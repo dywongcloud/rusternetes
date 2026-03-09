@@ -6,21 +6,36 @@ use serde::Serialize;
 pub struct ApiClient {
     base_url: String,
     client: Client,
+    token: Option<String>,
 }
 
 impl ApiClient {
-    pub fn new(base_url: &str) -> Self {
-        Self {
+    pub fn new(base_url: &str, insecure_skip_tls_verify: bool, token: Option<String>) -> Result<Self> {
+        let client = if insecure_skip_tls_verify {
+            Client::builder()
+                .danger_accept_invalid_certs(true)
+                .build()
+                .context("Failed to build HTTP client")?
+        } else {
+            Client::new()
+        };
+
+        Ok(Self {
             base_url: base_url.to_string(),
-            client: Client::new(),
-        }
+            client,
+            token,
+        })
     }
 
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}{}", self.base_url, path);
-        let response = self
-            .client
-            .get(&url)
+        let mut request = self.client.get(&url);
+
+        if let Some(ref token) = self.token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = request
             .send()
             .await
             .context("Failed to send GET request")?;
@@ -36,10 +51,13 @@ impl ApiClient {
 
     pub async fn post<T: Serialize, R: DeserializeOwned>(&self, path: &str, body: &T) -> Result<R> {
         let url = format!("{}{}", self.base_url, path);
-        let response = self
-            .client
-            .post(&url)
-            .json(body)
+        let mut request = self.client.post(&url).json(body);
+
+        if let Some(ref token) = self.token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = request
             .send()
             .await
             .context("Failed to send POST request")?;
@@ -55,10 +73,13 @@ impl ApiClient {
 
     pub async fn put<T: Serialize, R: DeserializeOwned>(&self, path: &str, body: &T) -> Result<R> {
         let url = format!("{}{}", self.base_url, path);
-        let response = self
-            .client
-            .put(&url)
-            .json(body)
+        let mut request = self.client.put(&url).json(body);
+
+        if let Some(ref token) = self.token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = request
             .send()
             .await
             .context("Failed to send PUT request")?;
@@ -74,9 +95,13 @@ impl ApiClient {
 
     pub async fn delete(&self, path: &str) -> Result<()> {
         let url = format!("{}{}", self.base_url, path);
-        let response = self
-            .client
-            .delete(&url)
+        let mut request = self.client.delete(&url);
+
+        if let Some(ref token) = self.token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = request
             .send()
             .await
             .context("Failed to send DELETE request")?;

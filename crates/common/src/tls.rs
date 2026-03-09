@@ -4,6 +4,18 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::str::FromStr;
 use std::sync::Arc;
 
+// Install the default crypto provider on module load
+fn install_crypto_provider() {
+    use rustls::crypto::CryptoProvider;
+    let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
+}
+
+// Call it immediately when the module is loaded
+static CRYPTO_INIT: std::sync::Once = std::sync::Once::new();
+fn ensure_crypto_provider() {
+    CRYPTO_INIT.call_once(install_crypto_provider);
+}
+
 /// TLS certificate configuration
 pub struct TlsConfig {
     pub cert: Vec<CertificateDer<'static>>,
@@ -16,6 +28,7 @@ impl TlsConfig {
         common_name: &str,
         subject_alt_names: Vec<String>,
     ) -> Result<Self> {
+        ensure_crypto_provider();
         let mut params = CertificateParams::default();
 
         // Set certificate validity (1 year)
@@ -64,6 +77,7 @@ impl TlsConfig {
         cert_path: &str,
         key_path: &str,
     ) -> Result<Self> {
+        ensure_crypto_provider();
         let cert_pem = std::fs::read(cert_path)
             .context("Failed to read certificate file")?;
         let key_pem = std::fs::read(key_path)
@@ -85,6 +99,7 @@ impl TlsConfig {
 
     /// Create rustls server config
     pub fn into_server_config(self) -> Result<Arc<rustls::ServerConfig>> {
+        ensure_crypto_provider();
         let config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(self.cert, self.key)

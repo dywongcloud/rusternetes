@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rusternetes_common::resources::{CronJob, CronJobStatus, Job};
+use rusternetes_common::resources::workloads::{CronJob, CronJobStatus, Job};
 use rusternetes_storage::{etcd::EtcdStorage, Storage};
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,7 +33,7 @@ impl CronJobController {
             if let Err(e) = self.reconcile(&mut cronjob).await {
                 error!(
                     "Failed to reconcile CronJob {}: {}",
-                    cronjob.metadata.name.as_ref().unwrap(),
+                    cronjob.metadata.name,
                     e
                 );
             }
@@ -43,7 +43,7 @@ impl CronJobController {
     }
 
     async fn reconcile(&self, cronjob: &mut CronJob) -> Result<()> {
-        let name = cronjob.metadata.name.as_ref().unwrap();
+        let name = &cronjob.metadata.name;
         let namespace = cronjob.metadata.namespace.as_ref().unwrap();
 
         info!("Reconciling CronJob {}/{}", namespace, name);
@@ -83,8 +83,9 @@ impl CronJobController {
                     && job
                         .status
                         .as_ref()
-                        .and_then(|s| s.completion_time.as_ref())
-                        .is_none() // Job not completed
+                        .and_then(|s| s.conditions.as_ref())
+                        .map(|conds| !conds.iter().any(|c| c.condition_type == "Complete" && c.status == "True"))
+                        .unwrap_or(true) // Job not completed
             })
             .collect();
 
@@ -108,7 +109,7 @@ impl CronJobController {
             "Replace" if !active_jobs.is_empty() => {
                 // Delete active jobs
                 for job in active_jobs.iter() {
-                    let job_name = job.metadata.name.as_ref().unwrap();
+                    let job_name = &job.metadata.name;
                     let job_key = format!("/registry/jobs/{}/{}", namespace, job_name);
                     self.storage.delete(&job_key).await?;
                     info!("Deleted active Job {} for replacement", job_name);
@@ -209,12 +210,17 @@ impl CronJobController {
     }
 
     async fn create_job(&self, cronjob: &CronJob, namespace: &str) -> Result<()> {
-        let cronjob_name = cronjob.metadata.name.as_ref().unwrap();
+        let cronjob_name = &cronjob.metadata.name;
         let timestamp = chrono::Utc::now().timestamp();
         let job_name = format!("{}-{}", cronjob_name, timestamp);
 
-        let mut labels = cronjob.spec.job_template.metadata.labels.clone().unwrap_or_default();
+        let mut labels = cronjob.spec.job_template.metadata.as_ref()
+            .and_then(|m| m.labels.clone())
+            .unwrap_or_default();
         labels.insert("cronjob-name".to_string(), cronjob_name.clone());
+
+        let annotations = cronjob.spec.job_template.metadata.as_ref()
+            .and_then(|m| m.annotations.clone());
 
         let job = Job {
             type_meta: rusternetes_common::types::TypeMeta {
@@ -222,12 +228,14 @@ impl CronJobController {
                 api_version: "batch/v1".to_string(),
             },
             metadata: rusternetes_common::types::ObjectMeta {
-                name: Some(job_name.clone()),
+                name: job_name.clone(),
                 namespace: Some(namespace.to_string()),
                 labels: Some(labels),
-                annotations: cronjob.spec.job_template.metadata.annotations.clone(),
-                uid: Some(uuid::Uuid::new_v4().to_string()),
-                creation_timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                annotations,
+                uid: uuid::Uuid::new_v4().to_string(),
+                creation_timestamp: Some(chrono::Utc::now()),
+                deletion_timestamp: None,
+                resource_version: None,
             },
             spec: cronjob.spec.job_template.spec.clone(),
             status: None,
@@ -242,7 +250,7 @@ impl CronJobController {
     }
 
     async fn cleanup_old_jobs(&self, cronjob: &CronJob, namespace: &str) -> Result<()> {
-        let cronjob_name = cronjob.metadata.name.as_ref().unwrap();
+        let cronjob_name = &cronjob.metadata.name;
         let success_limit = cronjob.spec.successful_jobs_history_limit.unwrap_or(3);
         let failed_limit = cronjob.spec.failed_jobs_history_limit.unwrap_or(1);
 
@@ -296,7 +304,7 @@ impl CronJobController {
         if successful_jobs.len() > success_limit as usize {
             let to_delete = successful_jobs.len() - success_limit as usize;
             for job in successful_jobs.iter().take(to_delete) {
-                let job_name: &String = job.metadata.name.as_ref().unwrap();
+                let job_name = &job.metadata.name;
                 let job_key = format!("/registry/jobs/{}/{}", namespace, job_name);
                 self.storage.delete(&job_key).await?;
                 info!("Deleted old successful Job {}", job_name);
@@ -307,7 +315,7 @@ impl CronJobController {
         if failed_jobs.len() > failed_limit as usize {
             let to_delete = failed_jobs.len() - failed_limit as usize;
             for job in failed_jobs.iter().take(to_delete) {
-                let job_name: &String = job.metadata.name.as_ref().unwrap();
+                let job_name = &job.metadata.name;
                 let job_key = format!("/registry/jobs/{}/{}", namespace, job_name);
                 self.storage.delete(&job_key).await?;
                 info!("Deleted old failed Job {}", job_name);

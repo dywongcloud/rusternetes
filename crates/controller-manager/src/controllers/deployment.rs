@@ -134,7 +134,7 @@ impl DeploymentController {
 
         let mut metadata = ObjectMeta::new(&pod_name);
         metadata.namespace = Some(namespace.to_string());
-        metadata.labels = deployment.spec.template.metadata.labels.clone();
+        metadata.labels = deployment.spec.template.metadata.as_ref().and_then(|m| m.labels.clone());
 
         let pod = Pod {
             type_meta: rusternetes_common::types::TypeMeta {

@@ -35,6 +35,8 @@ pub async fn create(
 
     // Ensure namespace is set correctly
     pod.metadata.namespace = Some(namespace.clone());
+    pod.metadata.ensure_uid();
+    pod.metadata.ensure_creation_timestamp();
 
     let key = build_key("pods", Some(&namespace), &pod.metadata.name);
     let created = state.storage.create(&key, &pod).await?;

@@ -1,10 +1,11 @@
 use anyhow::Result;
-use rusternetes_common::resources::{Pod, PodSpec, PodStatus, StatefulSet, StatefulSetStatus};
+use rusternetes_common::resources::{Pod, PodStatus, StatefulSet, StatefulSetStatus};
+use rusternetes_common::types::Phase;
 use rusternetes_storage::{etcd::EtcdStorage, Storage};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 pub struct StatefulSetController {
     storage: Arc<EtcdStorage>,
@@ -36,7 +37,7 @@ impl StatefulSetController {
             if let Err(e) = self.reconcile(&mut statefulset).await {
                 error!(
                     "Failed to reconcile StatefulSet {}: {}",
-                    statefulset.metadata.name.as_ref().unwrap(),
+                    statefulset.metadata.name,
                     e
                 );
             }
@@ -46,7 +47,7 @@ impl StatefulSetController {
     }
 
     async fn reconcile(&self, statefulset: &mut StatefulSet) -> Result<()> {
-        let name = statefulset.metadata.name.as_ref().unwrap();
+        let name = &statefulset.metadata.name;
         let namespace = statefulset.metadata.namespace.as_ref().unwrap();
 
         info!("Reconciling StatefulSet {}/{}", namespace, name);
@@ -74,8 +75,7 @@ impl StatefulSetController {
         statefulset_pods.sort_by_key(|pod| {
             pod.metadata
                 .name
-                .as_ref()
-                .and_then(|n| n.rsplit_once('-'))
+                .rsplit_once('-')
                 .and_then(|(_, idx)| idx.parse::<i32>().ok())
                 .unwrap_or(0)
         });
@@ -132,7 +132,7 @@ impl StatefulSetController {
             .filter(|pod| {
                 pod.status
                     .as_ref()
-                    .map(|s| s.phase.as_ref().map(|p| p == "Running").unwrap_or(false))
+                    .map(|s| s.phase == Phase::Running)
                     .unwrap_or(false)
             })
             .count() as i32;
@@ -157,12 +157,14 @@ impl StatefulSetController {
         ordinal: i32,
         namespace: &str,
     ) -> Result<()> {
-        let statefulset_name = statefulset.metadata.name.as_ref().unwrap();
+        let statefulset_name = &statefulset.metadata.name;
         let pod_name = format!("{}-{}", statefulset_name, ordinal);
 
         // Create pod from template
         let template = &statefulset.spec.template;
-        let mut labels = template.metadata.labels.clone().unwrap_or_default();
+        let mut labels = template.metadata.as_ref()
+            .and_then(|m| m.labels.clone())
+            .unwrap_or_default();
         labels.insert("app".to_string(), statefulset_name.clone());
         labels.insert(
             "statefulset.kubernetes.io/pod-name".to_string(),
@@ -175,20 +177,23 @@ impl StatefulSetController {
                 api_version: "v1".to_string(),
             },
             metadata: rusternetes_common::types::ObjectMeta {
-                name: Some(pod_name.clone()),
+                name: pod_name.clone(),
                 namespace: Some(namespace.to_string()),
                 labels: Some(labels),
-                annotations: template.metadata.annotations.clone(),
-                uid: Some(uuid::Uuid::new_v4().to_string()),
-                creation_timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                annotations: template.metadata.as_ref()
+                    .and_then(|m| m.annotations.clone()),
+                uid: uuid::Uuid::new_v4().to_string(),
+                creation_timestamp: Some(chrono::Utc::now()),
+                deletion_timestamp: None,
+                resource_version: None,
             },
             spec: template.spec.clone(),
             status: Some(PodStatus {
-                phase: Some("Pending".to_string()),
-                conditions: None,
+                phase: Phase::Pending,
+                message: None,
+                reason: None,
                 pod_ip: None,
                 host_ip: None,
-                start_time: None,
                 container_statuses: None,
             }),
         };

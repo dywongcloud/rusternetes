@@ -85,9 +85,17 @@ pub async fn update(
     namespace.metadata.name = name.clone();
 
     let key = build_key("namespaces", None, &name);
-    let updated = state.storage.update(&key, &namespace).await?;
 
-    Ok(Json(updated))
+    // Try to update first, if not found then create (upsert behavior)
+    let result = match state.storage.update(&key, &namespace).await {
+        Ok(updated) => updated,
+        Err(rusternetes_common::Error::NotFound(_)) => {
+            state.storage.create(&key, &namespace).await?
+        }
+        Err(e) => return Err(e),
+    };
+
+    Ok(Json(result))
 }
 
 pub async fn delete_ns(

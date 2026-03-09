@@ -1,0 +1,7 @@
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: test-namespace
+  labels:
+    environment: testing
+    purpose: functionality-verification

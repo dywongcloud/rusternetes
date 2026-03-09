@@ -1,5 +1,7 @@
 use anyhow::Result;
-use rusternetes_common::resources::{Job, JobStatus, Pod, PodStatus};
+use rusternetes_common::resources::workloads::{Job, JobCondition, JobStatus};
+use rusternetes_common::resources::{Pod, PodStatus};
+use rusternetes_common::types::Phase;
 use rusternetes_storage::{etcd::EtcdStorage, Storage};
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,7 +35,7 @@ impl JobController {
             if let Err(e) = self.reconcile(&mut job).await {
                 error!(
                     "Failed to reconcile Job {}: {}",
-                    job.metadata.name.as_ref().unwrap(),
+                    job.metadata.name,
                     e
                 );
             }
@@ -43,7 +45,7 @@ impl JobController {
     }
 
     async fn reconcile(&self, job: &mut Job) -> Result<()> {
-        let name = job.metadata.name.as_ref().unwrap();
+        let name = &job.metadata.name;
         let namespace = job.metadata.namespace.as_ref().unwrap();
 
         info!("Reconciling Job {}/{}", namespace, name);
@@ -74,15 +76,13 @@ impl JobController {
         let mut failed = 0;
 
         for pod in job_pods.iter() {
-            match pod
-                .status
-                .as_ref()
-                .and_then(|s| s.phase.as_ref().map(|p| p.as_str()))
-            {
-                Some("Running") | Some("Pending") => active += 1,
-                Some("Succeeded") => succeeded += 1,
-                Some("Failed") => failed += 1,
-                _ => {}
+            if let Some(status) = &pod.status {
+                match status.phase {
+                    Phase::Running | Phase::Pending => active += 1,
+                    Phase::Succeeded => succeeded += 1,
+                    Phase::Failed => failed += 1,
+                    _ => {}
+                }
             }
         }
 
@@ -101,7 +101,7 @@ impl JobController {
                 active: Some(0),
                 succeeded: Some(succeeded),
                 failed: Some(failed),
-                conditions: Some(vec![rusternetes_common::resources::JobCondition {
+                conditions: Some(vec![JobCondition {
                     condition_type: "Complete".to_string(),
                     status: "True".to_string(),
                     last_probe_time: Some(chrono::Utc::now()),
@@ -119,7 +119,7 @@ impl JobController {
                 active: Some(0),
                 succeeded: Some(succeeded),
                 failed: Some(failed),
-                conditions: Some(vec![rusternetes_common::resources::JobCondition {
+                conditions: Some(vec![JobCondition {
                     condition_type: "Failed".to_string(),
                     status: "True".to_string(),
                     last_probe_time: Some(chrono::Utc::now()),
@@ -165,17 +165,19 @@ impl JobController {
         Ok(())
     }
 
-    async fn create_pod(&self, job: &Job, namespace: &str, index: i32) -> Result<()> {
-        let job_name = job.metadata.name.as_ref().unwrap();
+    async fn create_pod(&self, job: &Job, namespace: &str, _index: i32) -> Result<()> {
+        let job_name = &job.metadata.name;
         let pod_name = format!("{}-{}", job_name, uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
 
         // Create pod from template
         let template = &job.spec.template;
-        let mut labels = template.metadata.labels.clone().unwrap_or_default();
+        let mut labels = template.metadata.as_ref()
+            .and_then(|m| m.labels.clone())
+            .unwrap_or_default();
         labels.insert("job-name".to_string(), job_name.clone());
         labels.insert(
             "controller-uid".to_string(),
-            job.metadata.uid.clone().unwrap_or_default(),
+            job.metadata.uid.clone(),
         );
 
         let mut spec = template.spec.clone();
@@ -188,20 +190,23 @@ impl JobController {
                 api_version: "v1".to_string(),
             },
             metadata: rusternetes_common::types::ObjectMeta {
-                name: Some(pod_name.clone()),
+                name: pod_name.clone(),
                 namespace: Some(namespace.to_string()),
                 labels: Some(labels),
-                annotations: template.metadata.annotations.clone(),
-                uid: Some(uuid::Uuid::new_v4().to_string()),
-                creation_timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                annotations: template.metadata.as_ref()
+                    .and_then(|m| m.annotations.clone()),
+                uid: uuid::Uuid::new_v4().to_string(),
+                creation_timestamp: Some(chrono::Utc::now()),
+                deletion_timestamp: None,
+                resource_version: None,
             },
             spec,
             status: Some(PodStatus {
-                phase: Some("Pending".to_string()),
-                conditions: None,
+                phase: Phase::Pending,
+                message: None,
+                reason: None,
                 pod_ip: None,
                 host_ip: None,
-                start_time: None,
                 container_statuses: None,
             }),
         };

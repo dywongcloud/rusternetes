@@ -328,9 +328,54 @@ pub fn matches_label_selector(
         }
     }
 
-    // TODO: Implement matchExpressions if needed
+    // Check matchExpressions
+    if let Some(ref match_expressions) = selector.match_expressions {
+        for expr in match_expressions {
+            if !matches_label_expression(labels, expr) {
+                return false;
+            }
+        }
+    }
 
     true
+}
+
+/// Check if labels match a single label selector expression
+fn matches_label_expression(
+    labels: &Option<HashMap<String, String>>,
+    expr: &rusternetes_common::types::LabelSelectorRequirement,
+) -> bool {
+    let label_value = labels
+        .as_ref()
+        .and_then(|l| l.get(&expr.key))
+        .map(|s| s.as_str());
+
+    let values = expr.values.as_deref().unwrap_or(&[]);
+
+    match expr.operator.as_str() {
+        "In" => {
+            // Label must exist and its value must be in the values list
+            label_value
+                .map(|v| values.contains(&v.to_string()))
+                .unwrap_or(false)
+        }
+        "NotIn" => {
+            // If label exists, its value must not be in the values list
+            // If label doesn't exist, the expression is satisfied
+            label_value
+                .map(|v| !values.contains(&v.to_string()))
+                .unwrap_or(true)
+        }
+        "Exists" => {
+            // Label must exist (value doesn't matter)
+            label_value.is_some()
+        }
+        "DoesNotExist" => {
+            // Label must not exist
+            label_value.is_none()
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]

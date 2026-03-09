@@ -55,6 +55,10 @@ struct Args {
     /// Subject Alternative Names for self-signed cert (comma-separated)
     #[arg(long, default_value = "localhost,127.0.0.1")]
     tls_san: String,
+
+    /// Skip authentication and authorization (INSECURE - development only)
+    #[arg(long)]
+    skip_auth: bool,
 }
 
 #[tokio::main]
@@ -90,9 +94,16 @@ async fn main() -> Result<()> {
     info!("Initializing TokenManager with JWT secret");
     let token_manager = Arc::new(TokenManager::new(args.jwt_secret.as_bytes()));
 
-    // Initialize RBAC Authorizer
-    info!("Initializing RBAC Authorizer");
-    let authorizer = Arc::new(RBACAuthorizer::new(storage.clone()));
+    // Initialize Authorizer (RBAC or AlwaysAllow based on skip_auth)
+    let authorizer: Arc<dyn rusternetes_common::authz::Authorizer> = if args.skip_auth {
+        warn!("⚠️  AUTHENTICATION AND AUTHORIZATION DISABLED - INSECURE MODE");
+        warn!("⚠️  Using AlwaysAllowAuthorizer - all requests will be permitted");
+        warn!("⚠️  This should ONLY be used in development/testing environments");
+        Arc::new(rusternetes_common::authz::AlwaysAllowAuthorizer)
+    } else {
+        info!("Initializing RBAC Authorizer");
+        Arc::new(RBACAuthorizer::new(storage.clone()))
+    };
 
     // Initialize Metrics Registry
     info!("Initializing Metrics Registry");
@@ -107,6 +118,7 @@ async fn main() -> Result<()> {
         token_manager,
         authorizer,
         metrics,
+        args.skip_auth,
     ));
 
     // Build router

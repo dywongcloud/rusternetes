@@ -1,12 +1,13 @@
 # Multi-stage build for Rusternetes components
 # This Dockerfile can build any component by specifying --build-arg COMPONENT=<name>
 
-FROM rust:1.75-slim AS builder
+FROM rust:latest AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -31,7 +32,7 @@ COPY crates ./crates
 RUN cargo build --release
 
 # Runtime stage
-FROM debian:bookworm-slim
+FROM debian:sid-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \

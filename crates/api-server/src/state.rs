@@ -10,6 +10,7 @@ pub struct ApiServerState {
     pub token_manager: Arc<TokenManager>,
     pub authorizer: Arc<dyn Authorizer>,
     pub metrics: Arc<MetricsRegistry>,
+    pub skip_auth: bool,
 }
 
 impl ApiServerState {
@@ -18,12 +19,14 @@ impl ApiServerState {
         token_manager: Arc<TokenManager>,
         authorizer: Arc<dyn Authorizer>,
         metrics: Arc<MetricsRegistry>,
+        skip_auth: bool,
     ) -> Self {
         Self {
             storage,
             token_manager,
             authorizer,
             metrics,
+            skip_auth,
         }
     }
 }

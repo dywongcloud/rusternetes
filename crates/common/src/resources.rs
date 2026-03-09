@@ -11,10 +11,11 @@ pub mod ingress;
 pub mod volume;
 
 pub use pod::{
-    Pod, PodSpec, PodStatus, Container, ContainerPort, VolumeMount, Volume,
-    Affinity, NodeAffinity, PodAffinity, PodAntiAffinity, Toleration,
+    Pod, PodSpec, PodStatus, Container, ContainerPort, ContainerStatus, ContainerState,
+    VolumeMount, Volume, Affinity, NodeAffinity, PodAffinity, PodAntiAffinity, Toleration,
     NodeSelector, NodeSelectorTerm, NodeSelectorRequirement, PreferredSchedulingTerm,
-    PodAffinityTerm, WeightedPodAffinityTerm,
+    PodAffinityTerm, WeightedPodAffinityTerm, Probe, HTTPGetAction, TCPSocketAction,
+    ExecAction, HTTPHeader, EnvVar,
 };
 pub use service::{Service, ServiceSpec, ServicePort, ServiceType};
 pub use deployment::{Deployment, DeploymentSpec, DeploymentStatus};

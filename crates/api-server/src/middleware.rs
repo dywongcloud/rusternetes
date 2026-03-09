@@ -15,6 +15,25 @@ pub struct AuthContext {
     pub user: UserInfo,
 }
 
+/// Middleware that adds a default admin AuthContext when skip_auth is enabled
+pub async fn skip_auth_middleware(
+    mut request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    // Create an admin user context
+    let admin_user = UserInfo {
+        username: "admin".to_string(),
+        uid: "system:admin".to_string(),
+        groups: vec!["system:masters".to_string()],
+        extra: std::collections::HashMap::new(),
+    };
+
+    // Insert AuthContext into request extensions
+    request.extensions_mut().insert(AuthContext { user: admin_user });
+
+    Ok(next.run(request).await)
+}
+
 /// Authentication middleware that extracts and validates JWT tokens
 pub async fn auth_middleware(
     Extension(token_manager): Extension<Arc<TokenManager>>,

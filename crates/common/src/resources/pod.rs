@@ -29,6 +29,7 @@ impl Pod {
 
 /// PodSpec describes the desired state of a pod
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PodSpec {
     pub containers: Vec<Container>,
 
@@ -72,6 +73,7 @@ pub struct PodSpec {
 
 /// Container represents a single container in a pod
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Container {
     pub name: String,
     pub image: String,
@@ -99,9 +101,19 @@ pub struct Container {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_pull_policy: Option<String>, // Always, Never, IfNotPresent
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub liveness_probe: Option<Probe>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readiness_probe: Option<Probe>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub startup_probe: Option<Probe>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ContainerPort {
     pub container_port: u16,
 
@@ -202,6 +214,7 @@ pub struct SecretVolumeSource {
 
 /// PodStatus represents the current state of a pod
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PodStatus {
     pub phase: Phase,
 
@@ -222,6 +235,7 @@ pub struct PodStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ContainerStatus {
     pub name: String,
     pub ready: bool,
@@ -386,4 +400,88 @@ pub struct Toleration {
     /// TolerationSeconds represents the period of time the toleration tolerates the taint
     #[serde(skip_serializing_if = "Option::is_none")]
     pub toleration_seconds: Option<i64>,
+}
+
+/// Probe describes a health check to be performed against a container
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Probe {
+    /// HTTP GET probe
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_get: Option<HTTPGetAction>,
+
+    /// TCP socket probe
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tcp_socket: Option<TCPSocketAction>,
+
+    /// Exec command probe
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exec: Option<ExecAction>,
+
+    /// Number of seconds after the container has started before probes are initiated
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initial_delay_seconds: Option<i32>,
+
+    /// Number of seconds after which the probe times out
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<i32>,
+
+    /// How often (in seconds) to perform the probe
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub period_seconds: Option<i32>,
+
+    /// Minimum consecutive successes for the probe to be considered successful
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success_threshold: Option<i32>,
+
+    /// Minimum consecutive failures for the probe to be considered failed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_threshold: Option<i32>,
+}
+
+/// HTTPGetAction describes an action based on HTTP Get requests
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HTTPGetAction {
+    /// Path to access on the HTTP server
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+
+    /// Port to access on the container
+    pub port: i32,
+
+    /// Host name to connect to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+
+    /// Scheme to use for connecting (HTTP or HTTPS)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheme: Option<String>,
+
+    /// Custom headers to set in the request
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_headers: Option<Vec<HTTPHeader>>,
+}
+
+/// HTTPHeader describes a custom header to be used in HTTP probes
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HTTPHeader {
+    pub name: String,
+    pub value: String,
+}
+
+/// TCPSocketAction describes an action based on opening a socket
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TCPSocketAction {
+    /// Port to connect to on the container
+    pub port: i32,
+
+    /// Host name to connect to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+}
+
+/// ExecAction describes a command-based action
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecAction {
+    /// Command to execute
+    pub command: Vec<String>,
 }

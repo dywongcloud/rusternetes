@@ -6,14 +6,16 @@ use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
 pub fn build_router(state: Arc<ApiServerState>) -> Router {
+    let skip_auth = state.skip_auth;
+
     // Routes that don't require authentication
     let public_routes = Router::new()
         .route("/healthz", get(handlers::health::healthz))
         .route("/readyz", get(handlers::health::readyz))
         .route("/metrics", get(handlers::health::metrics));
 
-    // Routes that require authentication
-    let protected_routes = Router::new()
+    // Routes that require authentication (unless skip_auth is enabled)
+    let mut protected_routes = Router::new()
         // Core v1 API
         .route("/api/v1/namespaces", get(handlers::namespace::list))
         .route("/api/v1/namespaces", post(handlers::namespace::create))
@@ -66,6 +68,28 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             get(handlers::deployment::get)
                 .put(handlers::deployment::update)
                 .delete(handlers::deployment::delete_deployment),
+        )
+        // Batch v1 API - Jobs
+        .route(
+            "/apis/batch/v1/namespaces/:namespace/jobs",
+            get(handlers::job::list).post(handlers::job::create),
+        )
+        .route(
+            "/apis/batch/v1/namespaces/:namespace/jobs/:name",
+            get(handlers::job::get)
+                .put(handlers::job::update)
+                .delete(handlers::job::delete_job),
+        )
+        // Batch v1 API - CronJobs
+        .route(
+            "/apis/batch/v1/namespaces/:namespace/cronjobs",
+            get(handlers::cronjob::list).post(handlers::cronjob::create),
+        )
+        .route(
+            "/apis/batch/v1/namespaces/:namespace/cronjobs/:name",
+            get(handlers::cronjob::get)
+                .put(handlers::cronjob::update)
+                .delete(handlers::cronjob::delete_cronjob),
         )
         // ServiceAccounts
         .route(
@@ -121,10 +145,19 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             get(handlers::rbac::get_clusterrolebinding)
                 .put(handlers::rbac::update_clusterrolebinding)
                 .delete(handlers::rbac::delete_clusterrolebinding),
-        )
-        // Apply authentication middleware
-        .layer(axum_middleware::from_fn(middleware::auth_middleware))
-        .layer(Extension(state.token_manager.clone()));
+        );
+
+    // Conditionally apply authentication middleware
+    if skip_auth {
+        // In skip-auth mode, inject a default admin user context
+        protected_routes = protected_routes
+            .layer(axum_middleware::from_fn(middleware::skip_auth_middleware));
+    } else {
+        // In normal mode, apply full authentication
+        protected_routes = protected_routes
+            .layer(axum_middleware::from_fn(middleware::auth_middleware))
+            .layer(Extension(state.token_manager.clone()));
+    }
 
     // Combine routes and add shared state
     Router::new()

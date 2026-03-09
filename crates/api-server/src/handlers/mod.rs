@@ -4,5 +4,7 @@ pub mod pod;
 pub mod service;
 pub mod node;
 pub mod deployment;
+pub mod job;
+pub mod cronjob;
 pub mod service_account;
 pub mod rbac;

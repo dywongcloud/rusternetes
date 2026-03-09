@@ -23,3 +23,5 @@ futures.workspace = true
 bollard.workspace = true
 chrono.workspace = true
 axum.workspace = true
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }

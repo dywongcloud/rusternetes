@@ -1,10 +1,11 @@
 use anyhow::Result;
-use rusternetes_common::resources::{DaemonSet, DaemonSetStatus, Node, Pod, PodSpec, PodStatus};
+use rusternetes_common::resources::{DaemonSet, DaemonSetStatus, Node, Pod, PodStatus};
+use rusternetes_common::types::Phase;
 use rusternetes_storage::{etcd::EtcdStorage, Storage};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 pub struct DaemonSetController {
     storage: Arc<EtcdStorage>,
@@ -36,7 +37,7 @@ impl DaemonSetController {
             if let Err(e) = self.reconcile(&mut daemonset).await {
                 error!(
                     "Failed to reconcile DaemonSet {}: {}",
-                    daemonset.metadata.name.as_ref().unwrap(),
+                    daemonset.metadata.name,
                     e
                 );
             }
@@ -46,7 +47,7 @@ impl DaemonSetController {
     }
 
     async fn reconcile(&self, daemonset: &mut DaemonSet) -> Result<()> {
-        let name = daemonset.metadata.name.as_ref().unwrap();
+        let name = &daemonset.metadata.name;
         let namespace = daemonset.metadata.namespace.as_ref().unwrap();
 
         info!("Reconciling DaemonSet {}/{}", namespace, name);
@@ -93,7 +94,7 @@ impl DaemonSetController {
 
         // Ensure one pod per eligible node
         for node in eligible_nodes.iter() {
-            let node_name = node.metadata.name.as_ref().unwrap();
+            let node_name = &node.metadata.name;
 
             if !pods_by_node.contains_key(node_name) {
                 // Create pod for this node
@@ -105,12 +106,12 @@ impl DaemonSetController {
         // Remove pods from nodes that are no longer eligible
         let eligible_node_names: std::collections::HashSet<_> = eligible_nodes
             .iter()
-            .filter_map(|n| n.metadata.name.as_ref())
+            .map(|n| n.metadata.name.as_str())
             .collect();
 
         for (node_name, pod) in pods_by_node.iter() {
             if !eligible_node_names.contains(node_name.as_str()) {
-                let pod_name = pod.metadata.name.as_ref().unwrap();
+                let pod_name = &pod.metadata.name;
                 let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
                 self.storage.delete(&pod_key).await?;
                 info!(
@@ -128,7 +129,7 @@ impl DaemonSetController {
             .filter(|pod| {
                 pod.status
                     .as_ref()
-                    .map(|s| s.phase.as_ref().map(|p| p == "Running").unwrap_or(false))
+                    .map(|s| s.phase == Phase::Running)
                     .unwrap_or(false)
             })
             .count() as i32;
@@ -171,16 +172,18 @@ impl DaemonSetController {
         node_name: &str,
         namespace: &str,
     ) -> Result<()> {
-        let daemonset_name = daemonset.metadata.name.as_ref().unwrap();
+        let daemonset_name = &daemonset.metadata.name;
         let pod_name = format!("{}-{}", daemonset_name, &node_name.replace('.', "-"));
 
         // Create pod from template
         let template = &daemonset.spec.template;
-        let mut labels = template.metadata.labels.clone().unwrap_or_default();
+        let mut labels = template.metadata.as_ref()
+            .and_then(|m| m.labels.clone())
+            .unwrap_or_default();
         labels.insert("app".to_string(), daemonset_name.clone());
         labels.insert(
             "controller-uid".to_string(),
-            daemonset.metadata.uid.clone().unwrap_or_default(),
+            daemonset.metadata.uid.clone(),
         );
 
         let spec = template.spec.clone();
@@ -192,20 +195,23 @@ impl DaemonSetController {
                 api_version: "v1".to_string(),
             },
             metadata: rusternetes_common::types::ObjectMeta {
-                name: Some(pod_name.clone()),
+                name: pod_name.clone(),
                 namespace: Some(namespace.to_string()),
                 labels: Some(labels),
-                annotations: template.metadata.annotations.clone(),
-                uid: Some(uuid::Uuid::new_v4().to_string()),
-                creation_timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                annotations: template.metadata.as_ref()
+                    .and_then(|m| m.annotations.clone()),
+                uid: uuid::Uuid::new_v4().to_string(),
+                creation_timestamp: Some(chrono::Utc::now()),
+                deletion_timestamp: None,
+                resource_version: None,
             },
             spec,
             status: Some(PodStatus {
-                phase: Some("Pending".to_string()),
-                conditions: None,
+                phase: Phase::Pending,
+                message: None,
+                reason: None,
                 pod_ip: None,
                 host_ip: None,
-                start_time: None,
                 container_statuses: None,
             }),
         };

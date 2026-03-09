@@ -1,4 +1,5 @@
 use crate::resources::pod::PodSpec;
+use crate::resources::workloads::PodTemplateSpec;
 use crate::types::{LabelSelector, ObjectMeta, TypeMeta};
 use serde::{Deserialize, Serialize};
 
@@ -41,12 +42,6 @@ pub struct DeploymentSpec {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revision_history_limit: Option<i32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PodTemplateSpec {
-    pub metadata: ObjectMeta,
-    pub spec: PodSpec,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

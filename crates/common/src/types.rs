@@ -4,15 +4,18 @@ use std::collections::HashMap;
 
 /// ObjectMeta is metadata that all persisted resources must have
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ObjectMeta {
     /// Name must be unique within a namespace
+    #[serde(default)]
     pub name: String,
 
     /// Namespace defines the space within which the resource name must be unique
     #[serde(skip_serializing_if = "Option::is_none")]
     pub namespace: Option<String>,
 
-    /// UID is a unique identifier for the resource
+    /// UID is a unique identifier for the resource (auto-generated if not provided)
+    #[serde(default = "generate_uid", skip_serializing_if = "String::is_empty")]
     pub uid: String,
 
     /// ResourceVersion is an opaque value for concurrency control
@@ -34,6 +37,10 @@ pub struct ObjectMeta {
     /// Annotations are key-value pairs for arbitrary metadata
     #[serde(skip_serializing_if = "Option::is_none")]
     pub annotations: Option<HashMap<String, String>>,
+}
+
+fn generate_uid() -> String {
+    String::new()
 }
 
 impl ObjectMeta {
@@ -59,10 +66,25 @@ impl ObjectMeta {
         self.labels = Some(labels);
         self
     }
+
+    /// Ensure uid is populated (generate if empty)
+    pub fn ensure_uid(&mut self) {
+        if self.uid.is_empty() {
+            self.uid = uuid::Uuid::new_v4().to_string();
+        }
+    }
+
+    /// Ensure creation timestamp is set
+    pub fn ensure_creation_timestamp(&mut self) {
+        if self.creation_timestamp.is_none() {
+            self.creation_timestamp = Some(Utc::now());
+        }
+    }
 }
 
 /// TypeMeta describes the type of the object
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct TypeMeta {
     /// Kind is the object's type
     pub kind: String,

@@ -3,23 +3,29 @@ version: '3.8'
 services:
   # etcd - distributed key-value store for cluster state
   etcd:
-    image: bitnami/etcd:latest
+    image: quay.io/coreos/etcd:v3.5.17
     container_name: rusternetes-etcd
-    environment:
-      - ALLOW_NONE_AUTHENTICATION=yes
-      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
     ports:
       - "2379:2379"
       - "2380:2380"
     volumes:
-      - etcd-data:/bitnami/etcd
+      - etcd-data:/etcd-data
     networks:
       - rusternetes-net
     healthcheck:
-      test: ["CMD", "etcdctl", "endpoint", "health"]
+      test: ["CMD", "/usr/local/bin/etcdctl", "--endpoints=http://localhost:2379", "endpoint", "health"]
       interval: 10s
       timeout: 5s
       retries: 5
+    environment:
+      - ETCDCTL_API=3
 
   # API Server - central management component
   api-server:
@@ -36,7 +42,16 @@ services:
       - rusternetes-net
     environment:
       - RUST_LOG=info
-    command: ["--bind-address", "0.0.0.0:6443", "--etcd-servers", "http://etcd:2379"]
+    command:
+      - "--bind-address"
+      - "0.0.0.0:6443"
+      - "--etcd-servers"
+      - "http://etcd:2379"
+      - "--tls"
+      - "--tls-self-signed"
+      - "--tls-san"
+      - "localhost,127.0.0.1,api-server,rusternetes-api-server"
+      - "--skip-auth"
 
   # Scheduler - assigns pods to nodes
   scheduler:
@@ -81,12 +96,11 @@ services:
     networks:
       - rusternetes-net
     volumes:
-      # Share Podman socket for container management
-      - /run/podman/podman.sock:/var/run/docker.sock:ro
-      # Alternative for Docker
-      # - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Podman socket - inside Podman Machine VM
+      # This path works because containers run inside the same VM
+      - /run/user/501/podman/podman.sock:/var/run/docker.sock:rw
     environment:
-      - RUST_LOG=info
+      - RUST_LOG=debug
       - DOCKER_HOST=unix:///var/run/docker.sock
     command: ["--node-name", "node-1", "--etcd-servers", "http://etcd:2379"]
 

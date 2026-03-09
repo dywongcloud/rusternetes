@@ -10,8 +10,16 @@ use client::ApiClient;
 #[command(about = "Rusternetes kubectl - Command line tool for Rusternetes")]
 struct Cli {
     /// API server address
-    #[arg(long, default_value = "http://localhost:6443", global = true)]
+    #[arg(long, default_value = "https://localhost:6443", global = true)]
     server: String,
+
+    /// Skip TLS certificate verification (insecure)
+    #[arg(long, global = true)]
+    insecure_skip_tls_verify: bool,
+
+    /// Bearer token for authentication
+    #[arg(long, global = true)]
+    token: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -63,7 +71,7 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let client = ApiClient::new(&cli.server);
+    let client = ApiClient::new(&cli.server, cli.insecure_skip_tls_verify, cli.token)?;
 
     match cli.command {
         Commands::Get {
