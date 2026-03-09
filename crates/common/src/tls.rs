@@ -1,0 +1,230 @@
+use anyhow::{Context, Result};
+use rcgen::{CertificateParams, DistinguishedName, DnType, Ia5String, SanType};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use std::str::FromStr;
+use std::sync::Arc;
+
+/// TLS certificate configuration
+pub struct TlsConfig {
+    pub cert: Vec<CertificateDer<'static>>,
+    pub key: PrivateKeyDer<'static>,
+}
+
+impl TlsConfig {
+    /// Generate a self-signed certificate for development/testing
+    pub fn generate_self_signed(
+        common_name: &str,
+        subject_alt_names: Vec<String>,
+    ) -> Result<Self> {
+        let mut params = CertificateParams::default();
+
+        // Set certificate validity (1 year)
+        params.not_before = rcgen::date_time_ymd(2024, 1, 1);
+        params.not_after = rcgen::date_time_ymd(2025, 1, 1);
+
+        // Set distinguished name
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, common_name);
+        dn.push(DnType::OrganizationName, "Rusternetes");
+        dn.push(DnType::CountryName, "US");
+        params.distinguished_name = dn;
+
+        // Add subject alternative names (SANs)
+        for san in subject_alt_names {
+            if san.parse::<std::net::IpAddr>().is_ok() {
+                params.subject_alt_names.push(SanType::IpAddress(san.parse()?));
+            } else {
+                params.subject_alt_names.push(SanType::DnsName(Ia5String::from_str(&san)?));
+            }
+        }
+
+        // Generate certificate
+        let key_pair = rcgen::KeyPair::generate()?;
+        let cert = params.self_signed(&key_pair)?;
+        let cert_pem = cert.pem();
+        let key_pem = key_pair.serialize_pem();
+
+        // Parse to rustls types
+        let cert_der = rustls_pemfile::certs(&mut cert_pem.as_bytes())
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .context("Failed to parse certificate")?;
+
+        let key_der = rustls_pemfile::private_key(&mut key_pem.as_bytes())
+            .context("Failed to read private key")?
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse private key"))?;
+
+        Ok(TlsConfig {
+            cert: cert_der,
+            key: key_der,
+        })
+    }
+
+    /// Load certificate and key from PEM files
+    pub fn from_pem_files(
+        cert_path: &str,
+        key_path: &str,
+    ) -> Result<Self> {
+        let cert_pem = std::fs::read(cert_path)
+            .context("Failed to read certificate file")?;
+        let key_pem = std::fs::read(key_path)
+            .context("Failed to read key file")?;
+
+        let cert_der = rustls_pemfile::certs(&mut cert_pem.as_slice())
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .context("Failed to parse certificate")?;
+
+        let key_der = rustls_pemfile::private_key(&mut key_pem.as_slice())
+            .context("Failed to read private key")?
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse private key"))?;
+
+        Ok(TlsConfig {
+            cert: cert_der,
+            key: key_der,
+        })
+    }
+
+    /// Create rustls server config
+    pub fn into_server_config(self) -> Result<Arc<rustls::ServerConfig>> {
+        let config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(self.cert, self.key)
+            .context("Failed to create server config")?;
+
+        Ok(Arc::new(config))
+    }
+
+    /// Create rustls server config with mutual TLS (mTLS)
+    pub fn into_mtls_server_config(
+        self,
+        client_ca_cert_path: &str,
+    ) -> Result<Arc<rustls::ServerConfig>> {
+        // Load client CA certificate
+        let client_ca_pem = std::fs::read(client_ca_cert_path)
+            .context("Failed to read client CA certificate")?;
+        let client_ca_certs = rustls_pemfile::certs(&mut client_ca_pem.as_slice())
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .context("Failed to parse client CA certificate")?;
+
+        let mut client_auth_roots = rustls::RootCertStore::empty();
+        client_auth_roots.add_parsable_certificates(client_ca_certs);
+
+        let client_cert_verifier = rustls::server::WebPkiClientVerifier::builder(
+            Arc::new(client_auth_roots)
+        ).build()
+        .context("Failed to build client cert verifier")?;
+
+        let config = rustls::ServerConfig::builder()
+            .with_client_cert_verifier(client_cert_verifier)
+            .with_single_cert(self.cert, self.key)
+            .context("Failed to create mTLS server config")?;
+
+        Ok(Arc::new(config))
+    }
+}
+
+/// TLS configuration for clients
+pub struct TlsClientConfig {
+    pub ca_cert: Vec<CertificateDer<'static>>,
+    pub client_cert: Option<Vec<CertificateDer<'static>>>,
+    pub client_key: Option<PrivateKeyDer<'static>>,
+}
+
+impl TlsClientConfig {
+    /// Create client config with CA certificate (server verification only)
+    pub fn new(ca_cert_path: &str) -> Result<Self> {
+        let ca_pem = std::fs::read(ca_cert_path)
+            .context("Failed to read CA certificate")?;
+        let ca_cert = rustls_pemfile::certs(&mut ca_pem.as_slice())
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .context("Failed to parse CA certificate")?;
+
+        Ok(TlsClientConfig {
+            ca_cert,
+            client_cert: None,
+            client_key: None,
+        })
+    }
+
+    /// Create client config with mTLS (client certificate authentication)
+    pub fn new_with_client_cert(
+        ca_cert_path: &str,
+        client_cert_path: &str,
+        client_key_path: &str,
+    ) -> Result<Self> {
+        let ca_pem = std::fs::read(ca_cert_path)
+            .context("Failed to read CA certificate")?;
+        let ca_cert = rustls_pemfile::certs(&mut ca_pem.as_slice())
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .context("Failed to parse CA certificate")?;
+
+        let client_cert_pem = std::fs::read(client_cert_path)
+            .context("Failed to read client certificate")?;
+        let client_cert = rustls_pemfile::certs(&mut client_cert_pem.as_slice())
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .context("Failed to parse client certificate")?;
+
+        let client_key_pem = std::fs::read(client_key_path)
+            .context("Failed to read client key")?;
+        let client_key = rustls_pemfile::private_key(&mut client_key_pem.as_slice())
+            .context("Failed to read client private key")?
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse client private key"))?;
+
+        Ok(TlsClientConfig {
+            ca_cert,
+            client_cert: Some(client_cert),
+            client_key: Some(client_key),
+        })
+    }
+
+    /// Create rustls client config
+    pub fn into_client_config(self) -> Result<Arc<rustls::ClientConfig>> {
+        let mut root_cert_store = rustls::RootCertStore::empty();
+        root_cert_store.add_parsable_certificates(self.ca_cert);
+
+        let config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_cert_store);
+
+        let config = if let (Some(cert), Some(key)) = (self.client_cert, self.client_key) {
+            config.with_client_auth_cert(cert, key)
+                .context("Failed to create client config with client auth")?
+        } else {
+            config.with_no_client_auth()
+        };
+
+        Ok(Arc::new(config))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_self_signed_cert() {
+        let tls_config = TlsConfig::generate_self_signed(
+            "localhost",
+            vec!["localhost".to_string(), "127.0.0.1".to_string()],
+        ).expect("Failed to generate self-signed certificate");
+
+        assert!(!tls_config.cert.is_empty());
+
+        // Should be able to create server config
+        let _server_config = tls_config.into_server_config()
+            .expect("Failed to create server config");
+    }
+
+    #[test]
+    fn test_cert_with_multiple_sans() {
+        let tls_config = TlsConfig::generate_self_signed(
+            "rusternetes-api",
+            vec![
+                "localhost".to_string(),
+                "api.rusternetes.local".to_string(),
+                "127.0.0.1".to_string(),
+                "::1".to_string(),
+            ],
+        ).expect("Failed to generate certificate");
+
+        assert!(!tls_config.cert.is_empty());
+    }
+}

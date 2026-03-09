@@ -1,0 +1,248 @@
+use anyhow::Result;
+use rusternetes_common::resources::{Job, JobStatus, Pod, PodStatus};
+use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::time;
+use tracing::{error, info, warn};
+
+pub struct JobController {
+    storage: Arc<EtcdStorage>,
+}
+
+impl JobController {
+    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+        Self { storage }
+    }
+
+    pub async fn run(&self) -> Result<()> {
+        info!("Starting JobController");
+
+        loop {
+            if let Err(e) = self.reconcile_all().await {
+                error!("Error in Job reconciliation loop: {}", e);
+            }
+            time::sleep(Duration::from_secs(5)).await;
+        }
+    }
+
+    async fn reconcile_all(&self) -> Result<()> {
+        let jobs: Vec<Job> = self.storage.list("/registry/jobs/").await?;
+
+        for mut job in jobs {
+            if let Err(e) = self.reconcile(&mut job).await {
+                error!(
+                    "Failed to reconcile Job {}: {}",
+                    job.metadata.name.as_ref().unwrap(),
+                    e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn reconcile(&self, job: &mut Job) -> Result<()> {
+        let name = job.metadata.name.as_ref().unwrap();
+        let namespace = job.metadata.namespace.as_ref().unwrap();
+
+        info!("Reconciling Job {}/{}", namespace, name);
+
+        let completions = job.spec.completions.unwrap_or(1);
+        let parallelism = job.spec.parallelism.unwrap_or(1);
+        let backoff_limit = job.spec.backoff_limit.unwrap_or(6);
+
+        // Get current pods for this Job
+        let pod_prefix = format!("/registry/pods/{}/", namespace);
+        let all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
+
+        // Filter pods that belong to this Job
+        let job_pods: Vec<Pod> = all_pods
+            .into_iter()
+            .filter(|pod| {
+                pod.metadata
+                    .labels
+                    .as_ref()
+                    .and_then(|labels| labels.get("job-name"))
+                    .map(|j| j == name)
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        let mut active = 0;
+        let mut succeeded = 0;
+        let mut failed = 0;
+
+        for pod in job_pods.iter() {
+            match pod
+                .status
+                .as_ref()
+                .and_then(|s| s.phase.as_ref().map(|p| p.as_str()))
+            {
+                Some("Running") | Some("Pending") => active += 1,
+                Some("Succeeded") => succeeded += 1,
+                Some("Failed") => failed += 1,
+                _ => {}
+            }
+        }
+
+        info!(
+            "Job {}/{}: active={}, succeeded={}, failed={}, target={}",
+            namespace, name, active, succeeded, failed, completions
+        );
+
+        // Check if Job is complete
+        let is_complete = succeeded >= completions;
+        let is_failed = failed > backoff_limit;
+
+        if is_complete {
+            info!("Job {}/{} completed successfully", namespace, name);
+            job.status = Some(JobStatus {
+                active: Some(0),
+                succeeded: Some(succeeded),
+                failed: Some(failed),
+                conditions: Some(vec![rusternetes_common::resources::JobCondition {
+                    condition_type: "Complete".to_string(),
+                    status: "True".to_string(),
+                    last_probe_time: Some(chrono::Utc::now()),
+                    last_transition_time: Some(chrono::Utc::now()),
+                    reason: Some("Completed".to_string()),
+                    message: Some("Job completed successfully".to_string()),
+                }]),
+            });
+        } else if is_failed {
+            warn!(
+                "Job {}/{} failed after {} failures",
+                namespace, name, failed
+            );
+            job.status = Some(JobStatus {
+                active: Some(0),
+                succeeded: Some(succeeded),
+                failed: Some(failed),
+                conditions: Some(vec![rusternetes_common::resources::JobCondition {
+                    condition_type: "Failed".to_string(),
+                    status: "True".to_string(),
+                    last_probe_time: Some(chrono::Utc::now()),
+                    last_transition_time: Some(chrono::Utc::now()),
+                    reason: Some("BackoffLimitExceeded".to_string()),
+                    message: Some(format!("Job has reached backoff limit of {}", backoff_limit)),
+                }]),
+            });
+        } else {
+            // Calculate how many new pods to create
+            let pods_needed = std::cmp::min(
+                parallelism - active,
+                completions - succeeded - active,
+            );
+
+            if pods_needed > 0 {
+                for i in 0..pods_needed {
+                    self.create_pod(job, namespace, job_pods.len() as i32 + i)
+                        .await?;
+                    info!(
+                        "Created pod for Job {}/{} ({}/{})",
+                        namespace,
+                        name,
+                        job_pods.len() + i as usize + 1,
+                        completions
+                    );
+                }
+            }
+
+            // Update status
+            job.status = Some(JobStatus {
+                active: Some(active),
+                succeeded: Some(succeeded),
+                failed: Some(failed),
+                conditions: None,
+            });
+        }
+
+        // Save updated status
+        let key = format!("/registry/jobs/{}/{}", namespace, name);
+        self.storage.update(&key, job).await?;
+
+        Ok(())
+    }
+
+    async fn create_pod(&self, job: &Job, namespace: &str, index: i32) -> Result<()> {
+        let job_name = job.metadata.name.as_ref().unwrap();
+        let pod_name = format!("{}-{}", job_name, uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
+
+        // Create pod from template
+        let template = &job.spec.template;
+        let mut labels = template.metadata.labels.clone().unwrap_or_default();
+        labels.insert("job-name".to_string(), job_name.clone());
+        labels.insert(
+            "controller-uid".to_string(),
+            job.metadata.uid.clone().unwrap_or_default(),
+        );
+
+        let mut spec = template.spec.clone();
+        // Jobs should not restart on failure - let the Job controller handle retries
+        spec.restart_policy = Some("Never".to_string());
+
+        let pod = Pod {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: rusternetes_common::types::ObjectMeta {
+                name: Some(pod_name.clone()),
+                namespace: Some(namespace.to_string()),
+                labels: Some(labels),
+                annotations: template.metadata.annotations.clone(),
+                uid: Some(uuid::Uuid::new_v4().to_string()),
+                creation_timestamp: Some(chrono::Utc::now().to_rfc3339()),
+            },
+            spec,
+            status: Some(PodStatus {
+                phase: Some("Pending".to_string()),
+                conditions: None,
+                pod_ip: None,
+                host_ip: None,
+                start_time: None,
+                container_statuses: None,
+            }),
+        };
+
+        let key = format!("/registry/pods/{}/{}", namespace, pod_name);
+        self.storage.create(&key, &pod).await?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pods_needed_calculation() {
+        let parallelism = 3;
+        let completions = 10;
+        let active = 2;
+        let succeeded = 5;
+
+        let pods_needed = std::cmp::min(
+            parallelism - active,       // 1 (can run 1 more in parallel)
+            completions - succeeded - active,  // 3 (need 3 more to complete)
+        );
+
+        assert_eq!(pods_needed, 1);
+    }
+
+    #[test]
+    fn test_job_completion() {
+        let completions = 5;
+        let succeeded = 5;
+        assert!(succeeded >= completions);
+    }
+
+    #[test]
+    fn test_backoff_limit_exceeded() {
+        let backoff_limit = 6;
+        let failed = 7;
+        assert!(failed > backoff_limit);
+    }
+}

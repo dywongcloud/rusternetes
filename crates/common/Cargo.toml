@@ -13,3 +13,14 @@ uuid.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
+async-trait.workspace = true
+jsonwebtoken.workspace = true
+prometheus.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
+rustls-pemfile = "2.1"
+axum = { workspace = true, optional = true }
+
+[features]
+default = []
+axum-support = ["axum"]

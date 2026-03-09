@@ -1,16 +1,21 @@
-use crate::state::ApiServerState;
+use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    Json,
+    Extension, Json,
 };
-use rusternetes_common::{resources::Deployment, Result};
-use rusternetes_storage::{build_key, build_prefix};
+use rusternetes_common::{
+    authz::{Decision, RequestAttributes},
+    resources::Deployment,
+    Result,
+};
+use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
 use tracing::info;
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     Json(mut deployment): Json<Deployment>,
 ) -> Result<(StatusCode, Json<Deployment>)> {
@@ -18,6 +23,18 @@ pub async fn create(
         "Creating deployment: {}/{}",
         namespace, deployment.metadata.name
     );
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "create", "deployments")
+        .with_namespace(&namespace)
+        .with_api_group("apps");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     deployment.metadata.namespace = Some(namespace.clone());
 
@@ -29,9 +46,23 @@ pub async fn create(
 
 pub async fn get(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Deployment>> {
     info!("Getting deployment: {}/{}", namespace, name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "get", "deployments")
+        .with_namespace(&namespace)
+        .with_api_group("apps")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     let key = build_key("deployments", Some(&namespace), &name);
     let deployment = state.storage.get(&key).await?;
@@ -41,10 +72,24 @@ pub async fn get(
 
 pub async fn update(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Json(mut deployment): Json<Deployment>,
 ) -> Result<Json<Deployment>> {
     info!("Updating deployment: {}/{}", namespace, name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "update", "deployments")
+        .with_namespace(&namespace)
+        .with_api_group("apps")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     deployment.metadata.name = name.clone();
     deployment.metadata.namespace = Some(namespace.clone());
@@ -57,9 +102,23 @@ pub async fn update(
 
 pub async fn delete_deployment(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<StatusCode> {
     info!("Deleting deployment: {}/{}", namespace, name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "delete", "deployments")
+        .with_namespace(&namespace)
+        .with_api_group("apps")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     let key = build_key("deployments", Some(&namespace), &name);
     state.storage.delete(&key).await?;
@@ -69,9 +128,22 @@ pub async fn delete_deployment(
 
 pub async fn list(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
 ) -> Result<Json<Vec<Deployment>>> {
     info!("Listing deployments in namespace: {}", namespace);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "deployments")
+        .with_namespace(&namespace)
+        .with_api_group("apps");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     let prefix = build_prefix("deployments", Some(&namespace));
     let deployments = state.storage.list(&prefix).await?;

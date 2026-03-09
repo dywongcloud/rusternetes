@@ -1,7 +1,10 @@
 mod scheduler;
+mod advanced;
 
 use anyhow::Result;
+use axum::{routing::get, Router};
 use clap::Parser;
+use rusternetes_common::observability::MetricsRegistry;
 use rusternetes_storage::etcd::EtcdStorage;
 use scheduler::Scheduler;
 use std::sync::Arc;
@@ -22,6 +25,10 @@ struct Args {
     /// Scheduling interval in seconds
     #[arg(long, default_value = "5")]
     interval: u64,
+
+    /// Metrics server port
+    #[arg(long, default_value = "8081")]
+    metrics_port: u16,
 }
 
 #[tokio::main]
@@ -51,6 +58,24 @@ async fn main() -> Result<()> {
 
     // Initialize storage
     let storage = Arc::new(EtcdStorage::new(etcd_endpoints).await?);
+
+    // Initialize metrics
+    let metrics = Arc::new(MetricsRegistry::new().with_scheduler_metrics()?);
+    let metrics_clone = metrics.clone();
+
+    // Start metrics server
+    let metrics_addr = format!("0.0.0.0:{}", args.metrics_port);
+    info!("Starting metrics server on {}", metrics_addr);
+
+    tokio::spawn(async move {
+        let app = Router::new()
+            .route("/metrics", get(|| async move {
+                metrics_clone.gather()
+            }));
+
+        let listener = tokio::net::TcpListener::bind(&metrics_addr).await.unwrap();
+        axum::serve(listener, app).await.unwrap();
+    });
 
     // Create and run scheduler
     let scheduler = Scheduler::new(storage, args.interval);

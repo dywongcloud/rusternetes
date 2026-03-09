@@ -1,19 +1,19 @@
 use rusternetes_common::{
-    resources::{Deployment, Pod, PodSpec, PodStatus},
+    resources::{Deployment, Pod, PodStatus},
     types::{ObjectMeta, Phase},
 };
-use rusternetes_storage::{build_key, build_prefix, Storage};
+use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info};
 
 /// DeploymentController reconciles Deployment resources
 pub struct DeploymentController {
-    storage: Arc<dyn Storage>,
+    storage: Arc<EtcdStorage>,
     interval: Duration,
 }
 
 impl DeploymentController {
-    pub fn new(storage: Arc<dyn Storage>, interval_secs: u64) -> Self {
+    pub fn new(storage: Arc<EtcdStorage>, interval_secs: u64) -> Self {
         Self {
             storage,
             interval: Duration::from_secs(interval_secs),
@@ -122,7 +122,7 @@ impl DeploymentController {
     async fn create_pod(
         &self,
         deployment: &Deployment,
-        index: i32,
+        _index: i32,
     ) -> rusternetes_common::Result<()> {
         let namespace = deployment
             .metadata
@@ -136,7 +136,7 @@ impl DeploymentController {
         metadata.namespace = Some(namespace.to_string());
         metadata.labels = deployment.spec.template.metadata.labels.clone();
 
-        let mut pod = Pod {
+        let pod = Pod {
             type_meta: rusternetes_common::types::TypeMeta {
                 kind: "Pod".to_string(),
                 api_version: "v1".to_string(),

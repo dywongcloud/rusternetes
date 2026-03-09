@@ -2,17 +2,21 @@ use rusternetes_common::{
     resources::{Node, Pod},
     types::Phase,
 };
-use rusternetes_storage::{build_prefix, Storage};
+use rusternetes_storage::{build_prefix, etcd::EtcdStorage, Storage};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tracing::{debug, error, info, warn};
 
+use crate::advanced::{
+    calculate_resource_score, check_node_affinity, check_taints_tolerations, NodeScore,
+};
+
 pub struct Scheduler {
-    storage: Arc<dyn Storage>,
+    storage: Arc<EtcdStorage>,
     interval: Duration,
 }
 
 impl Scheduler {
-    pub fn new(storage: Arc<dyn Storage>, interval_secs: u64) -> Self {
+    pub fn new(storage: Arc<EtcdStorage>, interval_secs: u64) -> Self {
         Self {
             storage,
             interval: Duration::from_secs(interval_secs),
@@ -82,15 +86,18 @@ impl Scheduler {
     }
 
     fn select_node(&self, pod: &Pod, nodes: &[Node]) -> Option<Node> {
-        // Simple scheduling algorithm:
+        // Advanced scheduling algorithm:
         // 1. Filter out unschedulable nodes
-        // 2. Check node selectors
-        // 3. Select first available node (round-robin would be better in production)
+        // 2. Check taints and tolerations
+        // 3. Check node selectors
+        // 4. Check node affinity
+        // 5. Calculate resource scores
+        // 6. Select node with highest score
 
+        // Phase 1: Filter schedulable nodes
         let schedulable_nodes: Vec<&Node> = nodes
             .iter()
             .filter(|n| {
-                // Check if node is schedulable
                 n.spec
                     .as_ref()
                     .and_then(|s| s.unschedulable)
@@ -103,18 +110,83 @@ impl Scheduler {
             return None;
         }
 
-        // Check node selectors if specified
-        if let Some(node_selector) = &pod.spec.node_selector {
-            for node in schedulable_nodes {
-                if self.matches_node_selector(node, node_selector) {
-                    return Some(node.clone());
-                }
-            }
+        // Phase 2: Filter by taints and tolerations
+        let tolerated_nodes: Vec<&Node> = schedulable_nodes
+            .iter()
+            .filter(|node| check_taints_tolerations(node, pod))
+            .copied()
+            .collect();
+
+        if tolerated_nodes.is_empty() {
+            debug!("No nodes tolerate pod taints");
             return None;
         }
 
-        // Return first available node
-        schedulable_nodes.first().map(|n| (*n).clone())
+        // Phase 3: Check node selectors (basic label matching)
+        let selector_matched_nodes: Vec<&Node> = if let Some(node_selector) = &pod.spec.node_selector {
+            tolerated_nodes
+                .iter()
+                .filter(|node| self.matches_node_selector(node, node_selector))
+                .copied()
+                .collect()
+        } else {
+            tolerated_nodes
+        };
+
+        if selector_matched_nodes.is_empty() {
+            debug!("No nodes match node selector");
+            return None;
+        }
+
+        // Phase 4 & 5: Score nodes based on affinity and resources
+        let mut node_scores: Vec<NodeScore> = Vec::new();
+
+        for node in selector_matched_nodes {
+            // Check node affinity (hard requirements and scoring)
+            let (affinity_ok, affinity_score) = check_node_affinity(node, pod);
+            if !affinity_ok {
+                continue; // Skip nodes that don't meet hard affinity requirements
+            }
+
+            // Calculate resource-based score
+            let resource_score = calculate_resource_score(node, pod);
+
+            // If pod doesn't fit resource-wise, skip
+            if resource_score == 0 {
+                continue;
+            }
+
+            // Priority score (if specified)
+            let priority_score = pod.spec.priority.unwrap_or(0);
+
+            // Combined score: resource (weight 40%) + affinity (weight 40%) + priority (weight 20%)
+            let total_score = (resource_score * 4 / 10)
+                + (affinity_score * 4 / 10)
+                + (priority_score * 2 / 10);
+
+            node_scores.push(NodeScore {
+                node_name: node.metadata.name.clone(),
+                score: total_score,
+            });
+        }
+
+        if node_scores.is_empty() {
+            return None;
+        }
+
+        // Sort by score (descending) and select best node
+        node_scores.sort_by(|a, b| b.score.cmp(&a.score));
+
+        let best_node_name = &node_scores[0].node_name;
+        debug!(
+            "Selected node {} with score {} for pod {}",
+            best_node_name, node_scores[0].score, pod.metadata.name
+        );
+
+        nodes
+            .iter()
+            .find(|n| &n.metadata.name == best_node_name)
+            .cloned()
     }
 
     fn matches_node_selector(&self, node: &Node, selector: &HashMap<String, String>) -> bool {

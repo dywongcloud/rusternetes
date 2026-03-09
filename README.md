@@ -68,4 +68,4 @@ This is an educational project to understand Kubernetes internals while leveragi
 
 ## License
 
-MIT OR Apache-2.0
+Apache-2.0

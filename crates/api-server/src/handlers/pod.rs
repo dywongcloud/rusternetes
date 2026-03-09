@@ -1,20 +1,37 @@
-use crate::state::ApiServerState;
+use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    Json,
+    Extension, Json,
 };
-use rusternetes_common::{resources::Pod, Result};
-use rusternetes_storage::{build_key, build_prefix};
+use rusternetes_common::{
+    authz::{Decision, RequestAttributes},
+    resources::Pod,
+    Result,
+};
+use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
 use tracing::info;
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     Json(mut pod): Json<Pod>,
 ) -> Result<(StatusCode, Json<Pod>)> {
     info!("Creating pod: {}/{}", namespace, pod.metadata.name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "create", "pods")
+        .with_namespace(&namespace)
+        .with_api_group("");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     // Ensure namespace is set correctly
     pod.metadata.namespace = Some(namespace.clone());
@@ -27,9 +44,23 @@ pub async fn create(
 
 pub async fn get(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Pod>> {
     info!("Getting pod: {}/{}", namespace, name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "get", "pods")
+        .with_namespace(&namespace)
+        .with_api_group("")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     let key = build_key("pods", Some(&namespace), &name);
     let pod = state.storage.get(&key).await?;
@@ -39,10 +70,24 @@ pub async fn get(
 
 pub async fn update(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Json(mut pod): Json<Pod>,
 ) -> Result<Json<Pod>> {
     info!("Updating pod: {}/{}", namespace, name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "update", "pods")
+        .with_namespace(&namespace)
+        .with_api_group("")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     // Ensure metadata matches URL
     pod.metadata.name = name.clone();
@@ -56,9 +101,23 @@ pub async fn update(
 
 pub async fn delete_pod(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<StatusCode> {
     info!("Deleting pod: {}/{}", namespace, name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "delete", "pods")
+        .with_namespace(&namespace)
+        .with_api_group("")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     let key = build_key("pods", Some(&namespace), &name);
     state.storage.delete(&key).await?;
@@ -68,9 +127,22 @@ pub async fn delete_pod(
 
 pub async fn list(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
 ) -> Result<Json<Vec<Pod>>> {
     info!("Listing pods in namespace: {}", namespace);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "pods")
+        .with_namespace(&namespace)
+        .with_api_group("");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     let prefix = build_prefix("pods", Some(&namespace));
     let pods = state.storage.list(&prefix).await?;

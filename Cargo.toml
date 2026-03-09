@@ -15,7 +15,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 authors = ["Rusternetes Contributors"]
-license = "MIT OR Apache-2.0"
+license = "Apache-2.0"
 repository = "https://github.com/rusternetes/rusternetes"
 
 [workspace.dependencies]
@@ -40,3 +40,11 @@ futures = "0.3"
 bollard = "0.17" # Docker API client
 tonic = "0.12" # gRPC
 prost = "0.13"
+jsonwebtoken = "9.3" # JWT token generation and validation
+rustls = "0.23" # TLS support
+tokio-rustls = "0.26" # Tokio integration for rustls
+rcgen = "0.13" # Certificate generation
+prometheus = "0.13" # Prometheus metrics
+opentelemetry = "0.22" # Distributed tracing
+opentelemetry-prometheus = "0.15" # Prometheus exporter for OpenTelemetry
+tracing-opentelemetry = "0.23" # OpenTelemetry integration with tracing

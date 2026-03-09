@@ -4,13 +4,13 @@ use rusternetes_common::{
     resources::{Node, NodeAddress, NodeCondition, NodeStatus, Pod},
     types::Phase,
 };
-use rusternetes_storage::{build_key, build_prefix, Storage};
+use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 pub struct Kubelet {
     node_name: String,
-    storage: Arc<dyn Storage>,
+    storage: Arc<EtcdStorage>,
     runtime: ContainerRuntime,
     sync_interval: Duration,
 }
@@ -18,7 +18,7 @@ pub struct Kubelet {
 impl Kubelet {
     pub async fn new(
         node_name: String,
-        storage: Arc<dyn Storage>,
+        storage: Arc<EtcdStorage>,
         sync_interval_secs: u64,
     ) -> Result<Self> {
         let runtime = ContainerRuntime::new().await?;

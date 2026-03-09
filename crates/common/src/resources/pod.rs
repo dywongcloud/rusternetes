@@ -52,6 +52,22 @@ pub struct PodSpec {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host_network: Option<bool>,
+
+    /// Affinity rules for pod scheduling
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub affinity: Option<Affinity>,
+
+    /// Tolerations for node taints
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tolerations: Option<Vec<Toleration>>,
+
+    /// Priority value - higher priority pods are scheduled first
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i32>,
+
+    /// Priority class name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority_class_name: Option<String>,
 }
 
 /// Container represents a single container in a pod
@@ -227,4 +243,147 @@ pub enum ContainerState {
     Waiting { reason: Option<String> },
     Running { started_at: Option<String> },
     Terminated { exit_code: i32, reason: Option<String> },
+}
+
+/// Affinity is a group of affinity scheduling rules
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Affinity {
+    /// Node affinity scheduling rules
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_affinity: Option<NodeAffinity>,
+
+    /// Pod affinity scheduling rules
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pod_affinity: Option<PodAffinity>,
+
+    /// Pod anti-affinity scheduling rules
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pod_anti_affinity: Option<PodAntiAffinity>,
+}
+
+/// Node affinity is a group of node affinity scheduling rules
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeAffinity {
+    /// Hard node affinity requirements
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required_during_scheduling_ignored_during_execution: Option<NodeSelector>,
+
+    /// Soft node affinity preferences
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_during_scheduling_ignored_during_execution: Option<Vec<PreferredSchedulingTerm>>,
+}
+
+/// A node selector represents the union of the results of one or more label queries
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeSelector {
+    /// A list of node selector terms (ORed together)
+    pub node_selector_terms: Vec<NodeSelectorTerm>,
+}
+
+/// A node selector term is associated with the corresponding weight
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeSelectorTerm {
+    /// A list of node selector requirements by node's labels
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub match_expressions: Option<Vec<NodeSelectorRequirement>>,
+
+    /// A list of node selector requirements by node's fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub match_fields: Option<Vec<NodeSelectorRequirement>>,
+}
+
+/// A node selector requirement is a selector that contains values, a key, and an operator
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeSelectorRequirement {
+    /// The label key
+    pub key: String,
+
+    /// Operator: In, NotIn, Exists, DoesNotExist, Gt, Lt
+    pub operator: String,
+
+    /// An array of string values
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub values: Option<Vec<String>>,
+}
+
+/// An empty preferred scheduling term matches all objects with implicit weight 0
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreferredSchedulingTerm {
+    /// Weight associated with matching the corresponding nodeSelectorTerm, in the range 1-100
+    pub weight: i32,
+
+    /// A node selector term, associated with the corresponding weight
+    pub preference: NodeSelectorTerm,
+}
+
+/// Pod affinity is a group of inter pod affinity scheduling rules
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PodAffinity {
+    /// Hard pod affinity requirements
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required_during_scheduling_ignored_during_execution: Option<Vec<PodAffinityTerm>>,
+
+    /// Soft pod affinity preferences
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_during_scheduling_ignored_during_execution: Option<Vec<WeightedPodAffinityTerm>>,
+}
+
+/// Pod anti-affinity is a group of inter pod anti affinity scheduling rules
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PodAntiAffinity {
+    /// Hard pod anti-affinity requirements
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required_during_scheduling_ignored_during_execution: Option<Vec<PodAffinityTerm>>,
+
+    /// Soft pod anti-affinity preferences
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_during_scheduling_ignored_during_execution: Option<Vec<WeightedPodAffinityTerm>>,
+}
+
+/// Defines a set of pods that should be co-located
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PodAffinityTerm {
+    /// A label selector over a set of resources
+    pub label_selector: crate::types::LabelSelector,
+
+    /// Namespaces specifies which namespaces the labelSelector applies to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespaces: Option<Vec<String>>,
+
+    /// Topology key for pod placement
+    pub topology_key: String,
+}
+
+/// The weights of all the matched WeightedPodAffinityTerm fields are added per-node to find the most preferred node(s)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeightedPodAffinityTerm {
+    /// Weight associated with matching the corresponding podAffinityTerm, in the range 1-100
+    pub weight: i32,
+
+    /// Required pod affinity term
+    pub pod_affinity_term: PodAffinityTerm,
+}
+
+/// The pod this Toleration is attached to tolerates any taint that matches the triple using the matching operator
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Toleration {
+    /// Key is the taint key that the toleration applies to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+
+    /// Operator represents a key's relationship to the value: Equal or Exists
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operator: Option<String>,
+
+    /// Value is the taint value the toleration matches to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+
+    /// Effect indicates the taint effect to match: NoSchedule, PreferNoSchedule, NoExecute
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect: Option<String>,
+
+    /// TolerationSeconds represents the period of time the toleration tolerates the taint
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub toleration_seconds: Option<i64>,
 }

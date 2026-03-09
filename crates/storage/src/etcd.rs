@@ -2,7 +2,7 @@ use crate::{Storage, WatchEvent, WatchStream};
 use async_trait::async_trait;
 use etcd_client::{Client, Compare, CompareOp, GetOptions, TxnOp, WatchOptions};
 use futures::StreamExt;
-use rusternetes_common::{Error, Result};
+use rusternetes_common::{authz::AuthzStorage, Error, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -162,7 +162,7 @@ impl Storage for EtcdStorage {
         let mut client = self.client.lock().await;
 
         let watch_options = WatchOptions::new().with_prefix();
-        let (mut watcher, stream) = client
+        let (_watcher, stream) = client
             .watch(prefix, Some(watch_options))
             .await
             .map_err(|e| Error::Storage(format!("Failed to create watch: {}", e)))?;
@@ -204,6 +204,74 @@ impl Storage for EtcdStorage {
         });
 
         Ok(Box::pin(watch_stream))
+    }
+}
+
+// Implement AuthzStorage for EtcdStorage
+#[async_trait]
+impl AuthzStorage for EtcdStorage {
+    async fn get<T>(&self, key: &str, namespace: Option<&str>) -> Result<T>
+    where
+        T: DeserializeOwned + Send + Sync,
+    {
+        // Build the full key based on the resource type and namespace
+        // AuthzStorage expects just the resource name, so we need to infer the resource type
+        // from the generic type T
+        let full_key = match namespace {
+            Some(ns) => {
+                // For namespaced resources, the key pattern is /registry/{resource_type}/{namespace}/{name}
+                // We need to determine the resource type from T
+                // For now, we'll construct keys for RBAC resources
+                if std::any::type_name::<T>().contains("Role") && !std::any::type_name::<T>().contains("Cluster") {
+                    format!("/registry/roles/{}/{}", ns, key)
+                } else if std::any::type_name::<T>().contains("RoleBinding") && !std::any::type_name::<T>().contains("Cluster") {
+                    format!("/registry/rolebindings/{}/{}", ns, key)
+                } else {
+                    format!("/registry/unknown/{}/{}", ns, key)
+                }
+            }
+            None => {
+                // For cluster-scoped resources
+                if std::any::type_name::<T>().contains("ClusterRole") && !std::any::type_name::<T>().contains("Binding") {
+                    format!("/registry/clusterroles/{}", key)
+                } else if std::any::type_name::<T>().contains("ClusterRoleBinding") {
+                    format!("/registry/clusterrolebindings/{}", key)
+                } else {
+                    format!("/registry/unknown/{}", key)
+                }
+            }
+        };
+
+        Storage::get(self, &full_key).await
+    }
+
+    async fn list<T>(&self, namespace: Option<&str>) -> Result<Vec<T>>
+    where
+        T: DeserializeOwned + Send + Sync,
+    {
+        // Build the prefix based on resource type and namespace
+        let prefix = match namespace {
+            Some(ns) => {
+                if std::any::type_name::<T>().contains("Role") && !std::any::type_name::<T>().contains("Cluster") {
+                    format!("/registry/roles/{}/", ns)
+                } else if std::any::type_name::<T>().contains("RoleBinding") && !std::any::type_name::<T>().contains("Cluster") {
+                    format!("/registry/rolebindings/{}/", ns)
+                } else {
+                    format!("/registry/unknown/{}/", ns)
+                }
+            }
+            None => {
+                if std::any::type_name::<T>().contains("ClusterRole") && !std::any::type_name::<T>().contains("Binding") {
+                    "/registry/clusterroles/".to_string()
+                } else if std::any::type_name::<T>().contains("ClusterRoleBinding") {
+                    "/registry/clusterrolebindings/".to_string()
+                } else {
+                    "/registry/unknown/".to_string()
+                }
+            }
+        };
+
+        Storage::list(self, &prefix).await
     }
 }
 

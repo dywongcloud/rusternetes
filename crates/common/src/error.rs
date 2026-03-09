@@ -26,8 +26,43 @@ pub enum Error {
     #[error("Authorization error: {0}")]
     Authorization(String),
 
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(feature = "axum-support")]
+impl axum::response::IntoResponse for Error {
+    fn into_response(self) -> axum::response::Response {
+        use axum::http::StatusCode;
+        use axum::Json;
+        use serde_json::json;
+
+        let (status, message) = match self {
+            Error::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            Error::AlreadyExists(msg) => (StatusCode::CONFLICT, msg),
+            Error::InvalidResource(msg) => (StatusCode::BAD_REQUEST, msg),
+            Error::Authentication(msg) => (StatusCode::UNAUTHORIZED, msg),
+            Error::Authorization(msg) => (StatusCode::FORBIDDEN, msg),
+            Error::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
+            Error::Storage(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            Error::Network(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
+            Error::Serialization(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            Error::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+        };
+
+        let body = Json(json!({
+            "kind": "Status",
+            "apiVersion": "v1",
+            "status": "Failure",
+            "message": message,
+            "code": status.as_u16(),
+        }));
+
+        (status, body).into_response()
+    }
+}

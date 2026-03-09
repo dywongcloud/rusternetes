@@ -1,5 +1,5 @@
 use crate::client::ApiClient;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use rusternetes_common::resources::{Deployment, Namespace, Node, Pod, Service};
 
 pub async fn execute(

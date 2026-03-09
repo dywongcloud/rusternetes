@@ -1,20 +1,37 @@
-use crate::state::ApiServerState;
+use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    Json,
+    Extension, Json,
 };
-use rusternetes_common::{resources::Service, Result};
-use rusternetes_storage::{build_key, build_prefix};
+use rusternetes_common::{
+    authz::{Decision, RequestAttributes},
+    resources::Service,
+    Result,
+};
+use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
 use tracing::info;
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     Json(mut service): Json<Service>,
 ) -> Result<(StatusCode, Json<Service>)> {
     info!("Creating service: {}/{}", namespace, service.metadata.name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "create", "services")
+        .with_namespace(&namespace)
+        .with_api_group("");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     service.metadata.namespace = Some(namespace.clone());
 
@@ -26,9 +43,23 @@ pub async fn create(
 
 pub async fn get(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Service>> {
     info!("Getting service: {}/{}", namespace, name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "get", "services")
+        .with_namespace(&namespace)
+        .with_api_group("")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     let key = build_key("services", Some(&namespace), &name);
     let service = state.storage.get(&key).await?;
@@ -38,10 +69,24 @@ pub async fn get(
 
 pub async fn update(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Json(mut service): Json<Service>,
 ) -> Result<Json<Service>> {
     info!("Updating service: {}/{}", namespace, name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "update", "services")
+        .with_namespace(&namespace)
+        .with_api_group("")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     service.metadata.name = name.clone();
     service.metadata.namespace = Some(namespace.clone());
@@ -54,9 +99,23 @@ pub async fn update(
 
 pub async fn delete_service(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<StatusCode> {
     info!("Deleting service: {}/{}", namespace, name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "delete", "services")
+        .with_namespace(&namespace)
+        .with_api_group("")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     let key = build_key("services", Some(&namespace), &name);
     state.storage.delete(&key).await?;
@@ -66,9 +125,22 @@ pub async fn delete_service(
 
 pub async fn list(
     State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
 ) -> Result<Json<Vec<Service>>> {
     info!("Listing services in namespace: {}", namespace);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "services")
+        .with_namespace(&namespace)
+        .with_api_group("");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
 
     let prefix = build_prefix("services", Some(&namespace));
     let services = state.storage.list(&prefix).await?;

@@ -6,7 +6,7 @@ use axum::{
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
-    resources::Node,
+    resources::ServiceAccount,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
@@ -16,12 +16,17 @@ use tracing::info;
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Json(node): Json<Node>,
-) -> Result<(StatusCode, Json<Node>)> {
-    info!("Creating node: {}", node.metadata.name);
+    Path(namespace): Path<String>,
+    Json(mut service_account): Json<ServiceAccount>,
+) -> Result<(StatusCode, Json<ServiceAccount>)> {
+    info!(
+        "Creating service account: {}/{}",
+        namespace, service_account.metadata.name
+    );
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "create", "nodes")
+    let attrs = RequestAttributes::new(auth_ctx.user, "create", "serviceaccounts")
+        .with_namespace(&namespace)
         .with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
@@ -31,8 +36,10 @@ pub async fn create(
         }
     }
 
-    let key = build_key("nodes", None, &node.metadata.name);
-    let created = state.storage.create(&key, &node).await?;
+    service_account.metadata.namespace = Some(namespace.clone());
+
+    let key = build_key("serviceaccounts", Some(&namespace), &service_account.metadata.name);
+    let created = state.storage.create(&key, &service_account).await?;
 
     Ok((StatusCode::CREATED, Json(created)))
 }
@@ -40,12 +47,13 @@ pub async fn create(
 pub async fn get(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Path(name): Path<String>,
-) -> Result<Json<Node>> {
-    info!("Getting node: {}", name);
+    Path((namespace, name)): Path<(String, String)>,
+) -> Result<Json<ServiceAccount>> {
+    info!("Getting service account: {}/{}", namespace, name);
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "get", "nodes")
+    let attrs = RequestAttributes::new(auth_ctx.user, "get", "serviceaccounts")
+        .with_namespace(&namespace)
         .with_api_group("")
         .with_name(&name);
 
@@ -56,22 +64,23 @@ pub async fn get(
         }
     }
 
-    let key = build_key("nodes", None, &name);
-    let node = state.storage.get(&key).await?;
+    let key = build_key("serviceaccounts", Some(&namespace), &name);
+    let service_account = state.storage.get(&key).await?;
 
-    Ok(Json(node))
+    Ok(Json(service_account))
 }
 
 pub async fn update(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Path(name): Path<String>,
-    Json(mut node): Json<Node>,
-) -> Result<Json<Node>> {
-    info!("Updating node: {}", name);
+    Path((namespace, name)): Path<(String, String)>,
+    Json(mut service_account): Json<ServiceAccount>,
+) -> Result<Json<ServiceAccount>> {
+    info!("Updating service account: {}/{}", namespace, name);
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "update", "nodes")
+    let attrs = RequestAttributes::new(auth_ctx.user, "update", "serviceaccounts")
+        .with_namespace(&namespace)
         .with_api_group("")
         .with_name(&name);
 
@@ -82,23 +91,25 @@ pub async fn update(
         }
     }
 
-    node.metadata.name = name.clone();
+    service_account.metadata.name = name.clone();
+    service_account.metadata.namespace = Some(namespace.clone());
 
-    let key = build_key("nodes", None, &name);
-    let updated = state.storage.update(&key, &node).await?;
+    let key = build_key("serviceaccounts", Some(&namespace), &name);
+    let updated = state.storage.update(&key, &service_account).await?;
 
     Ok(Json(updated))
 }
 
-pub async fn delete_node(
+pub async fn delete_service_account(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Path(name): Path<String>,
+    Path((namespace, name)): Path<(String, String)>,
 ) -> Result<StatusCode> {
-    info!("Deleting node: {}", name);
+    info!("Deleting service account: {}/{}", namespace, name);
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "delete", "nodes")
+    let attrs = RequestAttributes::new(auth_ctx.user, "delete", "serviceaccounts")
+        .with_namespace(&namespace)
         .with_api_group("")
         .with_name(&name);
 
@@ -109,7 +120,7 @@ pub async fn delete_node(
         }
     }
 
-    let key = build_key("nodes", None, &name);
+    let key = build_key("serviceaccounts", Some(&namespace), &name);
     state.storage.delete(&key).await?;
 
     Ok(StatusCode::NO_CONTENT)
@@ -118,11 +129,13 @@ pub async fn delete_node(
 pub async fn list(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<Vec<Node>>> {
-    info!("Listing nodes");
+    Path(namespace): Path<String>,
+) -> Result<Json<Vec<ServiceAccount>>> {
+    info!("Listing service accounts in namespace: {}", namespace);
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "nodes")
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "serviceaccounts")
+        .with_namespace(&namespace)
         .with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
@@ -132,8 +145,8 @@ pub async fn list(
         }
     }
 
-    let prefix = build_prefix("nodes", None);
-    let nodes = state.storage.list(&prefix).await?;
+    let prefix = build_prefix("serviceaccounts", Some(&namespace));
+    let service_accounts = state.storage.list(&prefix).await?;
 
-    Ok(Json(nodes))
+    Ok(Json(service_accounts))
 }

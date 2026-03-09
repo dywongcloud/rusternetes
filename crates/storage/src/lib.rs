@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use rusternetes_common::{Error, Result};
+use rusternetes_common::Result;
 use serde::{de::DeserializeOwned, Serialize};
 
 pub mod etcd;

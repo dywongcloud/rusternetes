@@ -2,7 +2,13 @@ mod controllers;
 
 use anyhow::Result;
 use clap::Parser;
-use controllers::deployment::DeploymentController;
+use controllers::{
+    deployment::DeploymentController,
+    statefulset::StatefulSetController,
+    daemonset::DaemonSetController,
+    job::JobController,
+    cronjob::CronJobController,
+};
 use rusternetes_storage::etcd::EtcdStorage;
 use std::sync::Arc;
 use tracing::{info, Level};
@@ -54,13 +60,45 @@ async fn main() -> Result<()> {
 
     // Start deployment controller
     let deployment_controller = DeploymentController::new(storage.clone(), args.sync_interval);
-
-    // Run controller in the background
     tokio::spawn(async move {
         if let Err(e) = deployment_controller.run().await {
             tracing::error!("Deployment controller error: {}", e);
         }
     });
+
+    // Start StatefulSet controller
+    let statefulset_controller = StatefulSetController::new(storage.clone());
+    tokio::spawn(async move {
+        if let Err(e) = statefulset_controller.run().await {
+            tracing::error!("StatefulSet controller error: {}", e);
+        }
+    });
+
+    // Start DaemonSet controller
+    let daemonset_controller = DaemonSetController::new(storage.clone());
+    tokio::spawn(async move {
+        if let Err(e) = daemonset_controller.run().await {
+            tracing::error!("DaemonSet controller error: {}", e);
+        }
+    });
+
+    // Start Job controller
+    let job_controller = JobController::new(storage.clone());
+    tokio::spawn(async move {
+        if let Err(e) = job_controller.run().await {
+            tracing::error!("Job controller error: {}", e);
+        }
+    });
+
+    // Start CronJob controller
+    let cronjob_controller = CronJobController::new(storage.clone());
+    tokio::spawn(async move {
+        if let Err(e) = cronjob_controller.run().await {
+            tracing::error!("CronJob controller error: {}", e);
+        }
+    });
+
+    info!("All controllers started successfully");
 
     // Keep the main thread alive
     tokio::signal::ctrl_c().await?;
