@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # etcd - distributed key-value store for cluster state
+  etcd:
+    image: bitnami/etcd:latest
+    container_name: rusternetes-etcd
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    volumes:
+      - etcd-data:/bitnami/etcd
+    networks:
+      - rusternetes-net
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API Server - central management component
+  api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.api-server
+    container_name: rusternetes-api-server
+    ports:
+      - "6443:6443"
+    depends_on:
+      etcd:
+        condition: service_healthy
+    networks:
+      - rusternetes-net
+    environment:
+      - RUST_LOG=info
+    command: ["--bind-address", "0.0.0.0:6443", "--etcd-servers", "http://etcd:2379"]
+
+  # Scheduler - assigns pods to nodes
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    container_name: rusternetes-scheduler
+    depends_on:
+      - etcd
+      - api-server
+    networks:
+      - rusternetes-net
+    environment:
+      - RUST_LOG=info
+    command: ["--etcd-servers", "http://etcd:2379"]
+
+  # Controller Manager - runs controllers
+  controller-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile.controller-manager
+    container_name: rusternetes-controller-manager
+    depends_on:
+      - etcd
+      - api-server
+    networks:
+      - rusternetes-net
+    environment:
+      - RUST_LOG=info
+    command: ["--etcd-servers", "http://etcd:2379"]
+
+  # Kubelet - node agent that manages containers
+  kubelet:
+    build:
+      context: .
+      dockerfile: Dockerfile.kubelet
+    container_name: rusternetes-kubelet
+    privileged: true
+    depends_on:
+      - etcd
+      - api-server
+    networks:
+      - rusternetes-net
+    volumes:
+      # Share Podman socket for container management
+      - /run/podman/podman.sock:/var/run/docker.sock:ro
+      # Alternative for Docker
+      # - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - RUST_LOG=info
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    command: ["--node-name", "node-1", "--etcd-servers", "http://etcd:2379"]
+
+  # Kube-proxy - network proxy
+  kube-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.kube-proxy
+    container_name: rusternetes-kube-proxy
+    privileged: true
+    depends_on:
+      - api-server
+    networks:
+      - rusternetes-net
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - RUST_LOG=info
+    command: ["--node-name", "node-1"]
+
+networks:
+  rusternetes-net:
+    driver: bridge
+    name: rusternetes-network
+
+volumes:
+  etcd-data:
+    name: rusternetes-etcd-data

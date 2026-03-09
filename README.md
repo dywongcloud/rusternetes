@@ -64,6 +64,26 @@ cargo run --bin kube-proxy
 
 ## Development
 
+### Quick Start with Podman
+
+For local development, we provide a complete container-based development environment:
+
+```bash
+# Interactive setup
+./dev-setup.sh
+
+# Or using Make
+make dev-full        # Build and start everything
+make dev-logs        # View logs
+make kubectl-get-pods # Try it out!
+```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development workflows, troubleshooting, and advanced usage.
+
+### Traditional Development
+
+If you prefer to run components locally without containers, see [GETTING_STARTED.md](GETTING_STARTED.md).
+
 This is an educational project to understand Kubernetes internals while leveraging Rust's safety guarantees.
 
 ## License

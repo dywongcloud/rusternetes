@@ -1,6 +1,7 @@
 # Rust
 target/
-Cargo.lock
+# Keep Cargo.lock for binary/workspace projects (needed for reproducible builds)
+# Cargo.lock
 **/*.rs.bk
 *.pdb
 
@@ -16,3 +17,10 @@ Cargo.lock
 *.log
 data/
 configs/local-*
+
+# Development environment
+.env
+.env.local
+
+# Podman/Docker volumes
+etcd-data/
