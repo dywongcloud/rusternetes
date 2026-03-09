@@ -1,0 +1,86 @@
+use crate::resources::pod::PodSpec;
+use crate::types::{LabelSelector, ObjectMeta, TypeMeta};
+use serde::{Deserialize, Serialize};
+
+/// Deployment provides declarative updates for Pods
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Deployment {
+    #[serde(flatten)]
+    pub type_meta: TypeMeta,
+    pub metadata: ObjectMeta,
+    pub spec: DeploymentSpec,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<DeploymentStatus>,
+}
+
+impl Deployment {
+    pub fn new(name: impl Into<String>, spec: DeploymentSpec) -> Self {
+        Self {
+            type_meta: TypeMeta {
+                kind: "Deployment".to_string(),
+                api_version: "apps/v1".to_string(),
+            },
+            metadata: ObjectMeta::new(name),
+            spec,
+            status: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeploymentSpec {
+    pub replicas: i32,
+    pub selector: LabelSelector,
+    pub template: PodTemplateSpec,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strategy: Option<DeploymentStrategy>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_ready_seconds: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision_history_limit: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PodTemplateSpec {
+    pub metadata: ObjectMeta,
+    pub spec: PodSpec,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeploymentStrategy {
+    #[serde(rename = "type")]
+    pub strategy_type: String, // Recreate or RollingUpdate
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rolling_update: Option<RollingUpdateDeployment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RollingUpdateDeployment {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_unavailable: Option<String>, // Can be int or percentage
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_surge: Option<String>, // Can be int or percentage
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeploymentStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replicas: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_replicas: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ready_replicas: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available_replicas: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable_replicas: Option<i32>,
+}

@@ -1,0 +1,21 @@
+[package]
+name = "rusternetes-kubectl"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "kubectl"
+path = "src/main.rs"
+
+[dependencies]
+rusternetes-common = { path = "../common" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tabled = "0.15"
+reqwest = { version = "0.12", features = ["json"] }
