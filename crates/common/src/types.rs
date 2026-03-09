@@ -105,6 +105,7 @@ pub enum Phase {
 
 /// Label selector for matching resources
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct LabelSelector {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub match_labels: Option<HashMap<String, String>>,
@@ -114,6 +115,7 @@ pub struct LabelSelector {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct LabelSelectorRequirement {
     pub key: String,
     pub operator: String, // In, NotIn, Exists, DoesNotExist

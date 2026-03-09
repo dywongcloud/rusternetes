@@ -1,4 +1,3 @@
-use crate::resources::pod::PodSpec;
 use crate::resources::workloads::PodTemplateSpec;
 use crate::types::{LabelSelector, ObjectMeta, TypeMeta};
 use serde::{Deserialize, Serialize};

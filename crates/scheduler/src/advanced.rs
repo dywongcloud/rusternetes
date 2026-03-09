@@ -3,9 +3,7 @@ use rusternetes_common::{
         Node, NodeSelector, NodeSelectorRequirement, NodeSelectorTerm, Pod,
         Taint, Toleration,
     },
-    types::LabelSelector,
 };
-use std::collections::HashMap;
 use tracing::debug;
 
 /// Scoring result for a node
@@ -310,73 +308,6 @@ fn parse_resource_quantity(quantity: &str, resource_type: &str) -> i64 {
     }
 }
 
-/// Check if labels match a label selector
-pub fn matches_label_selector(
-    labels: &Option<HashMap<String, String>>,
-    selector: &LabelSelector,
-) -> bool {
-    // Check matchLabels
-    if let Some(ref match_labels) = selector.match_labels {
-        for (key, value) in match_labels {
-            if let Some(ref pod_labels) = labels {
-                if pod_labels.get(key) != Some(value) {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        }
-    }
-
-    // Check matchExpressions
-    if let Some(ref match_expressions) = selector.match_expressions {
-        for expr in match_expressions {
-            if !matches_label_expression(labels, expr) {
-                return false;
-            }
-        }
-    }
-
-    true
-}
-
-/// Check if labels match a single label selector expression
-fn matches_label_expression(
-    labels: &Option<HashMap<String, String>>,
-    expr: &rusternetes_common::types::LabelSelectorRequirement,
-) -> bool {
-    let label_value = labels
-        .as_ref()
-        .and_then(|l| l.get(&expr.key))
-        .map(|s| s.as_str());
-
-    let values = expr.values.as_deref().unwrap_or(&[]);
-
-    match expr.operator.as_str() {
-        "In" => {
-            // Label must exist and its value must be in the values list
-            label_value
-                .map(|v| values.contains(&v.to_string()))
-                .unwrap_or(false)
-        }
-        "NotIn" => {
-            // If label exists, its value must not be in the values list
-            // If label doesn't exist, the expression is satisfied
-            label_value
-                .map(|v| !values.contains(&v.to_string()))
-                .unwrap_or(true)
-        }
-        "Exists" => {
-            // Label must exist (value doesn't matter)
-            label_value.is_some()
-        }
-        "DoesNotExist" => {
-            // Label must not exist
-            label_value.is_none()
-        }
-        _ => false,
-    }
-}
 
 #[cfg(test)]
 mod tests {

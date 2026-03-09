@@ -528,22 +528,6 @@ impl ContainerRuntime {
         Ok(exit_code == 0)
     }
 
-    /// Restart a container
-    pub async fn restart_container(&self, container_name: &str) -> Result<()> {
-        info!("Restarting container: {}", container_name);
-
-        let stop_options = StopContainerOptions { t: 10 };
-        self.docker
-            .stop_container(container_name, Some(stop_options))
-            .await?;
-
-        self.docker
-            .start_container(container_name, None::<StartContainerOptions<String>>)
-            .await?;
-
-        Ok(())
-    }
-
     /// Get the pod IP address from the first running container
     pub async fn get_pod_ip(&self, pod_name: &str) -> Result<Option<String>> {
         let mut filters = HashMap::new();
@@ -576,5 +560,33 @@ impl ContainerRuntime {
         }
 
         Ok(None)
+    }
+
+    /// List all running pod names from the container runtime
+    pub async fn list_running_pods(&self) -> Result<Vec<String>> {
+        let options = ListContainersOptions::<String> {
+            all: false, // Only running containers
+            ..Default::default()
+        };
+
+        let containers = self.docker.list_containers(Some(options)).await?;
+
+        let mut pod_names = std::collections::HashSet::new();
+        for container in containers {
+            if let Some(names) = container.names {
+                for name in names {
+                    // Container names are in format: /{pod_name}_{container_name}
+                    let name = name.trim_start_matches('/');
+                    if let Some(pod_name) = name.split('_').next() {
+                        // Skip Rusternetes control plane containers
+                        if !pod_name.starts_with("rusternetes-") {
+                            pod_names.insert(pod_name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(pod_names.into_iter().collect())
     }
 }

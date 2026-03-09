@@ -72,20 +72,29 @@ impl DeploymentController {
 
         // Get all pods for this deployment
         let pods_prefix = build_prefix("pods", Some(namespace));
+        info!("Querying pods with prefix: {}", pods_prefix);
         let all_pods: Vec<Pod> = self.storage.list(&pods_prefix).await?;
+        info!("Found {} total pods in namespace {}", all_pods.len(), namespace);
 
         // Filter pods that match this deployment's selector
         let deployment_pods: Vec<Pod> = all_pods
             .into_iter()
-            .filter(|p| self.matches_selector(p, deployment))
+            .filter(|p| {
+                let matches = self.matches_selector(p, deployment);
+                info!(
+                    "Pod {} matches selector: {} (labels: {:?})",
+                    p.metadata.name, matches, p.metadata.labels
+                );
+                matches
+            })
             .collect();
 
         let current_replicas = deployment_pods.len() as i32;
         let desired_replicas = deployment.spec.replicas;
 
         info!(
-            "Deployment {}/{}: current={}, desired={}",
-            namespace, deployment.metadata.name, current_replicas, desired_replicas
+            "Deployment {}/{}: current={}, desired={} (matched {} pods)",
+            namespace, deployment.metadata.name, current_replicas, desired_replicas, deployment_pods.len()
         );
 
         if current_replicas < desired_replicas {

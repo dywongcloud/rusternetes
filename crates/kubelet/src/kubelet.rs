@@ -160,6 +160,42 @@ impl Kubelet {
             }
         }
 
+        // Clean up orphaned containers (containers whose pods have been deleted from etcd)
+        if let Err(e) = self.cleanup_orphaned_containers(&node_pods).await {
+            error!("Error cleaning up orphaned containers: {}", e);
+        }
+
+        Ok(())
+    }
+
+    async fn cleanup_orphaned_containers(&self, _current_pods: &[Pod]) -> Result<()> {
+        debug!("Checking for orphaned containers");
+
+        // Get all pods from etcd (across all namespaces)
+        let all_pods_prefix = build_prefix("pods", None);
+        let all_existing_pods: Vec<Pod> = self.storage.list(&all_pods_prefix).await?;
+
+        let existing_pod_names: std::collections::HashSet<String> = all_existing_pods
+            .iter()
+            .map(|p| p.metadata.name.clone())
+            .collect();
+
+        debug!("Found {} pods in etcd", existing_pod_names.len());
+
+        // Get list of running pod names from the container runtime
+        let running_pods = self.runtime.list_running_pods().await?;
+        debug!("Found {} running pods in container runtime", running_pods.len());
+
+        // Check for orphaned pods (running in container runtime but not in etcd)
+        for running_pod_name in running_pods {
+            if !existing_pod_names.contains(&running_pod_name) {
+                info!("Found orphaned pod {} - not in etcd, stopping containers", running_pod_name);
+                if let Err(e) = self.runtime.stop_pod(&running_pod_name).await {
+                    warn!("Failed to stop orphaned pod {}: {}", running_pod_name, e);
+                }
+            }
+        }
+
         Ok(())
     }
 
