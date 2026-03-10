@@ -2,16 +2,18 @@
 
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::CustomResourceDefinition,
+    List,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -19,6 +21,7 @@ use tracing::{info, warn};
 pub async fn create_crd(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut crd): Json<CustomResourceDefinition>,
 ) -> Result<(StatusCode, Json<CustomResourceDefinition>)> {
     let crd_name = crd.metadata.name.clone();
@@ -56,6 +59,13 @@ pub async fn create_crd(
                     .collect(),
             ),
         });
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: CustomResourceDefinition validated successfully (not created)");
+        return Ok((StatusCode::CREATED, Json(crd)));
     }
 
     let key = build_key("customresourcedefinitions", None, &crd_name);
@@ -97,7 +107,8 @@ pub async fn get_crd(
 pub async fn list_crds(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<Vec<CustomResourceDefinition>>> {
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<List<CustomResourceDefinition>>> {
     info!("Listing all CustomResourceDefinitions");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "customresourcedefinitions")
@@ -111,9 +122,13 @@ pub async fn list_crds(
     }
 
     let prefix = build_prefix("customresourcedefinitions", None);
-    let crds = state.storage.list(&prefix).await?;
+    let mut crds = state.storage.list(&prefix).await?;
 
-    Ok(Json(crds))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut crds, &params)?;
+
+    let list = List::new("CustomResourceDefinitionList", "apiextensions.k8s.io/v1", crds);
+    Ok(Json(list))
 }
 
 /// Update a CustomResourceDefinition
@@ -121,6 +136,7 @@ pub async fn update_crd(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut crd): Json<CustomResourceDefinition>,
 ) -> Result<Json<CustomResourceDefinition>> {
     info!("Updating CustomResourceDefinition: {}", name);
@@ -141,6 +157,13 @@ pub async fn update_crd(
 
     crd.metadata.name = name.clone();
 
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: CustomResourceDefinition validated successfully (not updated)");
+        return Ok(Json(crd));
+    }
+
     let key = build_key("customresourcedefinitions", None, &name);
     let updated = state.storage.update(&key, &crd).await?;
 
@@ -155,6 +178,7 @@ pub async fn delete_crd(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting CustomResourceDefinition: {}", name);
 
@@ -171,17 +195,67 @@ pub async fn delete_crd(
 
     // Get CRD to check for custom resources
     let key = build_key("customresourcedefinitions", None, &name);
-    let _crd: CustomResourceDefinition = state.storage.get(&key).await?;
+    let crd: CustomResourceDefinition = state.storage.get(&key).await?;
 
-    // TODO: Check if there are any custom resources of this type
-    // and optionally delete them based on finalizers
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: CustomResourceDefinition validated successfully (not deleted)");
+        return Ok(StatusCode::OK);
+    }
 
-    state.storage.delete(&key).await?;
+    // Check if there are any custom resources of this type
+    // Custom resources are stored with keys like: /apis/{group}/{version}/{resource}/{namespace}/{name}
+    // or /apis/{group}/{version}/{resource}/{name} for cluster-scoped
+    for version in &crd.spec.versions {
+        let resource_prefix = if crd.spec.scope == rusternetes_common::resources::ResourceScope::Namespaced {
+            // For namespaced resources, check across all namespaces
+            format!("/apis/{}/{}/{}/", crd.spec.group, version.name, crd.spec.names.plural)
+        } else {
+            // For cluster-scoped resources
+            format!("/apis/{}/{}/{}/", crd.spec.group, version.name, crd.spec.names.plural)
+        };
 
-    // Notify dynamic route manager to remove routes for this CRD
-    info!("CRD deleted: {}", name);
+        // List all custom resources with this prefix
+        let custom_resources: Vec<serde_json::Value> = state.storage.list(&resource_prefix).await.unwrap_or_default();
 
-    Ok(StatusCode::NO_CONTENT)
+        if !custom_resources.is_empty() {
+            warn!(
+                "CRD {} has {} existing custom resources of type {}/{}/{}",
+                name,
+                custom_resources.len(),
+                crd.spec.group,
+                version.name,
+                crd.spec.names.plural
+            );
+
+            return Err(rusternetes_common::Error::InvalidResource(format!(
+                "CustomResourceDefinition {} cannot be deleted because {} custom resource(s) still exist. Delete all custom resources first.",
+                name,
+                custom_resources.len()
+            )));
+        }
+    }
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &crd,
+    )
+    .await?;
+
+    if deleted_immediately {
+        // Notify dynamic route manager to remove routes for this CRD
+        info!("CRD deleted: {}", name);
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "CustomResourceDefinition marked for deletion (has finalizers: {:?})",
+            crd.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 /// Validate a CustomResourceDefinition
@@ -254,6 +328,9 @@ fn validate_crd(crd: &CustomResourceDefinition) -> Result<()> {
 
     Ok(())
 }
+
+// Use the macro to create a PATCH handler for cluster-scoped CustomResourceDefinition
+crate::patch_handler_cluster!(patch_crd, CustomResourceDefinition, "customresourcedefinitions", "apiextensions.k8s.io");
 
 #[cfg(test)]
 mod tests {

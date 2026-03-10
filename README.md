@@ -19,7 +19,7 @@ Rusternetes follows the standard Kubernetes architecture with the following comp
 
 ### Additional Components
 
-- **DNS Server** (`dns-server`): Service discovery with Hickory DNS (Kubernetes-compatible)
+- **CoreDNS**: Standard Kubernetes DNS for service discovery (deployed via bootstrap-cluster.yaml)
 
 ### CLI Tools
 
@@ -68,45 +68,70 @@ cargo run --bin kube-proxy
 
 ## Development
 
-### Quick Start with Podman
+### Quick Setup Scripts
+
+We provide automated setup scripts for easy development:
+
+**macOS (Docker Desktop)**:
+```bash
+./scripts/dev-setup-macos.sh
+```
+
+**Fedora/RHEL/CentOS (Podman or Docker)**:
+```bash
+sudo ./scripts/dev-setup-fedora.sh
+```
+
+These scripts install all dependencies, build the project, create helper scripts, and set up your development environment.
+
+### Quick Start with Docker
 
 For local development, we provide a complete container-based development environment:
 
-```bash
-# Interactive setup
-./dev-setup.sh
-
-# Choose from options:
-# - Option 8: Full setup (build + start cluster)
-# - Option 9: Install MetalLB (for LoadBalancer services)
-
-# Or using Make
-make dev-full        # Build and start everything
-make dev-logs        # View logs
-make kubectl-get-pods # Try it out!
-```
-
-**Enable LoadBalancer Services:**
-
-After starting your cluster, you can install MetalLB for local LoadBalancer support:
+**Important Prerequisites:**
+- **Docker Desktop** is required on macOS (Podman Machine has compatibility issues on macOS Sequoia 15.7+)
+- **Docker with rootful mode** is required on Linux for kube-proxy iptables access
+- Set the `KUBELET_VOLUMES_PATH` environment variable before starting
 
 ```bash
-./dev-setup.sh  # Choose option 9
-# Or run the automated test:
-./examples/metallb/test-metallb.sh
+# Set the volumes path (required)
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+
+# Build and start the cluster
+docker-compose build
+docker-compose up -d
+
+# Apply bootstrap resources (CoreDNS, services)
+cat bootstrap-cluster.yaml | envsubst > /tmp/bootstrap-expanded.yaml
+KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify apply -f /tmp/bootstrap-expanded.yaml
+
+# Verify the cluster
+KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify get pods -A
 ```
 
-This gives you working LoadBalancer services without cloud provider credentials! See [docs/METALLB_INTEGRATION.md](docs/METALLB_INTEGRATION.md) for details.
+**Why Docker Desktop on macOS?**
 
-See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed development workflows, troubleshooting, and advanced usage.
+Podman Machine on macOS Sequoia 15.7+ has a known issue with the Apple Virtualization Framework that prevents VMs from starting. Additionally, kube-proxy requires rootful container execution for iptables access, which Docker Desktop provides automatically.
 
-### Traditional Development
+**Note:** See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed development workflows, troubleshooting, Podman alternatives on Linux, and advanced usage.
 
-If you prefer to run components locally without containers, see [GETTING_STARTED.md](docs/GETTING_STARTED.md).
+### Linux Users
+
+On Linux, you can use either Docker or Podman. For Podman, you must run in **rootful mode** for kube-proxy to access iptables:
+
+```bash
+# Create a rootful Podman machine (if using Podman Desktop)
+podman machine init --rootful --cpus 4 --memory 8192
+
+# Or run Podman containers as root
+sudo podman-compose up -d
+```
 
 This is an educational project to understand Kubernetes internals while leveraging Rust's safety guarantees.
 
 ## Documentation
+
+**📚 Complete Documentation Index:** See [docs/DOCUMENTATION_INDEX.md](docs/DOCUMENTATION_INDEX.md) for a comprehensive, organized guide to all documentation.
 
 ### Getting Started
 - [QUICKSTART.md](docs/QUICKSTART.md) - Quick start guide for trying Rusternetes
@@ -129,11 +154,13 @@ This is an educational project to understand Kubernetes internals while leveragi
 ### Networking
 - [DNS.md](docs/DNS.md) - DNS server and service discovery
 - [LOADBALANCER.md](docs/LOADBALANCER.md) - LoadBalancer service type with MetalLB
+- [Network Policies](docs/networking/network-policies.md) - NetworkPolicy validation and CNI plugin integration ⭐ NEW
 
 ### Security
 - [SECURITY.md](docs/SECURITY.md) - Security features (Admission Controllers, Pod Security Standards, Encryption, Audit)
-- [WEBHOOK_INTEGRATION.md](WEBHOOK_INTEGRATION.md) - Admission webhook integration guide ⭐ NEW
-- [WEBHOOK_TESTING.md](WEBHOOK_TESTING.md) - Comprehensive webhook testing guide ⭐ NEW
+- [ServiceAccount Token Signing](docs/security/service-account-tokens.md) - JWT token signing with RS256 for production deployments ⭐ NEW
+- [WEBHOOK_INTEGRATION.md](docs/WEBHOOK_INTEGRATION.md) - Admission webhook integration guide
+- [WEBHOOK_TESTING.md](docs/WEBHOOK_TESTING.md) - Comprehensive webhook testing guide
 - [TLS_GUIDE.md](docs/TLS_GUIDE.md) - TLS configuration
 
 ### Testing & Observability
@@ -155,7 +182,7 @@ Rusternetes implements core Kubernetes features including:
 - ✅ **Scheduler** - Advanced scheduling with affinity/anti-affinity, taints/tolerations, priority/preemption
 - ✅ **Controllers** - Deployment, StatefulSet, Job, DaemonSet, CronJob, Endpoints, PV/PVC Binder, Dynamic Provisioner, Volume Snapshot, LoadBalancer
 - ✅ **Storage** - PV/PVC, Dynamic Provisioning, Volume Snapshots, Volume Expansion
-- ✅ **Networking** - ClusterIP, NodePort, LoadBalancer services, DNS (Hickory), kube-proxy with iptables
+- ✅ **Networking** - ClusterIP, NodePort, LoadBalancer services, CoreDNS, kube-proxy with iptables
 - ✅ **Security** - RBAC, Admission Webhooks, Pod Security Standards, Secrets Encryption, Audit Logging
 - ✅ **High Availability** - Multi-master API servers, etcd clustering (3-5 nodes), leader election, automatic failover ⭐ NEW
 - ✅ **Advanced API** - PATCH (all resources), Field Selectors, Server-Side Apply, Watch API, CRDs with hot-reload
@@ -170,9 +197,18 @@ Rusternetes implements core Kubernetes features including:
 
 Run in HA mode: `docker-compose -f docker-compose.ha.yml up` or test with `./scripts/test-ha.sh`
 
-**Test Coverage:** 127+ tests passing including 21 admission webhook tests
+**Test Coverage:** 1306+ tests passing including:
+- 21 admission webhook tests
+- 16 CNI framework tests
+- 16 LoadBalancer tests
+- 8 autoscaling/init container tests
+- 42 controller unit tests
+- 371 status subresource tests
+- 324 garbage collector tests
+- 402 TTL controller tests
+- Integration tests for all workload controllers
 
-See [STATUS.md](docs/STATUS.md) for detailed implementation status.
+See [STATUS.md](docs/STATUS.md) for detailed implementation status and [CONFORMANCE_PLAN.md](docs/planning/CONFORMANCE_PLAN.md) for Kubernetes conformance tracking.
 
 ## License
 

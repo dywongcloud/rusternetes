@@ -8,7 +8,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed instructions on setting up you
 
 Quick start:
 ```bash
-./dev-setup.sh
+./scripts/dev-setup.sh
 ```
 
 ## Before You Submit a PR

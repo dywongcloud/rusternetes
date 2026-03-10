@@ -1,21 +1,24 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::StorageClass,
+    List,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
 pub async fn create_storageclass(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut sc): Json<StorageClass>,
 ) -> Result<(StatusCode, Json<StorageClass>)> {
     info!("Creating StorageClass: {}", sc.metadata.name);
@@ -33,6 +36,12 @@ pub async fn create_storageclass(
 
     sc.metadata.ensure_uid();
     sc.metadata.ensure_creation_timestamp();
+
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: StorageClass validated successfully (not created)");
+        return Ok((StatusCode::CREATED, Json(sc)));
+    }
 
     let key = build_key("storageclasses", None, &sc.metadata.name);
     let created = state.storage.create(&key, &sc).await?;
@@ -67,7 +76,8 @@ pub async fn get_storageclass(
 pub async fn list_storageclasses(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<Vec<StorageClass>>> {
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<List<StorageClass>>> {
     info!("Listing all StorageClasses");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "storageclasses")
@@ -81,15 +91,20 @@ pub async fn list_storageclasses(
     }
 
     let prefix = build_prefix("storageclasses", None);
-    let scs = state.storage.list(&prefix).await?;
+    let mut scs = state.storage.list(&prefix).await?;
 
-    Ok(Json(scs))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut scs, &params)?;
+
+    let list = List::new("StorageClassList", "storage.k8s.io/v1", scs);
+    Ok(Json(list))
 }
 
 pub async fn update_storageclass(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut sc): Json<StorageClass>,
 ) -> Result<Json<StorageClass>> {
     info!("Updating StorageClass: {}", name);
@@ -107,6 +122,12 @@ pub async fn update_storageclass(
 
     sc.metadata.name = name.clone();
 
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: StorageClass validated successfully (not updated)");
+        return Ok(Json(sc));
+    }
+
     let key = build_key("storageclasses", None, &name);
     let updated = state.storage.update(&key, &sc).await?;
 
@@ -117,6 +138,7 @@ pub async fn delete_storageclass(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting StorageClass: {}", name);
 
@@ -132,9 +154,33 @@ pub async fn delete_storageclass(
     }
 
     let key = build_key("storageclasses", None, &name);
-    state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: StorageClass validated successfully (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get the resource for finalizer handling
+    let resource: StorageClass = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &resource,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "StorageClass marked for deletion (has finalizers: {:?})",
+            resource.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 // Use the macro to create a PATCH handler

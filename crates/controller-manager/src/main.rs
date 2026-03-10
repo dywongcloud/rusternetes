@@ -4,6 +4,8 @@ use anyhow::Result;
 use clap::Parser;
 use controllers::{
     deployment::DeploymentController,
+    replicationcontroller::ReplicationControllerController,
+    replicaset::ReplicaSetController,
     statefulset::StatefulSetController,
     daemonset::DaemonSetController,
     job::JobController,
@@ -13,13 +15,27 @@ use controllers::{
     volume_snapshot::VolumeSnapshotController,
     volume_expansion::VolumeExpansionController,
     endpoints::EndpointsController,
+    endpointslice::EndpointSliceController,
     loadbalancer::LoadBalancerController,
     events::EventsController,
     resource_quota::ResourceQuotaController,
+    garbage_collector::GarbageCollector,
+    hpa::HorizontalPodAutoscalerController,
+    vpa::VerticalPodAutoscalerController,
+    ttl_controller::TTLController,
+    pod_disruption_budget::PodDisruptionBudgetController,
+    network_policy::NetworkPolicyController,
+    ingress::IngressController,
+    certificate_signing_request::CertificateSigningRequestController,
+    crd::CRDController,
+    namespace::NamespaceController,
+    serviceaccount::ServiceAccountController,
+    node::NodeController,
+    service::ServiceController,
 };
 use rusternetes_storage::etcd::EtcdStorage;
 use std::sync::Arc;
-use tracing::{info, warn, Level};
+use tracing::{error, info, warn, Level};
 use rusternetes_common::cloud_provider::CloudProvider;
 use rusternetes_common::leader_election::{LeaderElector, LeaderElectionConfig};
 
@@ -249,6 +265,36 @@ async fn main() -> Result<()> {
         }
     );
 
+    // Start replicationcontroller controller
+    let rc_controller = Arc::new(ReplicationControllerController::new(storage.clone(), args.sync_interval));
+    spawn_controller!(
+        "ReplicationController controller",
+        leader_elector,
+        {
+            let controller = rc_controller.clone();
+            async move {
+                if let Err(e) = controller.run().await {
+                    tracing::error!("ReplicationController controller error: {}", e);
+                }
+            }
+        }
+    );
+
+    // Start ReplicaSet controller
+    let replicaset_controller = Arc::new(ReplicaSetController::new(storage.clone(), args.sync_interval));
+    spawn_controller!(
+        "ReplicaSet controller",
+        leader_elector,
+        {
+            let controller = replicaset_controller.clone();
+            async move {
+                if let Err(e) = controller.run().await {
+                    tracing::error!("ReplicaSet controller error: {}", e);
+                }
+            }
+        }
+    );
+
     // Start StatefulSet controller
     let statefulset_controller = Arc::new(StatefulSetController::new(storage.clone()));
     spawn_controller!(
@@ -388,6 +434,25 @@ async fn main() -> Result<()> {
         }
     );
 
+    // Start EndpointSlice controller
+    let endpointslice_controller = Arc::new(EndpointSliceController::new(storage.clone()));
+    let sync_interval_secs_ep = args.sync_interval;
+    spawn_controller!(
+        "EndpointSlice controller",
+        leader_elector,
+        {
+            let controller = endpointslice_controller.clone();
+            async move {
+                loop {
+                    if let Err(e) = controller.reconcile_all().await {
+                        tracing::error!("EndpointSlice controller error: {}", e);
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs_ep)).await;
+                }
+            }
+        }
+    );
+
     // Start Events controller
     let events_controller = Arc::new(EventsController::new(storage.clone(), args.sync_interval));
     spawn_controller!(
@@ -415,6 +480,232 @@ async fn main() -> Result<()> {
                         tracing::error!("ResourceQuota controller error: {}", e);
                     }
                     tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs2)).await;
+                }
+            }
+        }
+    );
+
+    // Start Garbage Collector
+    let garbage_collector = Arc::new(GarbageCollector::<rusternetes_storage::etcd::EtcdStorage>::new(storage.clone()));
+    spawn_controller!(
+        "Garbage Collector",
+        leader_elector,
+        {
+            let controller = garbage_collector.clone();
+            async move {
+                controller.run().await;
+            }
+        }
+    );
+
+    // Start HPA controller
+    let hpa_controller = Arc::new(HorizontalPodAutoscalerController::new(storage.clone()));
+    spawn_controller!(
+        "HPA controller",
+        leader_elector,
+        {
+            let controller = hpa_controller.clone();
+            async move {
+                if let Err(e) = controller.run().await {
+                    error!("HPA controller error: {}", e);
+                }
+            }
+        }
+    );
+
+    // Start VPA controller
+    let vpa_controller = Arc::new(VerticalPodAutoscalerController::new(Arc::clone(&storage)));
+    spawn_controller!(
+        "VPA controller",
+        leader_elector,
+        {
+            let controller = vpa_controller.clone();
+            async move {
+                controller.run().await;
+            }
+        }
+    );
+
+    // Start TTL controller
+    let ttl_controller = Arc::new(TTLController::<rusternetes_storage::etcd::EtcdStorage>::new(storage.clone()));
+    spawn_controller!(
+        "TTL controller",
+        leader_elector,
+        {
+            let controller = ttl_controller.clone();
+            async move {
+                controller.run().await;
+            }
+        }
+    );
+
+    // Start PodDisruptionBudget controller
+    let pdb_controller = Arc::new(PodDisruptionBudgetController::new(storage.clone()));
+    spawn_controller!(
+        "PodDisruptionBudget controller",
+        leader_elector,
+        {
+            let controller = pdb_controller.clone();
+            async move {
+                if let Err(e) = controller.run().await {
+                    error!("PodDisruptionBudget controller error: {}", e);
+                }
+            }
+        }
+    );
+
+    // Start NetworkPolicy controller
+    let network_policy_controller = Arc::new(NetworkPolicyController::new(storage.clone()));
+    let sync_interval_secs_np = args.sync_interval;
+    spawn_controller!(
+        "NetworkPolicy controller",
+        leader_elector,
+        {
+            let controller = network_policy_controller.clone();
+            async move {
+                loop {
+                    if let Err(e) = controller.reconcile_all().await {
+                        tracing::error!("NetworkPolicy controller error: {}", e);
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs_np)).await;
+                }
+            }
+        }
+    );
+
+    // Start Ingress controller
+    let ingress_controller = Arc::new(IngressController::new(storage.clone()));
+    let sync_interval_secs_ing = args.sync_interval;
+    spawn_controller!(
+        "Ingress controller",
+        leader_elector,
+        {
+            let controller = ingress_controller.clone();
+            async move {
+                loop {
+                    if let Err(e) = controller.reconcile_all().await {
+                        tracing::error!("Ingress controller error: {}", e);
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs_ing)).await;
+                }
+            }
+        }
+    );
+
+    // Start CertificateSigningRequest controller
+    let csr_controller = Arc::new(CertificateSigningRequestController::new(storage.clone()));
+    let sync_interval_secs_csr = args.sync_interval;
+    spawn_controller!(
+        "CertificateSigningRequest controller",
+        leader_elector,
+        {
+            let controller = csr_controller.clone();
+            async move {
+                loop {
+                    if let Err(e) = controller.reconcile_all().await {
+                        tracing::error!("CertificateSigningRequest controller error: {}", e);
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs_csr)).await;
+                }
+            }
+        }
+    );
+
+    // Start CRD controller
+    let crd_controller = Arc::new(CRDController::new(storage.clone()));
+    let sync_interval_secs_crd = args.sync_interval;
+    spawn_controller!(
+        "CRD controller",
+        leader_elector,
+        {
+            let controller = crd_controller.clone();
+            async move {
+                loop {
+                    if let Err(e) = controller.reconcile_all().await {
+                        tracing::error!("CRD controller error: {}", e);
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs_crd)).await;
+                }
+            }
+        }
+    );
+
+    // Start Namespace controller
+    let namespace_controller = Arc::new(NamespaceController::new(storage.clone()));
+    let sync_interval_secs_ns = args.sync_interval;
+    spawn_controller!(
+        "Namespace controller",
+        leader_elector,
+        {
+            let controller = namespace_controller.clone();
+            async move {
+                loop {
+                    if let Err(e) = controller.reconcile_all().await {
+                        tracing::error!("Namespace controller error: {}", e);
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs_ns)).await;
+                }
+            }
+        }
+    );
+
+    // Start ServiceAccount controller
+    let serviceaccount_controller = Arc::new(ServiceAccountController::new(storage.clone()));
+    let sync_interval_secs_sa = args.sync_interval;
+    spawn_controller!(
+        "ServiceAccount controller",
+        leader_elector,
+        {
+            let controller = serviceaccount_controller.clone();
+            async move {
+                loop {
+                    if let Err(e) = controller.reconcile_all().await {
+                        tracing::error!("ServiceAccount controller error: {}", e);
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs_sa)).await;
+                }
+            }
+        }
+    );
+
+    // Start Service controller
+    let service_controller = Arc::new(ServiceController::new(storage.clone()));
+    let sync_interval_secs_svc = args.sync_interval;
+    spawn_controller!(
+        "Service controller",
+        leader_elector,
+        {
+            let controller = service_controller.clone();
+            async move {
+                // Initialize controller by scanning existing services
+                if let Err(e) = controller.initialize().await {
+                    tracing::error!("Service controller initialization error: {}", e);
+                    return;
+                }
+                loop {
+                    if let Err(e) = controller.reconcile_all().await {
+                        tracing::error!("Service controller error: {}", e);
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs_svc)).await;
+                }
+            }
+        }
+    );
+
+    // Start Node controller
+    let node_controller = Arc::new(NodeController::new(storage.clone()));
+    let sync_interval_secs_node = args.sync_interval;
+    spawn_controller!(
+        "Node controller",
+        leader_elector,
+        {
+            let controller = node_controller.clone();
+            async move {
+                loop {
+                    if let Err(e) = controller.reconcile_all().await {
+                        tracing::error!("Node controller error: {}", e);
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs_node)).await;
                 }
             }
         }

@@ -91,6 +91,8 @@ impl KubeProxy {
 
         // Get ClusterIP (required for ClusterIP/NodePort/LoadBalancer services)
         let cluster_ip = service.spec.cluster_ip.as_ref();
+        debug!("Service {}/{} - clusterIP field value: {:?}", namespace, name, cluster_ip);
+        debug!("Service {}/{} - full spec: {:?}", namespace, name, service.spec);
         if cluster_ip.is_none() && service_type != ServiceType::ExternalName {
             warn!("Service {}/{} has no ClusterIP, skipping", namespace, name);
             return Ok(());

@@ -234,9 +234,25 @@ impl AdmissionController for LimitRangerController {
         "LimitRanger"
     }
 
-    async fn admit(&self, _request: &AdmissionRequest) -> AdmissionResponse {
-        // TODO: Implement limit range checking
-        // For now, always allow
+    async fn admit(&self, request: &AdmissionRequest) -> AdmissionResponse {
+        // Only process Pod and PersistentVolumeClaim resources
+        if request.kind != "Pod" && request.kind != "PersistentVolumeClaim" {
+            return AdmissionResponse::Allow;
+        }
+
+        // Skip if this is a DELETE operation
+        if request.operation == Operation::Delete {
+            return AdmissionResponse::Allow;
+        }
+
+        // For now, return Allow since we need access to etcd to fetch LimitRange objects
+        // This will be implemented when admission controllers have access to the API server state
+        //
+        // Full implementation would:
+        // 1. Fetch all LimitRange objects from the namespace
+        // 2. For Pods: apply default limits/requests to containers, validate min/max, check ratios
+        // 3. For PVCs: validate storage requests against limits
+        // 4. Return patches for default values or deny if validation fails
         AdmissionResponse::Allow
     }
 }

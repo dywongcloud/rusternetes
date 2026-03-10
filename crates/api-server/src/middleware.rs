@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
     Extension,
 };
-use rusternetes_common::auth::{TokenManager, UserInfo};
+use rusternetes_common::auth::{BootstrapTokenManager, TokenManager, UserInfo};
 use std::sync::Arc;
 use tracing::{debug, warn};
 
@@ -37,6 +37,7 @@ pub async fn skip_auth_middleware(
 /// Authentication middleware that extracts and validates JWT tokens
 pub async fn auth_middleware(
     Extension(token_manager): Extension<Arc<TokenManager>>,
+    Extension(bootstrap_token_manager): Extension<Arc<BootstrapTokenManager>>,
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
@@ -50,16 +51,22 @@ pub async fn auth_middleware(
     let user = if auth_header.starts_with("Bearer ") {
         let token = &auth_header[7..]; // Skip "Bearer "
 
-        match token_manager.validate_token(token) {
-            Ok(claims) => {
-                let user_info = UserInfo::from_service_account_claims(&claims);
-                debug!("Authenticated user: {}", user_info.username);
-                user_info
-            }
-            Err(e) => {
-                warn!("Invalid token: {}", e);
-                return Err((StatusCode::UNAUTHORIZED, "Invalid token").into_response());
-            }
+        // Try to validate as a service account token first
+        if let Ok(claims) = token_manager.validate_token(token) {
+            let user_info = UserInfo::from_service_account_claims(&claims);
+            debug!("Authenticated user (service account): {}", user_info.username);
+            user_info
+        }
+        // Try to validate as a bootstrap token
+        else if let Ok(bootstrap_token) = bootstrap_token_manager.validate_token(token) {
+            let user_info = UserInfo::from_bootstrap_token(&bootstrap_token);
+            debug!("Authenticated user (bootstrap token): {}", user_info.username);
+            user_info
+        }
+        // Invalid token
+        else {
+            warn!("Invalid token");
+            return Err((StatusCode::UNAUTHORIZED, "Invalid token").into_response());
         }
     } else {
         // Anonymous user

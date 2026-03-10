@@ -1,5 +1,5 @@
 use crate::types::{ObjectMeta, TypeMeta};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 
 /// ConfigMap holds configuration data for pods to consume
@@ -48,6 +48,27 @@ impl ConfigMap {
     }
 }
 
+/// Custom serializer for Secret data field that encodes Vec<u8> as base64 strings
+fn serialize_secret_data<S>(
+    data: &Option<HashMap<String, Vec<u8>>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match data {
+        None => serializer.serialize_none(),
+        Some(map) => {
+            let mut string_map = HashMap::new();
+            for (k, v) in map {
+                let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, v);
+                string_map.insert(k.clone(), encoded);
+            }
+            serializer.collect_map(string_map)
+        }
+    }
+}
+
 /// Custom deserializer for Secret data field that handles base64-encoded strings
 fn deserialize_secret_data<'de, D>(
     deserializer: D,
@@ -91,7 +112,12 @@ pub struct Secret {
     pub secret_type: Option<String>,
 
     /// Data contains the secret data (base64 encoded)
-    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_secret_data")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_secret_data",
+        deserialize_with = "deserialize_secret_data"
+    )]
     pub data: Option<HashMap<String, Vec<u8>>>,
 
     /// StringData allows specifying non-binary secret data in string form
@@ -136,6 +162,21 @@ impl Secret {
     pub fn with_immutable(mut self, immutable: bool) -> Self {
         self.immutable = Some(immutable);
         self
+    }
+
+    /// Normalize the Secret by converting stringData to data (base64 encoded)
+    /// This matches Kubernetes behavior where stringData is a write-only convenience field
+    pub fn normalize(&mut self) {
+        if let Some(string_data) = self.string_data.take() {
+            let mut data = self.data.take().unwrap_or_default();
+
+            // Convert each string_data entry to base64 and add to data
+            for (key, value) in string_data {
+                data.insert(key, value.into_bytes());
+            }
+
+            self.data = Some(data);
+        }
     }
 }
 

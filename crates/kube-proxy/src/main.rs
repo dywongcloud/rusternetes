@@ -96,7 +96,7 @@ async fn main() -> Result<()> {
 
 /// Check if iptables is available
 fn check_iptables() -> Result<()> {
-    let output = std::process::Command::new("iptables")
+    let output = std::process::Command::new("/usr/sbin/iptables-legacy")
         .arg("--version")
         .output()?;
 
@@ -105,6 +105,6 @@ fn check_iptables() -> Result<()> {
         info!("iptables version: {}", version.trim());
         Ok(())
     } else {
-        Err(anyhow::anyhow!("iptables not available"))
+        Err(anyhow::anyhow!("iptables-legacy not available"))
     }
 }

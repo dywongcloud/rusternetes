@@ -145,6 +145,16 @@ impl<S: Storage> DeploymentController<S> {
         metadata.namespace = Some(namespace.to_string());
         metadata.labels = deployment.spec.template.metadata.as_ref().and_then(|m| m.labels.clone());
 
+        // Set owner reference to the deployment for garbage collection
+        metadata.owner_references = Some(vec![rusternetes_common::types::OwnerReference {
+            api_version: "apps/v1".to_string(),
+            kind: "Deployment".to_string(),
+            name: deployment.metadata.name.clone(),
+            uid: deployment.metadata.uid.clone(),
+            controller: Some(true),
+            block_owner_deletion: Some(true),
+        }]);
+
         let pod = Pod {
             type_meta: rusternetes_common::types::TypeMeta {
                 kind: "Pod".to_string(),
@@ -160,6 +170,7 @@ impl<S: Storage> DeploymentController<S> {
                 pod_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
+            ephemeral_container_statuses: None,
             }),
         };
 

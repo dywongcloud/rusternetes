@@ -1,17 +1,26 @@
 mod admission;
 mod admission_webhook;
+mod bootstrap;
 mod conversion;
 mod dynamic_routes;
+mod flow_control;
 mod handlers;
 mod middleware;
+mod openapi;
 mod patch;
+mod prometheus_client;
+mod response;
 mod router;
+mod spdy;
+mod spdy_handlers;
 mod state;
+mod streaming;
 mod ip_allocator;
 
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
+use prometheus_client::PrometheusClient;
 use rusternetes_common::auth::TokenManager;
 use rusternetes_common::authz::RBACAuthorizer;
 use rusternetes_common::observability::MetricsRegistry;
@@ -65,6 +74,10 @@ struct Args {
     /// Skip authentication and authorization (INSECURE - development only)
     #[arg(long)]
     skip_auth: bool,
+
+    /// Prometheus server URL for custom metrics (optional)
+    #[arg(long)]
+    prometheus_url: Option<String>,
 }
 
 #[tokio::main]
@@ -118,25 +131,12 @@ async fn main() -> Result<()> {
             .with_api_server_metrics()?,
     );
 
-    // Create shared state
-    let state = Arc::new(ApiServerState::new(
-        storage,
-        token_manager,
-        authorizer,
-        metrics,
-        args.skip_auth,
-    ));
+    // Load or generate TLS config (if TLS is enabled)
+    let ca_cert_pem = if args.tls {
+        info!("TLS enabled - loading/generating certificates");
 
-    // Build router
-    let app = router::build_router(state);
-
-    // Start server (with or without TLS)
-    if args.tls {
-        info!("TLS enabled - starting HTTPS server");
-
-        // Load or generate TLS config
         let tls_config = if let (Some(cert_file), Some(key_file)) =
-            (args.tls_cert_file, args.tls_key_file) {
+            (args.tls_cert_file.clone(), args.tls_key_file.clone()) {
             info!("Loading TLS certificate from {} and key from {}", cert_file, key_file);
             TlsConfig::from_pem_files(&cert_file, &key_file)?
         } else if args.tls_self_signed {
@@ -149,6 +149,68 @@ async fn main() -> Result<()> {
             TlsConfig::generate_self_signed("rusternetes-api", sans)?
         } else {
             anyhow::bail!("TLS enabled but no certificate provided. Use --tls-cert-file and --tls-key-file, or --tls-self-signed");
+        };
+
+        tls_config.cert_pem.clone()
+    } else {
+        None
+    };
+
+    // Bootstrap kubernetes Service Endpoints with dynamic IP discovery
+    let api_port = args.bind_address.split(':').last()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(6443);
+
+    if let Err(e) = bootstrap::bootstrap_kubernetes_service(storage.clone(), api_port).await {
+        warn!("Failed to bootstrap kubernetes Service Endpoints: {}. Continuing anyway.", e);
+    }
+
+    // Initialize Prometheus client for custom metrics (if URL provided)
+    let prometheus_client = if let Some(url) = args.prometheus_url {
+        info!("Initializing Prometheus client: {}", url);
+        match PrometheusClient::new(url.clone()) {
+            Ok(client) => {
+                info!("Prometheus client initialized successfully");
+                Some(Arc::new(client))
+            }
+            Err(e) => {
+                warn!("Failed to initialize Prometheus client: {}. Custom metrics will return mock data.", e);
+                None
+            }
+        }
+    } else {
+        info!("Prometheus URL not provided, custom metrics will return mock data");
+        None
+    };
+
+    // Create shared state with CA certificate and Prometheus client
+    let state = Arc::new(ApiServerState::new(
+        storage,
+        token_manager,
+        authorizer,
+        metrics,
+        args.skip_auth,
+    ).with_ca_cert(ca_cert_pem)
+     .with_prometheus_client(prometheus_client));
+
+    // Build router
+    let app = router::build_router(state);
+
+    // Start server (with or without TLS)
+    if args.tls {
+        info!("TLS enabled - starting HTTPS server");
+
+        // Reload TLS config for server
+        let tls_config = if let (Some(cert_file), Some(key_file)) =
+            (args.tls_cert_file, args.tls_key_file) {
+            TlsConfig::from_pem_files(&cert_file, &key_file)?
+        } else {
+            // Must be self-signed
+            let sans: Vec<String> = args.tls_san
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+            TlsConfig::generate_self_signed("rusternetes-api", sans)?
         };
 
         let rustls_config = RustlsConfig::from_config(tls_config.into_server_config()?);

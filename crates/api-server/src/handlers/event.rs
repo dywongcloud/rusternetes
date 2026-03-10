@@ -1,6 +1,6 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Extension, Json,
 };
@@ -10,6 +10,7 @@ use rusternetes_common::{
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
@@ -18,6 +19,7 @@ pub async fn list(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<EventList>> {
     info!("Listing events in namespace: {}", namespace);
 
@@ -34,7 +36,10 @@ pub async fn list(
     }
 
     let prefix = build_prefix("events", Some(&namespace));
-    let events: Vec<Event> = state.storage.list(&prefix).await?;
+    let mut events: Vec<Event> = state.storage.list(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut events, &params)?;
 
     Ok(Json(EventList {
         api_version: "v1".to_string(),
@@ -103,9 +108,13 @@ pub async fn create(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut event): Json<Event>,
 ) -> Result<(StatusCode, Json<Event>)> {
     info!("Creating event in namespace: {}", namespace);
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "events")
@@ -136,6 +145,12 @@ pub async fn create(
 
     let key = build_key("events", Some(&namespace), &event.metadata.name);
 
+    // If dry-run, skip storage operation but return the validated resource
+    if is_dry_run {
+        info!("Dry-run: Event {}/{} validated successfully (not created)", namespace, event.metadata.name);
+        return Ok((StatusCode::CREATED, Json(event)));
+    }
+
     let created = state.storage.create(&key, &event).await?;
 
     Ok((StatusCode::CREATED, Json(created)))
@@ -146,9 +161,13 @@ pub async fn update(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut event): Json<Event>,
 ) -> Result<Json<Event>> {
     info!("Updating event: {}/{}", namespace, name);
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "events")
@@ -169,6 +188,12 @@ pub async fn update(
 
     let key = build_key("events", Some(&namespace), &name);
 
+    // If dry-run, skip storage operation but return the validated resource
+    if is_dry_run {
+        info!("Dry-run: Event {}/{} validated successfully (not updated)", namespace, name);
+        return Ok(Json(event));
+    }
+
     let updated = state.storage.update(&key, &event).await?;
 
     Ok(Json(updated))
@@ -179,8 +204,12 @@ pub async fn delete(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting event: {}/{}", namespace, name);
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "events")
@@ -197,9 +226,34 @@ pub async fn delete(
 
     let key = build_key("events", Some(&namespace), &name);
 
-    state.storage.delete(&key).await?;
+    // If dry-run, skip delete operation
+    if is_dry_run {
+        info!("Dry-run: Event {}/{} validated successfully (not deleted)", namespace, name);
+        return Ok(StatusCode::OK);
+    }
 
-    Ok(StatusCode::NO_CONTENT)
+    // Get the event for finalizer handling
+    let event: Event = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &event,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "Event {}/{} marked for deletion (has finalizers: {:?})",
+            namespace,
+            name,
+            event.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 #[cfg(test)]

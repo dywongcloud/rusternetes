@@ -1,0 +1,193 @@
+use crate::{middleware::AuthContext, state::ApiServerState};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Extension, Json,
+};
+use rusternetes_common::{
+    authz::{Decision, RequestAttributes},
+    resources::ServiceCIDR,
+    List,
+    Result,
+};
+use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tracing::info;
+
+pub async fn create_servicecidr(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(mut servicecidr): Json<ServiceCIDR>,
+) -> Result<(StatusCode, Json<ServiceCIDR>)> {
+    info!("Creating ServiceCIDR: {}", servicecidr.metadata.name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "create", "servicecidrs")
+        .with_api_group("networking.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Enrich metadata with system fields
+    servicecidr.metadata.ensure_uid();
+    servicecidr.metadata.ensure_creation_timestamp();
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ServiceCIDR validated successfully (not created)");
+        return Ok((StatusCode::CREATED, Json(servicecidr)));
+    }
+
+    // ServiceCIDR is cluster-scoped (no namespace)
+    let key = build_key("servicecidrs", None, &servicecidr.metadata.name);
+    let created = state.storage.create(&key, &servicecidr).await?;
+
+    Ok((StatusCode::CREATED, Json(created)))
+}
+
+pub async fn get_servicecidr(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(name): Path<String>,
+) -> Result<Json<ServiceCIDR>> {
+    info!("Getting ServiceCIDR: {}", name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "get", "servicecidrs")
+        .with_api_group("networking.k8s.io")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    let key = build_key("servicecidrs", None, &name);
+    let servicecidr = state.storage.get(&key).await?;
+
+    Ok(Json(servicecidr))
+}
+
+pub async fn update_servicecidr(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(mut servicecidr): Json<ServiceCIDR>,
+) -> Result<Json<ServiceCIDR>> {
+    info!("Updating ServiceCIDR: {}", name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "update", "servicecidrs")
+        .with_api_group("networking.k8s.io")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    servicecidr.metadata.name = name.clone();
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ServiceCIDR validated successfully (not updated)");
+        return Ok(Json(servicecidr));
+    }
+
+    let key = build_key("servicecidrs", None, &name);
+    let updated = state.storage.update(&key, &servicecidr).await?;
+
+    Ok(Json(updated))
+}
+
+pub async fn delete_servicecidr(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("Deleting ServiceCIDR: {}", name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "delete", "servicecidrs")
+        .with_api_group("networking.k8s.io")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    let key = build_key("servicecidrs", None, &name);
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ServiceCIDR validated successfully (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get the resource for finalizer handling
+    let servicecidr: ServiceCIDR = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &servicecidr,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "ServiceCIDR marked for deletion (has finalizers: {:?})",
+            servicecidr.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
+}
+
+pub async fn list_servicecidrs(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+) -> Result<Response> {
+    info!("Listing ServiceCIDRs");
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "servicecidrs")
+        .with_api_group("networking.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    let prefix = build_prefix("servicecidrs", None);
+    let servicecidrs = state.storage.list::<ServiceCIDR>(&prefix).await?;
+
+    let list = List::new("ServiceCIDRList", "networking.k8s.io/v1", servicecidrs);
+    Ok(Json(list).into_response())
+}
+
+// Use the macro to create a PATCH handler
+crate::patch_handler_cluster!(patch_servicecidr, ServiceCIDR, "servicecidrs", "networking.k8s.io");

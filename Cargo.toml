@@ -7,7 +7,6 @@ members = [
     "crates/kubelet",
     "crates/kube-proxy",
     "crates/kubectl",
-    "crates/dns-server",
     "crates/common",
     "crates/storage",
     "crates/cloud-providers",
@@ -42,6 +41,7 @@ futures = "0.3"
 bollard = "0.17" # Docker API client
 tonic = "0.12" # gRPC
 prost = "0.13"
+prost-types = "0.13"
 jsonwebtoken = "9.3" # JWT token generation and validation
 rustls = { version = "0.23", features = ["aws-lc-rs"] } # TLS support with aws-lc-rs crypto provider
 tokio-rustls = "0.26" # Tokio integration for rustls
@@ -53,6 +53,11 @@ opentelemetry-jaeger = "0.21" # Jaeger exporter for OpenTelemetry
 opentelemetry-otlp = "0.15" # OTLP exporter for OpenTelemetry
 opentelemetry_sdk = { version = "0.22", features = ["rt-tokio"] } # OpenTelemetry SDK
 tracing-opentelemetry = "0.23" # OpenTelemetry integration with tracing
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false } # HTTP client
+cel-interpreter = "0.10" # Common Expression Language (CEL) interpreter
+x509-parser = "0.16" # X.509 certificate parsing
+pem = "3.0" # PEM format encoding/decoding
+base64 = "0.22" # Base64 encoding/decoding
 
 # Cloud provider SDKs
 aws-config = "1.1"

@@ -24,3 +24,5 @@ configs/local-*
 
 # Podman/Docker volumes
 etcd-data/
+# Local development runtime state
+.rusternetes/

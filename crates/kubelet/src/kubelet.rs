@@ -1,3 +1,4 @@
+use crate::eviction::{EvictionManager, EvictionSignal, get_node_stats, get_pod_stats};
 use crate::runtime::ContainerRuntime;
 use anyhow::Result;
 use rusternetes_common::{
@@ -5,7 +6,7 @@ use rusternetes_common::{
     types::Phase,
 };
 use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::{Arc, Mutex}, time::Duration};
 use tracing::{debug, error, info, warn};
 
 pub struct Kubelet {
@@ -13,6 +14,7 @@ pub struct Kubelet {
     storage: Arc<EtcdStorage>,
     runtime: ContainerRuntime,
     sync_interval: Duration,
+    eviction_manager: Mutex<EvictionManager>,
 }
 
 impl Kubelet {
@@ -20,14 +22,21 @@ impl Kubelet {
         node_name: String,
         storage: Arc<EtcdStorage>,
         sync_interval_secs: u64,
+        volume_dir: String,
+        cluster_dns: String,
+        cluster_domain: String,
+        network: String,
     ) -> Result<Self> {
-        let runtime = ContainerRuntime::new().await?.with_storage(storage.clone());
+        let runtime = ContainerRuntime::new(volume_dir, cluster_dns, cluster_domain, network)
+            .await?
+            .with_storage(storage.clone());
 
         Ok(Self {
             node_name,
             storage,
             runtime,
             sync_interval: Duration::from_secs(sync_interval_secs),
+            eviction_manager: Mutex::new(EvictionManager::new()),
         })
     }
 
@@ -113,6 +122,23 @@ impl Kubelet {
         let key = build_key("nodes", None, &self.node_name);
         let mut node: Node = self.storage.get(&key).await?;
 
+        // Get current node resource statistics
+        let node_stats = get_node_stats();
+
+        // Check if eviction is needed
+        let mut eviction_manager = self.eviction_manager.lock().unwrap();
+        let active_signals = eviction_manager.check_eviction_needed(&node_stats);
+
+        // Update node conditions based on resource pressure
+        if !active_signals.is_empty() {
+            info!("Resource pressure detected: {:?}", active_signals);
+            eviction_manager.update_node_conditions(&mut node, &active_signals)?;
+        } else {
+            // Clear pressure conditions if no active signals
+            eviction_manager.update_node_conditions(&mut node, &[])?;
+        }
+        drop(eviction_manager); // Release lock before async operations
+
         // Update heartbeat
         if let Some(ref mut status) = node.status {
             if let Some(ref mut conditions) = status.conditions {
@@ -125,6 +151,14 @@ impl Kubelet {
         }
 
         self.storage.update(&key, &node).await?;
+
+        // If eviction is needed, trigger pod eviction
+        if !active_signals.is_empty() {
+            if let Err(e) = self.handle_eviction(&active_signals).await {
+                error!("Error handling eviction: {}", e);
+            }
+        }
+
         Ok(())
     }
 
@@ -243,6 +277,7 @@ impl Kubelet {
                             pod_ip,
                             container_statuses,
                             init_container_statuses: None,
+            ephemeral_container_statuses: None,
                         });
 
                         let key = build_key("pods", new_pod.metadata.namespace.as_deref(), &new_pod.metadata.name);
@@ -291,9 +326,16 @@ impl Kubelet {
                         if let Ok(container_statuses) = self.runtime.get_container_statuses(pod).await {
                             let all_ready = container_statuses.iter().all(|s| s.ready);
 
+                            // Get pod IP (important for pods started by docker-compose)
+                            let pod_ip = self.runtime.get_pod_ip(pod_name).await.ok().flatten();
+
                             let mut new_pod = pod.clone();
                             if let Some(ref mut status) = new_pod.status {
                                 status.container_statuses = Some(container_statuses);
+                                // Update pod IP if we got one and it's different
+                                if pod_ip.is_some() && status.pod_ip != pod_ip {
+                                    status.pod_ip = pod_ip;
+                                }
                                 if all_ready {
                                     status.message = Some("All containers ready".to_string());
                                 } else {
@@ -343,6 +385,7 @@ impl Kubelet {
             pod_ip: None,
             container_statuses: None,
             init_container_statuses: None,
+            ephemeral_container_statuses: None,
         });
 
         let key = build_key("pods", new_pod.metadata.namespace.as_deref(), &new_pod.metadata.name);
@@ -353,5 +396,86 @@ impl Kubelet {
 
     async fn update_pod_status_error(&self, pod: &Pod, error: &str) -> Result<()> {
         self.update_pod_status(pod, Phase::Failed, Some("Error"), Some(error)).await
+    }
+
+    /// Handle pod eviction when node resources are exhausted
+    async fn handle_eviction(&self, signals: &[EvictionSignal]) -> Result<()> {
+        info!("Handling eviction for signals: {:?}", signals);
+
+        // Get all pods assigned to this node
+        let all_pods_prefix = build_prefix("pods", None);
+        let all_pods: Vec<Pod> = self.storage.list(&all_pods_prefix).await?;
+
+        let node_pods: Vec<Pod> = all_pods
+            .into_iter()
+            .filter(|p| {
+                p.spec
+                    .as_ref()
+                    .and_then(|s| s.node_name.as_ref())
+                    .map(|n| n == &self.node_name)
+                    .unwrap_or(false)
+            })
+            .filter(|p| {
+                // Only consider running pods for eviction
+                p.status
+                    .as_ref()
+                    .map(|s| s.phase == Phase::Running)
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        // Get pod resource usage statistics
+        let pod_stats = get_pod_stats(&node_pods);
+
+        // For each active signal, select pods for eviction
+        for signal in signals {
+            let eviction_manager = self.eviction_manager.lock().unwrap();
+            let pods_to_evict = eviction_manager.select_pods_for_eviction(
+                &node_pods,
+                &pod_stats,
+                signal,
+            );
+            drop(eviction_manager); // Release lock
+
+            for pod_key in pods_to_evict {
+                warn!("Evicting pod {} due to resource pressure ({:?})", pod_key, signal);
+
+                // Parse namespace and name from key
+                let parts: Vec<&str> = pod_key.split('/').collect();
+                if parts.len() != 2 {
+                    continue;
+                }
+                let namespace = parts[0];
+                let name = parts[1];
+
+                // Find the pod
+                if let Some(pod) = node_pods.iter().find(|p| {
+                    p.metadata.namespace.as_deref().unwrap_or("default") == namespace
+                        && p.metadata.name == name
+                }) {
+                    // Stop the pod
+                    if let Err(e) = self.runtime.stop_pod(&pod.metadata.name).await {
+                        error!("Failed to stop evicted pod {}: {}", pod_key, e);
+                        continue;
+                    }
+
+                    // Update pod status to reflect eviction
+                    if let Err(e) = self.update_pod_status(
+                        pod,
+                        Phase::Failed,
+                        Some("Evicted"),
+                        Some(&format!("Pod evicted due to resource pressure: {:?}", signal)),
+                    )
+                    .await
+                    {
+                        error!("Failed to update evicted pod status: {}", e);
+                    }
+
+                    info!("Successfully evicted pod {}", pod_key);
+                }
+            }
+        }
+
+        Ok(())
     }
 }

@@ -1,15 +1,17 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::VolumeSnapshot,
+    List,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
@@ -17,6 +19,7 @@ pub async fn create_volumesnapshot(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut vs): Json<VolumeSnapshot>,
 ) -> Result<(StatusCode, Json<VolumeSnapshot>)> {
     info!(
@@ -39,6 +42,12 @@ pub async fn create_volumesnapshot(
     vs.metadata.namespace = Some(namespace.clone());
     vs.metadata.ensure_uid();
     vs.metadata.ensure_creation_timestamp();
+
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: VolumeSnapshot validated successfully (not created)");
+        return Ok((StatusCode::CREATED, Json(vs)));
+    }
 
     let key = build_key("volumesnapshots", Some(&namespace), &vs.metadata.name);
     let created = state.storage.create(&key, &vs).await?;
@@ -75,7 +84,8 @@ pub async fn list_volumesnapshots(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
-) -> Result<Json<Vec<VolumeSnapshot>>> {
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<List<VolumeSnapshot>>> {
     info!("Listing VolumeSnapshots in namespace: {}", namespace);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "volumesnapshots")
@@ -90,15 +100,20 @@ pub async fn list_volumesnapshots(
     }
 
     let prefix = build_prefix("volumesnapshots", Some(&namespace));
-    let vss = state.storage.list(&prefix).await?;
+    let mut vss = state.storage.list(&prefix).await?;
 
-    Ok(Json(vss))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut vss, &params)?;
+
+    let list = List::new("VolumeSnapshotList", "snapshot.storage.k8s.io/v1", vss);
+    Ok(Json(list))
 }
 
 pub async fn list_all_volumesnapshots(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<Vec<VolumeSnapshot>>> {
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<List<VolumeSnapshot>>> {
     info!("Listing all VolumeSnapshots");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "volumesnapshots")
@@ -112,15 +127,20 @@ pub async fn list_all_volumesnapshots(
     }
 
     let prefix = build_prefix("volumesnapshots", None);
-    let vss = state.storage.list(&prefix).await?;
+    let mut vss = state.storage.list(&prefix).await?;
 
-    Ok(Json(vss))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut vss, &params)?;
+
+    let list = List::new("VolumeSnapshotList", "snapshot.storage.k8s.io/v1", vss);
+    Ok(Json(list))
 }
 
 pub async fn update_volumesnapshot(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut vs): Json<VolumeSnapshot>,
 ) -> Result<Json<VolumeSnapshot>> {
     info!("Updating VolumeSnapshot: {}/{}", namespace, name);
@@ -140,6 +160,12 @@ pub async fn update_volumesnapshot(
     vs.metadata.name = name.clone();
     vs.metadata.namespace = Some(namespace.clone());
 
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: VolumeSnapshot validated successfully (not updated)");
+        return Ok(Json(vs));
+    }
+
     let key = build_key("volumesnapshots", Some(&namespace), &name);
     let updated = state.storage.update(&key, &vs).await?;
 
@@ -150,6 +176,7 @@ pub async fn delete_volumesnapshot(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting VolumeSnapshot: {}/{}", namespace, name);
 
@@ -166,9 +193,33 @@ pub async fn delete_volumesnapshot(
     }
 
     let key = build_key("volumesnapshots", Some(&namespace), &name);
-    state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: VolumeSnapshot validated successfully (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get the resource for finalizer handling
+    let resource: VolumeSnapshot = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &resource,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "VolumeSnapshot marked for deletion (has finalizers: {:?})",
+            resource.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 // Use the macro to create a PATCH handler

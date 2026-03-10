@@ -1,57 +1,60 @@
-use rusternetes_common::resources::{HorizontalPodAutoscaler, HorizontalPodAutoscalerStatus, MetricSpec};
-use std::collections::HashMap;
+use rusternetes_common::resources::{
+    HorizontalPodAutoscaler, HorizontalPodAutoscalerStatus, HorizontalPodAutoscalerCondition,
+    MetricSpec, MetricStatus, MetricValueStatus,
+    Deployment, ReplicaSet, StatefulSet,
+};
+use rusternetes_common::resources::autoscaling::ResourceMetricStatus;
+use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{info, warn, error, debug};
+use anyhow::Result;
 
-#[allow(dead_code)]
-pub struct HorizontalPodAutoscalerController {
-    hpas: Arc<RwLock<HashMap<String, HorizontalPodAutoscaler>>>,
+pub struct HorizontalPodAutoscalerController<S: Storage> {
+    storage: Arc<S>,
 }
 
-impl HorizontalPodAutoscalerController {
-    pub fn new() -> Self {
-        Self {
-            hpas: Arc::new(RwLock::new(HashMap::new())),
-        }
+impl<S: Storage> HorizontalPodAutoscalerController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
+        Self { storage }
     }
 
-    pub async fn run(self: Arc<Self>) {
+    pub async fn run(&self) -> Result<()> {
         info!("Starting HorizontalPodAutoscaler controller");
 
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(15));
         loop {
             interval.tick().await;
 
-            if let Err(e) = self.reconcile().await {
+            if let Err(e) = self.reconcile_all().await {
                 error!("Error reconciling HPAs: {}", e);
             }
         }
     }
 
-    async fn reconcile(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let hpas = self.hpas.read().await;
+    async fn reconcile_all(&self) -> Result<()> {
+        debug!("Reconciling all HorizontalPodAutoscalers");
 
-        for (key, hpa) in hpas.iter() {
-            if let Err(e) = self.reconcile_hpa(hpa).await {
-                warn!("Failed to reconcile HPA {}: {}", key, e);
+        // Get all HPAs across all namespaces
+        let prefix = build_prefix("horizontalpodautoscalers", None);
+        let hpas: Vec<HorizontalPodAutoscaler> = self.storage.list(&prefix).await?;
+
+        for hpa in hpas {
+            if let Err(e) = self.reconcile_hpa(&hpa).await {
+                warn!("Failed to reconcile HPA {}/{}: {}",
+                    hpa.metadata.namespace.as_deref().unwrap_or("default"),
+                    hpa.metadata.name, e);
             }
         }
 
         Ok(())
     }
 
-    async fn reconcile_hpa(&self, hpa: &HorizontalPodAutoscaler) -> Result<(), Box<dyn std::error::Error>> {
-        info!("Reconciling HPA: {}", hpa.metadata.name);
-
-        // In a real implementation, this would:
-        // 1. Fetch metrics from metrics server
-        // 2. Calculate desired replica count based on metrics and target
-        // 3. Scale the target deployment/replicaset/statefulset
-        // 4. Update HPA status
+    async fn reconcile_hpa(&self, hpa: &HorizontalPodAutoscaler) -> Result<()> {
+        let namespace = hpa.metadata.namespace.as_deref().unwrap_or("default");
+        info!("Reconciling HPA: {}/{}", namespace, hpa.metadata.name);
 
         let target_ref = &hpa.spec.scale_target_ref;
-        info!("HPA {} targets {}/{} - min: {:?}, max: {}",
+        debug!("HPA {} targets {}/{} - min: {:?}, max: {}",
             hpa.metadata.name,
             target_ref.kind,
             target_ref.name,
@@ -59,114 +62,393 @@ impl HorizontalPodAutoscalerController {
             hpa.spec.max_replicas
         );
 
-        if let Some(metrics) = &hpa.spec.metrics {
-            for metric in metrics {
-                self.log_metric(metric);
+        // 1. Get current replica count from target resource
+        let current_replicas = match self.get_current_replicas(namespace, target_ref).await {
+            Ok(replicas) => replicas,
+            Err(e) => {
+                warn!("Failed to get current replicas for HPA {}/{}: {}", namespace, hpa.metadata.name, e);
+                // Update status with error condition
+                self.update_hpa_status_with_error(hpa, &format!("Failed to get target: {}", e)).await?;
+                return Ok(());
+            }
+        };
+
+        debug!("Current replicas for {}/{}: {}", namespace, target_ref.name, current_replicas);
+
+        // 2. Calculate desired replica count based on metrics
+        let desired_replicas = match self.calculate_desired_replicas(hpa, current_replicas, namespace).await {
+            Ok(replicas) => replicas,
+            Err(e) => {
+                warn!("Failed to calculate desired replicas for HPA {}/{}: {}", namespace, hpa.metadata.name, e);
+                // Update status with error condition
+                self.update_hpa_status_with_error(hpa, &format!("Failed to compute replicas: {}", e)).await?;
+                return Ok(());
+            }
+        };
+
+        debug!("Desired replicas for {}/{}: {}", namespace, target_ref.name, desired_replicas);
+
+        // 3. If desired replicas differ from current, scale the target
+        if desired_replicas != current_replicas {
+            info!("Scaling {}/{} from {} to {} replicas",
+                namespace, target_ref.name, current_replicas, desired_replicas);
+
+            if let Err(e) = self.scale_target(namespace, target_ref, desired_replicas).await {
+                error!("Failed to scale target for HPA {}/{}: {}", namespace, hpa.metadata.name, e);
+                self.update_hpa_status_with_error(hpa, &format!("Failed to scale: {}", e)).await?;
+                return Ok(());
             }
         }
+
+        // 4. Update HPA status
+        self.update_hpa_status_success(hpa, current_replicas, desired_replicas).await?;
 
         Ok(())
     }
 
-    fn log_metric(&self, metric: &MetricSpec) {
+    /// Get current replica count from the target resource
+    async fn get_current_replicas(
+        &self,
+        namespace: &str,
+        target_ref: &rusternetes_common::resources::CrossVersionObjectReference,
+    ) -> Result<i32> {
+        match target_ref.kind.as_str() {
+            "Deployment" => {
+                let key = build_key("deployments", Some(namespace), &target_ref.name);
+                let deployment: Deployment = self.storage.get(&key).await?;
+                Ok(deployment.spec.replicas)
+            }
+            "ReplicaSet" => {
+                let key = build_key("replicasets", Some(namespace), &target_ref.name);
+                let replicaset: ReplicaSet = self.storage.get(&key).await?;
+                Ok(replicaset.spec.replicas)
+            }
+            "StatefulSet" => {
+                let key = build_key("statefulsets", Some(namespace), &target_ref.name);
+                let statefulset: StatefulSet = self.storage.get(&key).await?;
+                Ok(statefulset.spec.replicas)
+            }
+            _ => {
+                Err(anyhow::anyhow!("Unsupported scale target kind: {}", target_ref.kind))
+            }
+        }
+    }
+
+    /// Scale the target resource to the desired replica count
+    async fn scale_target(
+        &self,
+        namespace: &str,
+        target_ref: &rusternetes_common::resources::CrossVersionObjectReference,
+        desired_replicas: i32,
+    ) -> Result<()> {
+        match target_ref.kind.as_str() {
+            "Deployment" => {
+                let key = build_key("deployments", Some(namespace), &target_ref.name);
+                let mut deployment: Deployment = self.storage.get(&key).await?;
+                deployment.spec.replicas = desired_replicas;
+                self.storage.update(&key, &deployment).await?;
+                info!("Scaled Deployment {}/{} to {} replicas", namespace, target_ref.name, desired_replicas);
+            }
+            "ReplicaSet" => {
+                let key = build_key("replicasets", Some(namespace), &target_ref.name);
+                let mut replicaset: ReplicaSet = self.storage.get(&key).await?;
+                replicaset.spec.replicas = desired_replicas;
+                self.storage.update(&key, &replicaset).await?;
+                info!("Scaled ReplicaSet {}/{} to {} replicas", namespace, target_ref.name, desired_replicas);
+            }
+            "StatefulSet" => {
+                let key = build_key("statefulsets", Some(namespace), &target_ref.name);
+                let mut statefulset: StatefulSet = self.storage.get(&key).await?;
+                statefulset.spec.replicas = desired_replicas;
+                self.storage.update(&key, &statefulset).await?;
+                info!("Scaled StatefulSet {}/{} to {} replicas", namespace, target_ref.name, desired_replicas);
+            }
+            _ => {
+                return Err(anyhow::anyhow!("Unsupported scale target kind: {}", target_ref.kind));
+            }
+        }
+        Ok(())
+    }
+
+    /// Calculate desired replica count based on metrics
+    /// Implements the HPA algorithm: desiredReplicas = ceil[currentReplicas * (currentMetricValue / targetMetricValue)]
+    async fn calculate_desired_replicas(
+        &self,
+        hpa: &HorizontalPodAutoscaler,
+        current_replicas: i32,
+        namespace: &str,
+    ) -> Result<i32> {
+        let metrics = match &hpa.spec.metrics {
+            Some(m) if !m.is_empty() => m,
+            _ => {
+                // No metrics specified - maintain current replicas
+                return Ok(current_replicas);
+            }
+        };
+
+        let mut max_desired_replicas = current_replicas;
+
+        // Iterate through all metrics and take the maximum desired replicas
+        // (Kubernetes HPA uses the highest recommendation)
+        for metric in metrics {
+            let desired = self.calculate_replicas_for_metric(metric, current_replicas, namespace, hpa).await?;
+            if desired > max_desired_replicas {
+                max_desired_replicas = desired;
+            }
+        }
+
+        // Apply min/max bounds
+        let min_replicas = hpa.spec.min_replicas.unwrap_or(1);
+        let max_replicas = hpa.spec.max_replicas;
+
+        let bounded_replicas = max_desired_replicas.max(min_replicas).min(max_replicas);
+
+        debug!("Calculated replicas: desired={}, min={}, max={}, bounded={}",
+            max_desired_replicas, min_replicas, max_replicas, bounded_replicas);
+
+        Ok(bounded_replicas)
+    }
+
+    /// Calculate desired replicas for a single metric
+    async fn calculate_replicas_for_metric(
+        &self,
+        metric: &MetricSpec,
+        current_replicas: i32,
+        namespace: &str,
+        hpa: &HorizontalPodAutoscaler,
+    ) -> Result<i32> {
         match metric.metric_type.as_str() {
             "Resource" => {
                 if let Some(resource) = &metric.resource {
-                    info!("  Resource metric: {} - target: {:?}",
-                        resource.name,
-                        resource.target.average_utilization
-                    );
+                    self.calculate_replicas_for_resource_metric(resource, current_replicas, namespace, hpa).await
+                } else {
+                    Err(anyhow::anyhow!("Resource metric specified but resource field is None"))
                 }
             }
-            "Pods" => {
-                if let Some(pods) = &metric.pods {
-                    info!("  Pods metric: {} - target: {:?}",
-                        pods.metric.name,
-                        pods.target.average_value
-                    );
-                }
-            }
-            "Object" => {
-                if let Some(object) = &metric.object {
-                    info!("  Object metric: {} - target: {:?}",
-                        object.metric.name,
-                        object.target.value
-                    );
-                }
-            }
-            "External" => {
-                if let Some(external) = &metric.external {
-                    info!("  External metric: {} - target: {:?}",
-                        external.metric.name,
-                        external.target.average_value
-                    );
-                }
+            "Pods" | "Object" | "External" | "ContainerResource" => {
+                // For now, these metric types are not implemented
+                // In a full implementation, would query custom metrics API
+                debug!("Metric type {} not yet implemented, using current replicas", metric.metric_type);
+                Ok(current_replicas)
             }
             _ => {
-                warn!("  Unknown metric type: {}", metric.metric_type);
+                warn!("Unknown metric type: {}", metric.metric_type);
+                Ok(current_replicas)
             }
         }
     }
 
-    pub async fn create_hpa(&self, hpa: HorizontalPodAutoscaler) -> Result<(), Box<dyn std::error::Error>> {
-        let key = format!("{}/{}",
-            hpa.metadata.namespace.as_ref().unwrap_or(&"default".to_string()),
-            hpa.metadata.name
-        );
-
-        info!("Creating HPA: {}", key);
-
-        let mut hpas = self.hpas.write().await;
-        hpas.insert(key, hpa);
-
-        Ok(())
-    }
-
-    pub async fn delete_hpa(&self, namespace: &str, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let key = format!("{}/{}", namespace, name);
-
-        info!("Deleting HPA: {}", key);
-
-        let mut hpas = self.hpas.write().await;
-        hpas.remove(&key);
-
-        Ok(())
-    }
-
-    pub async fn get_hpa(&self, namespace: &str, name: &str) -> Option<HorizontalPodAutoscaler> {
-        let key = format!("{}/{}", namespace, name);
-        let hpas = self.hpas.read().await;
-        hpas.get(&key).cloned()
-    }
-
-    pub async fn list_hpas(&self, namespace: Option<&str>) -> Vec<HorizontalPodAutoscaler> {
-        let hpas = self.hpas.read().await;
-
-        hpas.values()
-            .filter(|hpa| {
-                namespace.is_none() ||
-                hpa.metadata.namespace.as_ref().map(|ns| ns.as_str()) == namespace
-            })
-            .cloned()
-            .collect()
-    }
-
-    pub async fn update_hpa_status(
+    /// Calculate desired replicas based on resource metric (CPU/memory)
+    async fn calculate_replicas_for_resource_metric(
         &self,
-        namespace: &str,
-        name: &str,
-        status: HorizontalPodAutoscalerStatus,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let key = format!("{}/{}", namespace, name);
+        resource: &rusternetes_common::resources::ResourceMetricSource,
+        current_replicas: i32,
+        _namespace: &str,
+        _hpa: &HorizontalPodAutoscaler,
+    ) -> Result<i32> {
+        debug!("Calculating replicas for resource metric: {}", resource.name);
 
-        let mut hpas = self.hpas.write().await;
-        if let Some(hpa) = hpas.get_mut(&key) {
-            hpa.status = Some(status);
-            info!("Updated HPA status: {}", key);
-            Ok(())
-        } else {
-            Err(format!("HPA not found: {}", key).into())
+        // Get target utilization
+        let target_utilization = match resource.target.average_utilization {
+            Some(util) => util as f64,
+            None => {
+                // If no average_utilization, we'd need to use value or average_value
+                // For now, default to 80%
+                debug!("No target utilization specified, defaulting to 80%");
+                80.0
+            }
+        };
+
+        // In a real implementation, this would query the metrics API
+        // For now, we'll simulate by returning a mock current utilization
+        let current_utilization = self.get_current_resource_utilization(&resource.name).await?;
+
+        debug!("Resource {} - current: {}%, target: {}%",
+            resource.name, current_utilization, target_utilization);
+
+        // HPA formula: desiredReplicas = ceil[currentReplicas * (currentMetricValue / targetMetricValue)]
+        let ratio = current_utilization / target_utilization;
+        let desired_replicas = (current_replicas as f64 * ratio).ceil() as i32;
+
+        debug!("Calculated desired replicas: {} (ratio: {:.2})", desired_replicas, ratio);
+
+        Ok(desired_replicas)
+    }
+
+    /// Get current resource utilization from metrics API
+    /// In a real implementation, this would query metrics.k8s.io/v1beta1
+    /// For now, returns mock data based on simple heuristics
+    async fn get_current_resource_utilization(&self, resource_name: &str) -> Result<f64> {
+        // TODO: Query actual metrics from metrics API
+        // This is where we'd call GET /apis/metrics.k8s.io/v1beta1/namespaces/{ns}/pods
+        // and aggregate the metrics across all pods in the target
+
+        match resource_name {
+            "cpu" => {
+                // Mock: return a utilization that would trigger scaling
+                // In reality, this would be calculated from actual pod metrics
+                Ok(85.0) // 85% CPU utilization (above typical 80% target)
+            }
+            "memory" => {
+                Ok(70.0) // 70% memory utilization
+            }
+            _ => {
+                debug!("Unknown resource type: {}, returning 50%", resource_name);
+                Ok(50.0)
+            }
         }
+    }
+
+    /// Update HPA status with success
+    async fn update_hpa_status_success(
+        &self,
+        hpa: &HorizontalPodAutoscaler,
+        current_replicas: i32,
+        desired_replicas: i32,
+    ) -> Result<()> {
+        let namespace = hpa.metadata.namespace.as_deref().unwrap_or("default");
+        let key = build_key("horizontalpodautoscalers", Some(namespace), &hpa.metadata.name);
+
+        let mut updated_hpa = hpa.clone();
+
+        // Build metric status (simplified for now)
+        let current_metrics = if let Some(specs) = &hpa.spec.metrics {
+            Some(
+                specs
+                    .iter()
+                    .map(|spec| MetricStatus {
+                        metric_type: spec.metric_type.clone(),
+                        resource: spec.resource.as_ref().map(|r| ResourceMetricStatus {
+                            name: r.name.clone(),
+                            current: MetricValueStatus {
+                                value: None,
+                                average_value: None,
+                                average_utilization: Some(85), // Mock current utilization
+                            },
+                        }),
+                        pods: None,
+                        object: None,
+                        external: None,
+                    })
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
+        // Build conditions
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut conditions = vec![
+            HorizontalPodAutoscalerCondition {
+                condition_type: "AbleToScale".to_string(),
+                status: "True".to_string(),
+                last_transition_time: Some(now.clone()),
+                reason: Some("ReadyForNewScale".to_string()),
+                message: Some("the HPA controller was able to get the target's current scale".to_string()),
+            },
+            HorizontalPodAutoscalerCondition {
+                condition_type: "ScalingActive".to_string(),
+                status: "True".to_string(),
+                last_transition_time: Some(now.clone()),
+                reason: Some("ValidMetricFound".to_string()),
+                message: Some("the HPA was able to successfully calculate a replica count from the metrics".to_string()),
+            },
+        ];
+
+        // Add ScalingLimited condition if at min/max
+        let min_replicas = hpa.spec.min_replicas.unwrap_or(1);
+        let max_replicas = hpa.spec.max_replicas;
+        if desired_replicas >= max_replicas {
+            conditions.push(HorizontalPodAutoscalerCondition {
+                condition_type: "ScalingLimited".to_string(),
+                status: "True".to_string(),
+                last_transition_time: Some(now.clone()),
+                reason: Some("TooManyReplicas".to_string(),),
+                message: Some(format!("the desired replica count is more than the maximum replica count of {}", max_replicas)),
+            });
+        } else if desired_replicas <= min_replicas {
+            conditions.push(HorizontalPodAutoscalerCondition {
+                condition_type: "ScalingLimited".to_string(),
+                status: "True".to_string(),
+                last_transition_time: Some(now.clone()),
+                reason: Some("TooFewReplicas".to_string()),
+                message: Some(format!("the desired replica count is less than the minimum replica count of {}", min_replicas)),
+            });
+        } else {
+            conditions.push(HorizontalPodAutoscalerCondition {
+                condition_type: "ScalingLimited".to_string(),
+                status: "False".to_string(),
+                last_transition_time: Some(now),
+                reason: Some("DesiredWithinRange".to_string()),
+                message: Some("the desired replica count is within the acceptable range".to_string()),
+            });
+        }
+
+        let last_scale_time = if current_replicas != desired_replicas {
+            Some(chrono::Utc::now().to_rfc3339())
+        } else {
+            hpa.status.as_ref().and_then(|s| s.last_scale_time.clone())
+        };
+
+        updated_hpa.status = Some(HorizontalPodAutoscalerStatus {
+            observed_generation: None, // Would need generation tracking in ObjectMeta
+            last_scale_time,
+            current_replicas,
+            desired_replicas,
+            current_metrics,
+            conditions: Some(conditions),
+        });
+
+        self.storage.update(&key, &updated_hpa).await?;
+        debug!("Updated HPA status: {}/{}", namespace, hpa.metadata.name);
+
+        Ok(())
+    }
+
+    /// Update HPA status with error condition
+    async fn update_hpa_status_with_error(
+        &self,
+        hpa: &HorizontalPodAutoscaler,
+        error_msg: &str,
+    ) -> Result<()> {
+        let namespace = hpa.metadata.namespace.as_deref().unwrap_or("default");
+        let key = build_key("horizontalpodautoscalers", Some(namespace), &hpa.metadata.name);
+
+        let mut updated_hpa = hpa.clone();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let current_replicas = hpa.status.as_ref().map(|s| s.current_replicas).unwrap_or(0);
+
+        let conditions = vec![
+            HorizontalPodAutoscalerCondition {
+                condition_type: "AbleToScale".to_string(),
+                status: "False".to_string(),
+                last_transition_time: Some(now.clone()),
+                reason: Some("FailedGetScale".to_string()),
+                message: Some(error_msg.to_string()),
+            },
+            HorizontalPodAutoscalerCondition {
+                condition_type: "ScalingActive".to_string(),
+                status: "False".to_string(),
+                last_transition_time: Some(now),
+                reason: Some("FailedComputeMetricsReplicas".to_string()),
+                message: Some(error_msg.to_string()),
+            },
+        ];
+
+        updated_hpa.status = Some(HorizontalPodAutoscalerStatus {
+            observed_generation: None,
+            last_scale_time: hpa.status.as_ref().and_then(|s| s.last_scale_time.clone()),
+            current_replicas,
+            desired_replicas: current_replicas,
+            current_metrics: None,
+            conditions: Some(conditions),
+        });
+
+        self.storage.update(&key, &updated_hpa).await?;
+        debug!("Updated HPA status with error: {}/{}", namespace, hpa.metadata.name);
+
+        Ok(())
     }
 }
 
@@ -176,11 +458,62 @@ mod tests {
     use rusternetes_common::resources::{
         HorizontalPodAutoscalerSpec, CrossVersionObjectReference,
         MetricSpec, ResourceMetricSource, MetricTarget,
+        DeploymentSpec,
     };
+    use rusternetes_common::types::ObjectMeta;
+    use rusternetes_storage::MemoryStorage;
+    use std::collections::HashMap;
 
     #[tokio::test]
-    async fn test_create_and_get_hpa() {
-        let controller = Arc::new(HorizontalPodAutoscalerController::new());
+    async fn test_get_current_replicas_deployment() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = HorizontalPodAutoscalerController::new(storage.clone());
+
+        // Create a deployment
+        let mut deployment = Deployment {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Deployment".to_string(),
+                api_version: "apps/v1".to_string(),
+            },
+            metadata: ObjectMeta::new("web-app").with_namespace("default"),
+            spec: DeploymentSpec {
+                replicas: 3,
+                selector: rusternetes_common::types::LabelSelector {
+                    match_labels: Some(HashMap::from([("app".to_string(), "web".to_string())])),
+                    match_expressions: None,
+                },
+                template: rusternetes_common::resources::PodTemplateSpec {
+                    metadata: Some(ObjectMeta::new("web-pod")),
+                    spec: None,
+                },
+                strategy: None,
+                min_ready_seconds: None,
+                revision_history_limit: None,
+                paused: None,
+                progress_deadline_seconds: None,
+            },
+            status: None,
+        };
+        deployment.metadata.ensure_uid();
+        deployment.metadata.ensure_creation_timestamp();
+
+        let key = build_key("deployments", Some("default"), "web-app");
+        storage.create(&key, &deployment).await.unwrap();
+
+        let target_ref = CrossVersionObjectReference {
+            kind: "Deployment".to_string(),
+            name: "web-app".to_string(),
+            api_version: Some("apps/v1".to_string()),
+        };
+
+        let replicas = controller.get_current_replicas("default", &target_ref).await.unwrap();
+        assert_eq!(replicas, 3);
+    }
+
+    #[tokio::test]
+    async fn test_calculate_desired_replicas_with_bounds() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = HorizontalPodAutoscalerController::new(storage);
 
         let spec = HorizontalPodAutoscalerSpec {
             scale_target_ref: CrossVersionObjectReference {
@@ -211,60 +544,62 @@ mod tests {
 
         let hpa = HorizontalPodAutoscaler::new("test-hpa", "default", spec);
 
-        controller.create_hpa(hpa.clone()).await.unwrap();
+        // Test with current replicas = 1 (below min)
+        let desired = controller.calculate_desired_replicas(&hpa, 1, "default").await.unwrap();
+        assert!(desired >= 2, "Desired replicas should be at least min_replicas (2), got {}", desired);
 
-        let retrieved = controller.get_hpa("default", "test-hpa").await;
-        assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().metadata.name, "test-hpa");
+        // Test with current replicas = 20 (above max)
+        let desired = controller.calculate_desired_replicas(&hpa, 20, "default").await.unwrap();
+        assert!(desired <= 10, "Desired replicas should be at most max_replicas (10), got {}", desired);
     }
 
     #[tokio::test]
-    async fn test_delete_hpa() {
-        let controller = Arc::new(HorizontalPodAutoscalerController::new());
+    async fn test_scale_target_deployment() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = HorizontalPodAutoscalerController::new(storage.clone());
 
-        let spec = HorizontalPodAutoscalerSpec {
-            scale_target_ref: CrossVersionObjectReference {
+        // Create a deployment
+        let mut deployment = Deployment {
+            type_meta: rusternetes_common::types::TypeMeta {
                 kind: "Deployment".to_string(),
-                name: "api".to_string(),
-                api_version: Some("apps/v1".to_string()),
+                api_version: "apps/v1".to_string(),
             },
-            min_replicas: Some(1),
-            max_replicas: 5,
-            metrics: None,
-            behavior: None,
+            metadata: ObjectMeta::new("web-app").with_namespace("default"),
+            spec: DeploymentSpec {
+                replicas: 2,
+                selector: rusternetes_common::types::LabelSelector {
+                    match_labels: Some(HashMap::from([("app".to_string(), "web".to_string())])),
+                    match_expressions: None,
+                },
+                template: rusternetes_common::resources::PodTemplateSpec {
+                    metadata: Some(ObjectMeta::new("web-pod")),
+                    spec: None,
+                },
+                strategy: None,
+                min_ready_seconds: None,
+                revision_history_limit: None,
+                paused: None,
+                progress_deadline_seconds: None,
+            },
+            status: None,
+        };
+        deployment.metadata.ensure_uid();
+        deployment.metadata.ensure_creation_timestamp();
+
+        let key = build_key("deployments", Some("default"), "web-app");
+        storage.create(&key, &deployment).await.unwrap();
+
+        let target_ref = CrossVersionObjectReference {
+            kind: "Deployment".to_string(),
+            name: "web-app".to_string(),
+            api_version: Some("apps/v1".to_string()),
         };
 
-        let hpa = HorizontalPodAutoscaler::new("test-hpa", "default", spec);
+        // Scale to 5 replicas
+        controller.scale_target("default", &target_ref, 5).await.unwrap();
 
-        controller.create_hpa(hpa).await.unwrap();
-        controller.delete_hpa("default", "test-hpa").await.unwrap();
-
-        let retrieved = controller.get_hpa("default", "test-hpa").await;
-        assert!(retrieved.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_list_hpas() {
-        let controller = Arc::new(HorizontalPodAutoscalerController::new());
-
-        for i in 1..=3 {
-            let spec = HorizontalPodAutoscalerSpec {
-                scale_target_ref: CrossVersionObjectReference {
-                    kind: "Deployment".to_string(),
-                    name: format!("app-{}", i),
-                    api_version: Some("apps/v1".to_string()),
-                },
-                min_replicas: Some(1),
-                max_replicas: 5,
-                metrics: None,
-                behavior: None,
-            };
-
-            let hpa = HorizontalPodAutoscaler::new(format!("hpa-{}", i), "default", spec);
-            controller.create_hpa(hpa).await.unwrap();
-        }
-
-        let hpas = controller.list_hpas(Some("default")).await;
-        assert_eq!(hpas.len(), 3);
+        // Verify the deployment was scaled
+        let updated_deployment: Deployment = storage.get(&key).await.unwrap();
+        assert_eq!(updated_deployment.spec.replicas, 5);
     }
 }

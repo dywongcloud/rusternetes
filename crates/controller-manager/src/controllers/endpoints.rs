@@ -276,6 +276,12 @@ mod tests {
                 tolerations: None,
                 priority: None,
                 priority_class_name: None,
+                automount_service_account_token: None,
+                ephemeral_containers: None,
+                overhead: None,
+                scheduler_name: None,
+                topology_spread_constraints: None,
+                resource_claims: None,
             }),
             status: None,
         };
@@ -341,6 +347,12 @@ mod tests {
                 tolerations: None,
                 priority: None,
                 priority_class_name: None,
+                automount_service_account_token: None,
+                ephemeral_containers: None,
+                overhead: None,
+                scheduler_name: None,
+                topology_spread_constraints: None,
+                resource_claims: None,
             }),
             status: None,
         };
@@ -356,6 +368,7 @@ mod tests {
                 pod_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
+            ephemeral_container_statuses: None,
             }),
             ..pod_no_status.clone()
         };
@@ -380,6 +393,7 @@ mod tests {
                     },
                 ]),
                 init_container_statuses: None,
+            ephemeral_container_statuses: None,
             }),
             ..pod_no_status.clone()
         };
@@ -404,6 +418,7 @@ mod tests {
                     },
                 ]),
                 init_container_statuses: None,
+            ephemeral_container_statuses: None,
             }),
             ..pod_no_status
         };

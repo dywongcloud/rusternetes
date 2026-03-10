@@ -1,18 +1,23 @@
 mod runtime;
 mod kubelet;
+mod config;
+mod eviction;
+mod cni;
 
 use anyhow::Result;
 use axum::{routing::get, Router};
 use clap::Parser;
+use config::{KubeletConfiguration, RuntimeConfig};
 use kubelet::Kubelet;
 use rusternetes_common::observability::MetricsRegistry;
 use rusternetes_storage::etcd::EtcdStorage;
 use std::sync::Arc;
-use tracing::{info, Level};
+use tracing::{info, warn, Level};
 
 #[derive(Parser, Debug)]
 #[command(name = "rusternetes-kubelet")]
-#[command(about = "Rusternetes Kubelet - Node agent that manages containers")]
+#[command(about = "Rusternetes Kubelet - Node agent that manages containers", long_about = None)]
+#[command(version)]
 struct Args {
     /// Node name
     #[arg(long)]
@@ -22,25 +27,81 @@ struct Args {
     #[arg(long, default_value = "http://localhost:2379")]
     etcd_servers: String,
 
-    /// Log level
-    #[arg(long, default_value = "info")]
-    log_level: String,
+    /// Path to kubelet configuration file
+    #[arg(long, value_name = "FILE")]
+    config: Option<String>,
+
+    /// Root directory for managing kubelet files (volume data, plugin state, etc.)
+    #[arg(long, value_name = "DIR")]
+    root_dir: Option<String>,
+
+    /// Directory path for managing volume data
+    #[arg(long, value_name = "DIR")]
+    volume_dir: Option<String>,
+
+    /// Directory where volume plugins are installed
+    #[arg(long, value_name = "DIR")]
+    volume_plugin_dir: Option<String>,
+
+    /// Log level (trace, debug, info, warn, error)
+    #[arg(long)]
+    log_level: Option<String>,
 
     /// Sync interval in seconds
-    #[arg(long, default_value = "10")]
-    sync_interval: u64,
+    #[arg(long)]
+    sync_interval: Option<u64>,
 
     /// Metrics server port
-    #[arg(long, default_value = "8082")]
-    metrics_port: u16,
+    #[arg(long)]
+    metrics_port: Option<u16>,
+
+    /// Cluster DNS service IP address (dynamically discovered if not provided)
+    #[arg(long)]
+    cluster_dns: Option<String>,
+
+    /// Cluster domain suffix
+    #[arg(long, default_value = "cluster.local")]
+    cluster_domain: String,
+
+    /// Container network to connect pods to
+    #[arg(long, default_value = "rusternetes-network")]
+    network: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    // Load configuration file if specified
+    let config_file = if let Some(config_path) = &args.config {
+        info!("Loading kubelet configuration from: {}", config_path);
+        Some(KubeletConfiguration::from_file(config_path)?)
+    } else {
+        None
+    };
+
+    // Parse etcd endpoints
+    let etcd_endpoints: Vec<String> = args
+        .etcd_servers
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect();
+
+    // Build runtime configuration with proper precedence
+    let runtime_config = RuntimeConfig::build(
+        args.root_dir,
+        args.volume_dir,
+        args.volume_plugin_dir,
+        args.sync_interval,
+        args.metrics_port,
+        args.log_level,
+        config_file,
+        args.node_name,
+        etcd_endpoints,
+    )?;
+
     // Initialize tracing
-    let level = match args.log_level.as_str() {
+    let level = match runtime_config.log_level.to_lowercase().as_str() {
         "trace" => Level::TRACE,
         "debug" => Level::DEBUG,
         "info" => Level::INFO,
@@ -51,24 +112,47 @@ async fn main() -> Result<()> {
 
     tracing_subscriber::fmt().with_max_level(level).init();
 
-    info!("Starting Rusternetes Kubelet for node: {}", args.node_name);
-
-    // Parse etcd endpoints
-    let etcd_endpoints: Vec<String> = args
-        .etcd_servers
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .collect();
+    info!("Starting Rusternetes Kubelet");
+    info!("{}", runtime_config.display());
 
     // Initialize storage
-    let storage = Arc::new(EtcdStorage::new(etcd_endpoints).await?);
+    let storage = Arc::new(EtcdStorage::new(runtime_config.etcd_endpoints.clone()).await?);
+
+    // Discover cluster DNS IP if not provided
+    let cluster_dns = match args.cluster_dns {
+        Some(dns) => {
+            info!("Using provided cluster DNS: {}", dns);
+            dns
+        }
+        None => {
+            info!("Discovering cluster DNS IP from kube-dns service...");
+            use rusternetes_common::resources::Service;
+            use rusternetes_storage::Storage;
+
+            match storage.get::<Service>("/registry/services/kube-system/kube-dns").await {
+                Ok(service) => {
+                    if let Some(ref cluster_ip) = service.spec.cluster_ip {
+                        info!("Discovered cluster DNS IP: {}", cluster_ip);
+                        cluster_ip.clone()
+                    } else {
+                        warn!("kube-dns service has no ClusterIP, DNS resolution may not work");
+                        "".to_string()
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to discover cluster DNS IP: {}. DNS resolution may not work", e);
+                    "".to_string()
+                }
+            }
+        }
+    };
 
     // Initialize metrics
     let metrics = Arc::new(MetricsRegistry::new().with_kubelet_metrics()?);
     let metrics_clone = metrics.clone();
 
     // Start metrics server
-    let metrics_addr = format!("0.0.0.0:{}", args.metrics_port);
+    let metrics_addr = format!("0.0.0.0:{}", runtime_config.metrics_bind_port);
     info!("Starting metrics server on {}", metrics_addr);
 
     tokio::spawn(async move {
@@ -82,7 +166,15 @@ async fn main() -> Result<()> {
     });
 
     // Create and run kubelet
-    let kubelet = Kubelet::new(args.node_name, storage, args.sync_interval).await?;
+    let kubelet = Kubelet::new(
+        runtime_config.node_name.clone(),
+        storage,
+        runtime_config.sync_frequency,
+        runtime_config.volume_dir.to_string_lossy().to_string(),
+        cluster_dns,
+        args.cluster_domain,
+        args.network,
+    ).await?;
     kubelet.run().await?;
 
     Ok(())

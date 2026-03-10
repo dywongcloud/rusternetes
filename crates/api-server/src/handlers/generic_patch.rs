@@ -10,14 +10,16 @@ use crate::{
 };
 use axum::{
     body::Bytes,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
+    server_side_apply::{server_side_apply, ApplyParams, ApplyResult},
     Result,
 };
+use std::collections::HashMap;
 use rusternetes_storage::{build_key, Storage};
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
@@ -44,6 +46,7 @@ pub async fn patch_namespaced_resource<T>(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
     headers: HeaderMap,
     body: Bytes,
     resource_type: &str,
@@ -67,6 +70,73 @@ where
         }
     }
 
+    // Check if this is a server-side apply request (has fieldManager parameter)
+    if let Some(field_manager) = params.get("fieldManager") {
+        info!("Server-side apply for {} {}/{} by manager {}", resource_type, namespace, name, field_manager);
+
+        // Get current resource (if exists)
+        let key = build_key(resource_type, Some(&namespace), &name);
+        let current_json = match state.storage.get::<T>(&key).await {
+            Ok(current) => Some(serde_json::to_value(&current)
+                .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?),
+            Err(rusternetes_common::Error::NotFound(_)) => None,
+            Err(e) => return Err(e),
+        };
+
+        // Parse desired resource
+        let desired_json: serde_json::Value = serde_json::from_slice(&body)
+            .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e)))?;
+
+        // Apply with server-side apply semantics
+        let force = params.get("force")
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+
+        let apply_params = if force {
+            ApplyParams::new(field_manager.clone()).with_force()
+        } else {
+            ApplyParams::new(field_manager.clone())
+        };
+
+        let result = server_side_apply(current_json.as_ref(), &desired_json, &apply_params)
+            .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+
+        match result {
+            ApplyResult::Success(applied_json) => {
+                // Convert to resource type
+                let applied_resource: T = serde_json::from_value(applied_json)
+                    .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e)))?;
+
+                // Save to storage (create or update)
+                let saved = if current_json.is_some() {
+                    state.storage.update(&key, &applied_resource).await?
+                } else {
+                    state.storage.create(&key, &applied_resource).await?
+                };
+
+                return Ok(Json(saved));
+            }
+            ApplyResult::Conflicts(conflicts) => {
+                // Return 409 Conflict with details
+                let conflict_details: Vec<String> = conflicts
+                    .iter()
+                    .map(|c| {
+                        format!(
+                            "Field '{}' is owned by '{}' (applying as '{}')",
+                            c.field, c.current_manager, c.applying_manager
+                        )
+                    })
+                    .collect();
+
+                return Err(rusternetes_common::Error::Conflict(format!(
+                    "Apply conflict: {}. Use force=true to override.",
+                    conflict_details.join("; ")
+                )));
+            }
+        }
+    }
+
+    // Standard PATCH operation (not server-side apply)
     // Get Content-Type header
     let content_type = headers
         .get("content-type")
@@ -128,6 +198,7 @@ pub async fn patch_cluster_resource<T>(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     headers: HeaderMap,
     body: Bytes,
     resource_type: &str,
@@ -150,6 +221,73 @@ where
         }
     }
 
+    // Check if this is a server-side apply request (has fieldManager parameter)
+    if let Some(field_manager) = params.get("fieldManager") {
+        info!("Server-side apply for {} {} by manager {}", resource_type, name, field_manager);
+
+        // Get current resource (if exists)
+        let key = build_key(resource_type, None, &name);
+        let current_json = match state.storage.get::<T>(&key).await {
+            Ok(current) => Some(serde_json::to_value(&current)
+                .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?),
+            Err(rusternetes_common::Error::NotFound(_)) => None,
+            Err(e) => return Err(e),
+        };
+
+        // Parse desired resource
+        let desired_json: serde_json::Value = serde_json::from_slice(&body)
+            .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e)))?;
+
+        // Apply with server-side apply semantics
+        let force = params.get("force")
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+
+        let apply_params = if force {
+            ApplyParams::new(field_manager.clone()).with_force()
+        } else {
+            ApplyParams::new(field_manager.clone())
+        };
+
+        let result = server_side_apply(current_json.as_ref(), &desired_json, &apply_params)
+            .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+
+        match result {
+            ApplyResult::Success(applied_json) => {
+                // Convert to resource type
+                let applied_resource: T = serde_json::from_value(applied_json)
+                    .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e)))?;
+
+                // Save to storage (create or update)
+                let saved = if current_json.is_some() {
+                    state.storage.update(&key, &applied_resource).await?
+                } else {
+                    state.storage.create(&key, &applied_resource).await?
+                };
+
+                return Ok(Json(saved));
+            }
+            ApplyResult::Conflicts(conflicts) => {
+                // Return 409 Conflict with details
+                let conflict_details: Vec<String> = conflicts
+                    .iter()
+                    .map(|c| {
+                        format!(
+                            "Field '{}' is owned by '{}' (applying as '{}')",
+                            c.field, c.current_manager, c.applying_manager
+                        )
+                    })
+                    .collect();
+
+                return Err(rusternetes_common::Error::Conflict(format!(
+                    "Apply conflict: {}. Use force=true to override.",
+                    conflict_details.join("; ")
+                )));
+            }
+        }
+    }
+
+    // Standard PATCH operation (not server-side apply)
     // Get Content-Type header
     let content_type = headers
         .get("content-type")
@@ -204,6 +342,7 @@ macro_rules! patch_handler_namespaced {
             state: axum::extract::State<std::sync::Arc<$crate::state::ApiServerState>>,
             auth_ctx: axum::Extension<$crate::middleware::AuthContext>,
             path: axum::extract::Path<(String, String)>,
+            query: axum::extract::Query<std::collections::HashMap<String, String>>,
             headers: axum::http::HeaderMap,
             body: axum::body::Bytes,
         ) -> rusternetes_common::Result<axum::Json<$resource_type>> {
@@ -211,6 +350,7 @@ macro_rules! patch_handler_namespaced {
                 state,
                 auth_ctx,
                 path,
+                query,
                 headers,
                 body,
                 $resource_name,
@@ -237,6 +377,7 @@ macro_rules! patch_handler_cluster {
             state: axum::extract::State<std::sync::Arc<$crate::state::ApiServerState>>,
             auth_ctx: axum::Extension<$crate::middleware::AuthContext>,
             path: axum::extract::Path<String>,
+            query: axum::extract::Query<std::collections::HashMap<String, String>>,
             headers: axum::http::HeaderMap,
             body: axum::body::Bytes,
         ) -> rusternetes_common::Result<axum::Json<$resource_type>> {
@@ -244,6 +385,7 @@ macro_rules! patch_handler_cluster {
                 state,
                 auth_ctx,
                 path,
+                query,
                 headers,
                 body,
                 $resource_name,

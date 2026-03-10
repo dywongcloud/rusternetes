@@ -55,6 +55,24 @@ fn generate_uid() -> String {
     String::new()
 }
 
+impl Default for ObjectMeta {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            namespace: None,
+            uid: String::new(),
+            resource_version: None,
+            creation_timestamp: None,
+            deletion_timestamp: None,
+            deletion_grace_period_seconds: None,
+            labels: None,
+            annotations: None,
+            finalizers: None,
+            owner_references: None,
+        }
+    }
+}
+
 impl ObjectMeta {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
@@ -256,4 +274,66 @@ pub enum DeletionPropagation {
     Foreground,
     /// Background deletion - delete owner first, let GC clean up dependents
     Background,
+}
+
+/// ListMeta describes metadata for list objects
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ListMeta {
+    /// resourceVersion is a version string for the list
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_version: Option<String>,
+
+    /// continue token for pagination
+    #[serde(skip_serializing_if = "Option::is_none", rename = "continue")]
+    pub continue_token: Option<String>,
+
+    /// remainingItemCount is the number of subsequent items in the list
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remaining_item_count: Option<i64>,
+}
+
+impl Default for ListMeta {
+    fn default() -> Self {
+        Self {
+            resource_version: None,
+            continue_token: None,
+            remaining_item_count: None,
+        }
+    }
+}
+
+/// List is a generic wrapper for Kubernetes list responses
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct List<T> {
+    /// APIVersion defines the versioned schema of this representation
+    pub api_version: String,
+
+    /// Kind is a string value representing the REST resource
+    pub kind: String,
+
+    /// Standard list metadata
+    pub metadata: ListMeta,
+
+    /// List of objects
+    pub items: Vec<T>,
+}
+
+impl<T> List<T> {
+    /// Create a new List with the specified kind and API version
+    pub fn new(kind: impl Into<String>, api_version: impl Into<String>, items: Vec<T>) -> Self {
+        Self {
+            kind: kind.into(),
+            api_version: api_version.into(),
+            metadata: ListMeta::default(),
+            items,
+        }
+    }
+
+    /// Create a new List with resource version
+    pub fn with_resource_version(mut self, resource_version: impl Into<String>) -> Self {
+        self.metadata.resource_version = Some(resource_version.into());
+        self
+    }
 }

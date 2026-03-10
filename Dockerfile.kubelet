@@ -28,9 +28,21 @@ FROM debian:sid-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
+    iproute2 \
+    iptables \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Install CNI plugins
+RUN mkdir -p /opt/cni/bin && \
+    curl -L https://github.com/containernetworking/plugins/releases/download/v1.4.0/cni-plugins-linux-amd64-v1.4.0.tgz | \
+    tar -C /opt/cni/bin -xz
+
+# Create CNI config directory and copy configuration
+RUN mkdir -p /etc/cni/net.d
+COPY cni-config/10-rusternetes.conflist /etc/cni/net.d/
 
 COPY --from=builder /app/target/release/kubelet /app/kubelet
 

@@ -1,15 +1,17 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::CronJob,
+    List,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
@@ -17,6 +19,7 @@ pub async fn create(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut cronjob): Json<CronJob>,
 ) -> Result<(StatusCode, Json<CronJob>)> {
     info!(
@@ -24,6 +27,8 @@ pub async fn create(
         namespace, cronjob.metadata.name
     );
 
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "cronjobs")
         .with_namespace(&namespace)
@@ -37,6 +42,10 @@ pub async fn create(
     }
 
     cronjob.metadata.namespace = Some(namespace.clone());
+
+    // Enrich metadata with system fields
+    cronjob.metadata.ensure_uid();
+    cronjob.metadata.ensure_creation_timestamp();
 
     let key = build_key("cronjobs", Some(&namespace), &cronjob.metadata.name);
     let created = state.storage.create(&key, &cronjob).await?;
@@ -74,10 +83,13 @@ pub async fn update(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut cronjob): Json<CronJob>,
 ) -> Result<Json<CronJob>> {
     info!("Updating cronjob: {}/{}", namespace, name);
 
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "cronjobs")
         .with_namespace(&namespace)
@@ -94,6 +106,11 @@ pub async fn update(
     cronjob.metadata.name = name.clone();
     cronjob.metadata.namespace = Some(namespace.clone());
 
+    // If dry-run, skip storage operation but return the validated resource
+    if is_dry_run {
+        info!("Dry-run: CronJob {:}/{:} validated successfully (not updated)", namespace, name);
+        return Ok(Json(cronjob));
+    }
     let key = build_key("cronjobs", Some(&namespace), &name);
     let updated = state.storage.update(&key, &cronjob).await?;
 
@@ -104,9 +121,12 @@ pub async fn delete_cronjob(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting cronjob: {}/{}", namespace, name);
 
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "cronjobs")
         .with_namespace(&namespace)
@@ -121,7 +141,17 @@ pub async fn delete_cronjob(
     }
 
     let key = build_key("cronjobs", Some(&namespace), &name);
-    state.storage.delete(&key).await?;
+
+    // Get the resource to check if it exists
+    let cronjob: CronJob = state.storage.get(&key).await?;
+
+    // If dry-run, skip delete operation
+    if is_dry_run {
+        info!("Dry-run: CronJob {}/{} validated successfully (not deleted)", namespace, name);
+        return Ok(StatusCode::OK);
+    }
+
+    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &cronjob).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -130,7 +160,8 @@ pub async fn list(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
-) -> Result<Json<Vec<CronJob>>> {
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<List<CronJob>>> {
     info!("Listing cronjobs in namespace: {}", namespace);
 
     // Check authorization
@@ -146,9 +177,42 @@ pub async fn list(
     }
 
     let prefix = build_prefix("cronjobs", Some(&namespace));
-    let cronjobs = state.storage.list(&prefix).await?;
+    let mut cronjobs = state.storage.list(&prefix).await?;
 
-    Ok(Json(cronjobs))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut cronjobs, &params)?;
+
+    let list = List::new("CronJobList", "batch/v1", cronjobs);
+    Ok(Json(list))
+}
+
+/// List all cronjobs across all namespaces
+pub async fn list_all_cronjobs(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<List<CronJob>>> {
+    info!("Listing all cronjobs");
+
+    // Check authorization (cluster-wide list)
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "cronjobs")
+        .with_api_group("batch");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    let prefix = build_prefix("cronjobs", None);
+    let mut cronjobs = state.storage.list::<CronJob>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut cronjobs, &params)?;
+
+    let list = List::new("CronJobList", "batch/v1", cronjobs);
+    Ok(Json(list))
 }
 
 // Use the macro to create a PATCH handler

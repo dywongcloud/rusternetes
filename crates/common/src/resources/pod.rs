@@ -35,8 +35,13 @@ pub struct PodSpec {
     pub containers: Vec<Container>,
 
     /// Init containers run before app containers and must complete successfully
+    /// Sidecar containers are init containers with restartPolicy: Always
     #[serde(skip_serializing_if = "Option::is_none")]
     pub init_containers: Option<Vec<Container>>,
+
+    /// Ephemeral containers are temporary containers for debugging
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ephemeral_containers: Option<Vec<EphemeralContainer>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub volumes: Option<Vec<Volume>>,
@@ -80,6 +85,131 @@ pub struct PodSpec {
     /// Priority class name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub priority_class_name: Option<String>,
+
+    /// AutomountServiceAccountToken indicates whether a service account token should be automatically mounted
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automount_service_account_token: Option<bool>,
+
+    /// TopologySpreadConstraints describes how a group of pods ought to spread across topology domains
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topology_spread_constraints: Option<Vec<TopologySpreadConstraint>>,
+
+    /// Overhead represents the resource overhead associated with running a pod
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overhead: Option<HashMap<String, String>>,
+
+    /// SchedulerName is the name of the scheduler to be used to schedule this pod
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduler_name: Option<String>,
+
+    /// ResourceClaims defines which ResourceClaims must be allocated and reserved before the Pod is allowed to start
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_claims: Option<Vec<PodResourceClaim>>,
+}
+
+/// PodResourceClaim references a ResourceClaim that must be allocated for the pod
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PodResourceClaim {
+    /// Name uniquely identifies this resource claim inside the pod
+    pub name: String,
+
+    /// Source describes where to find the ResourceClaim
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<ClaimSource>,
+}
+
+/// ClaimSource describes a reference to a ResourceClaim
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimSource {
+    /// ResourceClaimName is the name of a ResourceClaim object in the same namespace
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_claim_name: Option<String>,
+
+    /// ResourceClaimTemplateName is the name of a ResourceClaimTemplate object in the same namespace
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_claim_template_name: Option<String>,
+}
+
+/// EphemeralContainer is a temporary container added to a running pod for debugging
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EphemeralContainer {
+    pub name: String,
+    pub image: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<Vec<EnvVar>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_mounts: Option<Vec<VolumeMount>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_pull_policy: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub security_context: Option<SecurityContext>,
+
+    /// TargetContainerName is the name of the container to attach to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_container_name: Option<String>,
+
+    /// Stdin enables redirecting stdin to the ephemeral container
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdin: Option<bool>,
+
+    /// StdinOnce closes stdin after the first attach
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdin_once: Option<bool>,
+
+    /// TTY allocates a pseudo-TTY for the ephemeral container
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tty: Option<bool>,
+}
+
+/// TopologySpreadConstraint specifies how to spread pods across topology domains
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopologySpreadConstraint {
+    /// MaxSkew describes the degree to which pods may be unevenly distributed
+    pub max_skew: i32,
+
+    /// TopologyKey is the key of node labels
+    pub topology_key: String,
+
+    /// WhenUnsatisfiable indicates how to deal with a pod if it doesn't satisfy the spread constraint
+    /// Possible values: DoNotSchedule, ScheduleAnyway
+    pub when_unsatisfiable: String,
+
+    /// LabelSelector is used to find matching pods
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_selector: Option<crate::types::LabelSelector>,
+
+    /// MinDomains indicates a minimum number of eligible domains
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_domains: Option<i32>,
+
+    /// NodeAffinityPolicy indicates how we will treat Pod's nodeAffinity/nodeSelector
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_affinity_policy: Option<String>,
+
+    /// NodeTaintsPolicy indicates how we will treat node taints
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_taints_policy: Option<String>,
+
+    /// MatchLabelKeys is a set of pod label keys to select pods
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub match_label_keys: Option<Vec<String>>,
 }
 
 /// Container represents a single container in a pod
@@ -124,6 +254,11 @@ pub struct Container {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub security_context: Option<SecurityContext>,
+
+    /// RestartPolicy for the container. Only applies to init containers.
+    /// Possible values: Always (sidecar container that runs alongside main containers)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restart_policy: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,6 +380,18 @@ pub struct Volume {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub persistent_volume_claim: Option<PersistentVolumeClaimVolumeSource>,
+
+    /// Downward API volume source
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub downward_api: Option<DownwardAPIVolumeSource>,
+
+    /// CSI (Container Storage Interface) ephemeral inline volume
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub csi: Option<crate::resources::csi::CSIVolumeSource>,
+
+    /// Generic ephemeral volume with volumeClaimTemplate
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ephemeral: Option<EphemeralVolumeSource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -280,6 +427,86 @@ pub struct PersistentVolumeClaimVolumeSource {
     pub read_only: Option<bool>,
 }
 
+/// DownwardAPIVolumeSource represents a downward API volume
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownwardAPIVolumeSource {
+    /// Items is a list of downward API volume file
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<DownwardAPIVolumeFile>>,
+
+    /// Optional: mode bits to use on created files by default
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_mode: Option<i32>,
+}
+
+/// DownwardAPIVolumeFile represents information to create the file containing the pod field
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownwardAPIVolumeFile {
+    /// Required: Path is the relative path name of the file to be created
+    pub path: String,
+
+    /// Required: Selects a field of the pod
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field_ref: Option<ObjectFieldSelector>,
+
+    /// Selects a resource of the container
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_field_ref: Option<ResourceFieldSelector>,
+
+    /// Optional: mode bits to use on this file
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<i32>,
+}
+
+/// ObjectFieldSelector selects an API object field
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ObjectFieldSelector {
+    /// Path of the field to select in the specified API version
+    pub field_path: String,
+
+    /// Version of the schema the FieldPath is written in terms of, defaults to "v1"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_version: Option<String>,
+}
+
+/// ResourceFieldSelector selects a resource of the container
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceFieldSelector {
+    /// Container name: required for volumes, optional for env vars
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub container_name: Option<String>,
+
+    /// Required: resource to select
+    pub resource: String,
+
+    /// Specifies the output format of the exposed resources, defaults to "1"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub divisor: Option<String>,
+}
+
+/// EphemeralVolumeSource represents an ephemeral volume with a volume claim template
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EphemeralVolumeSource {
+    /// Will be used to create a stand-alone PVC to provision the volume
+    pub volume_claim_template: Option<PersistentVolumeClaimTemplate>,
+}
+
+/// PersistentVolumeClaimTemplate is used to produce PVC objects
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistentVolumeClaimTemplate {
+    /// May contain labels and annotations that will be copied into the PVC
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ObjectMeta>,
+
+    /// The specification for the PersistentVolumeClaim
+    pub spec: crate::resources::volume::PersistentVolumeClaimSpec,
+}
+
 /// PodStatus represents the current state of a pod
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -304,6 +531,10 @@ pub struct PodStatus {
     /// Status of init containers
     #[serde(skip_serializing_if = "Option::is_none")]
     pub init_container_statuses: Option<Vec<ContainerStatus>>,
+
+    /// Status of ephemeral containers
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ephemeral_container_statuses: Option<Vec<ContainerStatus>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -360,14 +591,14 @@ pub struct NodeAffinity {
 }
 
 /// A node selector represents the union of the results of one or more label queries
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NodeSelector {
     /// A list of node selector terms (ORed together)
     pub node_selector_terms: Vec<NodeSelectorTerm>,
 }
 
 /// A node selector term is associated with the corresponding weight
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NodeSelectorTerm {
     /// A list of node selector requirements by node's labels
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -379,7 +610,7 @@ pub struct NodeSelectorTerm {
 }
 
 /// A node selector requirement is a selector that contains values, a key, and an operator
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NodeSelectorRequirement {
     /// The label key
     pub key: String,
@@ -393,7 +624,7 @@ pub struct NodeSelectorRequirement {
 }
 
 /// An empty preferred scheduling term matches all objects with implicit weight 0
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PreferredSchedulingTerm {
     /// Weight associated with matching the corresponding nodeSelectorTerm, in the range 1-100
     pub weight: i32,
@@ -451,7 +682,7 @@ pub struct WeightedPodAffinityTerm {
 }
 
 /// The pod this Toleration is attached to tolerates any taint that matches the triple using the matching operator
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Toleration {
     /// Key is the taint key that the toleration applies to
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -647,6 +878,7 @@ mod tests {
                     readiness_probe: None,
                     startup_probe: None,
                     security_context: None,
+                    restart_policy: None,
                 },
                 Container {
                     name: "init-mydb".to_string(),
@@ -663,6 +895,7 @@ mod tests {
                     readiness_probe: None,
                     startup_probe: None,
                     security_context: None,
+                    restart_policy: None,
                 },
             ]),
             containers: vec![Container {
@@ -685,7 +918,9 @@ mod tests {
                 readiness_probe: None,
                 startup_probe: None,
                 security_context: None,
+                restart_policy: None,
             }],
+            ephemeral_containers: None,
             volumes: None,
             restart_policy: Some("Always".to_string()),
             node_name: None,
@@ -699,6 +934,11 @@ mod tests {
             tolerations: None,
             priority: None,
             priority_class_name: None,
+            automount_service_account_token: None,
+            topology_spread_constraints: None,
+            overhead: None,
+            scheduler_name: None,
+            resource_claims: None,
         };
 
         let pod = Pod::new("myapp-pod", spec);
@@ -818,6 +1058,7 @@ mod tests {
                     container_id: Some("containerd://ghi789".to_string()),
                 },
             ]),
+            ephemeral_container_statuses: None,
         };
 
         assert_eq!(status.phase, Phase::Running);

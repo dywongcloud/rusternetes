@@ -2,10 +2,27 @@
 
 This guide provides Podman-specific tips and tricks for developing Rusternetes.
 
+## ⚠️ Important: macOS Compatibility Issue
+
+**If you're on macOS Sequoia 15.7+, use Docker Desktop instead of Podman Machine.**
+
+Podman Machine on macOS Sequoia 15.7+ has a critical bug in the Apple Virtualization Framework (vfkit) that prevents VMs from starting. This is a known issue in macOS, not Podman itself.
+
+**Symptoms:**
+```
+Error: vfkit exited unexpectedly with exit code 1
+Error Domain=VZErrorDomain Code=1
+Description="Internal Virtualization error. The virtual machine failed to start."
+```
+
+**Solution:** Use Docker Desktop on macOS for Rusternetes development. See [README.md](../README.md) for Docker setup instructions.
+
+**Linux users:** Podman works great on Linux! Just ensure you use **rootful mode** for kube-proxy iptables access.
+
 ## Why Podman?
 
 Podman is a daemonless container engine that's:
-- **Rootless** - More secure, runs without root privileges
+- **Rootless** - More secure, runs without root privileges (but Rusternetes needs rootful for kube-proxy)
 - **Docker-compatible** - Uses the same CLI and file formats
 - **Kubernetes-native** - Can generate Kubernetes YAML from pods
 - **Open source** - Part of the OCI (Open Container Initiative)
@@ -48,13 +65,18 @@ podman machine rm
 
 ### Podman Machine Configuration
 
-```bash
-# Initialize with more resources
-podman machine init --cpus 4 --memory 8192 --disk-size 50
+**IMPORTANT: Rusternetes requires rootful mode for kube-proxy iptables access.**
 
-# Set as default
-podman machine set --rootful=false
+```bash
+# Initialize with rootful mode (REQUIRED for Rusternetes)
+podman machine init --rootful --cpus 4 --memory 8192 --disk-size 50
+
+# Verify rootful mode is enabled
+podman machine inspect podman-machine-default | grep -i rootful
+# Should show: "Rootful": true
 ```
+
+Without rootful mode, kube-proxy will fail with "Permission denied" errors when trying to configure iptables rules for service routing.
 
 ## Podman Compose
 

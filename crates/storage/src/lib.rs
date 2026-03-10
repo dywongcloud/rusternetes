@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use rusternetes_common::Result;
 use serde::{de::DeserializeOwned, Serialize};
 
+pub mod concurrency;
 pub mod etcd;
 pub mod memory;
 
@@ -23,6 +24,9 @@ pub trait Storage: Send + Sync {
     where
         T: Serialize + DeserializeOwned + Send + Sync;
 
+    /// Update a resource with raw JSON value (for GC operations)
+    async fn update_raw(&self, key: &str, value: &serde_json::Value) -> Result<()>;
+
     /// Delete a resource
     async fn delete(&self, key: &str) -> Result<()>;
 
@@ -40,7 +44,7 @@ pub trait Storage: Send + Sync {
 pub enum WatchEvent {
     Added(String, String),    // key, value
     Modified(String, String), // key, value
-    Deleted(String),          // key
+    Deleted(String, String),  // key, previous value (for Kubernetes compliance)
 }
 
 /// Stream of watch events

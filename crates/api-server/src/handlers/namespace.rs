@@ -1,24 +1,35 @@
-use crate::{middleware::AuthContext, state::ApiServerState};
+use crate::{middleware::AuthContext, state::ApiServerState, handlers::watch};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
+    response::{IntoResponse, Response},
     Extension, Json,
 };
 use rusternetes_common::{
+    auth::ServiceAccountClaims,
     authz::{Decision, RequestAttributes},
-    resources::Namespace,
+    resources::{Namespace, ServiceAccount, Secret},
+    List,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use serde::Deserialize;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
+
+// Removed - using HashMap<String, String> for query params
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Json(namespace): Json<Namespace>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(mut namespace): Json<Namespace>,
 ) -> Result<(StatusCode, Json<Namespace>)> {
     info!("Creating namespace: {}", namespace.metadata.name);
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "namespaces")
@@ -31,8 +42,33 @@ pub async fn create(
         }
     }
 
+    // Enrich metadata with system fields
+    namespace.metadata.ensure_uid();
+    namespace.metadata.ensure_creation_timestamp();
+
     let key = build_key("namespaces", None, &namespace.metadata.name);
+
+    // If dry-run, skip storage operation but return the validated resource
+    if is_dry_run {
+        info!("Dry-run: Namespace {} validated successfully (not created)", namespace.metadata.name);
+        return Ok((StatusCode::CREATED, Json(namespace)));
+    }
+
     let created = state.storage.create(&key, &namespace).await?;
+
+    // Automatically create default ServiceAccount in the new namespace
+    let ns_name = created.metadata.name.clone();
+    info!("Creating default ServiceAccount for namespace: {}", ns_name);
+
+    match create_default_service_account(&state, &ns_name).await {
+        Ok(_) => {
+            info!("Successfully created default ServiceAccount for namespace: {}", ns_name);
+        }
+        Err(e) => {
+            tracing::warn!("Failed to create default ServiceAccount for namespace {}: {}", ns_name, e);
+            // Don't fail namespace creation if default SA creation fails
+        }
+    }
 
     Ok((StatusCode::CREATED, Json(created)))
 }
@@ -66,9 +102,13 @@ pub async fn update(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut namespace): Json<Namespace>,
 ) -> Result<Json<Namespace>> {
     info!("Updating namespace: {}", name);
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "namespaces")
@@ -86,6 +126,12 @@ pub async fn update(
 
     let key = build_key("namespaces", None, &name);
 
+    // If dry-run, skip storage operation but return the validated resource
+    if is_dry_run {
+        info!("Dry-run: Namespace {} validated successfully (not updated)", name);
+        return Ok(Json(namespace));
+    }
+
     // Try to update first, if not found then create (upsert behavior)
     let result = match state.storage.update(&key, &namespace).await {
         Ok(updated) => updated,
@@ -102,8 +148,12 @@ pub async fn delete_ns(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting namespace: {}", name);
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "namespaces")
@@ -118,15 +168,69 @@ pub async fn delete_ns(
     }
 
     let key = build_key("namespaces", None, &name);
-    state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    // Get the namespace to check for finalizers
+    let namespace: Namespace = state.storage.get(&key).await?;
+
+    // If dry-run, skip delete operation
+    if is_dry_run {
+        info!("Dry-run: Namespace {} validated successfully (not deleted)", name);
+        return Ok(StatusCode::OK);
+    }
+
+    // Handle deletion with finalizers
+    // If the namespace has finalizers, it will be marked for deletion (deletionTimestamp set)
+    // and remain in storage until controllers remove the finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &namespace,
+    )
+    .await?;
+
+    if deleted_immediately {
+        // Namespace had no finalizers and was deleted immediately
+        info!("Namespace {} deleted successfully (no finalizers)", name);
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        // Namespace has finalizers and was marked for deletion
+        // The namespace controller will handle cleanup and finalizer removal
+        info!(
+            "Namespace {} marked for deletion (has finalizers: {:?})",
+            name,
+            namespace.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 pub async fn list(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<Vec<Namespace>>> {
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Response> {
+    // Check if this is a watch request
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        info!("Watching namespaces");
+        // Parse WatchParams from the query parameters
+        let watch_params = watch::WatchParams {
+            resource_version: params.get("resourceVersion").map(|s| s.clone()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").map(|s| s.clone()),
+            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return watch::watch_cluster_scoped::<Namespace>(
+            state,
+            auth_ctx,
+            "namespaces",
+            "",
+            watch_params,
+        )
+        .await;
+    }
+
     info!("Listing namespaces");
 
     // Check authorization
@@ -141,9 +245,75 @@ pub async fn list(
     }
 
     let prefix = build_prefix("namespaces", None);
-    let namespaces = state.storage.list(&prefix).await?;
+    let mut namespaces = state.storage.list::<Namespace>(&prefix).await?;
 
-    Ok(Json(namespaces))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut namespaces, &params)?;
+
+    let list = List::new("NamespaceList", "v1", namespaces);
+    Ok(Json(list).into_response())
+}
+
+/// Helper function to create the default ServiceAccount in a namespace
+/// This replicates what Kubernetes does automatically when a namespace is created
+async fn create_default_service_account(
+    state: &Arc<ApiServerState>,
+    namespace: &str,
+) -> Result<()> {
+    let sa_name = "default";
+
+    // Create default ServiceAccount
+    let mut service_account = ServiceAccount::new(sa_name, namespace);
+    service_account.metadata.ensure_uid();
+    service_account.metadata.ensure_creation_timestamp();
+
+    let sa_key = build_key("serviceaccounts", Some(namespace), sa_name);
+    let created_sa = state.storage.create(&sa_key, &service_account).await?;
+
+    // Generate ServiceAccount token and store it in a Secret
+    let sa_uid = created_sa.metadata.uid.clone();
+
+    // Generate JWT token (valid for 10 years - Kubernetes default for static tokens)
+    let claims = ServiceAccountClaims::new(
+        sa_name.to_string(),
+        namespace.to_string(),
+        sa_uid.clone(),
+        87600, // 10 years in hours
+    );
+
+    let token = state.token_manager.generate_token(claims)?;
+
+    // Create Secret to store the token
+    let secret_name = format!("{}-token", sa_name);
+    let mut string_data = HashMap::new();
+    string_data.insert("token".to_string(), token);
+    string_data.insert("namespace".to_string(), namespace.to_string());
+
+    let mut secret = Secret::new(&secret_name, namespace)
+        .with_type("kubernetes.io/service-account-token");
+
+    // Add labels and annotations
+    secret.metadata.labels = Some({
+        let mut labels = HashMap::new();
+        labels.insert("kubernetes.io/service-account.name".to_string(), sa_name.to_string());
+        labels
+    });
+    secret.metadata.annotations = Some({
+        let mut annotations = HashMap::new();
+        annotations.insert("kubernetes.io/service-account.uid".to_string(), sa_uid);
+        annotations
+    });
+    secret.string_data = Some(string_data);
+
+    // Normalize: convert stringData to base64-encoded data before storing
+    secret.normalize();
+
+    // Store the secret
+    let secret_key = build_key("secrets", Some(namespace), &secret_name);
+    state.storage.create(&secret_key, &secret).await?;
+
+    info!("Created default ServiceAccount and token secret in namespace: {}", namespace);
+    Ok(())
 }
 
 // Use the macro to create a PATCH handler for cluster-scoped namespace

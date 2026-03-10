@@ -5,6 +5,7 @@ use rusternetes_storage::etcd::EtcdStorage;
 use std::sync::Arc;
 use crate::ip_allocator::ClusterIPAllocator;
 use crate::admission_webhook::AdmissionWebhookManager;
+use crate::prometheus_client::PrometheusClient;
 
 /// Shared state for the API server
 pub struct ApiServerState {
@@ -15,6 +16,8 @@ pub struct ApiServerState {
     pub skip_auth: bool,
     pub ip_allocator: Arc<ClusterIPAllocator>,
     pub webhook_manager: Arc<AdmissionWebhookManager<EtcdStorage>>,
+    pub ca_cert_pem: Option<String>,
+    pub prometheus_client: Option<Arc<PrometheusClient>>,
 }
 
 impl ApiServerState {
@@ -35,6 +38,20 @@ impl ApiServerState {
             skip_auth,
             ip_allocator: Arc::new(ClusterIPAllocator::new()),
             webhook_manager,
+            ca_cert_pem: None,
+            prometheus_client: None,
         }
+    }
+
+    /// Set the CA certificate PEM for distribution to service accounts
+    pub fn with_ca_cert(mut self, ca_cert_pem: Option<String>) -> Self {
+        self.ca_cert_pem = ca_cert_pem;
+        self
+    }
+
+    /// Set the Prometheus client for custom metrics
+    pub fn with_prometheus_client(mut self, prometheus_client: Option<Arc<PrometheusClient>>) -> Self {
+        self.prometheus_client = prometheus_client;
+        self
     }
 }

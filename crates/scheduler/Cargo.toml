@@ -5,6 +5,10 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lib]
+name = "rusternetes_scheduler"
+path = "src/lib.rs"
+
 [[bin]]
 name = "scheduler"
 path = "src/main.rs"
@@ -22,6 +26,8 @@ clap.workspace = true
 futures.workspace = true
 axum.workspace = true
 uuid.workspace = true
+async-trait.workspace = true
 
 [dev-dependencies]
 uuid.workspace = true
+chrono.workspace = true

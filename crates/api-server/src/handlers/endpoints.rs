@@ -1,15 +1,18 @@
-use crate::{middleware::AuthContext, state::ApiServerState};
+use crate::{middleware::AuthContext, state::ApiServerState, handlers::watch::WatchParams};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
+    response::{IntoResponse, Response},
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::Endpoints,
+    List,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
@@ -18,9 +21,13 @@ pub async fn create_endpoints(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut endpoints): Json<Endpoints>,
 ) -> Result<(StatusCode, Json<Endpoints>)> {
     info!("Creating endpoints: {}/{}", namespace, endpoints.metadata.name);
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "endpoints")
@@ -36,7 +43,18 @@ pub async fn create_endpoints(
 
     endpoints.metadata.namespace = Some(namespace.clone());
 
+    // Enrich metadata with system fields
+    endpoints.metadata.ensure_uid();
+    endpoints.metadata.ensure_creation_timestamp();
+
     let key = build_key("endpoints", Some(&namespace), &endpoints.metadata.name);
+
+    // If dry-run, skip storage operation but return the validated resource
+    if is_dry_run {
+        info!("Dry-run: Endpoints {}/{} validated successfully (not created)", namespace, endpoints.metadata.name);
+        return Ok((StatusCode::CREATED, Json(endpoints)));
+    }
+
     let created = state.storage.create(&key, &endpoints).await?;
 
     Ok((StatusCode::CREATED, Json(created)))
@@ -74,8 +92,20 @@ pub async fn list_endpoints(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
-) -> Result<Json<Vec<Endpoints>>> {
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
     info!("Listing endpoints in namespace: {}", namespace);
+
+    // Check if this is a watch request
+    if params.watch.unwrap_or(false) {
+        return crate::handlers::watch::watch_endpoints(
+            State(state),
+            Extension(auth_ctx),
+            Path(namespace),
+            Query(params),
+        )
+        .await;
+    }
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "endpoints")
@@ -90,17 +120,41 @@ pub async fn list_endpoints(
     }
 
     let prefix = build_prefix("endpoints", Some(&namespace));
-    let endpoints = state.storage.list(&prefix).await?;
+    let mut endpoints = state.storage.list::<Endpoints>(&prefix).await?;
 
-    Ok(Json(endpoints))
+    // Apply field and label selector filtering
+    let mut params_map = HashMap::new();
+    if let Some(fs) = params.field_selector {
+        params_map.insert("fieldSelector".to_string(), fs);
+    }
+    if let Some(ls) = params.label_selector {
+        params_map.insert("labelSelector".to_string(), ls);
+    }
+    crate::handlers::filtering::apply_selectors(&mut endpoints, &params_map)?;
+
+    let list = List::new("EndpointsList", "v1", endpoints);
+    Ok(Json(list).into_response())
 }
 
 /// List all endpoints across all namespaces
 pub async fn list_all_endpoints(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<Vec<Endpoints>>> {
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
     info!("Listing all endpoints");
+
+    // Check if this is a watch request
+    if params.watch.unwrap_or(false) {
+        return crate::handlers::watch::watch_cluster_scoped::<Endpoints>(
+            state,
+            auth_ctx,
+            "endpoints",
+            "",
+            params,
+        )
+        .await;
+    }
 
     // Check authorization (cluster-wide list)
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "endpoints")
@@ -114,9 +168,20 @@ pub async fn list_all_endpoints(
     }
 
     let prefix = build_prefix("endpoints", None);
-    let endpoints = state.storage.list(&prefix).await?;
+    let mut endpoints = state.storage.list::<Endpoints>(&prefix).await?;
 
-    Ok(Json(endpoints))
+    // Apply field and label selector filtering
+    let mut params_map = HashMap::new();
+    if let Some(fs) = params.field_selector {
+        params_map.insert("fieldSelector".to_string(), fs);
+    }
+    if let Some(ls) = params.label_selector {
+        params_map.insert("labelSelector".to_string(), ls);
+    }
+    crate::handlers::filtering::apply_selectors(&mut endpoints, &params_map)?;
+
+    let list = List::new("EndpointsList", "v1", endpoints);
+    Ok(Json(list).into_response())
 }
 
 /// Update endpoints
@@ -124,9 +189,13 @@ pub async fn update_endpoints(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut endpoints): Json<Endpoints>,
 ) -> Result<Json<Endpoints>> {
     info!("Updating endpoints: {}/{}", namespace, name);
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "endpoints")
@@ -145,6 +214,13 @@ pub async fn update_endpoints(
     endpoints.metadata.namespace = Some(namespace.clone());
 
     let key = build_key("endpoints", Some(&namespace), &name);
+
+    // If dry-run, skip storage operation but return the validated resource
+    if is_dry_run {
+        info!("Dry-run: Endpoints {}/{} validated successfully (not updated)", namespace, name);
+        return Ok(Json(endpoints));
+    }
+
     let updated = state.storage.update(&key, &endpoints).await?;
 
     Ok(Json(updated))
@@ -155,8 +231,12 @@ pub async fn delete_endpoints(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting endpoints: {}/{}", namespace, name);
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "endpoints")
@@ -172,7 +252,17 @@ pub async fn delete_endpoints(
     }
 
     let key = build_key("endpoints", Some(&namespace), &name);
-    state.storage.delete(&key).await?;
+
+    // Get the resource to check if it exists
+    let endpoints: Endpoints = state.storage.get(&key).await?;
+
+    // If dry-run, skip delete operation
+    if is_dry_run {
+        info!("Dry-run: Endpoints {}/{} validated successfully (not deleted)", namespace, name);
+        return Ok(StatusCode::OK);
+    }
+
+    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &endpoints).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

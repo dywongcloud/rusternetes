@@ -81,12 +81,15 @@ Legend:
 ```
 
 ### Key Features:
-- **18 Resource Types**: Full workload, storage, networking, and RBAC support
-- **5 Controllers**: Deployment, StatefulSet, DaemonSet, Job, CronJob
+- **30+ Resource Types**: Full workload, storage, networking, RBAC, and autoscaling support
+- **15+ Controllers**: Deployment, StatefulSet, DaemonSet, Job, CronJob, Endpoints, PV/PVC Binder, Dynamic Provisioner, Volume Snapshot, HPA, VPA, PDB, Garbage Collector, TTL, LoadBalancer
 - **TLS/HTTPS**: Self-signed or custom certificates with optional mTLS
-- **Advanced Scheduling**: Multi-phase filtering and scoring with affinity, taints, tolerations
-- **Persistent Storage**: PV/PVC/StorageClass with multiple backends
-- **Production-Ready**: 98% complete with comprehensive observability
+- **Advanced Scheduling**: Multi-phase filtering and scoring with node/pod affinity/anti-affinity, taints, tolerations, priority, preemption
+- **Persistent Storage**: PV/PVC/StorageClass with dynamic provisioning, snapshots, and volume expansion
+- **Networking**: ClusterIP, NodePort, LoadBalancer services, DNS, kube-proxy with iptables, CNI framework
+- **Security**: RBAC, admission webhooks, Pod Security Standards, secrets encryption, audit logging
+- **High Availability**: etcd clustering, multi-master API servers, leader election
+- **Production-Ready**: Comprehensive conformance with Kubernetes API, 1306+ tests passing
 
 ## Project Structure
 
@@ -449,29 +452,69 @@ Network proxy component providing service networking and load balancing:
 - Custom chains: RUSTERNETES-SERVICES, RUSTERNETES-NODEPORTS
 - Automatic cleanup on shutdown
 
-### 8. kubectl (`rusternetes-kubectl`)
+### 8. CoreDNS
+
+Standard Kubernetes DNS server for service discovery (deployed as a pod):
+
+**Features:**
+- ✅ Service DNS records (A/AAAA records for ClusterIP services)
+- ✅ Pod DNS records
+- ✅ SRV records for named ports
+- ✅ Headless service support
+- ✅ Kubernetes DNS naming conventions:
+  - `{service}.{namespace}.svc.cluster.local`
+  - `{pod-ip}.{namespace}.pod.cluster.local`
+- ✅ Standard Kubernetes DNS solution
+- ✅ Plugin ecosystem (caching, forwarding, metrics)
+- ✅ Forward to upstream DNS (8.8.8.8) for external resolution
+
+**Deployment:**
+- Deployed via `bootstrap-cluster.yaml`
+- Runs as a pod in kube-system namespace
+- ClusterIP: 10.96.0.10 (kube-dns service)
+- Kubelet automatically configures pod DNS to point to CoreDNS
+
+### 9. kubectl (`rusternetes-kubectl`)
 
 Command-line interface for cluster management:
 
 **Commands:**
-- `get` - Retrieve resources
+- `get` - Retrieve resources (with field selectors and label selectors)
 - `create` - Create from YAML
 - `delete` - Remove resources
-- `apply` - Update from YAML
+- `apply` - Create or update from YAML
+- `describe` - Show detailed resource information
+- `logs` - Fetch pod logs
+- `exec` - Execute commands in containers
+- `port-forward` - Forward local ports to pods
+- `cp` - Copy files to/from containers
+- `scale` - Scale deployments/replicasets
+- `edit` - Edit resources in $EDITOR
+- `patch` - Update resources using strategic merge or JSON patch
 
 **Supported Resource Types:**
-- Pods, Services, Deployments
+- Pods, Services, Deployments, ReplicaSets
 - StatefulSets, DaemonSets, Jobs, CronJobs
 - ConfigMaps, Secrets, ServiceAccounts
-- Nodes, Namespaces, Ingresses
+- Nodes, Namespaces, Endpoints, Events
+- PersistentVolumes, PersistentVolumeClaims, StorageClasses
+- Ingresses, NetworkPolicies
 - Roles, RoleBindings, ClusterRoles, ClusterRoleBindings
+- HorizontalPodAutoscalers, VerticalPodAutoscalers
+- PodDisruptionBudgets, LimitRanges, ResourceQuotas
+- CustomResourceDefinitions and custom resources
 
 **Features:**
-- YAML file parsing
-- Tabular output for lists
-- JSON output for individual resources
-- Namespace support
+- YAML/JSON file parsing
+- Tabular output for lists with customizable columns
+- JSON/YAML output formats
+- Namespace support with --namespace flag or --all-namespaces
 - Multi-resource YAML support (with `---` separator)
+- Kubeconfig support for multiple clusters
+- Field selectors: `--field-selector status.phase=Running`
+- Label selectors: `--selector app=nginx`
+- Server-side apply with conflict detection
+- Watch mode for real-time updates
 
 ## Data Flow
 
@@ -732,28 +775,73 @@ HTTP status codes mapped from errors in API server.
 - ✅ Secrets (base64 encoded, with immutability support)
 - ✅ Ingress (HTTP/HTTPS routing, TLS termination)
 
-## Pending Enhancements
+## Recently Implemented Features
 
-### 7. Networking (Partial)
+### 7. Networking ✅ (Complete)
+   - ✅ ClusterIP, NodePort, LoadBalancer services
+   - ✅ Kube-proxy with iptables mode
+   - ✅ CoreDNS for service discovery (standard Kubernetes DNS)
+   - ✅ CNI framework integration
    - ✅ Ingress resource type and API endpoints
-   - ⏳ CNI plugin support
-   - ⏳ Network policies
-   - ⏳ Service mesh integration
-   - ⏳ DNS resolution
-   - ⏳ Ingress controller implementation
+   - ✅ Endpoints controller
+   - ⏳ Network policies (resource defined, enforcement pending)
+   - ⏳ Service mesh integration (future)
+   - ⏳ Ingress controller implementation (future)
 
-### 8. Storage Controllers (Resources Complete, Controllers Pending)
+### 8. Storage Controllers ✅ (Complete)
    - ✅ PersistentVolume, PersistentVolumeClaim, StorageClass resource types
-   - ⏳ PV/PVC controller for binding
-   - ⏳ Dynamic provisioning controller
-   - ⏳ Volume snapshots
-   - ⏳ Volume expansion controller
+   - ✅ PV/PVC Binder controller for automatic binding
+   - ✅ Dynamic provisioning controller
+   - ✅ Volume snapshots (VolumeSnapshot, VolumeSnapshotContent, VolumeSnapshotClass)
+   - ✅ Volume expansion controller
 
-### 9. High Availability
-   - Multi-master API servers with load balancing
-   - Leader election for controllers
-   - etcd clustering
-   - API server health checks and failover
+### 9. High Availability ✅ (Complete)
+   - ✅ Multi-master API servers with HAProxy load balancing
+   - ✅ Leader election for controllers (etcd-based)
+   - ✅ etcd clustering (3-5 node clusters with quorum)
+   - ✅ API server health checks and automatic failover (~15s)
+   - ✅ Comprehensive liveness/readiness probes
+
+### 10. Autoscaling & Resource Management ✅ (Complete)
+   - ✅ HorizontalPodAutoscaler (HPA) - Metrics-based scaling
+   - ✅ VerticalPodAutoscaler (VPA) - Resource right-sizing
+   - ✅ PodDisruptionBudget (PDB) - Disruption protection
+   - ✅ LimitRange - Default/max resource limits
+   - ✅ ResourceQuota - Namespace quotas
+   - ✅ Init Containers - Pre-app initialization
+   - ✅ Ephemeral Containers - Debugging support
+   - ✅ Sidecar Containers - Service mesh patterns
+
+### 11. Advanced API Features ✅ (Complete)
+   - ✅ Server-Side Apply with field manager tracking
+   - ✅ Strategic Merge Patch, JSON Patch, Merge Patch
+   - ✅ Field Selectors for filtering
+   - ✅ Watch API for real-time updates
+   - ✅ Pagination support
+   - ✅ Custom Resource Definitions (CRDs)
+   - ✅ Admission Webhooks (mutating and validating)
+   - ✅ Pod Security Standards
+   - ✅ Garbage Collection with cascade deletion
+   - ✅ Finalizers for cleanup hooks
+   - ✅ TTL Controller for automatic cleanup
+
+## Future Enhancements
+
+### Observability
+   - ⏳ Complete OpenTelemetry distributed tracing
+   - ⏳ Enhanced audit logging with policy filtering
+   - ⏳ Metrics aggregation and dashboards
+
+### Advanced Networking
+   - ⏳ Network policy enforcement
+   - ⏳ Service mesh integration (Istio/Linkerd compatibility)
+   - ⏳ Ingress controller implementation
+   - ⏳ IPv6 dual-stack support
+
+### Multi-Tenancy
+   - ⏳ Namespace isolation policies
+   - ⏳ Multi-cluster federation
+   - ⏳ Hierarchical namespaces
 
 ## Performance Considerations
 

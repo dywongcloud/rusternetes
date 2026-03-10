@@ -1,9 +1,316 @@
 use crate::{handlers, middleware, state::ApiServerState};
 use axum::{
-    middleware as axum_middleware, routing::{get, post}, Extension, Router,
+    extract::{Request, State},
+    http::{Method, StatusCode, Uri},
+    middleware as axum_middleware,
+    response::{IntoResponse, Response},
+    routing::{get, post, put},
+    Extension, Json, Router,
 };
+use rusternetes_common::resources::CustomResourceDefinition;
+use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
+use tracing::{debug, warn};
+
+/// Fallback handler for custom resources defined by CRDs
+/// This handler is called for any route not matched by the static routes
+/// It checks if the request matches a CRD and routes to the appropriate handler
+async fn custom_resource_fallback(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<crate::middleware::AuthContext>,
+    uri: Uri,
+    method: Method,
+    req: Request,
+) -> Result<Response, StatusCode> {
+    let path = uri.path();
+    debug!("Fallback handler called for path: {}", path);
+
+    // Parse URI to extract custom resource information
+    // Expected formats:
+    //  - /apis/{group}/{version}/{plural}  (list cluster-scoped)
+    //  - /apis/{group}/{version}/{plural}/{name}  (get/update/delete cluster-scoped)
+    //  - /apis/{group}/{version}/namespaces/{namespace}/{plural}  (list namespaced)
+    //  - /apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}  (get/update/delete namespaced)
+    //  - /apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}/status  (status subresource)
+    //  - /apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}/scale  (scale subresource)
+
+    if !path.starts_with("/apis/") {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let parts: Vec<&str> = path.trim_start_matches("/apis/").split('/').collect();
+
+    // Parse the path components
+    let (group, version, plural, namespace, name, subresource) = match parts.as_slice() {
+        // Namespaced: /apis/{group}/{version}/namespaces/{namespace}/{plural}
+        [group, version, "namespaces", namespace, plural] if method == Method::GET || method == Method::POST => {
+            (*group, *version, *plural, Some(*namespace), None, None)
+        }
+        // Namespaced resource: /apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}
+        [group, version, "namespaces", namespace, plural, name] => {
+            (*group, *version, *plural, Some(*namespace), Some(*name), None)
+        }
+        // Namespaced subresource: /apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}/{subresource}
+        [group, version, "namespaces", namespace, plural, name, subresource] => {
+            (*group, *version, *plural, Some(*namespace), Some(*name), Some(*subresource))
+        }
+        // Cluster-scoped: /apis/{group}/{version}/{plural}
+        [group, version, plural] if method == Method::GET || method == Method::POST => {
+            (*group, *version, *plural, None, None, None)
+        }
+        // Cluster-scoped resource: /apis/{group}/{version}/{plural}/{name}
+        [group, version, plural, name] => {
+            (*group, *version, *plural, None, Some(*name), None)
+        }
+        // Cluster-scoped subresource: /apis/{group}/{version}/{plural}/{name}/{subresource}
+        [group, version, plural, name, subresource] => {
+            (*group, *version, *plural, None, Some(*name), Some(*subresource))
+        }
+        _ => {
+            return Err(StatusCode::NOT_FOUND);
+        }
+    };
+
+    // Build CRD name from plural and group
+    let crd_name = format!("{}.{}", plural, group);
+    let crd_key = build_key("customresourcedefinitions", None, &crd_name);
+
+    // Check if this CRD exists
+    let crd: Result<CustomResourceDefinition, _> = state.storage.get(&crd_key).await;
+
+    if crd.is_err() {
+        debug!("No CRD found for {}.{}, returning 404", plural, group);
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let _crd = crd.unwrap();
+    debug!("Found CRD {} for request", crd_name);
+
+    // Route to the appropriate custom resource handler based on method and path
+    let response = match (method.clone(), name, subresource) {
+        // POST to list endpoint = create
+        (Method::POST, None, None) => {
+            let body = axum::body::to_bytes(req.into_body(), usize::MAX).await
+                .map_err(|_| StatusCode::BAD_REQUEST)?;
+            let cr: rusternetes_common::resources::CustomResource = serde_json::from_slice(&body)
+                .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+            // Parse query parameters from URI
+            let query_params: std::collections::HashMap<String, String> = uri.query()
+                .map(|q| {
+                    url::form_urlencoded::parse(q.as_bytes())
+                        .into_owned()
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            match handlers::custom_resource::create_custom_resource(
+                State(state.clone()),
+                Extension(auth_ctx.clone()),
+                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()))),
+                axum::extract::Query(query_params),
+                Json(cr),
+            ).await {
+                Ok((status, json)) => (status, json).into_response(),
+                Err(e) => {
+                    warn!("Error creating custom resource: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                }
+            }
+        }
+        // GET with no name = list
+        (Method::GET, None, None) => {
+            match handlers::custom_resource::list_custom_resources(
+                State(state.clone()),
+                Extension(auth_ctx.clone()),
+                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()))),
+            ).await {
+                Ok(json) => json.into_response(),
+                Err(e) => {
+                    warn!("Error listing custom resources: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                }
+            }
+        }
+        // GET with name = get
+        (Method::GET, Some(name), None) => {
+            match handlers::custom_resource::get_custom_resource(
+                State(state.clone()),
+                Extension(auth_ctx.clone()),
+                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+            ).await {
+                Ok(json) => json.into_response(),
+                Err(e) => {
+                    warn!("Error getting custom resource: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                }
+            }
+        }
+        // PUT with name = update
+        (Method::PUT, Some(name), None) => {
+            let body = axum::body::to_bytes(req.into_body(), usize::MAX).await
+                .map_err(|_| StatusCode::BAD_REQUEST)?;
+            let cr: rusternetes_common::resources::CustomResource = serde_json::from_slice(&body)
+                .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+            // Parse query parameters from URI
+            let query_params: std::collections::HashMap<String, String> = uri.query()
+                .map(|q| {
+                    url::form_urlencoded::parse(q.as_bytes())
+                        .into_owned()
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            match handlers::custom_resource::update_custom_resource(
+                State(state.clone()),
+                Extension(auth_ctx.clone()),
+                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+                axum::extract::Query(query_params),
+                Json(cr),
+            ).await {
+                Ok(json) => json.into_response(),
+                Err(e) => {
+                    warn!("Error updating custom resource: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                }
+            }
+        }
+        // DELETE with name = delete
+        (Method::DELETE, Some(name), None) => {
+            // Parse query parameters from URI
+            let query_params: std::collections::HashMap<String, String> = uri.query()
+                .map(|q| {
+                    url::form_urlencoded::parse(q.as_bytes())
+                        .into_owned()
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            match handlers::custom_resource::delete_custom_resource(
+                State(state.clone()),
+                Extension(auth_ctx.clone()),
+                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+                axum::extract::Query(query_params),
+            ).await {
+                Ok(status) => status.into_response(),
+                Err(e) => {
+                    warn!("Error deleting custom resource: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                }
+            }
+        }
+        // PATCH with name = patch
+        (Method::PATCH, Some(name), None) => {
+            // Reconstruct the request for the patch handler
+            let (parts, body) = req.into_parts();
+            let reconstructed_req = Request::from_parts(parts, body);
+
+            match handlers::custom_resource::patch_custom_resource(
+                State(state.clone()),
+                Extension(auth_ctx.clone()),
+                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+                reconstructed_req,
+            ).await {
+                Ok(json) => json.into_response(),
+                Err(e) => {
+                    warn!("Error patching custom resource: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                }
+            }
+        }
+        // Status subresource endpoints
+        (Method::GET, Some(name), Some("status")) => {
+            match handlers::custom_resource::get_custom_resource_status(
+                State(state.clone()),
+                Extension(auth_ctx.clone()),
+                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+            ).await {
+                Ok(json) => json.into_response(),
+                Err(e) => {
+                    warn!("Error getting custom resource status: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                }
+            }
+        }
+        (Method::PUT, Some(name), Some("status")) => {
+            let body = axum::body::to_bytes(req.into_body(), usize::MAX).await
+                .map_err(|_| StatusCode::BAD_REQUEST)?;
+            let status: serde_json::Value = serde_json::from_slice(&body)
+                .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+            match handlers::custom_resource::update_custom_resource_status(
+                State(state.clone()),
+                Extension(auth_ctx.clone()),
+                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+                Json(status),
+            ).await {
+                Ok(json) => json.into_response(),
+                Err(e) => {
+                    warn!("Error updating custom resource status: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                }
+            }
+        }
+        (Method::PATCH, Some(name), Some("status")) => {
+            // Reconstruct the request for the patch handler
+            let (parts, body) = req.into_parts();
+            let reconstructed_req = Request::from_parts(parts, body);
+
+            match handlers::custom_resource::patch_custom_resource_status(
+                State(state.clone()),
+                Extension(auth_ctx.clone()),
+                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+                reconstructed_req,
+            ).await {
+                Ok(json) => json.into_response(),
+                Err(e) => {
+                    warn!("Error patching custom resource status: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                }
+            }
+        }
+        // Scale subresource endpoints
+        (Method::GET, Some(name), Some("scale")) => {
+            match handlers::custom_resource::get_custom_resource_scale(
+                State(state.clone()),
+                Extension(auth_ctx.clone()),
+                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+            ).await {
+                Ok(json) => json.into_response(),
+                Err(e) => {
+                    warn!("Error getting custom resource scale: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                }
+            }
+        }
+        (Method::PUT, Some(name), Some("scale")) => {
+            let body = axum::body::to_bytes(req.into_body(), usize::MAX).await
+                .map_err(|_| StatusCode::BAD_REQUEST)?;
+            let scale: handlers::custom_resource::Scale = serde_json::from_slice(&body)
+                .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+            match handlers::custom_resource::update_custom_resource_scale(
+                State(state.clone()),
+                Extension(auth_ctx.clone()),
+                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+                Json(scale),
+            ).await {
+                Ok(json) => json.into_response(),
+                Err(e) => {
+                    warn!("Error updating custom resource scale: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                }
+            }
+        }
+        _ => {
+            return Err(StatusCode::METHOD_NOT_ALLOWED);
+        }
+    };
+
+    Ok(response)
+}
 
 pub fn build_router(state: Arc<ApiServerState>) -> Router {
     let skip_auth = state.skip_auth;
@@ -13,7 +320,33 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route("/healthz", get(handlers::health::healthz))
         .route("/healthz/verbose", get(handlers::health::healthz_verbose))
         .route("/readyz", get(handlers::health::readyz))
-        .route("/metrics", get(handlers::health::metrics));
+        .route("/metrics", get(handlers::health::metrics))
+        // Discovery API endpoints
+        .route("/api", get(handlers::discovery::get_core_api))
+        .route("/api/v1", get(handlers::discovery::get_core_resources))
+        .route("/apis", get(handlers::discovery::get_api_groups))
+        .route("/apis/apps/v1", get(handlers::discovery::get_apps_v1_resources))
+        .route("/apis/batch/v1", get(handlers::discovery::get_batch_v1_resources))
+        .route("/apis/networking.k8s.io/v1", get(handlers::discovery::get_networking_v1_resources))
+        .route("/apis/rbac.authorization.k8s.io/v1", get(handlers::discovery::get_rbac_v1_resources))
+        .route("/apis/storage.k8s.io/v1", get(handlers::discovery::get_storage_v1_resources))
+        .route("/apis/scheduling.k8s.io/v1", get(handlers::discovery::get_scheduling_v1_resources))
+        .route("/apis/apiextensions.k8s.io/v1", get(handlers::discovery::get_apiextensions_v1_resources))
+        .route("/apis/admissionregistration.k8s.io/v1", get(handlers::discovery::get_admissionregistration_v1_resources))
+        .route("/apis/coordination.k8s.io/v1", get(handlers::discovery::get_coordination_v1_resources))
+        .route("/apis/flowcontrol.apiserver.k8s.io/v1", get(handlers::discovery::get_flowcontrol_v1_resources))
+        .route("/apis/certificates.k8s.io/v1", get(handlers::discovery::get_certificates_v1_resources))
+        .route("/apis/snapshot.storage.k8s.io/v1", get(handlers::discovery::get_snapshot_v1_resources))
+        .route("/apis/discovery.k8s.io/v1", get(handlers::discovery::get_discovery_v1_resources))
+        .route("/apis/autoscaling/v2", get(handlers::discovery::get_autoscaling_v2_resources))
+        .route("/apis/policy/v1", get(handlers::discovery::get_policy_v1_resources))
+        .route("/apis/node.k8s.io/v1", get(handlers::discovery::get_node_v1_resources))
+        .route("/apis/authentication.k8s.io/v1", get(handlers::discovery::get_authentication_v1_resources))
+        .route("/apis/authorization.k8s.io/v1", get(handlers::discovery::get_authorization_v1_resources))
+        .route("/apis/metrics.k8s.io/v1beta1", get(handlers::discovery::get_metrics_v1beta1_resources))
+        .route("/apis/custom.metrics.k8s.io/v1beta2", get(handlers::discovery::get_custom_metrics_v1beta2_resources))
+        .route("/apis/resource.k8s.io/v1", get(handlers::discovery::get_resource_v1_resources))
+        .route("/version", get(handlers::discovery::get_version));
 
     // Routes that require authentication (unless skip_auth is enabled)
     let mut protected_routes = Router::new()
@@ -27,6 +360,17 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::namespace::patch)
                 .delete(handlers::namespace::delete_ns),
         )
+        .route(
+            "/api/v1/namespaces/:name/status",
+            get(handlers::status::get_cluster_status)
+                .put(handlers::status::update_cluster_status)
+                .patch(handlers::status::update_cluster_status),
+        )
+        // Watch namespaces (cluster-scoped)
+        .route(
+            "/api/v1/watch/namespaces",
+            get(handlers::watch::watch_namespaces),
+        )
         // Pods
         .route(
             "/api/v1/namespaces/:namespace/pods",
@@ -39,6 +383,57 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::pod::patch)
                 .delete(handlers::pod::delete_pod),
         )
+        .route(
+            "/api/v1/namespaces/:namespace/pods/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::status::update_status)
+                .patch(handlers::status::update_status),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/pods/:name/log",
+            get(handlers::pod_subresources::get_logs),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/pods/:name/exec",
+            get(handlers::pod_subresources::exec)
+                .post(handlers::pod_subresources::exec),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/pods/:name/attach",
+            get(handlers::pod_subresources::attach)
+                .post(handlers::pod_subresources::attach),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/pods/:name/portforward",
+            get(handlers::pod_subresources::portforward)
+                .post(handlers::pod_subresources::portforward),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/pods/:name/binding",
+            post(handlers::pod_subresources::create_binding),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/pods/:name/eviction",
+            post(handlers::pod_subresources::create_eviction),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/pods/:name/proxy/*path",
+            get(handlers::proxy::proxy_pod)
+                .post(handlers::proxy::proxy_pod)
+                .put(handlers::proxy::proxy_pod)
+                .patch(handlers::proxy::proxy_pod)
+                .delete(handlers::proxy::proxy_pod),
+        )
+        // Watch pods in a namespace
+        .route(
+            "/api/v1/watch/namespaces/:namespace/pods",
+            get(handlers::watch::watch_pods),
+        )
+        // Pods (all namespaces)
+        .route(
+            "/api/v1/pods",
+            get(handlers::pod::list_all_pods),
+        )
         // Services
         .route(
             "/api/v1/namespaces/:namespace/services",
@@ -50,6 +445,30 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::service::update)
                 .patch(handlers::service::patch)
                 .delete(handlers::service::delete_service),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/services/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::status::update_status)
+                .patch(handlers::status::update_status),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/services/:name/proxy/*path",
+            get(handlers::proxy::proxy_service)
+                .post(handlers::proxy::proxy_service)
+                .put(handlers::proxy::proxy_service)
+                .patch(handlers::proxy::proxy_service)
+                .delete(handlers::proxy::proxy_service),
+        )
+        // Watch services in a namespace
+        .route(
+            "/api/v1/watch/namespaces/:namespace/services",
+            get(handlers::watch::watch_services),
+        )
+        // Services (all namespaces)
+        .route(
+            "/api/v1/services",
+            get(handlers::service::list_all_services),
         )
         // Endpoints
         .route(
@@ -67,6 +486,11 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/endpoints",
             get(handlers::endpoints::list_all_endpoints),
         )
+        // Watch endpoints in a namespace
+        .route(
+            "/api/v1/watch/namespaces/:namespace/endpoints",
+            get(handlers::watch::watch_endpoints),
+        )
         // ConfigMaps
         .route(
             "/api/v1/namespaces/:namespace/configmaps",
@@ -78,6 +502,16 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::configmap::update)
                 .patch(handlers::configmap::patch)
                 .delete(handlers::configmap::delete_configmap),
+        )
+        // ConfigMaps (all namespaces)
+        .route(
+            "/api/v1/configmaps",
+            get(handlers::configmap::list_all_configmaps),
+        )
+        // Watch configmaps in a namespace
+        .route(
+            "/api/v1/watch/namespaces/:namespace/configmaps",
+            get(handlers::watch::watch_configmaps),
         )
         // Secrets
         .route(
@@ -91,6 +525,16 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::secret::patch)
                 .delete(handlers::secret::delete_secret),
         )
+        // Secrets (all namespaces)
+        .route(
+            "/api/v1/secrets",
+            get(handlers::secret::list_all_secrets),
+        )
+        // Watch secrets in a namespace
+        .route(
+            "/api/v1/watch/namespaces/:namespace/secrets",
+            get(handlers::watch::watch_secrets),
+        )
         // Nodes
         .route(
             "/api/v1/nodes",
@@ -102,6 +546,25 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::node::update)
                 .patch(handlers::node::patch)
                 .delete(handlers::node::delete_node),
+        )
+        .route(
+            "/api/v1/nodes/:name/status",
+            get(handlers::status::get_cluster_status)
+                .put(handlers::status::update_cluster_status)
+                .patch(handlers::status::update_cluster_status),
+        )
+        .route(
+            "/api/v1/nodes/:name/proxy/*path",
+            get(handlers::proxy::proxy_node)
+                .post(handlers::proxy::proxy_node)
+                .put(handlers::proxy::proxy_node)
+                .patch(handlers::proxy::proxy_node)
+                .delete(handlers::proxy::proxy_node),
+        )
+        // Watch nodes (cluster-scoped)
+        .route(
+            "/api/v1/watch/nodes",
+            get(handlers::watch::watch_nodes),
         )
         // Apps v1 API - Deployments
         .route(
@@ -115,6 +578,62 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::deployment::patch)
                 .delete(handlers::deployment::delete_deployment),
         )
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/deployments/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::status::update_status)
+                .patch(handlers::status::update_status),
+        )
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/deployments/:name/scale",
+            get(handlers::scale::get_scale)
+                .put(handlers::scale::update_scale)
+                .patch(handlers::scale::patch_scale),
+        )
+        // Deployments (all namespaces)
+        .route(
+            "/apis/apps/v1/deployments",
+            get(handlers::deployment::list_all_deployments),
+        )
+        // Watch deployments in a namespace
+        .route(
+            "/apis/apps/v1/watch/namespaces/:namespace/deployments",
+            get(handlers::watch::watch_deployments),
+        )
+        // Apps v1 API - ReplicaSets
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/replicasets",
+            get(handlers::replicaset::list).post(handlers::replicaset::create),
+        )
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/replicasets/:name",
+            get(handlers::replicaset::get)
+                .put(handlers::replicaset::update)
+                .patch(handlers::replicaset::patch)
+                .delete(handlers::replicaset::delete_replicaset),
+        )
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/replicasets/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::status::update_status)
+                .patch(handlers::status::update_status),
+        )
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/replicasets/:name/scale",
+            get(handlers::scale::get_scale)
+                .put(handlers::scale::update_scale)
+                .patch(handlers::scale::patch_scale),
+        )
+        // ReplicaSets (all namespaces)
+        .route(
+            "/apis/apps/v1/replicasets",
+            get(handlers::replicaset::list_all_replicasets),
+        )
+        // Watch replicasets in a namespace
+        .route(
+            "/apis/apps/v1/watch/namespaces/:namespace/replicasets",
+            get(handlers::watch::watch_replicasets),
+        )
         // Apps v1 API - StatefulSets
         .route(
             "/apis/apps/v1/namespaces/:namespace/statefulsets",
@@ -126,6 +645,28 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::statefulset::update)
                 .patch(handlers::statefulset::patch)
                 .delete(handlers::statefulset::delete_statefulset),
+        )
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/statefulsets/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::status::update_status)
+                .patch(handlers::status::update_status),
+        )
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/statefulsets/:name/scale",
+            get(handlers::scale::get_scale)
+                .put(handlers::scale::update_scale)
+                .patch(handlers::scale::patch_scale),
+        )
+        // StatefulSets (all namespaces)
+        .route(
+            "/apis/apps/v1/statefulsets",
+            get(handlers::statefulset::list_all_statefulsets),
+        )
+        // Watch statefulsets in a namespace
+        .route(
+            "/apis/apps/v1/watch/namespaces/:namespace/statefulsets",
+            get(handlers::watch::watch_statefulsets),
         )
         // Apps v1 API - DaemonSets
         .route(
@@ -139,6 +680,28 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::daemonset::patch)
                 .delete(handlers::daemonset::delete_daemonset),
         )
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/daemonsets/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::status::update_status)
+                .patch(handlers::status::update_status),
+        )
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/daemonsets/:name/scale",
+            get(handlers::scale::get_scale)
+                .put(handlers::scale::update_scale)
+                .patch(handlers::scale::patch_scale),
+        )
+        // DaemonSets (all namespaces)
+        .route(
+            "/apis/apps/v1/daemonsets",
+            get(handlers::daemonset::list_all_daemonsets),
+        )
+        // Watch daemonsets in a namespace
+        .route(
+            "/apis/apps/v1/watch/namespaces/:namespace/daemonsets",
+            get(handlers::watch::watch_daemonsets),
+        )
         // Batch v1 API - Jobs
         .route(
             "/apis/batch/v1/namespaces/:namespace/jobs",
@@ -150,6 +713,22 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::job::update)
                 .patch(handlers::job::patch)
                 .delete(handlers::job::delete_job),
+        )
+        .route(
+            "/apis/batch/v1/namespaces/:namespace/jobs/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::status::update_status)
+                .patch(handlers::status::update_status),
+        )
+        // Jobs (all namespaces)
+        .route(
+            "/apis/batch/v1/jobs",
+            get(handlers::job::list_all_jobs),
+        )
+        // Watch jobs in a namespace
+        .route(
+            "/apis/batch/v1/watch/namespaces/:namespace/jobs",
+            get(handlers::watch::watch_jobs),
         )
         // Batch v1 API - CronJobs
         .route(
@@ -163,6 +742,22 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::cronjob::patch)
                 .delete(handlers::cronjob::delete_cronjob),
         )
+        .route(
+            "/apis/batch/v1/namespaces/:namespace/cronjobs/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::status::update_status)
+                .patch(handlers::status::update_status),
+        )
+        // CronJobs (all namespaces)
+        .route(
+            "/apis/batch/v1/cronjobs",
+            get(handlers::cronjob::list_all_cronjobs),
+        )
+        // Watch cronjobs in a namespace
+        .route(
+            "/apis/batch/v1/watch/namespaces/:namespace/cronjobs",
+            get(handlers::watch::watch_cronjobs),
+        )
         // ServiceAccounts
         .route(
             "/api/v1/namespaces/:namespace/serviceaccounts",
@@ -174,6 +769,16 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::service_account::update)
                 .patch(handlers::service_account::patch)
                 .delete(handlers::service_account::delete_service_account),
+        )
+        // ServiceAccounts (all namespaces)
+        .route(
+            "/api/v1/serviceaccounts",
+            get(handlers::service_account::list_all_serviceaccounts),
+        )
+        // Watch serviceaccounts in a namespace
+        .route(
+            "/api/v1/watch/namespaces/:namespace/serviceaccounts",
+            get(handlers::watch::watch_serviceaccounts),
         )
         // RBAC - Roles
         .route(
@@ -187,6 +792,11 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::rbac::patch_role)
                 .delete(handlers::rbac::delete_role),
         )
+        // Roles (all namespaces)
+        .route(
+            "/apis/rbac.authorization.k8s.io/v1/roles",
+            get(handlers::rbac::list_all_roles),
+        )
         // RBAC - RoleBindings
         .route(
             "/apis/rbac.authorization.k8s.io/v1/namespaces/:namespace/rolebindings",
@@ -198,6 +808,11 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::rbac::update_rolebinding)
                 .patch(handlers::rbac::patch_rolebinding)
                 .delete(handlers::rbac::delete_rolebinding),
+        )
+        // RoleBindings (all namespaces)
+        .route(
+            "/apis/rbac.authorization.k8s.io/v1/rolebindings",
+            get(handlers::rbac::list_all_rolebindings),
         )
         // RBAC - ClusterRoles
         .route(
@@ -235,6 +850,11 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::persistentvolume::patch_pv)
                 .delete(handlers::persistentvolume::delete_pv),
         )
+        // Watch persistentvolumes (cluster-scoped)
+        .route(
+            "/api/v1/watch/persistentvolumes",
+            get(handlers::watch::watch_persistentvolumes),
+        )
         // PersistentVolumeClaims (namespace-scoped)
         .route(
             "/api/v1/namespaces/:namespace/persistentvolumeclaims",
@@ -246,6 +866,16 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::persistentvolumeclaim::update_pvc)
                 .patch(handlers::persistentvolumeclaim::patch_pvc)
                 .delete(handlers::persistentvolumeclaim::delete_pvc),
+        )
+        // PersistentVolumeClaims (all namespaces)
+        .route(
+            "/api/v1/persistentvolumeclaims",
+            get(handlers::persistentvolumeclaim::list_all_pvcs),
+        )
+        // Watch persistentvolumeclaims in a namespace
+        .route(
+            "/api/v1/watch/namespaces/:namespace/persistentvolumeclaims",
+            get(handlers::watch::watch_persistentvolumeclaims),
         )
         // StorageClasses (cluster-scoped)
         .route(
@@ -270,6 +900,34 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::ingress::update)
                 .patch(handlers::ingress::patch)
                 .delete(handlers::ingress::delete_ingress),
+        )
+        .route(
+            "/apis/networking.k8s.io/v1/namespaces/:namespace/ingresses/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::status::update_status)
+                .patch(handlers::status::update_status),
+        )
+        // Ingresses (all namespaces)
+        .route(
+            "/apis/networking.k8s.io/v1/ingresses",
+            get(handlers::ingress::list_all_ingresses),
+        )
+        // Networking v1 API - NetworkPolicies
+        .route(
+            "/apis/networking.k8s.io/v1/namespaces/:namespace/networkpolicies",
+            get(handlers::networkpolicy::list).post(handlers::networkpolicy::create),
+        )
+        .route(
+            "/apis/networking.k8s.io/v1/namespaces/:namespace/networkpolicies/:name",
+            get(handlers::networkpolicy::get)
+                .put(handlers::networkpolicy::update)
+                .patch(handlers::networkpolicy::patch)
+                .delete(handlers::networkpolicy::delete_networkpolicy),
+        )
+        // NetworkPolicies (all namespaces)
+        .route(
+            "/apis/networking.k8s.io/v1/networkpolicies",
+            get(handlers::networkpolicy::list_all_networkpolicies),
         )
         // Snapshot storage API - VolumeSnapshotClasses (cluster-scoped)
         .route(
@@ -332,6 +990,11 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/events",
             get(handlers::event::list_all),
         )
+        // Watch events in a namespace
+        .route(
+            "/api/v1/watch/namespaces/:namespace/events",
+            get(handlers::watch::watch_events),
+        )
         // ResourceQuotas (namespace-scoped)
         .route(
             "/api/v1/namespaces/:namespace/resourcequotas",
@@ -387,6 +1050,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/:name",
             get(handlers::crd::get_crd)
                 .put(handlers::crd::update_crd)
+                .patch(handlers::crd::patch_crd)
                 .delete(handlers::crd::delete_crd),
         )
         // ValidatingWebhookConfiguration (cluster-scoped)
@@ -414,6 +1078,494 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::admission_webhook::update_mutating_webhook)
                 .patch(handlers::admission_webhook::patch_mutating_webhook)
                 .delete(handlers::admission_webhook::delete_mutating_webhook),
+        )
+        // Coordination v1 API - Leases (namespace-scoped)
+        .route(
+            "/apis/coordination.k8s.io/v1/namespaces/:namespace/leases",
+            get(handlers::lease::list).post(handlers::lease::create),
+        )
+        .route(
+            "/apis/coordination.k8s.io/v1/namespaces/:namespace/leases/:name",
+            get(handlers::lease::get)
+                .put(handlers::lease::update)
+                .patch(handlers::lease::patch)
+                .delete(handlers::lease::delete_lease),
+        )
+        // Leases (all namespaces)
+        .route(
+            "/apis/coordination.k8s.io/v1/leases",
+            get(handlers::lease::list_all_leases),
+        )
+        // FlowControl API Priority and Fairness - PriorityLevelConfigurations (cluster-scoped)
+        .route(
+            "/apis/flowcontrol.apiserver.k8s.io/v1/prioritylevelconfigurations",
+            get(handlers::flowcontrol::list_priority_level_configurations)
+                .post(handlers::flowcontrol::create_priority_level_configuration),
+        )
+        .route(
+            "/apis/flowcontrol.apiserver.k8s.io/v1/prioritylevelconfigurations/:name",
+            get(handlers::flowcontrol::get_priority_level_configuration)
+                .put(handlers::flowcontrol::update_priority_level_configuration)
+                .patch(handlers::flowcontrol::patch_priority_level_configuration)
+                .delete(handlers::flowcontrol::delete_priority_level_configuration),
+        )
+        // FlowControl API - FlowSchemas (cluster-scoped)
+        .route(
+            "/apis/flowcontrol.apiserver.k8s.io/v1/flowschemas",
+            get(handlers::flowcontrol::list_flow_schemas)
+                .post(handlers::flowcontrol::create_flow_schema),
+        )
+        .route(
+            "/apis/flowcontrol.apiserver.k8s.io/v1/flowschemas/:name",
+            get(handlers::flowcontrol::get_flow_schema)
+                .put(handlers::flowcontrol::update_flow_schema)
+                .patch(handlers::flowcontrol::patch_flow_schema)
+                .delete(handlers::flowcontrol::delete_flow_schema),
+        )
+        // Certificates API - CertificateSigningRequests (cluster-scoped)
+        .route(
+            "/apis/certificates.k8s.io/v1/certificatesigningrequests",
+            get(handlers::certificates::list_certificate_signing_requests)
+                .post(handlers::certificates::create_certificate_signing_request),
+        )
+        .route(
+            "/apis/certificates.k8s.io/v1/certificatesigningrequests/:name",
+            get(handlers::certificates::get_certificate_signing_request)
+                .put(handlers::certificates::update_certificate_signing_request)
+                .patch(handlers::certificates::patch_certificate_signing_request)
+                .delete(handlers::certificates::delete_certificate_signing_request),
+        )
+        .route(
+            "/apis/certificates.k8s.io/v1/certificatesigningrequests/:name/status",
+            get(handlers::certificates::get_certificate_signing_request_status)
+                .put(handlers::certificates::update_certificate_signing_request_status)
+                .patch(handlers::certificates::update_certificate_signing_request_status),
+        )
+        .route(
+            "/apis/certificates.k8s.io/v1/certificatesigningrequests/:name/approval",
+            put(handlers::certificates::approve_certificate_signing_request)
+                .patch(handlers::certificates::approve_certificate_signing_request),
+        )
+        // Discovery API - EndpointSlices (namespace-scoped)
+        .route(
+            "/apis/discovery.k8s.io/v1/namespaces/:namespace/endpointslices",
+            get(handlers::endpointslice::list_endpointslices)
+                .post(handlers::endpointslice::create_endpointslice),
+        )
+        .route(
+            "/apis/discovery.k8s.io/v1/namespaces/:namespace/endpointslices/:name",
+            get(handlers::endpointslice::get_endpointslice)
+                .put(handlers::endpointslice::update_endpointslice)
+                .patch(handlers::endpointslice::patch_endpointslice)
+                .delete(handlers::endpointslice::delete_endpointslice),
+        )
+        // EndpointSlices (all namespaces)
+        .route(
+            "/apis/discovery.k8s.io/v1/endpointslices",
+            get(handlers::endpointslice::list_all_endpointslices),
+        )
+        // Watch endpointslices in a namespace
+        .route(
+            "/apis/discovery.k8s.io/v1/watch/namespaces/:namespace/endpointslices",
+            get(handlers::watch::watch_endpointslices),
+        )
+        // Autoscaling v2 API - HorizontalPodAutoscalers (namespace-scoped)
+        .route(
+            "/apis/autoscaling/v2/namespaces/:namespace/horizontalpodautoscalers",
+            get(handlers::horizontalpodautoscaler::list)
+                .post(handlers::horizontalpodautoscaler::create),
+        )
+        .route(
+            "/apis/autoscaling/v2/namespaces/:namespace/horizontalpodautoscalers/:name",
+            get(handlers::horizontalpodautoscaler::get)
+                .put(handlers::horizontalpodautoscaler::update)
+                .patch(handlers::horizontalpodautoscaler::patch)
+                .delete(handlers::horizontalpodautoscaler::delete),
+        )
+        .route(
+            "/apis/autoscaling/v2/namespaces/:namespace/horizontalpodautoscalers/:name/status",
+            get(handlers::horizontalpodautoscaler::get_status)
+                .put(handlers::horizontalpodautoscaler::update_status)
+                .patch(handlers::horizontalpodautoscaler::update_status),
+        )
+        // HorizontalPodAutoscalers (all namespaces)
+        .route(
+            "/apis/autoscaling/v2/horizontalpodautoscalers",
+            get(handlers::horizontalpodautoscaler::list_all),
+        )
+        // Policy v1 API - PodDisruptionBudgets (namespace-scoped)
+        .route(
+            "/apis/policy/v1/namespaces/:namespace/poddisruptionbudgets",
+            get(handlers::poddisruptionbudget::list)
+                .post(handlers::poddisruptionbudget::create),
+        )
+        .route(
+            "/apis/policy/v1/namespaces/:namespace/poddisruptionbudgets/:name",
+            get(handlers::poddisruptionbudget::get)
+                .put(handlers::poddisruptionbudget::update)
+                .patch(handlers::poddisruptionbudget::patch)
+                .delete(handlers::poddisruptionbudget::delete),
+        )
+        .route(
+            "/apis/policy/v1/namespaces/:namespace/poddisruptionbudgets/:name/status",
+            get(handlers::poddisruptionbudget::get_status)
+                .put(handlers::poddisruptionbudget::update_status)
+                .patch(handlers::poddisruptionbudget::update_status),
+        )
+        // PodDisruptionBudgets (all namespaces)
+        .route(
+            "/apis/policy/v1/poddisruptionbudgets",
+            get(handlers::poddisruptionbudget::list_all),
+        )
+        // Storage v1 API - CSIStorageCapacity (namespace-scoped)
+        .route(
+            "/apis/storage.k8s.io/v1/namespaces/:namespace/csistoragecapacities",
+            get(handlers::csistoragecapacity::list_csistoragecapacities)
+                .post(handlers::csistoragecapacity::create_csistoragecapacity),
+        )
+        .route(
+            "/apis/storage.k8s.io/v1/namespaces/:namespace/csistoragecapacities/:name",
+            get(handlers::csistoragecapacity::get_csistoragecapacity)
+                .put(handlers::csistoragecapacity::update_csistoragecapacity)
+                .patch(handlers::csistoragecapacity::patch_csistoragecapacity)
+                .delete(handlers::csistoragecapacity::delete_csistoragecapacity),
+        )
+        // CSIStorageCapacity (all namespaces)
+        .route(
+            "/apis/storage.k8s.io/v1/csistoragecapacities",
+            get(handlers::csistoragecapacity::list_all_csistoragecapacities),
+        )
+        // Resource v1 API - ResourceClaims (namespace-scoped)
+        .route(
+            "/apis/resource.k8s.io/v1/namespaces/:namespace/resourceclaims",
+            get(handlers::resourceclaim::list_resourceclaims)
+                .post(handlers::resourceclaim::create_resourceclaim),
+        )
+        .route(
+            "/apis/resource.k8s.io/v1/namespaces/:namespace/resourceclaims/:name",
+            get(handlers::resourceclaim::get_resourceclaim)
+                .put(handlers::resourceclaim::update_resourceclaim)
+                .patch(handlers::resourceclaim::patch_resourceclaim)
+                .delete(handlers::resourceclaim::delete_resourceclaim),
+        )
+        .route(
+            "/apis/resource.k8s.io/v1/namespaces/:namespace/resourceclaims/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::resourceclaim::update_resourceclaim_status)
+                .patch(handlers::resourceclaim::update_resourceclaim_status),
+        )
+        // ResourceClaims (all namespaces)
+        .route(
+            "/apis/resource.k8s.io/v1/resourceclaims",
+            get(handlers::resourceclaim::list_all_resourceclaims),
+        )
+        // Resource v1 API - ResourceClaimTemplates (namespace-scoped)
+        .route(
+            "/apis/resource.k8s.io/v1/namespaces/:namespace/resourceclaimtemplates",
+            get(handlers::resourceclaimtemplate::list_resourceclaimtemplates)
+                .post(handlers::resourceclaimtemplate::create_resourceclaimtemplate),
+        )
+        .route(
+            "/apis/resource.k8s.io/v1/namespaces/:namespace/resourceclaimtemplates/:name",
+            get(handlers::resourceclaimtemplate::get_resourceclaimtemplate)
+                .put(handlers::resourceclaimtemplate::update_resourceclaimtemplate)
+                .patch(handlers::resourceclaimtemplate::patch_resourceclaimtemplate)
+                .delete(handlers::resourceclaimtemplate::delete_resourceclaimtemplate),
+        )
+        // ResourceClaimTemplates (all namespaces)
+        .route(
+            "/apis/resource.k8s.io/v1/resourceclaimtemplates",
+            get(handlers::resourceclaimtemplate::list_all_resourceclaimtemplates),
+        )
+        // Resource v1 API - DeviceClasses (cluster-scoped)
+        .route(
+            "/apis/resource.k8s.io/v1/deviceclasses",
+            get(handlers::deviceclass::list_deviceclasses)
+                .post(handlers::deviceclass::create_deviceclass),
+        )
+        .route(
+            "/apis/resource.k8s.io/v1/deviceclasses/:name",
+            get(handlers::deviceclass::get_deviceclass)
+                .put(handlers::deviceclass::update_deviceclass)
+                .patch(handlers::deviceclass::patch_deviceclass)
+                .delete(handlers::deviceclass::delete_deviceclass),
+        )
+        // Resource v1 API - ResourceSlices (cluster-scoped)
+        .route(
+            "/apis/resource.k8s.io/v1/resourceslices",
+            get(handlers::resourceslice::list_resourceslices)
+                .post(handlers::resourceslice::create_resourceslice),
+        )
+        .route(
+            "/apis/resource.k8s.io/v1/resourceslices/:name",
+            get(handlers::resourceslice::get_resourceslice)
+                .put(handlers::resourceslice::update_resourceslice)
+                .patch(handlers::resourceslice::patch_resourceslice)
+                .delete(handlers::resourceslice::delete_resourceslice),
+        )
+        // Storage v1 API - CSIDrivers (cluster-scoped)
+        .route(
+            "/apis/storage.k8s.io/v1/csidrivers",
+            get(handlers::csidriver::list_csidrivers)
+                .post(handlers::csidriver::create_csidriver),
+        )
+        .route(
+            "/apis/storage.k8s.io/v1/csidrivers/:name",
+            get(handlers::csidriver::get_csidriver)
+                .put(handlers::csidriver::update_csidriver)
+                .patch(handlers::csidriver::patch_csidriver)
+                .delete(handlers::csidriver::delete_csidriver),
+        )
+        // Storage v1 API - CSINodes (cluster-scoped)
+        .route(
+            "/apis/storage.k8s.io/v1/csinodes",
+            get(handlers::csinode::list_csinodes)
+                .post(handlers::csinode::create_csinode),
+        )
+        .route(
+            "/apis/storage.k8s.io/v1/csinodes/:name",
+            get(handlers::csinode::get_csinode)
+                .put(handlers::csinode::update_csinode)
+                .patch(handlers::csinode::patch_csinode)
+                .delete(handlers::csinode::delete_csinode),
+        )
+        // Storage v1 API - VolumeAttachments (cluster-scoped)
+        .route(
+            "/apis/storage.k8s.io/v1/volumeattachments",
+            get(handlers::volumeattachment::list_volumeattachments)
+                .post(handlers::volumeattachment::create_volumeattachment),
+        )
+        .route(
+            "/apis/storage.k8s.io/v1/volumeattachments/:name",
+            get(handlers::volumeattachment::get_volumeattachment)
+                .put(handlers::volumeattachment::update_volumeattachment)
+                .patch(handlers::volumeattachment::patch_volumeattachment)
+                .delete(handlers::volumeattachment::delete_volumeattachment),
+        )
+        // Storage v1 API - VolumeAttributesClasses (cluster-scoped)
+        .route(
+            "/apis/storage.k8s.io/v1/volumeattributesclasses",
+            get(handlers::volumeattributesclass::list_volumeattributesclasses)
+                .post(handlers::volumeattributesclass::create_volumeattributesclass),
+        )
+        .route(
+            "/apis/storage.k8s.io/v1/volumeattributesclasses/:name",
+            get(handlers::volumeattributesclass::get_volumeattributesclass)
+                .put(handlers::volumeattributesclass::update_volumeattributesclass)
+                .patch(handlers::volumeattributesclass::patch_volumeattributesclass)
+                .delete(handlers::volumeattributesclass::delete_volumeattributesclass),
+        )
+        // Admission v1 API - ValidatingAdmissionPolicies (cluster-scoped)
+        .route(
+            "/apis/admissionregistration.k8s.io/v1/validatingadmissionpolicies",
+            get(handlers::validating_admission_policy::list_validating_admission_policies)
+                .post(handlers::validating_admission_policy::create_validating_admission_policy),
+        )
+        .route(
+            "/apis/admissionregistration.k8s.io/v1/validatingadmissionpolicies/:name",
+            get(handlers::validating_admission_policy::get_validating_admission_policy)
+                .put(handlers::validating_admission_policy::update_validating_admission_policy)
+                .patch(handlers::validating_admission_policy::patch_validating_admission_policy)
+                .delete(handlers::validating_admission_policy::delete_validating_admission_policy),
+        )
+        // Admission v1 API - ValidatingAdmissionPolicyBindings (cluster-scoped)
+        .route(
+            "/apis/admissionregistration.k8s.io/v1/validatingadmissionpolicybindings",
+            get(handlers::validating_admission_policy::list_validating_admission_policy_bindings)
+                .post(handlers::validating_admission_policy::create_validating_admission_policy_binding),
+        )
+        .route(
+            "/apis/admissionregistration.k8s.io/v1/validatingadmissionpolicybindings/:name",
+            get(handlers::validating_admission_policy::get_validating_admission_policy_binding)
+                .put(handlers::validating_admission_policy::update_validating_admission_policy_binding)
+                .patch(handlers::validating_admission_policy::patch_validating_admission_policy_binding)
+                .delete(handlers::validating_admission_policy::delete_validating_admission_policy_binding),
+        )
+        // Networking v1 API - ServiceCIDRs (cluster-scoped)
+        .route(
+            "/apis/networking.k8s.io/v1/servicecidrs",
+            get(handlers::servicecidr::list_servicecidrs)
+                .post(handlers::servicecidr::create_servicecidr),
+        )
+        .route(
+            "/apis/networking.k8s.io/v1/servicecidrs/:name",
+            get(handlers::servicecidr::get_servicecidr)
+                .put(handlers::servicecidr::update_servicecidr)
+                .patch(handlers::servicecidr::patch_servicecidr)
+                .delete(handlers::servicecidr::delete_servicecidr),
+        )
+        // Networking v1 API - IPAddresses (cluster-scoped)
+        .route(
+            "/apis/networking.k8s.io/v1/ipaddresses",
+            get(handlers::ipaddress::list_ipaddresses)
+                .post(handlers::ipaddress::create_ipaddress),
+        )
+        .route(
+            "/apis/networking.k8s.io/v1/ipaddresses/:name",
+            get(handlers::ipaddress::get_ipaddress)
+                .put(handlers::ipaddress::update_ipaddress)
+                .patch(handlers::ipaddress::patch_ipaddress)
+                .delete(handlers::ipaddress::delete_ipaddress),
+        )
+        // Networking v1 API - IngressClasses (cluster-scoped)
+        .route(
+            "/apis/networking.k8s.io/v1/ingressclasses",
+            get(handlers::ingressclass::list_ingressclasses)
+                .post(handlers::ingressclass::create_ingressclass),
+        )
+        .route(
+            "/apis/networking.k8s.io/v1/ingressclasses/:name",
+            get(handlers::ingressclass::get_ingressclass)
+                .put(handlers::ingressclass::update_ingressclass)
+                .patch(handlers::ingressclass::patch_ingressclass)
+                .delete(handlers::ingressclass::delete_ingressclass),
+        )
+        // Node v1 API - RuntimeClasses (cluster-scoped)
+        .route(
+            "/apis/node.k8s.io/v1/runtimeclasses",
+            get(handlers::runtimeclass::list_runtimeclasses)
+                .post(handlers::runtimeclass::create_runtimeclass),
+        )
+        .route(
+            "/apis/node.k8s.io/v1/runtimeclasses/:name",
+            get(handlers::runtimeclass::get_runtimeclass)
+                .put(handlers::runtimeclass::update_runtimeclass)
+                .patch(handlers::runtimeclass::patch_runtimeclass)
+                .delete(handlers::runtimeclass::delete_runtimeclass),
+        )
+        // Core v1 API - PodTemplates (namespace-scoped)
+        .route(
+            "/api/v1/namespaces/:namespace/podtemplates",
+            get(handlers::podtemplate::list_podtemplates)
+                .post(handlers::podtemplate::create_podtemplate),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/podtemplates/:name",
+            get(handlers::podtemplate::get_podtemplate)
+                .put(handlers::podtemplate::update_podtemplate)
+                .patch(handlers::podtemplate::patch_podtemplate)
+                .delete(handlers::podtemplate::delete_podtemplate),
+        )
+        // PodTemplates (all namespaces)
+        .route(
+            "/api/v1/podtemplates",
+            get(handlers::podtemplate::list_all_podtemplates),
+        )
+        // Core v1 API - ReplicationControllers (namespace-scoped)
+        .route(
+            "/api/v1/namespaces/:namespace/replicationcontrollers",
+            get(handlers::replicationcontroller::list_replicationcontrollers)
+                .post(handlers::replicationcontroller::create_replicationcontroller),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/replicationcontrollers/:name",
+            get(handlers::replicationcontroller::get_replicationcontroller)
+                .put(handlers::replicationcontroller::update_replicationcontroller)
+                .patch(handlers::replicationcontroller::patch_replicationcontroller)
+                .delete(handlers::replicationcontroller::delete_replicationcontroller),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/replicationcontrollers/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::status::update_status)
+                .patch(handlers::status::update_status),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/replicationcontrollers/:name/scale",
+            get(handlers::scale::get_scale)
+                .put(handlers::scale::update_scale)
+                .patch(handlers::scale::patch_scale),
+        )
+        // ReplicationControllers (all namespaces)
+        .route(
+            "/api/v1/replicationcontrollers",
+            get(handlers::replicationcontroller::list_all_replicationcontrollers),
+        )
+        // Apps v1 API - ControllerRevisions (namespace-scoped)
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/controllerrevisions",
+            get(handlers::controllerrevision::list_controllerrevisions)
+                .post(handlers::controllerrevision::create_controllerrevision),
+        )
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/controllerrevisions/:name",
+            get(handlers::controllerrevision::get_controllerrevision)
+                .put(handlers::controllerrevision::update_controllerrevision)
+                .patch(handlers::controllerrevision::patch_controllerrevision)
+                .delete(handlers::controllerrevision::delete_controllerrevision),
+        )
+        // ControllerRevisions (all namespaces)
+        .route(
+            "/apis/apps/v1/controllerrevisions",
+            get(handlers::controllerrevision::list_all_controllerrevisions),
+        )
+        // Authentication API - authentication.k8s.io/v1
+        .route(
+            "/apis/authentication.k8s.io/v1/tokenreviews",
+            post(handlers::authentication::create_token_review),
+        )
+        .route(
+            "/apis/authentication.k8s.io/v1/selfsubjectreviews",
+            post(handlers::authentication::create_self_subject_review),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/serviceaccounts/:service_account_name/token",
+            post(handlers::authentication::create_token_request),
+        )
+        // Authorization API - authorization.k8s.io/v1
+        .route(
+            "/apis/authorization.k8s.io/v1/subjectaccessreviews",
+            post(handlers::authorization::create_subject_access_review),
+        )
+        .route(
+            "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
+            post(handlers::authorization::create_self_subject_access_review),
+        )
+        .route(
+            "/apis/authorization.k8s.io/v1/namespaces/:namespace/localsubjectaccessreviews",
+            post(handlers::authorization::create_local_subject_access_review),
+        )
+        .route(
+            "/apis/authorization.k8s.io/v1/selfsubjectrulesreviews",
+            post(handlers::authorization::create_self_subject_rules_review),
+        )
+        // Metrics API - metrics.k8s.io/v1beta1
+        .route(
+            "/apis/metrics.k8s.io/v1beta1/nodes/:name",
+            get(handlers::metrics::get_node_metrics),
+        )
+        .route(
+            "/apis/metrics.k8s.io/v1beta1/nodes",
+            get(handlers::metrics::list_node_metrics),
+        )
+        .route(
+            "/apis/metrics.k8s.io/v1beta1/namespaces/:namespace/pods/:name",
+            get(handlers::metrics::get_pod_metrics),
+        )
+        .route(
+            "/apis/metrics.k8s.io/v1beta1/namespaces/:namespace/pods",
+            get(handlers::metrics::list_pod_metrics),
+        )
+        .route(
+            "/apis/metrics.k8s.io/v1beta1/pods",
+            get(handlers::metrics::list_all_pod_metrics),
+        )
+        // Custom Metrics API - custom.metrics.k8s.io/v1beta2
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/:resource/:name/:metric",
+            get(handlers::custom_metrics::get_custom_metric),
+        )
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/:resource/*/:metric",
+            get(handlers::custom_metrics::list_custom_metrics),
+        )
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/metrics/:metric",
+            get(handlers::custom_metrics::get_namespace_metric),
+        )
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2/:resource/:name/:metric",
+            get(handlers::custom_metrics::get_cluster_metric),
         );
 
     // Conditionally apply authentication middleware
@@ -432,6 +1584,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
     Router::new()
         .merge(public_routes)
         .merge(protected_routes)
+        .fallback(custom_resource_fallback)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

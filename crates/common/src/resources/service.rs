@@ -33,12 +33,13 @@ pub struct ServiceSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selector: Option<HashMap<String, String>>,
 
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub ports: Vec<ServicePort>,
 
     #[serde(skip_serializing_if = "Option::is_none", rename = "type")]
     pub service_type: Option<ServiceType>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "clusterIP")]
     pub cluster_ip: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -46,6 +47,37 @@ pub struct ServiceSpec {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_affinity: Option<String>, // ClientIP or None
+
+    /// ExternalName is the external reference that kubedns or equivalent will return as a CNAME record for this service.
+    /// Required for ExternalName type services. No proxying will be involved.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_name: Option<String>,
+
+    /// ClusterIPs is a list of IP addresses assigned to this service, and is usually assigned randomly.
+    /// If specified, must be valid IPs. Used for dual-stack support.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster_ips: Option<Vec<String>>,
+
+    /// IPFamilies is a list of IP families (IPv4, IPv6) assigned to this service.
+    /// Dual-stack services use both IPv4 and IPv6.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip_families: Option<Vec<IPFamily>>,
+
+    /// IPFamilyPolicy represents the dual-stack-ness requested or required by this Service.
+    /// Can be SingleStack, PreferDualStack, or RequireDualStack.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip_family_policy: Option<IPFamilyPolicy>,
+
+    /// InternalTrafficPolicy specifies if the cluster internal traffic should be routed to all endpoints
+    /// or node-local endpoints only. "Cluster" routes to all endpoints. "Local" routes to node-local endpoints.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub internal_traffic_policy: Option<ServiceInternalTrafficPolicy>,
+
+    /// ExternalTrafficPolicy denotes if this Service desires to route external traffic to node-local or
+    /// cluster-wide endpoints. "Local" preserves the client source IP and avoids a second hop for LoadBalancer
+    /// and Nodeport type services, but risks potentially imbalanced traffic spreading.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_traffic_policy: Option<ServiceExternalTrafficPolicy>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,4 +127,51 @@ pub struct LoadBalancerIngress {
     pub ip: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
+}
+
+/// IPFamily represents the IP family (IPv4 or IPv6)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum IPFamily {
+    IPv4,
+    IPv6,
+}
+
+/// IPFamilyPolicy represents the dual-stack-ness requested or required by a Service
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum IPFamilyPolicy {
+    /// SingleStack indicates that this service is required to have a single IPFamily.
+    /// The IPFamily assigned is based on the default IPFamily used by the cluster
+    /// or as identified by service.spec.ipFamilies field.
+    SingleStack,
+    /// PreferDualStack indicates that this service prefers dual-stack when the cluster is configured for dual-stack.
+    /// If the cluster is not configured for dual-stack the service will be assigned a single IPFamily.
+    PreferDualStack,
+    /// RequireDualStack indicates that this service requires dual-stack.
+    /// The service will fail if the cluster is not configured for dual-stack.
+    RequireDualStack,
+}
+
+/// ServiceInternalTrafficPolicy describes how nodes distribute service traffic they
+/// receive on the ClusterIP. If set to "Local", the proxy will assume that pods only
+/// want to talk to endpoints of the service on the same node as the pod, dropping the
+/// traffic if there are no local endpoints.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ServiceInternalTrafficPolicy {
+    /// Cluster routes traffic to all endpoints
+    Cluster,
+    /// Local routes traffic only to node-local endpoints, dropping the traffic if no endpoints exist on the node
+    Local,
+}
+
+/// ServiceExternalTrafficPolicy describes how nodes distribute service traffic they
+/// receive on one of the Service's "externally-facing" addresses (NodePorts, ExternalIPs,
+/// and LoadBalancer IPs). If set to "Local", the proxy will assume that pods only want
+/// to talk to endpoints of the service on the same node as the pod, dropping the traffic
+/// if there are no local endpoints.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ServiceExternalTrafficPolicy {
+    /// Cluster routes traffic to all endpoints
+    Cluster,
+    /// Local routes traffic only to node-local endpoints, preserving client source IP and avoiding second hop
+    Local,
 }

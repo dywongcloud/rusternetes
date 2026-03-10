@@ -1,0 +1,246 @@
+use crate::{middleware::AuthContext, state::ApiServerState};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    Extension, Json,
+};
+use rusternetes_common::{
+    authz::{Decision, RequestAttributes},
+    resources::CertificateSigningRequest,
+    List,
+    Result,
+};
+use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tracing::info;
+
+pub async fn create_certificate_signing_request(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(mut csr): Json<CertificateSigningRequest>,
+) -> Result<(StatusCode, Json<CertificateSigningRequest>)> {
+    info!("Creating CertificateSigningRequest: {}", csr.metadata.name);
+
+    let attrs = RequestAttributes::new(auth_ctx.user, "create", "certificatesigningrequests")
+        .with_api_group("certificates.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => return Err(rusternetes_common::Error::Forbidden(reason)),
+    }
+
+    // Enrich metadata with system fields
+    csr.metadata.ensure_uid();
+    csr.metadata.ensure_creation_timestamp();
+
+    // Check for dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: CertificateSigningRequest validated successfully (not created)");
+        return Ok((StatusCode::CREATED, Json(csr)));
+    }
+
+    let key = build_key("certificatesigningrequests", None, &csr.metadata.name);
+    let created = state.storage.create(&key, &csr).await?;
+
+    Ok((StatusCode::CREATED, Json(created)))
+}
+
+pub async fn get_certificate_signing_request(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(name): Path<String>,
+) -> Result<Json<CertificateSigningRequest>> {
+    info!("Getting CertificateSigningRequest: {}", name);
+
+    let attrs = RequestAttributes::new(auth_ctx.user, "get", "certificatesigningrequests")
+        .with_api_group("certificates.k8s.io")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => return Err(rusternetes_common::Error::Forbidden(reason)),
+    }
+
+    let key = build_key("certificatesigningrequests", None, &name);
+    let csr = state.storage.get(&key).await?;
+
+    Ok(Json(csr))
+}
+
+pub async fn update_certificate_signing_request(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(mut csr): Json<CertificateSigningRequest>,
+) -> Result<Json<CertificateSigningRequest>> {
+    info!("Updating CertificateSigningRequest: {}", name);
+
+    let attrs = RequestAttributes::new(auth_ctx.user, "update", "certificatesigningrequests")
+        .with_api_group("certificates.k8s.io")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => return Err(rusternetes_common::Error::Forbidden(reason)),
+    }
+
+    csr.metadata.name = name.clone();
+
+    // Check for dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: CertificateSigningRequest validated successfully (not updated)");
+        return Ok(Json(csr));
+    }
+
+    let key = build_key("certificatesigningrequests", None, &name);
+    let result = match state.storage.update(&key, &csr).await {
+        Ok(updated) => updated,
+        Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &csr).await?,
+        Err(e) => return Err(e),
+    };
+
+    Ok(Json(result))
+}
+
+pub async fn delete_certificate_signing_request(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("Deleting CertificateSigningRequest: {}", name);
+
+    let attrs = RequestAttributes::new(auth_ctx.user, "delete", "certificatesigningrequests")
+        .with_api_group("certificates.k8s.io")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => return Err(rusternetes_common::Error::Forbidden(reason)),
+    }
+
+    let key = build_key("certificatesigningrequests", None, &name);
+
+    // Check for dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: CertificateSigningRequest validated successfully (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get the resource for finalizer handling
+    let resource: CertificateSigningRequest = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &resource,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "CertificateSigningRequest marked for deletion (has finalizers: {:?})",
+            resource.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
+}
+
+pub async fn list_certificate_signing_requests(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<List<CertificateSigningRequest>>> {
+    info!("Listing CertificateSigningRequests");
+
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "certificatesigningrequests")
+        .with_api_group("certificates.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => return Err(rusternetes_common::Error::Forbidden(reason)),
+    }
+
+    let prefix = build_prefix("certificatesigningrequests", None);
+    let mut items = state.storage.list(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    let list = List::new("CertificateSigningRequestList", "certificates.k8s.io/v1", items);
+    Ok(Json(list))
+}
+
+// Status subresource handlers
+pub async fn get_certificate_signing_request_status(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(name): Path<String>,
+) -> Result<Json<CertificateSigningRequest>> {
+    info!("Getting CertificateSigningRequest status: {}", name);
+
+    let attrs = RequestAttributes::new(auth_ctx.user, "get", "certificatesigningrequests/status")
+        .with_api_group("certificates.k8s.io")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => return Err(rusternetes_common::Error::Forbidden(reason)),
+    }
+
+    let key = build_key("certificatesigningrequests", None, &name);
+    let csr = state.storage.get(&key).await?;
+
+    Ok(Json(csr))
+}
+
+pub async fn update_certificate_signing_request_status(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(name): Path<String>,
+    Json(updated_csr): Json<CertificateSigningRequest>,
+) -> Result<Json<CertificateSigningRequest>> {
+    info!("Updating CertificateSigningRequest status: {}", name);
+
+    let attrs = RequestAttributes::new(auth_ctx.user, "update", "certificatesigningrequests/status")
+        .with_api_group("certificates.k8s.io")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => return Err(rusternetes_common::Error::Forbidden(reason)),
+    }
+
+    let key = build_key("certificatesigningrequests", None, &name);
+
+    // Get existing CSR
+    let mut existing_csr: CertificateSigningRequest = state.storage.get(&key).await?;
+
+    // Update only status
+    existing_csr.status = updated_csr.status;
+
+    let result = state.storage.update(&key, &existing_csr).await?;
+
+    Ok(Json(result))
+}
+
+// Approval subresource - simplified as update status
+pub async fn approve_certificate_signing_request(
+    state: State<Arc<ApiServerState>>,
+    auth_ctx: Extension<AuthContext>,
+    name: Path<String>,
+    csr: Json<CertificateSigningRequest>,
+) -> Result<Json<CertificateSigningRequest>> {
+    update_certificate_signing_request_status(state, auth_ctx, name, csr).await
+}
+
+crate::patch_handler_cluster!(patch_certificate_signing_request, CertificateSigningRequest, "certificatesigningrequests", "certificates.k8s.io");

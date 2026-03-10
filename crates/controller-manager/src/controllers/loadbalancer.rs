@@ -7,6 +7,7 @@ use rusternetes_common::{
     },
 };
 use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
@@ -129,26 +130,27 @@ impl LoadBalancerController {
         // Ensure NodePorts are allocated
         let has_node_ports = service.spec.ports.iter().all(|p| p.node_port.is_some());
 
-        if !has_node_ports {
-            warn!("Service {}/{} is LoadBalancer type but missing NodePorts", namespace, name);
-            // In a real implementation, we should allocate NodePorts here
-            return Ok(());
-        }
+        let updated_service = if !has_node_ports {
+            info!("Allocating NodePorts for LoadBalancer service {}/{}", namespace, name);
+            self.allocate_node_ports(service).await?
+        } else {
+            service.clone()
+        };
 
         // Convert to cloud provider service format
         let cloud_lb_service = CloudLBService {
             namespace: namespace.clone(),
             name: name.clone(),
             cluster_name: self.cluster_name.clone(),
-            ports: service.spec.ports.iter().map(|p| LoadBalancerPort {
+            ports: updated_service.spec.ports.iter().map(|p| LoadBalancerPort {
                 name: p.name.clone(),
                 protocol: p.protocol.clone().unwrap_or_else(|| "TCP".to_string()),
                 port: p.port,
                 node_port: p.node_port.unwrap(),
             }).collect(),
             node_addresses: node_addresses.to_vec(),
-            session_affinity: service.spec.session_affinity.clone(),
-            annotations: service.metadata.annotations.clone().unwrap_or_default(),
+            session_affinity: updated_service.spec.session_affinity.clone(),
+            annotations: updated_service.metadata.annotations.clone().unwrap_or_default(),
         };
 
         // Ensure load balancer exists
@@ -224,6 +226,95 @@ impl LoadBalancerController {
             .context("Failed to delete load balancer")?;
 
         Ok(())
+    }
+
+    /// Allocate NodePorts for a service
+    /// NodePort range: 30000-32767 (Kubernetes default)
+    async fn allocate_node_ports(&self, service: &Service) -> Result<Service> {
+        const NODE_PORT_MIN: u16 = 30000;
+        const NODE_PORT_MAX: u16 = 32767;
+
+        let namespace = service.metadata.namespace.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Service has no namespace"))?;
+        let name = &service.metadata.name;
+
+        // Collect all currently allocated NodePorts from all services
+        let allocated_ports = self.get_allocated_node_ports().await?;
+
+        // Clone service and allocate ports
+        let mut updated_service = service.clone();
+
+        for port in &mut updated_service.spec.ports {
+            if port.node_port.is_none() {
+                // Find next available port
+                let node_port = Self::find_available_port(
+                    NODE_PORT_MIN,
+                    NODE_PORT_MAX,
+                    &allocated_ports,
+                )?;
+
+                info!(
+                    "Allocated NodePort {} for service {}/{} port {}",
+                    node_port,
+                    namespace,
+                    name,
+                    port.name.as_deref().unwrap_or(&port.port.to_string())
+                );
+
+                port.node_port = Some(node_port);
+            }
+        }
+
+        // Update the service in storage
+        let key = rusternetes_storage::build_key("services", Some(namespace), name);
+        self.storage.update(&key, &updated_service).await
+            .context("Failed to update service with NodePorts")?;
+
+        Ok(updated_service)
+    }
+
+    /// Get all currently allocated NodePorts across all services
+    async fn get_allocated_node_ports(&self) -> Result<HashSet<u16>> {
+        let services: Vec<Service> = self.storage
+            .list("/registry/services/")
+            .await
+            .context("Failed to list services")?;
+
+        let mut allocated = HashSet::new();
+
+        for service in services {
+            for port in &service.spec.ports {
+                if let Some(node_port) = port.node_port {
+                    allocated.insert(node_port);
+                }
+            }
+        }
+
+        debug!("Found {} allocated NodePorts", allocated.len());
+
+        Ok(allocated)
+    }
+
+    /// Find an available port in the given range
+    fn find_available_port(
+        min: u16,
+        max: u16,
+        allocated: &HashSet<u16>,
+    ) -> Result<u16> {
+        // Simple linear search for available port
+        // In production, this could be optimized with a more sophisticated allocator
+        for port in min..=max {
+            if !allocated.contains(&port) {
+                return Ok(port);
+            }
+        }
+
+        Err(anyhow::anyhow!(
+            "No available NodePorts in range {}-{}. All {} ports are allocated.",
+            min,
+            max,
+            max - min + 1
+        ))
     }
 }
 

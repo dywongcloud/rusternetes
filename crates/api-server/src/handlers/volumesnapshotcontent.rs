@@ -1,21 +1,24 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::VolumeSnapshotContent,
+    List,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
 pub async fn create_volumesnapshotcontent(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut vsc): Json<VolumeSnapshotContent>,
 ) -> Result<(StatusCode, Json<VolumeSnapshotContent>)> {
     info!("Creating VolumeSnapshotContent: {}", vsc.metadata.name);
@@ -33,6 +36,12 @@ pub async fn create_volumesnapshotcontent(
 
     vsc.metadata.ensure_uid();
     vsc.metadata.ensure_creation_timestamp();
+
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: VolumeSnapshotContent validated successfully (not created)");
+        return Ok((StatusCode::CREATED, Json(vsc)));
+    }
 
     let key = build_key("volumesnapshotcontents", None, &vsc.metadata.name);
     let created = state.storage.create(&key, &vsc).await?;
@@ -67,7 +76,8 @@ pub async fn get_volumesnapshotcontent(
 pub async fn list_volumesnapshotcontents(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<Vec<VolumeSnapshotContent>>> {
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<List<VolumeSnapshotContent>>> {
     info!("Listing all VolumeSnapshotContents");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "volumesnapshotcontents")
@@ -81,15 +91,20 @@ pub async fn list_volumesnapshotcontents(
     }
 
     let prefix = build_prefix("volumesnapshotcontents", None);
-    let vscs = state.storage.list(&prefix).await?;
+    let mut vscs = state.storage.list(&prefix).await?;
 
-    Ok(Json(vscs))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut vscs, &params)?;
+
+    let list = List::new("VolumeSnapshotContentList", "snapshot.storage.k8s.io/v1", vscs);
+    Ok(Json(list))
 }
 
 pub async fn update_volumesnapshotcontent(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut vsc): Json<VolumeSnapshotContent>,
 ) -> Result<Json<VolumeSnapshotContent>> {
     info!("Updating VolumeSnapshotContent: {}", name);
@@ -107,6 +122,12 @@ pub async fn update_volumesnapshotcontent(
 
     vsc.metadata.name = name.clone();
 
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: VolumeSnapshotContent validated successfully (not updated)");
+        return Ok(Json(vsc));
+    }
+
     let key = build_key("volumesnapshotcontents", None, &name);
     let updated = state.storage.update(&key, &vsc).await?;
 
@@ -117,6 +138,7 @@ pub async fn delete_volumesnapshotcontent(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting VolumeSnapshotContent: {}", name);
 
@@ -132,9 +154,33 @@ pub async fn delete_volumesnapshotcontent(
     }
 
     let key = build_key("volumesnapshotcontents", None, &name);
-    state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: VolumeSnapshotContent validated successfully (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get the resource for finalizer handling
+    let resource: VolumeSnapshotContent = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &resource,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "VolumeSnapshotContent marked for deletion (has finalizers: {:?})",
+            resource.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 // Use the macro to create a PATCH handler

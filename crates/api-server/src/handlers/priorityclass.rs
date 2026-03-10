@@ -1,24 +1,30 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::PriorityClass,
+    List,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Json(priority_class): Json<PriorityClass>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(mut priority_class): Json<PriorityClass>,
 ) -> Result<(StatusCode, Json<PriorityClass>)> {
     info!("Creating PriorityClass: {}", priority_class.metadata.name);
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "priorityclasses")
@@ -31,7 +37,18 @@ pub async fn create(
         }
     }
 
+    // Enrich metadata with system fields
+    priority_class.metadata.ensure_uid();
+    priority_class.metadata.ensure_creation_timestamp();
+
     let key = build_key("priorityclasses", None, &priority_class.metadata.name);
+
+    // If dry-run, skip storage operation but return the validated resource
+    if is_dry_run {
+        info!("Dry-run: PriorityClass {} validated successfully (not created)", priority_class.metadata.name);
+        return Ok((StatusCode::CREATED, Json(priority_class)));
+    }
+
     let created = state.storage.create(&key, &priority_class).await?;
 
     Ok((StatusCode::CREATED, Json(created)))
@@ -66,9 +83,13 @@ pub async fn update(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut priority_class): Json<PriorityClass>,
 ) -> Result<Json<PriorityClass>> {
     info!("Updating PriorityClass: {}", name);
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "priorityclasses")
@@ -86,6 +107,12 @@ pub async fn update(
 
     let key = build_key("priorityclasses", None, &name);
 
+    // If dry-run, skip storage operation but return the validated resource
+    if is_dry_run {
+        info!("Dry-run: PriorityClass {} validated successfully (not updated)", name);
+        return Ok(Json(priority_class));
+    }
+
     let result = match state.storage.update(&key, &priority_class).await {
         Ok(updated) => updated,
         Err(rusternetes_common::Error::NotFound(_)) => {
@@ -101,8 +128,12 @@ pub async fn delete(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting PriorityClass: {}", name);
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "priorityclasses")
@@ -117,15 +148,41 @@ pub async fn delete(
     }
 
     let key = build_key("priorityclasses", None, &name);
-    state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    // If dry-run, skip delete operation
+    if is_dry_run {
+        info!("Dry-run: PriorityClass {} validated successfully (not deleted)", name);
+        return Ok(StatusCode::OK);
+    }
+
+    // Get the priority class for finalizer handling
+    let priority_class: PriorityClass = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &priority_class,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "PriorityClass {} marked for deletion (has finalizers: {:?})",
+            name,
+            priority_class.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 pub async fn list(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<Vec<PriorityClass>>> {
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<List<PriorityClass>>> {
     info!("Listing PriorityClasses");
 
     // Check authorization
@@ -140,9 +197,13 @@ pub async fn list(
     }
 
     let prefix = build_prefix("priorityclasses", None);
-    let priority_classes = state.storage.list(&prefix).await?;
+    let mut priority_classes = state.storage.list(&prefix).await?;
 
-    Ok(Json(priority_classes))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut priority_classes, &params)?;
+
+    let list = List::new("PriorityClassList", "scheduling.k8s.io/v1", priority_classes);
+    Ok(Json(list))
 }
 
 // Use the macro to create a PATCH handler

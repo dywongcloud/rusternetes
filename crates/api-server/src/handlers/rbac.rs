@@ -1,15 +1,17 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::{ClusterRole, ClusterRoleBinding, Role, RoleBinding},
+    List,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
@@ -18,6 +20,7 @@ pub async fn create_role(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut role): Json<Role>,
 ) -> Result<(StatusCode, Json<Role>)> {
     info!("Creating role: {}/{}", namespace, role.metadata.name);
@@ -35,6 +38,17 @@ pub async fn create_role(
     }
 
     role.metadata.namespace = Some(namespace.clone());
+
+    // Enrich metadata with system fields
+    role.metadata.ensure_uid();
+    role.metadata.ensure_creation_timestamp();
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: Role validated successfully (not created)");
+        return Ok((StatusCode::CREATED, Json(role)));
+    }
 
     let key = build_key("roles", Some(&namespace), &role.metadata.name);
     let created = state.storage.create(&key, &role).await?;
@@ -72,6 +86,7 @@ pub async fn update_role(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut role): Json<Role>,
 ) -> Result<Json<Role>> {
     info!("Updating role: {}/{}", namespace, name);
@@ -92,6 +107,13 @@ pub async fn update_role(
     role.metadata.name = name.clone();
     role.metadata.namespace = Some(namespace.clone());
 
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: Role validated successfully (not updated)");
+        return Ok(Json(role));
+    }
+
     let key = build_key("roles", Some(&namespace), &name);
     let updated = state.storage.update(&key, &role).await?;
 
@@ -102,6 +124,7 @@ pub async fn delete_role(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting role: {}/{}", namespace, name);
 
@@ -119,16 +142,42 @@ pub async fn delete_role(
     }
 
     let key = build_key("roles", Some(&namespace), &name);
-    state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: Role validated successfully (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get the resource for finalizer handling
+    let role: Role = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &role,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "Role marked for deletion (has finalizers: {:?})",
+            role.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 pub async fn list_roles(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
-) -> Result<Json<Vec<Role>>> {
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<List<Role>>> {
     info!("Listing roles in namespace: {}", namespace);
 
     // Check authorization
@@ -144,9 +193,42 @@ pub async fn list_roles(
     }
 
     let prefix = build_prefix("roles", Some(&namespace));
-    let roles = state.storage.list(&prefix).await?;
+    let mut roles = state.storage.list(&prefix).await?;
 
-    Ok(Json(roles))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut roles, &params)?;
+
+    let list = List::new("RoleList", "rbac.authorization.k8s.io/v1", roles);
+    Ok(Json(list))
+}
+
+/// List all roles across all namespaces
+pub async fn list_all_roles(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<List<Role>>> {
+    info!("Listing all roles");
+
+    // Check authorization (cluster-wide list)
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "roles")
+        .with_api_group("rbac.authorization.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    let prefix = build_prefix("roles", None);
+    let mut roles = state.storage.list::<Role>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut roles, &params)?;
+
+    let list = List::new("RoleList", "rbac.authorization.k8s.io/v1", roles);
+    Ok(Json(list))
 }
 
 // RoleBinding handlers
@@ -154,6 +236,7 @@ pub async fn create_rolebinding(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut rolebinding): Json<RoleBinding>,
 ) -> Result<(StatusCode, Json<RoleBinding>)> {
     info!("Creating rolebinding: {}/{}", namespace, rolebinding.metadata.name);
@@ -171,6 +254,17 @@ pub async fn create_rolebinding(
     }
 
     rolebinding.metadata.namespace = Some(namespace.clone());
+
+    // Enrich metadata with system fields
+    rolebinding.metadata.ensure_uid();
+    rolebinding.metadata.ensure_creation_timestamp();
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: RoleBinding validated successfully (not created)");
+        return Ok((StatusCode::CREATED, Json(rolebinding)));
+    }
 
     let key = build_key("rolebindings", Some(&namespace), &rolebinding.metadata.name);
     let created = state.storage.create(&key, &rolebinding).await?;
@@ -208,6 +302,7 @@ pub async fn update_rolebinding(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut rolebinding): Json<RoleBinding>,
 ) -> Result<Json<RoleBinding>> {
     info!("Updating rolebinding: {}/{}", namespace, name);
@@ -228,6 +323,13 @@ pub async fn update_rolebinding(
     rolebinding.metadata.name = name.clone();
     rolebinding.metadata.namespace = Some(namespace.clone());
 
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: RoleBinding validated successfully (not updated)");
+        return Ok(Json(rolebinding));
+    }
+
     let key = build_key("rolebindings", Some(&namespace), &name);
     let updated = state.storage.update(&key, &rolebinding).await?;
 
@@ -238,6 +340,7 @@ pub async fn delete_rolebinding(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting rolebinding: {}/{}", namespace, name);
 
@@ -255,16 +358,42 @@ pub async fn delete_rolebinding(
     }
 
     let key = build_key("rolebindings", Some(&namespace), &name);
-    state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: RoleBinding validated successfully (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get the resource for finalizer handling
+    let rolebinding: RoleBinding = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &rolebinding,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "RoleBinding marked for deletion (has finalizers: {:?})",
+            rolebinding.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 pub async fn list_rolebindings(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
-) -> Result<Json<Vec<RoleBinding>>> {
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<List<RoleBinding>>> {
     info!("Listing rolebindings in namespace: {}", namespace);
 
     // Check authorization
@@ -280,16 +409,50 @@ pub async fn list_rolebindings(
     }
 
     let prefix = build_prefix("rolebindings", Some(&namespace));
-    let rolebindings = state.storage.list(&prefix).await?;
+    let mut rolebindings = state.storage.list(&prefix).await?;
 
-    Ok(Json(rolebindings))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut rolebindings, &params)?;
+
+    let list = List::new("RoleBindingList", "rbac.authorization.k8s.io/v1", rolebindings);
+    Ok(Json(list))
+}
+
+/// List all rolebindings across all namespaces
+pub async fn list_all_rolebindings(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<List<RoleBinding>>> {
+    info!("Listing all rolebindings");
+
+    // Check authorization (cluster-wide list)
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "rolebindings")
+        .with_api_group("rbac.authorization.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    let prefix = build_prefix("rolebindings", None);
+    let mut rolebindings = state.storage.list::<RoleBinding>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut rolebindings, &params)?;
+
+    let list = List::new("RoleBindingList", "rbac.authorization.k8s.io/v1", rolebindings);
+    Ok(Json(list))
 }
 
 // ClusterRole handlers
 pub async fn create_clusterrole(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Json(clusterrole): Json<ClusterRole>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(mut clusterrole): Json<ClusterRole>,
 ) -> Result<(StatusCode, Json<ClusterRole>)> {
     info!("Creating clusterrole: {}", clusterrole.metadata.name);
 
@@ -304,10 +467,29 @@ pub async fn create_clusterrole(
         }
     }
 
-    let key = build_key("clusterroles", None, &clusterrole.metadata.name);
-    let created = state.storage.create(&key, &clusterrole).await?;
+    // Enrich metadata with system fields
+    clusterrole.metadata.ensure_uid();
+    clusterrole.metadata.ensure_creation_timestamp();
 
-    Ok((StatusCode::CREATED, Json(created)))
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ClusterRole validated successfully (not created)");
+        return Ok((StatusCode::CREATED, Json(clusterrole)));
+    }
+
+    let key = build_key("clusterroles", None, &clusterrole.metadata.name);
+
+    match state.storage.create(&key, &clusterrole).await {
+        Ok(created) => {
+            info!("ClusterRole created successfully: {}", clusterrole.metadata.name);
+            Ok((StatusCode::CREATED, Json(created)))
+        }
+        Err(e) => {
+            tracing::warn!("Failed to create ClusterRole {}: {}", clusterrole.metadata.name, e);
+            Err(e)
+        }
+    }
 }
 
 pub async fn get_clusterrole(
@@ -339,6 +521,7 @@ pub async fn update_clusterrole(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut clusterrole): Json<ClusterRole>,
 ) -> Result<Json<ClusterRole>> {
     info!("Updating clusterrole: {}", name);
@@ -357,6 +540,13 @@ pub async fn update_clusterrole(
 
     clusterrole.metadata.name = name.clone();
 
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ClusterRole validated successfully (not updated)");
+        return Ok(Json(clusterrole));
+    }
+
     let key = build_key("clusterroles", None, &name);
     let updated = state.storage.update(&key, &clusterrole).await?;
 
@@ -367,6 +557,7 @@ pub async fn delete_clusterrole(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting clusterrole: {}", name);
 
@@ -383,15 +574,41 @@ pub async fn delete_clusterrole(
     }
 
     let key = build_key("clusterroles", None, &name);
-    state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ClusterRole validated successfully (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get the resource for finalizer handling
+    let clusterrole: ClusterRole = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &clusterrole,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "ClusterRole marked for deletion (has finalizers: {:?})",
+            clusterrole.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 pub async fn list_clusterroles(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<Vec<ClusterRole>>> {
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<List<ClusterRole>>> {
     info!("Listing clusterroles");
 
     // Check authorization
@@ -406,16 +623,21 @@ pub async fn list_clusterroles(
     }
 
     let prefix = build_prefix("clusterroles", None);
-    let clusterroles = state.storage.list(&prefix).await?;
+    let mut clusterroles = state.storage.list(&prefix).await?;
 
-    Ok(Json(clusterroles))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut clusterroles, &params)?;
+
+    let list = List::new("ClusterRoleList", "rbac.authorization.k8s.io/v1", clusterroles);
+    Ok(Json(list))
 }
 
 // ClusterRoleBinding handlers
 pub async fn create_clusterrolebinding(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Json(clusterrolebinding): Json<ClusterRoleBinding>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(mut clusterrolebinding): Json<ClusterRoleBinding>,
 ) -> Result<(StatusCode, Json<ClusterRoleBinding>)> {
     info!("Creating clusterrolebinding: {}", clusterrolebinding.metadata.name);
 
@@ -430,10 +652,29 @@ pub async fn create_clusterrolebinding(
         }
     }
 
-    let key = build_key("clusterrolebindings", None, &clusterrolebinding.metadata.name);
-    let created = state.storage.create(&key, &clusterrolebinding).await?;
+    // Enrich metadata with system fields
+    clusterrolebinding.metadata.ensure_uid();
+    clusterrolebinding.metadata.ensure_creation_timestamp();
 
-    Ok((StatusCode::CREATED, Json(created)))
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ClusterRoleBinding validated successfully (not created)");
+        return Ok((StatusCode::CREATED, Json(clusterrolebinding)));
+    }
+
+    let key = build_key("clusterrolebindings", None, &clusterrolebinding.metadata.name);
+
+    match state.storage.create(&key, &clusterrolebinding).await {
+        Ok(created) => {
+            info!("ClusterRoleBinding created successfully: {}", clusterrolebinding.metadata.name);
+            Ok((StatusCode::CREATED, Json(created)))
+        }
+        Err(e) => {
+            tracing::warn!("Failed to create ClusterRoleBinding {}: {}", clusterrolebinding.metadata.name, e);
+            Err(e)
+        }
+    }
 }
 
 pub async fn get_clusterrolebinding(
@@ -465,6 +706,7 @@ pub async fn update_clusterrolebinding(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut clusterrolebinding): Json<ClusterRoleBinding>,
 ) -> Result<Json<ClusterRoleBinding>> {
     info!("Updating clusterrolebinding: {}", name);
@@ -483,6 +725,13 @@ pub async fn update_clusterrolebinding(
 
     clusterrolebinding.metadata.name = name.clone();
 
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ClusterRoleBinding validated successfully (not updated)");
+        return Ok(Json(clusterrolebinding));
+    }
+
     let key = build_key("clusterrolebindings", None, &name);
     let updated = state.storage.update(&key, &clusterrolebinding).await?;
 
@@ -493,6 +742,7 @@ pub async fn delete_clusterrolebinding(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting clusterrolebinding: {}", name);
 
@@ -509,15 +759,41 @@ pub async fn delete_clusterrolebinding(
     }
 
     let key = build_key("clusterrolebindings", None, &name);
-    state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ClusterRoleBinding validated successfully (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get the resource for finalizer handling
+    let clusterrolebinding: ClusterRoleBinding = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &clusterrolebinding,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "ClusterRoleBinding marked for deletion (has finalizers: {:?})",
+            clusterrolebinding.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 pub async fn list_clusterrolebindings(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<Vec<ClusterRoleBinding>>> {
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<List<ClusterRoleBinding>>> {
     info!("Listing clusterrolebindings");
 
     // Check authorization
@@ -532,9 +808,13 @@ pub async fn list_clusterrolebindings(
     }
 
     let prefix = build_prefix("clusterrolebindings", None);
-    let clusterrolebindings = state.storage.list(&prefix).await?;
+    let mut clusterrolebindings = state.storage.list(&prefix).await?;
 
-    Ok(Json(clusterrolebindings))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut clusterrolebindings, &params)?;
+
+    let list = List::new("ClusterRoleBindingList", "rbac.authorization.k8s.io/v1", clusterrolebindings);
+    Ok(Json(list))
 }
 
 // Use macros to create PATCH handlers for RBAC resources

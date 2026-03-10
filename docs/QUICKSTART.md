@@ -30,7 +30,7 @@ cd rusternetes
 ### 2. Start the Cluster
 ```bash
 # Option A: Interactive setup
-./dev-setup.sh
+./scripts/dev-setup.sh
 
 # Option B: One-command setup
 make dev-full
@@ -62,10 +62,11 @@ You now have a complete Kubernetes-like cluster running locally with:
 
 - **etcd** (http://localhost:2379) - Cluster state storage
 - **API Server** (https://localhost:6443) - Main API endpoint with TLS/HTTPS
-- **Scheduler** - Assigns pods to nodes
-- **Controller Manager** - Manages cluster state (Deployment, StatefulSet, DaemonSet, Job, CronJob)
-- **Kubelet** - Runs containers on nodes
-- **Kube-proxy** - Network proxy (stub implementation)
+- **Scheduler** - Assigns pods to nodes with advanced scheduling
+- **Controller Manager** - Manages cluster state (Deployment, StatefulSet, DaemonSet, Job, CronJob, Endpoints, PV/PVC, HPA, VPA)
+- **Kubelet** - Runs containers on nodes with health probes and volume management
+- **Kube-proxy** - Network proxy with iptables-based load balancing for ClusterIP and NodePort services
+- **DNS Server** - Service discovery with Kubernetes-compatible DNS
 
 ## Common Operations
 
@@ -188,26 +189,32 @@ make build-dev  # Debug builds are faster
 
 ## What's Different from Kubernetes?
 
-Rusternetes is a **learning implementation** of Kubernetes in Rust. It:
+Rusternetes is a **comprehensive learning implementation** of Kubernetes in Rust. It:
 
-- ✅ Implements core Kubernetes concepts (Pods, Deployments, Services, etc.)
-- ✅ Uses the same architecture (API server, scheduler, kubelet, etc.)
+- ✅ Implements core Kubernetes concepts (Pods, Deployments, Services, StatefulSets, Jobs, etc.)
+- ✅ Uses the same architecture (API server, scheduler, kubelet, controller manager, etc.)
 - ✅ Stores state in etcd like Kubernetes
-- ✅ Provides a kubectl-like CLI
-- ❌ Is not production-ready (use for learning!)
-- ❌ Doesn't implement all Kubernetes features
-- ❌ Is not compatible with real Kubernetes clusters
+- ✅ Provides a kubectl-like CLI with most common commands
+- ✅ Supports advanced features (RBAC, admission webhooks, Custom Resource Definitions, Server-Side Apply)
+- ✅ Implements storage features (PV/PVC, dynamic provisioning, snapshots, volume expansion)
+- ✅ Supports networking (ClusterIP, NodePort, LoadBalancer, DNS, CNI framework)
+- ✅ High Availability support (etcd clustering, leader election, multi-master API servers)
+- ⚠️  Educational/development use - not production-hardened
+- ⚠️  Not all Kubernetes features are implemented (see [planning/CONFORMANCE_PLAN.md](planning/CONFORMANCE_PLAN.md))
+- ❌ Not compatible with standard Kubernetes clusters (separate implementation)
 
 **Use it to:**
 - Learn how Kubernetes works internally
 - Experiment with Rust for systems programming
 - Understand distributed system concepts
 - Build custom controllers and extensions
+- Test Kubernetes operators in a controlled environment
+- Learn about container orchestration
 
-**Don't use it for:**
-- Production workloads
+**Consider carefully for:**
+- Production workloads (use real Kubernetes instead)
 - Critical infrastructure
-- Running real applications (use real Kubernetes!)
+- Large-scale deployments
 
 ## Resources
 

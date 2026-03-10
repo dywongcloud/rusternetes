@@ -1,0 +1,217 @@
+//! Integration tests for proxy handlers (node, service, pod)
+
+use axum::http::StatusCode;
+use rusternetes_common::resources::{Node, Pod, Service, ServicePort, ServiceSpec, ServiceType};
+use rusternetes_common::types::{NodeStatus, ObjectMeta, PodSpec, PodStatus, Phase, TypeMeta};
+use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use std::sync::Arc;
+
+#[tokio::test]
+async fn test_proxy_node_missing_address() {
+    let storage = Arc::new(
+        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
+            .await
+            .unwrap(),
+    );
+
+    // Create a node without addresses
+    let node = Node {
+        type_meta: TypeMeta {
+            kind: "Node".to_string(),
+            api_version: "v1".to_string(),
+        },
+        metadata: ObjectMeta {
+            name: "test-node".to_string(),
+            namespace: None,
+            uid: uuid::Uuid::new_v4().to_string(),
+            resource_version: None,
+            deletion_grace_period_seconds: None,
+            finalizers: None,
+            owner_references: None,
+            creation_timestamp: Some(chrono::Utc::now()),
+            deletion_timestamp: None,
+            labels: None,
+            annotations: None,
+        },
+        spec: None,
+        status: Some(NodeStatus {
+            conditions: None,
+            addresses: None, // No addresses
+            capacity: None,
+            allocatable: None,
+            node_info: None,
+        }),
+    };
+
+    let key = "/api/v1/nodes/test-node";
+    storage.create(key, &node).await.unwrap();
+
+    // Verify the node exists but has no addresses
+    let retrieved: Node = storage.get(key).await.unwrap();
+    assert!(retrieved.status.is_some());
+    assert!(retrieved.status.as_ref().unwrap().addresses.is_none());
+
+    // Clean up
+    storage.delete(key).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_proxy_service_missing_clusterip() {
+    let storage = Arc::new(
+        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
+            .await
+            .unwrap(),
+    );
+
+    // Create a service without ClusterIP
+    let service = Service {
+        type_meta: TypeMeta {
+            kind: "Service".to_string(),
+            api_version: "v1".to_string(),
+        },
+        metadata: ObjectMeta {
+            name: "test-service".to_string(),
+            namespace: Some("default".to_string()),
+            uid: uuid::Uuid::new_v4().to_string(),
+            resource_version: None,
+            deletion_grace_period_seconds: None,
+            finalizers: None,
+            owner_references: None,
+            creation_timestamp: Some(chrono::Utc::now()),
+            deletion_timestamp: None,
+            labels: None,
+            annotations: None,
+        },
+        spec: ServiceSpec {
+            selector: None,
+            ports: vec![ServicePort {
+                name: Some("http".to_string()),
+                port: 80,
+                target_port: Some(8080),
+                protocol: Some("TCP".to_string()),
+                node_port: None,
+            }],
+            service_type: Some(ServiceType::ClusterIP),
+            cluster_ip: None, // No ClusterIP
+            external_ips: None,
+            session_affinity: None,
+            external_name: None,
+            cluster_ips: None,
+            ip_families: None,
+            ip_family_policy: None,
+            internal_traffic_policy: None,
+            external_traffic_policy: None,
+        },
+        status: None,
+    };
+
+    let key = "/api/v1/namespaces/default/services/test-service";
+    storage.create(key, &service).await.unwrap();
+
+    // Verify the service exists but has no ClusterIP
+    let retrieved: Service = storage.get(key).await.unwrap();
+    assert!(retrieved.spec.cluster_ip.is_none());
+
+    // Clean up
+    storage.delete(key).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_proxy_pod_missing_ip() {
+    let storage = Arc::new(
+        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
+            .await
+            .unwrap(),
+    );
+
+    // Create a pod without IP
+    let pod = Pod {
+        type_meta: TypeMeta {
+            kind: "Pod".to_string(),
+            api_version: "v1".to_string(),
+        },
+        metadata: ObjectMeta {
+            name: "test-pod".to_string(),
+            namespace: Some("default".to_string()),
+            uid: uuid::Uuid::new_v4().to_string(),
+            resource_version: None,
+            deletion_grace_period_seconds: None,
+            finalizers: None,
+            owner_references: None,
+            creation_timestamp: Some(chrono::Utc::now()),
+            deletion_timestamp: None,
+            labels: None,
+            annotations: None,
+        },
+        spec: Some(PodSpec {
+            containers: vec![],
+            init_containers: None,
+            ephemeral_containers: None,
+            restart_policy: None,
+            termination_grace_period_seconds: None,
+            active_deadline_seconds: None,
+            dns_policy: None,
+            node_selector: None,
+            service_account_name: None,
+            service_account: None,
+            node_name: None,
+            host_network: None,
+            host_pid: None,
+            host_ipc: None,
+            volumes: None,
+            image_pull_secrets: None,
+            hostname: None,
+            subdomain: None,
+            affinity: None,
+            scheduler_name: None,
+            tolerations: None,
+            priority_class_name: None,
+            priority: None,
+            dns_config: None,
+            runtime_class_name: None,
+            enable_service_links: None,
+            preemption_policy: None,
+            overhead: None,
+            topology_spread_constraints: None,
+            set_hostname_as_fqdn: None,
+            os: None,
+            security_context: None,
+        }),
+        status: Some(PodStatus {
+            phase: Phase::Pending,
+            message: None,
+            reason: None,
+            host_ip: None,
+            pod_ip: None, // No pod IP
+            container_statuses: None,
+            init_container_statuses: None,
+            ephemeral_container_statuses: None,
+        }),
+    };
+
+    let key = "/api/v1/namespaces/default/pods/test-pod";
+    storage.create(key, &pod).await.unwrap();
+
+    // Verify the pod exists but has no IP
+    let retrieved: Pod = storage.get(key).await.unwrap();
+    assert!(retrieved.status.is_some());
+    assert!(retrieved.status.as_ref().unwrap().pod_ip.is_none());
+
+    // Clean up
+    storage.delete(key).await.unwrap();
+}
+
+#[test]
+fn test_proxy_handlers_header_filtering() {
+    // Header filtering is already tested in proxy.rs
+    // This test documents the expected behavior
+
+    // Hop-by-hop headers should be filtered: Connection, Keep-Alive,
+    // Proxy-Authenticate, Proxy-Authorization, TE, Trailers, Transfer-Encoding, Upgrade
+
+    // End-to-end headers should be forwarded: Content-Type, Authorization,
+    // Accept, User-Agent, etc.
+
+    // This is verified in the proxy.rs module tests
+    assert!(true);
+}

@@ -1,6 +1,196 @@
 use crate::resources::pod::PodSpec;
 use crate::types::{LabelSelector, ObjectMeta, TypeMeta};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// ReplicationController ensures that a specified number of pod replicas are running at any given time
+/// This is a legacy resource - ReplicaSets/Deployments are preferred for new workloads
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplicationController {
+    #[serde(flatten)]
+    pub type_meta: TypeMeta,
+
+    pub metadata: ObjectMeta,
+
+    pub spec: ReplicationControllerSpec,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<ReplicationControllerStatus>,
+}
+
+impl ReplicationController {
+    pub fn new(name: impl Into<String>, namespace: impl Into<String>, spec: ReplicationControllerSpec) -> Self {
+        Self {
+            type_meta: TypeMeta {
+                kind: "ReplicationController".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta::new(name).with_namespace(namespace),
+            spec,
+            status: None,
+        }
+    }
+}
+
+/// ReplicationControllerSpec defines the desired state of a ReplicationController
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplicationControllerSpec {
+    /// Number of desired pods (defaults to 1)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replicas: Option<i32>,
+
+    /// Selector for pods (label query)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selector: Option<HashMap<String, String>>,
+
+    /// Template for pod creation
+    pub template: PodTemplateSpec,
+
+    /// Minimum number of seconds for which a newly created pod should be ready
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_ready_seconds: Option<i32>,
+}
+
+/// ReplicationControllerStatus represents the current state of a ReplicationController
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReplicationControllerStatus {
+    /// Number of replicas
+    pub replicas: i32,
+
+    /// Number of fully labeled replicas
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fully_labeled_replicas: Option<i32>,
+
+    /// Number of ready replicas
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ready_replicas: Option<i32>,
+
+    /// Number of available replicas
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available_replicas: Option<i32>,
+
+    /// ObservedGeneration reflects the generation of the most recently observed ReplicationController
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_generation: Option<i64>,
+
+    /// Conditions represent the latest available observations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<Vec<ReplicationControllerCondition>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReplicationControllerCondition {
+    /// Type of replication controller condition
+    #[serde(rename = "type")]
+    pub condition_type: String,
+
+    /// Status of the condition: True, False, Unknown
+    pub status: String,
+
+    /// Last time the condition transitioned
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_transition_time: Option<chrono::DateTime<chrono::Utc>>,
+
+    /// The reason for the condition's last transition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    /// A human readable message indicating details about the transition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// ReplicaSet ensures that a specified number of pod replicas are running at any given time
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplicaSet {
+    #[serde(flatten)]
+    pub type_meta: TypeMeta,
+
+    pub metadata: ObjectMeta,
+
+    pub spec: ReplicaSetSpec,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<ReplicaSetStatus>,
+}
+
+impl ReplicaSet {
+    pub fn new(name: impl Into<String>, namespace: impl Into<String>, spec: ReplicaSetSpec) -> Self {
+        Self {
+            type_meta: TypeMeta {
+                kind: "ReplicaSet".to_string(),
+                api_version: "apps/v1".to_string(),
+            },
+            metadata: ObjectMeta::new(name).with_namespace(namespace),
+            spec,
+            status: None,
+        }
+    }
+}
+
+/// ReplicaSetSpec defines the desired state of a ReplicaSet
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplicaSetSpec {
+    /// Number of desired pods
+    pub replicas: i32,
+
+    /// Selector for pods
+    pub selector: LabelSelector,
+
+    /// Template for pod creation
+    pub template: PodTemplateSpec,
+
+    /// Minimum number of seconds for which a newly created pod should be ready
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_ready_seconds: Option<i32>,
+}
+
+/// ReplicaSetStatus represents the current state of a ReplicaSet
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReplicaSetStatus {
+    /// Number of replicas
+    pub replicas: i32,
+
+    /// Number of fully labeled replicas
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fully_labeled_replicas: Option<i32>,
+
+    /// Number of ready replicas
+    pub ready_replicas: i32,
+
+    /// Number of available replicas
+    pub available_replicas: i32,
+
+    /// ObservedGeneration reflects the generation of the most recently observed ReplicaSet
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_generation: Option<i64>,
+
+    /// Conditions represent the latest available observations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<Vec<ReplicaSetCondition>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReplicaSetCondition {
+    /// Type of replica set condition
+    #[serde(rename = "type")]
+    pub condition_type: String,
+
+    /// Status of the condition: True, False, Unknown
+    pub status: String,
+
+    /// Last time the condition transitioned
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_transition_time: Option<chrono::DateTime<chrono::Utc>>,
+
+    /// The reason for the condition's last transition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    /// A human readable message indicating details about the transition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
 
 /// StatefulSet represents a set of pods with consistent identities
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -341,6 +531,31 @@ pub struct CronJobStatus {
     pub last_successful_time: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+/// PodTemplate describes a template for creating copies of a predefined pod
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PodTemplate {
+    #[serde(flatten)]
+    pub type_meta: TypeMeta,
+
+    pub metadata: ObjectMeta,
+
+    /// Template defines the pods that will be created from this pod template
+    pub template: PodTemplateSpec,
+}
+
+impl PodTemplate {
+    pub fn new(name: impl Into<String>, namespace: impl Into<String>, template: PodTemplateSpec) -> Self {
+        Self {
+            type_meta: TypeMeta {
+                kind: "PodTemplate".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta::new(name).with_namespace(namespace),
+            template,
+        }
+    }
+}
+
 /// PodTemplateSpec describes the pod that will be created
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PodTemplateSpec {
@@ -355,12 +570,95 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_replication_controller_creation() {
+        let pod_template_spec = PodTemplateSpec {
+            metadata: None,
+            spec: PodSpec {
+                containers: vec![],
+                init_containers: None,
+                ephemeral_containers: None,
+                volumes: None,
+                restart_policy: Some("Always".to_string()),
+                node_name: None,
+                node_selector: None,
+                service_account_name: None,
+                hostname: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                affinity: None,
+                tolerations: None,
+                priority: None,
+                priority_class_name: None,
+                automount_service_account_token: None,
+                topology_spread_constraints: None,
+                overhead: None,
+                scheduler_name: None,
+                resource_claims: None,
+            },
+        };
+
+        let rc_spec = ReplicationControllerSpec {
+            replicas: Some(3),
+            selector: Some([("app".to_string(), "nginx".to_string())].iter().cloned().collect()),
+            template: pod_template_spec,
+            min_ready_seconds: None,
+        };
+
+        let rc = ReplicationController::new("test-rc", "default", rc_spec);
+
+        assert_eq!(rc.metadata.name, "test-rc");
+        assert_eq!(rc.metadata.namespace, Some("default".to_string()));
+        assert_eq!(rc.type_meta.kind, "ReplicationController");
+        assert_eq!(rc.type_meta.api_version, "v1");
+        assert_eq!(rc.spec.replicas, Some(3));
+    }
+
+    #[test]
+    fn test_pod_template_creation() {
+        let pod_template_spec = PodTemplateSpec {
+            metadata: None,
+            spec: PodSpec {
+                containers: vec![],
+                init_containers: None,
+                ephemeral_containers: None,
+                volumes: None,
+                restart_policy: Some("Always".to_string()),
+                node_name: None,
+                node_selector: None,
+                service_account_name: None,
+                hostname: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                affinity: None,
+                tolerations: None,
+                priority: None,
+                priority_class_name: None,
+                automount_service_account_token: None,
+                topology_spread_constraints: None,
+                overhead: None,
+                scheduler_name: None,
+                resource_claims: None,
+            },
+        };
+
+        let pod_template = PodTemplate::new("test-template", "default", pod_template_spec);
+
+        assert_eq!(pod_template.metadata.name, "test-template");
+        assert_eq!(pod_template.metadata.namespace, Some("default".to_string()));
+        assert_eq!(pod_template.type_meta.kind, "PodTemplate");
+        assert_eq!(pod_template.type_meta.api_version, "v1");
+    }
+
+    #[test]
     fn test_job_creation() {
         let template = PodTemplateSpec {
             metadata: None,
             spec: PodSpec {
                 containers: vec![],
                 init_containers: None,
+                ephemeral_containers: None,
                 volumes: None,
                 restart_policy: Some("Never".to_string()),
                 node_name: None,
@@ -374,6 +672,11 @@ mod tests {
                 tolerations: None,
                 priority: None,
                 priority_class_name: None,
+                automount_service_account_token: None,
+                topology_spread_constraints: None,
+                overhead: None,
+                scheduler_name: None,
+                resource_claims: None,
             },
         };
 

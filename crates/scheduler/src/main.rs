@@ -1,5 +1,7 @@
 mod scheduler;
 mod advanced;
+mod framework;
+mod plugins;
 
 use anyhow::Result;
 use axum::{routing::get, Router};

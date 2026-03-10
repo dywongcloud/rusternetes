@@ -15,25 +15,191 @@ use rusternetes_common::resources::{
 use rusternetes_common::resources::volume::PersistentVolumeSource;
 use rusternetes_storage::{build_key, Storage};
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
-/// ContainerRuntime manages containers using Docker/Podman
+use crate::cni::CniRuntime;
+
+/// ContainerRuntime manages containers using Docker/Podman with CNI networking
 pub struct ContainerRuntime {
     docker: Docker,
     storage: Option<Arc<rusternetes_storage::etcd::EtcdStorage>>,
+    volumes_base_path: String,
+    cluster_dns: String,
+    cluster_domain: String,
+    network: String,
+    cni: Option<CniRuntime>,
+    use_cni: bool,
 }
 
 impl ContainerRuntime {
-    pub async fn new() -> Result<Self> {
+    pub async fn new(
+        volumes_base_path: String,
+        cluster_dns: String,
+        cluster_domain: String,
+        network: String,
+    ) -> Result<Self> {
         let docker = Docker::connect_with_local_defaults()?;
-        Ok(Self { docker, storage: None })
+
+        info!("Using volumes base path: {}", volumes_base_path);
+        info!("Cluster DNS: {}, domain: {}, network: {}", cluster_dns, cluster_domain, network);
+
+        // Initialize CNI if plugins are available
+        let (cni, use_cni) = match Self::initialize_cni() {
+            Ok(cni_runtime) => {
+                info!("CNI networking enabled");
+                (Some(cni_runtime), true)
+            }
+            Err(e) => {
+                warn!("CNI not available, falling back to Podman networking: {}", e);
+                (None, false)
+            }
+        };
+
+        Ok(Self {
+            docker,
+            storage: None,
+            volumes_base_path,
+            cluster_dns,
+            cluster_domain,
+            network,
+            cni,
+            use_cni,
+        })
+    }
+
+    /// Initialize CNI runtime
+    fn initialize_cni() -> Result<CniRuntime> {
+        let cni_plugin_paths = vec![PathBuf::from("/opt/cni/bin")];
+        let cni_config_dir = PathBuf::from("/etc/cni/net.d");
+
+        // Check if CNI plugins exist
+        if !cni_plugin_paths.iter().any(|p| p.exists()) {
+            return Err(anyhow::anyhow!("CNI plugin directory not found"));
+        }
+
+        // Pre-flight check: verify we can create and access network namespaces
+        // This will fail in Podman Machine where netns created in container aren't
+        // accessible to other containers
+        let test_netns = "rusternetes-cni-test";
+        let create_result = Command::new("ip")
+            .args(&["netns", "add", test_netns])
+            .output();
+
+        if let Ok(output) = create_result {
+            if output.status.success() || String::from_utf8_lossy(&output.stderr).contains("File exists") {
+                // Clean up test namespace
+                let _ = Command::new("ip")
+                    .args(&["netns", "del", test_netns])
+                    .output();
+
+                // Network namespaces work, but we're likely in a container where
+                // they won't be accessible to sibling containers (Podman Machine case)
+                warn!("CNI plugins found but network namespaces may not work across containers.");
+                warn!("This is normal in Podman Machine - will fall back to Podman networking.");
+                return Err(anyhow::anyhow!("Network namespace isolation prevents CNI usage"));
+            }
+        }
+
+        let cni = CniRuntime::new(cni_plugin_paths, cni_config_dir)?
+            .with_default_network("rusternetes".to_string());
+
+        Ok(cni)
     }
 
     pub fn with_storage(mut self, storage: Arc<rusternetes_storage::etcd::EtcdStorage>) -> Self {
         self.storage = Some(storage);
         self
+    }
+
+    /// Setup CNI networking for a pod
+    /// Creates a network namespace and configures CNI networking
+    /// Returns None if CNI setup fails (will fall back to Podman networking)
+    async fn setup_pod_network(&self, pod_name: &str) -> Option<String> {
+        info!("Setting up CNI network for pod: {}", pod_name);
+
+        // Create network namespace
+        let netns_name = format!("cni-{}", pod_name);
+        let output = match Command::new("ip")
+            .args(&["netns", "add", &netns_name])
+            .output() {
+            Ok(out) => out,
+            Err(e) => {
+                warn!("Failed to create network namespace for pod {}: {}. Falling back to Podman networking.", pod_name, e);
+                return None;
+            }
+        };
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Ignore error if namespace already exists
+            if !stderr.contains("File exists") {
+                warn!("Failed to create network namespace for pod {}: {}. Falling back to Podman networking.", pod_name, stderr);
+                return None;
+            }
+            info!("Network namespace {} already exists, reusing it", netns_name);
+        } else {
+            info!("Created network namespace: {}", netns_name);
+        }
+
+        // Get the network namespace path
+        let netns_path = format!("/var/run/netns/{}", netns_name);
+
+        // Setup CNI networking in the namespace
+        if let Some(cni) = &self.cni {
+            match cni.setup_network(pod_name, &netns_path, "eth0", None) {
+                Ok(result) => {
+                    info!("CNI network setup successful for pod {}: IP={:?}", pod_name, result.ips);
+                }
+                Err(e) => {
+                    warn!("Failed to setup CNI network for pod {}: {}. Falling back to Podman networking.", pod_name, e);
+                    // Clean up the network namespace on failure
+                    let _ = Command::new("ip")
+                        .args(&["netns", "del", &netns_name])
+                        .output();
+                    return None;
+                }
+            }
+        }
+
+        Some(netns_path)
+    }
+
+    /// Teardown CNI networking for a pod
+    /// Removes CNI configuration and deletes the network namespace
+    async fn teardown_pod_network(&self, pod_name: &str) -> Result<()> {
+        info!("Tearing down CNI network for pod: {}", pod_name);
+
+        let netns_name = format!("cni-{}", pod_name);
+        let netns_path = format!("/var/run/netns/{}", netns_name);
+
+        // Teardown CNI networking
+        if let Some(cni) = &self.cni {
+            if let Err(e) = cni.teardown_network(pod_name, &netns_path, "eth0", None) {
+                warn!("Failed to teardown CNI network for pod {}: {}", pod_name, e);
+                // Continue with namespace deletion even if CNI teardown fails
+            } else {
+                info!("CNI network teardown successful for pod {}", pod_name);
+            }
+        }
+
+        // Delete network namespace
+        let output = Command::new("ip")
+            .args(&["netns", "del", &netns_name])
+            .output()
+            .context("Failed to execute ip netns del command")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!("Failed to delete network namespace {}: {}", netns_name, stderr);
+        } else {
+            info!("Deleted network namespace: {}", netns_name);
+        }
+
+        Ok(())
     }
 
     /// Pull an image if necessary based on the pull policy
@@ -45,17 +211,13 @@ impl ContainerRuntime {
         let policy = pull_policy.unwrap_or("IfNotPresent");
         debug!("Ensuring image {} with policy {}", image, policy);
 
-        // Check if image exists locally
-        let image_exists = match self.docker.inspect_image(image).await {
-            Ok(_) => {
-                debug!("Image {} exists locally", image);
-                true
-            }
-            Err(e) => {
-                debug!("Image {} not found locally: {}", image, e);
-                false
-            }
-        };
+        // Normalize image name to include registry if not specified
+        let normalized_image = self.normalize_image_name(image);
+        debug!("Normalized image name: {}", normalized_image);
+
+        // Check if image exists locally (try both original and normalized names)
+        let image_exists = self.check_image_exists(image).await ||
+                          self.check_image_exists(&normalized_image).await;
 
         let should_pull = match policy {
             "Always" => true,
@@ -67,30 +229,97 @@ impl ContainerRuntime {
         debug!("Image {} - exists: {}, should_pull: {}", image, image_exists, should_pull);
 
         if should_pull {
-            info!("Pulling image: {}", image);
-            let options = CreateImageOptions {
-                from_image: image,
-                ..Default::default()
-            };
+            info!("Pulling image: {}", normalized_image);
 
-            let mut stream = self.docker.create_image(Some(options), None, None);
+            // Try to pull the image with proper registry handling
+            if let Err(e) = self.pull_image_with_retry(&normalized_image).await {
+                error!("Failed to pull image {}: {}", normalized_image, e);
 
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(info) => {
-                        if let Some(status) = info.status {
-                            debug!("Image pull: {}", status);
-                        }
-                        if let Some(error) = info.error {
-                            return Err(anyhow::anyhow!("Image pull failed: {}", error));
-                        }
-                    }
-                    Err(e) => return Err(e.into()),
+                // If normalized image failed and it's different from original, try original
+                if normalized_image != image {
+                    warn!("Retrying with original image name: {}", image);
+                    self.pull_image_with_retry(image).await?;
+                } else {
+                    return Err(e);
                 }
             }
+
             info!("Successfully pulled image: {}", image);
         } else {
             debug!("Image {} already exists locally, skipping pull", image);
+        }
+
+        Ok(())
+    }
+
+    /// Check if an image exists locally
+    async fn check_image_exists(&self, image: &str) -> bool {
+        match self.docker.inspect_image(image).await {
+            Ok(_) => {
+                debug!("Image {} exists locally", image);
+                true
+            }
+            Err(e) => {
+                debug!("Image {} not found locally: {}", image, e);
+                false
+            }
+        }
+    }
+
+    /// Normalize image name to include default registry
+    fn normalize_image_name(&self, image: &str) -> String {
+        // If image already has a registry (contains '/'), use as-is
+        if image.contains('/') {
+            // Check for explicit registry (contains '.' or ':' in first component)
+            let first_component = image.split('/').next().unwrap_or("");
+            if first_component.contains('.') || first_component.contains(':') {
+                return image.to_string();
+            }
+            // Otherwise prepend docker.io/library/ for official images like "library/image"
+            if !image.starts_with("docker.io/") {
+                return format!("docker.io/{}", image);
+            }
+            image.to_string()
+        } else {
+            // Simple image name without registry - use docker.io/library
+            format!("docker.io/library/{}", image)
+        }
+    }
+
+    /// Pull image with retry logic
+    async fn pull_image_with_retry(&self, image: &str) -> Result<()> {
+        let options = CreateImageOptions {
+            from_image: image,
+            ..Default::default()
+        };
+
+        let mut stream = self.docker.create_image(Some(options), None, None);
+        let mut last_error = None;
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(info) => {
+                    if let Some(status) = &info.status {
+                        debug!("Image pull: {}", status);
+                    }
+                    if let Some(progress) = &info.progress {
+                        debug!("Image pull progress: {}", progress);
+                    }
+                    if let Some(error) = info.error {
+                        last_error = Some(error.clone());
+                        error!("Image pull error: {}", error);
+                    }
+                }
+                Err(e) => {
+                    last_error = Some(format!("{}", e));
+                    error!("Image pull stream error: {}", e);
+                }
+            }
+        }
+
+        // Check if there was an error
+        if let Some(err) = last_error {
+            return Err(anyhow::anyhow!("Image pull failed: {}", err));
         }
 
         Ok(())
@@ -101,9 +330,78 @@ impl ContainerRuntime {
         let pod_name = &pod.metadata.name;
         info!("Starting pod: {}", pod_name);
 
-        // Create volumes first
+        // Create network namespace and setup CNI networking if enabled
+        // If CNI setup fails, netns_path will be None and we fall back to Podman networking
+        let netns_path = if self.use_cni {
+            self.setup_pod_network(pod_name).await
+        } else {
+            None
+        };
+
+        // Create volumes first (includes service account token volumes injected by admission controller)
         let volume_binds = self.create_pod_volumes(pod).await?;
 
+        // Step 1: Run init containers sequentially (non-sidecar init containers)
+        // Sidecar init containers (with restartPolicy: Always) will be started with main containers
+        if let Some(init_containers) = &pod.spec.as_ref().unwrap().init_containers {
+            for container in init_containers {
+                // Check if this is a sidecar container (restartPolicy: Always)
+                let is_sidecar = container.restart_policy.as_deref() == Some("Always");
+
+                if !is_sidecar {
+                    // Regular init container - run to completion
+                    info!("Running init container: {}", container.name);
+
+                    // Ensure image is available
+                    if let Err(e) = self
+                        .ensure_image(
+                            &container.image,
+                            container.image_pull_policy.as_deref(),
+                        )
+                        .await
+                    {
+                        error!("Failed to pull image for init container {}: {}", container.name, e);
+                        return Err(e);
+                    }
+
+                    // Start the init container
+                    self.start_container(pod_name, container, &volume_binds, netns_path.as_deref()).await?;
+
+                    // Wait for init container to complete
+                    self.wait_for_container_completion(pod_name, &container.name).await?;
+
+                    info!("Init container {} completed successfully", container.name);
+                }
+            }
+        }
+
+        // Step 2: Start sidecar containers (init containers with restartPolicy: Always)
+        if let Some(init_containers) = &pod.spec.as_ref().unwrap().init_containers {
+            for container in init_containers {
+                let is_sidecar = container.restart_policy.as_deref() == Some("Always");
+
+                if is_sidecar {
+                    info!("Starting sidecar container: {}", container.name);
+
+                    // Ensure image is available
+                    if let Err(e) = self
+                        .ensure_image(
+                            &container.image,
+                            container.image_pull_policy.as_deref(),
+                        )
+                        .await
+                    {
+                        error!("Failed to pull image for sidecar container {}: {}", container.name, e);
+                        return Err(e);
+                    }
+
+                    // Start the sidecar container (it will run alongside main containers)
+                    self.start_container(pod_name, container, &volume_binds, netns_path.as_deref()).await?;
+                }
+            }
+        }
+
+        // Step 3: Start main containers
         for container in &pod.spec.as_ref().unwrap().containers {
             // Ensure image is available
             if let Err(e) = self
@@ -118,10 +416,51 @@ impl ContainerRuntime {
             }
 
             // Start the container with volume bindings
-            self.start_container(pod_name, container, &volume_binds).await?;
+            self.start_container(pod_name, container, &volume_binds, netns_path.as_deref()).await?;
         }
 
         Ok(())
+    }
+
+    /// Wait for a container to complete (used for init containers)
+    async fn wait_for_container_completion(&self, pod_name: &str, container_name: &str) -> Result<()> {
+        let full_container_name = format!("{}_{}", pod_name, container_name);
+        let timeout = Duration::from_secs(300); // 5 minute timeout
+        let start_time = std::time::Instant::now();
+
+        loop {
+            if start_time.elapsed() > timeout {
+                return Err(anyhow::anyhow!("Timeout waiting for init container {} to complete", container_name));
+            }
+
+            match self.docker.inspect_container(&full_container_name, None::<InspectContainerOptions>).await {
+                Ok(inspect) => {
+                    if let Some(state) = inspect.state {
+                        let running = state.running.unwrap_or(false);
+
+                        if !running {
+                            // Container has stopped
+                            let exit_code = state.exit_code.unwrap_or(1);
+
+                            if exit_code == 0 {
+                                debug!("Init container {} completed successfully", container_name);
+                                return Ok(());
+                            } else {
+                                let error_msg = state.error.unwrap_or_else(|| format!("Exit code: {}", exit_code));
+                                error!("Init container {} failed: {}", container_name, error_msg);
+                                return Err(anyhow::anyhow!("Init container {} failed with exit code {}: {}", container_name, exit_code, error_msg));
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to inspect init container {}: {}", container_name, e);
+                }
+            }
+
+            // Wait a bit before checking again
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
     }
 
     /// Create volumes for a pod and return volume bindings for containers
@@ -138,6 +477,46 @@ impl ContainerRuntime {
         Ok(volume_paths)
     }
 
+    /// Expand environment variables in a string (e.g., ${VAR_NAME} or $VAR_NAME)
+    fn expand_env_vars(input: &str) -> String {
+        let mut result = input.to_string();
+
+        // Expand ${VAR_NAME} format
+        while let Some(start) = result.find("${") {
+            if let Some(end) = result[start..].find('}') {
+                let var_name = &result[start + 2..start + end];
+                let var_value = std::env::var(var_name).unwrap_or_default();
+                result.replace_range(start..start + end + 1, &var_value);
+            } else {
+                break;
+            }
+        }
+
+        // Expand $VAR_NAME format (word boundary based)
+        let mut i = 0;
+        while i < result.len() {
+            if result[i..].starts_with('$') && i + 1 < result.len() {
+                let rest = &result[i + 1..];
+                let var_len = rest.chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .count();
+
+                if var_len > 0 {
+                    let var_name = &rest[..var_len];
+                    let var_value = std::env::var(var_name).unwrap_or_default();
+                    result.replace_range(i..i + 1 + var_len, &var_value);
+                    i += var_value.len();
+                } else {
+                    i += 1;
+                }
+            } else {
+                i += 1;
+            }
+        }
+
+        result
+    }
+
     /// Create a single volume and return its host path
     async fn create_volume(&self, pod: &Pod, volume: &rusternetes_common::resources::Volume) -> Result<String> {
         let pod_name = &pod.metadata.name;
@@ -145,7 +524,7 @@ impl ContainerRuntime {
 
         // EmptyDir: create a temporary directory
         if volume.empty_dir.is_some() {
-            let volume_dir = format!("/tmp/rusternetes/volumes/{}/{}", pod_name, volume.name);
+            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
             std::fs::create_dir_all(&volume_dir)
                 .context("Failed to create emptyDir volume")?;
             info!("Created emptyDir volume {} at {}", volume.name, volume_dir);
@@ -154,7 +533,8 @@ impl ContainerRuntime {
 
         // HostPath: use the specified host path
         if let Some(host_path) = &volume.host_path {
-            let path = host_path.path.clone();
+            // Expand environment variables in the path
+            let path = Self::expand_env_vars(&host_path.path);
             // Optionally create the directory if it doesn't exist
             if let Some(type_) = &host_path.type_ {
                 if type_ == "DirectoryOrCreate" {
@@ -176,7 +556,7 @@ impl ContainerRuntime {
                 .with_context(|| format!("ConfigMap {} not found in namespace {}", configmap_source.name, namespace))?;
 
             // Create volume directory
-            let volume_dir = format!("/tmp/rusternetes/volumes/{}/{}", pod_name, volume.name);
+            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
             std::fs::create_dir_all(&volume_dir)
                 .context("Failed to create ConfigMap volume directory")?;
 
@@ -204,7 +584,7 @@ impl ContainerRuntime {
                 .with_context(|| format!("Secret {} not found in namespace {}", secret_source.secret_name, namespace))?;
 
             // Create volume directory
-            let volume_dir = format!("/tmp/rusternetes/volumes/{}/{}", pod_name, volume.name);
+            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
             std::fs::create_dir_all(&volume_dir)
                 .context("Failed to create Secret volume directory")?;
 
@@ -255,13 +635,222 @@ impl ContainerRuntime {
             return Ok(path);
         }
 
+        // DownwardAPI: expose pod/container metadata as files
+        if let Some(downward_api) = &volume.downward_api {
+            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+            std::fs::create_dir_all(&volume_dir)
+                .context("Failed to create DownwardAPI volume directory")?;
+
+            if let Some(items) = &downward_api.items {
+                for item in items {
+                    let file_path = format!("{}/{}", volume_dir, item.path);
+
+                    // Create parent directories if needed
+                    if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+
+                    // Get the value from field_ref or resource_field_ref
+                    let value = if let Some(field_ref) = &item.field_ref {
+                        self.get_pod_field_value(pod, &field_ref.field_path)?
+                    } else if let Some(resource_ref) = &item.resource_field_ref {
+                        self.get_container_resource_value(pod, resource_ref)?
+                    } else {
+                        return Err(anyhow::anyhow!("DownwardAPI item must have either fieldRef or resourceFieldRef"));
+                    };
+
+                    std::fs::write(&file_path, value)
+                        .with_context(|| format!("Failed to write DownwardAPI file {}", file_path))?;
+
+                    // Set file permissions if specified
+                    #[cfg(unix)]
+                    if let Some(mode) = item.mode {
+                        use std::os::unix::fs::PermissionsExt;
+                        std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(mode as u32))?;
+                    }
+
+                    info!("Wrote DownwardAPI file {} with value from {}", file_path, item.path);
+                }
+            }
+
+            info!("Created DownwardAPI volume {} at {}", volume.name, volume_dir);
+            return Ok(volume_dir);
+        }
+
+        // CSI: ephemeral inline volume (handled by external CSI driver)
+        if let Some(_csi) = &volume.csi {
+            // CSI ephemeral inline volumes are managed by the CSI driver via the kubelet CSI plugin
+            // For conformance, we create a placeholder directory and rely on the CSI driver to populate it
+            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+            std::fs::create_dir_all(&volume_dir)
+                .context("Failed to create CSI volume directory")?;
+
+            info!("Created CSI ephemeral volume {} at {} (managed by CSI driver)", volume.name, volume_dir);
+            return Ok(volume_dir);
+        }
+
+        // Ephemeral: generic ephemeral volume with PVC template
+        if let Some(ephemeral) = &volume.ephemeral {
+            if let Some(pvc_template) = &ephemeral.volume_claim_template {
+                let storage = self.storage.as_ref()
+                    .context("Storage not available for ephemeral volumes")?;
+
+                // Create a PVC name based on pod name and volume name
+                let pvc_name = format!("{}-{}", pod_name, volume.name);
+
+                // Check if PVC already exists
+                let pvc_key = build_key("persistentvolumeclaims", Some(namespace), &pvc_name);
+                let pvc_exists = storage.get::<PersistentVolumeClaim>(&pvc_key).await.is_ok();
+
+                if !pvc_exists {
+                    // Create the PVC from the template
+                    let mut pvc = PersistentVolumeClaim {
+                        type_meta: rusternetes_common::types::TypeMeta {
+                            kind: "PersistentVolumeClaim".to_string(),
+                            api_version: "v1".to_string(),
+                        },
+                        metadata: rusternetes_common::types::ObjectMeta::new(&pvc_name)
+                            .with_namespace(namespace),
+                        spec: pvc_template.spec.clone(),
+                        status: None,
+                    };
+
+                    // Copy labels and annotations from template if provided
+                    if let Some(template_meta) = &pvc_template.metadata {
+                        if let Some(labels) = &template_meta.labels {
+                            pvc.metadata.labels = Some(labels.clone());
+                        }
+                        if let Some(annotations) = &template_meta.annotations {
+                            pvc.metadata.annotations = Some(annotations.clone());
+                        }
+                    }
+
+                    // Store the PVC
+                    storage.create(&pvc_key, &pvc).await
+                        .context("Failed to create ephemeral PVC")?;
+
+                    info!("Created ephemeral PVC {} for volume {}", pvc_name, volume.name);
+
+                    // Wait for PVC to be bound (simplified - in production would poll/watch)
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+
+                // Now use the PVC like a regular PersistentVolumeClaim
+                let pvc: PersistentVolumeClaim = storage.get(&pvc_key).await
+                    .with_context(|| format!("Ephemeral PVC {} not found", pvc_name))?;
+
+                if let Some(pv_name) = &pvc.spec.volume_name {
+                    let pv_key = build_key("persistentvolumes", None, pv_name);
+                    let pv: PersistentVolume = storage.get(&pv_key).await
+                        .with_context(|| format!("PersistentVolume {} not found for ephemeral volume", pv_name))?;
+
+                    let path = match &pv.spec.volume_source {
+                        PersistentVolumeSource::HostPath(hp) => hp.path.clone(),
+                        _ => return Err(anyhow::anyhow!("PersistentVolume does not have a hostPath volume source")),
+                    };
+
+                    info!("Using ephemeral volume {} backed by PVC {} and PV {} at {}", volume.name, pvc_name, pv_name, path);
+                    return Ok(path);
+                } else {
+                    return Err(anyhow::anyhow!("Ephemeral PVC {} is not bound yet", pvc_name));
+                }
+            }
+        }
+
         Err(anyhow::anyhow!("Unknown volume type for volume {}", volume.name))
     }
 
-    async fn start_container(&self, pod_name: &str, container: &Container, volume_paths: &HashMap<String, String>) -> Result<()> {
+    /// Create ServiceAccount token volume for in-cluster authentication
+    async fn create_serviceaccount_token_volume(&self, pod: &Pod) -> Result<String> {
+        let pod_name = &pod.metadata.name;
+        let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
+
+        // Get ServiceAccount name from pod spec (default to "default")
+        let sa_name = pod.spec.as_ref()
+            .and_then(|spec| spec.service_account_name.as_deref())
+            .unwrap_or("default");
+
+        info!("Creating ServiceAccount token volume for pod {} using ServiceAccount {}/{}", pod_name, namespace, sa_name);
+
+        // Find the ServiceAccount token secret
+        let storage = self.storage.as_ref()
+            .context("Storage not available for ServiceAccount token volumes")?;
+
+        let secret_name = format!("{}-token", sa_name);
+        let key = build_key("secrets", Some(namespace), &secret_name);
+
+        // Try to get the secret; if it doesn't exist, create a basic token mount anyway
+        let secret: Option<Secret> = match storage.get(&key).await {
+            Ok(s) => Some(s),
+            Err(e) => {
+                warn!("ServiceAccount token secret {} not found: {}. Creating empty token volume.", secret_name, e);
+                None
+            }
+        };
+
+        // Create volume directory
+        let volume_dir = format!("{}/{}/serviceaccount-token", self.volumes_base_path, pod_name);
+        std::fs::create_dir_all(&volume_dir)
+            .context("Failed to create ServiceAccount token volume directory")?;
+
+        // Write token file
+        if let Some(secret) = secret {
+            if let Some(data) = &secret.data {
+                // Write token
+                if let Some(token) = data.get("token") {
+                    let token_path = format!("{}/token", volume_dir);
+                    std::fs::write(&token_path, token)
+                        .context("Failed to write ServiceAccount token")?;
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        std::fs::set_permissions(&token_path, std::fs::Permissions::from_mode(0o600))?;
+                    }
+                    info!("Wrote ServiceAccount token to {}", token_path);
+                }
+
+                // Write namespace
+                if let Some(ns_bytes) = data.get("namespace") {
+                    let ns_path = format!("{}/namespace", volume_dir);
+                    std::fs::write(&ns_path, ns_bytes)
+                        .context("Failed to write namespace file")?;
+                    info!("Wrote namespace file to {}", ns_path);
+                } else {
+                    // If not in secret, write the pod's namespace
+                    let ns_path = format!("{}/namespace", volume_dir);
+                    std::fs::write(&ns_path, namespace)
+                        .context("Failed to write namespace file")?;
+                }
+            }
+        } else {
+            // Create minimal files even without a secret
+            let ns_path = format!("{}/namespace", volume_dir);
+            std::fs::write(&ns_path, namespace)
+                .context("Failed to write namespace file")?;
+        }
+
+        // Write ca.crt (cluster CA certificate) so pods can verify API server
+        let ca_cert_source = std::env::var("CA_CERT_PATH")
+            .unwrap_or_else(|_| format!("{}/.rusternetes/certs/ca.crt",
+                std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())));
+
+        let ca_path = format!("{}/ca.crt", volume_dir);
+        if let Ok(ca_content) = std::fs::read(&ca_cert_source) {
+            std::fs::write(&ca_path, ca_content)
+                .context("Failed to write CA certificate")?;
+            info!("Wrote CA certificate to {}", ca_path);
+        } else {
+            warn!("CA certificate not found at {}, pods may not be able to verify API server", ca_cert_source);
+        }
+
+        info!("Created ServiceAccount token volume at {}", volume_dir);
+        Ok(volume_dir)
+    }
+
+    async fn start_container(&self, pod_name: &str, container: &Container, volume_paths: &HashMap<String, String>, netns_path: Option<&str>) -> Result<()> {
         let container_name = format!("{}_{}", pod_name, container.name);
 
-        info!("Starting container: {}", container_name);
+        info!("Starting container: {} (netns: {:?})", container_name, netns_path);
 
         // Check if container already exists
         if let Ok(inspect) = self
@@ -286,10 +875,22 @@ impl ContainerRuntime {
         }
 
         // Build environment variables
-        let env: Option<Vec<String>> = if let Some(env_vars) = &container.env {
-            let mut env_list = Vec::new();
-            let namespace = pod_name.split('_').next().unwrap_or("default");
+        let mut env_list = Vec::new();
+        let namespace = pod_name.split('_').next().unwrap_or("default");
 
+        // Inject Kubernetes service environment variables for in-cluster access
+        // Use kubernetes.default.svc.cluster.local which resolves via CoreDNS to the kubernetes service
+        env_list.push("KUBERNETES_SERVICE_HOST=kubernetes.default.svc.cluster.local".to_string());
+        env_list.push("KUBERNETES_SERVICE_PORT=443".to_string());
+        env_list.push("KUBERNETES_SERVICE_PORT_HTTPS=443".to_string());
+        env_list.push("KUBERNETES_PORT=tcp://kubernetes.default.svc.cluster.local:443".to_string());
+        env_list.push("KUBERNETES_PORT_443_TCP=tcp://kubernetes.default.svc.cluster.local:443".to_string());
+        env_list.push("KUBERNETES_PORT_443_TCP_PROTO=tcp".to_string());
+        env_list.push("KUBERNETES_PORT_443_TCP_PORT=443".to_string());
+        env_list.push("KUBERNETES_PORT_443_TCP_ADDR=kubernetes.default.svc.cluster.local".to_string());
+
+        // Add user-defined environment variables
+        if let Some(env_vars) = &container.env {
             for env_var in env_vars {
                 // Direct value
                 if let Some(value) = &env_var.value {
@@ -326,11 +927,9 @@ impl ContainerRuntime {
                     }
                 }
             }
+        }
 
-            Some(env_list)
-        } else {
-            None
-        };
+        let env = if env_list.is_empty() { None } else { Some(env_list) };
 
         // Build port bindings
         let mut exposed_ports = HashMap::new();
@@ -355,6 +954,8 @@ impl ContainerRuntime {
 
         // Build volume bindings
         let mut binds = Vec::new();
+
+        // Mount volumes based on volumeMounts (includes service account tokens injected by admission controller)
         if let Some(volume_mounts) = &container.volume_mounts {
             for mount in volume_mounts {
                 if let Some(host_path) = volume_paths.get(&mount.name) {
@@ -366,7 +967,52 @@ impl ContainerRuntime {
             }
         }
 
+        // Create and mount custom resolv.conf for non-CoreDNS pods
+        // This bypasses Podman's aardvark-dns which overrides our DNS configuration
+        if pod_name != "coredns" {
+            let resolv_conf_path = format!("{}/{}/resolv.conf", self.volumes_base_path, pod_name);
+            let resolv_conf_content = format!(
+                "nameserver {}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
+                self.cluster_dns,
+                namespace,
+                self.cluster_domain,
+                self.cluster_domain,
+                self.cluster_domain
+            );
+
+            // Create directory if it doesn't exist
+            std::fs::create_dir_all(format!("{}/{}", self.volumes_base_path, pod_name))
+                .context("Failed to create pod directory for resolv.conf")?;
+
+            // Write custom resolv.conf
+            std::fs::write(&resolv_conf_path, resolv_conf_content)
+                .with_context(|| format!("Failed to write custom resolv.conf for pod {}", pod_name))?;
+
+            // Mount custom resolv.conf into container
+            binds.push(format!("{}:/etc/resolv.conf:ro", resolv_conf_path));
+            info!("Mounted custom resolv.conf for pod {} with DNS server {}", pod_name, self.cluster_dns);
+        }
+
         // Create container configuration
+        // Skip cluster DNS configuration for CoreDNS to avoid circular dependency
+        let (dns_servers, dns_search_domains, dns_options) = if pod_name == "coredns" {
+            info!("Skipping cluster DNS configuration for CoreDNS pod (using default/host DNS)");
+            (None, None, None)
+        } else {
+            info!("Configuring DNS for container {} in namespace {}", container.name, namespace);
+            let servers = vec![self.cluster_dns.clone()];
+            let search_domains = vec![
+                format!("{}.svc.{}", namespace, self.cluster_domain),
+                format!("svc.{}", self.cluster_domain),
+                self.cluster_domain.clone(),
+            ];
+            // Add ndots:5 to match Kubernetes default DNS behavior
+            // This tells the resolver to try search domains after 5 dots in the query
+            let options = vec!["ndots:5".to_string()];
+            info!("DNS servers: {:?}, search domains: {:?}, options: {:?}", servers, search_domains, options);
+            (Some(servers), Some(search_domains), Some(options))
+        };
+
         let mut config = Config {
             image: Some(container.image.clone()),
             env,
@@ -387,15 +1033,40 @@ impl ContainerRuntime {
                 } else {
                     Some(binds)
                 },
+                // Configure DNS to use kube-dns service
+                // CoreDNS uses default/host DNS to avoid circular dependency
+                dns: dns_servers,
+                dns_search: dns_search_domains,
+                dns_options: dns_options,
+                // Use CNI network namespace if available, otherwise use Podman bridge network
+                network_mode: if let Some(netns) = netns_path {
+                    Some(format!("ns:{}", netns))
+                } else {
+                    Some(self.network.clone())
+                },
                 ..Default::default()
             }),
             ..Default::default()
         };
 
         // Set command and args
+        // In Kubernetes: command replaces ENTRYPOINT, args replaces CMD
+        // When both are present, combine them
         if let Some(command) = &container.command {
-            config.cmd = Some(command.clone());
+            if let Some(args) = &container.args {
+                // Both command and args present - combine them
+                let mut full_cmd = command.clone();
+                full_cmd.extend(args.clone());
+                info!("Container {} - combining command {:?} and args {:?} into {:?}", container.name, command, args, full_cmd);
+                config.cmd = Some(full_cmd);
+            } else {
+                // Only command present
+                info!("Container {} - using command: {:?}", container.name, command);
+                config.cmd = Some(command.clone());
+            }
         } else if let Some(args) = &container.args {
+            // Only args present - use container's default entrypoint + args
+            info!("Container {} - using args: {:?}", container.name, args);
             config.cmd = Some(args.clone());
         }
 
@@ -405,10 +1076,10 @@ impl ContainerRuntime {
         };
 
         // Create the container
-        self.docker
-            .create_container(Some(options), config)
-            .await
-            .context("Failed to create container")?;
+        if let Err(e) = self.docker.create_container(Some(options), config).await {
+            error!("Docker API error creating container {}: {}", container_name, e);
+            return Err(anyhow::anyhow!("Failed to create container: {}", e));
+        }
 
         // Start the container
         self.docker
@@ -458,6 +1129,14 @@ impl ContainerRuntime {
             }
         }
 
+        // Teardown CNI networking if enabled
+        if self.use_cni {
+            if let Err(e) = self.teardown_pod_network(pod_name).await {
+                warn!("Failed to teardown CNI network for pod {}: {}", pod_name, e);
+                // Continue with cleanup even if CNI teardown fails
+            }
+        }
+
         // Clean up emptyDir volumes
         self.cleanup_pod_volumes(pod_name).await?;
 
@@ -466,7 +1145,7 @@ impl ContainerRuntime {
 
     /// Clean up volumes created for a pod
     async fn cleanup_pod_volumes(&self, pod_name: &str) -> Result<()> {
-        let volume_dir = format!("/tmp/rusternetes/volumes/{}", pod_name);
+        let volume_dir = format!("{}/{}", self.volumes_base_path, pod_name);
 
         if std::path::Path::new(&volume_dir).exists() {
             if let Err(e) = std::fs::remove_dir_all(&volume_dir) {
@@ -751,6 +1430,17 @@ impl ContainerRuntime {
 
     /// Get the pod IP address from the first running container
     pub async fn get_pod_ip(&self, pod_name: &str) -> Result<Option<String>> {
+        // If using CNI, get IP from CNI runtime
+        if self.use_cni {
+            if let Some(cni) = &self.cni {
+                if let Some(ip) = cni.get_container_ip(pod_name) {
+                    debug!("Retrieved pod IP {} from CNI for pod {}", ip, pod_name);
+                    return Ok(Some(ip));
+                }
+            }
+        }
+
+        // Fallback to Docker/Podman network inspection
         let mut filters = HashMap::new();
         filters.insert("name".to_string(), vec![format!("{}_", pod_name)]);
 
@@ -771,8 +1461,22 @@ impl ContainerRuntime {
                     .await?;
 
                 if let Some(network_settings) = inspect.network_settings {
+                    // First try to get IP from the specific network we're using
+                    if let Some(networks) = network_settings.networks {
+                        if let Some(network_info) = networks.get(&self.network) {
+                            if let Some(ip) = &network_info.ip_address {
+                                if !ip.is_empty() && ip != "0.0.0.0" {
+                                    debug!("Retrieved pod IP {} from network {} for pod {}", ip, self.network, pod_name);
+                                    return Ok(Some(ip.clone()));
+                                }
+                            }
+                        }
+                    }
+
+                    // Fallback to default network IP
                     if let Some(ip) = network_settings.ip_address {
                         if !ip.is_empty() && ip != "0.0.0.0" {
+                            debug!("Retrieved pod IP {} from default network for pod {}", ip, pod_name);
                             return Ok(Some(ip));
                         }
                     }
@@ -815,6 +1519,85 @@ impl ContainerRuntime {
             .with_context(|| format!("Key {} not found in Secret {}", key, name))
     }
 
+    /// Get a pod field value for DownwardAPI
+    fn get_pod_field_value(&self, pod: &Pod, field_path: &str) -> Result<String> {
+        let value = match field_path {
+            "metadata.name" => pod.metadata.name.clone(),
+            "metadata.namespace" => pod.metadata.namespace.clone().unwrap_or("default".to_string()),
+            "metadata.uid" => pod.metadata.uid.clone(),
+            "spec.nodeName" => pod.spec.as_ref()
+                .and_then(|s| s.node_name.clone())
+                .unwrap_or("".to_string()),
+            "spec.serviceAccountName" => pod.spec.as_ref()
+                .and_then(|s| s.service_account_name.clone())
+                .unwrap_or("default".to_string()),
+            "status.podIP" => pod.status.as_ref()
+                .and_then(|s| s.pod_ip.clone())
+                .unwrap_or("".to_string()),
+            "status.hostIP" => pod.status.as_ref()
+                .and_then(|s| s.host_ip.clone())
+                .unwrap_or("".to_string()),
+            _ => {
+                // Support metadata.labels['key'] and metadata.annotations['key']
+                if field_path.starts_with("metadata.labels['") && field_path.ends_with("']") {
+                    let key = &field_path[17..field_path.len()-2];
+                    pod.metadata.labels.as_ref()
+                        .and_then(|labels| labels.get(key))
+                        .cloned()
+                        .unwrap_or("".to_string())
+                } else if field_path.starts_with("metadata.annotations['") && field_path.ends_with("']") {
+                    let key = &field_path[22..field_path.len()-2];
+                    pod.metadata.annotations.as_ref()
+                        .and_then(|annotations| annotations.get(key))
+                        .cloned()
+                        .unwrap_or("".to_string())
+                } else {
+                    return Err(anyhow::anyhow!("Unsupported field path: {}", field_path));
+                }
+            }
+        };
+        Ok(value)
+    }
+
+    /// Get a container resource value for DownwardAPI
+    fn get_container_resource_value(&self, pod: &Pod, resource_ref: &rusternetes_common::resources::ResourceFieldSelector) -> Result<String> {
+        let spec = pod.spec.as_ref()
+            .context("Pod has no spec")?;
+
+        // Find the container
+        let container_name = resource_ref.container_name.as_ref()
+            .context("Container name is required for resource field selector")?;
+
+        let container = spec.containers.iter()
+            .find(|c| &c.name == container_name)
+            .with_context(|| format!("Container {} not found", container_name))?;
+
+        let resources = container.resources.as_ref()
+            .context("Container has no resources specified")?;
+
+        let value = match resource_ref.resource.as_str() {
+            "limits.cpu" => resources.limits.as_ref()
+                .and_then(|l| l.get("cpu"))
+                .cloned()
+                .unwrap_or("0".to_string()),
+            "limits.memory" => resources.limits.as_ref()
+                .and_then(|l| l.get("memory"))
+                .cloned()
+                .unwrap_or("0".to_string()),
+            "requests.cpu" => resources.requests.as_ref()
+                .and_then(|r| r.get("cpu"))
+                .cloned()
+                .unwrap_or("0".to_string()),
+            "requests.memory" => resources.requests.as_ref()
+                .and_then(|r| r.get("memory"))
+                .cloned()
+                .unwrap_or("0".to_string()),
+            _ => return Err(anyhow::anyhow!("Unsupported resource field: {}", resource_ref.resource)),
+        };
+
+        Ok(value)
+    }
+
     /// List all running pod names from the container runtime
     pub async fn list_running_pods(&self) -> Result<Vec<String>> {
         let options = ListContainersOptions::<String> {
@@ -850,11 +1633,11 @@ mod tests {
     fn test_emptydir_volume_path_format() {
         let pod_name = "test-pod-emptydir";
         let volume_name = "test-volume";
-        let expected_path = format!("/tmp/rusternetes/volumes/{}/{}", pod_name, volume_name);
+        let expected_path = format!("/volumes/{}/{}", pod_name, volume_name);
 
         assert_eq!(
             expected_path,
-            "/tmp/rusternetes/volumes/test-pod-emptydir/test-volume"
+            "/volumes/test-pod-emptydir/test-volume"
         );
     }
 
@@ -892,9 +1675,9 @@ mod tests {
     #[test]
     fn test_cleanup_volume_path() {
         let pod_name = "test-pod";
-        let volume_dir = format!("/tmp/rusternetes/volumes/{}", pod_name);
+        let volume_dir = format!("/volumes/{}", pod_name);
 
-        assert_eq!(volume_dir, "/tmp/rusternetes/volumes/test-pod");
+        assert_eq!(volume_dir, "/volumes/test-pod");
     }
 
     #[test]
@@ -912,5 +1695,61 @@ mod tests {
         for hp_type in types {
             assert!(hp_type.len() > 0);
         }
+    }
+
+    #[test]
+    fn test_downward_api_field_paths() {
+        // Test common DownwardAPI field paths
+        let field_paths = vec![
+            "metadata.name",
+            "metadata.namespace",
+            "metadata.uid",
+            "spec.nodeName",
+            "spec.serviceAccountName",
+            "status.podIP",
+            "status.hostIP",
+        ];
+
+        for path in field_paths {
+            assert!(path.contains('.'));
+        }
+    }
+
+    #[test]
+    fn test_downward_api_label_syntax() {
+        let field_path = "metadata.labels['app']";
+        assert!(field_path.starts_with("metadata.labels['"));
+        assert!(field_path.ends_with("']"));
+
+        // Extract key
+        let key = &field_path[17..field_path.len()-2];
+        assert_eq!(key, "app");
+    }
+
+    #[test]
+    fn test_downward_api_annotation_syntax() {
+        let field_path = "metadata.annotations['description']";
+        assert!(field_path.starts_with("metadata.annotations['"));
+        assert!(field_path.ends_with("']"));
+
+        // Extract key
+        let key = &field_path[22..field_path.len()-2];
+        assert_eq!(key, "description");
+    }
+
+    #[test]
+    fn test_ephemeral_pvc_naming() {
+        let pod_name = "test-pod";
+        let volume_name = "cache";
+        let pvc_name = format!("{}-{}", pod_name, volume_name);
+        assert_eq!(pvc_name, "test-pod-cache");
+    }
+
+    #[test]
+    fn test_csi_volume_directory_format() {
+        let pod_name = "test-pod";
+        let volume_name = "csi-vol";
+        let volume_dir = format!("/volumes/{}/{}", pod_name, volume_name);
+        assert_eq!(volume_dir, "/volumes/test-pod/csi-vol");
     }
 }

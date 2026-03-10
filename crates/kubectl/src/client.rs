@@ -1,7 +1,16 @@
 use anyhow::{Context, Result};
 use reqwest::{Client, StatusCode};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+/// Generic Kubernetes List wrapper
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KubernetesList<T> {
+    pub api_version: String,
+    pub kind: String,
+    pub items: Vec<T>,
+}
 
 pub struct ApiClient {
     base_url: String,
@@ -71,6 +80,12 @@ impl ApiClient {
         response.json().await.map_err(|e| GetError::Other(anyhow::anyhow!("Failed to parse response: {}", e)))
     }
 
+    /// Get a list of resources, automatically unwrapping the Kubernetes List wrapper
+    pub async fn get_list<T: DeserializeOwned>(&self, path: &str) -> Result<Vec<T>, GetError> {
+        let list: KubernetesList<T> = self.get(path).await?;
+        Ok(list.items)
+    }
+
     pub async fn post<T: Serialize, R: DeserializeOwned>(&self, path: &str, body: &T) -> Result<R> {
         let url = format!("{}{}", self.base_url, path);
         let mut request = self.client.post(&url).json(body);
@@ -135,5 +150,86 @@ impl ApiClient {
         }
 
         Ok(())
+    }
+
+    pub async fn patch<T: Serialize, R: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &T,
+        content_type: &str,
+    ) -> Result<R> {
+        let url = format!("{}{}", self.base_url, path);
+        let mut request = self.client.patch(&url)
+            .header("Content-Type", content_type)
+            .json(body);
+
+        if let Some(ref token) = self.token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = request
+            .send()
+            .await
+            .context("Failed to send PATCH request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Request failed with status {}: {}", status, body);
+        }
+
+        response.json().await.context("Failed to parse response")
+    }
+
+    /// Get a resource as plain text (for logs, etc.)
+    pub async fn get_text(&self, path: &str) -> Result<String> {
+        let url = format!("{}{}", self.base_url, path);
+        let mut request = self.client.get(&url);
+
+        if let Some(ref token) = self.token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = request
+            .send()
+            .await
+            .context("Failed to send GET request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Request failed with status {}: {}", status, body);
+        }
+
+        response.text().await.context("Failed to read response text")
+    }
+
+    /// Convert HTTP(S) base URL to WebSocket URL for streaming endpoints
+    pub fn get_ws_url(&self, path: &str) -> Result<String> {
+        let ws_base = if self.base_url.starts_with("https://") {
+            self.base_url.replace("https://", "wss://")
+        } else if self.base_url.starts_with("http://") {
+            self.base_url.replace("http://", "ws://")
+        } else {
+            anyhow::bail!("Invalid base URL: {}", self.base_url);
+        };
+
+        let mut url = format!("{}{}", ws_base, path);
+
+        // Add token as query parameter if present (WebSocket doesn't support headers)
+        if let Some(ref token) = self.token {
+            let separator = if url.contains('?') { "&" } else { "?" };
+            url.push_str(&format!("{}token={}", separator, token));
+        }
+
+        Ok(url)
+    }
+
+    pub fn get_base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    pub fn get_token(&self) -> Option<&String> {
+        self.token.as_ref()
     }
 }

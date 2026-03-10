@@ -62,7 +62,27 @@ impl Storage for EtcdStorage {
         }
 
         debug!("Created resource at key: {}", key);
-        Self::deserialize(&json)
+
+        // Get the resource back to populate resourceVersion from etcd mod_revision
+        let get_resp = client
+            .get(key, None)
+            .await
+            .map_err(|e| Error::Storage(format!("Failed to get created resource: {}", e)))?;
+
+        if let Some(kv) = get_resp.kvs().first() {
+            let mod_revision = kv.mod_revision();
+            let mut resource: serde_json::Value = serde_json::from_str(&json)
+                .map_err(|e| Error::Serialization(e))?;
+
+            // Set resourceVersion in metadata if it exists
+            if let Some(metadata) = resource.get_mut("metadata") {
+                metadata["resourceVersion"] = serde_json::json!(crate::concurrency::mod_revision_to_resource_version(mod_revision));
+            }
+
+            serde_json::from_value(resource).map_err(|e| Error::Serialization(e))
+        } else {
+            Self::deserialize(&json)
+        }
     }
 
     async fn get<T>(&self, key: &str) -> Result<T>
@@ -80,7 +100,17 @@ impl Storage for EtcdStorage {
             let json = kv
                 .value_str()
                 .map_err(|e| Error::Storage(format!("Invalid UTF-8 in value: {}", e)))?;
-            Self::deserialize(json)
+
+            // Add resourceVersion from etcd mod_revision
+            let mod_revision = kv.mod_revision();
+            let mut resource: serde_json::Value = serde_json::from_str(json)
+                .map_err(|e| Error::Serialization(e))?;
+
+            if let Some(metadata) = resource.get_mut("metadata") {
+                metadata["resourceVersion"] = serde_json::json!(crate::concurrency::mod_revision_to_resource_version(mod_revision));
+            }
+
+            serde_json::from_value(resource).map_err(|e| Error::Serialization(e))
         } else {
             Err(Error::NotFound(key.to_string()))
         }
@@ -93,6 +123,88 @@ impl Storage for EtcdStorage {
         let mut client = self.client.lock().await;
         let json = Self::serialize(value)?;
 
+        // Check if the key exists and get current resourceVersion
+        let get_resp = client
+            .get(key, None)
+            .await
+            .map_err(|e| Error::Storage(format!("Failed to check resource: {}", e)))?;
+
+        if get_resp.kvs().is_empty() {
+            return Err(Error::NotFound(key.to_string()));
+        }
+
+        let current_kv = get_resp.kvs().first().unwrap();
+        let current_mod_revision = current_kv.mod_revision();
+
+        // Extract resourceVersion from the incoming resource
+        let incoming_resource: serde_json::Value = serde_json::from_str(&json)
+            .map_err(|e| Error::Serialization(e))?;
+        let incoming_rv = crate::concurrency::extract_resource_version(
+            incoming_resource.get("metadata").unwrap_or(&serde_json::json!({}))
+        );
+
+        // Validate optimistic concurrency if resourceVersion is provided
+        if let Some(incoming_rv) = incoming_rv.as_deref() {
+            let current_rv = crate::concurrency::mod_revision_to_resource_version(current_mod_revision);
+            crate::concurrency::validate_resource_version(
+                Some(incoming_rv),
+                Some(&current_rv)
+            )?;
+
+            // Use a transaction to ensure atomic update with version check
+            let expected_mod_revision = crate::concurrency::resource_version_to_mod_revision(incoming_rv)?;
+            let txn = etcd_client::Txn::new()
+                .when(vec![Compare::mod_revision(key, CompareOp::Equal, expected_mod_revision)])
+                .and_then(vec![TxnOp::put(key, json.clone(), None)])
+                .or_else(vec![]);
+
+            let txn_resp = client
+                .txn(txn)
+                .await
+                .map_err(|e| Error::Storage(format!("Failed to update resource: {}", e)))?;
+
+            if !txn_resp.succeeded() {
+                return Err(Error::Conflict(format!(
+                    "resourceVersion mismatch: resource was modified (expected: {}, current: {})",
+                    incoming_rv, current_rv
+                )));
+            }
+        } else {
+            // No resourceVersion provided, allow update without optimistic lock
+            client
+                .put(key, json.clone(), None)
+                .await
+                .map_err(|e| Error::Storage(format!("Failed to update resource: {}", e)))?;
+        }
+
+        debug!("Updated resource at key: {}", key);
+
+        // Get the updated resource to return the new resourceVersion
+        let get_resp = client
+            .get(key, None)
+            .await
+            .map_err(|e| Error::Storage(format!("Failed to get updated resource: {}", e)))?;
+
+        if let Some(kv) = get_resp.kvs().first() {
+            let mod_revision = kv.mod_revision();
+            let mut resource: serde_json::Value = serde_json::from_str(&json)
+                .map_err(|e| Error::Serialization(e))?;
+
+            if let Some(metadata) = resource.get_mut("metadata") {
+                metadata["resourceVersion"] = serde_json::json!(crate::concurrency::mod_revision_to_resource_version(mod_revision));
+            }
+
+            serde_json::from_value(resource).map_err(|e| Error::Serialization(e))
+        } else {
+            Self::deserialize(&json)
+        }
+    }
+
+    async fn update_raw(&self, key: &str, value: &serde_json::Value) -> Result<()> {
+        let mut client = self.client.lock().await;
+        let json = serde_json::to_string(value)
+            .map_err(|e| Error::Serialization(e))?;
+
         // Check if the key exists first
         let get_resp = client
             .get(key, None)
@@ -104,12 +216,12 @@ impl Storage for EtcdStorage {
         }
 
         client
-            .put(key, json.clone(), None)
+            .put(key, json, None)
             .await
             .map_err(|e| Error::Storage(format!("Failed to update resource: {}", e)))?;
 
-        debug!("Updated resource at key: {}", key);
-        Self::deserialize(&json)
+        debug!("Updated resource (raw) at key: {}", key);
+        Ok(())
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
@@ -145,10 +257,25 @@ impl Storage for EtcdStorage {
             let json = kv
                 .value_str()
                 .map_err(|e| Error::Storage(format!("Invalid UTF-8 in value: {}", e)))?;
-            match Self::deserialize(json) {
-                Ok(value) => results.push(value),
+            let mod_revision = kv.mod_revision();
+
+            // Add resourceVersion from etcd mod_revision
+            let mut resource: serde_json::Value = match serde_json::from_str(json) {
+                Ok(value) => value,
                 Err(e) => {
                     error!("Failed to deserialize value: {}", e);
+                    continue;
+                }
+            };
+
+            if let Some(metadata) = resource.get_mut("metadata") {
+                metadata["resourceVersion"] = serde_json::json!(crate::concurrency::mod_revision_to_resource_version(mod_revision));
+            }
+
+            match serde_json::from_value(resource) {
+                Ok(value) => results.push(value),
+                Err(e) => {
+                    error!("Failed to deserialize enhanced value: {}", e);
                     continue;
                 }
             }
@@ -161,7 +288,8 @@ impl Storage for EtcdStorage {
     async fn watch(&self, prefix: &str) -> Result<WatchStream> {
         let mut client = self.client.lock().await;
 
-        let watch_options = WatchOptions::new().with_prefix();
+        // Enable prev_kv to get the previous value on DELETE events (required for Kubernetes)
+        let watch_options = WatchOptions::new().with_prefix().with_prev_key();
         let (_watcher, stream) = client
             .watch(prefix, Some(watch_options))
             .await
@@ -194,7 +322,15 @@ impl Storage for EtcdStorage {
                                     Ok(WatchEvent::Modified(key, value))
                                 }
                             }
-                            etcd_client::EventType::Delete => Ok(WatchEvent::Deleted(key)),
+                            etcd_client::EventType::Delete => {
+                                // Get the previous value from prev_kv (required for Kubernetes watch DELETE events)
+                                let prev_value = event
+                                    .prev_kv()
+                                    .and_then(|kv| kv.value_str().ok())
+                                    .unwrap_or("")
+                                    .to_string();
+                                Ok(WatchEvent::Deleted(key, prev_value))
+                            }
                         };
                     }
                     Err(Error::Storage("Empty watch response".to_string()))

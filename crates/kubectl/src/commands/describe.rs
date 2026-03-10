@@ -3,6 +3,31 @@ use anyhow::Result;
 use rusternetes_common::resources::{Pod, Service, Deployment, Node, Namespace};
 use chrono::Utc;
 
+pub async fn execute_enhanced(
+    client: &ApiClient,
+    resource_type: &str,
+    name: Option<&str>,
+    namespace: &str,
+    selector: Option<&str>,
+    all_namespaces: bool,
+) -> Result<()> {
+    if let Some(sel) = selector {
+        println!("Selector: {}", sel);
+        println!("Note: Selector-based describe not yet implemented");
+        return Ok(());
+    }
+    if all_namespaces {
+        println!("All namespaces");
+        println!("Note: All-namespaces describe not yet implemented");
+        return Ok(());
+    }
+    if let Some(n) = name {
+        execute(client, resource_type, n, Some(namespace)).await
+    } else {
+        anyhow::bail!("Resource name required for describe");
+    }
+}
+
 // Helper to convert GetError to anyhow::Error
 fn map_get_error(err: GetError) -> anyhow::Error {
     match err {

@@ -84,7 +84,7 @@ async fn test_token_manager_initialization() {
 
 #[tokio::test]
 async fn test_rbac_authorizer_initialization() {
-    // Note: RBACAuthorizer requires EtcdStorage which needs a live etcd instance
+    // Note: RBACAuthorizer requires storage backend
     // This test verifies the pattern but uses AlwaysAllowAuthorizer instead
 
     use rusternetes_common::auth::UserInfo;

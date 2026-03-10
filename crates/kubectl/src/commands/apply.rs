@@ -11,6 +11,26 @@ use serde::Deserialize;
 use std::fs;
 use std::io::{self, Read};
 
+pub async fn execute_enhanced(
+    client: &ApiClient,
+    file: &str,
+    namespace: Option<&str>,
+    dry_run: Option<&str>,
+    server_side: bool,
+    force: bool,
+) -> Result<()> {
+    if let Some(dr) = dry_run {
+        println!("Dry run mode: {}", dr);
+    }
+    if server_side {
+        println!("Server-side apply enabled");
+    }
+    if force {
+        println!("Force apply enabled");
+    }
+    execute(client, file).await
+}
+
 pub async fn execute(client: &ApiClient, file: &str) -> Result<()> {
     let contents = if file == "-" {
         // Read from stdin

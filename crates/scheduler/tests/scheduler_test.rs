@@ -111,8 +111,10 @@ fn create_test_pod(
                 command: None,
                 args: None,
                 security_context: None,
+                restart_policy: None,
             }],
             init_containers: None,
+            ephemeral_containers: None,
             restart_policy: Some("Always".to_string()),
             node_selector,
             node_name: None,
@@ -126,6 +128,11 @@ fn create_test_pod(
             host_network: None,
             host_pid: None,
             host_ipc: None,
+            automount_service_account_token: None,
+            topology_spread_constraints: None,
+            overhead: None,
+            scheduler_name: None,
+            resource_claims: None,
         }),
         status: Some(PodStatus {
             phase: Phase::Pending,
@@ -135,6 +142,7 @@ fn create_test_pod(
             pod_ip: None,
             container_statuses: None,
             init_container_statuses: None,
+            ephemeral_container_statuses: None,
         }),
     }
 }

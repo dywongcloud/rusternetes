@@ -9,14 +9,14 @@ The `dev-setup.sh` script now includes **automatic MetalLB installation** as opt
 ### Step 1: Start Your Cluster
 
 ```bash
-./dev-setup.sh
+./scripts/dev-setup.sh
 # Choose option 8 (Full setup - build + start)
 ```
 
 ### Step 2: Install MetalLB
 
 ```bash
-./dev-setup.sh
+./scripts/dev-setup.sh
 # Choose option 9 (Install MetalLB)
 ```
 
@@ -59,11 +59,11 @@ kubectl get svc --watch
 
 ```bash
 # 1. Build and start cluster
-./dev-setup.sh
+./scripts/dev-setup.sh
 # Choose: 8
 
 # 2. Install MetalLB
-./dev-setup.sh
+./scripts/dev-setup.sh
 # Choose: 9
 
 # 3. Create a test service
@@ -120,13 +120,13 @@ What would you like to do?
 ```bash
 # Build kubectl first
 cargo build --release --bin kubectl
-# Then run dev-setup.sh option 9 again
+# Then run scripts/dev-setup.sh option 9 again
 ```
 
 ### "Kubernetes cluster is not running"
 ```bash
 # Start the cluster first
-./dev-setup.sh
+./scripts/dev-setup.sh
 # Choose option 2 (or 8 for full setup)
 ```
 

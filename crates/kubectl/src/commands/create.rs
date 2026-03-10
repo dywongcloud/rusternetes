@@ -7,6 +7,31 @@ use rusternetes_common::resources::{
 use serde::Deserialize;
 use std::fs;
 
+/// Execute inline resource creation (e.g., kubectl create namespace foo)
+pub async fn execute_inline(client: &ApiClient, args: &[String], namespace: &str) -> Result<()> {
+    if args.is_empty() {
+        anyhow::bail!("Resource type required");
+    }
+
+    let resource_type = &args[0];
+    match resource_type.as_str() {
+        "namespace" | "ns" => {
+            if args.len() < 2 {
+                anyhow::bail!("Namespace name required");
+            }
+            let name = &args[1];
+            println!("Creating namespace: {}", name);
+            println!("Note: Inline resource creation not yet fully implemented");
+        }
+        _ => {
+            println!("Creating {} in namespace {}", resource_type, namespace);
+            println!("Note: Inline resource creation not yet fully implemented");
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn execute(client: &ApiClient, file: &str) -> Result<()> {
     let contents = fs::read_to_string(file).context("Failed to read file")?;
 

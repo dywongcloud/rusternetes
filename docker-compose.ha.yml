@@ -297,10 +297,21 @@ services:
     networks:
       - rusternetes-net
     volumes:
-      - /run/user/501/podman/podman.sock:/var/run/docker.sock:rw
+      # Docker socket
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      # Share volume directory so ConfigMap/Secret volumes can be mounted into pods
+      # IMPORTANT: Use same path on both sides so kubelet's bind mounts work correctly
+      # The kubelet creates volumes and then bind mounts them into pod containers
+      # Docker interprets bind mount paths relative to the VM filesystem, not the kubelet container
+      # IMPORTANT: KUBELET_VOLUMES_PATH must be set to an absolute path. Example:
+      #   export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+      - ${KUBELET_VOLUMES_PATH}:${KUBELET_VOLUMES_PATH}:rw
     environment:
       - RUST_LOG=debug
       - DOCKER_HOST=unix:///var/run/docker.sock
+      # Legacy environment variable - still supported for backward compatibility
+      # IMPORTANT: Must be an absolute path
+      - KUBELET_VOLUMES_PATH=${KUBELET_VOLUMES_PATH}
     command:
       - "--node-name"
       - "node-1"
@@ -331,31 +342,6 @@ services:
       - "node-1"
       - "--etcd-servers"
       - "http://etcd-1:2379,http://etcd-2:2379,http://etcd-3:2379"
-
-  # DNS Server - internal DNS for service discovery
-  dns-server:
-    build:
-      context: .
-      dockerfile: Dockerfile.dns-server
-    container_name: rusternetes-dns-server
-    depends_on:
-      etcd-1:
-        condition: service_healthy
-    networks:
-      - rusternetes-net
-    environment:
-      - RUST_LOG=info
-    command:
-      - "--etcd-endpoint"
-      - "http://etcd-1:2379"
-      - "--listen-addr"
-      - "0.0.0.0:8053"
-      - "--cluster-domain"
-      - "cluster.local"
-      - "--ttl"
-      - "10"
-      - "--sync-interval-secs"
-      - "30"
 
 networks:
   rusternetes-net:

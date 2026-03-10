@@ -1,12 +1,12 @@
-/// Pod admission controllers for ResourceQuota and LimitRange enforcement
+/// Pod admission controllers for ResourceQuota, LimitRange enforcement, and ServiceAccount injection
 use rusternetes_common::{
-    resources::{LimitRange, Pod, ResourceQuota},
+    resources::{LimitRange, Pod, ResourceQuota, SecretVolumeSource, Volume, VolumeMount},
     types::ResourceRequirements,
 };
 use rusternetes_storage::Storage;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{info, warn};
 
 /// Check if pod creation would exceed ResourceQuota limits
 pub async fn check_resource_quota<S: Storage>(
@@ -436,4 +436,187 @@ fn bytes_to_memory_string(bytes: i64) -> String {
     } else {
         format!("{}", bytes)
     }
+}
+
+/// DefaultStorageClass admission controller - sets default storage class for PVCs
+/// This is a built-in admission controller that:
+/// 1. If a PVC doesn't specify storageClassName, sets it to the default StorageClass
+/// 2. Finds the default StorageClass by checking for the annotation:
+///    storageclass.kubernetes.io/is-default-class: "true"
+pub async fn set_default_storage_class<S: Storage>(
+    storage: &Arc<S>,
+    pvc: &mut rusternetes_common::resources::PersistentVolumeClaim,
+) -> anyhow::Result<()> {
+    // Check if storageClassName is already set
+    if pvc.spec.storage_class_name.is_some() {
+        info!(
+            "PVC {}/{} already has storageClassName set",
+            pvc.metadata.namespace.as_deref().unwrap_or("default"),
+            pvc.metadata.name
+        );
+        return Ok(());
+    }
+
+    // Find default storage class
+    let sc_prefix = "/registry/storageclasses/";
+    let storage_classes: Vec<rusternetes_common::resources::StorageClass> =
+        storage.list(sc_prefix).await?;
+
+    // Look for the default storage class (marked with annotation)
+    for sc in storage_classes {
+        if let Some(annotations) = &sc.metadata.annotations {
+            if annotations.get("storageclass.kubernetes.io/is-default-class") == Some(&"true".to_string())
+                || annotations.get("storageclass.beta.kubernetes.io/is-default-class")
+                    == Some(&"true".to_string())
+            {
+                info!(
+                    "Setting default storage class '{}' for PVC {}/{}",
+                    sc.metadata.name,
+                    pvc.metadata.namespace.as_deref().unwrap_or("default"),
+                    pvc.metadata.name
+                );
+                pvc.spec.storage_class_name = Some(sc.metadata.name.clone());
+                return Ok(());
+            }
+        }
+    }
+
+    info!(
+        "No default storage class found for PVC {}/{}",
+        pvc.metadata.namespace.as_deref().unwrap_or("default"),
+        pvc.metadata.name
+    );
+
+    Ok(())
+}
+
+/// ServiceAccount admission controller - injects service account token volumes into pods
+/// This is a built-in admission controller that:
+/// 1. Sets serviceAccountName to "default" if not specified
+/// 2. Injects a volume for the service account token secret
+/// 3. Mounts the token at /var/run/secrets/kubernetes.io/serviceaccount/ in all containers
+pub async fn inject_service_account_token<S: Storage>(
+    storage: &Arc<S>,
+    namespace: &str,
+    pod: &mut Pod,
+) -> anyhow::Result<()> {
+    let spec = match &mut pod.spec {
+        Some(spec) => spec,
+        None => return Ok(()), // No spec, nothing to inject
+    };
+
+    // Check if automountServiceAccountToken is explicitly set to false
+    if spec.automount_service_account_token == Some(false) {
+        info!(
+            "Skipping service account token injection for pod {}/{} - automountServiceAccountToken is false",
+            namespace, pod.metadata.name
+        );
+        return Ok(());
+    }
+
+    // Set service account name to "default" if not specified
+    let sa_name = spec
+        .service_account_name
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
+
+    if spec.service_account_name.is_none() {
+        info!(
+            "Setting default service account for pod {}/{}",
+            namespace, pod.metadata.name
+        );
+        spec.service_account_name = Some(sa_name.clone());
+    }
+
+    // Verify the service account exists
+    let sa_key = format!("/registry/serviceaccounts/{}/{}", namespace, sa_name);
+    if storage.get::<serde_json::Value>(&sa_key).await.is_err() {
+        warn!(
+            "Service account {}/{} does not exist, but proceeding with token injection",
+            namespace, sa_name
+        );
+    }
+
+    // The service account token secret name follows the pattern: {sa-name}-token
+    let token_secret_name = format!("{}-token", sa_name);
+
+    // Define the service account token volume
+    let sa_token_volume = Volume {
+        name: "kube-api-access".to_string(),
+        empty_dir: None,
+        host_path: None,
+        config_map: None,
+        secret: Some(SecretVolumeSource {
+            secret_name: token_secret_name.clone(),
+        }),
+        persistent_volume_claim: None,
+        downward_api: None,
+        csi: None,
+        ephemeral: None,
+    };
+
+    // Add volume to pod spec
+    if let Some(volumes) = &mut spec.volumes {
+        // Check if volume already exists
+        if !volumes.iter().any(|v| v.name == "kube-api-access") {
+            volumes.push(sa_token_volume);
+            info!(
+                "Injected service account token volume for pod {}/{}",
+                namespace, pod.metadata.name
+            );
+        }
+    } else {
+        spec.volumes = Some(vec![sa_token_volume]);
+        info!(
+            "Injected service account token volume for pod {}/{}",
+            namespace, pod.metadata.name
+        );
+    }
+
+    // Define the volume mount for the token
+    let sa_token_mount = VolumeMount {
+        name: "kube-api-access".to_string(),
+        mount_path: "/var/run/secrets/kubernetes.io/serviceaccount".to_string(),
+        read_only: Some(true),
+        sub_path: None,
+    };
+
+    // Add volume mount to all containers
+    for container in &mut spec.containers {
+        if let Some(mounts) = &mut container.volume_mounts {
+            // Check if mount already exists
+            if !mounts
+                .iter()
+                .any(|m| m.mount_path == "/var/run/secrets/kubernetes.io/serviceaccount")
+            {
+                mounts.push(sa_token_mount.clone());
+            }
+        } else {
+            container.volume_mounts = Some(vec![sa_token_mount.clone()]);
+        }
+    }
+
+    // Also add to init containers if present
+    if let Some(init_containers) = &mut spec.init_containers {
+        for container in init_containers {
+            if let Some(mounts) = &mut container.volume_mounts {
+                // Check if mount already exists
+                if !mounts
+                    .iter()
+                    .any(|m| m.mount_path == "/var/run/secrets/kubernetes.io/serviceaccount")
+                {
+                    mounts.push(sa_token_mount.clone());
+                }
+            } else {
+                container.volume_mounts = Some(vec![sa_token_mount.clone()]);
+            }
+        }
+    }
+
+    info!(
+        "Service account token injection complete for pod {}/{} using SA {}",
+        namespace, pod.metadata.name, sa_name
+    );
+
+    Ok(())
 }

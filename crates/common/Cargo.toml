@@ -35,6 +35,11 @@ opentelemetry-jaeger = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
 opentelemetry-stdout = { version = "0.3", optional = true }
 tracing-opentelemetry = { workspace = true, optional = true }
+sha2 = "0.10.9"
+reqwest = { workspace = true }
+cel-interpreter.workspace = true
+prost.workspace = true
+prost-types.workspace = true
 
 [features]
 default = []
@@ -42,3 +47,6 @@ axum-support = ["axum"]
 jaeger = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-jaeger", "tracing-opentelemetry"]
 otlp = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing-opentelemetry"]
 tracing-full = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-stdout", "tracing-opentelemetry"]
+
+[dev-dependencies]
+tempfile = "3.27.0"

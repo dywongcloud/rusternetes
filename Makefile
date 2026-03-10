@@ -67,7 +67,21 @@ build-image-%: ## Build a specific component image (e.g., make build-image-api-s
 	$(CONTAINER_RUNTIME) build -f Dockerfile.$* -t $(IMAGE_PREFIX)/$*:$(IMAGE_TAG) .
 
 dev-up: ## Start the development cluster
+	@if [ -z "$$KUBELET_VOLUMES_PATH" ]; then \
+		echo "$(YELLOW)ERROR: KUBELET_VOLUMES_PATH environment variable is not set!$(NC)"; \
+		echo ""; \
+		echo "You must set this to an absolute path before starting the cluster."; \
+		echo ""; \
+		echo "Example:"; \
+		echo "  export KUBELET_VOLUMES_PATH=\$$(pwd)/.rusternetes/volumes"; \
+		echo "  make dev-up"; \
+		echo ""; \
+		echo "Or in one command:"; \
+		echo "  KUBELET_VOLUMES_PATH=\$$(pwd)/.rusternetes/volumes make dev-up"; \
+		exit 1; \
+	fi
 	@echo "$(GREEN)Starting development cluster...$(NC)"
+	@echo "Using volume path: $$KUBELET_VOLUMES_PATH"
 	$(COMPOSE_CMD) up -d
 	@echo ""
 	@echo "$(BOLD)Cluster started!$(NC)"
@@ -150,7 +164,19 @@ install-deps: ## Install required system dependencies (macOS)
 	fi
 
 # Full Development Workflow
-dev-full: build-images dev-up ## Build images and start development cluster
+dev-full: ## Build images and start development cluster
+	@if [ -z "$$KUBELET_VOLUMES_PATH" ]; then \
+		echo "$(YELLOW)ERROR: KUBELET_VOLUMES_PATH environment variable is not set!$(NC)"; \
+		echo ""; \
+		echo "You must set this to an absolute path before starting the cluster."; \
+		echo ""; \
+		echo "Example:"; \
+		echo "  export KUBELET_VOLUMES_PATH=\$$(pwd)/.rusternetes/volumes"; \
+		echo "  make dev-full"; \
+		exit 1; \
+	fi
+	@$(MAKE) build-images
+	@$(MAKE) dev-up
 	@echo ""
 	@echo "$(BOLD)$(GREEN)Development environment is ready!$(NC)"
 	@echo ""
@@ -161,7 +187,7 @@ dev-full: build-images dev-up ## Build images and start development cluster
 
 # Quick start
 quick-start: ## Interactive setup using dev-setup.sh script
-	./dev-setup.sh
+	./scripts/dev-setup.sh
 
 # Pre-commit checks
 pre-commit: fmt clippy test ## Run pre-commit checks (format, lint, test)

@@ -73,6 +73,7 @@ async fn test_complete_pod_lifecycle() {
                 command: None,
                 args: None,
                 security_context: None,
+                restart_policy: None,
             }],
             init_containers: None,
             restart_policy: Some("Always".to_string()),
@@ -84,10 +85,16 @@ async fn test_complete_pod_lifecycle() {
             service_account_name: None,
             priority: None,
             priority_class_name: None,
-                hostname: None,
-                host_network: None,
-                host_pid: None,
-                host_ipc: None,
+            hostname: None,
+            host_network: None,
+            host_pid: None,
+            host_ipc: None,
+            automount_service_account_token: None,
+            ephemeral_containers: None,
+            overhead: None,
+            scheduler_name: None,
+            topology_spread_constraints: None,
+            resource_claims: None,
         }),
         status: Some(PodStatus {
             phase: Phase::Pending,
@@ -97,6 +104,7 @@ async fn test_complete_pod_lifecycle() {
             pod_ip: None,
             container_statuses: None,
             init_container_statuses: None,
+            ephemeral_container_statuses: None,
         }),
     };
 
@@ -127,6 +135,7 @@ async fn test_complete_pod_lifecycle() {
         pod_ip: Some("10.244.1.5".to_string()),
         container_statuses: None,
         init_container_statuses: None,
+            ephemeral_container_statuses: None,
     });
     storage.update(&pod_key, &running_pod).await.unwrap();
 
@@ -183,6 +192,7 @@ async fn test_deployment_workflow() {
                         command: None,
                         args: None,
                         security_context: None,
+                        restart_policy: None,
                     }],
                     init_containers: None,
                     restart_policy: Some("Always".to_string()),
@@ -198,6 +208,12 @@ async fn test_deployment_workflow() {
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
+                    automount_service_account_token: None,
+                    ephemeral_containers: None,
+                    overhead: None,
+                    scheduler_name: None,
+                    topology_spread_constraints: None,
+                    resource_claims: None,
                 },
             },
             strategy: None,
@@ -245,6 +261,7 @@ async fn test_deployment_workflow() {
             pod_ip: Some("10.244.1.5".to_string()),
             container_statuses: None,
             init_container_statuses: None,
+            ephemeral_container_statuses: None,
         });
         storage.update(&pod_key, &updated_pod).await.unwrap();
     }

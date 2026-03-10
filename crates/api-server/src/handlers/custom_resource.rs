@@ -14,9 +14,11 @@ use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::{CustomResource, CustomResourceDefinition},
     schema_validation::SchemaValidator,
+    List,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -25,6 +27,7 @@ pub async fn create_custom_resource(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((group, version, plural, namespace)): Path<(String, String, String, Option<String>)>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
     Json(mut cr): Json<CustomResource>,
 ) -> Result<(StatusCode, Json<CustomResource>)> {
     let cr_name = cr.metadata.name.clone();
@@ -63,6 +66,11 @@ pub async fn create_custom_resource(
     // Set API version and kind
     cr.api_version = format!("{}/{}", group, version);
     cr.kind = crd.spec.names.kind.clone();
+
+    // Check for dry-run
+    if crate::handlers::dryrun::is_dry_run(&params) {
+        return Ok((StatusCode::OK, Json(cr)));
+    }
 
     // Build storage key
     let resource_type = format!("{}_{}", group.replace('.', "_"), plural);
@@ -135,7 +143,7 @@ pub async fn list_custom_resources(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((group, version, plural, namespace)): Path<(String, String, String, Option<String>)>,
-) -> Result<Json<Vec<CustomResource>>> {
+) -> Result<Json<List<CustomResource>>> {
     info!(
         "Listing custom resources {}/{}/{}",
         group, version, plural
@@ -171,7 +179,8 @@ pub async fn list_custom_resources(
 
     let crs = state.storage.list(&prefix).await?;
 
-    Ok(Json(crs))
+    let list = List::new("List", "v1", crs);
+    Ok(Json(list))
 }
 
 /// Update a custom resource instance
@@ -185,6 +194,7 @@ pub async fn update_custom_resource(
         Option<String>,
         String,
     )>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
     Json(mut cr): Json<CustomResource>,
 ) -> Result<Json<CustomResource>> {
     info!(
@@ -223,6 +233,11 @@ pub async fn update_custom_resource(
     cr.api_version = format!("{}/{}", group, version);
     cr.kind = crd.spec.names.kind.clone();
 
+    // Check for dry-run
+    if crate::handlers::dryrun::is_dry_run(&params) {
+        return Ok(Json(cr));
+    }
+
     // Build storage key
     let resource_type = format!("{}_{}", group.replace('.', "_"), plural);
     let key = if let Some(ref ns) = namespace {
@@ -232,6 +247,213 @@ pub async fn update_custom_resource(
     };
 
     let updated = state.storage.update(&key, &cr).await?;
+
+    Ok(Json(updated))
+}
+
+/// Patch a custom resource instance (JSON Patch, JSON Merge Patch, or Strategic Merge Patch)
+pub async fn patch_custom_resource(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((group, version, plural, namespace, name)): Path<(
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+    )>,
+    req: axum::extract::Request,
+) -> Result<Json<CustomResource>> {
+    use axum::body::to_bytes;
+
+    info!(
+        "Patching custom resource {}/{}/{}: {}",
+        group, version, plural, name
+    );
+
+    // Find the CRD for this resource type
+    let crd_name = format!("{}.{}", plural, group);
+    let crd = get_crd_for_resource(&state, &crd_name).await?;
+
+    // Check authorization
+    let attrs = if let Some(ref ns) = namespace {
+        RequestAttributes::new(auth_ctx.user.clone(), "patch", &plural)
+            .with_api_group(&group)
+            .with_namespace(ns)
+            .with_name(&name)
+    } else {
+        RequestAttributes::new(auth_ctx.user, "patch", &plural)
+            .with_api_group(&group)
+            .with_name(&name)
+    };
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Get the current resource
+    let resource_type = format!("{}_{}", group.replace('.', "_"), plural);
+    let key = if let Some(ref ns) = namespace {
+        build_key(&resource_type, Some(ns), &name)
+    } else {
+        build_key(&resource_type, None, &name)
+    };
+
+    let current: CustomResource = state.storage.get(&key).await?;
+
+    // Split request into parts to avoid borrow/move conflict
+    let (parts, body) = req.into_parts();
+
+    // Get Content-Type header to determine patch type
+    let content_type = parts
+        .headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/json-patch+json");
+
+    // Read the patch body
+    let body_bytes = to_bytes(body, usize::MAX).await
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Failed to read patch body: {}", e)))?;
+    let patch_value: serde_json::Value = serde_json::from_slice(&body_bytes)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch JSON: {}", e)))?;
+
+    // Apply the patch based on Content-Type
+    let current_json = serde_json::to_value(&current)
+        .map_err(|e| rusternetes_common::Error::Internal(format!("Failed to serialize current resource: {}", e)))?;
+
+    let patch_type = crate::patch::PatchType::from_content_type(content_type)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Unsupported patch content type: {}", e)))?;
+
+    let patched_json = crate::patch::apply_patch(&current_json, &patch_value, patch_type)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Failed to apply patch: {}", e)))?;
+
+    // Deserialize the patched JSON back to CustomResource
+    let mut patched: CustomResource = serde_json::from_value(patched_json)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Failed to deserialize patched resource: {}", e)))?;
+
+    // Validate the patched resource against CRD schema
+    validate_custom_resource(&crd, &version, &patched)?;
+
+    // Ensure name matches
+    patched.metadata.name = name.clone();
+    patched.api_version = format!("{}/{}", group, version);
+    patched.kind = crd.spec.names.kind.clone();
+
+    // Update the resource in storage
+    let updated = state.storage.update(&key, &patched).await?;
+
+    Ok(Json(updated))
+}
+
+/// Patch the status subresource of a custom resource
+pub async fn patch_custom_resource_status(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((group, version, plural, namespace, name)): Path<(
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+    )>,
+    req: axum::extract::Request,
+) -> Result<Json<CustomResource>> {
+    use axum::body::to_bytes;
+
+    info!(
+        "Patching custom resource status {}/{}/{}: {}",
+        group, version, plural, name
+    );
+
+    // Find the CRD for this resource type
+    let crd_name = format!("{}.{}", plural, group);
+    let crd = get_crd_for_resource(&state, &crd_name).await?;
+
+    // Check if status subresource is enabled
+    let version_spec = crd
+        .spec
+        .versions
+        .iter()
+        .find(|v| v.name == version)
+        .ok_or_else(|| {
+            rusternetes_common::Error::InvalidResource(format!(
+                "Version {} not found in CRD",
+                version
+            ))
+        })?;
+
+    if version_spec.subresources.is_none()
+        || version_spec.subresources.as_ref().unwrap().status.is_none()
+    {
+        return Err(rusternetes_common::Error::InvalidResource(
+            "Status subresource not enabled for this CRD".to_string(),
+        ));
+    }
+
+    // Check authorization
+    let attrs = if let Some(ref ns) = namespace {
+        RequestAttributes::new(auth_ctx.user.clone(), "patch", &plural)
+            .with_api_group(&group)
+            .with_namespace(ns)
+            .with_name(&name)
+            .with_subresource("status")
+    } else {
+        RequestAttributes::new(auth_ctx.user, "patch", &plural)
+            .with_api_group(&group)
+            .with_name(&name)
+            .with_subresource("status")
+    };
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Get the current resource
+    let resource_type = format!("{}_{}", group.replace('.', "_"), plural);
+    let key = if let Some(ref ns) = namespace {
+        build_key(&resource_type, Some(ns), &name)
+    } else {
+        build_key(&resource_type, None, &name)
+    };
+
+    let mut current: CustomResource = state.storage.get(&key).await?;
+
+    // Split request into parts to avoid borrow/move conflict
+    let (parts, body) = req.into_parts();
+
+    // Get Content-Type header to determine patch type
+    let content_type = parts
+        .headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/json-patch+json");
+
+    // Read the patch body
+    let body_bytes = to_bytes(body, usize::MAX).await
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Failed to read patch body: {}", e)))?;
+    let patch_value: serde_json::Value = serde_json::from_slice(&body_bytes)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch JSON: {}", e)))?;
+
+    // Apply the patch to the status field only
+    let current_status = current.status.as_ref().unwrap_or(&serde_json::Value::Null).clone();
+
+    let patch_type = crate::patch::PatchType::from_content_type(content_type)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Unsupported patch content type: {}", e)))?;
+
+    let patched_status = crate::patch::apply_patch(&current_status, &patch_value, patch_type)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Failed to apply status patch: {}", e)))?;
+
+    // Update only the status field
+    current.status = Some(patched_status);
+
+    // Save the updated resource
+    let updated = state.storage.update(&key, &current).await?;
 
     Ok(Json(updated))
 }
@@ -247,6 +469,7 @@ pub async fn delete_custom_resource(
         Option<String>,
         String,
     )>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!(
         "Deleting custom resource {}/{}/{}: {}",
@@ -284,7 +507,16 @@ pub async fn delete_custom_resource(
         build_key(&resource_type, None, &name)
     };
 
-    state.storage.delete(&key).await?;
+    // Get the resource to check if it exists
+    let cr: CustomResource = state.storage.get(&key).await?;
+
+    // Check for dry-run
+    if crate::handlers::dryrun::is_dry_run(&params) {
+        info!("Dry-run: CustomResource {}/{}/{} validated successfully (not deleted)", group, plural, name);
+        return Ok(StatusCode::OK);
+    }
+
+    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &cr).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

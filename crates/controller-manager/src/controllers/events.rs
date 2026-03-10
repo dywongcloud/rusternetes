@@ -283,7 +283,8 @@ mod tests {
                     command: None,
                     args: None,
                     security_context: None,
-                }],
+                restart_policy: None,
+            }],
                 restart_policy: None,
                 node_selector: None,
                 node_name,
@@ -297,6 +298,12 @@ mod tests {
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,
+                automount_service_account_token: None,
+                ephemeral_containers: None,
+                overhead: None,
+                scheduler_name: None,
+                topology_spread_constraints: None,
+                resource_claims: None,
             }),
             status: Some(PodStatus {
                 phase: match phase {
@@ -312,6 +319,7 @@ mod tests {
                 host_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
+            ephemeral_container_statuses: None,
             }),
         }
     }

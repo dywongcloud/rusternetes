@@ -322,3 +322,151 @@ async fn test_metadata_finalizer_helpers() {
     metadata.remove_finalizer("my-finalizer");
     assert!(!metadata.has_finalizers());
 }
+
+// Tests for actual GarbageCollector functionality
+mod garbage_collector_integration {
+    use super::*;
+    use rusternetes_controller_manager::controllers::garbage_collector::GarbageCollector;
+    use rusternetes_common::resources::namespace::Namespace;
+    use chrono::Utc;
+
+    #[tokio::test]
+    async fn test_gc_deletes_orphaned_pods() {
+        let storage = setup_test().await;
+        let gc = GarbageCollector::new(storage.clone());
+
+        // Create pods with owner reference to non-existent parent
+        let fake_owner_uid = uuid::Uuid::new_v4().to_string();
+
+        for i in 0..3 {
+            let pod = create_test_pod(&format!("orphan-pod-{}", i), "default", Some(&fake_owner_uid));
+            let pod_key = build_key("pods", Some("default"), &format!("orphan-pod-{}", i));
+            storage.create(&pod_key, &pod).await.unwrap();
+        }
+
+        // Verify pods exist
+        let pods_before: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        assert_eq!(pods_before.len(), 3);
+
+        // Run GC
+        gc.scan_and_collect().await.unwrap();
+
+        // Pods should be deleted (orphaned)
+        let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        assert_eq!(pods_after.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_gc_cascades_with_owner_references() {
+        let storage = setup_test().await;
+        let gc = GarbageCollector::new(storage.clone());
+
+        // Create a parent pod
+        let parent = create_test_pod("parent-pod", "default", None);
+        let parent_uid = parent.metadata.uid.clone();
+        let parent_key = build_key("pods", Some("default"), "parent-pod");
+        storage.create(&parent_key, &parent).await.unwrap();
+
+        // Create child pods with owner reference
+        for i in 0..2 {
+            let child = create_test_pod(&format!("child-pod-{}", i), "default", Some(&parent_uid));
+            let child_key = build_key("pods", Some("default"), &format!("child-pod-{}", i));
+            storage.create(&child_key, &child).await.unwrap();
+        }
+
+        // Verify all resources exist
+        assert!(storage.get::<Pod>(&parent_key).await.is_ok());
+        let children_before: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        assert_eq!(children_before.len(), 3); // parent + 2 children
+
+        // Delete the parent
+        storage.delete(&parent_key).await.unwrap();
+
+        // Run GC - child pods should become orphaned and deleted
+        gc.scan_and_collect().await.unwrap();
+
+        // Children should be deleted
+        let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        assert_eq!(pods_after.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_gc_namespace_cascade_deletion() {
+        let storage = setup_test().await;
+        let gc = GarbageCollector::new(storage.clone());
+
+        // Create namespace
+        let mut namespace_meta = ObjectMeta::new("test-cascade-ns");
+        namespace_meta.uid = uuid::Uuid::new_v4().to_string();
+
+        let namespace = Namespace {
+            type_meta: TypeMeta {
+                kind: "Namespace".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: namespace_meta,
+            spec: None,
+            status: None,
+        };
+
+        let ns_key = build_key("namespaces", None, "test-cascade-ns");
+        storage.create(&ns_key, &namespace).await.unwrap();
+
+        // Create resources in namespace
+        for i in 0..3 {
+            let pod = create_test_pod(&format!("pod-{}", i), "test-cascade-ns", None);
+            let pod_key = build_key("pods", Some("test-cascade-ns"), &format!("pod-{}", i));
+            storage.create(&pod_key, &pod).await.unwrap();
+        }
+
+        // Verify resources exist
+        let pods_before: Vec<Pod> = storage.list("/registry/pods/test-cascade-ns/").await.unwrap();
+        assert_eq!(pods_before.len(), 3);
+
+        // Mark namespace for deletion
+        let mut namespace = storage.get::<Namespace>(&ns_key).await.unwrap();
+        namespace.metadata.deletion_timestamp = Some(Utc::now());
+        storage.update(&ns_key, &namespace).await.unwrap();
+
+        // Run GC
+        gc.scan_and_collect().await.unwrap();
+
+        // All resources in namespace should be deleted
+        let pods_after: Vec<Pod> = storage.list("/registry/pods/test-cascade-ns/").await.unwrap();
+        assert_eq!(pods_after.len(), 0);
+
+        // Namespace should be deleted
+        assert!(storage.get::<Namespace>(&ns_key).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_gc_respects_finalizers() {
+        let storage = setup_test().await;
+        let gc = GarbageCollector::new(storage.clone());
+
+        // Create pod with finalizer
+        let mut pod = create_test_pod("finalized-pod", "default", None);
+        pod.metadata.deletion_timestamp = Some(Utc::now());
+        pod.metadata.add_finalizer("test-finalizer".to_string());
+
+        let pod_key = build_key("pods", Some("default"), "finalized-pod");
+        storage.create(&pod_key, &pod).await.unwrap();
+
+        // Run GC
+        gc.scan_and_collect().await.unwrap();
+
+        // Pod should NOT be deleted (has finalizer)
+        assert!(storage.get::<Pod>(&pod_key).await.is_ok());
+
+        // Remove finalizer
+        let mut pod = storage.get::<Pod>(&pod_key).await.unwrap();
+        pod.metadata.remove_finalizer("test-finalizer");
+        storage.update(&pod_key, &pod).await.unwrap();
+
+        // Run GC again
+        gc.scan_and_collect().await.unwrap();
+
+        // Now pod should be deleted
+        assert!(storage.get::<Pod>(&pod_key).await.is_err());
+    }
+}

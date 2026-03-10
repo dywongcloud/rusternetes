@@ -1,15 +1,17 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::{MutatingWebhookConfiguration, ValidatingWebhookConfiguration},
+    List,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
@@ -18,7 +20,8 @@ use tracing::info;
 pub async fn create_validating_webhook(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Json(config): Json<ValidatingWebhookConfiguration>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(mut config): Json<ValidatingWebhookConfiguration>,
 ) -> Result<(StatusCode, Json<ValidatingWebhookConfiguration>)> {
     info!("Creating ValidatingWebhookConfiguration: {}", config.metadata.name);
 
@@ -31,6 +34,17 @@ pub async fn create_validating_webhook(
         Decision::Deny(reason) => {
             return Err(rusternetes_common::Error::Forbidden(reason));
         }
+    }
+
+    // Enrich metadata with system fields
+    config.metadata.ensure_uid();
+    config.metadata.ensure_creation_timestamp();
+
+    // Check for dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ValidatingWebhookConfiguration validated successfully (not created)");
+        return Ok((StatusCode::CREATED, Json(config)));
     }
 
     let key = build_key("validatingwebhookconfigurations", None, &config.metadata.name);
@@ -68,6 +82,7 @@ pub async fn update_validating_webhook(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut config): Json<ValidatingWebhookConfiguration>,
 ) -> Result<Json<ValidatingWebhookConfiguration>> {
     info!("Updating ValidatingWebhookConfiguration: {}", name);
@@ -86,6 +101,13 @@ pub async fn update_validating_webhook(
 
     config.metadata.name = name.clone();
 
+    // Check for dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ValidatingWebhookConfiguration validated successfully (not updated)");
+        return Ok(Json(config));
+    }
+
     let key = build_key("validatingwebhookconfigurations", None, &name);
 
     let result = match state.storage.update(&key, &config).await {
@@ -103,6 +125,7 @@ pub async fn delete_validating_webhook(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting ValidatingWebhookConfiguration: {}", name);
 
@@ -119,15 +142,41 @@ pub async fn delete_validating_webhook(
     }
 
     let key = build_key("validatingwebhookconfigurations", None, &name);
-    state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    // Check for dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ValidatingWebhookConfiguration validated successfully (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get the resource for finalizer handling
+    let resource: ValidatingWebhookConfiguration = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &resource,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "ValidatingWebhookConfiguration marked for deletion (has finalizers: {:?})",
+            resource.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 pub async fn list_validating_webhooks(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<Vec<ValidatingWebhookConfiguration>>> {
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<List<ValidatingWebhookConfiguration>>> {
     info!("Listing ValidatingWebhookConfigurations");
 
     // Check authorization
@@ -142,9 +191,13 @@ pub async fn list_validating_webhooks(
     }
 
     let prefix = build_prefix("validatingwebhookconfigurations", None);
-    let configs = state.storage.list(&prefix).await?;
+    let mut configs = state.storage.list(&prefix).await?;
 
-    Ok(Json(configs))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut configs, &params)?;
+
+    let list = List::new("ValidatingWebhookConfigurationList", "admissionregistration.k8s.io/v1", configs);
+    Ok(Json(list))
 }
 
 // Use the macro to create a PATCH handler
@@ -155,7 +208,8 @@ crate::patch_handler_cluster!(patch_validating_webhook, ValidatingWebhookConfigu
 pub async fn create_mutating_webhook(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Json(config): Json<MutatingWebhookConfiguration>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(mut config): Json<MutatingWebhookConfiguration>,
 ) -> Result<(StatusCode, Json<MutatingWebhookConfiguration>)> {
     info!("Creating MutatingWebhookConfiguration: {}", config.metadata.name);
 
@@ -168,6 +222,17 @@ pub async fn create_mutating_webhook(
         Decision::Deny(reason) => {
             return Err(rusternetes_common::Error::Forbidden(reason));
         }
+    }
+
+    // Enrich metadata with system fields
+    config.metadata.ensure_uid();
+    config.metadata.ensure_creation_timestamp();
+
+    // Check for dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: MutatingWebhookConfiguration validated successfully (not created)");
+        return Ok((StatusCode::CREATED, Json(config)));
     }
 
     let key = build_key("mutatingwebhookconfigurations", None, &config.metadata.name);
@@ -205,6 +270,7 @@ pub async fn update_mutating_webhook(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut config): Json<MutatingWebhookConfiguration>,
 ) -> Result<Json<MutatingWebhookConfiguration>> {
     info!("Updating MutatingWebhookConfiguration: {}", name);
@@ -223,6 +289,13 @@ pub async fn update_mutating_webhook(
 
     config.metadata.name = name.clone();
 
+    // Check for dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: MutatingWebhookConfiguration validated successfully (not updated)");
+        return Ok(Json(config));
+    }
+
     let key = build_key("mutatingwebhookconfigurations", None, &name);
 
     let result = match state.storage.update(&key, &config).await {
@@ -240,6 +313,7 @@ pub async fn delete_mutating_webhook(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting MutatingWebhookConfiguration: {}", name);
 
@@ -256,15 +330,41 @@ pub async fn delete_mutating_webhook(
     }
 
     let key = build_key("mutatingwebhookconfigurations", None, &name);
-    state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    // Check for dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: MutatingWebhookConfiguration validated successfully (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get the resource for finalizer handling
+    let resource: MutatingWebhookConfiguration = state.storage.get(&key).await?;
+
+    // Handle deletion with finalizers
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+        &state.storage,
+        &key,
+        &resource,
+    )
+    .await?;
+
+    if deleted_immediately {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        info!(
+            "MutatingWebhookConfiguration marked for deletion (has finalizers: {:?})",
+            resource.metadata.finalizers
+        );
+        Ok(StatusCode::OK)
+    }
 }
 
 pub async fn list_mutating_webhooks(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<Vec<MutatingWebhookConfiguration>>> {
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<List<MutatingWebhookConfiguration>>> {
     info!("Listing MutatingWebhookConfigurations");
 
     // Check authorization
@@ -279,9 +379,13 @@ pub async fn list_mutating_webhooks(
     }
 
     let prefix = build_prefix("mutatingwebhookconfigurations", None);
-    let configs = state.storage.list(&prefix).await?;
+    let mut configs = state.storage.list(&prefix).await?;
 
-    Ok(Json(configs))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut configs, &params)?;
+
+    let list = List::new("MutatingWebhookConfigurationList", "admissionregistration.k8s.io/v1", configs);
+    Ok(Json(list))
 }
 
 // Use the macro to create a PATCH handler

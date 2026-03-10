@@ -1,9 +1,10 @@
 use rusternetes_common::{
     resources::{
         Node, NodeSelector, NodeSelectorRequirement, NodeSelectorTerm, Pod,
-        Taint, Toleration,
+        Taint, Toleration, TopologySpreadConstraint,
     },
 };
+use std::collections::HashMap;
 use tracing::debug;
 
 /// Scoring result for a node
@@ -639,6 +640,161 @@ pub fn check_preemption(
 
     // Even after evicting all lower-priority pods, not enough resources
     (false, vec![])
+}
+
+/// Check topology spread constraints for a pod
+/// Returns (passes_hard_constraints, score_penalty)
+pub fn check_topology_spread_constraints(
+    node: &Node,
+    pod: &Pod,
+    all_pods: &[Pod],
+    all_nodes: &[Node],
+) -> (bool, i32) {
+    let constraints = match &pod.spec {
+        Some(spec) => match &spec.topology_spread_constraints {
+            Some(c) => c,
+            None => return (true, 0), // No constraints
+        },
+        None => return (true, 0),
+    };
+
+    let mut total_penalty = 0;
+
+    for constraint in constraints {
+        let (passes, penalty) = check_single_topology_constraint(node, pod, constraint, all_pods, all_nodes);
+
+        if !passes {
+            return (false, 0); // Hard constraint failed
+        }
+
+        total_penalty += penalty;
+    }
+
+    (true, total_penalty)
+}
+
+/// Check a single topology spread constraint
+fn check_single_topology_constraint(
+    node: &Node,
+    pod: &Pod,
+    constraint: &TopologySpreadConstraint,
+    all_pods: &[Pod],
+    all_nodes: &[Node],
+) -> (bool, i32) {
+    // Get the topology value for the candidate node
+    let node_topology_value = match node.metadata.labels.as_ref() {
+        Some(labels) => match labels.get(&constraint.topology_key) {
+            Some(v) => v.clone(),
+            None => {
+                // Node doesn't have the topology key
+                // If whenUnsatisfiable is DoNotSchedule, we can't schedule here
+                if constraint.when_unsatisfiable == "DoNotSchedule" {
+                    return (false, 0);
+                }
+                return (true, 0);
+            }
+        },
+        None => {
+            if constraint.when_unsatisfiable == "DoNotSchedule" {
+                return (false, 0);
+            }
+            return (true, 0);
+        }
+    };
+
+    // Find all pods that match the label selector
+    let matching_pods: Vec<&Pod> = all_pods
+        .iter()
+        .filter(|p| {
+            // Skip unscheduled pods
+            if p.spec.as_ref().and_then(|s| s.node_name.as_ref()).is_none() {
+                return false;
+            }
+
+            // Check if pod matches the label selector
+            if let Some(ref selector) = constraint.label_selector {
+                match_selector(selector, &p.metadata.labels)
+            } else {
+                // No label selector means match all pods
+                true
+            }
+        })
+        .collect();
+
+    // Count pods per topology domain
+    let mut domain_counts: HashMap<String, i32> = HashMap::new();
+
+    // Initialize counts for all domains
+    for n in all_nodes {
+        if let Some(labels) = &n.metadata.labels {
+            if let Some(topology_value) = labels.get(&constraint.topology_key) {
+                domain_counts.entry(topology_value.clone()).or_insert(0);
+            }
+        }
+    }
+
+    // Count matching pods per domain
+    for p in &matching_pods {
+        if let Some(spec) = &p.spec {
+            if let Some(node_name) = &spec.node_name {
+                // Find the node this pod is on
+                if let Some(pod_node) = all_nodes.iter().find(|n| &n.metadata.name == node_name) {
+                    if let Some(labels) = &pod_node.metadata.labels {
+                        if let Some(topology_value) = labels.get(&constraint.topology_key) {
+                            *domain_counts.entry(topology_value.clone()).or_insert(0) += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Calculate skew if we place this pod on the candidate node
+    let current_count = domain_counts.get(&node_topology_value).copied().unwrap_or(0);
+    let new_count = current_count + 1;
+
+    // Find min and max counts
+    let min_count = domain_counts.values().min().copied().unwrap_or(0);
+    let max_count = domain_counts.values().max().copied().unwrap_or(0);
+
+    // Calculate skew after placing pod
+    let skew = if new_count > min_count {
+        new_count - min_count
+    } else {
+        max_count - min_count
+    };
+
+    // Check if skew exceeds max_skew
+    if skew > constraint.max_skew {
+        if constraint.when_unsatisfiable == "DoNotSchedule" {
+            debug!(
+                "Topology spread constraint violated: skew {} > max_skew {} for topology key {}",
+                skew, constraint.max_skew, constraint.topology_key
+            );
+            return (false, 0);
+        } else {
+            // ScheduleAnyway - allow but penalize
+            let penalty = (skew - constraint.max_skew) * 10; // Penalty proportional to skew violation
+            return (true, penalty);
+        }
+    }
+
+    // Check minDomains if specified
+    if let Some(min_domains) = constraint.min_domains {
+        let num_domains = domain_counts.len() as i32;
+        if num_domains < min_domains {
+            if constraint.when_unsatisfiable == "DoNotSchedule" {
+                return (false, 0);
+            } else {
+                let penalty = (min_domains - num_domains) * 5;
+                return (true, penalty);
+            }
+        }
+    }
+
+    // Constraint satisfied - add small penalty based on imbalance to prefer better spread
+    let imbalance_penalty = ((new_count as f32 - min_count as f32) * 2.0) as i32;
+    (true, imbalance_penalty.max(0))
 }
 
 #[cfg(test)]

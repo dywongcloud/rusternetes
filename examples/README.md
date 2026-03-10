@@ -114,13 +114,13 @@ kubectl apply -f examples/storage/
 
 1. **Start the cluster:**
    ```bash
-   ./dev-setup.sh
+   ./scripts/dev-setup.sh
    # Choose option 8 (Full setup)
    ```
 
 2. **Install MetalLB (for LoadBalancer support):**
    ```bash
-   ./dev-setup.sh
+   ./scripts/dev-setup.sh
    # Choose option 9
    ```
 
@@ -144,7 +144,7 @@ kubectl apply -f examples/storage/
 6. **Test DNS (requires DNS proxy for macOS):**
    ```bash
    # Setup DNS proxy
-   ./dev-setup.sh  # Choose option 10, then start
+   ./scripts/dev-setup.sh  # Choose option 10, then start
 
    # Deploy DNS test pod
    kubectl apply -f examples/dns/test-dns.yaml

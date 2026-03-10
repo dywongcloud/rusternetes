@@ -20,6 +20,7 @@ fn ensure_crypto_provider() {
 pub struct TlsConfig {
     pub cert: Vec<CertificateDer<'static>>,
     pub key: PrivateKeyDer<'static>,
+    pub cert_pem: Option<String>, // PEM-encoded certificate for distribution to clients
 }
 
 impl TlsConfig {
@@ -31,9 +32,13 @@ impl TlsConfig {
         ensure_crypto_provider();
         let mut params = CertificateParams::default();
 
-        // Set certificate validity (1 year)
+        // Set certificate validity (10 years for development/testing)
+        // Valid from 2024 to 2034
         params.not_before = rcgen::date_time_ymd(2024, 1, 1);
-        params.not_after = rcgen::date_time_ymd(2025, 1, 1);
+        params.not_after = rcgen::date_time_ymd(2034, 12, 31);
+
+        // Mark this as a CA certificate so it can be trusted as a root CA
+        params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
 
         // Set distinguished name
         let mut dn = DistinguishedName::new();
@@ -69,6 +74,7 @@ impl TlsConfig {
         Ok(TlsConfig {
             cert: cert_der,
             key: key_der,
+            cert_pem: Some(cert_pem),
         })
     }
 
@@ -94,6 +100,7 @@ impl TlsConfig {
         Ok(TlsConfig {
             cert: cert_der,
             key: key_der,
+            cert_pem: String::from_utf8(cert_pem).ok(), // Try to convert to String, None if invalid UTF-8
         })
     }
 

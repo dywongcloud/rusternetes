@@ -86,6 +86,18 @@ impl Storage for MemoryStorage {
         Ok(serde_json::from_str(&serialized)?)
     }
 
+    async fn update_raw(&self, key: &str, value: &serde_json::Value) -> Result<()> {
+        let serialized = serde_json::to_string(value)?;
+
+        let mut data = self.data.write().unwrap();
+        if !data.contains_key(key) {
+            return Err(Error::NotFound(key.to_string()));
+        }
+
+        data.insert(key.to_string(), serialized);
+        Ok(())
+    }
+
     async fn delete(&self, key: &str) -> Result<()> {
         let mut data = self.data.write().unwrap();
         data.remove(key)

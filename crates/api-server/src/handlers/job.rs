@@ -1,15 +1,17 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::Job,
+    List,
     Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
@@ -17,6 +19,7 @@ pub async fn create(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut job): Json<Job>,
 ) -> Result<(StatusCode, Json<Job>)> {
     info!(
@@ -24,6 +27,8 @@ pub async fn create(
         namespace, job.metadata.name
     );
 
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "jobs")
         .with_namespace(&namespace)
@@ -37,6 +42,16 @@ pub async fn create(
     }
 
     job.metadata.namespace = Some(namespace.clone());
+
+    // Enrich metadata with system fields
+    job.metadata.ensure_uid();
+    job.metadata.ensure_creation_timestamp();
+
+    // If dry-run, skip storage operation but return the validated resource
+    if is_dry_run {
+        info!("Dry-run: Job {}/{} validated successfully (not created)", namespace, job.metadata.name);
+        return Ok((StatusCode::CREATED, Json(job)));
+    }
 
     let key = build_key("jobs", Some(&namespace), &job.metadata.name);
     let created = state.storage.create(&key, &job).await?;
@@ -74,10 +89,13 @@ pub async fn update(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
     Json(mut job): Json<Job>,
 ) -> Result<Json<Job>> {
     info!("Updating job: {}/{}", namespace, name);
 
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "jobs")
         .with_namespace(&namespace)
@@ -94,6 +112,11 @@ pub async fn update(
     job.metadata.name = name.clone();
     job.metadata.namespace = Some(namespace.clone());
 
+    // If dry-run, skip storage operation but return the validated resource
+    if is_dry_run {
+        info!("Dry-run: Job {:}/{:} validated successfully (not updated)", namespace, name);
+        return Ok(Json(job));
+    }
     let key = build_key("jobs", Some(&namespace), &name);
     let updated = state.storage.update(&key, &job).await?;
 
@@ -104,9 +127,12 @@ pub async fn delete_job(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
     info!("Deleting job: {}/{}", namespace, name);
 
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "jobs")
         .with_namespace(&namespace)
@@ -121,7 +147,17 @@ pub async fn delete_job(
     }
 
     let key = build_key("jobs", Some(&namespace), &name);
-    state.storage.delete(&key).await?;
+
+    // Get the resource to check if it exists
+    let job: Job = state.storage.get(&key).await?;
+
+    // If dry-run, skip delete operation
+    if is_dry_run {
+        info!("Dry-run: Job {}/{} validated successfully (not deleted)", namespace, name);
+        return Ok(StatusCode::OK);
+    }
+
+    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &job).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -130,7 +166,8 @@ pub async fn list(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
-) -> Result<Json<Vec<Job>>> {
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<List<Job>>> {
     info!("Listing jobs in namespace: {}", namespace);
 
     // Check authorization
@@ -146,9 +183,42 @@ pub async fn list(
     }
 
     let prefix = build_prefix("jobs", Some(&namespace));
-    let jobs = state.storage.list(&prefix).await?;
+    let mut jobs = state.storage.list(&prefix).await?;
 
-    Ok(Json(jobs))
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut jobs, &params)?;
+
+    let list = List::new("JobList", "batch/v1", jobs);
+    Ok(Json(list))
+}
+
+/// List all jobs across all namespaces
+pub async fn list_all_jobs(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<List<Job>>> {
+    info!("Listing all jobs");
+
+    // Check authorization (cluster-wide list)
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "jobs")
+        .with_api_group("batch");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    let prefix = build_prefix("jobs", None);
+    let mut jobs = state.storage.list::<Job>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut jobs, &params)?;
+
+    let list = List::new("JobList", "batch/v1", jobs);
+    Ok(Json(list))
 }
 
 // Use the macro to create a PATCH handler

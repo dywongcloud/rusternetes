@@ -214,6 +214,7 @@ impl DaemonSetController {
                 host_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
+            ephemeral_container_statuses: None,
             }),
         };
 
@@ -306,7 +307,7 @@ mod tests {
                     }),
                     spec: PodSpec {
                         init_containers: None,
-                containers: vec![],
+                        containers: vec![],
                         node_name: None,
                         node_selector: None,
                         restart_policy: None,
@@ -320,6 +321,12 @@ mod tests {
                         host_network: None,
                         host_pid: None,
                         host_ipc: None,
+                        automount_service_account_token: None,
+                        ephemeral_containers: None,
+                        overhead: None,
+                        scheduler_name: None,
+                        topology_spread_constraints: None,
+                        resource_claims: None,
                     },
                 },
                 update_strategy: None,

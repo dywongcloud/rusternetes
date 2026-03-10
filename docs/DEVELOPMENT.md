@@ -1,13 +1,14 @@
 # Rusternetes Local Development Guide
 
-This guide explains how to set up and use the local development environment for Rusternetes using Podman (or Docker).
+This guide explains how to set up and use the local development environment for Rusternetes using Docker or Podman.
 
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [Development Workflows](#development-workflows)
-- [Using Podman Compose](#using-podman-compose)
+- [Using Docker Compose](#using-docker-compose)
+- [Using Podman Compose (Linux Only)](#using-podman-compose-linux-only)
 - [Using the Makefile](#using-the-makefile)
 - [Manual Development](#manual-development)
 - [Troubleshooting](#troubleshooting)
@@ -21,28 +22,34 @@ This guide explains how to set up and use the local development environment for 
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    ```
 
-2. **Podman** (recommended) or Docker
+2. **Container Runtime**
 
    **macOS:**
    ```bash
-   brew install podman podman-compose
-   podman machine init
-   podman machine start
+   # Docker Desktop (REQUIRED on macOS Sequoia 15.7+)
+   brew install --cask docker
+   # Then start Docker Desktop from Applications
    ```
 
-   **Linux (Fedora/RHEL/CentOS):**
+   **Why Docker Desktop on macOS?** Podman Machine has a known issue with macOS Sequoia 15.7+ where the Apple Virtualization Framework prevents VMs from starting. Additionally, Rusternetes requires rootful container execution for kube-proxy iptables access, which Docker Desktop provides automatically.
+
+   **Linux (with Docker):**
    ```bash
+   # Install Docker
+   curl -fsSL https://get.docker.com | sh
+   sudo usermod -aG docker $USER
+   ```
+
+   **Linux (with Podman - rootful mode required):**
+   ```bash
+   # Fedora/RHEL/CentOS
    sudo dnf install podman podman-compose
-   ```
 
-   **Linux (Ubuntu/Debian):**
-   ```bash
+   # Ubuntu/Debian
    sudo apt-get install podman podman-compose
-   ```
 
-3. **podman-compose** or docker-compose
-   ```bash
-   pip3 install podman-compose
+   # IMPORTANT: Run in rootful mode for kube-proxy
+   sudo podman-compose up -d
    ```
 
 ### Optional
@@ -52,52 +59,78 @@ This guide explains how to set up and use the local development environment for 
 
 ## Quick Start
 
-### Option 1: Interactive Setup Script (Recommended for First-Time Setup)
+### Automated Setup Scripts
 
+For the fastest setup experience, use our automated development setup scripts:
+
+**macOS:**
 ```bash
-./dev-setup.sh
+./scripts/dev-setup-macos.sh
 ```
 
-This interactive script will:
-- Check all prerequisites
-- Guide you through building images
-- Start the development cluster
-- Show you next steps
-
-### Option 2: Using Make (Recommended for Daily Development)
-
+**Fedora/RHEL/CentOS:**
 ```bash
-# Build images and start the cluster
-make dev-full
-
-# Or step by step:
-make build-images    # Build all container images
-make dev-up          # Start the cluster
-
-# View logs
-make dev-logs
-
-# Run kubectl commands
-make kubectl-get-pods
-
-# Stop the cluster
-make dev-down
+sudo ./scripts/dev-setup-fedora.sh
 ```
 
-### Option 3: Using Podman Compose Directly
+These scripts will:
+- Install all dependencies (Rust, Docker/Podman, etc.)
+- Build the project binaries and images
+- Create convenient helper scripts in `.dev/` directory
+- Set up shell functions and aliases for cluster management
+- Optionally create systemd service for auto-start
+
+After running the setup script, you'll have commands like:
+- `cluster-start` - Start the cluster
+- `cluster-stop` - Stop the cluster
+- `cluster-logs` - View logs
+- `cluster-status` - Check status
+- `k` - kubectl alias (e.g., `k get pods -A`)
+
+### Manual Setup - Docker Desktop (macOS and Windows)
 
 ```bash
+# Set the volumes path (REQUIRED)
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+
 # Build images
-podman-compose build
+docker-compose build
 
 # Start the cluster
-podman-compose up -d
+docker-compose up -d
+
+# Apply bootstrap resources (CoreDNS, services)
+cat bootstrap-cluster.yaml | envsubst > /tmp/bootstrap-expanded.yaml
+KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify apply -f /tmp/bootstrap-expanded.yaml
+
+# Verify the cluster
+KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify get pods -A
 
 # View logs
-podman-compose logs -f
+docker-compose logs -f
 
 # Stop the cluster
-podman-compose down
+docker-compose down
+```
+
+### Podman (Linux Only - Rootful Mode)
+
+```bash
+# Set the volumes path (REQUIRED)
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+
+# Build images (as root for rootful mode)
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose build
+
+# Start the cluster (rootful mode required for kube-proxy)
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose up -d
+
+# Apply bootstrap resources
+cat bootstrap-cluster.yaml | envsubst > /tmp/bootstrap-expanded.yaml
+KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify apply -f /tmp/bootstrap-expanded.yaml
+
+# Verify
+KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify get pods -A
 ```
 
 ## Development Workflows
@@ -182,69 +215,85 @@ make test
 make pre-commit
 ```
 
-## Using Podman Compose
+## Using Docker Compose
 
 The `docker-compose.yml` file defines all services. Here are common operations:
 
 ### Start/Stop Services
 
 ```bash
+# Set volumes path (REQUIRED)
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+
 # Start all services in background
-podman-compose up -d
+docker-compose up -d
 
 # Start and follow logs
-podman-compose up
+docker-compose up
 
 # Stop all services
-podman-compose down
+docker-compose down
 
 # Stop and remove volumes (clean slate)
-podman-compose down -v
+docker-compose down -v
 ```
 
 ### View Logs
 
 ```bash
 # All services
-podman-compose logs -f
+docker-compose logs -f
 
 # Specific service
-podman-compose logs -f api-server
-podman-compose logs -f scheduler
-podman-compose logs -f kubelet
+docker-compose logs -f api-server
+docker-compose logs -f scheduler
+docker-compose logs -f kubelet
+docker-compose logs -f kube-proxy
 ```
 
 ### Check Service Status
 
 ```bash
 # List running containers
-podman-compose ps
+docker-compose ps
 
 # Check specific service health
-podman exec rusternetes-api-server /app/api-server --version
+docker exec rusternetes-api-server /app/api-server --version
 ```
 
 ### Rebuild Services
 
 ```bash
 # Rebuild all images
-podman-compose build
+KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes docker-compose build
 
 # Rebuild specific service
-podman-compose build api-server
+KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes docker-compose build api-server
 
 # Rebuild and restart
-podman-compose up -d --build api-server
+KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes docker-compose up -d --build api-server
 ```
 
 ### Execute Commands in Containers
 
 ```bash
 # Open shell in container
-podman-compose exec api-server /bin/sh
+docker-compose exec api-server /bin/sh
 
 # Run specific command
-podman-compose exec api-server ps aux
+docker-compose exec api-server ps aux
+```
+
+## Using Podman Compose (Linux Only)
+
+On Linux, you can use Podman instead of Docker. **Rootful mode is required for kube-proxy iptables access.**
+
+All commands are the same as Docker Compose, but prefix with `sudo` and pass the environment variable:
+
+```bash
+# Example
+sudo KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes podman-compose up -d
+sudo KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes podman-compose logs -f
 ```
 
 ## Using the Makefile
@@ -375,11 +424,37 @@ The development environment consists of:
 
 ## Troubleshooting
 
-### Podman Machine Not Running (macOS)
+### Docker Desktop Not Running (macOS/Windows)
 
 ```bash
-podman machine start
+# Start Docker Desktop from Applications, or:
+open -a Docker
+
+# Verify Docker is running
+docker info
 ```
+
+### Podman Machine Virtualization Error (macOS)
+
+If you see:
+```
+Error: vfkit exited unexpectedly with exit code 1
+Error Domain=VZErrorDomain Code=1
+```
+
+This is a known issue with macOS Sequoia 15.7+ and Podman Machine. **Use Docker Desktop instead.** See [PODMAN_TIPS.md](PODMAN_TIPS.md) for details.
+
+### Kube-proxy Permission Denied
+
+If kube-proxy logs show:
+```
+Permission denied (you must be root)
+```
+
+This means you're not running in rootful mode:
+- **Docker Desktop**: Should work automatically (already rootful)
+- **Podman**: Must use `sudo podman-compose up -d` or create rootful machine
+- See the [rootful mode section](#podman-linux-only---rootful-mode) above
 
 ### Port Already in Use
 
@@ -396,31 +471,26 @@ lsof -i :2379
 ### Container Build Fails
 
 ```bash
-# Clean and rebuild
-make clean
-podman system prune -a
-make build-images
+# Docker
+docker system prune -a
+KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes docker-compose build
+
+# Podman
+sudo podman system prune -a
+sudo KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes podman-compose build
 ```
 
-### Kubelet Cannot Access Podman Socket
+### Kubelet Cannot Access Container Runtime
 
-The kubelet needs access to the container runtime. On macOS with Podman:
+The kubelet needs access to the container runtime socket.
 
-```bash
-# Make sure Podman machine is running
-podman machine start
+**Docker Desktop:**
+- Socket is at `/var/run/docker.sock` (already configured in `docker-compose.yml`)
+- Should work automatically
 
-# Check socket location
-podman machine inspect | grep -i socket
-
-# Update docker-compose.yml volume mount if needed
-```
-
-For Docker users, change the volume mount in `docker-compose.yml`:
-```yaml
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock:ro
-```
+**Podman:**
+- Make sure you're running in rootful mode with `sudo`
+- Socket path should be `/run/podman/podman.sock`
 
 ### etcd Health Check Fails
 
@@ -490,6 +560,21 @@ RUST_LOG=debug
 ETCD_SERVERS=http://etcd:2379
 API_SERVER_ADDRESS=0.0.0.0:6443
 ```
+
+### Optional Security Configuration (Production Features)
+
+For **local development**, these are **optional**. The system works without them:
+
+**ServiceAccount Token Signing** (Production-only):
+```bash
+# Generate signing keys (only needed for production)
+./scripts/generate-sa-signing-key.sh
+
+# Configure controller-manager (optional for dev)
+export SA_SIGNING_KEY_PATH=~/.rusternetes/keys/sa-signing-key.pem
+```
+
+> **Note**: Without a signing key, the controller-manager will log a warning but work fine with unsigned tokens. This is acceptable for development. For production deployments, see [docs/security/service-account-tokens.md](security/service-account-tokens.md).
 
 ## Performance Tips
 

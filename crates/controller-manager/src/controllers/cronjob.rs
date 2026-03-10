@@ -155,58 +155,60 @@ impl CronJobController {
             .as_ref()
             .and_then(|s| s.last_schedule_time);
 
-        // Simple schedule parsing for common patterns
-        // In production, use a proper cron parser like the `cron` crate
-        let should_run = match schedule {
-            s if s.starts_with("*/") => {
-                // Every N minutes
-                if let Some(mins) = s.strip_prefix("*/").and_then(|s| s.split_whitespace().next()).and_then(|s| s.parse::<i64>().ok()) {
-                    if let Some(last) = last_schedule {
-                        let elapsed = (now - last).num_minutes();
-                        elapsed >= mins
-                    } else {
-                        true // Never run before
-                    }
-                } else {
-                    false
-                }
-            }
-            "@hourly" => {
-                if let Some(last) = last_schedule {
-                    (now - last).num_hours() >= 1
-                } else {
-                    true
-                }
-            }
-            "@daily" | "@midnight" => {
-                if let Some(last) = last_schedule {
-                    (now - last).num_days() >= 1
-                } else {
-                    true
-                }
-            }
-            "@weekly" => {
-                if let Some(last) = last_schedule {
-                    (now - last).num_weeks() >= 1
-                } else {
-                    true
-                }
-            }
-            "@monthly" => {
-                if let Some(last) = last_schedule {
-                    (now - last).num_days() >= 30
-                } else {
-                    true
-                }
-            }
-            _ => {
-                // For complex cron expressions, would need a proper parser
-                warn!("Complex cron schedule '{}' not fully supported, skipping", schedule);
-                false
+        // Handle special schedules
+        let cron_schedule = match schedule {
+            "@yearly" | "@annually" => "0 0 1 1 *",
+            "@monthly" => "0 0 1 * *",
+            "@weekly" => "0 0 * * 0",
+            "@daily" | "@midnight" => "0 0 * * *",
+            "@hourly" => "0 * * * *",
+            other => other,
+        };
+
+        // Parse cron expression using the `cron` crate
+        let schedule_parsed = match cron::Schedule::try_from(cron_schedule) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("Failed to parse cron schedule '{}': {}", cron_schedule, e);
+                return Ok(false);
             }
         };
 
-        Ok(should_run)
+        // Determine if job should run now
+        // Check if we're within the schedule window since last run
+        if let Some(last) = last_schedule {
+            // Find next scheduled time after last run
+            if let Some(next_run) = schedule_parsed.after(&last).next() {
+                // Should run if current time >= next scheduled time
+                let should_run = now >= next_run;
+                if should_run {
+                    info!(
+                        "CronJob should run: next_run={}, current={}",
+                        next_run, now
+                    );
+                }
+                Ok(should_run)
+            } else {
+                // No next run time found
+                Ok(false)
+            }
+        } else {
+            // Never run before - check if there's a scheduled time in the past minute
+            // This prevents all cronjobs from running immediately on startup
+            let one_minute_ago = now - chrono::Duration::minutes(1);
+            if let Some(next_run) = schedule_parsed.after(&one_minute_ago).next() {
+                let should_run = now >= next_run;
+                if should_run {
+                    info!(
+                        "CronJob first run: next_run={}, current={}",
+                        next_run, now
+                    );
+                }
+                Ok(should_run)
+            } else {
+                Ok(false)
+            }
+        }
     }
 
     async fn create_job(&self, cronjob: &CronJob, namespace: &str) -> Result<()> {

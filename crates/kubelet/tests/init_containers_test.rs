@@ -22,6 +22,7 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             resources: None,
             working_dir: None,
             security_context: None,
+            restart_policy: None,
         });
     }
 
@@ -42,6 +43,7 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             resources: None,
             working_dir: None,
             security_context: None,
+            restart_policy: None,
         });
     }
 
@@ -54,6 +56,7 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
         spec: Some(PodSpec {
             init_containers: Some(init_containers),
             containers,
+            ephemeral_containers: None,
             restart_policy: Some("Always".to_string()),
             node_selector: None,
             node_name: None,
@@ -67,6 +70,11 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             host_network: None,
             host_pid: None,
             host_ipc: None,
+            automount_service_account_token: None,
+            topology_spread_constraints: None,
+            overhead: None,
+            scheduler_name: None,
+            resource_claims: None,
         }),
         status: None,
     }
@@ -116,6 +124,7 @@ fn test_init_container_status_sequence() {
             },
             // init-1 and init-2 are waiting
         ]),
+        ephemeral_container_statuses: None,
     });
 
     let status = pod.status.as_ref().unwrap();
@@ -176,6 +185,7 @@ fn test_init_containers_completed_app_starting() {
                 container_id: Some("app-0-container".to_string()),
             },
         ]),
+        ephemeral_container_statuses: None,
     });
 
     let status = pod.status.as_ref().unwrap();
@@ -227,6 +237,7 @@ fn test_init_container_failure_blocks_app() {
             },
         ]),
         container_statuses: None, // App container never started
+        ephemeral_container_statuses: None,
     });
 
     let status = pod.status.as_ref().unwrap();
@@ -272,6 +283,7 @@ fn test_init_container_restart_count() {
             },
         ]),
         container_statuses: None,
+        ephemeral_container_statuses: None,
     });
 
     let status = pod.status.as_ref().unwrap();

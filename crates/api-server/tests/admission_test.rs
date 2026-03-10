@@ -40,6 +40,7 @@ fn create_minimal_pod(name: &str, namespace: &str) -> Pod {
                 readiness_probe: None,
                 startup_probe: None,
                 security_context: None,
+                restart_policy: None,
             }],
             init_containers: None,
             volumes: None,
@@ -55,6 +56,12 @@ fn create_minimal_pod(name: &str, namespace: &str) -> Pod {
             tolerations: None,
             priority_class_name: None,
             priority: None,
+            automount_service_account_token: None,
+            ephemeral_containers: None,
+            overhead: None,
+            scheduler_name: None,
+            topology_spread_constraints: None,
+            resource_claims: None,
         }),
         status: None,
     }
@@ -189,4 +196,162 @@ async fn test_quota_rejects_when_exceeding_pod_count() {
     let result = check_resource_quota(&storage, "test-namespace", &new_pod).await;
     assert!(result.is_ok());
     assert!(!result.unwrap(), "Pod should be rejected for exceeding pod count quota");
+}
+
+// ===== DefaultStorageClass admission tests =====
+
+use rusternetes_api_server::admission::set_default_storage_class;
+use rusternetes_common::resources::{
+    PersistentVolumeClaim, PersistentVolumeClaimSpec, PersistentVolumeAccessMode, StorageClass,
+};
+use rusternetes_common::resources::volume::ResourceRequirements;
+
+fn create_test_pvc(name: &str, namespace: &str) -> PersistentVolumeClaim {
+    let mut requests = HashMap::new();
+    requests.insert("storage".to_string(), "1Gi".to_string());
+
+    PersistentVolumeClaim {
+        type_meta: TypeMeta {
+            kind: "PersistentVolumeClaim".to_string(),
+            api_version: "v1".to_string(),
+        },
+        metadata: ObjectMeta::new(name).with_namespace(namespace),
+        spec: PersistentVolumeClaimSpec {
+            access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
+            resources: ResourceRequirements {
+                requests: Some(requests),
+                limits: None,
+            },
+            storage_class_name: None,
+            volume_name: None,
+            selector: None,
+            volume_mode: None,
+            data_source: None,
+        },
+        status: None,
+    }
+}
+
+#[tokio::test]
+async fn test_default_storage_class_no_default() {
+    let storage = Arc::new(MemoryStorage::new());
+    let mut pvc = create_test_pvc("test-pvc", "test-namespace");
+
+    // No storage classes exist
+    let result = set_default_storage_class(&storage, &mut pvc).await;
+    assert!(result.is_ok());
+    // storageClassName should remain None
+    assert!(pvc.spec.storage_class_name.is_none());
+}
+
+#[tokio::test]
+async fn test_default_storage_class_sets_default() {
+    let storage = Arc::new(MemoryStorage::new());
+    let mut pvc = create_test_pvc("test-pvc", "test-namespace");
+
+    // Create a default storage class
+    let mut annotations = HashMap::new();
+    annotations.insert(
+        "storageclass.kubernetes.io/is-default-class".to_string(),
+        "true".to_string(),
+    );
+
+    let storage_class = StorageClass {
+        type_meta: TypeMeta {
+            kind: "StorageClass".to_string(),
+            api_version: "storage.k8s.io/v1".to_string(),
+        },
+        metadata: ObjectMeta::new("default-sc").with_annotations(annotations),
+        provisioner: "kubernetes.io/no-provisioner".to_string(),
+        parameters: None,
+        reclaim_policy: None,
+        volume_binding_mode: None,
+        allow_volume_expansion: None,
+        allowed_topologies: None,
+    };
+
+    let sc_key = build_key("storageclasses", None, "default-sc");
+    storage.create(&sc_key, &storage_class).await.unwrap();
+
+    // Apply default storage class
+    let result = set_default_storage_class(&storage, &mut pvc).await;
+    assert!(result.is_ok());
+
+    // storageClassName should be set to "default-sc"
+    assert_eq!(pvc.spec.storage_class_name, Some("default-sc".to_string()));
+}
+
+#[tokio::test]
+async fn test_default_storage_class_already_set() {
+    let storage = Arc::new(MemoryStorage::new());
+    let mut pvc = create_test_pvc("test-pvc", "test-namespace");
+    pvc.spec.storage_class_name = Some("my-custom-sc".to_string());
+
+    // Create a default storage class
+    let mut annotations = HashMap::new();
+    annotations.insert(
+        "storageclass.kubernetes.io/is-default-class".to_string(),
+        "true".to_string(),
+    );
+
+    let storage_class = StorageClass {
+        type_meta: TypeMeta {
+            kind: "StorageClass".to_string(),
+            api_version: "storage.k8s.io/v1".to_string(),
+        },
+        metadata: ObjectMeta::new("default-sc").with_annotations(annotations),
+        provisioner: "kubernetes.io/no-provisioner".to_string(),
+        parameters: None,
+        reclaim_policy: None,
+        volume_binding_mode: None,
+        allow_volume_expansion: None,
+        allowed_topologies: None,
+    };
+
+    let sc_key = build_key("storageclasses", None, "default-sc");
+    storage.create(&sc_key, &storage_class).await.unwrap();
+
+    // Apply default storage class
+    let result = set_default_storage_class(&storage, &mut pvc).await;
+    assert!(result.is_ok());
+
+    // storageClassName should remain "my-custom-sc"
+    assert_eq!(pvc.spec.storage_class_name, Some("my-custom-sc".to_string()));
+}
+
+#[tokio::test]
+async fn test_default_storage_class_beta_annotation() {
+    let storage = Arc::new(MemoryStorage::new());
+    let mut pvc = create_test_pvc("test-pvc", "test-namespace");
+
+    // Create a default storage class with beta annotation
+    let mut annotations = HashMap::new();
+    annotations.insert(
+        "storageclass.beta.kubernetes.io/is-default-class".to_string(),
+        "true".to_string(),
+    );
+
+    let storage_class = StorageClass {
+        type_meta: TypeMeta {
+            kind: "StorageClass".to_string(),
+            api_version: "storage.k8s.io/v1".to_string(),
+        },
+        metadata: ObjectMeta::new("default-sc").with_annotations(annotations),
+        provisioner: "kubernetes.io/no-provisioner".to_string(),
+        parameters: None,
+        reclaim_policy: None,
+        volume_binding_mode: None,
+        allow_volume_expansion: None,
+        allowed_topologies: None,
+    };
+
+    let sc_key = build_key("storageclasses", None, "default-sc");
+    storage.create(&sc_key, &storage_class).await.unwrap();
+
+    // Apply default storage class
+    let result = set_default_storage_class(&storage, &mut pvc).await;
+    assert!(result.is_ok());
+
+    // storageClassName should be set even with beta annotation
+    assert_eq!(pvc.spec.storage_class_name, Some("default-sc".to_string()));
 }

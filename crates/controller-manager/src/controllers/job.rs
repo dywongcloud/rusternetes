@@ -212,6 +212,7 @@ impl JobController {
                 host_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
+            ephemeral_container_statuses: None,
             }),
         };
 

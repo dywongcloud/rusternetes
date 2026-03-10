@@ -2,6 +2,9 @@ use crate::error::{Error, Result};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
+use sha2::{Sha256, Digest};
+use std::collections::HashMap;
+use base64::Engine;
 
 /// JWT claims for service account tokens
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +86,93 @@ impl TokenManager {
     }
 }
 
+/// Bootstrap Token for node join and authentication
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BootstrapToken {
+    /// Token ID (6 characters)
+    pub token_id: String,
+
+    /// Token Secret (16 characters)
+    pub token_secret: String,
+
+    /// Expiration timestamp (None = no expiration)
+    pub expiration: Option<i64>,
+
+    /// Usage restrictions
+    pub usages: Vec<String>,
+
+    /// Description
+    pub description: Option<String>,
+
+    /// Extra groups to add to the authenticated user
+    pub auth_extra_groups: Option<Vec<String>>,
+}
+
+impl BootstrapToken {
+    /// Create a new bootstrap token
+    pub fn new(token_id: String, token_secret: String) -> Self {
+        Self {
+            token_id,
+            token_secret,
+            expiration: None,
+            usages: vec![
+                "signing".to_string(),
+                "authentication".to_string(),
+            ],
+            description: None,
+            auth_extra_groups: None,
+        }
+    }
+
+    /// Format as kubernetes bootstrap token (token-id.token-secret)
+    pub fn to_token_string(&self) -> String {
+        format!("{}.{}", self.token_id, self.token_secret)
+    }
+
+    /// Parse from kubernetes bootstrap token format
+    pub fn from_token_string(token: &str) -> Result<(String, String)> {
+        let parts: Vec<&str> = token.split('.').collect();
+        if parts.len() != 2 {
+            return Err(Error::Authentication(
+                "Invalid bootstrap token format".to_string()
+            ));
+        }
+
+        let token_id = parts[0].to_string();
+        let token_secret = parts[1].to_string();
+
+        // Validate format
+        if token_id.len() != 6 || token_secret.len() != 16 {
+            return Err(Error::Authentication(
+                "Bootstrap token must be in format [a-z0-9]{6}.[a-z0-9]{16}".to_string()
+            ));
+        }
+
+        Ok((token_id, token_secret))
+    }
+
+    /// Hash the token secret for secure storage
+    pub fn hash_secret(secret: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(secret.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+
+    /// Check if token is expired
+    pub fn is_expired(&self) -> bool {
+        if let Some(exp) = self.expiration {
+            Utc::now().timestamp() > exp
+        } else {
+            false
+        }
+    }
+
+    /// Check if token has the specified usage
+    pub fn has_usage(&self, usage: &str) -> bool {
+        self.usages.contains(&usage.to_string())
+    }
+}
+
 /// User information extracted from authentication
 #[derive(Debug, Clone)]
 pub struct UserInfo {
@@ -112,6 +202,25 @@ impl UserInfo {
         }
     }
 
+    pub fn from_bootstrap_token(token: &BootstrapToken) -> Self {
+        let mut groups = vec![
+            "system:bootstrappers".to_string(),
+            "system:authenticated".to_string(),
+        ];
+
+        // Add extra groups if specified
+        if let Some(ref extra_groups) = token.auth_extra_groups {
+            groups.extend(extra_groups.clone());
+        }
+
+        Self {
+            username: format!("system:bootstrap:{}", token.token_id),
+            uid: token.token_id.clone(),
+            groups,
+            extra: std::collections::HashMap::new(),
+        }
+    }
+
     pub fn anonymous() -> Self {
         Self {
             username: "system:anonymous".to_string(),
@@ -119,6 +228,406 @@ impl UserInfo {
             groups: vec!["system:unauthenticated".to_string()],
             extra: std::collections::HashMap::new(),
         }
+    }
+
+    pub fn from_client_cert(subject: &str) -> Self {
+        // Extract CN and O from subject
+        // Format: CN=<username>,O=<group1>,O=<group2>,...
+        let mut username = String::new();
+        let mut groups = vec!["system:authenticated".to_string()];
+
+        for part in subject.split(',') {
+            let part = part.trim();
+            if let Some(cn) = part.strip_prefix("CN=") {
+                username = cn.to_string();
+            } else if let Some(o) = part.strip_prefix("O=") {
+                groups.push(o.to_string());
+            }
+        }
+
+        Self {
+            uid: username.clone(),
+            username,
+            groups,
+            extra: std::collections::HashMap::new(),
+        }
+    }
+}
+
+/// Bootstrap Token Manager for node authentication
+pub struct BootstrapTokenManager {
+    /// In-memory token storage (in production, this would be in etcd as Secrets)
+    tokens: std::sync::RwLock<HashMap<String, BootstrapToken>>,
+}
+
+impl BootstrapTokenManager {
+    pub fn new() -> Self {
+        Self {
+            tokens: std::sync::RwLock::new(HashMap::new()),
+        }
+    }
+
+    /// Add a bootstrap token
+    pub fn add_token(&self, token: BootstrapToken) {
+        let mut tokens = self.tokens.write().unwrap();
+        tokens.insert(token.token_id.clone(), token);
+    }
+
+    /// Validate a bootstrap token
+    pub fn validate_token(&self, token_str: &str) -> Result<BootstrapToken> {
+        let (token_id, token_secret) = BootstrapToken::from_token_string(token_str)?;
+
+        let tokens = self.tokens.read().unwrap();
+        if let Some(stored_token) = tokens.get(&token_id) {
+            // Check if token is expired
+            if stored_token.is_expired() {
+                return Err(Error::Authentication("Bootstrap token has expired".to_string()));
+            }
+
+            // Check if token has authentication usage
+            if !stored_token.has_usage("authentication") {
+                return Err(Error::Authentication(
+                    "Bootstrap token does not have authentication usage".to_string()
+                ));
+            }
+
+            // Verify token secret (constant-time comparison)
+            if stored_token.token_secret == token_secret {
+                Ok(stored_token.clone())
+            } else {
+                Err(Error::Authentication("Invalid bootstrap token secret".to_string()))
+            }
+        } else {
+            Err(Error::Authentication("Bootstrap token not found".to_string()))
+        }
+    }
+
+    /// Remove a bootstrap token
+    pub fn remove_token(&self, token_id: &str) {
+        let mut tokens = self.tokens.write().unwrap();
+        tokens.remove(token_id);
+    }
+
+    /// List all tokens
+    pub fn list_tokens(&self) -> Vec<BootstrapToken> {
+        let tokens = self.tokens.read().unwrap();
+        tokens.values().cloned().collect()
+    }
+}
+
+impl Default for BootstrapTokenManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// OIDC Discovery Document
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OIDCDiscoveryDocument {
+    pub issuer: String,
+    pub jwks_uri: String,
+    pub authorization_endpoint: Option<String>,
+    pub token_endpoint: Option<String>,
+    pub userinfo_endpoint: Option<String>,
+}
+
+/// JSON Web Key Set
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonWebKeySet {
+    pub keys: Vec<JsonWebKey>,
+}
+
+/// JSON Web Key
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonWebKey {
+    #[serde(rename = "kty")]
+    pub key_type: String,
+    #[serde(rename = "kid")]
+    pub key_id: Option<String>,
+    #[serde(rename = "use")]
+    pub key_use: Option<String>,
+    #[serde(rename = "alg")]
+    pub algorithm: Option<String>,
+    #[serde(rename = "n")]
+    pub modulus: Option<String>,
+    #[serde(rename = "e")]
+    pub exponent: Option<String>,
+}
+
+/// OIDC Token Claims
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OIDCTokenClaims {
+    pub iss: String,
+    pub sub: String,
+    pub aud: serde_json::Value,
+    pub exp: i64,
+    pub iat: i64,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub groups: Option<Vec<String>>,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// OIDC Token Validator with JWKS support
+pub struct OIDCTokenValidator {
+    issuer_url: String,
+    client_id: String,
+    jwks: std::sync::RwLock<Option<JsonWebKeySet>>,
+    http_client: reqwest::Client,
+    ca_cert: Option<String>,
+}
+
+impl OIDCTokenValidator {
+    pub fn new(issuer_url: String, client_id: String, ca_cert: Option<String>) -> Self {
+        Self {
+            issuer_url,
+            client_id,
+            jwks: std::sync::RwLock::new(None),
+            http_client: reqwest::Client::new(),
+            ca_cert,
+        }
+    }
+
+    /// Fetch the OIDC discovery document
+    pub async fn fetch_discovery_document(&self) -> Result<OIDCDiscoveryDocument> {
+        let discovery_url = format!("{}/.well-known/openid-configuration", self.issuer_url);
+
+        let response = self.http_client
+            .get(&discovery_url)
+            .send()
+            .await
+            .map_err(|e| Error::Authentication(format!("Failed to fetch OIDC discovery document: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(Error::Authentication(format!(
+                "OIDC discovery document request failed with status: {}",
+                response.status()
+            )));
+        }
+
+        response
+            .json::<OIDCDiscoveryDocument>()
+            .await
+            .map_err(|e| Error::Authentication(format!("Failed to parse OIDC discovery document: {}", e)))
+    }
+
+    /// Fetch the JWKS from the OIDC provider
+    pub async fn fetch_jwks(&self) -> Result<JsonWebKeySet> {
+        // First fetch the discovery document to get the JWKS URI
+        let discovery = self.fetch_discovery_document().await?;
+
+        let response = self.http_client
+            .get(&discovery.jwks_uri)
+            .send()
+            .await
+            .map_err(|e| Error::Authentication(format!("Failed to fetch JWKS: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(Error::Authentication(format!(
+                "JWKS request failed with status: {}",
+                response.status()
+            )));
+        }
+
+        response
+            .json::<JsonWebKeySet>()
+            .await
+            .map_err(|e| Error::Authentication(format!("Failed to parse JWKS: {}", e)))
+    }
+
+    /// Refresh the cached JWKS
+    pub async fn refresh_jwks(&self) -> Result<()> {
+        let jwks = self.fetch_jwks().await?;
+        let mut cached_jwks = self.jwks.write().unwrap();
+        *cached_jwks = Some(jwks);
+        Ok(())
+    }
+
+    /// Get the cached JWKS, fetching if not present
+    async fn get_jwks(&self) -> Result<JsonWebKeySet> {
+        {
+            let cached_jwks = self.jwks.read().unwrap();
+            if let Some(ref jwks) = *cached_jwks {
+                return Ok(jwks.clone());
+            }
+        }
+
+        // JWKS not cached, fetch it
+        self.refresh_jwks().await?;
+
+        let cached_jwks = self.jwks.read().unwrap();
+        cached_jwks.as_ref()
+            .ok_or_else(|| Error::Authentication("Failed to fetch JWKS".to_string()))
+            .cloned()
+    }
+
+    /// Validate an OIDC token
+    pub async fn validate_token(&self, token: &str) -> Result<UserInfo> {
+        // Decode the token header to get the key ID
+        let header = jsonwebtoken::decode_header(token)
+            .map_err(|e| Error::Authentication(format!("Failed to decode token header: {}", e)))?;
+
+        let kid = header.kid
+            .ok_or_else(|| Error::Authentication("Token missing kid (key ID)".to_string()))?;
+
+        // Get the JWKS
+        let jwks = self.get_jwks().await?;
+
+        // Find the key with matching kid
+        let jwk = jwks.keys.iter()
+            .find(|k| k.key_id.as_ref() == Some(&kid))
+            .ok_or_else(|| Error::Authentication(format!("Key ID {} not found in JWKS", kid)))?;
+
+        // Validate the token using the key
+        let decoding_key = self.jwk_to_decoding_key(jwk)?;
+
+        let mut validation = Validation::new(
+            header.alg
+        );
+        validation.set_audience(&[&self.client_id]);
+        validation.set_issuer(&[&self.issuer_url]);
+
+        let token_data = decode::<OIDCTokenClaims>(token, &decoding_key, &validation)
+            .map_err(|e| Error::Authentication(format!("Token validation failed: {}", e)))?;
+
+        // Convert to UserInfo
+        Ok(self.claims_to_user_info(&token_data.claims))
+    }
+
+    /// Convert JWK to DecodingKey
+    fn jwk_to_decoding_key(&self, jwk: &JsonWebKey) -> Result<DecodingKey> {
+        match jwk.key_type.as_str() {
+            "RSA" => {
+                let modulus = jwk.modulus.as_ref()
+                    .ok_or_else(|| Error::Authentication("RSA key missing modulus".to_string()))?;
+                let exponent = jwk.exponent.as_ref()
+                    .ok_or_else(|| Error::Authentication("RSA key missing exponent".to_string()))?;
+
+                // Decode base64url encoded values
+                let n = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(modulus)
+                    .map_err(|e| Error::Authentication(format!("Failed to decode modulus: {}", e)))?;
+                let e = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(exponent)
+                    .map_err(|e| Error::Authentication(format!("Failed to decode exponent: {}", e)))?;
+
+                DecodingKey::from_rsa_components(
+                    &base64::engine::general_purpose::STANDARD.encode(&n),
+                    &base64::engine::general_purpose::STANDARD.encode(&e),
+                )
+                .map_err(|e| Error::Authentication(format!("Failed to create decoding key: {}", e)))
+            }
+            _ => Err(Error::Authentication(format!("Unsupported key type: {}", jwk.key_type)))
+        }
+    }
+
+    /// Convert OIDC claims to UserInfo
+    fn claims_to_user_info(&self, claims: &OIDCTokenClaims) -> UserInfo {
+        let mut groups = vec!["system:authenticated".to_string()];
+
+        // Add groups from token if present
+        if let Some(ref token_groups) = claims.groups {
+            groups.extend(token_groups.clone());
+        }
+
+        UserInfo {
+            username: claims.email.clone().unwrap_or_else(|| claims.sub.clone()),
+            uid: claims.sub.clone(),
+            groups,
+            extra: std::collections::HashMap::new(),
+        }
+    }
+}
+
+/// Webhook Token Authenticator with full HTTP integration
+pub struct WebhookTokenAuthenticator {
+    webhook_url: String,
+    http_client: reqwest::Client,
+    ca_cert: Option<String>,
+}
+
+impl WebhookTokenAuthenticator {
+    pub fn new(webhook_url: String, ca_cert: Option<String>) -> Result<Self> {
+        let http_client = if let Some(ref cert_pem) = ca_cert {
+            // Build client with custom CA certificate
+            let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())
+                .map_err(|e| Error::Internal(format!("Failed to parse CA certificate: {}", e)))?;
+
+            reqwest::Client::builder()
+                .add_root_certificate(cert)
+                .build()
+                .map_err(|e| Error::Internal(format!("Failed to create HTTP client: {}", e)))?
+        } else {
+            reqwest::Client::new()
+        };
+
+        Ok(Self {
+            webhook_url,
+            http_client,
+            ca_cert,
+        })
+    }
+
+    /// Authenticate a token using the webhook
+    pub async fn authenticate(&self, token: &str) -> Result<UserInfo> {
+        use crate::resources::authentication::{TokenReview, TokenReviewSpec};
+        use crate::types::ObjectMeta;
+
+        // Create TokenReview request
+        let token_review = TokenReview {
+            api_version: "authentication.k8s.io/v1".to_string(),
+            kind: "TokenReview".to_string(),
+            metadata: ObjectMeta::new(""),
+            spec: TokenReviewSpec {
+                token: token.to_string(),
+                audiences: None,
+            },
+            status: None,
+        };
+
+        // Send request to webhook
+        let response = self.http_client
+            .post(&self.webhook_url)
+            .json(&token_review)
+            .send()
+            .await
+            .map_err(|e| Error::Authentication(format!("Webhook request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(Error::Authentication(format!(
+                "Webhook returned error status: {}",
+                response.status()
+            )));
+        }
+
+        // Parse response
+        let token_review_response: TokenReview = response
+            .json()
+            .await
+            .map_err(|e| Error::Authentication(format!("Failed to parse webhook response: {}", e)))?;
+
+        // Check if authentication succeeded
+        let status = token_review_response.status
+            .ok_or_else(|| Error::Authentication("Webhook response missing status".to_string()))?;
+
+        if !status.authenticated.unwrap_or(false) {
+            return Err(Error::Authentication(
+                status.error.unwrap_or_else(|| "Authentication failed".to_string())
+            ));
+        }
+
+        // Extract user info
+        let user = status.user
+            .ok_or_else(|| Error::Authentication("Webhook response missing user info".to_string()))?;
+
+        Ok(UserInfo {
+            username: user.username.unwrap_or_default(),
+            uid: user.uid.unwrap_or_default(),
+            groups: user.groups.unwrap_or_default(),
+            extra: user.extra.unwrap_or_default(),
+        })
     }
 }
 
@@ -153,5 +662,67 @@ mod tests {
 
         let result = manager.validate_token("invalid.token.here");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bootstrap_token_validation() {
+        let manager = BootstrapTokenManager::new();
+
+        // Create and add a bootstrap token
+        let token = BootstrapToken::new("abcdef".to_string(), "0123456789abcdef".to_string());
+        manager.add_token(token.clone());
+
+        // Validate the token
+        let token_str = token.to_token_string();
+        let validated = manager.validate_token(&token_str).unwrap();
+
+        assert_eq!(validated.token_id, "abcdef");
+        assert_eq!(validated.token_secret, "0123456789abcdef");
+    }
+
+    #[test]
+    fn test_bootstrap_token_invalid_format() {
+        let result = BootstrapToken::from_token_string("invalid");
+        assert!(result.is_err());
+
+        let result = BootstrapToken::from_token_string("abc.def");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bootstrap_token_expiration() {
+        let mut token = BootstrapToken::new("abcdef".to_string(), "0123456789abcdef".to_string());
+
+        // Set expiration to past
+        token.expiration = Some(Utc::now().timestamp() - 3600);
+        assert!(token.is_expired());
+
+        // Set expiration to future
+        token.expiration = Some(Utc::now().timestamp() + 3600);
+        assert!(!token.is_expired());
+
+        // No expiration
+        token.expiration = None;
+        assert!(!token.is_expired());
+    }
+
+    #[test]
+    fn test_user_info_from_bootstrap_token() {
+        let token = BootstrapToken::new("abcdef".to_string(), "0123456789abcdef".to_string());
+        let user = UserInfo::from_bootstrap_token(&token);
+
+        assert_eq!(user.username, "system:bootstrap:abcdef");
+        assert!(user.groups.contains(&"system:bootstrappers".to_string()));
+        assert!(user.groups.contains(&"system:authenticated".to_string()));
+    }
+
+    #[test]
+    fn test_user_info_from_client_cert() {
+        let subject = "CN=admin,O=system:masters";
+        let user = UserInfo::from_client_cert(subject);
+
+        assert_eq!(user.username, "admin");
+        assert!(user.groups.contains(&"system:masters".to_string()));
+        assert!(user.groups.contains(&"system:authenticated".to_string()));
     }
 }

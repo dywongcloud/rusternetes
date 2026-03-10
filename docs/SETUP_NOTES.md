@@ -12,7 +12,7 @@ Successfully implemented a Podman-based local development environment for Ruster
 - .dockerignore for optimized builds
 
 ### Development Tools
-- dev-setup.sh - Interactive setup wizard
+- scripts/dev-setup.sh - Interactive setup wizard
 - Makefile - 50+ commands for common tasks
 - .env.example - Configuration template
 - rust-toolchain.toml - Rust version specification
@@ -154,7 +154,9 @@ rusternetes/
 ├── Dockerfile.kubectl           # kubectl CLI image
 ├── docker-compose.yml           # Orchestration configuration
 ├── .dockerignore                # Docker build exclusions
-├── dev-setup.sh                 # Interactive setup script
+├── scripts/
+│   ├── dev-setup.sh             # Interactive setup script
+│   └── bootstrap-conformance.sh # Conformance testing setup
 ├── test-cluster.sh              # Cluster testing script
 ├── Makefile                     # Development commands
 ├── rust-toolchain.toml          # Rust version specification
