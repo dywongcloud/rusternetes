@@ -9,9 +9,20 @@ use rusternetes_common::resources::{
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use std::fs;
+use std::io::{self, Read};
 
 pub async fn execute(client: &ApiClient, file: &str) -> Result<()> {
-    let contents = fs::read_to_string(file).context("Failed to read file")?;
+    let contents = if file == "-" {
+        // Read from stdin
+        let mut buffer = String::new();
+        io::stdin()
+            .read_to_string(&mut buffer)
+            .context("Failed to read from stdin")?;
+        buffer
+    } else {
+        // Read from file
+        fs::read_to_string(file).context("Failed to read file")?
+    };
 
     // Support for multi-document YAML files
     for document in serde_yaml::Deserializer::from_str(&contents) {

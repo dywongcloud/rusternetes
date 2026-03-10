@@ -42,6 +42,10 @@ enum Commands {
         /// Output format (json, yaml, wide)
         #[arg(short = 'o', long)]
         output: Option<String>,
+
+        /// Don't print headers (for table output)
+        #[arg(long)]
+        no_headers: bool,
     },
 
     /// Create a resource from a file
@@ -70,6 +74,19 @@ enum Commands {
         #[arg(short = 'f', long)]
         file: String,
     },
+
+    /// Describe a resource
+    Describe {
+        /// Resource type (pod, service, deployment, node, namespace)
+        resource_type: String,
+
+        /// Resource name
+        name: String,
+
+        /// Namespace (for namespaced resources)
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -83,8 +100,9 @@ async fn main() -> Result<()> {
             name,
             namespace,
             output,
+            no_headers,
         } => {
-            commands::get::execute(&client, &resource_type, name.as_deref(), namespace.as_deref(), output.as_deref())
+            commands::get::execute(&client, &resource_type, name.as_deref(), namespace.as_deref(), output.as_deref(), no_headers)
                 .await?;
         }
         Commands::Create { file } => {
@@ -99,6 +117,13 @@ async fn main() -> Result<()> {
         }
         Commands::Apply { file } => {
             commands::apply::execute(&client, &file).await?;
+        }
+        Commands::Describe {
+            resource_type,
+            name,
+            namespace,
+        } => {
+            commands::describe::execute(&client, &resource_type, &name, namespace.as_deref()).await?;
         }
     }
 

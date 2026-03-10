@@ -37,6 +37,7 @@ impl Ingress {
 
 /// IngressSpec describes the Ingress the user wishes to exist
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct IngressSpec {
     /// IngressClassName is the name of the IngressClass cluster resource
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -88,6 +89,7 @@ pub struct HTTPIngressRuleValue {
 
 /// HTTPIngressPath associates a path with a backend
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct HTTPIngressPath {
     /// Path is matched against the path of an incoming request
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -95,6 +97,7 @@ pub struct HTTPIngressPath {
 
     /// PathType determines the interpretation of the Path matching
     /// Exact, Prefix, or ImplementationSpecific
+    #[serde(alias = "pathType")]
     pub path_type: String,
 
     /// Backend defines the referenced service endpoint

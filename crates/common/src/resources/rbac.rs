@@ -127,6 +127,7 @@ pub struct RoleBinding {
     pub subjects: Vec<Subject>,
 
     /// RoleRef can reference a Role in the current namespace or a ClusterRole in the global namespace
+    #[serde(alias = "roleRef")]
     pub role_ref: RoleRef,
 }
 
@@ -170,6 +171,7 @@ pub struct ClusterRoleBinding {
     pub subjects: Vec<Subject>,
 
     /// RoleRef can only reference a ClusterRole in the global namespace
+    #[serde(alias = "roleRef")]
     pub role_ref: RoleRef,
 }
 
@@ -250,8 +252,10 @@ impl Subject {
 
 /// RoleRef contains information that points to the role being used
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct RoleRef {
     /// APIGroup is the group for the resource being referenced
+    #[serde(alias = "apiGroup")]
     pub api_group: String,
 
     /// Kind is the type of resource being referenced

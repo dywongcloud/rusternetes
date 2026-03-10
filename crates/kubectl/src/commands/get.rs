@@ -5,9 +5,10 @@ use rusternetes_common::resources::{
     StorageClass, VolumeSnapshot, VolumeSnapshotClass, Endpoints, ConfigMap, Secret,
     StatefulSet, DaemonSet, Ingress, ServiceAccount, Role, RoleBinding, ClusterRole, ClusterRoleBinding,
     ResourceQuota, LimitRange, PriorityClass, CustomResourceDefinition,
-    PodDisruptionBudget, HorizontalPodAutoscaler, VerticalPodAutoscaler,
+    PodDisruptionBudget, HorizontalPodAutoscaler, VerticalPodAutoscaler, Job, CronJob,
 };
 use serde::Serialize;
+use chrono::Utc;
 
 // Helper to convert GetError to anyhow::Error
 fn map_get_error(err: GetError) -> anyhow::Error {
@@ -58,12 +59,92 @@ pub async fn execute(
     name: Option<&str>,
     namespace: Option<&str>,
     output: Option<&str>,
+    no_headers: bool,
 ) -> Result<()> {
     let default_namespace = "default";
     let ns = namespace.unwrap_or(default_namespace);
     let format = output.map(OutputFormat::from_str).transpose()?.unwrap_or(OutputFormat::Table);
 
     match resource_type {
+        "all" => {
+            // Get all common resources
+            println!("Fetching all resources in namespace {}...\n", ns);
+
+            // Pods
+            let pods: Vec<Pod> = client
+                .get(&format!("/api/v1/namespaces/{}/pods", ns))
+                .await
+                .unwrap_or_default();
+            if !pods.is_empty() {
+                print_pods(&pods, no_headers);
+                println!();
+            }
+
+            // Services
+            let services: Vec<Service> = client
+                .get(&format!("/api/v1/namespaces/{}/services", ns))
+                .await
+                .unwrap_or_default();
+            if !services.is_empty() {
+                print_services(&services, no_headers);
+                println!();
+            }
+
+            // Deployments
+            let deployments: Vec<Deployment> = client
+                .get(&format!("/apis/apps/v1/namespaces/{}/deployments", ns))
+                .await
+                .unwrap_or_default();
+            if !deployments.is_empty() {
+                print_deployments(&deployments, no_headers);
+                println!();
+            }
+
+            // StatefulSets
+            let statefulsets: Vec<StatefulSet> = client
+                .get(&format!("/apis/apps/v1/namespaces/{}/statefulsets", ns))
+                .await
+                .unwrap_or_default();
+            if !statefulsets.is_empty() {
+                println!("{:<30} {:<15}", "NAME", "READY");
+                for sts in &statefulsets {
+                    println!("{:<30} {:<15}", sts.metadata.name, "statefulset");
+                }
+                println!();
+            }
+
+            // DaemonSets
+            let daemonsets: Vec<DaemonSet> = client
+                .get(&format!("/apis/apps/v1/namespaces/{}/daemonsets", ns))
+                .await
+                .unwrap_or_default();
+            if !daemonsets.is_empty() {
+                println!("{:<30} {:<15}", "NAME", "TYPE");
+                for ds in &daemonsets {
+                    println!("{:<30} {:<15}", ds.metadata.name, "daemonset");
+                }
+                println!();
+            }
+
+            // Jobs
+            let jobs: Vec<Job> = client
+                .get(&format!("/apis/batch/v1/namespaces/{}/jobs", ns))
+                .await
+                .unwrap_or_default();
+            if !jobs.is_empty() {
+                print_jobs(&jobs, no_headers);
+                println!();
+            }
+
+            // CronJobs
+            let cronjobs: Vec<CronJob> = client
+                .get(&format!("/apis/batch/v1/namespaces/{}/cronjobs", ns))
+                .await
+                .unwrap_or_default();
+            if !cronjobs.is_empty() {
+                print_cronjobs(&cronjobs, no_headers);
+            }
+        }
         "pod" | "pods" => {
             if let Some(name) = name {
                 let pod: Pod = client
@@ -77,7 +158,7 @@ pub async fn execute(
                     .await
                     .map_err(map_get_error)?;
                 match format {
-                    OutputFormat::Table | OutputFormat::Wide => print_pods(&pods),
+                    OutputFormat::Table | OutputFormat::Wide => print_pods(&pods, no_headers),
                     OutputFormat::Json => format_output(&pods, format)?,
                     OutputFormat::Yaml => format_output(&pods, format)?,
                 }
@@ -96,7 +177,7 @@ pub async fn execute(
                     .await
                     .map_err(map_get_error)?;
                 match format {
-                    OutputFormat::Table | OutputFormat::Wide => print_services(&services),
+                    OutputFormat::Table | OutputFormat::Wide => print_services(&services, no_headers),
                     OutputFormat::Json => format_output(&services, format)?,
                     OutputFormat::Yaml => format_output(&services, format)?,
                 }
@@ -115,7 +196,7 @@ pub async fn execute(
                     .await
                     .map_err(map_get_error)?;
                 match format {
-                    OutputFormat::Table | OutputFormat::Wide => print_deployments(&deployments),
+                    OutputFormat::Table | OutputFormat::Wide => print_deployments(&deployments, no_headers),
                     OutputFormat::Json => format_output(&deployments, format)?,
                     OutputFormat::Yaml => format_output(&deployments, format)?,
                 }
@@ -151,6 +232,44 @@ pub async fn execute(
                 format_output(&daemonsets, format)?;
             }
         }
+        "job" | "jobs" => {
+            if let Some(name) = name {
+                let job: Job = client
+                    .get(&format!("/apis/batch/v1/namespaces/{}/jobs/{}", ns, name))
+                    .await
+                    .map_err(map_get_error)?;
+                format_output(&job, format)?;
+            } else {
+                let jobs: Vec<Job> = client
+                    .get(&format!("/apis/batch/v1/namespaces/{}/jobs", ns))
+                    .await
+                    .map_err(map_get_error)?;
+                match format {
+                    OutputFormat::Table | OutputFormat::Wide => print_jobs(&jobs, no_headers),
+                    OutputFormat::Json => format_output(&jobs, format)?,
+                    OutputFormat::Yaml => format_output(&jobs, format)?,
+                }
+            }
+        }
+        "cronjob" | "cronjobs" | "cj" => {
+            if let Some(name) = name {
+                let cronjob: CronJob = client
+                    .get(&format!("/apis/batch/v1/namespaces/{}/cronjobs/{}", ns, name))
+                    .await
+                    .map_err(map_get_error)?;
+                format_output(&cronjob, format)?;
+            } else {
+                let cronjobs: Vec<CronJob> = client
+                    .get(&format!("/apis/batch/v1/namespaces/{}/cronjobs", ns))
+                    .await
+                    .map_err(map_get_error)?;
+                match format {
+                    OutputFormat::Table | OutputFormat::Wide => print_cronjobs(&cronjobs, no_headers),
+                    OutputFormat::Json => format_output(&cronjobs, format)?,
+                    OutputFormat::Yaml => format_output(&cronjobs, format)?,
+                }
+            }
+        }
         "node" | "nodes" => {
             if let Some(name) = name {
                 let node: Node = client.get(&format!("/api/v1/nodes/{}", name)).await.map_err(map_get_error)?;
@@ -158,7 +277,7 @@ pub async fn execute(
             } else {
                 let nodes: Vec<Node> = client.get("/api/v1/nodes").await.map_err(map_get_error)?;
                 match format {
-                    OutputFormat::Table | OutputFormat::Wide => print_nodes(&nodes),
+                    OutputFormat::Table | OutputFormat::Wide => print_nodes(&nodes, no_headers),
                     OutputFormat::Json => format_output(&nodes, format)?,
                     OutputFormat::Yaml => format_output(&nodes, format)?,
                 }
@@ -171,7 +290,7 @@ pub async fn execute(
             } else {
                 let namespaces: Vec<Namespace> = client.get("/api/v1/namespaces").await.map_err(map_get_error)?;
                 match format {
-                    OutputFormat::Table | OutputFormat::Wide => print_namespaces(&namespaces),
+                    OutputFormat::Table | OutputFormat::Wide => print_namespaces(&namespaces, no_headers),
                     OutputFormat::Json => format_output(&namespaces, format)?,
                     OutputFormat::Yaml => format_output(&namespaces, format)?,
                 }
@@ -184,7 +303,7 @@ pub async fn execute(
             } else {
                 let pvs: Vec<PersistentVolume> = client.get("/api/v1/persistentvolumes").await.map_err(map_get_error)?;
                 match format {
-                    OutputFormat::Table | OutputFormat::Wide => print_pvs(&pvs),
+                    OutputFormat::Table | OutputFormat::Wide => print_pvs(&pvs, no_headers),
                     OutputFormat::Json => format_output(&pvs, format)?,
                     OutputFormat::Yaml => format_output(&pvs, format)?,
                 }
@@ -197,7 +316,7 @@ pub async fn execute(
             } else {
                 let pvcs: Vec<PersistentVolumeClaim> = client.get(&format!("/api/v1/namespaces/{}/persistentvolumeclaims", ns)).await.map_err(map_get_error)?;
                 match format {
-                    OutputFormat::Table | OutputFormat::Wide => print_pvcs(&pvcs),
+                    OutputFormat::Table | OutputFormat::Wide => print_pvcs(&pvcs, no_headers),
                     OutputFormat::Json => format_output(&pvcs, format)?,
                     OutputFormat::Yaml => format_output(&pvcs, format)?,
                 }
@@ -380,8 +499,10 @@ pub async fn execute(
     Ok(())
 }
 
-fn print_pods(pods: &[Pod]) {
-    println!("{:<30} {:<15} {:<15}", "NAME", "STATUS", "NODE");
+fn print_pods(pods: &[Pod], no_headers: bool) {
+    if !no_headers {
+        println!("{:<30} {:<15} {:<15}", "NAME", "STATUS", "NODE");
+    }
     for pod in pods {
         let status = pod
             .status
@@ -398,8 +519,10 @@ fn print_pods(pods: &[Pod]) {
     }
 }
 
-fn print_services(services: &[Service]) {
-    println!("{:<30} {:<20} {:<10}", "NAME", "CLUSTER-IP", "PORTS");
+fn print_services(services: &[Service], no_headers: bool) {
+    if !no_headers {
+        println!("{:<30} {:<20} {:<10}", "NAME", "CLUSTER-IP", "PORTS");
+    }
     for service in services {
         let cluster_ip = service
             .spec
@@ -421,8 +544,27 @@ fn print_services(services: &[Service]) {
     }
 }
 
-fn print_deployments(deployments: &[Deployment]) {
-    println!("{:<30} {:<10} {:<10}", "NAME", "DESIRED", "READY");
+fn format_duration(duration: chrono::Duration) -> String {
+    let days = duration.num_days();
+    if days > 0 {
+        return format!("{}d", days);
+    }
+    let hours = duration.num_hours();
+    if hours > 0 {
+        return format!("{}h", hours);
+    }
+    let minutes = duration.num_minutes();
+    if minutes > 0 {
+        return format!("{}m", minutes);
+    }
+    let seconds = duration.num_seconds();
+    format!("{}s", seconds)
+}
+
+fn print_deployments(deployments: &[Deployment], no_headers: bool) {
+    if !no_headers {
+        println!("{:<30} {:<15} {:<15} {:<15} {:<10}", "NAME", "READY", "UP-TO-DATE", "AVAILABLE", "AGE");
+    }
     for deployment in deployments {
         let desired = deployment.spec.replicas;
         let ready = deployment
@@ -430,15 +572,36 @@ fn print_deployments(deployments: &[Deployment]) {
             .as_ref()
             .and_then(|s| s.ready_replicas)
             .unwrap_or(0);
+        let updated = deployment
+            .status
+            .as_ref()
+            .and_then(|s| s.updated_replicas)
+            .unwrap_or(0);
+        let available = deployment
+            .status
+            .as_ref()
+            .and_then(|s| s.available_replicas)
+            .unwrap_or(0);
+        let age = deployment
+            .metadata
+            .creation_timestamp
+            .map(|ts| format_duration(Utc::now().signed_duration_since(ts)))
+            .unwrap_or_else(|| "<unknown>".to_string());
         println!(
-            "{:<30} {:<10} {:<10}",
-            deployment.metadata.name, desired, ready
+            "{:<30} {:<15} {:<15} {:<15} {:<10}",
+            deployment.metadata.name,
+            format!("{}/{}", ready, desired),
+            updated,
+            available,
+            age
         );
     }
 }
 
-fn print_nodes(nodes: &[Node]) {
-    println!("{:<30} {:<15}", "NAME", "STATUS");
+fn print_nodes(nodes: &[Node], no_headers: bool) {
+    if !no_headers {
+        println!("{:<30} {:<15}", "NAME", "STATUS");
+    }
     for node in nodes {
         let status = node
             .status
@@ -451,8 +614,10 @@ fn print_nodes(nodes: &[Node]) {
     }
 }
 
-fn print_namespaces(namespaces: &[Namespace]) {
-    println!("{:<30} {:<15}", "NAME", "STATUS");
+fn print_namespaces(namespaces: &[Namespace], no_headers: bool) {
+    if !no_headers {
+        println!("{:<30} {:<15}", "NAME", "STATUS");
+    }
     for namespace in namespaces {
         let status = namespace
             .status
@@ -463,8 +628,10 @@ fn print_namespaces(namespaces: &[Namespace]) {
     }
 }
 
-fn print_pvs(pvs: &[PersistentVolume]) {
-    println!("{:<30} {:<15} {:<20} {:<15}", "NAME", "CAPACITY", "ACCESS MODES", "STATUS");
+fn print_pvs(pvs: &[PersistentVolume], no_headers: bool) {
+    if !no_headers {
+        println!("{:<30} {:<15} {:<20} {:<15}", "NAME", "CAPACITY", "ACCESS MODES", "STATUS");
+    }
     for pv in pvs {
         let capacity = pv.spec.capacity.get("storage")
             .map(|s| s.as_str())
@@ -480,8 +647,10 @@ fn print_pvs(pvs: &[PersistentVolume]) {
     }
 }
 
-fn print_pvcs(pvcs: &[PersistentVolumeClaim]) {
-    println!("{:<30} {:<15} {:<20} {:<20} {:<15}", "NAME", "STATUS", "VOLUME", "CAPACITY", "ACCESS MODES");
+fn print_pvcs(pvcs: &[PersistentVolumeClaim], no_headers: bool) {
+    if !no_headers {
+        println!("{:<30} {:<15} {:<20} {:<20} {:<15}", "NAME", "STATUS", "VOLUME", "CAPACITY", "ACCESS MODES");
+    }
     for pvc in pvcs {
         let status = pvc.status.as_ref()
             .map(|s| format!("{:?}", s.phase))
@@ -497,5 +666,49 @@ fn print_pvcs(pvcs: &[PersistentVolumeClaim]) {
             .collect::<Vec<_>>()
             .join(",");
         println!("{:<30} {:<15} {:<20} {:<20} {:<15}", pvc.metadata.name, status, volume, capacity, access_modes);
+    }
+}
+
+fn print_jobs(jobs: &[Job], no_headers: bool) {
+    if !no_headers {
+        println!("{:<30} {:<15} {:<10}", "NAME", "COMPLETIONS", "AGE");
+    }
+    for job in jobs {
+        let completions = job.spec.completions.unwrap_or(1);
+        let succeeded = job.status.as_ref().and_then(|s| s.succeeded).unwrap_or(0);
+        let age = job
+            .metadata
+            .creation_timestamp
+            .map(|ts| format_duration(Utc::now().signed_duration_since(ts)))
+            .unwrap_or_else(|| "<unknown>".to_string());
+        println!(
+            "{:<30} {:<15} {:<10}",
+            job.metadata.name,
+            format!("{}/{}", succeeded, completions),
+            age
+        );
+    }
+}
+
+fn print_cronjobs(cronjobs: &[CronJob], no_headers: bool) {
+    if !no_headers {
+        println!("{:<30} {:<20} {:<10} {:<20} {:<10}", "NAME", "SCHEDULE", "SUSPEND", "ACTIVE", "LAST SCHEDULE");
+    }
+    for cronjob in cronjobs {
+        let schedule = &cronjob.spec.schedule;
+        let suspend = cronjob.spec.suspend.unwrap_or(false);
+        let active = cronjob.status.as_ref().and_then(|s| s.active.as_ref()).map(|a| a.len()).unwrap_or(0);
+        let last_schedule = cronjob.status.as_ref()
+            .and_then(|s| s.last_schedule_time)
+            .map(|ts| format_duration(Utc::now().signed_duration_since(ts)))
+            .unwrap_or_else(|| "<none>".to_string());
+        println!(
+            "{:<30} {:<20} {:<10} {:<20} {:<10}",
+            cronjob.metadata.name,
+            schedule,
+            suspend,
+            active,
+            last_schedule
+        );
     }
 }

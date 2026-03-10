@@ -27,7 +27,7 @@ impl StatefulSetController {
         }
     }
 
-    async fn reconcile_all(&self) -> Result<()> {
+    pub async fn reconcile_all(&self) -> Result<()> {
         let statefulsets: Vec<StatefulSet> = self
             .storage
             .list("/registry/statefulsets/")

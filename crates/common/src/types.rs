@@ -156,6 +156,7 @@ pub enum Phase {
     Succeeded,
     Failed,
     Unknown,
+    Active,
 }
 
 /// Label selector for matching resources

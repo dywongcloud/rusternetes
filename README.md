@@ -117,6 +117,7 @@ This is an educational project to understand Kubernetes internals while leveragi
 ### Features & Implementation
 - [STATUS.md](docs/STATUS.md) - Current implementation status and roadmap
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture and design
+- [HIGH_AVAILABILITY.md](docs/HIGH_AVAILABILITY.md) - High Availability setup with etcd clustering, load balancing, and leader election ⭐ NEW
 - [API_FEATURES_COMPLETE.md](docs/API_FEATURES_COMPLETE.md) - API features implementation (PATCH, Field Selectors, Server-Side Apply)
 - [PATCH_IMPLEMENTATION.md](docs/PATCH_IMPLEMENTATION.md) - Detailed PATCH operations guide
 
@@ -155,11 +156,19 @@ Rusternetes implements core Kubernetes features including:
 - ✅ **Controllers** - Deployment, StatefulSet, Job, DaemonSet, CronJob, Endpoints, PV/PVC Binder, Dynamic Provisioner, Volume Snapshot, LoadBalancer
 - ✅ **Storage** - PV/PVC, Dynamic Provisioning, Volume Snapshots, Volume Expansion
 - ✅ **Networking** - ClusterIP, NodePort, LoadBalancer services, DNS (Hickory), kube-proxy with iptables
-- ✅ **Security** - RBAC, Admission Webhooks ⭐ NEW, Pod Security Standards, Secrets Encryption, Audit Logging
+- ✅ **Security** - RBAC, Admission Webhooks, Pod Security Standards, Secrets Encryption, Audit Logging
+- ✅ **High Availability** - Multi-master API servers, etcd clustering (3-5 nodes), leader election, automatic failover ⭐ NEW
 - ✅ **Advanced API** - PATCH (all resources), Field Selectors, Server-Side Apply, Watch API, CRDs with hot-reload
 - ✅ **Observability** - Prometheus metrics, Events API, OpenTelemetry tracing
 
-**Latest Addition (March 10, 2026):** Full Kubernetes-compatible admission webhook support with `MutatingWebhookConfiguration` and `ValidatingWebhookConfiguration`. External webhooks can now validate and mutate resources before persistence, enabling policy enforcement (OPA, Kyverno), security scanning, and service mesh integration (Istio, Linkerd).
+**Latest Addition (March 10, 2026):** Production-grade High Availability support with:
+- **etcd Clustering**: 3-5 node clusters with quorum for fault tolerance
+- **Multi-Master API Servers**: Active-active API servers behind HAProxy load balancer
+- **Leader Election**: Controller-manager and scheduler use etcd-based leader election for active-standby HA
+- **Automatic Failover**: ~15 second failover time for all components
+- **Enhanced Health Checks**: Comprehensive liveness/readiness probes with storage connectivity checks
+
+Run in HA mode: `docker-compose -f docker-compose.ha.yml up` or test with `./scripts/test-ha.sh`
 
 **Test Coverage:** 127+ tests passing including 21 admission webhook tests
 

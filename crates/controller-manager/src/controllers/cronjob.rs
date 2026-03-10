@@ -26,7 +26,7 @@ impl CronJobController {
         }
     }
 
-    async fn reconcile_all(&self) -> Result<()> {
+    pub async fn reconcile_all(&self) -> Result<()> {
         let cronjobs: Vec<CronJob> = self.storage.list("/registry/cronjobs/").await?;
 
         for mut cronjob in cronjobs {

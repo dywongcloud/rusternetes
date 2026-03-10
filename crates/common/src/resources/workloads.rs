@@ -32,6 +32,7 @@ impl StatefulSet {
 
 /// StatefulSetSpec defines the desired state of a StatefulSet
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatefulSetSpec {
     /// Number of desired pods
     pub replicas: i32,
@@ -40,6 +41,7 @@ pub struct StatefulSetSpec {
     pub selector: LabelSelector,
 
     /// Service name for network identity
+    #[serde(alias = "serviceName")]
     pub service_name: String,
 
     /// Template for pod creation
@@ -289,11 +291,13 @@ impl CronJob {
 
 /// CronJobSpec defines the desired state of a CronJob
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CronJobSpec {
     /// Cron schedule (e.g., "0 * * * *")
     pub schedule: String,
 
     /// Job template
+    #[serde(alias = "jobTemplate")]
     pub job_template: JobTemplateSpec,
 
     /// Concurrency policy: Allow, Forbid, or Replace

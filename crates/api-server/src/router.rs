@@ -11,6 +11,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
     // Routes that don't require authentication
     let public_routes = Router::new()
         .route("/healthz", get(handlers::health::healthz))
+        .route("/healthz/verbose", get(handlers::health::healthz_verbose))
         .route("/readyz", get(handlers::health::readyz))
         .route("/metrics", get(handlers::health::metrics));
 

@@ -14,5 +14,6 @@ pub mod tls;
 pub mod cloud_provider;
 pub mod tracing;
 pub mod schema_validation;
+pub mod leader_election;
 
 pub use error::{Error, Result};

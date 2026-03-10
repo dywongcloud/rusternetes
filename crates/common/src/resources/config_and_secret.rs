@@ -1,5 +1,5 @@
 use crate::types::{ObjectMeta, TypeMeta};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
 /// ConfigMap holds configuration data for pods to consume
@@ -15,7 +15,7 @@ pub struct ConfigMap {
     pub data: Option<HashMap<String, String>>,
 
     /// BinaryData contains binary data
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "binaryData")]
     pub binary_data: Option<HashMap<String, Vec<u8>>>,
 
     /// Immutable, if set, ensures that data stored in the ConfigMap cannot be updated
@@ -48,6 +48,36 @@ impl ConfigMap {
     }
 }
 
+/// Custom deserializer for Secret data field that handles base64-encoded strings
+fn deserialize_secret_data<'de, D>(
+    deserializer: D,
+) -> Result<Option<HashMap<String, Vec<u8>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<HashMap<String, String>> = Option::deserialize(deserializer)?;
+
+    match opt {
+        None => Ok(None),
+        Some(map) => {
+            let mut result = HashMap::new();
+            for (k, v) in map {
+                // Try to decode as base64, if it fails, just use the bytes as-is
+                match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &v) {
+                    Ok(decoded) => {
+                        result.insert(k, decoded);
+                    }
+                    Err(_) => {
+                        // If base64 decoding fails, use the string bytes
+                        result.insert(k, v.into_bytes());
+                    }
+                }
+            }
+            Ok(Some(result))
+        }
+    }
+}
+
 /// Secret holds sensitive data such as passwords, tokens, or keys
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Secret {
@@ -61,11 +91,11 @@ pub struct Secret {
     pub secret_type: Option<String>,
 
     /// Data contains the secret data (base64 encoded)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_secret_data")]
     pub data: Option<HashMap<String, Vec<u8>>>,
 
     /// StringData allows specifying non-binary secret data in string form
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "stringData")]
     pub string_data: Option<HashMap<String, String>>,
 
     /// Immutable, if set, ensures that data stored in the Secret cannot be updated

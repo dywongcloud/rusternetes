@@ -23,7 +23,7 @@ impl Namespace {
             metadata: ObjectMeta::new(name),
             spec: None,
             status: Some(NamespaceStatus {
-                phase: Phase::Running,
+                phase: Phase::Active,
             }),
         }
     }

@@ -27,7 +27,7 @@ impl DaemonSetController {
         }
     }
 
-    async fn reconcile_all(&self) -> Result<()> {
+    pub async fn reconcile_all(&self) -> Result<()> {
         let daemonsets: Vec<DaemonSet> = self
             .storage
             .list("/registry/daemonsets/")

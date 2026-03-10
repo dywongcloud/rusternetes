@@ -2,6 +2,7 @@ pub mod get;
 pub mod create;
 pub mod delete;
 pub mod apply;
+pub mod describe;
 
 #[cfg(test)]
 mod apply_test;

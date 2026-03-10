@@ -28,6 +28,7 @@ impl Service {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServiceSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selector: Option<HashMap<String, String>>,
@@ -48,6 +49,7 @@ pub struct ServiceSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServicePort {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,

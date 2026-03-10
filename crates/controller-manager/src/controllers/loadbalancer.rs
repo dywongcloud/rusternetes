@@ -36,7 +36,7 @@ impl LoadBalancerController {
     }
 
     /// Start the controller reconciliation loop
-    pub async fn run(mut self) -> Result<()> {
+    pub async fn run(&self) -> Result<()> {
         info!("Starting LoadBalancer controller");
 
         if self.cloud_provider.is_none() {
@@ -56,7 +56,7 @@ impl LoadBalancerController {
     }
 
     /// Reconcile all LoadBalancer services
-    pub async fn reconcile_all(&mut self) -> Result<()> {
+    pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Reconciling LoadBalancer services");
 
         // If no cloud provider, skip

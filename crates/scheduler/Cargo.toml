@@ -21,6 +21,7 @@ tracing-subscriber.workspace = true
 clap.workspace = true
 futures.workspace = true
 axum.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 uuid.workspace = true

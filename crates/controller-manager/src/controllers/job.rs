@@ -28,7 +28,7 @@ impl JobController {
         }
     }
 
-    async fn reconcile_all(&self) -> Result<()> {
+    pub async fn reconcile_all(&self) -> Result<()> {
         let jobs: Vec<Job> = self.storage.list("/registry/jobs/").await?;
 
         for mut job in jobs {

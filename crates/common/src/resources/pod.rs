@@ -324,7 +324,7 @@ pub struct ContainerStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ContainerState {
     Waiting { reason: Option<String> },
     Running { started_at: Option<String> },

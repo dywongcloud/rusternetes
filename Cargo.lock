@@ -2991,6 +2991,7 @@ dependencies = [
  "axum 0.7.9",
  "base64 0.22.1",
  "chrono",
+ "etcd-client",
  "jsonwebtoken",
  "opentelemetry",
  "opentelemetry-jaeger",
@@ -3072,6 +3073,7 @@ name = "rusternetes-kubectl"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "reqwest",
  "rusternetes-common",
