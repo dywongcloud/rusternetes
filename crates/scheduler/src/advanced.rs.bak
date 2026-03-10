@@ -236,7 +236,7 @@ pub fn calculate_resource_score(node: &Node, pod: &Pod) -> i32 {
     let mut cpu_request = 0i64;
     let mut memory_request = 0i64;
 
-    for container in &pod.spec.as_ref().unwrap().containers {
+    for container in &pod.spec.containers {
         if let Some(ref resources) = container.resources {
             if let Some(ref requests) = resources.requests {
                 if let Some(cpu) = requests.get("cpu") {

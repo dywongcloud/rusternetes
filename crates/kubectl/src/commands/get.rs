@@ -106,8 +106,8 @@ fn print_pods(pods: &[Pod]) {
             .unwrap_or_else(|| "Unknown".to_string());
         let node = pod
             .spec
-            .node_name
             .as_ref()
+            .and_then(|s| s.node_name.as_ref())
             .map(|n| n.as_str())
             .unwrap_or("<none>");
         println!("{:<30} {:<15} {:<15}", pod.metadata.name, status, node);

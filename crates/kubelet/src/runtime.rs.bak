@@ -128,7 +128,7 @@ impl ContainerRuntime {
     async fn create_pod_volumes(&self, pod: &Pod) -> Result<HashMap<String, String>> {
         let mut volume_paths = HashMap::new();
 
-        if let Some(volumes) = &pod.spec.as_ref().unwrap().volumes {
+        if let Some(volumes) = &pod.spec.volumes {
             for volume in volumes {
                 let volume_path = self.create_volume(pod, volume).await?;
                 volume_paths.insert(volume.name.clone(), volume_path);

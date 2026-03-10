@@ -38,4 +38,7 @@ pub use volume::{
     PersistentVolume, PersistentVolumeSpec, PersistentVolumeStatus, PersistentVolumeAccessMode,
     PersistentVolumeClaim, PersistentVolumeClaimSpec, PersistentVolumeClaimStatus,
     StorageClass, VolumeBindingMode,
+    VolumeSnapshot, VolumeSnapshotSpec, VolumeSnapshotStatus, VolumeSnapshotSource,
+    VolumeSnapshotClass, DeletionPolicy,
+    VolumeSnapshotContent, VolumeSnapshotContentSpec, VolumeSnapshotContentStatus,
 };

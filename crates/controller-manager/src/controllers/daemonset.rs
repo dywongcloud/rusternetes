@@ -87,7 +87,7 @@ impl DaemonSetController {
 
         let mut pods_by_node = std::collections::HashMap::new();
         for pod in daemonset_pods.iter() {
-            if let Some(node_name) = pod.spec.node_name.as_ref() {
+            if let Some(node_name) = pod.spec.as_ref().and_then(|s| s.node_name.as_ref()) {
                 pods_by_node.insert(node_name.clone(), pod.clone());
             }
         }
@@ -205,7 +205,7 @@ impl DaemonSetController {
                 deletion_timestamp: None,
                 resource_version: None,
             },
-            spec,
+            spec: Some(spec),
             status: Some(PodStatus {
                 phase: Phase::Pending,
                 message: None,
@@ -226,6 +226,7 @@ impl DaemonSetController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusternetes_common::resources::PodSpec;
     use std::collections::HashMap;
 
     #[tokio::test]
@@ -243,17 +244,21 @@ mod tests {
                 api_version: "v1".to_string(),
             },
             metadata: rusternetes_common::types::ObjectMeta {
-                name: Some("node-1".to_string()),
+                name: "node-1".to_string(),
                 namespace: None,
                 labels: Some(node_labels),
                 annotations: None,
-                uid: None,
+                uid: uuid::Uuid::new_v4().to_string(),
                 creation_timestamp: None,
+                deletion_timestamp: None,
+                resource_version: None,
             },
-            spec: rusternetes_common::resources::NodeSpec {
+            spec: Some(rusternetes_common::resources::NodeSpec {
                 pod_cidr: None,
+                provider_id: None,
+                unschedulable: None,
                 taints: None,
-            },
+            }),
             status: None,
         };
 
@@ -264,24 +269,31 @@ mod tests {
                 api_version: "apps/v1".to_string(),
             },
             metadata: rusternetes_common::types::ObjectMeta {
-                name: Some("test-ds".to_string()),
+                name: "test-ds".to_string(),
                 namespace: Some("default".to_string()),
                 labels: None,
                 annotations: None,
-                uid: None,
+                uid: uuid::Uuid::new_v4().to_string(),
                 creation_timestamp: None,
+                deletion_timestamp: None,
+                resource_version: None,
             },
             spec: rusternetes_common::resources::DaemonSetSpec {
-                selector: None,
+                selector: rusternetes_common::types::LabelSelector {
+                    match_labels: None,
+                    match_expressions: None,
+                },
                 template: rusternetes_common::resources::PodTemplateSpec {
-                    metadata: rusternetes_common::types::ObjectMeta {
-                        name: None,
+                    metadata: Some(rusternetes_common::types::ObjectMeta {
+                        name: "".to_string(),
                         namespace: None,
                         labels: None,
                         annotations: None,
-                        uid: None,
+                        uid: uuid::Uuid::new_v4().to_string(),
                         creation_timestamp: None,
-                    },
+                        deletion_timestamp: None,
+                        resource_version: None,
+                    }),
                     spec: PodSpec {
                         containers: vec![],
                         node_name: None,
@@ -293,11 +305,11 @@ mod tests {
                         tolerations: None,
                         priority: None,
                         priority_class_name: None,
+                        hostname: None,
+                        host_network: None,
                     },
                 },
                 update_strategy: None,
-                min_ready_seconds: None,
-                revision_history_limit: None,
             },
             status: None,
         };

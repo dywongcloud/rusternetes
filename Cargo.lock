@@ -1884,6 +1884,7 @@ dependencies = [
  "clap",
  "hyper",
  "rusternetes-common",
+ "rusternetes-controller-manager",
  "rusternetes-storage",
  "serde",
  "serde_json",
@@ -1998,6 +1999,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

@@ -9,6 +9,8 @@ use controllers::{
     job::JobController,
     cronjob::CronJobController,
     pv_binder::PVBinderController,
+    dynamic_provisioner::DynamicProvisionerController,
+    volume_snapshot::VolumeSnapshotController,
 };
 use rusternetes_storage::etcd::EtcdStorage;
 use std::sync::Arc;
@@ -104,6 +106,22 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         if let Err(e) = pv_binder_controller.run().await {
             tracing::error!("PV/PVC Binder controller error: {}", e);
+        }
+    });
+
+    // Start Dynamic Provisioner controller
+    let dynamic_provisioner_controller = DynamicProvisionerController::new(storage.clone());
+    tokio::spawn(async move {
+        if let Err(e) = dynamic_provisioner_controller.run().await {
+            tracing::error!("Dynamic Provisioner controller error: {}", e);
+        }
+    });
+
+    // Start Volume Snapshot controller
+    let volume_snapshot_controller = VolumeSnapshotController::new(storage.clone());
+    tokio::spawn(async move {
+        if let Err(e) = volume_snapshot_controller.run().await {
+            tracing::error!("Volume Snapshot controller error: {}", e);
         }
     });
 

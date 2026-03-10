@@ -44,7 +44,7 @@ fn test_persistentvolume_creation() {
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-        },
+            claim_ref: None,        },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
@@ -335,7 +335,7 @@ fn test_pv_with_multiple_access_modes() {
             mount_options: Some(vec!["ro".to_string(), "noexec".to_string()]),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-        },
+            claim_ref: None,        },
         status: None,
     };
 

@@ -8,6 +8,8 @@ pub struct Namespace {
     pub type_meta: TypeMeta,
     pub metadata: ObjectMeta,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec: Option<NamespaceSpec>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<NamespaceStatus>,
 }
 
@@ -19,11 +21,19 @@ impl Namespace {
                 api_version: "v1".to_string(),
             },
             metadata: ObjectMeta::new(name),
+            spec: None,
             status: Some(NamespaceStatus {
                 phase: Phase::Running,
             }),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NamespaceSpec {
+    /// Finalizers is a list of finalizers
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finalizers: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

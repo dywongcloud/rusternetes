@@ -8,7 +8,8 @@ pub struct Pod {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
     pub metadata: ObjectMeta,
-    pub spec: PodSpec,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec: Option<PodSpec>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<PodStatus>,
 }
@@ -21,7 +22,7 @@ impl Pod {
                 api_version: "v1".to_string(),
             },
             metadata: ObjectMeta::new(name),
-            spec,
+            spec: Some(spec),
             status: None,
         }
     }
@@ -541,30 +542,32 @@ mod tests {
         let pod: Pod = serde_json::from_str(json).expect("Failed to deserialize Pod");
 
         assert_eq!(pod.metadata.name, "test-pod");
-        assert_eq!(pod.spec.containers.len(), 1);
-        assert_eq!(pod.spec.containers[0].name, "test-container");
+        let spec = pod.spec.as_ref().unwrap();
+        assert_eq!(spec.containers.len(), 1);
+        assert_eq!(spec.containers[0].name, "test-container");
 
         // Check volumes
-        assert!(pod.spec.volumes.is_some(), "volumes should be Some");
-        let volumes = pod.spec.volumes.as_ref().unwrap();
+        assert!(spec.volumes.is_some(), "volumes should be Some");
+        let volumes = spec.volumes.as_ref().unwrap();
         assert_eq!(volumes.len(), 1);
         assert_eq!(volumes[0].name, "test-volume");
         assert!(volumes[0].persistent_volume_claim.is_some(), "persistent_volume_claim should be Some");
         assert_eq!(volumes[0].persistent_volume_claim.as_ref().unwrap().claim_name, "test-pvc");
 
         // Check volume mounts
-        assert!(pod.spec.containers[0].volume_mounts.is_some(), "volume_mounts should be Some");
-        let mounts = pod.spec.containers[0].volume_mounts.as_ref().unwrap();
+        assert!(spec.containers[0].volume_mounts.is_some(), "volume_mounts should be Some");
+        let mounts = spec.containers[0].volume_mounts.as_ref().unwrap();
         assert_eq!(mounts.len(), 1);
         assert_eq!(mounts[0].name, "test-volume");
         assert_eq!(mounts[0].mount_path, "/data");
 
         // Test serialization
         let serialized = serde_json::to_string_pretty(&pod).expect("Failed to serialize Pod");
-        
+
         // Verify round-trip
         let pod2: Pod = serde_json::from_str(&serialized).expect("Failed to deserialize serialized Pod");
-        assert!(pod2.spec.volumes.is_some());
-        assert_eq!(pod2.spec.volumes.as_ref().unwrap()[0].name, "test-volume");
+        let spec2 = pod2.spec.as_ref().unwrap();
+        assert!(spec2.volumes.is_some());
+        assert_eq!(spec2.volumes.as_ref().unwrap()[0].name, "test-volume");
     }
 }

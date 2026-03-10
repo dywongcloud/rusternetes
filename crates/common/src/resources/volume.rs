@@ -72,7 +72,7 @@ pub struct HostPathVolumeSource {
     pub r#type: Option<HostPathType>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum HostPathType {
     DirectoryOrCreate,
     Directory,
@@ -344,6 +344,165 @@ pub struct TopologySelectorTerm {
 pub struct TopologySelectorLabelRequirement {
     pub key: String,
     pub values: Vec<String>,
+}
+
+/// VolumeSnapshot represents a snapshot of a volume
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeSnapshot {
+    #[serde(flatten)]
+    pub type_meta: TypeMeta,
+    pub metadata: ObjectMeta,
+    pub spec: VolumeSnapshotSpec,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<VolumeSnapshotStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeSnapshotSpec {
+    /// Source of the snapshot
+    pub source: VolumeSnapshotSource,
+
+    /// VolumeSnapshotClass name
+    pub volume_snapshot_class_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeSnapshotSource {
+    /// Reference to PVC to snapshot
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub persistent_volume_claim_name: Option<String>,
+
+    /// Reference to existing VolumeSnapshotContent
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_snapshot_content_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeSnapshotStatus {
+    /// Bound VolumeSnapshotContent name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bound_volume_snapshot_content_name: Option<String>,
+
+    /// Creation time
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub creation_time: Option<String>,
+
+    /// Ready to use
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ready_to_use: Option<bool>,
+
+    /// Restore size
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restore_size: Option<String>,
+
+    /// Error
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<VolumeSnapshotError>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeSnapshotError {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// VolumeSnapshotClass describes the parameters for a class of volume snapshots
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeSnapshotClass {
+    #[serde(flatten)]
+    pub type_meta: TypeMeta,
+    pub metadata: ObjectMeta,
+
+    /// Driver name (snapshotter)
+    pub driver: String,
+
+    /// Parameters for the driver
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<HashMap<String, String>>,
+
+    /// Deletion policy
+    pub deletion_policy: DeletionPolicy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum DeletionPolicy {
+    Delete,
+    Retain,
+}
+
+/// VolumeSnapshotContent represents the actual snapshot data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeSnapshotContent {
+    #[serde(flatten)]
+    pub type_meta: TypeMeta,
+    pub metadata: ObjectMeta,
+    pub spec: VolumeSnapshotContentSpec,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<VolumeSnapshotContentStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeSnapshotContentSpec {
+    /// Source of the snapshot
+    pub source: VolumeSnapshotContentSource,
+
+    /// Reference to VolumeSnapshot
+    pub volume_snapshot_ref: ObjectReference,
+
+    /// VolumeSnapshotClass name
+    pub volume_snapshot_class_name: String,
+
+    /// Deletion policy
+    pub deletion_policy: DeletionPolicy,
+
+    /// Driver name
+    pub driver: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeSnapshotContentSource {
+    /// Snapshot handle (CSI snapshot ID)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_handle: Option<String>,
+
+    /// Volume handle to snapshot from
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_handle: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeSnapshotContentStatus {
+    /// Snapshot handle
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_handle: Option<String>,
+
+    /// Creation time (Unix timestamp in nanoseconds)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub creation_time: Option<i64>,
+
+    /// Ready to use
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ready_to_use: Option<bool>,
+
+    /// Restore size in bytes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restore_size: Option<i64>,
+
+    /// Error
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<VolumeSnapshotError>,
 }
 
 #[cfg(test)]

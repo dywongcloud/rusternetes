@@ -1,20 +1,20 @@
 use anyhow::Result;
 use rusternetes_common::resources::{
-    PersistentVolume, PersistentVolumeClaim, PersistentVolumeClaimStatus, PersistentVolumeStatus,
+    PersistentVolume, PersistentVolumeClaim, PersistentVolumeStatus,
 };
-use rusternetes_common::resources::volume::{PersistentVolumeClaimPhase, PersistentVolumePhase};
-use rusternetes_storage::{build_key, etcd::EtcdStorage, Storage};
+use rusternetes_common::resources::volume::{PersistentVolumeClaimPhase, PersistentVolumePhase, PersistentVolumeClaimStatus};
+use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
 use tracing::{error, info};
 
-pub struct PVBinderController {
-    storage: Arc<EtcdStorage>,
+pub struct PVBinderController<S: Storage> {
+    storage: Arc<S>,
 }
 
-impl PVBinderController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> PVBinderController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 
@@ -29,7 +29,7 @@ impl PVBinderController {
         }
     }
 
-    async fn reconcile_all(&self) -> Result<()> {
+    pub async fn reconcile_all(&self) -> Result<()> {
         // Get all PVCs
         let pvcs: Vec<PersistentVolumeClaim> = self
             .storage
@@ -215,14 +215,17 @@ impl PVBinderController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusternetes_storage::memory::MemoryStorage;
 
     #[test]
     fn test_storage_comparison() {
-        let controller = PVBinderController {
-            storage: Arc::new(unsafe { std::mem::zeroed() }), // Only for testing
-        };
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = PVBinderController::new(storage);
 
         assert!(controller.storage_sufficient("10Gi", "5Gi"));
         assert!(controller.storage_sufficient("10Gi", "10Gi"));
+        assert!(!controller.storage_sufficient("5Gi", "10Gi"));
+        assert!(controller.storage_sufficient("100Mi", "50Mi"));
+        assert!(!controller.storage_sufficient("50Mi", "100Mi"));
     }
 }

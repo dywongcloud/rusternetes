@@ -47,7 +47,7 @@ impl Scheduler {
         let pending_pods: Vec<Pod> = pods
             .into_iter()
             .filter(|p| {
-                p.spec.node_name.is_none()
+                p.spec.as_ref().and_then(|s| s.node_name.as_ref()).is_none()
                     && p.status
                         .as_ref()
                         .map(|s| s.phase == Phase::Pending)
@@ -123,7 +123,7 @@ impl Scheduler {
         }
 
         // Phase 3: Check node selectors (basic label matching)
-        let selector_matched_nodes: Vec<&Node> = if let Some(node_selector) = &pod.spec.node_selector {
+        let selector_matched_nodes: Vec<&Node> = if let Some(node_selector) = pod.spec.as_ref().and_then(|s| s.node_selector.as_ref()) {
             tolerated_nodes
                 .iter()
                 .filter(|node| self.matches_node_selector(node, node_selector))
@@ -157,7 +157,7 @@ impl Scheduler {
             }
 
             // Priority score (if specified)
-            let priority_score = pod.spec.priority.unwrap_or(0);
+            let priority_score = pod.spec.as_ref().and_then(|s| s.priority).unwrap_or(0);
 
             // Combined score: resource (weight 40%) + affinity (weight 40%) + priority (weight 20%)
             let total_score = (resource_score * 4 / 10)
@@ -220,7 +220,9 @@ impl Scheduler {
         );
 
         // Update pod spec with node name
-        pod.spec.node_name = Some(node_name.to_string());
+        if let Some(ref mut spec) = pod.spec {
+            spec.node_name = Some(node_name.to_string());
+        }
 
         // Update pod status to Running
         if let Some(ref mut status) = pod.status {

@@ -2,18 +2,18 @@ use rusternetes_common::{
     resources::{Deployment, Pod, PodStatus},
     types::{ObjectMeta, Phase},
 };
-use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info};
 
 /// DeploymentController reconciles Deployment resources
-pub struct DeploymentController {
-    storage: Arc<EtcdStorage>,
+pub struct DeploymentController<S: Storage> {
+    storage: Arc<S>,
     interval: Duration,
 }
 
-impl DeploymentController {
-    pub fn new(storage: Arc<EtcdStorage>, interval_secs: u64) -> Self {
+impl<S: Storage> DeploymentController<S> {
+    pub fn new(storage: Arc<S>, interval_secs: u64) -> Self {
         Self {
             storage,
             interval: Duration::from_secs(interval_secs),
@@ -36,7 +36,7 @@ impl DeploymentController {
         }
     }
 
-    async fn reconcile_all(&self) -> rusternetes_common::Result<()> {
+    pub async fn reconcile_all(&self) -> rusternetes_common::Result<()> {
         debug!("Reconciling all deployments");
 
         // Get all deployments
@@ -151,7 +151,7 @@ impl DeploymentController {
                 api_version: "v1".to_string(),
             },
             metadata,
-            spec: deployment.spec.template.spec.clone(),
+            spec: Some(deployment.spec.template.spec.clone()),
             status: Some(PodStatus {
                 phase: Phase::Pending,
                 message: None,

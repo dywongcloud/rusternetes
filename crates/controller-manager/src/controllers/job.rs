@@ -200,7 +200,7 @@ impl JobController {
                 deletion_timestamp: None,
                 resource_version: None,
             },
-            spec,
+            spec: Some(spec),
             status: Some(PodStatus {
                 phase: Phase::Pending,
                 message: None,

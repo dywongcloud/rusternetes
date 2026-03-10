@@ -233,6 +233,47 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             get(handlers::ingress::get)
                 .put(handlers::ingress::update)
                 .delete(handlers::ingress::delete_ingress),
+        )
+        // Snapshot storage API - VolumeSnapshotClasses (cluster-scoped)
+        .route(
+            "/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses",
+            get(handlers::volumesnapshotclass::list_volumesnapshotclasses)
+                .post(handlers::volumesnapshotclass::create_volumesnapshotclass),
+        )
+        .route(
+            "/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses/:name",
+            get(handlers::volumesnapshotclass::get_volumesnapshotclass)
+                .put(handlers::volumesnapshotclass::update_volumesnapshotclass)
+                .delete(handlers::volumesnapshotclass::delete_volumesnapshotclass),
+        )
+        // VolumeSnapshots (namespace-scoped)
+        .route(
+            "/apis/snapshot.storage.k8s.io/v1/namespaces/:namespace/volumesnapshots",
+            get(handlers::volumesnapshot::list_volumesnapshots)
+                .post(handlers::volumesnapshot::create_volumesnapshot),
+        )
+        .route(
+            "/apis/snapshot.storage.k8s.io/v1/namespaces/:namespace/volumesnapshots/:name",
+            get(handlers::volumesnapshot::get_volumesnapshot)
+                .put(handlers::volumesnapshot::update_volumesnapshot)
+                .delete(handlers::volumesnapshot::delete_volumesnapshot),
+        )
+        // VolumeSnapshots (all namespaces)
+        .route(
+            "/apis/snapshot.storage.k8s.io/v1/volumesnapshots",
+            get(handlers::volumesnapshot::list_all_volumesnapshots),
+        )
+        // VolumeSnapshotContents (cluster-scoped)
+        .route(
+            "/apis/snapshot.storage.k8s.io/v1/volumesnapshotcontents",
+            get(handlers::volumesnapshotcontent::list_volumesnapshotcontents)
+                .post(handlers::volumesnapshotcontent::create_volumesnapshotcontent),
+        )
+        .route(
+            "/apis/snapshot.storage.k8s.io/v1/volumesnapshotcontents/:name",
+            get(handlers::volumesnapshotcontent::get_volumesnapshotcontent)
+                .put(handlers::volumesnapshotcontent::update_volumesnapshotcontent)
+                .delete(handlers::volumesnapshotcontent::delete_volumesnapshotcontent),
         );
 
     // Conditionally apply authentication middleware

@@ -3,6 +3,7 @@ use rusternetes_common::Result;
 use serde::{de::DeserializeOwned, Serialize};
 
 pub mod etcd;
+pub mod memory;
 
 /// Storage trait for persisting Kubernetes resources
 #[async_trait]

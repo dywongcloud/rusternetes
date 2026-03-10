@@ -1,0 +1,338 @@
+use anyhow::{Context, Result};
+use rusternetes_common::resources::{
+    PersistentVolume, PersistentVolumeClaim, PersistentVolumeStatus, StorageClass,
+};
+use rusternetes_common::resources::volume::{
+    HostPathType, HostPathVolumeSource, PersistentVolumePhase,
+    PersistentVolumeReclaimPolicy, PersistentVolumeSource,
+};
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
+use rusternetes_storage::{build_key, Storage};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::time;
+use tracing::{error, info, warn};
+
+pub struct DynamicProvisionerController<S: Storage> {
+    storage: Arc<S>,
+}
+
+impl<S: Storage> DynamicProvisionerController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
+        Self { storage }
+    }
+
+    pub async fn run(&self) -> Result<()> {
+        info!("Starting Dynamic Provisioner Controller");
+
+        loop {
+            if let Err(e) = self.reconcile_all().await {
+                error!("Error in dynamic provisioner reconciliation loop: {}", e);
+            }
+            time::sleep(Duration::from_secs(5)).await;
+        }
+    }
+
+    pub async fn reconcile_all(&self) -> Result<()> {
+        // Get all PVCs
+        let pvcs: Vec<PersistentVolumeClaim> = self
+            .storage
+            .list("/registry/persistentvolumeclaims/")
+            .await?;
+
+        for pvc in pvcs {
+            // Only process unbound PVCs with a storage class
+            if pvc.spec.volume_name.is_none() && pvc.spec.storage_class_name.is_some() {
+                if let Err(e) = self.provision_volume(&pvc).await {
+                    error!(
+                        "Failed to provision volume for PVC {}/{}: {}",
+                        pvc.metadata.namespace.as_deref().unwrap_or("default"),
+                        pvc.metadata.name,
+                        e
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn provision_volume(&self, pvc: &PersistentVolumeClaim) -> Result<()> {
+        let pvc_name = &pvc.metadata.name;
+        let namespace = pvc.metadata.namespace.as_deref().unwrap_or("default");
+
+        let storage_class_name = pvc.spec.storage_class_name.as_ref()
+            .context("PVC has no storage class name")?;
+
+        info!(
+            "Attempting to dynamically provision volume for PVC {}/{} using StorageClass {}",
+            namespace, pvc_name, storage_class_name
+        );
+
+        // Get the StorageClass
+        let sc_key = build_key("storageclasses", None, storage_class_name);
+        let storage_class: StorageClass = self.storage.get(&sc_key).await
+            .with_context(|| format!("StorageClass {} not found", storage_class_name))?;
+
+        info!("Found StorageClass {} with provisioner {}", storage_class_name, storage_class.provisioner);
+
+        // Check if provisioner is supported
+        if !self.is_provisioner_supported(&storage_class.provisioner) {
+            warn!(
+                "Provisioner {} is not supported. Skipping PVC {}/{}",
+                storage_class.provisioner, namespace, pvc_name
+            );
+            return Ok(());
+        }
+
+        // Check if a PV already exists for this PVC (in case we're retrying)
+        let pv_name = format!("pvc-{}-{}", namespace, pvc_name);
+        let pv_key = build_key("persistentvolumes", None, &pv_name);
+
+        if let Ok(_existing_pv) = self.storage.get::<PersistentVolume>(&pv_key).await {
+            info!("PV {} already exists for PVC {}/{}", pv_name, namespace, pvc_name);
+            return Ok(());
+        }
+
+        // Create the PV
+        let pv = self.create_pv_for_pvc(&storage_class, pvc, &pv_name)?;
+
+        // Store the PV
+        self.storage.create(&pv_key, &pv).await
+            .with_context(|| format!("Failed to create PV {}", pv_name))?;
+
+        info!(
+            "Successfully provisioned PV {} for PVC {}/{}",
+            pv_name, namespace, pvc_name
+        );
+
+        Ok(())
+    }
+
+    fn is_provisioner_supported(&self, provisioner: &str) -> bool {
+        matches!(
+            provisioner,
+            "rusternetes.io/hostpath" | "kubernetes.io/hostpath" | "hostpath"
+        )
+    }
+
+    fn create_pv_for_pvc(
+        &self,
+        storage_class: &StorageClass,
+        pvc: &PersistentVolumeClaim,
+        pv_name: &str,
+    ) -> Result<PersistentVolume> {
+        let namespace = pvc.metadata.namespace.as_deref().unwrap_or("default");
+
+        // Get requested storage capacity
+        let requested_storage = pvc.spec.resources.requests.as_ref()
+            .and_then(|r| r.get("storage"))
+            .context("PVC has no storage request")?;
+
+        let mut capacity = HashMap::new();
+        capacity.insert("storage".to_string(), requested_storage.clone());
+
+        // Determine the path for the volume
+        let base_path = storage_class.parameters.as_ref()
+            .and_then(|p| p.get("path"))
+            .map(|s| s.as_str())
+            .unwrap_or("/tmp/rusternetes/dynamic-pvs");
+
+        let volume_path = format!("{}/{}", base_path, pv_name);
+
+        info!(
+            "Creating PV {} with path {} and capacity {}",
+            pv_name, volume_path, requested_storage
+        );
+
+        // Create PV based on provisioner type
+        let volume_source = match storage_class.provisioner.as_str() {
+            "rusternetes.io/hostpath" | "kubernetes.io/hostpath" | "hostpath" => {
+                PersistentVolumeSource::HostPath(HostPathVolumeSource {
+                    path: volume_path,
+                    r#type: Some(HostPathType::DirectoryOrCreate),
+                })
+            }
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Unsupported provisioner: {}",
+                    storage_class.provisioner
+                ));
+            }
+        };
+
+        // Determine reclaim policy (default to Delete for dynamically provisioned volumes)
+        let reclaim_policy = storage_class.reclaim_policy.clone()
+            .unwrap_or(PersistentVolumeReclaimPolicy::Delete);
+
+        // Create labels to track the PVC this was created for
+        let mut labels = HashMap::new();
+        labels.insert("pvc-name".to_string(), pvc.metadata.name.clone());
+        labels.insert("pvc-namespace".to_string(), namespace.to_string());
+        labels.insert("provisioner".to_string(), storage_class.provisioner.clone());
+        labels.insert("storage-class".to_string(), storage_class.metadata.name.clone());
+
+        let pv = PersistentVolume {
+            type_meta: TypeMeta {
+                kind: "PersistentVolume".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: {
+                let mut meta = ObjectMeta::new(pv_name);
+                meta.uid = uuid::Uuid::new_v4().to_string();
+                meta.resource_version = Some("1".to_string());
+                meta.labels = Some(labels);
+                meta.annotations = Some({
+                    let mut annotations = HashMap::new();
+                    annotations.insert(
+                        "pv.kubernetes.io/provisioned-by".to_string(),
+                        storage_class.provisioner.clone(),
+                    );
+                    annotations
+                });
+                meta
+            },
+            spec: rusternetes_common::resources::PersistentVolumeSpec {
+                capacity,
+                volume_source,
+                access_modes: pvc.spec.access_modes.clone(),
+                persistent_volume_reclaim_policy: Some(reclaim_policy),
+                storage_class_name: Some(storage_class.metadata.name.clone()),
+                mount_options: None,
+                volume_mode: pvc.spec.volume_mode.clone(),
+                node_affinity: None,
+                claim_ref: None, // Will be bound by the PV binder controller
+            },
+            status: Some(PersistentVolumeStatus {
+                phase: PersistentVolumePhase::Available,
+                message: Some("Dynamically provisioned".to_string()),
+                reason: None,
+            }),
+        };
+
+        Ok(pv)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusternetes_common::resources::volume::{
+        PersistentVolumeAccessMode, PersistentVolumeClaimPhase, PersistentVolumeClaimStatus,
+        PersistentVolumeMode, ResourceRequirements,
+    };
+    use rusternetes_storage::memory::MemoryStorage;
+
+    #[test]
+    fn test_is_provisioner_supported() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = DynamicProvisionerController::new(storage);
+
+        assert!(controller.is_provisioner_supported("rusternetes.io/hostpath"));
+        assert!(controller.is_provisioner_supported("kubernetes.io/hostpath"));
+        assert!(controller.is_provisioner_supported("hostpath"));
+        assert!(!controller.is_provisioner_supported("kubernetes.io/aws-ebs"));
+    }
+
+    #[test]
+    fn test_create_pv_for_pvc() {
+        // Use MemoryStorage for testing
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = DynamicProvisionerController::new(storage);
+
+        let mut requests = HashMap::new();
+        requests.insert("storage".to_string(), "5Gi".to_string());
+
+        let pvc = PersistentVolumeClaim {
+            type_meta: TypeMeta {
+                kind: "PersistentVolumeClaim".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: {
+                let mut meta = ObjectMeta::new("test-pvc");
+                meta.namespace = Some("default".to_string());
+                meta
+            },
+            spec: rusternetes_common::resources::PersistentVolumeClaimSpec {
+                access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
+                resources: ResourceRequirements {
+                    limits: None,
+                    requests: Some(requests),
+                },
+                volume_name: None,
+                storage_class_name: Some("fast".to_string()),
+                volume_mode: Some(PersistentVolumeMode::Filesystem),
+                selector: None,
+                data_source: None,
+            },
+            status: Some(PersistentVolumeClaimStatus {
+                phase: PersistentVolumeClaimPhase::Pending,
+                access_modes: None,
+                capacity: None,
+                conditions: None,
+            }),
+        };
+
+        let storage_class = StorageClass {
+            type_meta: TypeMeta {
+                kind: "StorageClass".to_string(),
+                api_version: "storage.k8s.io/v1".to_string(),
+            },
+            metadata: ObjectMeta::new("fast"),
+            provisioner: "rusternetes.io/hostpath".to_string(),
+            parameters: None,
+            reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
+            volume_binding_mode: None,
+            allowed_topologies: None,
+            allow_volume_expansion: None,
+        };
+
+        let pv = controller
+            .create_pv_for_pvc(&storage_class, &pvc, "pvc-default-test-pvc")
+            .unwrap();
+
+        // Verify PV metadata
+        assert_eq!(pv.metadata.name, "pvc-default-test-pvc");
+        assert_eq!(
+            pv.spec.storage_class_name,
+            Some("fast".to_string())
+        );
+        assert_eq!(
+            pv.spec.capacity.get("storage"),
+            Some(&"5Gi".to_string())
+        );
+        assert_eq!(
+            pv.spec.persistent_volume_reclaim_policy,
+            Some(PersistentVolumeReclaimPolicy::Delete)
+        );
+        assert_eq!(
+            pv.spec.access_modes,
+            vec![PersistentVolumeAccessMode::ReadWriteOnce]
+        );
+        assert_eq!(pv.status.as_ref().unwrap().phase, PersistentVolumePhase::Available);
+
+        // Verify hostpath volume source
+        match &pv.spec.volume_source {
+            PersistentVolumeSource::HostPath(hp) => {
+                assert_eq!(hp.path, "/tmp/rusternetes/dynamic-pvs/pvc-default-test-pvc");
+                assert_eq!(hp.r#type, Some(HostPathType::DirectoryOrCreate));
+            }
+            _ => panic!("Expected HostPath volume source"),
+        }
+
+        // Verify labels
+        let labels = pv.metadata.labels.as_ref().unwrap();
+        assert_eq!(labels.get("pvc-name"), Some(&"test-pvc".to_string()));
+        assert_eq!(labels.get("pvc-namespace"), Some(&"default".to_string()));
+        assert_eq!(labels.get("provisioner"), Some(&"rusternetes.io/hostpath".to_string()));
+        assert_eq!(labels.get("storage-class"), Some(&"fast".to_string()));
+
+        // Verify annotations
+        let annotations = pv.metadata.annotations.as_ref().unwrap();
+        assert_eq!(
+            annotations.get("pv.kubernetes.io/provisioned-by"),
+            Some(&"rusternetes.io/hostpath".to_string())
+        );
+    }
+}

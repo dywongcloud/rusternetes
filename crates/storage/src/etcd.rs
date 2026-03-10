@@ -278,6 +278,7 @@ impl AuthzStorage for EtcdStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::{Deserialize, Serialize};
 
     // Note: These tests require a running etcd instance
     // Run with: docker run -d -p 2379:2379 -e ALLOW_NONE_AUTHENTICATION=yes bitnami/etcd
@@ -300,10 +301,10 @@ mod tests {
             value: 42,
         };
 
-        let created = storage.create("/test/key", &data).await.unwrap();
+        let created = Storage::create(&storage, "/test/key", &data).await.unwrap();
         assert_eq!(created, data);
 
-        let retrieved: TestData = storage.get("/test/key").await.unwrap();
+        let retrieved: TestData = Storage::get(&storage, "/test/key").await.unwrap();
         assert_eq!(retrieved, data);
 
         storage.delete("/test/key").await.unwrap();

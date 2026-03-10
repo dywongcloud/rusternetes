@@ -187,7 +187,7 @@ impl StatefulSetController {
                 deletion_timestamp: None,
                 resource_version: None,
             },
-            spec: template.spec.clone(),
+            spec: Some(template.spec.clone()),
             status: Some(PodStatus {
                 phase: Phase::Pending,
                 message: None,

@@ -16,3 +16,6 @@ pub mod secret;
 pub mod statefulset;
 pub mod daemonset;
 pub mod ingress;
+pub mod volumesnapshotclass;
+pub mod volumesnapshot;
+pub mod volumesnapshotcontent;

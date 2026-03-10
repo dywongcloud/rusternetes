@@ -139,8 +139,8 @@ impl Kubelet {
             .into_iter()
             .filter(|p| {
                 p.spec
-                    .node_name
                     .as_ref()
+                    .and_then(|s| s.node_name.as_ref())
                     .map(|n| n == &self.node_name)
                     .unwrap_or(false)
             })
@@ -259,7 +259,7 @@ impl Kubelet {
                 // Check liveness probes
                 if let Ok(needs_restart) = self.runtime.check_liveness(pod).await {
                     if needs_restart {
-                        let restart_policy = pod.spec.restart_policy.as_deref().unwrap_or("Always");
+                        let restart_policy = pod.spec.as_ref().and_then(|s| s.restart_policy.as_deref()).unwrap_or("Always");
 
                         match restart_policy {
                             "Always" | "OnFailure" => {
