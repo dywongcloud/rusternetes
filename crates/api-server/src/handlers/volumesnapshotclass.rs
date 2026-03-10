@@ -136,3 +136,6 @@ pub async fn delete_volumesnapshotclass(
 
     Ok(StatusCode::NO_CONTENT)
 }
+
+// Use the macro to create a PATCH handler
+crate::patch_handler_cluster!(patch_volumesnapshotclass, VolumeSnapshotClass, "volumesnapshotclasses", "snapshot.storage.k8s.io");

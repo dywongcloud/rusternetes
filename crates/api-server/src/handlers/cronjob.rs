@@ -150,3 +150,6 @@ pub async fn list(
 
     Ok(Json(cronjobs))
 }
+
+// Use the macro to create a PATCH handler
+crate::patch_handler_namespaced!(patch, CronJob, "cronjobs", "batch");

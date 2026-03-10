@@ -27,3 +27,5 @@ pub mod limitrange;
 pub mod priorityclass;
 pub mod crd;
 pub mod custom_resource;
+pub mod generic_patch;
+pub mod apply;

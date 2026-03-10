@@ -160,3 +160,6 @@ pub async fn list(
 
     Ok(Json(ingresses))
 }
+
+// Use the macro to create a PATCH handler
+crate::patch_handler_namespaced!(patch, Ingress, "ingresses", "networking.k8s.io");

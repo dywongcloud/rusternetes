@@ -536,3 +536,9 @@ pub async fn list_clusterrolebindings(
 
     Ok(Json(clusterrolebindings))
 }
+
+// Use macros to create PATCH handlers for RBAC resources
+crate::patch_handler_namespaced!(patch_role, Role, "roles", "rbac.authorization.k8s.io");
+crate::patch_handler_namespaced!(patch_rolebinding, RoleBinding, "rolebindings", "rbac.authorization.k8s.io");
+crate::patch_handler_cluster!(patch_clusterrole, ClusterRole, "clusterroles", "rbac.authorization.k8s.io");
+crate::patch_handler_cluster!(patch_clusterrolebinding, ClusterRoleBinding, "clusterrolebindings", "rbac.authorization.k8s.io");

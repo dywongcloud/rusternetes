@@ -177,3 +177,6 @@ pub async fn list_all(
 
     Ok(Json(limit_ranges))
 }
+
+// Use the macro to create a PATCH handler
+crate::patch_handler_namespaced!(patch, LimitRange, "limitranges", "");

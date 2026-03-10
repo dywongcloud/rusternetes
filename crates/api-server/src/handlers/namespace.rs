@@ -145,3 +145,6 @@ pub async fn list(
 
     Ok(Json(namespaces))
 }
+
+// Use the macro to create a PATCH handler for cluster-scoped namespace
+crate::patch_handler_cluster!(patch, Namespace, "namespaces", "");

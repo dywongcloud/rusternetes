@@ -160,3 +160,6 @@ pub async fn list(
 
     Ok(Json(daemonsets))
 }
+
+// Use the macro to create a PATCH handler
+crate::patch_handler_namespaced!(patch, DaemonSet, "daemonsets", "apps");

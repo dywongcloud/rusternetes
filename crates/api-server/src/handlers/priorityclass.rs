@@ -144,3 +144,6 @@ pub async fn list(
 
     Ok(Json(priority_classes))
 }
+
+// Use the macro to create a PATCH handler
+crate::patch_handler_cluster!(patch, PriorityClass, "priorityclasses", "scheduling.k8s.io");

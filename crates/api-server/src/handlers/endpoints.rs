@@ -176,3 +176,6 @@ pub async fn delete_endpoints(
 
     Ok(StatusCode::NO_CONTENT)
 }
+
+// Use the macro to create a PATCH handler
+crate::patch_handler_namespaced!(patch_endpoints, Endpoints, "endpoints", "");

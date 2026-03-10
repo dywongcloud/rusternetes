@@ -160,3 +160,6 @@ pub async fn list(
 
     Ok(Json(deployments))
 }
+
+// Use the macro to create a PATCH handler
+crate::patch_handler_namespaced!(patch, Deployment, "deployments", "apps");

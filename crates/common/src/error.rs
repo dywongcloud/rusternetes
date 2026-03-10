@@ -29,6 +29,9 @@ pub enum Error {
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -49,6 +52,7 @@ impl axum::response::IntoResponse for Error {
             Error::Authentication(msg) => (StatusCode::UNAUTHORIZED, msg),
             Error::Authorization(msg) => (StatusCode::FORBIDDEN, msg),
             Error::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
+            Error::Conflict(msg) => (StatusCode::CONFLICT, msg),
             Error::Storage(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             Error::Network(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
             Error::Serialization(e) => (StatusCode::BAD_REQUEST, e.to_string()),

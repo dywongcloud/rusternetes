@@ -6,7 +6,7 @@
 // 3. JSON Patch (RFC 6902)
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 
 /// Patch types supported by the API
@@ -303,12 +303,12 @@ fn test_operation(value: &Value, path: &str, test_value: &Value) -> Result<(), P
 
 /// Apply Strategic Merge Patch (Kubernetes-specific)
 ///
-/// This is a simplified implementation that works for most cases.
-/// Full strategic merge requires type-specific merge keys (like merging arrays by name).
-///
-/// For now, we implement a hybrid approach:
+/// Implements strategic merge with directive markers:
+/// - `$patch`: Specifies merge strategy ("replace", "merge", "delete")
+/// - `$retainKeys`: List of keys to retain when using replace strategy
+/// - `$deleteFromPrimitiveList`: Values to delete from primitive arrays
 /// - Arrays with items that have a 'name' field are merged by name
-/// - Other arrays replace the original
+/// - Other arrays replace the original (unless directives specify otherwise)
 /// - Objects are recursively merged
 /// - Null values delete keys
 fn apply_strategic_merge_patch(original: &Value, patch: &Value) -> Result<Value, PatchError> {
@@ -325,22 +325,103 @@ fn apply_strategic_merge_patch(original: &Value, patch: &Value) -> Result<Value,
     let result_obj = result.as_object_mut().unwrap();
     let patch_obj = patch.as_object().unwrap();
 
-    for (key, patch_value) in patch_obj {
-        if patch_value.is_null() {
-            // Null deletes the key
-            result_obj.remove(key);
-        } else if patch_value.is_array() && result_obj.get(key).map_or(false, |v| v.is_array()) {
-            // Strategic merge for arrays
-            let merged_array =
-                strategic_merge_arrays(result_obj[key].as_array().unwrap(), patch_value.as_array().unwrap())?;
-            result_obj.insert(key.clone(), Value::Array(merged_array));
-        } else if patch_value.is_object() && result_obj.get(key).map_or(false, |v| v.is_object()) {
-            // Recursively merge objects
-            let merged = apply_strategic_merge_patch(&result_obj[key], patch_value)?;
-            result_obj.insert(key.clone(), merged);
-        } else {
-            // Replace value
-            result_obj.insert(key.clone(), patch_value.clone());
+    // Check for $patch directive
+    let patch_strategy = patch_obj
+        .get("$patch")
+        .and_then(|v| v.as_str())
+        .unwrap_or("merge");
+
+    // Check for $retainKeys directive
+    let retain_keys: Option<Vec<String>> = patch_obj
+        .get("$retainKeys")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        });
+
+    match patch_strategy {
+        "replace" => {
+            // Replace strategy - replace entire object but retain specified keys
+            if let Some(keys_to_retain) = retain_keys {
+                let mut new_obj = serde_json::Map::new();
+                // First, copy retained keys from original
+                for key in &keys_to_retain {
+                    if let Some(value) = result_obj.get(key) {
+                        new_obj.insert(key.clone(), value.clone());
+                    }
+                }
+                // Then apply patch values (excluding directives)
+                for (key, value) in patch_obj {
+                    if !key.starts_with('$') {
+                        new_obj.insert(key.clone(), value.clone());
+                    }
+                }
+                return Ok(Value::Object(new_obj));
+            } else {
+                // Full replacement (excluding directives)
+                let mut new_obj = serde_json::Map::new();
+                for (key, value) in patch_obj {
+                    if !key.starts_with('$') {
+                        new_obj.insert(key.clone(), value.clone());
+                    }
+                }
+                return Ok(Value::Object(new_obj));
+            }
+        }
+        "delete" => {
+            // Delete the object entirely
+            return Ok(Value::Null);
+        }
+        "merge" | _ => {
+            // Default merge strategy
+            for (key, patch_value) in patch_obj {
+                // Skip directive keys
+                if key.starts_with('$') {
+                    continue;
+                }
+
+                if patch_value.is_null() {
+                    // Null deletes the key
+                    result_obj.remove(key);
+                } else if patch_value.is_array() && result_obj.get(key).map_or(false, |v| v.is_array()) {
+                    // Check for $deleteFromPrimitiveList directive
+                    let delete_list: Option<Vec<Value>> = if let Some(obj) = patch_value.as_array() {
+                        // Look for $deleteFromPrimitiveList in array elements
+                        obj.iter()
+                            .find_map(|item| {
+                                item.as_object()
+                                    .and_then(|o| o.get("$deleteFromPrimitiveList"))
+                                    .and_then(|v| v.as_array())
+                                    .map(|arr| arr.clone())
+                            })
+                    } else {
+                        None
+                    };
+
+                    if let Some(to_delete) = delete_list {
+                        // Remove specified values from the original array
+                        let mut original_array = result_obj[key].as_array().unwrap().clone();
+                        original_array.retain(|item| !to_delete.contains(item));
+                        result_obj.insert(key.clone(), Value::Array(original_array));
+                    } else {
+                        // Strategic merge for arrays
+                        let merged_array = strategic_merge_arrays(
+                            result_obj[key].as_array().unwrap(),
+                            patch_value.as_array().unwrap(),
+                        )?;
+                        result_obj.insert(key.clone(), Value::Array(merged_array));
+                    }
+                } else if patch_value.is_object() && result_obj.get(key).map_or(false, |v| v.is_object()) {
+                    // Recursively merge objects
+                    let merged = apply_strategic_merge_patch(&result_obj[key], patch_value)?;
+                    result_obj.insert(key.clone(), merged);
+                } else {
+                    // Replace value
+                    result_obj.insert(key.clone(), patch_value.clone());
+                }
+            }
         }
     }
 
@@ -666,5 +747,110 @@ mod tests {
             PatchType::from_content_type("application/json-patch+json").unwrap(),
             PatchType::JsonPatch
         );
+    }
+
+    #[test]
+    fn test_strategic_merge_patch_directive() {
+        let original = json!({
+            "metadata": {
+                "name": "test",
+                "labels": {
+                    "app": "nginx",
+                    "version": "1.0"
+                }
+            },
+            "spec": {
+                "replicas": 1
+            }
+        });
+
+        let patch = json!({
+            "metadata": {
+                "labels": {
+                    "$patch": "replace",
+                    "app": "apache"
+                }
+            }
+        });
+
+        let result = apply_strategic_merge_patch(&original, &patch).unwrap();
+        // With $patch: replace, the labels should be replaced entirely
+        assert_eq!(result["metadata"]["labels"]["app"], "apache");
+        assert!(result["metadata"]["labels"].get("version").is_none());
+    }
+
+    #[test]
+    fn test_strategic_merge_patch_retain_keys() {
+        let original = json!({
+            "metadata": {
+                "name": "test",
+                "uid": "abc-123",
+                "labels": {
+                    "app": "nginx",
+                    "version": "1.0"
+                }
+            }
+        });
+
+        let patch = json!({
+            "metadata": {
+                "$patch": "replace",
+                "$retainKeys": ["name", "uid"],
+                "labels": {
+                    "app": "apache"
+                }
+            }
+        });
+
+        let result = apply_strategic_merge_patch(&original, &patch).unwrap();
+        // Should retain name and uid, but replace labels
+        assert_eq!(result["metadata"]["name"], "test");
+        assert_eq!(result["metadata"]["uid"], "abc-123");
+        assert_eq!(result["metadata"]["labels"]["app"], "apache");
+    }
+
+    #[test]
+    fn test_strategic_merge_delete_from_primitive_list() {
+        let original = json!({
+            "spec": {
+                "finalizers": ["kubernetes.io/pv-protection", "example.com/my-finalizer"]
+            }
+        });
+
+        let patch = json!({
+            "spec": {
+                "finalizers": [
+                    {"$deleteFromPrimitiveList": ["example.com/my-finalizer"]}
+                ]
+            }
+        });
+
+        let result = apply_strategic_merge_patch(&original, &patch).unwrap();
+        let finalizers = result["spec"]["finalizers"].as_array().unwrap();
+        assert_eq!(finalizers.len(), 1);
+        assert_eq!(finalizers[0], "kubernetes.io/pv-protection");
+    }
+
+    #[test]
+    fn test_strategic_merge_delete_directive() {
+        let original = json!({
+            "metadata": {
+                "name": "test",
+                "annotations": {
+                    "foo": "bar"
+                }
+            }
+        });
+
+        let patch = json!({
+            "metadata": {
+                "annotations": {
+                    "$patch": "delete"
+                }
+            }
+        });
+
+        let result = apply_strategic_merge_patch(&original, &patch).unwrap();
+        assert!(result["metadata"]["annotations"].is_null());
     }
 }

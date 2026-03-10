@@ -235,3 +235,6 @@ mod tests {
         assert_eq!(event.count, 1);
     }
 }
+
+// Use the macro to create a PATCH handler
+crate::patch_handler_namespaced!(patch, Event, "events", "");

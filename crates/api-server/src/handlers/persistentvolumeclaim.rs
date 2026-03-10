@@ -144,3 +144,6 @@ pub async fn delete_pvc(
 
     Ok(StatusCode::NO_CONTENT)
 }
+
+// Use the macro to create a PATCH handler
+crate::patch_handler_namespaced!(patch_pvc, PersistentVolumeClaim, "persistentvolumeclaims", "");

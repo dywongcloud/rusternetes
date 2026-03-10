@@ -1,6 +1,6 @@
 use crate::{handlers, middleware, state::ApiServerState};
 use axum::{
-    middleware as axum_middleware, routing::{get, patch, post}, Extension, Router,
+    middleware as axum_middleware, routing::{get, post}, Extension, Router,
 };
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
@@ -23,6 +23,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/namespaces/:name",
             get(handlers::namespace::get)
                 .put(handlers::namespace::update)
+                .patch(handlers::namespace::patch)
                 .delete(handlers::namespace::delete_ns),
         )
         // Pods
@@ -46,6 +47,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/namespaces/:namespace/services/:name",
             get(handlers::service::get)
                 .put(handlers::service::update)
+                .patch(handlers::service::patch)
                 .delete(handlers::service::delete_service),
         )
         // Endpoints
@@ -57,6 +59,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/namespaces/:namespace/endpoints/:name",
             get(handlers::endpoints::get_endpoints)
                 .put(handlers::endpoints::update_endpoints)
+                .patch(handlers::endpoints::patch_endpoints)
                 .delete(handlers::endpoints::delete_endpoints),
         )
         .route(
@@ -72,6 +75,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/namespaces/:namespace/configmaps/:name",
             get(handlers::configmap::get)
                 .put(handlers::configmap::update)
+                .patch(handlers::configmap::patch)
                 .delete(handlers::configmap::delete_configmap),
         )
         // Secrets
@@ -83,6 +87,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/namespaces/:namespace/secrets/:name",
             get(handlers::secret::get)
                 .put(handlers::secret::update)
+                .patch(handlers::secret::patch)
                 .delete(handlers::secret::delete_secret),
         )
         // Nodes
@@ -94,6 +99,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/nodes/:name",
             get(handlers::node::get)
                 .put(handlers::node::update)
+                .patch(handlers::node::patch)
                 .delete(handlers::node::delete_node),
         )
         // Apps v1 API - Deployments
@@ -105,6 +111,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/apps/v1/namespaces/:namespace/deployments/:name",
             get(handlers::deployment::get)
                 .put(handlers::deployment::update)
+                .patch(handlers::deployment::patch)
                 .delete(handlers::deployment::delete_deployment),
         )
         // Apps v1 API - StatefulSets
@@ -116,6 +123,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/apps/v1/namespaces/:namespace/statefulsets/:name",
             get(handlers::statefulset::get)
                 .put(handlers::statefulset::update)
+                .patch(handlers::statefulset::patch)
                 .delete(handlers::statefulset::delete_statefulset),
         )
         // Apps v1 API - DaemonSets
@@ -127,6 +135,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/apps/v1/namespaces/:namespace/daemonsets/:name",
             get(handlers::daemonset::get)
                 .put(handlers::daemonset::update)
+                .patch(handlers::daemonset::patch)
                 .delete(handlers::daemonset::delete_daemonset),
         )
         // Batch v1 API - Jobs
@@ -138,6 +147,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/batch/v1/namespaces/:namespace/jobs/:name",
             get(handlers::job::get)
                 .put(handlers::job::update)
+                .patch(handlers::job::patch)
                 .delete(handlers::job::delete_job),
         )
         // Batch v1 API - CronJobs
@@ -149,6 +159,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/batch/v1/namespaces/:namespace/cronjobs/:name",
             get(handlers::cronjob::get)
                 .put(handlers::cronjob::update)
+                .patch(handlers::cronjob::patch)
                 .delete(handlers::cronjob::delete_cronjob),
         )
         // ServiceAccounts
@@ -160,6 +171,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/namespaces/:namespace/serviceaccounts/:name",
             get(handlers::service_account::get)
                 .put(handlers::service_account::update)
+                .patch(handlers::service_account::patch)
                 .delete(handlers::service_account::delete_service_account),
         )
         // RBAC - Roles
@@ -171,6 +183,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/rbac.authorization.k8s.io/v1/namespaces/:namespace/roles/:name",
             get(handlers::rbac::get_role)
                 .put(handlers::rbac::update_role)
+                .patch(handlers::rbac::patch_role)
                 .delete(handlers::rbac::delete_role),
         )
         // RBAC - RoleBindings
@@ -182,6 +195,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/rbac.authorization.k8s.io/v1/namespaces/:namespace/rolebindings/:name",
             get(handlers::rbac::get_rolebinding)
                 .put(handlers::rbac::update_rolebinding)
+                .patch(handlers::rbac::patch_rolebinding)
                 .delete(handlers::rbac::delete_rolebinding),
         )
         // RBAC - ClusterRoles
@@ -193,6 +207,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/rbac.authorization.k8s.io/v1/clusterroles/:name",
             get(handlers::rbac::get_clusterrole)
                 .put(handlers::rbac::update_clusterrole)
+                .patch(handlers::rbac::patch_clusterrole)
                 .delete(handlers::rbac::delete_clusterrole),
         )
         // RBAC - ClusterRoleBindings
@@ -204,6 +219,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/:name",
             get(handlers::rbac::get_clusterrolebinding)
                 .put(handlers::rbac::update_clusterrolebinding)
+                .patch(handlers::rbac::patch_clusterrolebinding)
                 .delete(handlers::rbac::delete_clusterrolebinding),
         )
         // Storage v1 API - PersistentVolumes (cluster-scoped)
@@ -215,6 +231,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/persistentvolumes/:name",
             get(handlers::persistentvolume::get_pv)
                 .put(handlers::persistentvolume::update_pv)
+                .patch(handlers::persistentvolume::patch_pv)
                 .delete(handlers::persistentvolume::delete_pv),
         )
         // PersistentVolumeClaims (namespace-scoped)
@@ -226,6 +243,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/namespaces/:namespace/persistentvolumeclaims/:name",
             get(handlers::persistentvolumeclaim::get_pvc)
                 .put(handlers::persistentvolumeclaim::update_pvc)
+                .patch(handlers::persistentvolumeclaim::patch_pvc)
                 .delete(handlers::persistentvolumeclaim::delete_pvc),
         )
         // StorageClasses (cluster-scoped)
@@ -237,6 +255,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/storage.k8s.io/v1/storageclasses/:name",
             get(handlers::storageclass::get_storageclass)
                 .put(handlers::storageclass::update_storageclass)
+                .patch(handlers::storageclass::patch_storageclass)
                 .delete(handlers::storageclass::delete_storageclass),
         )
         // Networking v1 API - Ingresses
@@ -248,6 +267,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/networking.k8s.io/v1/namespaces/:namespace/ingresses/:name",
             get(handlers::ingress::get)
                 .put(handlers::ingress::update)
+                .patch(handlers::ingress::patch)
                 .delete(handlers::ingress::delete_ingress),
         )
         // Snapshot storage API - VolumeSnapshotClasses (cluster-scoped)
@@ -260,6 +280,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses/:name",
             get(handlers::volumesnapshotclass::get_volumesnapshotclass)
                 .put(handlers::volumesnapshotclass::update_volumesnapshotclass)
+                .patch(handlers::volumesnapshotclass::patch_volumesnapshotclass)
                 .delete(handlers::volumesnapshotclass::delete_volumesnapshotclass),
         )
         // VolumeSnapshots (namespace-scoped)
@@ -272,6 +293,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/snapshot.storage.k8s.io/v1/namespaces/:namespace/volumesnapshots/:name",
             get(handlers::volumesnapshot::get_volumesnapshot)
                 .put(handlers::volumesnapshot::update_volumesnapshot)
+                .patch(handlers::volumesnapshot::patch_volumesnapshot)
                 .delete(handlers::volumesnapshot::delete_volumesnapshot),
         )
         // VolumeSnapshots (all namespaces)
@@ -289,6 +311,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/snapshot.storage.k8s.io/v1/volumesnapshotcontents/:name",
             get(handlers::volumesnapshotcontent::get_volumesnapshotcontent)
                 .put(handlers::volumesnapshotcontent::update_volumesnapshotcontent)
+                .patch(handlers::volumesnapshotcontent::patch_volumesnapshotcontent)
                 .delete(handlers::volumesnapshotcontent::delete_volumesnapshotcontent),
         )
         // Events (namespace-scoped)
@@ -300,6 +323,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/namespaces/:namespace/events/:name",
             get(handlers::event::get)
                 .put(handlers::event::update)
+                .patch(handlers::event::patch)
                 .delete(handlers::event::delete),
         )
         // Events (all namespaces)
@@ -316,6 +340,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/namespaces/:namespace/resourcequotas/:name",
             get(handlers::resourcequota::get)
                 .put(handlers::resourcequota::update)
+                .patch(handlers::resourcequota::patch)
                 .delete(handlers::resourcequota::delete),
         )
         // ResourceQuotas (all namespaces)
@@ -332,6 +357,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/namespaces/:namespace/limitranges/:name",
             get(handlers::limitrange::get)
                 .put(handlers::limitrange::update)
+                .patch(handlers::limitrange::patch)
                 .delete(handlers::limitrange::delete),
         )
         // LimitRanges (all namespaces)
@@ -348,6 +374,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/scheduling.k8s.io/v1/priorityclasses/:name",
             get(handlers::priorityclass::get)
                 .put(handlers::priorityclass::update)
+                .patch(handlers::priorityclass::patch)
                 .delete(handlers::priorityclass::delete),
         )
         // CustomResourceDefinitions (cluster-scoped)

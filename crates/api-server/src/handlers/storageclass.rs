@@ -136,3 +136,6 @@ pub async fn delete_storageclass(
 
     Ok(StatusCode::NO_CONTENT)
 }
+
+// Use the macro to create a PATCH handler
+crate::patch_handler_cluster!(patch_storageclass, StorageClass, "storageclasses", "storage.k8s.io");
