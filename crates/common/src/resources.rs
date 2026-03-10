@@ -15,7 +15,9 @@ pub use pod::{
     VolumeMount, Volume, Affinity, NodeAffinity, PodAffinity, PodAntiAffinity, Toleration,
     NodeSelector, NodeSelectorTerm, NodeSelectorRequirement, PreferredSchedulingTerm,
     PodAffinityTerm, WeightedPodAffinityTerm, Probe, HTTPGetAction, TCPSocketAction,
-    ExecAction, HTTPHeader, EnvVar,
+    ExecAction, HTTPHeader, EnvVar, EnvVarSource, ConfigMapKeySelector, SecretKeySelector,
+    EmptyDirVolumeSource, HostPathVolumeSource, ConfigMapVolumeSource, SecretVolumeSource,
+    PersistentVolumeClaimVolumeSource,
 };
 pub use service::{Service, ServiceSpec, ServicePort, ServiceType};
 pub use deployment::{Deployment, DeploymentSpec, DeploymentStatus};

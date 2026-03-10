@@ -47,6 +47,28 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::service::update)
                 .delete(handlers::service::delete_service),
         )
+        // ConfigMaps
+        .route(
+            "/api/v1/namespaces/:namespace/configmaps",
+            get(handlers::configmap::list).post(handlers::configmap::create),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/configmaps/:name",
+            get(handlers::configmap::get)
+                .put(handlers::configmap::update)
+                .delete(handlers::configmap::delete_configmap),
+        )
+        // Secrets
+        .route(
+            "/api/v1/namespaces/:namespace/secrets",
+            get(handlers::secret::list).post(handlers::secret::create),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/secrets/:name",
+            get(handlers::secret::get)
+                .put(handlers::secret::update)
+                .delete(handlers::secret::delete_secret),
+        )
         // Nodes
         .route(
             "/api/v1/nodes",
@@ -68,6 +90,28 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             get(handlers::deployment::get)
                 .put(handlers::deployment::update)
                 .delete(handlers::deployment::delete_deployment),
+        )
+        // Apps v1 API - StatefulSets
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/statefulsets",
+            get(handlers::statefulset::list).post(handlers::statefulset::create),
+        )
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/statefulsets/:name",
+            get(handlers::statefulset::get)
+                .put(handlers::statefulset::update)
+                .delete(handlers::statefulset::delete_statefulset),
+        )
+        // Apps v1 API - DaemonSets
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/daemonsets",
+            get(handlers::daemonset::list).post(handlers::daemonset::create),
+        )
+        .route(
+            "/apis/apps/v1/namespaces/:namespace/daemonsets/:name",
+            get(handlers::daemonset::get)
+                .put(handlers::daemonset::update)
+                .delete(handlers::daemonset::delete_daemonset),
         )
         // Batch v1 API - Jobs
         .route(
@@ -178,6 +222,17 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             get(handlers::storageclass::get_storageclass)
                 .put(handlers::storageclass::update_storageclass)
                 .delete(handlers::storageclass::delete_storageclass),
+        )
+        // Networking v1 API - Ingresses
+        .route(
+            "/apis/networking.k8s.io/v1/namespaces/:namespace/ingresses",
+            get(handlers::ingress::list).post(handlers::ingress::create),
+        )
+        .route(
+            "/apis/networking.k8s.io/v1/namespaces/:namespace/ingresses/:name",
+            get(handlers::ingress::get)
+                .put(handlers::ingress::update)
+                .delete(handlers::ingress::delete_ingress),
         );
 
     // Conditionally apply authentication middleware

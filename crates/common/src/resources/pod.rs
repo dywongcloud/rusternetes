@@ -160,6 +160,7 @@ pub struct SecretKeySelector {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VolumeMount {
     pub name: String,
     pub mount_path: String,
@@ -172,6 +173,7 @@ pub struct VolumeMount {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Volume {
     pub name: String,
 
@@ -186,6 +188,9 @@ pub struct Volume {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secret: Option<SecretVolumeSource>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub persistent_volume_claim: Option<PersistentVolumeClaimVolumeSource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,6 +215,15 @@ pub struct ConfigMapVolumeSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretVolumeSource {
     pub secret_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistentVolumeClaimVolumeSource {
+    pub claim_name: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_only: Option<bool>,
 }
 
 /// PodStatus represents the current state of a pod
@@ -484,4 +498,73 @@ pub struct TCPSocketAction {
 pub struct ExecAction {
     /// Command to execute
     pub command: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pod_with_pvc_volume_serialization() {
+        let json = r#"{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "test-pod",
+    "namespace": "default"
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "test-container",
+        "image": "nginx:latest",
+        "volumeMounts": [
+          {
+            "name": "test-volume",
+            "mountPath": "/data"
+          }
+        ]
+      }
+    ],
+    "volumes": [
+      {
+        "name": "test-volume",
+        "persistentVolumeClaim": {
+          "claimName": "test-pvc"
+        }
+      }
+    ]
+  }
+}"#;
+
+        // Test deserialization
+        let pod: Pod = serde_json::from_str(json).expect("Failed to deserialize Pod");
+
+        assert_eq!(pod.metadata.name, "test-pod");
+        assert_eq!(pod.spec.containers.len(), 1);
+        assert_eq!(pod.spec.containers[0].name, "test-container");
+
+        // Check volumes
+        assert!(pod.spec.volumes.is_some(), "volumes should be Some");
+        let volumes = pod.spec.volumes.as_ref().unwrap();
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].name, "test-volume");
+        assert!(volumes[0].persistent_volume_claim.is_some(), "persistent_volume_claim should be Some");
+        assert_eq!(volumes[0].persistent_volume_claim.as_ref().unwrap().claim_name, "test-pvc");
+
+        // Check volume mounts
+        assert!(pod.spec.containers[0].volume_mounts.is_some(), "volume_mounts should be Some");
+        let mounts = pod.spec.containers[0].volume_mounts.as_ref().unwrap();
+        assert_eq!(mounts.len(), 1);
+        assert_eq!(mounts[0].name, "test-volume");
+        assert_eq!(mounts[0].mount_path, "/data");
+
+        // Test serialization
+        let serialized = serde_json::to_string_pretty(&pod).expect("Failed to serialize Pod");
+        
+        // Verify round-trip
+        let pod2: Pod = serde_json::from_str(&serialized).expect("Failed to deserialize serialized Pod");
+        assert!(pod2.spec.volumes.is_some());
+        assert_eq!(pod2.spec.volumes.as_ref().unwrap()[0].name, "test-volume");
+    }
 }

@@ -11,3 +11,8 @@ pub mod rbac;
 pub mod persistentvolume;
 pub mod persistentvolumeclaim;
 pub mod storageclass;
+pub mod configmap;
+pub mod secret;
+pub mod statefulset;
+pub mod daemonset;
+pub mod ingress;

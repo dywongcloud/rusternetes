@@ -1,4 +1,5 @@
 use crate::types::{ObjectMeta, TypeMeta};
+use crate::resources::service_account::ObjectReference;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -46,6 +47,10 @@ pub struct PersistentVolumeSpec {
     /// Node affinity
     #[serde(skip_serializing_if = "Option::is_none")]
     pub node_affinity: Option<VolumeNodeAffinity>,
+
+    /// Claim reference (binding to a PVC)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claim_ref: Option<ObjectReference>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -368,6 +373,7 @@ mod tests {
                 mount_options: None,
                 volume_mode: Some(PersistentVolumeMode::Filesystem),
                 node_affinity: None,
+                claim_ref: None,
             },
             status: Some(PersistentVolumeStatus {
                 phase: PersistentVolumePhase::Available,

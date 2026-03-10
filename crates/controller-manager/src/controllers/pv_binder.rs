@@ -1,0 +1,228 @@
+use anyhow::Result;
+use rusternetes_common::resources::{
+    PersistentVolume, PersistentVolumeClaim, PersistentVolumeClaimStatus, PersistentVolumeStatus,
+};
+use rusternetes_common::resources::volume::{PersistentVolumeClaimPhase, PersistentVolumePhase};
+use rusternetes_storage::{build_key, etcd::EtcdStorage, Storage};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::time;
+use tracing::{error, info};
+
+pub struct PVBinderController {
+    storage: Arc<EtcdStorage>,
+}
+
+impl PVBinderController {
+    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+        Self { storage }
+    }
+
+    pub async fn run(&self) -> Result<()> {
+        info!("Starting PV/PVC Binder Controller");
+
+        loop {
+            if let Err(e) = self.reconcile_all().await {
+                error!("Error in PV/PVC binder reconciliation loop: {}", e);
+            }
+            time::sleep(Duration::from_secs(5)).await;
+        }
+    }
+
+    async fn reconcile_all(&self) -> Result<()> {
+        // Get all PVCs
+        let pvcs: Vec<PersistentVolumeClaim> = self
+            .storage
+            .list("/registry/persistentvolumeclaims/")
+            .await?;
+
+        for mut pvc in pvcs {
+            if let Err(e) = self.bind_pvc(&mut pvc).await {
+                error!(
+                    "Failed to bind PVC {}: {}",
+                    pvc.metadata.name, e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn bind_pvc(&self, pvc: &mut PersistentVolumeClaim) -> Result<()> {
+        let pvc_name = &pvc.metadata.name;
+        let namespace = pvc.metadata.namespace.as_deref().unwrap_or("default");
+
+        // Skip if already bound
+        if pvc.spec.volume_name.is_some() {
+            return Ok(());
+        }
+
+        let pvc_spec = &pvc.spec;
+
+        info!("Looking for PV to bind to PVC {}/{}", namespace, pvc_name);
+        info!("PVC requirements: storage_class={:?}, capacity={:?}, access_modes={:?}",
+            pvc_spec.storage_class_name,
+            pvc_spec.resources.requests.as_ref().and_then(|r| r.get("storage")),
+            pvc_spec.access_modes);
+
+        // Get all available PVs
+        let pvs: Vec<PersistentVolume> = self
+            .storage
+            .list("/registry/persistentvolumes/")
+            .await?;
+
+        info!("Found {} PVs to check for binding", pvs.len());
+
+        // Find a matching available PV
+        for mut pv in pvs {
+            info!("Checking PV {} (storage_class={:?}, capacity={:?}, access_modes={:?}, claim_ref={:?})",
+                pv.metadata.name,
+                pv.spec.storage_class_name,
+                pv.spec.capacity,
+                pv.spec.access_modes,
+                pv.spec.claim_ref.is_some());
+
+            // Skip if PV is already bound
+            if pv.spec.claim_ref.is_some() {
+                continue;
+            }
+
+            // Check if PV matches PVC requirements
+            let matches = self.pv_matches_pvc(&pv.spec, pvc_spec);
+            info!("PV {} matches PVC requirements: {}", pv.metadata.name, matches);
+            if !matches {
+                continue;
+            }
+
+            info!("Binding PVC {}/{} to PV {}", namespace, pvc_name, pv.metadata.name);
+
+            // Clone values we need before mutating pv
+            let pv_access_modes = pv.spec.access_modes.clone();
+            let pv_capacity = pv.spec.capacity.clone();
+            let pv_name = pv.metadata.name.clone();
+
+            // Bind PV to PVC
+            pv.spec.claim_ref = Some(rusternetes_common::resources::service_account::ObjectReference {
+                kind: Some("PersistentVolumeClaim".to_string()),
+                namespace: Some(namespace.to_string()),
+                name: Some(pvc_name.to_string()),
+                uid: Some(pvc.metadata.uid.clone()),
+                api_version: Some("v1".to_string()),
+                resource_version: None,
+                field_path: None,
+            });
+
+            // Update PV status to Bound
+            pv.status = Some(PersistentVolumeStatus {
+                phase: PersistentVolumePhase::Bound,
+                message: None,
+                reason: None,
+            });
+
+            let pv_key = build_key("persistentvolumes", None, &pv_name);
+            self.storage.update(&pv_key, &pv).await?;
+
+            // Bind PVC to PV
+            pvc.spec.volume_name = Some(pv_name.clone());
+
+            // Update PVC status to Bound
+            pvc.status = Some(PersistentVolumeClaimStatus {
+                phase: PersistentVolumeClaimPhase::Bound,
+                access_modes: Some(pv_access_modes),
+                capacity: Some(pv_capacity),
+                conditions: None,
+            });
+
+            let pvc_key = build_key("persistentvolumeclaims", Some(namespace), pvc_name);
+            self.storage.update(&pvc_key, pvc).await?;
+
+            info!("Successfully bound PVC {}/{} to PV {}", namespace, pvc_name, pv.metadata.name);
+            return Ok(());
+        }
+
+        info!("No matching PV found for PVC {}/{}", namespace, pvc_name);
+        Ok(())
+    }
+
+    /// Check if a PV matches the requirements of a PVC
+    fn pv_matches_pvc(
+        &self,
+        pv_spec: &rusternetes_common::resources::PersistentVolumeSpec,
+        pvc_spec: &rusternetes_common::resources::PersistentVolumeClaimSpec,
+    ) -> bool {
+        // Check storage class match
+        if let (Some(pv_class), Some(pvc_class)) = (&pv_spec.storage_class_name, &pvc_spec.storage_class_name) {
+            if pv_class != pvc_class {
+                return false;
+            }
+        }
+
+        // Check capacity
+        if let (Some(pv_storage), Some(pvc_storage)) = (
+            pv_spec.capacity.get("storage"),
+            pvc_spec.resources.requests.as_ref().and_then(|r| r.get("storage"))
+        ) {
+            // Simple string comparison - in real Kubernetes, this would parse quantities
+            // For now, we'll just check if PV storage >= PVC storage
+            if !self.storage_sufficient(pv_storage, pvc_storage) {
+                return false;
+            }
+        }
+
+        // Check access modes - PV must support all modes requested by PVC
+        for pvc_mode in &pvc_spec.access_modes {
+            if !pv_spec.access_modes.contains(pvc_mode) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Check if PV storage is sufficient for PVC
+    /// This is a simple string comparison for now
+    fn storage_sufficient(&self, pv_storage: &str, pvc_storage: &str) -> bool {
+        // Parse the numeric part and unit from storage strings like "10Gi", "5Gi"
+        let parse_storage = |s: &str| -> Option<(f64, String)> {
+            let numeric_end = s.chars().position(|c| !c.is_numeric() && c != '.')?;
+            let (num_str, unit) = s.split_at(numeric_end);
+            let num = num_str.parse::<f64>().ok()?;
+            Some((num, unit.to_string()))
+        };
+
+        match (parse_storage(pv_storage), parse_storage(pvc_storage)) {
+            (Some((pv_num, pv_unit)), Some((pvc_num, pvc_unit))) => {
+                // Units must match
+                if pv_unit != pvc_unit {
+                    info!("Storage units don't match: PV has {}, PVC needs {}", pv_unit, pvc_unit);
+                    return false;
+                }
+                // PV must have at least as much storage as PVC
+                let sufficient = pv_num >= pvc_num;
+                info!("Storage comparison: PV has {}{}, PVC needs {}{} -> sufficient: {}",
+                    pv_num, pv_unit, pvc_num, pvc_unit, sufficient);
+                sufficient
+            }
+            _ => {
+                info!("Failed to parse storage values: PV='{}', PVC='{}'", pv_storage, pvc_storage);
+                // Fall back to string comparison if parsing fails
+                pv_storage >= pvc_storage
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_storage_comparison() {
+        let controller = PVBinderController {
+            storage: Arc::new(unsafe { std::mem::zeroed() }), // Only for testing
+        };
+
+        assert!(controller.storage_sufficient("10Gi", "5Gi"));
+        assert!(controller.storage_sufficient("10Gi", "10Gi"));
+    }
+}

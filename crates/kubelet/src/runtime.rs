@@ -9,22 +9,31 @@ use bollard::Docker;
 use chrono::Utc;
 use futures_util::StreamExt;
 use rusternetes_common::resources::{
-    Container, ContainerState, ContainerStatus, ExecAction, HTTPGetAction, Pod, Probe,
-    TCPSocketAction,
+    ConfigMap, Container, ContainerState, ContainerStatus, ExecAction, HTTPGetAction,
+    PersistentVolume, PersistentVolumeClaim, Pod, Probe, Secret, TCPSocketAction,
 };
+use rusternetes_common::resources::volume::PersistentVolumeSource;
+use rusternetes_storage::{build_key, Storage};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 /// ContainerRuntime manages containers using Docker/Podman
 pub struct ContainerRuntime {
     docker: Docker,
+    storage: Option<Arc<rusternetes_storage::etcd::EtcdStorage>>,
 }
 
 impl ContainerRuntime {
     pub async fn new() -> Result<Self> {
         let docker = Docker::connect_with_local_defaults()?;
-        Ok(Self { docker })
+        Ok(Self { docker, storage: None })
+    }
+
+    pub fn with_storage(mut self, storage: Arc<rusternetes_storage::etcd::EtcdStorage>) -> Self {
+        self.storage = Some(storage);
+        self
     }
 
     /// Pull an image if necessary based on the pull policy
@@ -132,6 +141,7 @@ impl ContainerRuntime {
     /// Create a single volume and return its host path
     async fn create_volume(&self, pod: &Pod, volume: &rusternetes_common::resources::Volume) -> Result<String> {
         let pod_name = &pod.metadata.name;
+        let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
 
         // EmptyDir: create a temporary directory
         if volume.empty_dir.is_some() {
@@ -156,11 +166,93 @@ impl ContainerRuntime {
             return Ok(path);
         }
 
-        // ConfigMap and Secret volumes would be implemented here
-        // For now, we'll skip them
-        if volume.config_map.is_some() || volume.secret.is_some() {
-            warn!("ConfigMap and Secret volumes are not yet implemented");
-            return Err(anyhow::anyhow!("ConfigMap/Secret volumes not yet supported"));
+        // ConfigMap: mount configmap data as files
+        if let Some(configmap_source) = &volume.config_map {
+            let storage = self.storage.as_ref()
+                .context("Storage not available for ConfigMap volumes")?;
+
+            let key = build_key("configmaps", Some(namespace), &configmap_source.name);
+            let configmap: ConfigMap = storage.get(&key).await
+                .with_context(|| format!("ConfigMap {} not found in namespace {}", configmap_source.name, namespace))?;
+
+            // Create volume directory
+            let volume_dir = format!("/tmp/rusternetes/volumes/{}/{}", pod_name, volume.name);
+            std::fs::create_dir_all(&volume_dir)
+                .context("Failed to create ConfigMap volume directory")?;
+
+            // Write each key as a file
+            if let Some(data) = &configmap.data {
+                for (key, value) in data {
+                    let file_path = format!("{}/{}", volume_dir, key);
+                    std::fs::write(&file_path, value)
+                        .with_context(|| format!("Failed to write ConfigMap key {} to file", key))?;
+                    info!("Wrote ConfigMap key {} to {}", key, file_path);
+                }
+            }
+
+            info!("Created ConfigMap volume {} at {}", volume.name, volume_dir);
+            return Ok(volume_dir);
+        }
+
+        // Secret: mount secret data as files
+        if let Some(secret_source) = &volume.secret {
+            let storage = self.storage.as_ref()
+                .context("Storage not available for Secret volumes")?;
+
+            let key = build_key("secrets", Some(namespace), &secret_source.secret_name);
+            let secret: Secret = storage.get(&key).await
+                .with_context(|| format!("Secret {} not found in namespace {}", secret_source.secret_name, namespace))?;
+
+            // Create volume directory
+            let volume_dir = format!("/tmp/rusternetes/volumes/{}/{}", pod_name, volume.name);
+            std::fs::create_dir_all(&volume_dir)
+                .context("Failed to create Secret volume directory")?;
+
+            // Write each key as a file
+            if let Some(data) = &secret.data {
+                for (key, value) in data {
+                    let file_path = format!("{}/{}", volume_dir, key);
+                    std::fs::write(&file_path, value)
+                        .with_context(|| format!("Failed to write Secret key {} to file", key))?;
+                    // Set restrictive permissions on secret files
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o600))?;
+                    }
+                    info!("Wrote Secret key {} to {}", key, file_path);
+                }
+            }
+
+            info!("Created Secret volume {} at {}", volume.name, volume_dir);
+            return Ok(volume_dir);
+        }
+
+        // PersistentVolumeClaim: find bound PV and use its path
+        if let Some(pvc_source) = &volume.persistent_volume_claim {
+            let storage = self.storage.as_ref()
+                .context("Storage not available for PersistentVolumeClaim volumes")?;
+
+            let pvc_key = build_key("persistentvolumeclaims", Some(namespace), &pvc_source.claim_name);
+            let pvc: PersistentVolumeClaim = storage.get(&pvc_key).await
+                .with_context(|| format!("PersistentVolumeClaim {} not found in namespace {}", pvc_source.claim_name, namespace))?;
+
+            // Get the bound PV name
+            let pv_name = pvc.spec.volume_name.as_ref()
+                .context("PersistentVolumeClaim is not bound to a volume")?;
+
+            // Get the PV
+            let pv_key = build_key("persistentvolumes", None, pv_name);
+            let pv: PersistentVolume = storage.get(&pv_key).await
+                .with_context(|| format!("PersistentVolume {} not found", pv_name))?;
+
+            // Get the host path from the PV
+            let path = match &pv.spec.volume_source {
+                PersistentVolumeSource::HostPath(hp) => hp.path.clone(),
+                _ => return Err(anyhow::anyhow!("PersistentVolume does not have a hostPath volume source")),
+            };
+            info!("Using PersistentVolumeClaim volume {} backed by PV {} at {}", volume.name, pv_name, path);
+            return Ok(path);
         }
 
         Err(anyhow::anyhow!("Unknown volume type for volume {}", volume.name))
@@ -194,12 +286,51 @@ impl ContainerRuntime {
         }
 
         // Build environment variables
-        let env: Option<Vec<String>> = container.env.as_ref().map(|env_vars| {
-            env_vars
-                .iter()
-                .filter_map(|e| e.value.as_ref().map(|v| format!("{}={}", e.name, v)))
-                .collect()
-        });
+        let env: Option<Vec<String>> = if let Some(env_vars) = &container.env {
+            let mut env_list = Vec::new();
+            let namespace = pod_name.split('_').next().unwrap_or("default");
+
+            for env_var in env_vars {
+                // Direct value
+                if let Some(value) = &env_var.value {
+                    env_list.push(format!("{}={}", env_var.name, value));
+                    continue;
+                }
+
+                // Value from ConfigMap or Secret
+                if let Some(value_from) = &env_var.value_from {
+                    // ConfigMap reference
+                    if let Some(configmap_ref) = &value_from.config_map_key_ref {
+                        match self.get_configmap_value(namespace, &configmap_ref.name, &configmap_ref.key).await {
+                            Ok(value) => {
+                                env_list.push(format!("{}={}", env_var.name, value));
+                            }
+                            Err(e) => {
+                                warn!("Failed to get ConfigMap value for {}: {}", env_var.name, e);
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Secret reference
+                    if let Some(secret_ref) = &value_from.secret_key_ref {
+                        match self.get_secret_value(namespace, &secret_ref.name, &secret_ref.key).await {
+                            Ok(value) => {
+                                env_list.push(format!("{}={}", env_var.name, value));
+                            }
+                            Err(e) => {
+                                warn!("Failed to get Secret value for {}: {}", env_var.name, e);
+                            }
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            Some(env_list)
+        } else {
+            None
+        };
 
         // Build port bindings
         let mut exposed_ports = HashMap::new();
@@ -650,6 +781,38 @@ impl ContainerRuntime {
         }
 
         Ok(None)
+    }
+
+    /// Get a value from a ConfigMap
+    async fn get_configmap_value(&self, namespace: &str, name: &str, key: &str) -> Result<String> {
+        let storage = self.storage.as_ref()
+            .context("Storage not available")?;
+
+        let configmap_key = build_key("configmaps", Some(namespace), name);
+        let configmap: ConfigMap = storage.get(&configmap_key).await
+            .with_context(|| format!("ConfigMap {} not found in namespace {}", name, namespace))?;
+
+        configmap.data
+            .as_ref()
+            .and_then(|data| data.get(key))
+            .cloned()
+            .with_context(|| format!("Key {} not found in ConfigMap {}", key, name))
+    }
+
+    /// Get a value from a Secret
+    async fn get_secret_value(&self, namespace: &str, name: &str, key: &str) -> Result<String> {
+        let storage = self.storage.as_ref()
+            .context("Storage not available")?;
+
+        let secret_key = build_key("secrets", Some(namespace), name);
+        let secret: Secret = storage.get(&secret_key).await
+            .with_context(|| format!("Secret {} not found in namespace {}", name, namespace))?;
+
+        secret.data
+            .as_ref()
+            .and_then(|data| data.get(key))
+            .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+            .with_context(|| format!("Key {} not found in Secret {}", key, name))
     }
 
     /// List all running pod names from the container runtime

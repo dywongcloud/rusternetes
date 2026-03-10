@@ -21,7 +21,7 @@ impl Kubelet {
         storage: Arc<EtcdStorage>,
         sync_interval_secs: u64,
     ) -> Result<Self> {
-        let runtime = ContainerRuntime::new().await?;
+        let runtime = ContainerRuntime::new().await?.with_storage(storage.clone());
 
         Ok(Self {
             node_name,

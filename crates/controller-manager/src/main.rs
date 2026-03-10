@@ -8,6 +8,7 @@ use controllers::{
     daemonset::DaemonSetController,
     job::JobController,
     cronjob::CronJobController,
+    pv_binder::PVBinderController,
 };
 use rusternetes_storage::etcd::EtcdStorage;
 use std::sync::Arc;
@@ -95,6 +96,14 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         if let Err(e) = cronjob_controller.run().await {
             tracing::error!("CronJob controller error: {}", e);
+        }
+    });
+
+    // Start PV/PVC Binder controller
+    let pv_binder_controller = PVBinderController::new(storage.clone());
+    tokio::spawn(async move {
+        if let Err(e) = pv_binder_controller.run().await {
+            tracing::error!("PV/PVC Binder controller error: {}", e);
         }
     });
 

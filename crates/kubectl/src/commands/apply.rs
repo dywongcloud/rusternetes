@@ -1,6 +1,6 @@
 use crate::client::ApiClient;
 use anyhow::{Context, Result};
-use rusternetes_common::resources::{Deployment, Namespace, Node, Pod, Service, Job, CronJob};
+use rusternetes_common::resources::{Deployment, Namespace, Node, Pod, Service, Job, CronJob, PersistentVolume, PersistentVolumeClaim};
 use std::fs;
 
 pub async fn execute(client: &ApiClient, file: &str) -> Result<()> {
@@ -113,6 +113,34 @@ pub async fn execute(client: &ApiClient, file: &str) -> Result<()> {
                 )
                 .await?;
             println!("CronJob '{}' applied", cronjob.metadata.name);
+        }
+        "PersistentVolume" => {
+            let mut pv: PersistentVolume = serde_yaml::from_str(&contents)?;
+            pv.metadata.ensure_uid();
+            pv.metadata.ensure_creation_timestamp();
+            let _result: PersistentVolume = client
+                .put(
+                    &format!("/api/v1/persistentvolumes/{}", pv.metadata.name),
+                    &pv,
+                )
+                .await?;
+            println!("PersistentVolume '{}' applied", pv.metadata.name);
+        }
+        "PersistentVolumeClaim" => {
+            let mut pvc: PersistentVolumeClaim = serde_yaml::from_str(&contents)?;
+            pvc.metadata.ensure_uid();
+            pvc.metadata.ensure_creation_timestamp();
+            let namespace = pvc.metadata.namespace.as_deref().unwrap_or("default");
+            let _result: PersistentVolumeClaim = client
+                .put(
+                    &format!(
+                        "/api/v1/namespaces/{}/persistentvolumeclaims/{}",
+                        namespace, pvc.metadata.name
+                    ),
+                    &pvc,
+                )
+                .await?;
+            println!("PersistentVolumeClaim '{}' applied", pvc.metadata.name);
         }
         _ => anyhow::bail!("Unsupported resource kind: {}", kind),
     }

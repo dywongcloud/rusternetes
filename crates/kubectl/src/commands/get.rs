@@ -1,6 +1,6 @@
 use crate::client::ApiClient;
 use anyhow::Result;
-use rusternetes_common::resources::{Deployment, Namespace, Node, Pod, Service};
+use rusternetes_common::resources::{Deployment, Namespace, Node, Pod, Service, PersistentVolume, PersistentVolumeClaim};
 
 pub async fn execute(
     client: &ApiClient,
@@ -70,6 +70,24 @@ pub async fn execute(
             } else {
                 let namespaces: Vec<Namespace> = client.get("/api/v1/namespaces").await?;
                 print_namespaces(&namespaces);
+            }
+        }
+        "persistentvolume" | "persistentvolumes" | "pv" => {
+            if let Some(name) = name {
+                let pv: PersistentVolume = client.get(&format!("/api/v1/persistentvolumes/{}", name)).await?;
+                println!("{}", serde_json::to_string_pretty(&pv)?);
+            } else {
+                let pvs: Vec<PersistentVolume> = client.get("/api/v1/persistentvolumes").await?;
+                print_pvs(&pvs);
+            }
+        }
+        "persistentvolumeclaim" | "persistentvolumeclaims" | "pvc" => {
+            if let Some(name) = name {
+                let pvc: PersistentVolumeClaim = client.get(&format!("/api/v1/namespaces/{}/persistentvolumeclaims/{}", ns, name)).await?;
+                println!("{}", serde_json::to_string_pretty(&pvc)?);
+            } else {
+                let pvcs: Vec<PersistentVolumeClaim> = client.get(&format!("/api/v1/namespaces/{}/persistentvolumeclaims", ns)).await?;
+                print_pvcs(&pvcs);
             }
         }
         _ => anyhow::bail!("Unknown resource type: {}", resource_type),
@@ -158,5 +176,42 @@ fn print_namespaces(namespaces: &[Namespace]) {
             .map(|s| format!("{:?}", s.phase))
             .unwrap_or_else(|| "Unknown".to_string());
         println!("{:<30} {:<15}", namespace.metadata.name, status);
+    }
+}
+
+fn print_pvs(pvs: &[PersistentVolume]) {
+    println!("{:<30} {:<15} {:<20} {:<15}", "NAME", "CAPACITY", "ACCESS MODES", "STATUS");
+    for pv in pvs {
+        let capacity = pv.spec.capacity.get("storage")
+            .map(|s| s.as_str())
+            .unwrap_or("<none>");
+        let access_modes = pv.spec.access_modes.iter()
+            .map(|m| format!("{:?}", m))
+            .collect::<Vec<_>>()
+            .join(",");
+        let status = pv.status.as_ref()
+            .map(|s| format!("{:?}", s.phase))
+            .unwrap_or_else(|| "Unknown".to_string());
+        println!("{:<30} {:<15} {:<20} {:<15}", pv.metadata.name, capacity, access_modes, status);
+    }
+}
+
+fn print_pvcs(pvcs: &[PersistentVolumeClaim]) {
+    println!("{:<30} {:<15} {:<20} {:<20} {:<15}", "NAME", "STATUS", "VOLUME", "CAPACITY", "ACCESS MODES");
+    for pvc in pvcs {
+        let status = pvc.status.as_ref()
+            .map(|s| format!("{:?}", s.phase))
+            .unwrap_or_else(|| "Unknown".to_string());
+        let volume = pvc.spec.volume_name.as_deref().unwrap_or("<none>");
+        let capacity = pvc.status.as_ref()
+            .and_then(|s| s.capacity.as_ref())
+            .and_then(|c| c.get("storage"))
+            .map(|s| s.as_str())
+            .unwrap_or("<none>");
+        let access_modes = pvc.spec.access_modes.iter()
+            .map(|m| format!("{:?}", m))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!("{:<30} {:<15} {:<20} {:<20} {:<15}", pvc.metadata.name, status, volume, capacity, access_modes);
     }
 }
