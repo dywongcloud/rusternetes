@@ -1,6 +1,6 @@
 use crate::client::ApiClient;
 use anyhow::{Context, Result};
-use rusternetes_common::resources::{Deployment, Namespace, Node, Pod, Service};
+use rusternetes_common::resources::{Deployment, Namespace, Node, Pod, Service, StorageClass};
 use std::fs;
 
 pub async fn execute(client: &ApiClient, file: &str) -> Result<()> {
@@ -53,6 +53,13 @@ pub async fn execute(client: &ApiClient, file: &str) -> Result<()> {
             let namespace: Namespace = serde_yaml::from_str(&contents)?;
             let _result: Namespace = client.post("/api/v1/namespaces", &namespace).await?;
             println!("Namespace '{}' created", namespace.metadata.name);
+        }
+        "StorageClass" => {
+            let sc: StorageClass = serde_yaml::from_str(&contents)?;
+            let _result: StorageClass = client
+                .post("/apis/storage.k8s.io/v1/storageclasses", &sc)
+                .await?;
+            println!("StorageClass '{}' created", sc.metadata.name);
         }
         _ => anyhow::bail!("Unsupported resource kind: {}", kind),
     }
