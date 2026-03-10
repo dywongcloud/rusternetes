@@ -1,4 +1,4 @@
-use crate::client::ApiClient;
+use crate::client::{ApiClient, GetError};
 use anyhow::Result;
 use rusternetes_common::resources::{
     Deployment, Namespace, Node, Pod, Service, PersistentVolume, PersistentVolumeClaim,
@@ -7,6 +7,14 @@ use rusternetes_common::resources::{
     ResourceQuota, LimitRange, PriorityClass, CustomResourceDefinition,
 };
 use serde::Serialize;
+
+// Helper to convert GetError to anyhow::Error
+fn map_get_error(err: GetError) -> anyhow::Error {
+    match err {
+        GetError::NotFound => anyhow::anyhow!("Resource not found"),
+        GetError::Other(e) => e,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum OutputFormat {
@@ -59,12 +67,14 @@ pub async fn execute(
             if let Some(name) = name {
                 let pod: Pod = client
                     .get(&format!("/api/v1/namespaces/{}/pods/{}", ns, name))
-                    .await?;
+                    .await
+                    .map_err(map_get_error)?;
                 format_output(&pod, format)?;
             } else {
                 let pods: Vec<Pod> = client
                     .get(&format!("/api/v1/namespaces/{}/pods", ns))
-                    .await?;
+                    .await
+                    .map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => print_pods(&pods),
                     OutputFormat::Json => format_output(&pods, format)?,
@@ -76,12 +86,14 @@ pub async fn execute(
             if let Some(name) = name {
                 let service: Service = client
                     .get(&format!("/api/v1/namespaces/{}/services/{}", ns, name))
-                    .await?;
+                    .await
+                    .map_err(map_get_error)?;
                 format_output(&service, format)?;
             } else {
                 let services: Vec<Service> = client
                     .get(&format!("/api/v1/namespaces/{}/services", ns))
-                    .await?;
+                    .await
+                    .map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => print_services(&services),
                     OutputFormat::Json => format_output(&services, format)?,
@@ -93,12 +105,14 @@ pub async fn execute(
             if let Some(name) = name {
                 let deployment: Deployment = client
                     .get(&format!("/apis/apps/v1/namespaces/{}/deployments/{}", ns, name))
-                    .await?;
+                    .await
+                    .map_err(map_get_error)?;
                 format_output(&deployment, format)?;
             } else {
                 let deployments: Vec<Deployment> = client
                     .get(&format!("/apis/apps/v1/namespaces/{}/deployments", ns))
-                    .await?;
+                    .await
+                    .map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => print_deployments(&deployments),
                     OutputFormat::Json => format_output(&deployments, format)?,
@@ -110,12 +124,14 @@ pub async fn execute(
             if let Some(name) = name {
                 let statefulset: StatefulSet = client
                     .get(&format!("/apis/apps/v1/namespaces/{}/statefulsets/{}", ns, name))
-                    .await?;
+                    .await
+                    .map_err(map_get_error)?;
                 format_output(&statefulset, format)?;
             } else {
                 let statefulsets: Vec<StatefulSet> = client
                     .get(&format!("/apis/apps/v1/namespaces/{}/statefulsets", ns))
-                    .await?;
+                    .await
+                    .map_err(map_get_error)?;
                 format_output(&statefulsets, format)?;
             }
         }
@@ -123,21 +139,23 @@ pub async fn execute(
             if let Some(name) = name {
                 let daemonset: DaemonSet = client
                     .get(&format!("/apis/apps/v1/namespaces/{}/daemonsets/{}", ns, name))
-                    .await?;
+                    .await
+                    .map_err(map_get_error)?;
                 format_output(&daemonset, format)?;
             } else {
                 let daemonsets: Vec<DaemonSet> = client
                     .get(&format!("/apis/apps/v1/namespaces/{}/daemonsets", ns))
-                    .await?;
+                    .await
+                    .map_err(map_get_error)?;
                 format_output(&daemonsets, format)?;
             }
         }
         "node" | "nodes" => {
             if let Some(name) = name {
-                let node: Node = client.get(&format!("/api/v1/nodes/{}", name)).await?;
+                let node: Node = client.get(&format!("/api/v1/nodes/{}", name)).await.map_err(map_get_error)?;
                 format_output(&node, format)?;
             } else {
-                let nodes: Vec<Node> = client.get("/api/v1/nodes").await?;
+                let nodes: Vec<Node> = client.get("/api/v1/nodes").await.map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => print_nodes(&nodes),
                     OutputFormat::Json => format_output(&nodes, format)?,
@@ -147,10 +165,10 @@ pub async fn execute(
         }
         "namespace" | "namespaces" | "ns" => {
             if let Some(name) = name {
-                let namespace: Namespace = client.get(&format!("/api/v1/namespaces/{}", name)).await?;
+                let namespace: Namespace = client.get(&format!("/api/v1/namespaces/{}", name)).await.map_err(map_get_error)?;
                 format_output(&namespace, format)?;
             } else {
-                let namespaces: Vec<Namespace> = client.get("/api/v1/namespaces").await?;
+                let namespaces: Vec<Namespace> = client.get("/api/v1/namespaces").await.map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => print_namespaces(&namespaces),
                     OutputFormat::Json => format_output(&namespaces, format)?,
@@ -160,10 +178,10 @@ pub async fn execute(
         }
         "persistentvolume" | "persistentvolumes" | "pv" => {
             if let Some(name) = name {
-                let pv: PersistentVolume = client.get(&format!("/api/v1/persistentvolumes/{}", name)).await?;
+                let pv: PersistentVolume = client.get(&format!("/api/v1/persistentvolumes/{}", name)).await.map_err(map_get_error)?;
                 format_output(&pv, format)?;
             } else {
-                let pvs: Vec<PersistentVolume> = client.get("/api/v1/persistentvolumes").await?;
+                let pvs: Vec<PersistentVolume> = client.get("/api/v1/persistentvolumes").await.map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => print_pvs(&pvs),
                     OutputFormat::Json => format_output(&pvs, format)?,
@@ -173,10 +191,10 @@ pub async fn execute(
         }
         "persistentvolumeclaim" | "persistentvolumeclaims" | "pvc" => {
             if let Some(name) = name {
-                let pvc: PersistentVolumeClaim = client.get(&format!("/api/v1/namespaces/{}/persistentvolumeclaims/{}", ns, name)).await?;
+                let pvc: PersistentVolumeClaim = client.get(&format!("/api/v1/namespaces/{}/persistentvolumeclaims/{}", ns, name)).await.map_err(map_get_error)?;
                 format_output(&pvc, format)?;
             } else {
-                let pvcs: Vec<PersistentVolumeClaim> = client.get(&format!("/api/v1/namespaces/{}/persistentvolumeclaims", ns)).await?;
+                let pvcs: Vec<PersistentVolumeClaim> = client.get(&format!("/api/v1/namespaces/{}/persistentvolumeclaims", ns)).await.map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => print_pvcs(&pvcs),
                     OutputFormat::Json => format_output(&pvcs, format)?,
@@ -186,145 +204,145 @@ pub async fn execute(
         }
         "storageclass" | "storageclasses" | "sc" => {
             if let Some(name) = name {
-                let sc: StorageClass = client.get(&format!("/apis/storage.k8s.io/v1/storageclasses/{}", name)).await?;
+                let sc: StorageClass = client.get(&format!("/apis/storage.k8s.io/v1/storageclasses/{}", name)).await.map_err(map_get_error)?;
                 format_output(&sc, format)?;
             } else {
-                let scs: Vec<StorageClass> = client.get("/apis/storage.k8s.io/v1/storageclasses").await?;
+                let scs: Vec<StorageClass> = client.get("/apis/storage.k8s.io/v1/storageclasses").await.map_err(map_get_error)?;
                 format_output(&scs, format)?;
             }
         }
         "volumesnapshot" | "volumesnapshots" | "vs" => {
             if let Some(name) = name {
-                let vs: VolumeSnapshot = client.get(&format!("/apis/snapshot.storage.k8s.io/v1/namespaces/{}/volumesnapshots/{}", ns, name)).await?;
+                let vs: VolumeSnapshot = client.get(&format!("/apis/snapshot.storage.k8s.io/v1/namespaces/{}/volumesnapshots/{}", ns, name)).await.map_err(map_get_error)?;
                 format_output(&vs, format)?;
             } else {
-                let vss: Vec<VolumeSnapshot> = client.get(&format!("/apis/snapshot.storage.k8s.io/v1/namespaces/{}/volumesnapshots", ns)).await?;
+                let vss: Vec<VolumeSnapshot> = client.get(&format!("/apis/snapshot.storage.k8s.io/v1/namespaces/{}/volumesnapshots", ns)).await.map_err(map_get_error)?;
                 format_output(&vss, format)?;
             }
         }
         "volumesnapshotclass" | "volumesnapshotclasses" | "vsc" => {
             if let Some(name) = name {
-                let vsc: VolumeSnapshotClass = client.get(&format!("/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses/{}", name)).await?;
+                let vsc: VolumeSnapshotClass = client.get(&format!("/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses/{}", name)).await.map_err(map_get_error)?;
                 format_output(&vsc, format)?;
             } else {
-                let vscs: Vec<VolumeSnapshotClass> = client.get("/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses").await?;
+                let vscs: Vec<VolumeSnapshotClass> = client.get("/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses").await.map_err(map_get_error)?;
                 format_output(&vscs, format)?;
             }
         }
         "endpoints" | "ep" => {
             if let Some(name) = name {
-                let ep: Endpoints = client.get(&format!("/api/v1/namespaces/{}/endpoints/{}", ns, name)).await?;
+                let ep: Endpoints = client.get(&format!("/api/v1/namespaces/{}/endpoints/{}", ns, name)).await.map_err(map_get_error)?;
                 format_output(&ep, format)?;
             } else {
-                let eps: Vec<Endpoints> = client.get(&format!("/api/v1/namespaces/{}/endpoints", ns)).await?;
+                let eps: Vec<Endpoints> = client.get(&format!("/api/v1/namespaces/{}/endpoints", ns)).await.map_err(map_get_error)?;
                 format_output(&eps, format)?;
             }
         }
         "configmap" | "configmaps" | "cm" => {
             if let Some(name) = name {
-                let cm: ConfigMap = client.get(&format!("/api/v1/namespaces/{}/configmaps/{}", ns, name)).await?;
+                let cm: ConfigMap = client.get(&format!("/api/v1/namespaces/{}/configmaps/{}", ns, name)).await.map_err(map_get_error)?;
                 format_output(&cm, format)?;
             } else {
-                let cms: Vec<ConfigMap> = client.get(&format!("/api/v1/namespaces/{}/configmaps", ns)).await?;
+                let cms: Vec<ConfigMap> = client.get(&format!("/api/v1/namespaces/{}/configmaps", ns)).await.map_err(map_get_error)?;
                 format_output(&cms, format)?;
             }
         }
         "secret" | "secrets" => {
             if let Some(name) = name {
-                let secret: Secret = client.get(&format!("/api/v1/namespaces/{}/secrets/{}", ns, name)).await?;
+                let secret: Secret = client.get(&format!("/api/v1/namespaces/{}/secrets/{}", ns, name)).await.map_err(map_get_error)?;
                 format_output(&secret, format)?;
             } else {
-                let secrets: Vec<Secret> = client.get(&format!("/api/v1/namespaces/{}/secrets", ns)).await?;
+                let secrets: Vec<Secret> = client.get(&format!("/api/v1/namespaces/{}/secrets", ns)).await.map_err(map_get_error)?;
                 format_output(&secrets, format)?;
             }
         }
         "ingress" | "ingresses" | "ing" => {
             if let Some(name) = name {
-                let ing: Ingress = client.get(&format!("/apis/networking.k8s.io/v1/namespaces/{}/ingresses/{}", ns, name)).await?;
+                let ing: Ingress = client.get(&format!("/apis/networking.k8s.io/v1/namespaces/{}/ingresses/{}", ns, name)).await.map_err(map_get_error)?;
                 format_output(&ing, format)?;
             } else {
-                let ings: Vec<Ingress> = client.get(&format!("/apis/networking.k8s.io/v1/namespaces/{}/ingresses", ns)).await?;
+                let ings: Vec<Ingress> = client.get(&format!("/apis/networking.k8s.io/v1/namespaces/{}/ingresses", ns)).await.map_err(map_get_error)?;
                 format_output(&ings, format)?;
             }
         }
         "serviceaccount" | "serviceaccounts" | "sa" => {
             if let Some(name) = name {
-                let sa: ServiceAccount = client.get(&format!("/api/v1/namespaces/{}/serviceaccounts/{}", ns, name)).await?;
+                let sa: ServiceAccount = client.get(&format!("/api/v1/namespaces/{}/serviceaccounts/{}", ns, name)).await.map_err(map_get_error)?;
                 format_output(&sa, format)?;
             } else {
-                let sas: Vec<ServiceAccount> = client.get(&format!("/api/v1/namespaces/{}/serviceaccounts", ns)).await?;
+                let sas: Vec<ServiceAccount> = client.get(&format!("/api/v1/namespaces/{}/serviceaccounts", ns)).await.map_err(map_get_error)?;
                 format_output(&sas, format)?;
             }
         }
         "role" | "roles" => {
             if let Some(name) = name {
-                let role: Role = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles/{}", ns, name)).await?;
+                let role: Role = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles/{}", ns, name)).await.map_err(map_get_error)?;
                 format_output(&role, format)?;
             } else {
-                let roles: Vec<Role> = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles", ns)).await?;
+                let roles: Vec<Role> = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles", ns)).await.map_err(map_get_error)?;
                 format_output(&roles, format)?;
             }
         }
         "rolebinding" | "rolebindings" => {
             if let Some(name) = name {
-                let rb: RoleBinding = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}", ns, name)).await?;
+                let rb: RoleBinding = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}", ns, name)).await.map_err(map_get_error)?;
                 format_output(&rb, format)?;
             } else {
-                let rbs: Vec<RoleBinding> = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings", ns)).await?;
+                let rbs: Vec<RoleBinding> = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings", ns)).await.map_err(map_get_error)?;
                 format_output(&rbs, format)?;
             }
         }
         "clusterrole" | "clusterroles" => {
             if let Some(name) = name {
-                let cr: ClusterRole = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/clusterroles/{}", name)).await?;
+                let cr: ClusterRole = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/clusterroles/{}", name)).await.map_err(map_get_error)?;
                 format_output(&cr, format)?;
             } else {
-                let crs: Vec<ClusterRole> = client.get("/apis/rbac.authorization.k8s.io/v1/clusterroles").await?;
+                let crs: Vec<ClusterRole> = client.get("/apis/rbac.authorization.k8s.io/v1/clusterroles").await.map_err(map_get_error)?;
                 format_output(&crs, format)?;
             }
         }
         "clusterrolebinding" | "clusterrolebindings" => {
             if let Some(name) = name {
-                let crb: ClusterRoleBinding = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}", name)).await?;
+                let crb: ClusterRoleBinding = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}", name)).await.map_err(map_get_error)?;
                 format_output(&crb, format)?;
             } else {
-                let crbs: Vec<ClusterRoleBinding> = client.get("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings").await?;
+                let crbs: Vec<ClusterRoleBinding> = client.get("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings").await.map_err(map_get_error)?;
                 format_output(&crbs, format)?;
             }
         }
         "resourcequota" | "resourcequotas" | "quota" => {
             if let Some(name) = name {
-                let rq: ResourceQuota = client.get(&format!("/api/v1/namespaces/{}/resourcequotas/{}", ns, name)).await?;
+                let rq: ResourceQuota = client.get(&format!("/api/v1/namespaces/{}/resourcequotas/{}", ns, name)).await.map_err(map_get_error)?;
                 format_output(&rq, format)?;
             } else {
-                let rqs: Vec<ResourceQuota> = client.get(&format!("/api/v1/namespaces/{}/resourcequotas", ns)).await?;
+                let rqs: Vec<ResourceQuota> = client.get(&format!("/api/v1/namespaces/{}/resourcequotas", ns)).await.map_err(map_get_error)?;
                 format_output(&rqs, format)?;
             }
         }
         "limitrange" | "limitranges" | "limits" => {
             if let Some(name) = name {
-                let lr: LimitRange = client.get(&format!("/api/v1/namespaces/{}/limitranges/{}", ns, name)).await?;
+                let lr: LimitRange = client.get(&format!("/api/v1/namespaces/{}/limitranges/{}", ns, name)).await.map_err(map_get_error)?;
                 format_output(&lr, format)?;
             } else {
-                let lrs: Vec<LimitRange> = client.get(&format!("/api/v1/namespaces/{}/limitranges", ns)).await?;
+                let lrs: Vec<LimitRange> = client.get(&format!("/api/v1/namespaces/{}/limitranges", ns)).await.map_err(map_get_error)?;
                 format_output(&lrs, format)?;
             }
         }
         "priorityclass" | "priorityclasses" | "pc" => {
             if let Some(name) = name {
-                let pc: PriorityClass = client.get(&format!("/apis/scheduling.k8s.io/v1/priorityclasses/{}", name)).await?;
+                let pc: PriorityClass = client.get(&format!("/apis/scheduling.k8s.io/v1/priorityclasses/{}", name)).await.map_err(map_get_error)?;
                 format_output(&pc, format)?;
             } else {
-                let pcs: Vec<PriorityClass> = client.get("/apis/scheduling.k8s.io/v1/priorityclasses").await?;
+                let pcs: Vec<PriorityClass> = client.get("/apis/scheduling.k8s.io/v1/priorityclasses").await.map_err(map_get_error)?;
                 format_output(&pcs, format)?;
             }
         }
         "customresourcedefinition" | "customresourcedefinitions" | "crd" | "crds" => {
             if let Some(name) = name {
-                let crd: CustomResourceDefinition = client.get(&format!("/apis/apiextensions.k8s.io/v1/customresourcedefinitions/{}", name)).await?;
+                let crd: CustomResourceDefinition = client.get(&format!("/apis/apiextensions.k8s.io/v1/customresourcedefinitions/{}", name)).await.map_err(map_get_error)?;
                 format_output(&crd, format)?;
             } else {
-                let crds: Vec<CustomResourceDefinition> = client.get("/apis/apiextensions.k8s.io/v1/customresourcedefinitions").await?;
+                let crds: Vec<CustomResourceDefinition> = client.get("/apis/apiextensions.k8s.io/v1/customresourcedefinitions").await.map_err(map_get_error)?;
                 format_output(&crds, format)?;
             }
         }

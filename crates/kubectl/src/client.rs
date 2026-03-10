@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -8,6 +8,23 @@ pub struct ApiClient {
     client: Client,
     token: Option<String>,
 }
+
+#[derive(Debug)]
+pub enum GetError {
+    NotFound,
+    Other(anyhow::Error),
+}
+
+impl std::fmt::Display for GetError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GetError::NotFound => write!(f, "Resource not found"),
+            GetError::Other(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl std::error::Error for GetError {}
 
 impl ApiClient {
     pub fn new(base_url: &str, insecure_skip_tls_verify: bool, token: Option<String>) -> Result<Self> {
@@ -27,7 +44,7 @@ impl ApiClient {
         })
     }
 
-    pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+    pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, GetError> {
         let url = format!("{}{}", self.base_url, path);
         let mut request = self.client.get(&url);
 
@@ -38,15 +55,20 @@ impl ApiClient {
         let response = request
             .send()
             .await
-            .context("Failed to send GET request")?;
+            .map_err(|e| GetError::Other(anyhow::anyhow!("Failed to send GET request: {}", e)))?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Request failed with status {}: {}", status, body);
+        let status = response.status();
+
+        if status == StatusCode::NOT_FOUND {
+            return Err(GetError::NotFound);
         }
 
-        response.json().await.context("Failed to parse response")
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(GetError::Other(anyhow::anyhow!("Request failed with status {}: {}", status, body)));
+        }
+
+        response.json().await.map_err(|e| GetError::Other(anyhow::anyhow!("Failed to parse response: {}", e)))
     }
 
     pub async fn post<T: Serialize, R: DeserializeOwned>(&self, path: &str, body: &T) -> Result<R> {
