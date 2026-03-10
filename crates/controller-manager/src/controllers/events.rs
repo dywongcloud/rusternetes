@@ -167,6 +167,9 @@ impl<S: Storage> EventsController<S> {
                     ).await?;
                 }
                 Phase::Unknown => {}
+                Phase::Active => {
+                    // Active phase for namespaces - not relevant for pod events
+                }
             }
         }
 

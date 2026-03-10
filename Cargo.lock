@@ -3100,6 +3100,7 @@ dependencies = [
  "rusternetes-storage",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
