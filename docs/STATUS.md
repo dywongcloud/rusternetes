@@ -709,7 +709,55 @@ cargo test
 cargo build --release
 ```
 
-## Known Limitations
+## Known Limitations & Missing Features
+
+### Implementation Gaps Found During Testing (March 10, 2026)
+
+The following issues were discovered during comprehensive cluster testing:
+
+#### kubectl Command Issues
+
+1. **kubectl apply doesn't work for new resources**
+   - `kubectl apply` sends a PUT (update) request even when the resource doesn't exist
+   - Results in 404 error when trying to apply new resources
+   - **Workaround:** Use `kubectl create` instead
+   - **Fix needed:** Update handler should fall back to create if resource doesn't exist (server-side apply logic)
+
+2. **Missing resource type support in kubectl**
+   - StorageClass - not recognized by kubectl create/get
+   - endpoints - returns "Unknown resource type"
+   - VolumeSnapshot, VolumeSnapshotClass - not in kubectl yet
+   - ResourceQuota, LimitRange - not in kubectl yet
+   - PriorityClass - not in kubectl yet
+   - **Workaround:** Use curl to API server directly
+   - **Fix needed:** Add resource type definitions and handlers to kubectl
+
+3. **No multi-document YAML support**
+   - kubectl can't handle YAML files with multiple resources separated by `---`
+   - Error: "deserializing from YAML containing more than one document is not supported"
+   - **Workaround:** Split into separate files or use curl for each resource
+   - **Fix needed:** Add YAML document splitting and iteration
+
+4. **Missing -o/--output flag**
+   - kubectl get doesn't support output formatting flags like `-o wide`, `-o json`, `-o yaml`
+   - Error: "unexpected argument '-o' found"
+   - **Workaround:** Use default table output or curl to API
+   - **Fix needed:** Add output format parsing and rendering
+
+#### Networking Issues
+
+5. **NodePort external access not working**
+   - NodePort services created successfully but not accessible from host
+   - kube-proxy container has no port mappings
+   - **Impact:** Can't test NodePort services from outside cluster
+   - **Fix needed:** Configure kube-proxy port forwarding or host network mode
+
+6. **DNS not accessible from host**
+   - DNS server running correctly inside cluster on port 8053
+   - `dig` from host times out trying to reach DNS server
+   - **Impact:** Can't test DNS resolution from host machine
+   - **Note:** DNS works fine for pods inside the cluster
+   - **Fix needed:** Expose DNS server port or test from inside cluster only
 
 ### 1. Self-Signed Certificates (Development Only)
 The API server uses self-signed TLS certificates for development. For production use, replace with proper certificates from a trusted Certificate Authority.

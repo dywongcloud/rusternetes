@@ -38,6 +38,10 @@ enum Commands {
         /// Namespace (for namespaced resources)
         #[arg(short = 'n', long)]
         namespace: Option<String>,
+
+        /// Output format (json, yaml, wide)
+        #[arg(short = 'o', long)]
+        output: Option<String>,
     },
 
     /// Create a resource from a file
@@ -78,8 +82,9 @@ async fn main() -> Result<()> {
             resource_type,
             name,
             namespace,
+            output,
         } => {
-            commands::get::execute(&client, &resource_type, name.as_deref(), namespace.as_deref())
+            commands::get::execute(&client, &resource_type, name.as_deref(), namespace.as_deref(), output.as_deref())
                 .await?;
         }
         Commands::Create { file } => {

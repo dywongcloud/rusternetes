@@ -120,7 +120,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "StatefulSet" => {
             let mut statefulset: StatefulSet = serde_yaml::from_str(&yaml_str)?;
             let namespace = statefulset.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = statefulset.metadata.name.clone();
+            let name = &statefulset.metadata.name;
 
             let exists = client
                 .get::<StatefulSet>(&format!("/apis/apps/v1/namespaces/{}/statefulsets/{}", namespace, name))
@@ -144,7 +144,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "DaemonSet" => {
             let mut daemonset: DaemonSet = serde_yaml::from_str(&yaml_str)?;
             let namespace = daemonset.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = daemonset.metadata.name.clone();
+            let name = &daemonset.metadata.name;
 
             let exists = client
                 .get::<DaemonSet>(&format!("/apis/apps/v1/namespaces/{}/daemonsets/{}", namespace, name))
@@ -167,7 +167,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         }
         "Node" => {
             let mut node: Node = serde_yaml::from_str(&yaml_str)?;
-            let name = node.metadata.name.clone();
+            let name = &node.metadata.name;
 
             let exists = client
                 .get::<Node>(&format!("/api/v1/nodes/{}", name))
@@ -190,7 +190,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         }
         "Namespace" => {
             let mut namespace: Namespace = serde_yaml::from_str(&yaml_str)?;
-            let name = namespace.metadata.name.clone();
+            let name = &namespace.metadata.name;
 
             let exists = client
                 .get::<Namespace>(&format!("/api/v1/namespaces/{}", name))
@@ -214,7 +214,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "Job" => {
             let mut job: Job = serde_yaml::from_str(&yaml_str)?;
             let namespace = job.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = job.metadata.name.clone();
+            let name = &job.metadata.name;
 
             let exists = client
                 .get::<Job>(&format!("/apis/batch/v1/namespaces/{}/jobs/{}", namespace, name))
@@ -238,7 +238,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "CronJob" => {
             let mut cronjob: CronJob = serde_yaml::from_str(&yaml_str)?;
             let namespace = cronjob.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = cronjob.metadata.name.clone();
+            let name = &cronjob.metadata.name;
 
             let exists = client
                 .get::<CronJob>(&format!("/apis/batch/v1/namespaces/{}/cronjobs/{}", namespace, name))
@@ -261,7 +261,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         }
         "PersistentVolume" => {
             let mut pv: PersistentVolume = serde_yaml::from_str(&yaml_str)?;
-            let name = pv.metadata.name.clone();
+            let name = &pv.metadata.name;
 
             let exists = client
                 .get::<PersistentVolume>(&format!("/api/v1/persistentvolumes/{}", name))
@@ -285,7 +285,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "PersistentVolumeClaim" => {
             let mut pvc: PersistentVolumeClaim = serde_yaml::from_str(&yaml_str)?;
             let namespace = pvc.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = pvc.metadata.name.clone();
+            let name = &pvc.metadata.name;
 
             let exists = client
                 .get::<PersistentVolumeClaim>(&format!("/api/v1/namespaces/{}/persistentvolumeclaims/{}", namespace, name))
@@ -308,7 +308,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         }
         "StorageClass" => {
             let mut sc: StorageClass = serde_yaml::from_str(&yaml_str)?;
-            let name = sc.metadata.name.clone();
+            let name = &sc.metadata.name;
 
             let exists = client
                 .get::<StorageClass>(&format!("/apis/storage.k8s.io/v1/storageclasses/{}", name))
@@ -332,7 +332,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "VolumeSnapshot" => {
             let mut snapshot: VolumeSnapshot = serde_yaml::from_str(&yaml_str)?;
             let namespace = snapshot.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = snapshot.metadata.name.clone();
+            let name = &snapshot.metadata.name;
 
             let exists = client
                 .get::<VolumeSnapshot>(&format!("/apis/snapshot.storage.k8s.io/v1/namespaces/{}/volumesnapshots/{}", namespace, name))
@@ -355,7 +355,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         }
         "VolumeSnapshotClass" => {
             let mut vsc: VolumeSnapshotClass = serde_yaml::from_str(&yaml_str)?;
-            let name = vsc.metadata.name.clone();
+            let name = &vsc.metadata.name;
 
             let exists = client
                 .get::<VolumeSnapshotClass>(&format!("/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses/{}", name))
@@ -379,7 +379,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "Endpoints" => {
             let mut endpoints: Endpoints = serde_yaml::from_str(&yaml_str)?;
             let namespace = endpoints.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = endpoints.metadata.name.clone();
+            let name = &endpoints.metadata.name;
 
             let exists = client
                 .get::<Endpoints>(&format!("/api/v1/namespaces/{}/endpoints/{}", namespace, name))
@@ -403,7 +403,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "ConfigMap" => {
             let mut configmap: ConfigMap = serde_yaml::from_str(&yaml_str)?;
             let namespace = configmap.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = configmap.metadata.name.clone();
+            let name = &configmap.metadata.name;
 
             let exists = client
                 .get::<ConfigMap>(&format!("/api/v1/namespaces/{}/configmaps/{}", namespace, name))
@@ -427,7 +427,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "Secret" => {
             let mut secret: Secret = serde_yaml::from_str(&yaml_str)?;
             let namespace = secret.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = secret.metadata.name.clone();
+            let name = &secret.metadata.name;
 
             let exists = client
                 .get::<Secret>(&format!("/api/v1/namespaces/{}/secrets/{}", namespace, name))
@@ -451,7 +451,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "Ingress" => {
             let mut ingress: Ingress = serde_yaml::from_str(&yaml_str)?;
             let namespace = ingress.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = ingress.metadata.name.clone();
+            let name = &ingress.metadata.name;
 
             let exists = client
                 .get::<Ingress>(&format!("/apis/networking.k8s.io/v1/namespaces/{}/ingresses/{}", namespace, name))
@@ -475,7 +475,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "ServiceAccount" => {
             let mut sa: ServiceAccount = serde_yaml::from_str(&yaml_str)?;
             let namespace = sa.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = sa.metadata.name.clone();
+            let name = &sa.metadata.name;
 
             let exists = client
                 .get::<ServiceAccount>(&format!("/api/v1/namespaces/{}/serviceaccounts/{}", namespace, name))
@@ -499,7 +499,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "Role" => {
             let mut role: Role = serde_yaml::from_str(&yaml_str)?;
             let namespace = role.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = role.metadata.name.clone();
+            let name = &role.metadata.name;
 
             let exists = client
                 .get::<Role>(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles/{}", namespace, name))
@@ -523,7 +523,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "RoleBinding" => {
             let mut rb: RoleBinding = serde_yaml::from_str(&yaml_str)?;
             let namespace = rb.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = rb.metadata.name.clone();
+            let name = &rb.metadata.name;
 
             let exists = client
                 .get::<RoleBinding>(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}", namespace, name))
@@ -546,7 +546,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         }
         "ClusterRole" => {
             let mut cr: ClusterRole = serde_yaml::from_str(&yaml_str)?;
-            let name = cr.metadata.name.clone();
+            let name = &cr.metadata.name;
 
             let exists = client
                 .get::<ClusterRole>(&format!("/apis/rbac.authorization.k8s.io/v1/clusterroles/{}", name))
@@ -569,7 +569,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         }
         "ClusterRoleBinding" => {
             let mut crb: ClusterRoleBinding = serde_yaml::from_str(&yaml_str)?;
-            let name = crb.metadata.name.clone();
+            let name = &crb.metadata.name;
 
             let exists = client
                 .get::<ClusterRoleBinding>(&format!("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}", name))
@@ -593,7 +593,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "ResourceQuota" => {
             let mut rq: ResourceQuota = serde_yaml::from_str(&yaml_str)?;
             let namespace = rq.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = rq.metadata.name.clone();
+            let name = &rq.metadata.name;
 
             let exists = client
                 .get::<ResourceQuota>(&format!("/api/v1/namespaces/{}/resourcequotas/{}", namespace, name))
@@ -617,7 +617,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         "LimitRange" => {
             let mut lr: LimitRange = serde_yaml::from_str(&yaml_str)?;
             let namespace = lr.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-            let name = lr.metadata.name.clone();
+            let name = &lr.metadata.name;
 
             let exists = client
                 .get::<LimitRange>(&format!("/api/v1/namespaces/{}/limitranges/{}", namespace, name))
@@ -640,7 +640,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         }
         "PriorityClass" => {
             let mut pc: PriorityClass = serde_yaml::from_str(&yaml_str)?;
-            let name = pc.metadata.name.clone();
+            let name = &pc.metadata.name;
 
             let exists = client
                 .get::<PriorityClass>(&format!("/apis/scheduling.k8s.io/v1/priorityclasses/{}", name))
@@ -663,7 +663,7 @@ async fn apply_resource(client: &ApiClient, value: &serde_yaml::Value) -> Result
         }
         "CustomResourceDefinition" => {
             let mut crd: CustomResourceDefinition = serde_yaml::from_str(&yaml_str)?;
-            let name = crd.metadata.name.clone();
+            let name = &crd.metadata.name;
 
             let exists = client
                 .get::<CustomResourceDefinition>(&format!("/apis/apiextensions.k8s.io/v1/customresourcedefinitions/{}", name))

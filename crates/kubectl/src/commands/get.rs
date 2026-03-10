@@ -1,15 +1,58 @@
 use crate::client::ApiClient;
 use anyhow::Result;
-use rusternetes_common::resources::{Deployment, Namespace, Node, Pod, Service, PersistentVolume, PersistentVolumeClaim};
+use rusternetes_common::resources::{
+    Deployment, Namespace, Node, Pod, Service, PersistentVolume, PersistentVolumeClaim,
+    StorageClass, VolumeSnapshot, VolumeSnapshotClass, Endpoints, ConfigMap, Secret,
+    StatefulSet, DaemonSet, Ingress, ServiceAccount, Role, RoleBinding, ClusterRole, ClusterRoleBinding,
+    ResourceQuota, LimitRange, PriorityClass, CustomResourceDefinition,
+};
+use serde::Serialize;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum OutputFormat {
+    Table,
+    Json,
+    Yaml,
+    Wide,
+}
+
+impl OutputFormat {
+    pub(crate) fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "json" => Ok(Self::Json),
+            "yaml" => Ok(Self::Yaml),
+            "wide" => Ok(Self::Wide),
+            _ => anyhow::bail!("Unknown output format: {}. Supported formats: json, yaml, wide", s),
+        }
+    }
+}
+
+pub(crate) fn format_output<T: Serialize>(resource: &T, format: OutputFormat) -> Result<()> {
+    match format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(resource)?);
+        }
+        OutputFormat::Yaml => {
+            println!("{}", serde_yaml::to_string(resource)?);
+        }
+        _ => {
+            // For table and wide, just use JSON for now
+            println!("{}", serde_json::to_string_pretty(resource)?);
+        }
+    }
+    Ok(())
+}
 
 pub async fn execute(
     client: &ApiClient,
     resource_type: &str,
     name: Option<&str>,
     namespace: Option<&str>,
+    output: Option<&str>,
 ) -> Result<()> {
     let default_namespace = "default";
     let ns = namespace.unwrap_or(default_namespace);
+    let format = output.map(OutputFormat::from_str).transpose()?.unwrap_or(OutputFormat::Table);
 
     match resource_type {
         "pod" | "pods" => {
@@ -17,12 +60,16 @@ pub async fn execute(
                 let pod: Pod = client
                     .get(&format!("/api/v1/namespaces/{}/pods/{}", ns, name))
                     .await?;
-                println!("{}", serde_json::to_string_pretty(&pod)?);
+                format_output(&pod, format)?;
             } else {
                 let pods: Vec<Pod> = client
                     .get(&format!("/api/v1/namespaces/{}/pods", ns))
                     .await?;
-                print_pods(&pods);
+                match format {
+                    OutputFormat::Table | OutputFormat::Wide => print_pods(&pods),
+                    OutputFormat::Json => format_output(&pods, format)?,
+                    OutputFormat::Yaml => format_output(&pods, format)?,
+                }
             }
         }
         "service" | "services" | "svc" => {
@@ -30,64 +77,255 @@ pub async fn execute(
                 let service: Service = client
                     .get(&format!("/api/v1/namespaces/{}/services/{}", ns, name))
                     .await?;
-                println!("{}", serde_json::to_string_pretty(&service)?);
+                format_output(&service, format)?;
             } else {
                 let services: Vec<Service> = client
                     .get(&format!("/api/v1/namespaces/{}/services", ns))
                     .await?;
-                print_services(&services);
+                match format {
+                    OutputFormat::Table | OutputFormat::Wide => print_services(&services),
+                    OutputFormat::Json => format_output(&services, format)?,
+                    OutputFormat::Yaml => format_output(&services, format)?,
+                }
             }
         }
         "deployment" | "deployments" | "deploy" => {
             if let Some(name) = name {
                 let deployment: Deployment = client
-                    .get(&format!(
-                        "/apis/apps/v1/namespaces/{}/deployments/{}",
-                        ns, name
-                    ))
+                    .get(&format!("/apis/apps/v1/namespaces/{}/deployments/{}", ns, name))
                     .await?;
-                println!("{}", serde_json::to_string_pretty(&deployment)?);
+                format_output(&deployment, format)?;
             } else {
                 let deployments: Vec<Deployment> = client
                     .get(&format!("/apis/apps/v1/namespaces/{}/deployments", ns))
                     .await?;
-                print_deployments(&deployments);
+                match format {
+                    OutputFormat::Table | OutputFormat::Wide => print_deployments(&deployments),
+                    OutputFormat::Json => format_output(&deployments, format)?,
+                    OutputFormat::Yaml => format_output(&deployments, format)?,
+                }
+            }
+        }
+        "statefulset" | "statefulsets" | "sts" => {
+            if let Some(name) = name {
+                let statefulset: StatefulSet = client
+                    .get(&format!("/apis/apps/v1/namespaces/{}/statefulsets/{}", ns, name))
+                    .await?;
+                format_output(&statefulset, format)?;
+            } else {
+                let statefulsets: Vec<StatefulSet> = client
+                    .get(&format!("/apis/apps/v1/namespaces/{}/statefulsets", ns))
+                    .await?;
+                format_output(&statefulsets, format)?;
+            }
+        }
+        "daemonset" | "daemonsets" | "ds" => {
+            if let Some(name) = name {
+                let daemonset: DaemonSet = client
+                    .get(&format!("/apis/apps/v1/namespaces/{}/daemonsets/{}", ns, name))
+                    .await?;
+                format_output(&daemonset, format)?;
+            } else {
+                let daemonsets: Vec<DaemonSet> = client
+                    .get(&format!("/apis/apps/v1/namespaces/{}/daemonsets", ns))
+                    .await?;
+                format_output(&daemonsets, format)?;
             }
         }
         "node" | "nodes" => {
             if let Some(name) = name {
                 let node: Node = client.get(&format!("/api/v1/nodes/{}", name)).await?;
-                println!("{}", serde_json::to_string_pretty(&node)?);
+                format_output(&node, format)?;
             } else {
                 let nodes: Vec<Node> = client.get("/api/v1/nodes").await?;
-                print_nodes(&nodes);
+                match format {
+                    OutputFormat::Table | OutputFormat::Wide => print_nodes(&nodes),
+                    OutputFormat::Json => format_output(&nodes, format)?,
+                    OutputFormat::Yaml => format_output(&nodes, format)?,
+                }
             }
         }
         "namespace" | "namespaces" | "ns" => {
             if let Some(name) = name {
                 let namespace: Namespace = client.get(&format!("/api/v1/namespaces/{}", name)).await?;
-                println!("{}", serde_json::to_string_pretty(&namespace)?);
+                format_output(&namespace, format)?;
             } else {
                 let namespaces: Vec<Namespace> = client.get("/api/v1/namespaces").await?;
-                print_namespaces(&namespaces);
+                match format {
+                    OutputFormat::Table | OutputFormat::Wide => print_namespaces(&namespaces),
+                    OutputFormat::Json => format_output(&namespaces, format)?,
+                    OutputFormat::Yaml => format_output(&namespaces, format)?,
+                }
             }
         }
         "persistentvolume" | "persistentvolumes" | "pv" => {
             if let Some(name) = name {
                 let pv: PersistentVolume = client.get(&format!("/api/v1/persistentvolumes/{}", name)).await?;
-                println!("{}", serde_json::to_string_pretty(&pv)?);
+                format_output(&pv, format)?;
             } else {
                 let pvs: Vec<PersistentVolume> = client.get("/api/v1/persistentvolumes").await?;
-                print_pvs(&pvs);
+                match format {
+                    OutputFormat::Table | OutputFormat::Wide => print_pvs(&pvs),
+                    OutputFormat::Json => format_output(&pvs, format)?,
+                    OutputFormat::Yaml => format_output(&pvs, format)?,
+                }
             }
         }
         "persistentvolumeclaim" | "persistentvolumeclaims" | "pvc" => {
             if let Some(name) = name {
                 let pvc: PersistentVolumeClaim = client.get(&format!("/api/v1/namespaces/{}/persistentvolumeclaims/{}", ns, name)).await?;
-                println!("{}", serde_json::to_string_pretty(&pvc)?);
+                format_output(&pvc, format)?;
             } else {
                 let pvcs: Vec<PersistentVolumeClaim> = client.get(&format!("/api/v1/namespaces/{}/persistentvolumeclaims", ns)).await?;
-                print_pvcs(&pvcs);
+                match format {
+                    OutputFormat::Table | OutputFormat::Wide => print_pvcs(&pvcs),
+                    OutputFormat::Json => format_output(&pvcs, format)?,
+                    OutputFormat::Yaml => format_output(&pvcs, format)?,
+                }
+            }
+        }
+        "storageclass" | "storageclasses" | "sc" => {
+            if let Some(name) = name {
+                let sc: StorageClass = client.get(&format!("/apis/storage.k8s.io/v1/storageclasses/{}", name)).await?;
+                format_output(&sc, format)?;
+            } else {
+                let scs: Vec<StorageClass> = client.get("/apis/storage.k8s.io/v1/storageclasses").await?;
+                format_output(&scs, format)?;
+            }
+        }
+        "volumesnapshot" | "volumesnapshots" | "vs" => {
+            if let Some(name) = name {
+                let vs: VolumeSnapshot = client.get(&format!("/apis/snapshot.storage.k8s.io/v1/namespaces/{}/volumesnapshots/{}", ns, name)).await?;
+                format_output(&vs, format)?;
+            } else {
+                let vss: Vec<VolumeSnapshot> = client.get(&format!("/apis/snapshot.storage.k8s.io/v1/namespaces/{}/volumesnapshots", ns)).await?;
+                format_output(&vss, format)?;
+            }
+        }
+        "volumesnapshotclass" | "volumesnapshotclasses" | "vsc" => {
+            if let Some(name) = name {
+                let vsc: VolumeSnapshotClass = client.get(&format!("/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses/{}", name)).await?;
+                format_output(&vsc, format)?;
+            } else {
+                let vscs: Vec<VolumeSnapshotClass> = client.get("/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses").await?;
+                format_output(&vscs, format)?;
+            }
+        }
+        "endpoints" | "ep" => {
+            if let Some(name) = name {
+                let ep: Endpoints = client.get(&format!("/api/v1/namespaces/{}/endpoints/{}", ns, name)).await?;
+                format_output(&ep, format)?;
+            } else {
+                let eps: Vec<Endpoints> = client.get(&format!("/api/v1/namespaces/{}/endpoints", ns)).await?;
+                format_output(&eps, format)?;
+            }
+        }
+        "configmap" | "configmaps" | "cm" => {
+            if let Some(name) = name {
+                let cm: ConfigMap = client.get(&format!("/api/v1/namespaces/{}/configmaps/{}", ns, name)).await?;
+                format_output(&cm, format)?;
+            } else {
+                let cms: Vec<ConfigMap> = client.get(&format!("/api/v1/namespaces/{}/configmaps", ns)).await?;
+                format_output(&cms, format)?;
+            }
+        }
+        "secret" | "secrets" => {
+            if let Some(name) = name {
+                let secret: Secret = client.get(&format!("/api/v1/namespaces/{}/secrets/{}", ns, name)).await?;
+                format_output(&secret, format)?;
+            } else {
+                let secrets: Vec<Secret> = client.get(&format!("/api/v1/namespaces/{}/secrets", ns)).await?;
+                format_output(&secrets, format)?;
+            }
+        }
+        "ingress" | "ingresses" | "ing" => {
+            if let Some(name) = name {
+                let ing: Ingress = client.get(&format!("/apis/networking.k8s.io/v1/namespaces/{}/ingresses/{}", ns, name)).await?;
+                format_output(&ing, format)?;
+            } else {
+                let ings: Vec<Ingress> = client.get(&format!("/apis/networking.k8s.io/v1/namespaces/{}/ingresses", ns)).await?;
+                format_output(&ings, format)?;
+            }
+        }
+        "serviceaccount" | "serviceaccounts" | "sa" => {
+            if let Some(name) = name {
+                let sa: ServiceAccount = client.get(&format!("/api/v1/namespaces/{}/serviceaccounts/{}", ns, name)).await?;
+                format_output(&sa, format)?;
+            } else {
+                let sas: Vec<ServiceAccount> = client.get(&format!("/api/v1/namespaces/{}/serviceaccounts", ns)).await?;
+                format_output(&sas, format)?;
+            }
+        }
+        "role" | "roles" => {
+            if let Some(name) = name {
+                let role: Role = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles/{}", ns, name)).await?;
+                format_output(&role, format)?;
+            } else {
+                let roles: Vec<Role> = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles", ns)).await?;
+                format_output(&roles, format)?;
+            }
+        }
+        "rolebinding" | "rolebindings" => {
+            if let Some(name) = name {
+                let rb: RoleBinding = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}", ns, name)).await?;
+                format_output(&rb, format)?;
+            } else {
+                let rbs: Vec<RoleBinding> = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings", ns)).await?;
+                format_output(&rbs, format)?;
+            }
+        }
+        "clusterrole" | "clusterroles" => {
+            if let Some(name) = name {
+                let cr: ClusterRole = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/clusterroles/{}", name)).await?;
+                format_output(&cr, format)?;
+            } else {
+                let crs: Vec<ClusterRole> = client.get("/apis/rbac.authorization.k8s.io/v1/clusterroles").await?;
+                format_output(&crs, format)?;
+            }
+        }
+        "clusterrolebinding" | "clusterrolebindings" => {
+            if let Some(name) = name {
+                let crb: ClusterRoleBinding = client.get(&format!("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}", name)).await?;
+                format_output(&crb, format)?;
+            } else {
+                let crbs: Vec<ClusterRoleBinding> = client.get("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings").await?;
+                format_output(&crbs, format)?;
+            }
+        }
+        "resourcequota" | "resourcequotas" | "quota" => {
+            if let Some(name) = name {
+                let rq: ResourceQuota = client.get(&format!("/api/v1/namespaces/{}/resourcequotas/{}", ns, name)).await?;
+                format_output(&rq, format)?;
+            } else {
+                let rqs: Vec<ResourceQuota> = client.get(&format!("/api/v1/namespaces/{}/resourcequotas", ns)).await?;
+                format_output(&rqs, format)?;
+            }
+        }
+        "limitrange" | "limitranges" | "limits" => {
+            if let Some(name) = name {
+                let lr: LimitRange = client.get(&format!("/api/v1/namespaces/{}/limitranges/{}", ns, name)).await?;
+                format_output(&lr, format)?;
+            } else {
+                let lrs: Vec<LimitRange> = client.get(&format!("/api/v1/namespaces/{}/limitranges", ns)).await?;
+                format_output(&lrs, format)?;
+            }
+        }
+        "priorityclass" | "priorityclasses" | "pc" => {
+            if let Some(name) = name {
+                let pc: PriorityClass = client.get(&format!("/apis/scheduling.k8s.io/v1/priorityclasses/{}", name)).await?;
+                format_output(&pc, format)?;
+            } else {
+                let pcs: Vec<PriorityClass> = client.get("/apis/scheduling.k8s.io/v1/priorityclasses").await?;
+                format_output(&pcs, format)?;
+            }
+        }
+        "customresourcedefinition" | "customresourcedefinitions" | "crd" | "crds" => {
+            if let Some(name) = name {
+                let crd: CustomResourceDefinition = client.get(&format!("/apis/apiextensions.k8s.io/v1/customresourcedefinitions/{}", name)).await?;
+                format_output(&crd, format)?;
+            } else {
+                let crds: Vec<CustomResourceDefinition> = client.get("/apis/apiextensions.k8s.io/v1/customresourcedefinitions").await?;
+                format_output(&crds, format)?;
             }
         }
         _ => anyhow::bail!("Unknown resource type: {}", resource_type),
