@@ -86,11 +86,14 @@ podman-compose down
     - Handles YAML files with multiple resources separated by `---`
     - Uses `serde_yaml::Deserializer::from_str()` to iterate documents
     - Each document applied independently with proper error handling
-- **Remaining Work**:
-  - ⏹️ Add multi-document YAML support to `kubectl create` command (currently only in `apply`)
+  - ✅ **Multi-document YAML support in create** (create.rs:13-26):
+    - Same implementation as apply for consistency
+    - Handles YAML files with multiple resources separated by `---`
+    - Skips empty/null documents automatically
+    - 2 new tests added (multi-doc parsing and empty doc handling)
 - **Build Status**: ✅ All kubectl code compiles successfully
-- **Test Coverage**: 387+ tests for create operations (252 StorageClass + 135 Endpoints)
-- **Impact**: kubectl now has feature parity with standard Kubernetes kubectl for most common operations. All resource types are supported, output formatting works, and multi-document YAML is supported in apply commands.
+- **Test Coverage**: 389+ tests for create operations (252 StorageClass + 135 Endpoints + 2 multi-document YAML tests)
+- **Impact**: kubectl now has feature parity with standard Kubernetes kubectl for most common operations. All resource types are supported, output formatting works, and multi-document YAML is supported in both apply and create commands.
 
 ### 1. Custom Resource Definitions (CRDs) Implementation ✅ COMPLETE
 - **Feature**: Extend Kubernetes API with custom resource types (Operator framework foundation)
@@ -233,7 +236,7 @@ podman-compose down
   - `crates/dns-server/tests/dns_integration_test.rs` - 15 integration tests
   - `Dockerfile.dns-server` - DNS server container image
   - `DNS.md` - Comprehensive DNS documentation (500+ lines)
-  - `examples/test-dns.yaml` - DNS testing example with instructions
+  - `examples/dns/test-dns.yaml` - DNS testing example with instructions
 - **Files Modified**:
   - `Cargo.toml` - Added dns-server to workspace members
   - `docker-compose.yml` - Added dns-server service (port 53 UDP/TCP)
@@ -297,7 +300,7 @@ podman-compose down
   - `crates/controller-manager/src/controllers/loadbalancer.rs` - LoadBalancer controller
   - `LOADBALANCER.md` - Comprehensive documentation with cloud provider and MetalLB examples
   - `docs/METALLB_INTEGRATION.md` - Complete MetalLB integration guide
-  - `examples/test-loadbalancer-service.yaml` - Example configurations
+  - `examples/networking/test-loadbalancer-service.yaml` - Example configurations
   - `examples/metallb/` - MetalLB configurations for different environments (local, Podman, Docker Desktop, BGP)
   - `examples/metallb/test-metallb.sh` - Automated MetalLB test script
 - **Files Modified**:
@@ -479,10 +482,10 @@ podman-compose down
   - `crates/api-server/src/router.rs` - Added volume API routes
   - `crates/kubelet/src/runtime.rs` - Volume creation, mounting, and cleanup
 - **Test Examples**:
-  - `examples/test-pod-emptydir.yaml` - EmptyDir volume example
-  - `examples/test-pod-hostpath.yaml` - HostPath volume example
-  - `examples/test-pv-pvc.yaml` - PV and PVC example with pod
-  - `examples/test-storageclass.yaml` - StorageClass configuration example
+  - `examples/workloads/test-pod-emptydir.yaml` - EmptyDir volume example
+  - `examples/workloads/test-pod-hostpath.yaml` - HostPath volume example
+  - `examples/storage/test-pv-pvc.yaml` - PV and PVC example with pod
+  - `examples/storage/test-storageclass.yaml` - StorageClass configuration example
 - **Future Work**: ConfigMap and Secret volumes (currently return "not implemented" error)
 
 ### 1. Orphaned Container Cleanup ✅
@@ -561,7 +564,7 @@ cargo build --release --bin kubectl
 
 # Apply resources
 ./target/release/kubectl --server https://localhost:6443 \
-  --insecure-skip-tls-verify apply -f examples/test-pod.yaml
+  --insecure-skip-tls-verify apply -f examples/workloads/test-pod.yaml
 ```
 
 ### Test etcd
@@ -770,11 +773,12 @@ The following issues were discovered during comprehensive cluster testing:
    - ✅ Plus 13 additional types: ConfigMap, Secret, StatefulSet, DaemonSet, Ingress, ServiceAccount, RBAC resources, CRDs
    - **Status:** All major Kubernetes resource types now supported in kubectl
 
-3. **✅ Multi-document YAML support in apply (COMPLETE)**
+3. **✅ Multi-document YAML support in apply and create (COMPLETE)**
    - ✅ `kubectl apply` handles YAML files with multiple resources separated by `---`
+   - ✅ `kubectl create` handles YAML files with multiple resources separated by `---`
    - Implementation: `serde_yaml::Deserializer::from_str()` iterates over documents
    - Each document processed independently with proper error handling
-   - ⏹️ **Minor gap:** `kubectl create` doesn't support multi-document YAML yet (use `apply` instead)
+   - Empty documents (consecutive `---`) are automatically skipped
 
 4. **✅ -o/--output flag support (COMPLETE)**
    - ✅ `kubectl get` supports `-o json`, `-o yaml`, `-o wide` flags
@@ -872,22 +876,22 @@ podman ps | grep etcd
 - `PODMAN_TIPS.md` - Podman-specific tips
 
 ### Test Resources
-- `examples/test-namespace.yaml`
-- `examples/test-deployment.yaml`
-- `examples/test-service.yaml`
-- `examples/test-job.yaml`
-- `examples/test-cronjob.yaml`
-- `examples/test-pod.yaml`
-- `examples/test-pod-emptydir.yaml` - EmptyDir volume example
-- `examples/test-pod-hostpath.yaml` - HostPath volume example
-- `examples/test-pv-pvc.yaml` - PersistentVolume and PersistentVolumeClaim example
-- `examples/test-storageclass.yaml` - StorageClass example
-- `examples/test-dynamic-pvc.yaml` - Dynamic provisioning example with StorageClass
+- `examples/tests/test-namespace.yaml`
+- `examples/workloads/test-deployment.yaml`
+- `examples/networking/test-service.yaml`
+- `examples/workloads/test-job.yaml`
+- `examples/workloads/test-cronjob.yaml`
+- `examples/workloads/test-pod.yaml`
+- `examples/workloads/test-pod-emptydir.yaml` - EmptyDir volume example
+- `examples/workloads/test-pod-hostpath.yaml` - HostPath volume example
+- `examples/storage/test-pv-pvc.yaml` - PersistentVolume and PersistentVolumeClaim example
+- `examples/storage/test-storageclass.yaml` - StorageClass example
+- `examples/storage/test-dynamic-pvc.yaml` - Dynamic provisioning example with StorageClass
 
 ### Build & Deployment
 - `Dockerfile.*` (7 component-specific files)
 - `docker-compose.yml`
-- `test-cluster.sh`
+- `scripts/test-cluster.sh`
 - `rust-toolchain.toml`
 - `.dockerignore`
 
@@ -896,7 +900,7 @@ podman ps | grep etcd
 ### End-to-End Pod Deployment ✅
 ```bash
 # Test flow verified:
-1. kubectl apply -f examples/test-pod.yaml
+1. kubectl apply -f examples/workloads/test-pod.yaml
 2. API Server stores pod in etcd
 3. Scheduler assigns pod to node-1
 4. Kubelet on node-1 detects new pod

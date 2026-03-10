@@ -337,7 +337,7 @@ EOF
 
 ### Complete Restore Example
 
-See `examples/test-snapshot-restore.yaml` for a complete working example showing:
+See `examples/storage/test-snapshot-restore.yaml` for a complete working example showing:
 1. Creating a StorageClass
 2. Creating an original PVC with data
 3. Taking a VolumeSnapshot

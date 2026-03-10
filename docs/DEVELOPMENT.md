@@ -134,7 +134,7 @@ podman-compose down
 
    # Try kubectl commands
    make kubectl-get-pods
-   cargo run --bin kubectl -- --server http://localhost:6443 create -f examples/pod.yaml
+   cargo run --bin kubectl -- --server http://localhost:6443 create -f examples/workloads/pod.yaml
    ```
 
 6. **Stop the cluster when done:**

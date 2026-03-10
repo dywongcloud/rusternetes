@@ -92,7 +92,7 @@ cargo run --bin kube-proxy -- \
 cargo run --bin kubectl -- \
   --server https://localhost:6443 \
   --insecure-skip-tls-verify \
-  create -f examples/test-namespace.yaml
+  create -f examples/tests/test-namespace.yaml
 ```
 
 ### Create a pod
@@ -101,7 +101,7 @@ cargo run --bin kubectl -- \
 cargo run --bin kubectl -- \
   --server https://localhost:6443 \
   --insecure-skip-tls-verify \
-  create -f examples/test-pod.yaml
+  create -f examples/workloads/test-pod.yaml
 ```
 
 ### List pods
@@ -119,7 +119,7 @@ cargo run --bin kubectl -- \
 cargo run --bin kubectl -- \
   --server https://localhost:6443 \
   --insecure-skip-tls-verify \
-  create -f examples/test-deployment.yaml
+  create -f examples/workloads/test-deployment.yaml
 ```
 
 ### List deployments

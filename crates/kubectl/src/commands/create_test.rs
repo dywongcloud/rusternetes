@@ -384,4 +384,93 @@ parameters:
         assert_eq!(params.get("replication").map(|s| s.as_str()), Some("3"));
         assert_eq!(params.get("zone").map(|s| s.as_str()), Some("us-east-1a"));
     }
+
+    #[test]
+    fn test_multi_document_yaml_parsing() {
+        use serde::Deserialize;
+
+        let yaml = r#"
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-ns
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+  namespace: test-ns
+spec:
+  containers:
+  - name: nginx
+    image: nginx:latest
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-service
+  namespace: test-ns
+spec:
+  selector:
+    app: test
+  ports:
+  - port: 80
+    targetPort: 80
+"#;
+
+        let mut documents = Vec::new();
+        for document in serde_yaml::Deserializer::from_str(yaml) {
+            let value = serde_yaml::Value::deserialize(document).unwrap();
+            if !value.is_null() {
+                documents.push(value);
+            }
+        }
+
+        assert_eq!(documents.len(), 3, "Should parse 3 documents");
+
+        // Verify first document is a Namespace
+        let kind1 = documents[0].get("kind").and_then(|k| k.as_str());
+        assert_eq!(kind1, Some("Namespace"));
+
+        // Verify second document is a Pod
+        let kind2 = documents[1].get("kind").and_then(|k| k.as_str());
+        assert_eq!(kind2, Some("Pod"));
+
+        // Verify third document is a Service
+        let kind3 = documents[2].get("kind").and_then(|k| k.as_str());
+        assert_eq!(kind3, Some("Service"));
+    }
+
+    #[test]
+    fn test_multi_document_yaml_with_empty_documents() {
+        use serde::Deserialize;
+
+        let yaml = r#"
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-ns
+---
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+spec:
+  containers:
+  - name: nginx
+    image: nginx:latest
+"#;
+
+        let mut documents = Vec::new();
+        for document in serde_yaml::Deserializer::from_str(yaml) {
+            let value = serde_yaml::Value::deserialize(document).unwrap();
+            // Skip empty/null documents
+            if !value.is_null() {
+                documents.push(value);
+            }
+        }
+
+        assert_eq!(documents.len(), 2, "Should parse 2 non-empty documents");
+    }
 }

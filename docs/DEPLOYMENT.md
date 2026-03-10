@@ -74,7 +74,7 @@ kubectl get services --namespace default
 kubectl get pods --namespace default
 
 # Create resources
-kubectl create -f examples/test-deployment.yaml
+kubectl create -f examples/workloads/test-deployment.yaml
 
 # Delete resources
 kubectl delete deployment test-deployment --namespace default

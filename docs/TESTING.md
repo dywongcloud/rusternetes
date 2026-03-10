@@ -7,7 +7,7 @@ This document describes how to test Rusternetes functionality and documents the 
 Run the basic cluster health test:
 
 ```bash
-./test-cluster.sh
+./scripts/test-cluster.sh
 ```
 
 ## Current Test Results
@@ -93,13 +93,15 @@ The cluster runs with authentication disabled (`--skip-auth`) for convenience:
 
 ## Test Resources
 
-Example resource files are in `examples/`:
+Example resource files are organized in `examples/`:
 
-- `test-namespace.yaml` - Test namespace
-- `test-deployment.yaml` - Nginx deployment with 3 replicas
-- `test-service.yaml` - Service exposing the deployment
-- `test-job.yaml` - Batch job calculating pi
-- `test-cronjob.yaml` - CronJob running every 5 minutes
+- `examples/tests/test-namespace.yaml` - Test namespace
+- `examples/workloads/test-deployment.yaml` - Nginx deployment with 3 replicas
+- `examples/networking/test-service.yaml` - Service exposing the deployment
+- `examples/workloads/test-job.yaml` - Batch job calculating pi
+- `examples/workloads/test-cronjob.yaml` - CronJob running every 5 minutes
+
+See [examples/README.md](../examples/README.md) for complete list of examples.
 
 ## Manual Testing
 
@@ -132,19 +134,19 @@ Should return successfully with `--skip-auth` enabled (development mode).
 ### Test 3: Apply Resources
 
 ```bash
-./target/release/kubectl --server https://localhost:6443 --insecure-skip-tls-verify apply -f examples/test-namespace.yaml
-./target/release/kubectl --server https://localhost:6443 --insecure-skip-tls-verify apply -f examples/test-deployment.yaml
-./target/release/kubectl --server https://localhost:6443 --insecure-skip-tls-verify apply -f examples/test-service.yaml
+./target/release/kubectl --server https://localhost:6443 --insecure-skip-tls-verify apply -f examples/tests/test-namespace.yaml
+./target/release/kubectl --server https://localhost:6443 --insecure-skip-tls-verify apply -f examples/workloads/test-deployment.yaml
+./target/release/kubectl --server https://localhost:6443 --insecure-skip-tls-verify apply -f examples/networking/test-service.yaml
 ```
 
 ### Test 4: Verify Pod Scheduling and Execution (Works Now!)
 
 ```bash
 # Create a test namespace
-./target/release/kubectl --insecure-skip-tls-verify create -f examples/test-namespace.yaml
+./target/release/kubectl --insecure-skip-tls-verify create -f examples/tests/test-namespace.yaml
 
 # Create a pod
-./target/release/kubectl --insecure-skip-tls-verify create -f examples/test-pod.yaml
+./target/release/kubectl --insecure-skip-tls-verify create -f examples/workloads/test-pod.yaml
 
 # Wait a few seconds for scheduler and kubelet
 sleep 15
@@ -312,8 +314,8 @@ Create comprehensive test scenarios:
 - Added dependencies: `futures-util`, `reqwest` for HTTP probes
 
 ### Test Infrastructure
-- Created `test-cluster.sh` for automated testing
-- Created example YAML files for all workload types
+- Created `scripts/test-cluster.sh` for automated testing
+- Created example YAML files for all workload types in organized `examples/` subdirectories
 - Created comprehensive testing documentation
 - Verified end-to-end pod workflow: create → schedule → pull image → run container
 

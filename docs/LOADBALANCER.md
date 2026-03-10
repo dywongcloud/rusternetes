@@ -19,7 +19,7 @@ kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/confi
 kubectl apply -f examples/metallb/metallb-config-podman.yaml
 
 # Create a LoadBalancer service
-kubectl apply -f examples/test-loadbalancer-service.yaml
+kubectl apply -f examples/networking/test-loadbalancer-service.yaml
 
 # Get the external IP
 kubectl get svc

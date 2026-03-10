@@ -334,6 +334,393 @@ fn validate_custom_resource(
     Ok(())
 }
 
+/// Get the status subresource of a custom resource
+pub async fn get_custom_resource_status(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((group, version, plural, namespace, name)): Path<(
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+    )>,
+) -> Result<Json<serde_json::Value>> {
+    info!(
+        "Getting custom resource status {}/{}/{}: {}",
+        group, version, plural, name
+    );
+
+    // Get the full resource first
+    let cr: CustomResource = get_custom_resource(
+        State(state.clone()),
+        Extension(auth_ctx),
+        Path((group, version, plural, namespace, name)),
+    )
+    .await?
+    .0;
+
+    // Extract and return just the status field
+    let status = cr.status.unwrap_or(serde_json::Value::Null);
+    Ok(Json(status))
+}
+
+/// Update the status subresource of a custom resource
+pub async fn update_custom_resource_status(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((group, version, plural, namespace, name)): Path<(
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+    )>,
+    Json(status): Json<serde_json::Value>,
+) -> Result<Json<CustomResource>> {
+    info!(
+        "Updating custom resource status {}/{}/{}: {}",
+        group, version, plural, name
+    );
+
+    // Find the CRD for this resource type
+    let crd_name = format!("{}.{}", plural, group);
+    let crd = get_crd_for_resource(&state, &crd_name).await?;
+
+    // Check if status subresource is enabled
+    let version_spec = crd
+        .spec
+        .versions
+        .iter()
+        .find(|v| v.name == version)
+        .ok_or_else(|| {
+            rusternetes_common::Error::InvalidResource(format!(
+                "Version {} not found in CRD",
+                version
+            ))
+        })?;
+
+    if version_spec.subresources.is_none()
+        || version_spec.subresources.as_ref().unwrap().status.is_none()
+    {
+        return Err(rusternetes_common::Error::InvalidResource(
+            "Status subresource not enabled for this CRD".to_string(),
+        ));
+    }
+
+    // Check authorization
+    let attrs = if let Some(ref ns) = namespace {
+        RequestAttributes::new(auth_ctx.user.clone(), "update", &plural)
+            .with_api_group(&group)
+            .with_namespace(ns)
+            .with_name(&name)
+            .with_subresource("status")
+    } else {
+        RequestAttributes::new(auth_ctx.user, "update", &plural)
+            .with_api_group(&group)
+            .with_name(&name)
+            .with_subresource("status")
+    };
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Get the existing resource
+    let resource_type = format!("{}_{}", group.replace('.', "_"), plural);
+    let key = if let Some(ref ns) = namespace {
+        build_key(&resource_type, Some(ns), &name)
+    } else {
+        build_key(&resource_type, None, &name)
+    };
+
+    let mut cr: CustomResource = state.storage.get(&key).await?;
+
+    // Update only the status field (optimistic concurrency control)
+    cr.status = Some(status);
+
+    // Save the updated resource
+    let updated = state.storage.update(&key, &cr).await?;
+
+    Ok(Json(updated))
+}
+
+/// Get the scale subresource of a custom resource
+pub async fn get_custom_resource_scale(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((group, version, plural, namespace, name)): Path<(
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+    )>,
+) -> Result<Json<Scale>> {
+    info!(
+        "Getting custom resource scale {}/{}/{}: {}",
+        group, version, plural, name
+    );
+
+    // Find the CRD for this resource type
+    let crd_name = format!("{}.{}", plural, group);
+    let crd = get_crd_for_resource(&state, &crd_name).await?;
+
+    // Check if scale subresource is enabled and get the configuration
+    let version_spec = crd
+        .spec
+        .versions
+        .iter()
+        .find(|v| v.name == version)
+        .ok_or_else(|| {
+            rusternetes_common::Error::InvalidResource(format!(
+                "Version {} not found in CRD",
+                version
+            ))
+        })?;
+
+    let scale_config = version_spec
+        .subresources
+        .as_ref()
+        .and_then(|s| s.scale.as_ref())
+        .ok_or_else(|| {
+            rusternetes_common::Error::InvalidResource(
+                "Scale subresource not enabled for this CRD".to_string(),
+            )
+        })?;
+
+    // Check authorization
+    let attrs = if let Some(ref ns) = namespace {
+        RequestAttributes::new(auth_ctx.user.clone(), "get", &plural)
+            .with_api_group(&group)
+            .with_namespace(ns)
+            .with_name(&name)
+            .with_subresource("scale")
+    } else {
+        RequestAttributes::new(auth_ctx.user, "get", &plural)
+            .with_api_group(&group)
+            .with_name(&name)
+            .with_subresource("scale")
+    };
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Get the existing resource
+    let resource_type = format!("{}_{}", group.replace('.', "_"), plural);
+    let key = if let Some(ref ns) = namespace {
+        build_key(&resource_type, Some(ns), &name)
+    } else {
+        build_key(&resource_type, None, &name)
+    };
+
+    let cr: CustomResource = state.storage.get(&key).await?;
+
+    // Extract scale information using JSONPath
+    let spec_replicas = extract_json_path(&cr.spec, &scale_config.spec_replicas_path)
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as i32;
+
+    let status_replicas = extract_json_path(&cr.status, &scale_config.status_replicas_path)
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as i32;
+
+    let label_selector = if let Some(ref selector_path) = scale_config.label_selector_path {
+        extract_json_path(&cr.status, selector_path)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    } else {
+        None
+    };
+
+    let scale = Scale {
+        api_version: "autoscaling/v1".to_string(),
+        kind: "Scale".to_string(),
+        metadata: cr.metadata.clone(),
+        spec: ScaleSpec {
+            replicas: spec_replicas,
+        },
+        status: Some(ScaleStatus {
+            replicas: status_replicas,
+            selector: label_selector,
+        }),
+    };
+
+    Ok(Json(scale))
+}
+
+/// Update the scale subresource of a custom resource
+pub async fn update_custom_resource_scale(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((group, version, plural, namespace, name)): Path<(
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+    )>,
+    Json(scale): Json<Scale>,
+) -> Result<Json<Scale>> {
+    info!(
+        "Updating custom resource scale {}/{}/{}: {}",
+        group, version, plural, name
+    );
+
+    // Find the CRD for this resource type
+    let crd_name = format!("{}.{}", plural, group);
+    let crd = get_crd_for_resource(&state, &crd_name).await?;
+
+    // Check if scale subresource is enabled and get the configuration
+    let version_spec = crd
+        .spec
+        .versions
+        .iter()
+        .find(|v| v.name == version)
+        .ok_or_else(|| {
+            rusternetes_common::Error::InvalidResource(format!(
+                "Version {} not found in CRD",
+                version
+            ))
+        })?;
+
+    let scale_config = version_spec
+        .subresources
+        .as_ref()
+        .and_then(|s| s.scale.as_ref())
+        .ok_or_else(|| {
+            rusternetes_common::Error::InvalidResource(
+                "Scale subresource not enabled for this CRD".to_string(),
+            )
+        })?;
+
+    // Check authorization
+    let attrs = if let Some(ref ns) = namespace {
+        RequestAttributes::new(auth_ctx.user.clone(), "update", &plural)
+            .with_api_group(&group)
+            .with_namespace(ns)
+            .with_name(&name)
+            .with_subresource("scale")
+    } else {
+        RequestAttributes::new(auth_ctx.user.clone(), "update", &plural)
+            .with_api_group(&group)
+            .with_name(&name)
+            .with_subresource("scale")
+    };
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Get the existing resource
+    let resource_type = format!("{}_{}", group.replace('.', "_"), plural);
+    let key = if let Some(ref ns) = namespace {
+        build_key(&resource_type, Some(ns), &name)
+    } else {
+        build_key(&resource_type, None, &name)
+    };
+
+    let mut cr: CustomResource = state.storage.get(&key).await?;
+
+    // Update the replica count in the spec using JSONPath
+    if let Some(ref mut spec) = cr.spec {
+        set_json_path(spec, &scale_config.spec_replicas_path, scale.spec.replicas);
+    }
+
+    // Save the updated resource
+    let updated = state.storage.update(&key, &cr).await?;
+
+    // Return the updated scale representation
+    get_custom_resource_scale(
+        State(state),
+        Extension(auth_ctx),
+        Path((group, version, plural, namespace, name)),
+    )
+    .await
+}
+
+/// Helper to extract a value from a JSON object using a simple JSONPath
+fn extract_json_path<'a>(
+    json: &'a Option<serde_json::Value>,
+    path: &str,
+) -> Option<&'a serde_json::Value> {
+    let json = json.as_ref()?;
+    let parts: Vec<&str> = path.trim_start_matches('.').split('.').collect();
+
+    let mut current = json;
+    for part in parts {
+        current = current.get(part)?;
+    }
+
+    Some(current)
+}
+
+/// Helper to set a value in a JSON object using a simple JSONPath
+fn set_json_path(json: &mut serde_json::Value, path: &str, value: i32) {
+    let parts: Vec<&str> = path.trim_start_matches('.').split('.').collect();
+
+    if parts.is_empty() {
+        return;
+    }
+
+    // Ensure we're working with an object
+    if !json.is_object() {
+        *json = serde_json::json!({});
+    }
+
+    let mut current = json;
+    for (i, part) in parts.iter().enumerate() {
+        if i == parts.len() - 1 {
+            // Last part - set the value
+            if let Some(obj) = current.as_object_mut() {
+                obj.insert(part.to_string(), serde_json::Value::Number(value.into()));
+            }
+        } else {
+            // Intermediate part - navigate or create
+            let obj = current.as_object_mut().unwrap();
+            current = obj
+                .entry(part.to_string())
+                .or_insert_with(|| serde_json::json!({}));
+        }
+    }
+}
+
+/// Scale represents the scale subresource of a custom resource
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Scale {
+    pub api_version: String,
+    pub kind: String,
+    pub metadata: rusternetes_common::types::ObjectMeta,
+    pub spec: ScaleSpec,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<ScaleStatus>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScaleSpec {
+    pub replicas: i32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScaleStatus {
+    pub replicas: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selector: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

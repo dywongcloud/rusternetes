@@ -83,13 +83,13 @@ make dev-logs-kubelet
 ### Create Resources
 ```bash
 # Create a namespace
-cargo run --bin kubectl -- --server https://localhost:6443 --insecure-skip-tls-verify create -f examples/test-namespace.yaml
+cargo run --bin kubectl -- --server https://localhost:6443 --insecure-skip-tls-verify create -f examples/tests/test-namespace.yaml
 
 # Create a pod
-cargo run --bin kubectl -- --server https://localhost:6443 --insecure-skip-tls-verify create -f examples/test-pod.yaml
+cargo run --bin kubectl -- --server https://localhost:6443 --insecure-skip-tls-verify create -f examples/workloads/test-pod.yaml
 
 # Create a deployment
-cargo run --bin kubectl -- --server https://localhost:6443 --insecure-skip-tls-verify create -f examples/test-deployment.yaml
+cargo run --bin kubectl -- --server https://localhost:6443 --insecure-skip-tls-verify create -f examples/workloads/test-deployment.yaml
 ```
 
 ### List Resources

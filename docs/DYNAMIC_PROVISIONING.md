@@ -176,7 +176,7 @@ podman logs rusternetes-controller-manager 2>&1 | grep -i "binding"
 
 ## Complete Example
 
-See `examples/test-dynamic-pvc.yaml` for a complete working example that includes:
+See `examples/storage/test-dynamic-pvc.yaml` for a complete working example that includes:
 1. StorageClass definition
 2. PVC that will be dynamically provisioned
 3. Pod that uses the dynamically provisioned volume
@@ -184,7 +184,7 @@ See `examples/test-dynamic-pvc.yaml` for a complete working example that include
 Apply it:
 ```bash
 ./target/release/kubectl --server https://localhost:6443 \
-  --insecure-skip-tls-verify apply -f examples/test-dynamic-pvc.yaml
+  --insecure-skip-tls-verify apply -f examples/storage/test-dynamic-pvc.yaml
 ```
 
 ## Implementation Details

@@ -48,7 +48,7 @@ kubectl apply -f examples/metallb/metallb-config-local.yaml
 ### Step 3: Create a LoadBalancer Service
 
 ```bash
-kubectl apply -f examples/test-loadbalancer-service.yaml
+kubectl apply -f examples/networking/test-loadbalancer-service.yaml
 ```
 
 ## Verify It Works

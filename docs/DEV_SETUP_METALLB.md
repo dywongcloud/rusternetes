@@ -46,7 +46,7 @@ After installation, test with:
 
 ```bash
 # Apply a test LoadBalancer service
-kubectl apply -f examples/test-loadbalancer-service.yaml
+kubectl apply -f examples/networking/test-loadbalancer-service.yaml
 
 # Watch for external IP
 kubectl get svc --watch
@@ -67,7 +67,7 @@ kubectl get svc --watch
 # Choose: 9
 
 # 3. Create a test service
-kubectl apply -f examples/test-loadbalancer-service.yaml
+kubectl apply -f examples/networking/test-loadbalancer-service.yaml
 
 # 4. Get the external IP
 kubectl get svc test-loadbalancer-service

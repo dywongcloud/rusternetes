@@ -37,6 +37,9 @@ pub struct RequestAttributes {
 
     /// The specific resource name (None for list operations)
     pub name: Option<String>,
+
+    /// The subresource being accessed (status, scale, etc.)
+    pub subresource: Option<String>,
 }
 
 impl RequestAttributes {
@@ -48,6 +51,7 @@ impl RequestAttributes {
             api_group: String::new(),
             resource: resource.into(),
             name: None,
+            subresource: None,
         }
     }
 
@@ -63,6 +67,11 @@ impl RequestAttributes {
 
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
+        self
+    }
+
+    pub fn with_subresource(mut self, subresource: impl Into<String>) -> Self {
+        self.subresource = Some(subresource.into());
         self
     }
 }
