@@ -1,7 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::super::apply::*;
-
     #[test]
     fn test_multi_document_yaml_parsing() {
         let yaml = r#"

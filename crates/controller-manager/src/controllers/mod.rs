@@ -14,3 +14,5 @@ pub mod resource_quota;
 pub mod pod_disruption_budget;
 pub mod hpa;
 pub mod vpa;
+pub mod garbage_collector;
+pub mod ttl_controller;

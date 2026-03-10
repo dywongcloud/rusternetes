@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn, error};
 
+#[allow(dead_code)]
 pub struct HorizontalPodAutoscalerController {
     hpas: Arc<RwLock<HashMap<String, HorizontalPodAutoscaler>>>,
 }
@@ -172,11 +173,10 @@ impl HorizontalPodAutoscalerController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::resources::{
+    use rusternetes_common::resources::{
         HorizontalPodAutoscalerSpec, CrossVersionObjectReference,
         MetricSpec, ResourceMetricSource, MetricTarget,
     };
-    use common::types::ObjectMeta;
 
     #[tokio::test]
     async fn test_create_and_get_hpa() {

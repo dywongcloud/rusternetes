@@ -1,9 +1,11 @@
-// PATCH operations implementation for Kubernetes API compatibility
-//
-// Supports three patch types:
-// 1. Strategic Merge Patch (Kubernetes-specific)
-// 2. JSON Merge Patch (RFC 7386)
-// 3. JSON Patch (RFC 6902)
+//! PATCH operations implementation for Kubernetes API compatibility
+//!
+//! Supports three patch types:
+//! 1. Strategic Merge Patch (Kubernetes-specific)
+//! 2. JSON Merge Patch (RFC 7386)
+//! 3. JSON Patch (RFC 6902)
+
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};

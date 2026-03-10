@@ -199,6 +199,9 @@ impl JobController {
                 creation_timestamp: Some(chrono::Utc::now()),
                 deletion_timestamp: None,
                 resource_version: None,
+                deletion_grace_period_seconds: None,
+                finalizers: None,
+                owner_references: None,
             },
             spec: Some(spec),
             status: Some(PodStatus {
@@ -221,8 +224,6 @@ impl JobController {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_pods_needed_calculation() {
         let parallelism = 3;

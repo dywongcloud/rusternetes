@@ -254,24 +254,61 @@ mod tests {
     use rusternetes_common::types::ObjectMeta;
 
     fn create_test_pod(name: &str, namespace: &str, phase: &str, node_name: Option<String>) -> Pod {
+        use rusternetes_common::types::{TypeMeta, Phase};
+
         Pod {
-            api_version: "v1".to_string(),
-            kind: "Pod".to_string(),
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
             metadata: ObjectMeta::new(name)
                 .with_namespace(namespace),
-            spec: PodSpec {
+            spec: Some(PodSpec {
                 init_containers: None,
                 containers: vec![Container {
                     name: "test-container".to_string(),
                     image: "nginx:latest".to_string(),
-                    ..Default::default()
+                    image_pull_policy: None,
+                    ports: None,
+                    env: None,
+                    volume_mounts: None,
+                    liveness_probe: None,
+                    readiness_probe: None,
+                    startup_probe: None,
+                    resources: None,
+                    working_dir: None,
+                    command: None,
+                    args: None,
+                    security_context: None,
                 }],
+                restart_policy: None,
+                node_selector: None,
                 node_name,
-                ..Default::default()
-            },
+                volumes: None,
+                affinity: None,
+                tolerations: None,
+                service_account_name: None,
+                priority: None,
+                priority_class_name: None,
+                hostname: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+            }),
             status: Some(PodStatus {
-                phase: Some(phase.to_string()),
-                ..Default::default()
+                phase: match phase {
+                    "Pending" => Phase::Pending,
+                    "Running" => Phase::Running,
+                    "Succeeded" => Phase::Succeeded,
+                    "Failed" => Phase::Failed,
+                    _ => Phase::Unknown,
+                },
+                message: None,
+                reason: None,
+                pod_ip: None,
+                host_ip: None,
+                container_statuses: None,
+                init_container_statuses: None,
             }),
         }
     }

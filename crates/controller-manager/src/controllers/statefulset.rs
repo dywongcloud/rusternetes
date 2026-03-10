@@ -171,22 +171,22 @@ impl StatefulSetController {
             pod_name.clone(),
         );
 
+        let mut metadata = rusternetes_common::types::ObjectMeta::new(pod_name.clone())
+            .with_namespace(namespace.to_string())
+            .with_labels(labels);
+
+        if let Some(template_meta) = &template.metadata {
+            if let Some(ref annotations) = template_meta.annotations {
+                metadata.annotations = Some(annotations.clone());
+            }
+        }
+
         let pod = Pod {
             type_meta: rusternetes_common::types::TypeMeta {
                 kind: "Pod".to_string(),
                 api_version: "v1".to_string(),
             },
-            metadata: rusternetes_common::types::ObjectMeta {
-                name: pod_name.clone(),
-                namespace: Some(namespace.to_string()),
-                labels: Some(labels),
-                annotations: template.metadata.as_ref()
-                    .and_then(|m| m.annotations.clone()),
-                uid: uuid::Uuid::new_v4().to_string(),
-                creation_timestamp: Some(chrono::Utc::now()),
-                deletion_timestamp: None,
-                resource_version: None,
-            },
+            metadata,
             spec: Some(template.spec.clone()),
             status: Some(PodStatus {
                 phase: Phase::Pending,
@@ -208,8 +208,6 @@ impl StatefulSetController {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_pod_name_generation() {
         let statefulset_name = "web";

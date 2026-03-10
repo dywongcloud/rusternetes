@@ -67,16 +67,7 @@ impl Event {
         Self {
             api_version: "v1".to_string(),
             kind: "Event".to_string(),
-            metadata: ObjectMeta {
-                name,
-                namespace: Some(namespace),
-                uid: uuid::Uuid::new_v4().to_string(),
-                resource_version: None,
-                creation_timestamp: Some(now),
-                deletion_timestamp: None,
-                labels: None,
-                annotations: None,
-            },
+            metadata: ObjectMeta::new(name).with_namespace(namespace),
             involved_object,
             reason,
             message,

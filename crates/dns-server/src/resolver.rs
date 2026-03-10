@@ -54,6 +54,9 @@ impl KubernetesResolver {
         // Clear existing records for this service
         records_map.remove(&fqdn);
 
+        // Also remove any existing SRV records for this service
+        records_map.retain(|key, _| !key.ends_with(&format!(".{}", fqdn)));
+
         let mut records = Vec::new();
 
         if let Some(ip_str) = cluster_ip {
@@ -99,13 +102,13 @@ impl KubernetesResolver {
                 }
             }
 
-            // Add SRV records for headless services
+            // Add SRV records for headless services (stored separately)
             for endpoint in &endpoints {
                 if let Some(pod_name) = &endpoint.pod_name {
                     let srv_name = format!("_{}._{}.{}", endpoint.port_name.as_deref().unwrap_or("http"), endpoint.protocol.as_deref().unwrap_or("tcp"), fqdn);
                     let target = format!("{}.{}.pod.{}", pod_name, namespace, self.cluster_domain);
 
-                    records.push(DnsRecord {
+                    let srv_record = DnsRecord {
                         name: srv_name.clone(),
                         rdata: RecordData::SRV {
                             priority: 0,
@@ -113,7 +116,10 @@ impl KubernetesResolver {
                             port: endpoint.port,
                             target: target.clone(),
                         },
-                    });
+                    };
+
+                    // Store SRV records under their own name, not the service name
+                    records_map.entry(srv_name.clone()).or_insert_with(Vec::new).push(srv_record);
                     debug!("Added SRV record: {} -> {}:{}", srv_name, target, endpoint.port);
                 }
             }
@@ -167,6 +173,10 @@ impl KubernetesResolver {
         let fqdn = format!("{}.{}.svc.{}", name, namespace, self.cluster_domain);
         let mut records_map = self.records.write().unwrap();
         records_map.remove(&fqdn);
+
+        // Also remove any SRV records for this service
+        records_map.retain(|key, _| !key.ends_with(&format!(".{}", fqdn)));
+
         debug!("Removed service record: {}", fqdn);
     }
 
@@ -225,13 +235,13 @@ impl KubernetesResolver {
                     }
                 };
 
-                let mut record = Record::new();
-                record.set_name(record_name);
-                record.set_ttl(self.ttl);
-                record.set_dns_class(hickory_proto::rr::DNSClass::IN);
-                record.set_data(Some(rdata));
+                let dns_record = Record::from_rdata(
+                    record_name,
+                    self.ttl,
+                    rdata,
+                );
 
-                result.push(record);
+                result.push(dns_record);
             }
 
             if !result.is_empty() {

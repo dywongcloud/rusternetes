@@ -30,6 +30,10 @@ pub struct ObjectMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deletion_timestamp: Option<DateTime<Utc>>,
 
+    /// DeletionGracePeriodSeconds is the number of seconds before the object should be deleted
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deletion_grace_period_seconds: Option<i64>,
+
     /// Labels are key-value pairs for categorization
     #[serde(skip_serializing_if = "Option::is_none")]
     pub labels: Option<HashMap<String, String>>,
@@ -37,6 +41,14 @@ pub struct ObjectMeta {
     /// Annotations are key-value pairs for arbitrary metadata
     #[serde(skip_serializing_if = "Option::is_none")]
     pub annotations: Option<HashMap<String, String>>,
+
+    /// Finalizers are pre-deletion hooks that must complete before deletion
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finalizers: Option<Vec<String>>,
+
+    /// OwnerReferences are references to objects that own this object
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_references: Option<Vec<OwnerReference>>,
 }
 
 fn generate_uid() -> String {
@@ -52,8 +64,11 @@ impl ObjectMeta {
             resource_version: None,
             creation_timestamp: Some(Utc::now()),
             deletion_timestamp: None,
+            deletion_grace_period_seconds: None,
             labels: None,
             annotations: None,
+            finalizers: None,
+            owner_references: None,
         }
     }
 
@@ -64,6 +79,21 @@ impl ObjectMeta {
 
     pub fn with_labels(mut self, labels: HashMap<String, String>) -> Self {
         self.labels = Some(labels);
+        self
+    }
+
+    pub fn with_annotations(mut self, annotations: HashMap<String, String>) -> Self {
+        self.annotations = Some(annotations);
+        self
+    }
+
+    pub fn with_owner_reference(mut self, owner: OwnerReference) -> Self {
+        self.owner_references = Some(vec![owner]);
+        self
+    }
+
+    pub fn with_finalizers(mut self, finalizers: Vec<String>) -> Self {
+        self.finalizers = Some(finalizers);
         self
     }
 
@@ -79,6 +109,31 @@ impl ObjectMeta {
         if self.creation_timestamp.is_none() {
             self.creation_timestamp = Some(Utc::now());
         }
+    }
+
+    /// Check if the object is being deleted (has deletion timestamp)
+    pub fn is_being_deleted(&self) -> bool {
+        self.deletion_timestamp.is_some()
+    }
+
+    /// Add a finalizer to the object
+    pub fn add_finalizer(&mut self, finalizer: String) {
+        let finalizers = self.finalizers.get_or_insert_with(Vec::new);
+        if !finalizers.contains(&finalizer) {
+            finalizers.push(finalizer);
+        }
+    }
+
+    /// Remove a finalizer from the object
+    pub fn remove_finalizer(&mut self, finalizer: &str) {
+        if let Some(finalizers) = &mut self.finalizers {
+            finalizers.retain(|f| f != finalizer);
+        }
+    }
+
+    /// Check if the object has any finalizers
+    pub fn has_finalizers(&self) -> bool {
+        self.finalizers.as_ref().map_or(false, |f| !f.is_empty())
     }
 }
 
@@ -131,4 +186,73 @@ pub struct ResourceRequirements {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requests: Option<HashMap<String, String>>,
+}
+
+/// OwnerReference contains information about an object that owns another object
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerReference {
+    /// API version of the referent
+    pub api_version: String,
+
+    /// Kind of the referent
+    pub kind: String,
+
+    /// Name of the referent
+    pub name: String,
+
+    /// UID of the referent
+    pub uid: String,
+
+    /// If true, AND if the owner has the "foregroundDeletion" finalizer, then
+    /// the owner cannot be deleted from the key-value store until this
+    /// reference is removed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_owner_deletion: Option<bool>,
+
+    /// If true, this reference points to the managing controller
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub controller: Option<bool>,
+}
+
+impl OwnerReference {
+    /// Create a new owner reference
+    pub fn new(
+        api_version: impl Into<String>,
+        kind: impl Into<String>,
+        name: impl Into<String>,
+        uid: impl Into<String>,
+    ) -> Self {
+        Self {
+            api_version: api_version.into(),
+            kind: kind.into(),
+            name: name.into(),
+            uid: uid.into(),
+            block_owner_deletion: None,
+            controller: None,
+        }
+    }
+
+    /// Mark this reference as the managing controller
+    pub fn with_controller(mut self, is_controller: bool) -> Self {
+        self.controller = Some(is_controller);
+        self
+    }
+
+    /// Set whether this reference blocks owner deletion
+    pub fn with_block_owner_deletion(mut self, block: bool) -> Self {
+        self.block_owner_deletion = Some(block);
+        self
+    }
+}
+
+/// Deletion propagation policy
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum DeletionPropagation {
+    /// Orphan dependents (default for some resources)
+    Orphan,
+    /// Foreground deletion - delete dependents first
+    Foreground,
+    /// Background deletion - delete owner first, let GC clean up dependents
+    Background,
 }

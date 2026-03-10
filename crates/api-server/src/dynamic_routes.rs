@@ -1,7 +1,9 @@
-// Dynamic API route registration for Custom Resource Definitions
-//
-// This module enables hot-reload of API routes when CRDs are created or deleted,
-// allowing the API server to automatically serve new custom resource types without restart.
+//! Dynamic API route registration for Custom Resource Definitions
+//!
+//! This module enables hot-reload of API routes when CRDs are created or deleted,
+//! allowing the API server to automatically serve new custom resource types without restart.
+
+#![allow(dead_code)]
 
 use crate::{handlers::custom_resource, state::ApiServerState};
 use axum::{
@@ -222,17 +224,18 @@ mod tests {
     };
     use rusternetes_common::types::ObjectMeta;
 
-    fn create_test_state() -> Arc<ApiServerState> {
+    async fn create_test_state() -> Arc<ApiServerState> {
         use rusternetes_common::auth::TokenManager;
         use rusternetes_common::authz::AlwaysAllowAuthorizer;
         use rusternetes_common::observability::MetricsRegistry;
         use rusternetes_storage::etcd::EtcdStorage;
 
         let storage = Arc::new(
-            EtcdStorage::new(&["http://localhost:2379"])
+            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
+                .await
                 .expect("Failed to create storage"),
         );
-        let token_manager = Arc::new(TokenManager::new("test-secret".to_string()));
+        let token_manager = Arc::new(TokenManager::new(b"test-secret"));
         let authorizer = Arc::new(AlwaysAllowAuthorizer) as Arc<dyn rusternetes_common::authz::Authorizer>;
         let metrics = Arc::new(MetricsRegistry::new());
 
@@ -291,17 +294,19 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_dynamic_route_manager_creation() {
-        let state = create_test_state();
+    #[tokio::test]
+    #[ignore] // Requires etcd to be running
+    async fn test_dynamic_route_manager_creation() {
+        let state = create_test_state().await;
         let manager = DynamicRouteManager::new(state);
         // Manager should be created successfully
         assert!(std::ptr::addr_of!(manager) as usize > 0);
     }
 
-    #[test]
-    fn test_build_namespaced_crd_routes() {
-        let state = create_test_state();
+    #[tokio::test]
+    #[ignore] // Requires etcd to be running
+    async fn test_build_namespaced_crd_routes() {
+        let state = create_test_state().await;
         let manager = DynamicRouteManager::new(state);
         let crd = create_test_crd(false);
 
@@ -309,9 +314,10 @@ mod tests {
         // If we got here without panicking, route building succeeded
     }
 
-    #[test]
-    fn test_build_crd_routes_with_subresources() {
-        let state = create_test_state();
+    #[tokio::test]
+    #[ignore] // Requires etcd to be running
+    async fn test_build_crd_routes_with_subresources() {
+        let state = create_test_state().await;
         let manager = DynamicRouteManager::new(state);
         let crd = create_test_crd(true);
 
@@ -319,9 +325,10 @@ mod tests {
         // If we got here without panicking, route building with subresources succeeded
     }
 
-    #[test]
-    fn test_build_cluster_scoped_crd_routes() {
-        let state = create_test_state();
+    #[tokio::test]
+    #[ignore] // Requires etcd to be running
+    async fn test_build_cluster_scoped_crd_routes() {
+        let state = create_test_state().await;
         let manager = DynamicRouteManager::new(state);
         let mut crd = create_test_crd(false);
         crd.spec.scope = ResourceScope::Cluster;
@@ -330,9 +337,10 @@ mod tests {
         // If we got here without panicking, cluster-scoped route building succeeded
     }
 
-    #[test]
-    fn test_register_and_unregister_crd() {
-        let state = create_test_state();
+    #[tokio::test]
+    #[ignore] // Requires etcd to be running
+    async fn test_register_and_unregister_crd() {
+        let state = create_test_state().await;
         let manager = DynamicRouteManager::new(state);
         let crd = create_test_crd(false);
 

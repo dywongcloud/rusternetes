@@ -1,7 +1,9 @@
-/// Server-Side Apply handler for Kubernetes API compatibility
-///
-/// Provides /apply endpoints that implement server-side apply semantics
-/// with field manager tracking and conflict detection.
+//! Server-Side Apply handler for Kubernetes API compatibility
+//!
+//! Provides /apply endpoints that implement server-side apply semantics
+//! with field manager tracking and conflict detection.
+
+#![allow(dead_code)]
 
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{

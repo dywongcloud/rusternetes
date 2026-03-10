@@ -1,7 +1,9 @@
-// Conversion webhook support for Custom Resource Definitions
-//
-// This module implements Kubernetes-compatible conversion webhooks that allow
-// automatic conversion between different versions of custom resources.
+//! Conversion webhook support for Custom Resource Definitions
+//!
+//! This module implements Kubernetes-compatible conversion webhooks that allow
+//! automatic conversion between different versions of custom resources.
+
+#![allow(dead_code)]
 
 use rusternetes_common::resources::{
     CustomResource, CustomResourceDefinition, WebhookClientConfig,

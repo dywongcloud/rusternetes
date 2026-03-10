@@ -171,7 +171,7 @@ pub async fn delete_crd(
 
     // Get CRD to check for custom resources
     let key = build_key("customresourcedefinitions", None, &name);
-    let crd: CustomResourceDefinition = state.storage.get(&key).await?;
+    let _crd: CustomResourceDefinition = state.storage.get(&key).await?;
 
     // TODO: Check if there are any custom resources of this type
     // and optionally delete them based on finalizers

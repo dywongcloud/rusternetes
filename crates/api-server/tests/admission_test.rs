@@ -12,7 +12,7 @@ use rusternetes_common::resources::{
     Container, LimitRange, LimitRangeItem, LimitRangeSpec, Pod, PodSpec, ResourceQuota,
     ResourceQuotaSpec,
 };
-use rusternetes_common::types::{ObjectMeta, TypeMeta, ResourceRequirements};
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -41,6 +41,7 @@ fn create_minimal_pod(name: &str, namespace: &str) -> Pod {
                 startup_probe: None,
                 security_context: None,
             }],
+            init_containers: None,
             volumes: None,
             restart_policy: None,
             node_name: None,

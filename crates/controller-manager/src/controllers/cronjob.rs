@@ -236,6 +236,9 @@ impl CronJobController {
                 creation_timestamp: Some(chrono::Utc::now()),
                 deletion_timestamp: None,
                 resource_version: None,
+                deletion_grace_period_seconds: None,
+                finalizers: None,
+                owner_references: None,
             },
             spec: cronjob.spec.job_template.spec.clone(),
             status: None,
@@ -328,8 +331,6 @@ impl CronJobController {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_cron_schedule_parsing() {
         // Test that schedule patterns are recognized

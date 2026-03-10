@@ -112,6 +112,7 @@ fn create_test_pod(
                 args: None,
                 security_context: None,
             }],
+            init_containers: None,
             restart_policy: Some("Always".to_string()),
             node_selector,
             node_name: None,
@@ -133,6 +134,7 @@ fn create_test_pod(
             host_ip: None,
             pod_ip: None,
             container_statuses: None,
+            init_container_statuses: None,
         }),
     }
 }

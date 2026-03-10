@@ -1,10 +1,11 @@
-use rusternetes_common::resources::{PodDisruptionBudget, PodDisruptionBudgetStatus, IntOrString};
+use rusternetes_common::resources::PodDisruptionBudget;
 use rusternetes_common::types::LabelSelector;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn, error};
 
+#[allow(dead_code)]
 pub struct PodDisruptionBudgetController {
     pdbs: Arc<RwLock<HashMap<String, PodDisruptionBudget>>>,
 }
@@ -140,8 +141,7 @@ impl PodDisruptionBudgetController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::resources::{PodDisruptionBudgetSpec};
-    use common::types::ObjectMeta;
+    use rusternetes_common::resources::{IntOrString, PodDisruptionBudgetSpec};
 
     #[tokio::test]
     async fn test_create_and_get_pdb() {

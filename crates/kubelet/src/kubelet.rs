@@ -242,6 +242,7 @@ impl Kubelet {
                             host_ip: Some("127.0.0.1".to_string()),
                             pod_ip,
                             container_statuses,
+                            init_container_statuses: None,
                         });
 
                         let key = build_key("pods", new_pod.metadata.namespace.as_deref(), &new_pod.metadata.name);
@@ -341,6 +342,7 @@ impl Kubelet {
             host_ip: Some("127.0.0.1".to_string()),
             pod_ip: None,
             container_statuses: None,
+            init_container_statuses: None,
         });
 
         let key = build_key("pods", new_pod.metadata.namespace.as_deref(), &new_pod.metadata.name);

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn, error};
 
+#[allow(dead_code)]
 pub struct VerticalPodAutoscalerController {
     vpas: Arc<RwLock<HashMap<String, VerticalPodAutoscaler>>>,
 }
@@ -148,11 +149,10 @@ impl VerticalPodAutoscalerController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::resources::{
+    use rusternetes_common::resources::{
         VerticalPodAutoscalerSpec, CrossVersionObjectReference,
         PodUpdatePolicy, PodResourcePolicy, ContainerResourcePolicy,
     };
-    use common::types::ObjectMeta;
 
     #[tokio::test]
     async fn test_create_and_get_vpa() {

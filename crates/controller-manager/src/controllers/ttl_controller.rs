@@ -1,0 +1,343 @@
+// TTL Controller - Automatic cleanup of completed Jobs based on TTL
+//
+// Implements:
+// - TTL after finished for Jobs
+// - Automatic deletion of finished Jobs after specified time
+// - Cleanup of associated Pods
+
+use chrono::{DateTime, Duration, Utc};
+use rusternetes_common::resources::workloads::Job;
+use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
+use std::sync::Arc;
+use tokio::time::{sleep, Duration as TokioDuration};
+use tracing::{debug, error, info, warn};
+
+/// TTL Controller for automatic cleanup of finished Jobs
+#[allow(dead_code)]
+pub struct TTLController {
+    storage: Arc<MemoryStorage>,
+    /// How often to check for expired Jobs
+    check_interval: TokioDuration,
+}
+
+impl TTLController {
+    pub fn new(storage: Arc<MemoryStorage>) -> Self {
+        Self {
+            storage,
+            check_interval: TokioDuration::from_secs(60), // Check every 60 seconds
+        }
+    }
+
+    /// Start the TTL controller
+    pub async fn run(&self) {
+        info!("Starting TTL Controller");
+        loop {
+            if let Err(e) = self.check_and_cleanup().await {
+                error!("TTL controller check failed: {}", e);
+            }
+            sleep(self.check_interval).await;
+        }
+    }
+
+    /// Check all Jobs and cleanup expired ones
+    pub async fn check_and_cleanup(&self) -> rusternetes_common::Result<()> {
+        debug!("Checking for expired Jobs");
+
+        // List all Jobs across all namespaces
+        let prefix = build_prefix("jobs", None);
+        let jobs: Vec<Job> = self.storage.list(&prefix).await?;
+
+        let now = Utc::now();
+        let mut cleaned_count = 0;
+
+        for job in jobs {
+            if let Some(ttl_seconds) = self.get_ttl_seconds_after_finished(&job) {
+                if self.should_cleanup(&job, ttl_seconds, now).await {
+                    if let Err(e) = self.cleanup_job(&job).await {
+                        error!(
+                            "Failed to cleanup job {}/{}: {}",
+                            job.metadata.namespace.as_deref().unwrap_or("default"),
+                            job.metadata.name,
+                            e
+                        );
+                    } else {
+                        cleaned_count += 1;
+                    }
+                }
+            }
+        }
+
+        if cleaned_count > 0 {
+            info!("Cleaned up {} expired Jobs", cleaned_count);
+        }
+
+        Ok(())
+    }
+
+    /// Get TTL seconds from Job spec
+    pub fn get_ttl_seconds_after_finished(&self, job: &Job) -> Option<i32> {
+        // Check if the job spec has ttlSecondsAfterFinished annotation
+        // Since we don't have it in the spec yet, check annotations
+        job.metadata
+            .annotations
+            .as_ref()
+            .and_then(|a| a.get("ttlSecondsAfterFinished"))
+            .and_then(|v| v.parse().ok())
+    }
+
+    /// Check if a Job should be cleaned up
+    async fn should_cleanup(&self, job: &Job, ttl_seconds: i32, now: DateTime<Utc>) -> bool {
+        // Job must be finished (Complete or Failed)
+        if !self.is_job_finished(job) {
+            return false;
+        }
+
+        // Get the finish time
+        if let Some(finish_time) = self.get_job_finish_time(job) {
+            let ttl_duration = Duration::seconds(ttl_seconds as i64);
+            let expiry_time = finish_time + ttl_duration;
+
+            if now >= expiry_time {
+                info!(
+                    "Job {}/{} has exceeded TTL ({} seconds after finish at {})",
+                    job.metadata.namespace.as_deref().unwrap_or("default"),
+                    job.metadata.name,
+                    ttl_seconds,
+                    finish_time
+                );
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Check if a Job is finished
+    fn is_job_finished(&self, job: &Job) -> bool {
+        if let Some(status) = &job.status {
+            if let Some(conditions) = &status.conditions {
+                return conditions.iter().any(|c| {
+                    matches!(c.condition_type.as_str(), "Complete" | "Failed")
+                        && c.status == "True"
+                });
+            }
+        }
+        false
+    }
+
+    /// Get the finish time of a Job
+    fn get_job_finish_time(&self, job: &Job) -> Option<DateTime<Utc>> {
+        if let Some(status) = &job.status {
+            if let Some(conditions) = &status.conditions {
+                // Find the Complete or Failed condition
+                for condition in conditions {
+                    if matches!(condition.condition_type.as_str(), "Complete" | "Failed")
+                        && condition.status == "True"
+                    {
+                        return condition.last_transition_time;
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Cleanup a Job and its associated Pods
+    async fn cleanup_job(&self, job: &Job) -> rusternetes_common::Result<()> {
+        let namespace = job.metadata.namespace.as_deref().unwrap_or("default");
+        let name = &job.metadata.name;
+
+        info!("Cleaning up Job: {}/{}", namespace, name);
+
+        // Delete associated Pods first (cascade deletion)
+        if let Err(e) = self.delete_job_pods(namespace, &job.metadata.uid).await {
+            warn!(
+                "Failed to delete pods for job {}/{}: {}",
+                namespace, name, e
+            );
+        }
+
+        // Delete the Job itself
+        let key = build_key("jobs", Some(namespace), name);
+        self.storage.delete(&key).await?;
+
+        info!("Successfully cleaned up Job: {}/{}", namespace, name);
+        Ok(())
+    }
+
+    /// Delete all Pods owned by a Job
+    async fn delete_job_pods(
+        &self,
+        namespace: &str,
+        job_uid: &str,
+    ) -> rusternetes_common::Result<()> {
+        use rusternetes_common::resources::Pod;
+
+        let prefix = build_prefix("pods", Some(namespace));
+        let pods: Vec<Pod> = self.storage.list(&prefix).await?;
+
+        for pod in pods {
+            // Check if this Pod is owned by the Job
+            if let Some(owner_refs) = &pod.metadata.owner_references {
+                if owner_refs.iter().any(|o| o.uid == job_uid) {
+                    let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                    if let Err(e) = self.storage.delete(&pod_key).await {
+                        warn!("Failed to delete pod {}: {}", pod.metadata.name, e);
+                    } else {
+                        debug!("Deleted pod {}", pod.metadata.name);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Job spec extension for TTL
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobSpecWithTTL {
+    /// Duration in seconds the job can be active before the system tries to terminate it
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_deadline_seconds: Option<i64>,
+
+    /// Clean up finished Jobs (complete or failed) after this time (in seconds)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds_after_finished: Option<i32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use rusternetes_common::resources::workloads::{JobCondition, JobSpec, JobStatus, PodTemplateSpec};
+    use rusternetes_common::types::ObjectMeta;
+    use std::collections::HashMap;
+
+    fn create_test_job(name: &str, namespace: &str, ttl_seconds: i32) -> Job {
+        let mut annotations = HashMap::new();
+        annotations.insert(
+            "ttlSecondsAfterFinished".to_string(),
+            ttl_seconds.to_string(),
+        );
+
+        Job {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Job".to_string(),
+                api_version: "batch/v1".to_string(),
+            },
+            metadata: ObjectMeta::new(name)
+                .with_namespace(namespace)
+                .with_labels(HashMap::new())
+                .with_annotations(annotations),
+            spec: JobSpec {
+                template: PodTemplateSpec {
+                    metadata: None,
+                    spec: rusternetes_common::resources::pod::PodSpec {
+                        containers: vec![],
+                        init_containers: None,
+                        volumes: None,
+                        restart_policy: Some("Never".to_string()),
+                        node_name: None,
+                        node_selector: None,
+                        service_account_name: None,
+                        hostname: None,
+                        host_network: None,
+                        host_pid: None,
+                        host_ipc: None,
+                        affinity: None,
+                        tolerations: None,
+                        priority: None,
+                        priority_class_name: None,
+                    },
+                },
+                completions: Some(1),
+                parallelism: Some(1),
+                backoff_limit: Some(3),
+                active_deadline_seconds: None,
+            },
+            status: Some(JobStatus {
+                active: Some(0),
+                succeeded: Some(1),
+                failed: Some(0),
+                conditions: Some(vec![JobCondition {
+                    condition_type: "Complete".to_string(),
+                    status: "True".to_string(),
+                    last_probe_time: Some(Utc::now()),
+                    last_transition_time: Some(Utc::now() - Duration::seconds(120)),
+                    reason: Some("JobComplete".to_string()),
+                    message: Some("Job completed successfully".to_string()),
+                }]),
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ttl_controller_identifies_finished_job() {
+        let storage = Arc::new(rusternetes_storage::memory::MemoryStorage::new());
+        let controller = TTLController::new(storage.clone());
+
+        let job = create_test_job("test-job", "default", 60);
+        assert!(controller.is_job_finished(&job));
+    }
+
+    #[tokio::test]
+    async fn test_ttl_controller_gets_finish_time() {
+        let storage = Arc::new(rusternetes_storage::memory::MemoryStorage::new());
+        let controller = TTLController::new(storage.clone());
+
+        let job = create_test_job("test-job", "default", 60);
+        let finish_time = controller.get_job_finish_time(&job);
+        assert!(finish_time.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_ttl_seconds_parsing() {
+        let storage = Arc::new(rusternetes_storage::memory::MemoryStorage::new());
+        let controller = TTLController::new(storage.clone());
+
+        let job = create_test_job("test-job", "default", 100);
+        let ttl = controller.get_ttl_seconds_after_finished(&job);
+        assert_eq!(ttl, Some(100));
+    }
+
+    #[tokio::test]
+    async fn test_should_cleanup_expired_job() {
+        let storage = Arc::new(rusternetes_storage::memory::MemoryStorage::new());
+        let controller = TTLController::new(storage.clone());
+
+        // Create a job that finished 120 seconds ago with 60 second TTL
+        let job = create_test_job("test-job", "default", 60);
+        let now = Utc::now();
+
+        // Should be cleaned up since it finished 120 seconds ago and TTL is 60 seconds
+        let should_cleanup = controller.should_cleanup(&job, 60, now).await;
+        assert!(should_cleanup);
+    }
+
+    #[tokio::test]
+    async fn test_should_not_cleanup_recent_job() {
+        let storage = Arc::new(rusternetes_storage::memory::MemoryStorage::new());
+        let controller = TTLController::new(storage.clone());
+
+        // Create a job that just finished with 3600 second TTL
+        let mut job = create_test_job("test-job", "default", 3600);
+
+        // Update the finish time to be very recent
+        if let Some(ref mut status) = job.status {
+            if let Some(ref mut conditions) = status.conditions {
+                if let Some(condition) = conditions.first_mut() {
+                    condition.last_transition_time = Some(Utc::now() - Duration::seconds(10));
+                }
+            }
+        }
+
+        let now = Utc::now();
+
+        // Should NOT be cleaned up since it just finished and TTL is 1 hour
+        let should_cleanup = controller.should_cleanup(&job, 3600, now).await;
+        assert!(!should_cleanup);
+    }
+}

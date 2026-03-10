@@ -91,6 +91,9 @@ impl EndpointsController {
                 namespace: Some(namespace.clone()),
                 uid: String::new(),
                 resource_version: None,
+                deletion_grace_period_seconds: None,
+                finalizers: None,
+                owner_references: None,
                 creation_timestamp: None,
                 deletion_timestamp: None,
                 labels: service.metadata.labels.clone(),
@@ -228,10 +231,11 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    #[test]
-    fn test_pod_matches_selector() {
+    #[tokio::test]
+    async fn test_pod_matches_selector() {
+        let storage = Arc::new(EtcdStorage::new(vec!["http://localhost:2379".to_string()]).await.unwrap());
         let controller = EndpointsController {
-            storage: Arc::new(unsafe { std::mem::zeroed() }),
+            storage,
         };
 
         let mut pod_labels = HashMap::new();
@@ -248,6 +252,9 @@ mod tests {
                 namespace: Some("default".to_string()),
                 uid: String::new(),
                 resource_version: None,
+                deletion_grace_period_seconds: None,
+                finalizers: None,
+                owner_references: None,
                 creation_timestamp: None,
                 deletion_timestamp: None,
                 labels: Some(pod_labels),
@@ -263,6 +270,8 @@ mod tests {
                 service_account_name: None,
                 hostname: None,
                 host_network: None,
+                host_pid: None,
+                host_ipc: None,
                 affinity: None,
                 tolerations: None,
                 priority: None,
@@ -290,10 +299,11 @@ mod tests {
         assert!(!controller.pod_matches_selector(&pod, &selector));
     }
 
-    #[test]
-    fn test_is_pod_ready() {
+    #[tokio::test]
+    async fn test_is_pod_ready() {
+        let storage = Arc::new(EtcdStorage::new(vec!["http://localhost:2379".to_string()]).await.unwrap());
         let controller = EndpointsController {
-            storage: Arc::new(unsafe { std::mem::zeroed() }),
+            storage,
         };
 
         // Pod without status
@@ -307,6 +317,9 @@ mod tests {
                 namespace: None,
                 uid: String::new(),
                 resource_version: None,
+                deletion_grace_period_seconds: None,
+                finalizers: None,
+                owner_references: None,
                 creation_timestamp: None,
                 deletion_timestamp: None,
                 labels: None,
@@ -322,6 +335,8 @@ mod tests {
                 service_account_name: None,
                 hostname: None,
                 host_network: None,
+                host_pid: None,
+                host_ipc: None,
                 affinity: None,
                 tolerations: None,
                 priority: None,
@@ -340,6 +355,7 @@ mod tests {
                 host_ip: None,
                 pod_ip: None,
                 container_statuses: None,
+                init_container_statuses: None,
             }),
             ..pod_no_status.clone()
         };
@@ -363,6 +379,7 @@ mod tests {
                         container_id: Some("container-123".to_string()),
                     },
                 ]),
+                init_container_statuses: None,
             }),
             ..pod_no_status.clone()
         };
@@ -386,6 +403,7 @@ mod tests {
                         container_id: Some("container-123".to_string()),
                     },
                 ]),
+                init_container_statuses: None,
             }),
             ..pod_no_status
         };

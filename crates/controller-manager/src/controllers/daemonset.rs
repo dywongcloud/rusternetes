@@ -189,22 +189,22 @@ impl DaemonSetController {
         let spec = template.spec.clone();
         // Note: In production, would set node_name here but PodSpec doesn't have this field yet
 
+        let mut metadata = rusternetes_common::types::ObjectMeta::new(pod_name.clone())
+            .with_namespace(namespace.to_string())
+            .with_labels(labels);
+
+        if let Some(template_meta) = &template.metadata {
+            if let Some(ref annotations) = template_meta.annotations {
+                metadata.annotations = Some(annotations.clone());
+            }
+        }
+
         let pod = Pod {
             type_meta: rusternetes_common::types::TypeMeta {
                 kind: "Pod".to_string(),
                 api_version: "v1".to_string(),
             },
-            metadata: rusternetes_common::types::ObjectMeta {
-                name: pod_name.clone(),
-                namespace: Some(namespace.to_string()),
-                labels: Some(labels),
-                annotations: template.metadata.as_ref()
-                    .and_then(|m| m.annotations.clone()),
-                uid: uuid::Uuid::new_v4().to_string(),
-                creation_timestamp: Some(chrono::Utc::now()),
-                deletion_timestamp: None,
-                resource_version: None,
-            },
+            metadata,
             spec: Some(spec),
             status: Some(PodStatus {
                 phase: Phase::Pending,
@@ -253,6 +253,9 @@ mod tests {
                 creation_timestamp: None,
                 deletion_timestamp: None,
                 resource_version: None,
+                deletion_grace_period_seconds: None,
+                finalizers: None,
+                owner_references: None,
             },
             spec: Some(rusternetes_common::resources::NodeSpec {
                 pod_cidr: None,
@@ -278,6 +281,9 @@ mod tests {
                 creation_timestamp: None,
                 deletion_timestamp: None,
                 resource_version: None,
+                deletion_grace_period_seconds: None,
+                finalizers: None,
+                owner_references: None,
             },
             spec: rusternetes_common::resources::DaemonSetSpec {
                 selector: rusternetes_common::types::LabelSelector {
@@ -294,6 +300,9 @@ mod tests {
                         creation_timestamp: None,
                         deletion_timestamp: None,
                         resource_version: None,
+                deletion_grace_period_seconds: None,
+                finalizers: None,
+                owner_references: None,
                     }),
                     spec: PodSpec {
                         init_containers: None,
@@ -309,6 +318,8 @@ mod tests {
                         priority_class_name: None,
                         hostname: None,
                         host_network: None,
+                        host_pid: None,
+                        host_ipc: None,
                     },
                 },
                 update_strategy: None,

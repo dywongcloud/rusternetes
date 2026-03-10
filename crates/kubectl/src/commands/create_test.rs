@@ -1,7 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::super::create::*;
-
     #[test]
     fn test_kind_extraction_from_yaml() {
         let yaml = r#"

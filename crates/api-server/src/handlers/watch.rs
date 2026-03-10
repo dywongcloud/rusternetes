@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     body::Body,
@@ -128,7 +130,7 @@ where
                 Ok(WatchEvent::Deleted(key)) => {
                     debug!("Watch event - Deleted: {}", key);
                     // For delete events, we need to extract the name from the key
-                    let name = key.rsplit('/').next().unwrap_or("");
+                    let _name = key.rsplit('/').next().unwrap_or("");
                     // Create a minimal object with just metadata for delete events
                     // This would need the actual resource type to construct properly
                     // For now, we'll skip delete events that can't be deserialized

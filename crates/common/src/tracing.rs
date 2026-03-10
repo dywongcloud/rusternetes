@@ -17,7 +17,7 @@ use opentelemetry_sdk::Resource;
 #[cfg(feature = "tracing-full")]
 use std::time::Duration;
 #[cfg(feature = "tracing-full")]
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Tracing configuration
 #[derive(Debug, Clone)]
@@ -241,38 +241,8 @@ pub fn init_tracing(config: TracingConfig) -> Result<()> {
 /// Initialize stdout tracing (for debugging)
 #[cfg(feature = "tracing-full")]
 fn init_stdout_tracing(config: &TracingConfig) -> Result<()> {
-    let exporter = opentelemetry_stdout::SpanExporter::default();
-
-    let provider = TracerProvider::builder()
-        .with_simple_exporter(exporter)
-        .with_id_generator(RandomIdGenerator::default())
-        .with_resource(Resource::new(vec![
-            KeyValue::new("service.name", config.service_name.clone()),
-        ]))
-        .build();
-
-    let tracer = provider.tracer("rusternetes");
-    opentelemetry::global::set_tracer_provider(provider);
-
-    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&config.log_level));
-
-    let formatting_layer = tracing_subscriber::fmt::layer()
-        .with_target(true)
-        .with_thread_ids(true)
-        .with_line_number(true);
-
-    tracing_subscriber::registry()
-        .with(env_filter)
-        .with(formatting_layer)
-        .with(telemetry_layer)
-        .init();
-
-    tracing::info!("Initialized stdout tracing for service '{}'", config.service_name);
-
-    Ok(())
+    // Note: opentelemetry_stdout API has changed, falling back to basic tracing
+    init_basic_tracing(config)
 }
 
 /// Initialize basic tracing without OpenTelemetry

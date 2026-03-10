@@ -62,6 +62,7 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                         args: None,
                         security_context: None,
                     }],
+                    init_containers: None,
                     restart_policy: Some("Always".to_string()),
                     node_selector: None,
                     node_name: None,
@@ -267,6 +268,7 @@ async fn test_deployment_selector_matching() {
                         args: None,
                         security_context: None,
                     }],
+                    init_containers: None,
                     restart_policy: Some("Always".to_string()),
                     node_selector: None,
                     node_name: None,
@@ -330,6 +332,7 @@ async fn test_deployment_selector_matching() {
                 args: None,
                         security_context: None,
             }],
+            init_containers: None,
             restart_policy: Some("Always".to_string()),
             node_selector: None,
             node_name: None,
@@ -351,6 +354,7 @@ async fn test_deployment_selector_matching() {
             host_ip: None,
             pod_ip: None,
             container_statuses: None,
+            init_container_statuses: None,
         }),
     };
 
@@ -466,6 +470,7 @@ async fn test_deployment_preserves_existing_matching_pods() {
                     args: None,
                         security_context: None,
                 }],
+                init_containers: None,
                 restart_policy: Some("Always".to_string()),
                 node_selector: None,
                 node_name: None,
@@ -487,6 +492,7 @@ async fn test_deployment_preserves_existing_matching_pods() {
                 host_ip: None,
                 pod_ip: None,
                 container_statuses: None,
+                init_container_statuses: None,
             }),
         };
 

@@ -3,7 +3,7 @@ use rusternetes_common::resources::{
 };
 use rusternetes_common::resources::volume::{
     HostPathType, HostPathVolumeSource, PersistentVolumeAccessMode, PersistentVolumeClaimPhase,
-    PersistentVolumeClaimResizeStatus, PersistentVolumeMode, PersistentVolumePhase,
+    PersistentVolumeMode, PersistentVolumePhase,
     PersistentVolumeReclaimPolicy, PersistentVolumeSource, ResourceRequirements,
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};

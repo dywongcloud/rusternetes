@@ -1,6 +1,8 @@
-// Custom Resource (CR) API handlers for dynamically created CRDs
-//
-// This module handles CRUD operations for custom resources defined by CRDs.
+//! Custom Resource (CR) API handlers for dynamically created CRDs
+//!
+//! This module handles CRUD operations for custom resources defined by CRDs.
+
+#![allow(dead_code)]
 
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
@@ -638,7 +640,7 @@ pub async fn update_custom_resource_scale(
     }
 
     // Save the updated resource
-    let updated = state.storage.update(&key, &cr).await?;
+    let _updated = state.storage.update(&key, &cr).await?;
 
     // Return the updated scale representation
     get_custom_resource_scale(

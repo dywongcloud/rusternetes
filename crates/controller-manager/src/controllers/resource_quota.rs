@@ -231,7 +231,8 @@ mod tests {
 
         assert_eq!(controller.bytes_to_memory_string(1073741824), "1Gi");
         assert_eq!(controller.bytes_to_memory_string(536870912), "512Mi");
-        assert_eq!(controller.bytes_to_memory_string(1048576), "1024Ki");
+        assert_eq!(controller.bytes_to_memory_string(1048576), "1Mi"); // 1048576 = 1024 * 1024 = 1 MiB
+        assert_eq!(controller.bytes_to_memory_string(1024), "1Ki"); // 1024 bytes = 1 KiB
         assert_eq!(controller.bytes_to_memory_string(1000), "1000");
     }
 }

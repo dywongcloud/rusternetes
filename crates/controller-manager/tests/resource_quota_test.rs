@@ -43,6 +43,7 @@ fn create_test_pod(name: &str, cpu_request: &str, memory_request: &str) -> Pod {
                 startup_probe: None,
                 security_context: None,
             }],
+            init_containers: None,
             volumes: None,
             restart_policy: None,
             node_name: None,

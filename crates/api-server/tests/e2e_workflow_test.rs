@@ -74,6 +74,7 @@ async fn test_complete_pod_lifecycle() {
                 args: None,
                 security_context: None,
             }],
+            init_containers: None,
             restart_policy: Some("Always".to_string()),
             node_selector: None,
             node_name: None,
@@ -95,6 +96,7 @@ async fn test_complete_pod_lifecycle() {
             host_ip: None,
             pod_ip: None,
             container_statuses: None,
+            init_container_statuses: None,
         }),
     };
 
@@ -124,6 +126,7 @@ async fn test_complete_pod_lifecycle() {
         host_ip: Some("192.168.1.10".to_string()),
         pod_ip: Some("10.244.1.5".to_string()),
         container_statuses: None,
+        init_container_statuses: None,
     });
     storage.update(&pod_key, &running_pod).await.unwrap();
 
@@ -181,6 +184,7 @@ async fn test_deployment_workflow() {
                         args: None,
                         security_context: None,
                     }],
+                    init_containers: None,
                     restart_policy: Some("Always".to_string()),
                     node_selector: None,
                     node_name: None,
@@ -240,6 +244,7 @@ async fn test_deployment_workflow() {
             host_ip: Some("192.168.1.10".to_string()),
             pod_ip: Some("10.244.1.5".to_string()),
             container_statuses: None,
+            init_container_statuses: None,
         });
         storage.update(&pod_key, &updated_pod).await.unwrap();
     }
