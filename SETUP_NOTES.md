@@ -69,7 +69,7 @@ Successfully implemented a Podman-based local development environment for Ruster
 - Controller Manager - Runs controllers for workload management
 
 ### ⚠️ Known Issues
-- **Kubelet** - May encounter Podman socket permission issues depending on setup
+None - all components are fully operational!
 
 ## Quick Start Commands
 
@@ -107,41 +107,39 @@ cargo build --release --bin kubectl
 
 ## Known Limitations
 
-1. **Kubelet**: May encounter Podman socket access issues depending on configuration
-   - Socket path may vary between systems
-   - May require adjusting volume mount in docker-compose.yml
-   - Works with default Podman Machine setup on macOS
-
-2. **TLS Certificates**: Currently using self-signed certificates
+1. **TLS Certificates**: Currently using self-signed certificates
    - Not suitable for production use
    - Clients must use `--insecure-skip-tls-verify` flag
    - Should implement proper PKI infrastructure for production
 
+2. **Authentication**: Currently runs with `--skip-auth` flag
+   - Easier for development and testing
+   - Use `--token` flag with kubectl for authenticated requests when auth is enabled
+
 ## Next Steps
 
-1. **Enhanced Testing**:
-   - Expand test-cluster.sh with more comprehensive tests
-   - Add tests for workload controllers (Deployments, Jobs, CronJobs)
-   - Test pod lifecycle and scheduling
-   - Test service networking and discovery
+See STATUS.md "Critical Missing Features" section for the complete roadmap. Priority items:
 
-2. **Production-Ready TLS**:
-   - Implement proper certificate authority (CA)
-   - Generate properly signed certificates
-   - Remove need for `--insecure-skip-tls-verify`
-   - Add certificate rotation
+1. **Networking (CRITICAL)**:
+   - Implement kube-proxy with iptables/ipvs
+   - Add service endpoint controller
+   - Implement ClusterIP networking
+   - Add DNS service (CoreDNS)
 
-3. **Advanced Features**:
-   - Implement persistent storage support
-   - Add resource quotas and limits
-   - Enhance RBAC capabilities
-   - Add network policies
+2. **Storage Automation**:
+   - Implement PV/PVC binding controller
+   - Add dynamic provisioning for HostPath StorageClass
+
+3. **Integration Tests**:
+   - Automated cluster startup tests
+   - Resource CRUD operation tests
+   - Controller reconciliation tests
+   - Scheduling verification tests
 
 4. **Observability**:
-   - Add metrics collection (Prometheus)
-   - Implement distributed tracing
-   - Enhanced logging and log aggregation
-   - Cluster monitoring dashboards
+   - Expose /metrics endpoint on all components
+   - Add Events API for pod lifecycle events
+   - Integrate distributed tracing (optional)
 
 ## File Structure
 

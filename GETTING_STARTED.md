@@ -48,7 +48,9 @@ The binaries will be available in `target/release/`:
 ```bash
 cargo run --bin api-server -- \
   --bind-address 0.0.0.0:6443 \
-  --etcd-servers http://localhost:2379
+  --etcd-servers http://localhost:2379 \
+  --tls \
+  --tls-self-signed
 ```
 
 ### 2. Start the Scheduler
@@ -88,23 +90,26 @@ cargo run --bin kube-proxy -- \
 
 ```bash
 cargo run --bin kubectl -- \
-  --server http://localhost:6443 \
-  create -f examples/namespace.yaml
+  --server https://localhost:6443 \
+  --insecure-skip-tls-verify \
+  create -f examples/test-namespace.yaml
 ```
 
 ### Create a pod
 
 ```bash
 cargo run --bin kubectl -- \
-  --server http://localhost:6443 \
-  create -f examples/pod.yaml
+  --server https://localhost:6443 \
+  --insecure-skip-tls-verify \
+  create -f examples/test-pod.yaml
 ```
 
 ### List pods
 
 ```bash
 cargo run --bin kubectl -- \
-  --server http://localhost:6443 \
+  --server https://localhost:6443 \
+  --insecure-skip-tls-verify \
   get pods
 ```
 
@@ -112,15 +117,17 @@ cargo run --bin kubectl -- \
 
 ```bash
 cargo run --bin kubectl -- \
-  --server http://localhost:6443 \
-  create -f examples/deployment.yaml
+  --server https://localhost:6443 \
+  --insecure-skip-tls-verify \
+  create -f examples/test-deployment.yaml
 ```
 
 ### List deployments
 
 ```bash
 cargo run --bin kubectl -- \
-  --server http://localhost:6443 \
+  --server https://localhost:6443 \
+  --insecure-skip-tls-verify \
   get deployments
 ```
 
@@ -128,8 +135,9 @@ cargo run --bin kubectl -- \
 
 ```bash
 cargo run --bin kubectl -- \
-  --server http://localhost:6443 \
-  delete pod nginx-pod
+  --server https://localhost:6443 \
+  --insecure-skip-tls-verify \
+  delete pod nginx-pod -n test-namespace
 ```
 
 ## Architecture Overview

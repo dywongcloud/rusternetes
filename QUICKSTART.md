@@ -61,11 +61,11 @@ make dev-logs
 You now have a complete Kubernetes-like cluster running locally with:
 
 - **etcd** (http://localhost:2379) - Cluster state storage
-- **API Server** (http://localhost:6443) - Main API endpoint
+- **API Server** (https://localhost:6443) - Main API endpoint with TLS/HTTPS
 - **Scheduler** - Assigns pods to nodes
-- **Controller Manager** - Manages cluster state
+- **Controller Manager** - Manages cluster state (Deployment, StatefulSet, DaemonSet, Job, CronJob)
 - **Kubelet** - Runs containers on nodes
-- **Kube-proxy** - Handles networking
+- **Kube-proxy** - Network proxy (stub implementation)
 
 ## Common Operations
 
@@ -83,13 +83,13 @@ make dev-logs-kubelet
 ### Create Resources
 ```bash
 # Create a namespace
-cargo run --bin kubectl -- --server http://localhost:6443 create -f examples/namespace.yaml
+cargo run --bin kubectl -- --server https://localhost:6443 --insecure-skip-tls-verify create -f examples/test-namespace.yaml
 
 # Create a pod
-cargo run --bin kubectl -- --server http://localhost:6443 create -f examples/pod.yaml
+cargo run --bin kubectl -- --server https://localhost:6443 --insecure-skip-tls-verify create -f examples/test-pod.yaml
 
 # Create a deployment
-cargo run --bin kubectl -- --server http://localhost:6443 create -f examples/deployment.yaml
+cargo run --bin kubectl -- --server https://localhost:6443 --insecure-skip-tls-verify create -f examples/test-deployment.yaml
 ```
 
 ### List Resources

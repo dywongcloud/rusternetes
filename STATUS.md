@@ -488,7 +488,203 @@ selector:
       operator: DoesNotExist
 ```
 
-## Next Steps
+## Critical Missing Features
+
+### 1. Networking & Service Discovery (🔴 HIGHEST PRIORITY)
+**Status:** Kube-proxy is a stub - pods cannot communicate via services
+
+**Missing Components:**
+- ⏹️ **Kube-proxy Implementation**: Currently does nothing
+  - Service endpoint watching and updates
+  - iptables/ipvs rule programming for load balancing
+  - NodePort service support (expose services on host ports)
+  - LoadBalancer service support (cloud integration)
+  - ClusterIP networking (virtual IPs for services)
+- ⏹️ **DNS Resolution**: No internal DNS service (kube-dns/CoreDNS)
+  - Service name → IP resolution
+  - Pod name resolution
+  - SRV records for headless services
+- ⏹️ **CNI Plugin Support**: No Container Network Interface integration
+  - Pod-to-pod networking across nodes
+  - Network namespace management
+  - IP address management (IPAM)
+- ⏹️ **Network Policies**: No network isolation enforcement
+  - Ingress/egress rules
+  - Pod-to-pod traffic filtering
+  - Namespace isolation
+
+**Impact:** Pods can only communicate via direct pod IPs, not via services. Multi-node networking won't work.
+
+### 2. Storage Controllers
+**Status:** Resource types exist, but no automatic binding or provisioning
+
+**Missing Components:**
+- ⏹️ **PV/PVC Binding Controller**: Manual binding only
+  - Automatic matching of PVCs to PVs based on capacity, access modes
+  - Status updates (Pending → Bound)
+  - Volume name assignment in PVC spec
+- ⏹️ **Dynamic Provisioning Controller**: StorageClass unused
+  - Automatic PV creation from StorageClass
+  - Integration with storage backends (NFS, iSCSI, cloud volumes)
+  - Volume lifecycle management
+- ⏹️ **Volume Snapshots**: Not implemented
+  - VolumeSnapshot, VolumeSnapshotContent resources
+  - Snapshot creation and restoration
+- ⏹️ **Volume Expansion**: No dynamic resizing
+  - PVC capacity updates
+  - Volume resize operations
+
+**Impact:** Users must manually create and bind PVs to PVCs. No cloud-native storage integration.
+
+### 3. Advanced Scheduling
+**Status:** Types defined but not evaluated
+
+**Missing Components:**
+- ⏹️ **Pod Affinity/Anti-Affinity**: Defined but not evaluated in scheduler
+  - Inter-pod affinity rules (schedule pods near/far from other pods)
+  - Required vs preferred rules
+  - Topology-based scheduling (zone, region, hostname)
+- ⏹️ **Pod Priority and Preemption**: Priority classes unused
+  - Preempt lower-priority pods when resources exhausted
+  - Priority-based scheduling decisions
+- ⏹️ **Resource Quotas**: No namespace limits
+  - CPU/memory quotas per namespace
+  - Object count limits
+- ⏹️ **Limit Ranges**: No default resource constraints
+  - Default requests/limits for containers
+  - Min/max resource validation
+
+**Impact:** Limited multi-tenancy support. No automatic pod eviction based on priority.
+
+### 4. High Availability
+**Status:** Single-node control plane only
+
+**Missing Components:**
+- ⏹️ **Multi-Master API Servers**: Single point of failure
+  - Load balancing across multiple API servers
+  - Horizontal scaling for API throughput
+- ⏹️ **Leader Election**: Controllers run on single node
+  - Leader election for controller-manager
+  - Leader election for scheduler
+  - Lease API for coordination
+- ⏹️ **etcd Clustering**: Single etcd instance
+  - Multi-node etcd cluster (3 or 5 nodes)
+  - Quorum-based consensus
+  - Data replication
+- ⏹️ **Health Checks and Failover**: No automatic recovery
+  - Component health monitoring
+  - Automatic failover on component failure
+
+**Impact:** No fault tolerance. Single node failure brings down entire control plane.
+
+### 5. API Features
+**Status:** Basic CRUD works, advanced features missing
+
+**Missing Components:**
+- ⏹️ **Watch API**: No real-time updates to clients
+  - Long-polling watch connections
+  - Resource version tracking
+  - Reconnection and resumption
+- ⏹️ **PATCH Operations**: Only PUT (full updates) supported
+  - Strategic merge patch
+  - JSON merge patch
+  - JSON patch (RFC 6902)
+- ⏹️ **Field Selectors**: Only label selectors work
+  - Filter by status.phase, spec.nodeName, etc.
+  - Complex field-based queries
+- ⏹️ **Server-Side Apply**: Not implemented
+  - Declarative configuration management
+  - Field ownership tracking
+  - Conflict resolution
+- ⏹️ **Custom Resource Definitions (CRDs)**: Cannot extend API
+  - Define custom resource types
+  - OpenAPI schema validation
+  - Custom controllers for CRDs
+
+**Impact:** Limited client flexibility. Cannot build Kubernetes operators or extend API.
+
+### 6. Security & Policy
+**Status:** Basic RBAC works, advanced security missing
+
+**Missing Components:**
+- ⏹️ **Admission Controllers**: No validation/mutation webhooks
+  - ValidatingWebhookConfiguration
+  - MutatingWebhookConfiguration
+  - Built-in admission plugins (ResourceQuota, LimitRanger, etc.)
+- ⏹️ **Pod Security Standards**: No pod security enforcement
+  - Privileged mode restrictions
+  - Capability restrictions
+  - Host namespace access controls
+- ⏹️ **Secrets Encryption at Rest**: Secrets stored as base64 in etcd
+  - Encryption provider configuration
+  - KMS integration
+  - Key rotation
+- ⏹️ **Audit Logging**: No security event tracking
+  - API request logging
+  - User action tracking
+  - Compliance reporting
+
+**Impact:** Limited security for production use. Secrets are not encrypted in etcd.
+
+### 7. Observability
+**Status:** Metrics infrastructure exists but not exposed
+
+**Missing Components:**
+- ⏹️ **Metrics Endpoint**: `/metrics` endpoint not integrated
+  - Prometheus scrape target
+  - Per-component metrics exposure
+- ⏹️ **Distributed Tracing**: No request tracing
+  - OpenTelemetry integration
+  - Trace propagation across components
+  - Jaeger/Zipkin export
+- ⏹️ **Events API**: No event recording
+  - Pod events (pulled, started, failed, etc.)
+  - Component events
+  - Event TTL and cleanup
+
+**Impact:** Limited operational visibility. Hard to debug issues without events.
+
+### 8. Workload Features
+**Status:** Basic workloads work, advanced features missing
+
+**Missing Components:**
+- ⏹️ **Horizontal Pod Autoscaler (HPA)**: No auto-scaling
+  - Metrics-based scaling (CPU, memory, custom)
+  - Scale up/down based on load
+  - Integration with metrics-server
+- ⏹️ **Vertical Pod Autoscaler (VPA)**: No resource right-sizing
+  - Automatic resource request/limit adjustment
+  - Historical usage analysis
+- ⏹️ **Pod Disruption Budgets**: No disruption protection
+  - Minimum available replicas during voluntary disruptions
+  - Integration with node draining
+- ⏹️ **Init Containers**: Not supported
+  - Run before app containers
+  - Setup and initialization logic
+
+**Impact:** Manual scaling only. No automatic resource optimization.
+
+### 9. Resource Management
+**Status:** Basic lifecycle works, no garbage collection
+
+**Missing Components:**
+- ⏹️ **Garbage Collection**: Orphaned resources not cleaned up
+  - Owner reference enforcement
+  - Cascade deletion (delete dependents when owner deleted)
+  - Background/foreground deletion
+- ⏹️ **Finalizers**: No pre-deletion hooks
+  - Resource cleanup before deletion
+  - External resource deprovisioning
+- ⏹️ **Resource Status Subresource**: Status updates go through main resource
+  - Separate /status endpoint
+  - Optimistic concurrency for status
+- ⏹️ **TTL Controller**: No automatic cleanup of completed jobs
+  - TTL for finished jobs
+  - Automatic deletion of old resources
+
+**Impact:** Manual cleanup required. Resource leaks possible.
+
+## Completed Features Summary
 
 ### Priority 1: Testing & Validation ✅ COMPLETE
 - ✅ kubectl token authentication implemented
@@ -514,24 +710,43 @@ selector:
   - Job status correctly tracked: `"active": 1, "succeeded": 0, "failed": 0`
 - ✅ CronJob controller verified (scheduled execution requires time-based testing)
 
+## Next Steps (Prioritized by Impact)
+
+### Priority 1: Networking (CRITICAL - Required for Production)
+- Implement basic kube-proxy with iptables mode
+- Add service endpoint controller
+- Implement ClusterIP service networking
+- Add basic DNS service (CoreDNS integration)
+- Target: Pods can communicate via service names
+
+### Priority 2: Storage Automation
+- Implement PV/PVC binding controller
+- Add dynamic provisioning for HostPath StorageClass
+- Target: Automatic PV creation and binding
+
 ### Priority 3: Integration Tests
 - Write automated cluster startup tests
 - Write resource CRUD operation tests
 - Write controller reconciliation tests
 - Write scheduling verification tests
 
-### Priority 4: Performance & Optimization
+### Priority 4: Observability
+- Expose /metrics endpoint on all components
+- Add Events API for pod lifecycle events
+- Integrate distributed tracing (optional)
+
+### Priority 5: Performance & Optimization
 - Profile components under load
-- Optimize etcd queries
+- Optimize etcd queries with caching
 - Benchmark scheduling throughput
 - Memory usage optimization
 
-### Priority 5: Production Readiness
+### Priority 6: Production Hardening
 - Replace self-signed certificates with CA-signed certs
 - Enable authentication by default
-- Add metrics collection and dashboards
-- Add distributed tracing
-- Write deployment guides
+- Add admission controllers (at least built-in ones)
+- Implement garbage collection with owner references
+- Add high availability (leader election, multi-master)
 
 ## Success Metrics
 
