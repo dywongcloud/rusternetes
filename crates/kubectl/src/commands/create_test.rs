@@ -176,6 +176,135 @@ allowVolumeExpansion: true
     }
 
     #[test]
+    fn test_endpoints_deserialization() {
+        let yaml = r#"
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: test-endpoints
+  namespace: default
+subsets:
+  - addresses:
+    - ip: 192.168.1.1
+    ports:
+    - port: 80
+"#;
+
+        use rusternetes_common::resources::Endpoints;
+        let ep: Endpoints = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(ep.metadata.name, "test-endpoints");
+        assert_eq!(ep.metadata.namespace, Some("default".to_string()));
+    }
+
+    #[test]
+    fn test_volumesnapshot_deserialization() {
+        let yaml = r#"
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: test-snapshot
+  namespace: default
+spec:
+  volumeSnapshotClassName: test-snapshot-class
+  source:
+    persistentVolumeClaimName: test-pvc
+"#;
+
+        use rusternetes_common::resources::VolumeSnapshot;
+        let vs: VolumeSnapshot = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(vs.metadata.name, "test-snapshot");
+        assert_eq!(vs.metadata.namespace, Some("default".to_string()));
+    }
+
+    #[test]
+    fn test_volumesnapshotclass_deserialization() {
+        let yaml = r#"
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: test-snapshot-class
+driver: rusternetes.io/snapshot
+deletionPolicy: Delete
+"#;
+
+        use rusternetes_common::resources::VolumeSnapshotClass;
+        let vsc: VolumeSnapshotClass = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(vsc.metadata.name, "test-snapshot-class");
+        assert_eq!(vsc.driver, "rusternetes.io/snapshot");
+    }
+
+    #[test]
+    fn test_resourcequota_deserialization() {
+        let yaml = r#"
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: test-quota
+  namespace: default
+spec:
+  hard:
+    pods: "10"
+    requests.cpu: "4"
+    requests.memory: "8Gi"
+"#;
+
+        use rusternetes_common::resources::ResourceQuota;
+        let rq: ResourceQuota = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(rq.metadata.name, "test-quota");
+        assert_eq!(rq.metadata.namespace, Some("default".to_string()));
+    }
+
+    #[test]
+    fn test_limitrange_deserialization() {
+        let yaml = r#"
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: test-limits
+  namespace: default
+spec:
+  limits:
+  - type: Pod
+    max:
+      cpu: "2"
+      memory: "4Gi"
+    min:
+      cpu: "200m"
+      memory: "256Mi"
+"#;
+
+        use rusternetes_common::resources::LimitRange;
+        let lr: LimitRange = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(lr.metadata.name, "test-limits");
+        assert_eq!(lr.metadata.namespace, Some("default".to_string()));
+    }
+
+    #[test]
+    fn test_priorityclass_deserialization() {
+        let yaml = r#"
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 1000
+globalDefault: false
+description: "High priority class for critical workloads"
+"#;
+
+        use rusternetes_common::resources::PriorityClass;
+        let pc: PriorityClass = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(pc.metadata.name, "high-priority");
+        assert_eq!(pc.value, 1000);
+        assert_eq!(pc.global_default, Some(false));
+    }
+
+    #[test]
     fn test_all_supported_resource_kinds() {
         let test_cases = vec![
             ("Pod", "v1"),
@@ -184,6 +313,12 @@ allowVolumeExpansion: true
             ("Node", "v1"),
             ("Namespace", "v1"),
             ("StorageClass", "storage.k8s.io/v1"),
+            ("Endpoints", "v1"),
+            ("VolumeSnapshot", "snapshot.storage.k8s.io/v1"),
+            ("VolumeSnapshotClass", "snapshot.storage.k8s.io/v1"),
+            ("ResourceQuota", "v1"),
+            ("LimitRange", "v1"),
+            ("PriorityClass", "scheduling.k8s.io/v1"),
         ];
 
         for (kind, api_version) in test_cases {

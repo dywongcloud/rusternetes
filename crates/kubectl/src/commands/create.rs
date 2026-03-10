@@ -1,6 +1,9 @@
 use crate::client::ApiClient;
 use anyhow::{Context, Result};
-use rusternetes_common::resources::{Deployment, Namespace, Node, Pod, Service, StorageClass};
+use rusternetes_common::resources::{
+    Deployment, Namespace, Node, Pod, Service, StorageClass,
+    VolumeSnapshot, VolumeSnapshotClass, Endpoints, ResourceQuota, LimitRange, PriorityClass,
+};
 use std::fs;
 
 pub async fn execute(client: &ApiClient, file: &str) -> Result<()> {
@@ -60,6 +63,64 @@ pub async fn execute(client: &ApiClient, file: &str) -> Result<()> {
                 .post("/apis/storage.k8s.io/v1/storageclasses", &sc)
                 .await?;
             println!("StorageClass '{}' created", sc.metadata.name);
+        }
+        "VolumeSnapshot" => {
+            let vs: VolumeSnapshot = serde_yaml::from_str(&contents)?;
+            let namespace = vs.metadata.namespace.as_deref().unwrap_or("default");
+            let _result: VolumeSnapshot = client
+                .post(
+                    &format!("/apis/snapshot.storage.k8s.io/v1/namespaces/{}/volumesnapshots", namespace),
+                    &vs,
+                )
+                .await?;
+            println!("VolumeSnapshot '{}' created", vs.metadata.name);
+        }
+        "VolumeSnapshotClass" => {
+            let vsc: VolumeSnapshotClass = serde_yaml::from_str(&contents)?;
+            let _result: VolumeSnapshotClass = client
+                .post("/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses", &vsc)
+                .await?;
+            println!("VolumeSnapshotClass '{}' created", vsc.metadata.name);
+        }
+        "Endpoints" => {
+            let ep: Endpoints = serde_yaml::from_str(&contents)?;
+            let namespace = ep.metadata.namespace.as_deref().unwrap_or("default");
+            let _result: Endpoints = client
+                .post(
+                    &format!("/api/v1/namespaces/{}/endpoints", namespace),
+                    &ep,
+                )
+                .await?;
+            println!("Endpoints '{}' created", ep.metadata.name);
+        }
+        "ResourceQuota" => {
+            let rq: ResourceQuota = serde_yaml::from_str(&contents)?;
+            let namespace = rq.metadata.namespace.as_deref().unwrap_or("default");
+            let _result: ResourceQuota = client
+                .post(
+                    &format!("/api/v1/namespaces/{}/resourcequotas", namespace),
+                    &rq,
+                )
+                .await?;
+            println!("ResourceQuota '{}' created", rq.metadata.name);
+        }
+        "LimitRange" => {
+            let lr: LimitRange = serde_yaml::from_str(&contents)?;
+            let namespace = lr.metadata.namespace.as_deref().unwrap_or("default");
+            let _result: LimitRange = client
+                .post(
+                    &format!("/api/v1/namespaces/{}/limitranges", namespace),
+                    &lr,
+                )
+                .await?;
+            println!("LimitRange '{}' created", lr.metadata.name);
+        }
+        "PriorityClass" => {
+            let pc: PriorityClass = serde_yaml::from_str(&contents)?;
+            let _result: PriorityClass = client
+                .post("/apis/scheduling.k8s.io/v1/priorityclasses", &pc)
+                .await?;
+            println!("PriorityClass '{}' created", pc.metadata.name);
         }
         _ => anyhow::bail!("Unsupported resource kind: {}", kind),
     }
