@@ -1,24 +1,40 @@
+mod iptables;
+mod proxy;
+
 use anyhow::Result;
 use clap::Parser;
-use tracing::{info, Level};
+use rusternetes_storage::etcd::EtcdStorage;
+use std::sync::Arc;
+use tracing::{info, warn, Level};
+
+use proxy::KubeProxy;
 
 #[derive(Parser, Debug)]
 #[command(name = "rusternetes-kube-proxy")]
-#[command(about = "Rusternetes Kube-proxy - Network proxy (stub implementation)")]
+#[command(about = "Rusternetes Kube-proxy - Network proxy for service load balancing")]
 struct Args {
     /// Node name
     #[arg(long)]
     node_name: String,
 
+    /// Etcd endpoints (comma-separated)
+    #[arg(long, default_value = "http://localhost:2379")]
+    etcd_servers: String,
+
     /// Log level
     #[arg(long, default_value = "info")]
     log_level: String,
+
+    /// Sync interval in seconds
+    #[arg(long, default_value = "30")]
+    sync_interval: u64,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    // Initialize tracing
     let level = match args.log_level.as_str() {
         "trace" => Level::TRACE,
         "debug" => Level::DEBUG,
@@ -31,15 +47,64 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt().with_max_level(level).init();
 
     info!("Starting Rusternetes Kube-proxy for node: {}", args.node_name);
-    info!("Note: This is a stub implementation");
 
-    // In a real implementation, kube-proxy would:
-    // 1. Watch for Service and Endpoints changes
-    // 2. Program iptables/ipvs rules for service load balancing
-    // 3. Handle NodePort and LoadBalancer services
+    // Check for iptables availability
+    if let Err(e) = check_iptables() {
+        warn!("iptables check failed: {}. Some features may not work.", e);
+        warn!("Kube-proxy requires iptables to be installed and accessible.");
+    }
 
-    tokio::signal::ctrl_c().await?;
+    // Parse etcd endpoints
+    let etcd_endpoints: Vec<String> = args
+        .etcd_servers
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect();
+
+    // Initialize storage
+    info!("Connecting to etcd at: {:?}", etcd_endpoints);
+    let storage = Arc::new(EtcdStorage::new(etcd_endpoints).await?);
+
+    // Initialize kube-proxy
+    let mut kube_proxy = KubeProxy::new(storage)?;
+
+    info!("Kube-proxy initialized successfully");
+    info!("Syncing services every {} seconds", args.sync_interval);
+
+    // Main sync loop
+    let sync_interval = tokio::time::Duration::from_secs(args.sync_interval);
+    let mut interval = tokio::time::interval(sync_interval);
+
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                if let Err(e) = kube_proxy.sync().await {
+                    tracing::error!("Sync error: {}", e);
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("Received shutdown signal");
+                break;
+            }
+        }
+    }
+
     info!("Shutting down kube-proxy");
 
     Ok(())
+}
+
+/// Check if iptables is available
+fn check_iptables() -> Result<()> {
+    let output = std::process::Command::new("iptables")
+        .arg("--version")
+        .output()?;
+
+    if output.status.success() {
+        let version = String::from_utf8_lossy(&output.stdout);
+        info!("iptables version: {}", version.trim());
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("iptables not available"))
+    }
 }

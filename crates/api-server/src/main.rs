@@ -2,6 +2,7 @@ mod handlers;
 mod middleware;
 mod router;
 mod state;
+mod ip_allocator;
 
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;

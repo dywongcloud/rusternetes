@@ -47,6 +47,21 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::service::update)
                 .delete(handlers::service::delete_service),
         )
+        // Endpoints
+        .route(
+            "/api/v1/namespaces/:namespace/endpoints",
+            get(handlers::endpoints::list_endpoints).post(handlers::endpoints::create_endpoints),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/endpoints/:name",
+            get(handlers::endpoints::get_endpoints)
+                .put(handlers::endpoints::update_endpoints)
+                .delete(handlers::endpoints::delete_endpoints),
+        )
+        .route(
+            "/api/v1/endpoints",
+            get(handlers::endpoints::list_all_endpoints),
+        )
         // ConfigMaps
         .route(
             "/api/v1/namespaces/:namespace/configmaps",

@@ -1,5 +1,6 @@
 pub mod pod;
 pub mod service;
+pub mod endpoints;
 pub mod deployment;
 pub mod node;
 pub mod namespace;
@@ -20,6 +21,7 @@ pub use pod::{
     PersistentVolumeClaimVolumeSource,
 };
 pub use service::{Service, ServiceSpec, ServicePort, ServiceType};
+pub use endpoints::{Endpoints, EndpointSubset, EndpointAddress, EndpointPort, EndpointReference};
 pub use deployment::{Deployment, DeploymentSpec, DeploymentStatus};
 pub use node::{Node, NodeSpec, NodeStatus, NodeCondition, NodeAddress, Taint};
 pub use namespace::Namespace;

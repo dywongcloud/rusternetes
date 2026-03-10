@@ -3,6 +3,7 @@ use rusternetes_common::authz::Authorizer;
 use rusternetes_common::observability::MetricsRegistry;
 use rusternetes_storage::etcd::EtcdStorage;
 use std::sync::Arc;
+use crate::ip_allocator::ClusterIPAllocator;
 
 /// Shared state for the API server
 pub struct ApiServerState {
@@ -11,6 +12,7 @@ pub struct ApiServerState {
     pub authorizer: Arc<dyn Authorizer>,
     pub metrics: Arc<MetricsRegistry>,
     pub skip_auth: bool,
+    pub ip_allocator: Arc<ClusterIPAllocator>,
 }
 
 impl ApiServerState {
@@ -27,6 +29,7 @@ impl ApiServerState {
             authorizer,
             metrics,
             skip_auth,
+            ip_allocator: Arc::new(ClusterIPAllocator::new()),
         }
     }
 }

@@ -9,6 +9,7 @@ members = [
     "crates/kubectl",
     "crates/common",
     "crates/storage",
+    "crates/cloud-providers",
 ]
 
 [workspace.package]
@@ -48,3 +49,8 @@ prometheus = "0.13" # Prometheus metrics
 opentelemetry = "0.22" # Distributed tracing
 opentelemetry-prometheus = "0.15" # Prometheus exporter for OpenTelemetry
 tracing-opentelemetry = "0.23" # OpenTelemetry integration with tracing
+
+# Cloud provider SDKs
+aws-config = "1.1"
+aws-sdk-elasticloadbalancingv2 = "1.14"
+aws-sdk-ec2 = "1.30"

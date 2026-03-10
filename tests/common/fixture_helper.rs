@@ -226,3 +226,94 @@ pub fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Dep
         }),
     }
 }
+
+/// Create a test LoadBalancer Service
+pub fn create_test_loadbalancer_service(
+    name: &str,
+    namespace: &str,
+    port: u16,
+    node_port: u16,
+) -> Service {
+    let mut labels = HashMap::new();
+    labels.insert("app".to_string(), name.to_string());
+
+    let mut selector = HashMap::new();
+    selector.insert("app".to_string(), name.to_string());
+
+    Service {
+        type_meta: TypeMeta {
+            kind: "Service".to_string(),
+            api_version: "v1".to_string(),
+        },
+        metadata: {
+            let mut meta = ObjectMeta::new(name);
+            meta.namespace = Some(namespace.to_string());
+            meta.uid = uuid::Uuid::new_v4().to_string();
+            meta.labels = Some(labels);
+            meta
+        },
+        spec: ServiceSpec {
+            selector: Some(selector),
+            ports: vec![ServicePort {
+                name: Some("http".to_string()),
+                port,
+                target_port: Some(port),
+                protocol: Some("TCP".to_string()),
+                node_port: Some(node_port),
+            }],
+            service_type: Some(ServiceType::LoadBalancer),
+            cluster_ip: Some("10.96.100.123".to_string()),
+            external_ips: None,
+            session_affinity: None,
+        },
+        status: None,
+    }
+}
+
+/// Create a test Node
+pub fn create_test_node(name: &str, internal_ip: &str) -> Node {
+    Node {
+        type_meta: TypeMeta {
+            kind: "Node".to_string(),
+            api_version: "v1".to_string(),
+        },
+        metadata: {
+            let mut meta = ObjectMeta::new(name);
+            meta.uid = uuid::Uuid::new_v4().to_string();
+            meta
+        },
+        spec: NodeSpec {
+            pod_cidr: Some("10.244.0.0/24".to_string()),
+            provider_id: None,
+            unschedulable: None,
+            taints: None,
+        },
+        status: Some(NodeStatus {
+            conditions: Some(vec![NodeCondition {
+                condition_type: "Ready".to_string(),
+                status: "True".to_string(),
+                reason: Some("NodeReady".to_string()),
+                message: Some("Node is ready".to_string()),
+                last_heartbeat_time: chrono::Utc::now(),
+                last_transition_time: chrono::Utc::now(),
+            }]),
+            addresses: Some(vec![NodeAddress {
+                address_type: "InternalIP".to_string(),
+                address: internal_ip.to_string(),
+            }]),
+            capacity: Some({
+                let mut cap = HashMap::new();
+                cap.insert("cpu".to_string(), "4".to_string());
+                cap.insert("memory".to_string(), "8Gi".to_string());
+                cap
+            }),
+            allocatable: Some({
+                let mut alloc = HashMap::new();
+                alloc.insert("cpu".to_string(), "4".to_string());
+                alloc.insert("memory".to_string(), "8Gi".to_string());
+                alloc
+            }),
+            node_info: None,
+        }),
+    }
+}

@@ -99,6 +99,15 @@ print_success "All prerequisites are installed!"
 echo "  Container runtime: $CONTAINER_RUNTIME"
 echo "  Compose command: $COMPOSE_CMD"
 
+# Check for kubectl
+KUBECTL_CMD=""
+if check_command "kubectl"; then
+    KUBECTL_CMD="kubectl"
+elif [ -f "./target/release/kubectl" ]; then
+    KUBECTL_CMD="./target/release/kubectl"
+    print_warning "Using local kubectl binary"
+fi
+
 # Ask user what they want to do
 echo ""
 echo "What would you like to do?"
@@ -110,9 +119,10 @@ echo "  5) View logs"
 echo "  6) Build Rust binaries locally"
 echo "  7) Run tests"
 echo "  8) Full setup (build + start)"
-echo "  9) Exit"
+echo "  9) Install MetalLB (local LoadBalancer support)"
+echo " 10) Exit"
 echo ""
-read -p "Enter your choice [1-9]: " choice
+read -p "Enter your choice [1-10]: " choice
 
 case $choice in
     1)
@@ -179,11 +189,84 @@ case $choice in
         echo "etcd: http://localhost:2379"
         echo ""
         echo "Next steps:"
+        echo "  - Install MetalLB: ./dev-setup.sh (choose option 9)"
         echo "  - View logs: $COMPOSE_CMD logs -f"
         echo "  - Run kubectl: cargo run --bin kubectl -- --server http://localhost:6443 get pods"
         echo "  - Stop cluster: $COMPOSE_CMD down"
         ;;
     9)
+        print_step "Installing MetalLB for LoadBalancer support..."
+
+        if [ -z "$KUBECTL_CMD" ]; then
+            print_error "kubectl is not available. Please install kubectl or build it with: cargo build --release --bin kubectl"
+            exit 1
+        fi
+
+        # Check if cluster is running
+        if ! $KUBECTL_CMD cluster-info &> /dev/null; then
+            print_error "Kubernetes cluster is not running or not accessible"
+            echo "  Start the cluster first with option 2"
+            exit 1
+        fi
+
+        print_step "Installing MetalLB v0.14.3..."
+        $KUBECTL_CMD apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
+
+        print_step "Waiting for MetalLB to be ready..."
+        $KUBECTL_CMD wait --namespace metallb-system \
+            --for=condition=ready pod \
+            --selector=app=metallb \
+            --timeout=90s || {
+            print_warning "MetalLB pods may still be initializing. Check with: kubectl get pods -n metallb-system"
+        }
+
+        print_step "Configuring MetalLB for Podman network..."
+
+        # Detect Podman network range
+        if [ "$CONTAINER_RUNTIME" = "podman" ] && command -v podman &> /dev/null; then
+            PODMAN_SUBNET=$(podman network inspect podman 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+/\d+' | head -1 || echo "10.88.0.0/16")
+            print_success "Detected Podman network: $PODMAN_SUBNET"
+            IP_RANGE="10.88.100.1-10.88.100.50"
+        else
+            print_warning "Could not detect Podman network, using default range"
+            IP_RANGE="192.168.1.240-192.168.1.250"
+        fi
+
+        echo "  Using IP range: $IP_RANGE"
+
+        cat <<EOF | $KUBECTL_CMD apply -f -
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: default-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - $IP_RANGE
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: default-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - default-pool
+EOF
+
+        print_success "MetalLB installed and configured!"
+        echo ""
+        echo "MetalLB is ready! Create a LoadBalancer service to test:"
+        echo "  $KUBECTL_CMD apply -f examples/test-loadbalancer-service.yaml"
+        echo ""
+        echo "Or run the automated test:"
+        echo "  ./examples/metallb/test-metallb.sh"
+        echo ""
+        echo "For more information, see:"
+        echo "  - docs/METALLB_INTEGRATION.md"
+        echo "  - examples/metallb/QUICKSTART.md"
+        ;;
+    10)
         echo "Exiting..."
         exit 0
         ;;

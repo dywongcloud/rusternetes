@@ -72,11 +72,27 @@ For local development, we provide a complete container-based development environ
 # Interactive setup
 ./dev-setup.sh
 
+# Choose from options:
+# - Option 8: Full setup (build + start cluster)
+# - Option 9: Install MetalLB (for LoadBalancer services)
+
 # Or using Make
 make dev-full        # Build and start everything
 make dev-logs        # View logs
 make kubectl-get-pods # Try it out!
 ```
+
+**Enable LoadBalancer Services:**
+
+After starting your cluster, you can install MetalLB for local LoadBalancer support:
+
+```bash
+./dev-setup.sh  # Choose option 9
+# Or run the automated test:
+./examples/metallb/test-metallb.sh
+```
+
+This gives you working LoadBalancer services without cloud provider credentials! See [docs/METALLB_INTEGRATION.md](docs/METALLB_INTEGRATION.md) for details.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development workflows, troubleshooting, and advanced usage.
 
