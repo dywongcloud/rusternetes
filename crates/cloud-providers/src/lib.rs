@@ -11,8 +11,8 @@ use std::sync::Arc;
 /// Factory function to create a cloud provider based on the provider type
 pub async fn create_provider(
     provider_type: CloudProviderType,
-    cluster_name: String,
-    config: std::collections::HashMap<String, String>,
+    #[allow(unused_variables)] cluster_name: String,
+    #[allow(unused_variables)] config: std::collections::HashMap<String, String>,
 ) -> Result<Arc<dyn CloudProvider>> {
     match provider_type {
         CloudProviderType::AWS => {

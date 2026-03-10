@@ -3,15 +3,15 @@
 
 use async_trait::async_trait;
 use rusternetes_common::{
-    cloud_provider::{CloudProvider, LoadBalancerService, LoadBalancerStatus, LoadBalancerIngress},
+    cloud_provider::{CloudProvider, LoadBalancerService, LoadBalancerStatus},
     Result, Error,
 };
 use tracing::{info, warn};
 
 pub struct GcpProvider {
-    project_id: String,
-    region: String,
-    cluster_name: String,
+    _project_id: String,
+    _region: String,
+    _cluster_name: String,
 }
 
 impl GcpProvider {
@@ -19,9 +19,9 @@ impl GcpProvider {
         info!("Initializing GCP provider for project {} in region {}", project_id, region);
 
         Ok(Self {
-            project_id,
-            region,
-            cluster_name,
+            _project_id: project_id,
+            _region: region,
+            _cluster_name: cluster_name,
         })
     }
 }
@@ -30,7 +30,7 @@ impl GcpProvider {
 impl CloudProvider for GcpProvider {
     async fn ensure_load_balancer(
         &self,
-        service: &LoadBalancerService,
+        _service: &LoadBalancerService,
     ) -> Result<LoadBalancerStatus> {
         warn!("GCP LoadBalancer provider not yet implemented");
 

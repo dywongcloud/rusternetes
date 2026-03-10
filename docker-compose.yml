@@ -122,6 +122,34 @@ services:
       - RUST_LOG=info
     command: ["--node-name", "node-1"]
 
+  # DNS Server - internal DNS for service discovery
+  dns-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.dns-server
+    container_name: rusternetes-dns-server
+    depends_on:
+      etcd:
+        condition: service_healthy
+    ports:
+      - "8053:8053/udp"
+      - "8053:8053/tcp"
+    networks:
+      - rusternetes-net
+    environment:
+      - RUST_LOG=info
+    command:
+      - "--etcd-endpoint"
+      - "http://etcd:2379"
+      - "--listen-addr"
+      - "0.0.0.0:8053"
+      - "--cluster-domain"
+      - "cluster.local"
+      - "--ttl"
+      - "10"
+      - "--sync-interval-secs"
+      - "30"
+
 networks:
   rusternetes-net:
     driver: bridge

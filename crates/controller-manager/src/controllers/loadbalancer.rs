@@ -205,6 +205,7 @@ impl LoadBalancerController {
     }
 
     /// Delete load balancer for a service (called when service is deleted)
+    #[allow(dead_code)]
     pub async fn cleanup_service(
         &self,
         namespace: &str,

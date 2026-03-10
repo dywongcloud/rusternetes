@@ -3,16 +3,16 @@
 
 use async_trait::async_trait;
 use rusternetes_common::{
-    cloud_provider::{CloudProvider, LoadBalancerService, LoadBalancerStatus, LoadBalancerIngress},
+    cloud_provider::{CloudProvider, LoadBalancerService, LoadBalancerStatus},
     Result, Error,
 };
 use tracing::{info, warn};
 
 pub struct AzureProvider {
-    subscription_id: String,
-    resource_group: String,
-    location: String,
-    cluster_name: String,
+    _subscription_id: String,
+    _resource_group: String,
+    _location: String,
+    _cluster_name: String,
 }
 
 impl AzureProvider {
@@ -26,10 +26,10 @@ impl AzureProvider {
             subscription_id, location);
 
         Ok(Self {
-            subscription_id,
-            resource_group,
-            location,
-            cluster_name,
+            _subscription_id: subscription_id,
+            _resource_group: resource_group,
+            _location: location,
+            _cluster_name: cluster_name,
         })
     }
 }
@@ -38,7 +38,7 @@ impl AzureProvider {
 impl CloudProvider for AzureProvider {
     async fn ensure_load_balancer(
         &self,
-        service: &LoadBalancerService,
+        _service: &LoadBalancerService,
     ) -> Result<LoadBalancerStatus> {
         warn!("Azure LoadBalancer provider not yet implemented");
 

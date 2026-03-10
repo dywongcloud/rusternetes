@@ -1,0 +1,35 @@
+# Build stage
+FROM rust:1.83-slim-bookworm AS builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y pkg-config libssl-dev protobuf-compiler && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy workspace files
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+
+# Copy all crate directories
+COPY crates/ crates/
+
+# Build the DNS server binary
+RUN cargo build --release --bin rusternetes-dns-server
+
+# Runtime stage
+FROM debian:sid-slim
+
+# Install runtime dependencies
+RUN apt-get update && \
+    apt-get install -y ca-certificates libssl3 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy the binary from builder
+COPY --from=builder /build/target/release/rusternetes-dns-server /usr/local/bin/
+
+# DNS runs on port 53
+EXPOSE 53/udp
+EXPOSE 53/tcp
+
+ENTRYPOINT ["rusternetes-dns-server"]

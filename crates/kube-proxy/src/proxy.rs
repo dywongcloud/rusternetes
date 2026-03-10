@@ -7,30 +7,10 @@ use tracing::{debug, error, info, warn};
 
 use crate::iptables::IptablesManager;
 
-/// ServiceInfo holds the configuration for a service
-#[derive(Debug, Clone)]
-struct ServiceInfo {
-    namespace: String,
-    name: String,
-    cluster_ip: Option<String>,
-    service_type: ServiceType,
-    ports: Vec<ServicePortInfo>,
-}
-
-#[derive(Debug, Clone)]
-struct ServicePortInfo {
-    port: u16,
-    target_port: u16,
-    protocol: String,
-    node_port: Option<u16>,
-}
-
 /// KubeProxy manages service networking through iptables rules
 pub struct KubeProxy {
     storage: Arc<EtcdStorage>,
     iptables: IptablesManager,
-    /// Cache of current service state to detect changes
-    service_cache: HashMap<String, ServiceInfo>,
 }
 
 impl KubeProxy {
@@ -41,7 +21,6 @@ impl KubeProxy {
         Ok(Self {
             storage,
             iptables,
-            service_cache: HashMap::new(),
         })
     }
 

@@ -99,6 +99,7 @@ impl ClusterIPAllocator {
     }
 
     /// Mark existing IPs as allocated (for recovery after restart)
+    #[allow(dead_code)]
     pub fn mark_allocated(&self, ip: String) {
         if self.is_in_range(&ip) {
             let mut allocated = self.allocated.lock().unwrap();
@@ -107,6 +108,7 @@ impl ClusterIPAllocator {
     }
 
     /// Get statistics about IP allocation
+    #[allow(dead_code)]
     pub fn stats(&self) -> (usize, u32) {
         let allocated = self.allocated.lock().unwrap();
         (allocated.len(), self.pool_size)
