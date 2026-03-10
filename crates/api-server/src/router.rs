@@ -145,6 +145,39 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             get(handlers::rbac::get_clusterrolebinding)
                 .put(handlers::rbac::update_clusterrolebinding)
                 .delete(handlers::rbac::delete_clusterrolebinding),
+        )
+        // Storage v1 API - PersistentVolumes (cluster-scoped)
+        .route(
+            "/api/v1/persistentvolumes",
+            get(handlers::persistentvolume::list_pvs).post(handlers::persistentvolume::create_pv),
+        )
+        .route(
+            "/api/v1/persistentvolumes/:name",
+            get(handlers::persistentvolume::get_pv)
+                .put(handlers::persistentvolume::update_pv)
+                .delete(handlers::persistentvolume::delete_pv),
+        )
+        // PersistentVolumeClaims (namespace-scoped)
+        .route(
+            "/api/v1/namespaces/:namespace/persistentvolumeclaims",
+            get(handlers::persistentvolumeclaim::list_pvcs).post(handlers::persistentvolumeclaim::create_pvc),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/persistentvolumeclaims/:name",
+            get(handlers::persistentvolumeclaim::get_pvc)
+                .put(handlers::persistentvolumeclaim::update_pvc)
+                .delete(handlers::persistentvolumeclaim::delete_pvc),
+        )
+        // StorageClasses (cluster-scoped)
+        .route(
+            "/apis/storage.k8s.io/v1/storageclasses",
+            get(handlers::storageclass::list_storageclasses).post(handlers::storageclass::create_storageclass),
+        )
+        .route(
+            "/apis/storage.k8s.io/v1/storageclasses/:name",
+            get(handlers::storageclass::get_storageclass)
+                .put(handlers::storageclass::update_storageclass)
+                .delete(handlers::storageclass::delete_storageclass),
         );
 
     // Conditionally apply authentication middleware

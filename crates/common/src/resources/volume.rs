@@ -107,7 +107,7 @@ pub struct LocalVolumeSource {
     pub fs_type: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PersistentVolumeAccessMode {
     ReadWriteOnce,
     ReadOnlyMany,
@@ -115,14 +115,14 @@ pub enum PersistentVolumeAccessMode {
     ReadWriteOncePod,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PersistentVolumeReclaimPolicy {
     Retain,
     Recycle,
     Delete,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PersistentVolumeMode {
     Filesystem,
     Block,
@@ -169,7 +169,7 @@ pub struct PersistentVolumeStatus {
     pub reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PersistentVolumePhase {
     Pending,
     Available,
@@ -267,7 +267,7 @@ pub struct PersistentVolumeClaimStatus {
     pub conditions: Option<Vec<PersistentVolumeClaimCondition>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PersistentVolumeClaimPhase {
     Pending,
     Bound,
@@ -321,7 +321,7 @@ pub struct StorageClass {
     pub allow_volume_expansion: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum VolumeBindingMode {
     Immediate,
     WaitForFirstConsumer,
@@ -355,14 +355,7 @@ mod tests {
                 kind: "PersistentVolume".to_string(),
                 api_version: "v1".to_string(),
             },
-            metadata: ObjectMeta {
-                name: Some("test-pv".to_string()),
-                namespace: None,
-                labels: None,
-                annotations: None,
-                uid: None,
-                creation_timestamp: None,
-            },
+            metadata: ObjectMeta::new("test-pv"),
             spec: PersistentVolumeSpec {
                 capacity,
                 volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
@@ -397,14 +390,7 @@ mod tests {
                 kind: "PersistentVolumeClaim".to_string(),
                 api_version: "v1".to_string(),
             },
-            metadata: ObjectMeta {
-                name: Some("test-pvc".to_string()),
-                namespace: Some("default".to_string()),
-                labels: None,
-                annotations: None,
-                uid: None,
-                creation_timestamp: None,
-            },
+            metadata: ObjectMeta::new("test-pvc").with_namespace("default"),
             spec: PersistentVolumeClaimSpec {
                 access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
                 resources: ResourceRequirements {

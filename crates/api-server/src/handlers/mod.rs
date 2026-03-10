@@ -8,3 +8,6 @@ pub mod job;
 pub mod cronjob;
 pub mod service_account;
 pub mod rbac;
+pub mod persistentvolume;
+pub mod persistentvolumeclaim;
+pub mod storageclass;

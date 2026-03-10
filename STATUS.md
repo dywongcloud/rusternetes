@@ -49,7 +49,38 @@ podman-compose down
 
 ## Latest Enhancements (March 9, 2026)
 
-### 0. Orphaned Container Cleanup ✅
+### 0. Volume Support Implementation ✅
+- **Feature**: Full Kubernetes-compatible volume support for pod storage management
+- **Volume Types Supported**:
+  - **EmptyDir**: Temporary storage created at `/tmp/rusternetes/volumes/{pod_name}/{volume_name}`
+  - **HostPath**: Direct access to host filesystem with DirectoryOrCreate support
+  - **PersistentVolume (PV)**: Cluster-scoped storage resources
+  - **PersistentVolumeClaim (PVC)**: Namespace-scoped storage requests
+  - **StorageClass**: Storage provisioner configuration
+- **API Endpoints Added**:
+  - PersistentVolumes: `/api/v1/persistentvolumes` (cluster-scoped)
+  - PersistentVolumeClaims: `/api/v1/namespaces/:namespace/persistentvolumeclaims`
+  - StorageClasses: `/apis/storage.k8s.io/v1/storageclasses` (cluster-scoped)
+- **Kubelet Runtime Integration**:
+  - Volumes created before container start
+  - Volume mounting with Docker/Podman bind mounts
+  - Read-only mount support with `:ro` flag
+  - Automatic volume cleanup on pod deletion
+- **Files Modified**:
+  - `crates/api-server/src/handlers/persistentvolume.rs` - PV CRUD operations
+  - `crates/api-server/src/handlers/persistentvolumeclaim.rs` - PVC CRUD operations
+  - `crates/api-server/src/handlers/storageclass.rs` - StorageClass CRUD operations
+  - `crates/api-server/src/handlers/mod.rs` - Registered volume handlers
+  - `crates/api-server/src/router.rs` - Added volume API routes
+  - `crates/kubelet/src/runtime.rs` - Volume creation, mounting, and cleanup
+- **Test Examples**:
+  - `examples/test-pod-emptydir.yaml` - EmptyDir volume example
+  - `examples/test-pod-hostpath.yaml` - HostPath volume example
+  - `examples/test-pv-pvc.yaml` - PV and PVC example with pod
+  - `examples/test-storageclass.yaml` - StorageClass configuration example
+- **Future Work**: ConfigMap and Secret volumes (currently return "not implemented" error)
+
+### 1. Orphaned Container Cleanup ✅
 - **Feature**: Kubelet now automatically detects and cleans up orphaned containers
 - **Implementation**: Added `cleanup_orphaned_containers()` method to kubelet sync loop
 - **Behavior**: Compares running containers in Podman/Docker against pods in etcd
@@ -60,7 +91,7 @@ podman-compose down
   - `crates/kubelet/src/kubelet.rs` - Added orphaned container cleanup in sync loop (lines 163-200)
   - `crates/kubelet/src/runtime.rs` - Added `list_running_pods()` method (lines 565-592)
 
-### 1. Critical Bug Fix: Label Selector Deserialization ✅
+### 2. Critical Bug Fix: Label Selector Deserialization ✅
 - **Bug**: `LabelSelector` struct was missing `#[serde(rename_all = "camelCase")]` annotation
 - **Impact**: Deployment controller couldn't match pods, created 60+ duplicate pods every 10 seconds
 - **Fix**: Added serde annotation to `crates/common/src/types.rs:108` for `LabelSelector` and `LabelSelectorRequirement`
@@ -69,35 +100,35 @@ podman-compose down
   - `crates/common/src/types.rs` - Fixed serialization
   - `crates/controller-manager/src/controllers/deployment.rs` - Added debug logging
 
-### 2. kubectl Authentication Support ✅
+### 3. kubectl Authentication Support ✅
 - Added `--token` flag for Bearer token authentication
 - All HTTP methods include Authorization headers when token provided
 - Supports secure multi-user API access
 - Example: `kubectl --token <jwt> --server https://localhost:6443 get pods`
 
-### 3. Job and CronJob API Handlers ✅
+### 4. Job and CronJob API Handlers ✅
 - Full CRUD operations for Jobs at `/apis/batch/v1/namespaces/:namespace/jobs`
 - Full CRUD operations for CronJobs at `/apis/batch/v1/namespaces/:namespace/cronjobs`
 - RBAC authorization integrated
 - Ready for batch workload management
 
-### 4. Pod IP Address Tracking ✅
+### 5. Pod IP Address Tracking ✅
 - Kubelet retrieves pod IPs from container runtime network settings
 - Pod status now includes actual `pod_ip` field
 - Enables accurate service discovery and networking
 
-### 5. Container Restart Count Tracking ✅
+### 6. Container Restart Count Tracking ✅
 - Restart counts preserved across status updates
 - Visible in container status reports
 - Helps diagnose crash-loop and stability issues
 
-### 6. Label Selector matchExpressions ✅
+### 7. Label Selector matchExpressions ✅
 - Full Kubernetes-compatible matchExpressions support
 - Operators: In, NotIn, Exists, DoesNotExist
 - Enables complex pod affinity/anti-affinity rules
 - Supports advanced deployment targeting
 
-### 7. Rustls Crypto Provider Fix ✅
+### 8. Rustls Crypto Provider Fix ✅
 - Added aws-lc-rs crypto provider to rustls dependency
 - Automatic crypto provider installation in TLS module
 - API server now starts successfully with TLS encryption
@@ -209,6 +240,19 @@ curl -k https://localhost:6443/api/v1
 - ✅ Restart count tracking
 - ✅ Orphaned container cleanup (automatic detection and removal)
 
+### Volume & Storage Features
+- ✅ EmptyDir volumes (temporary storage, auto-cleanup)
+- ✅ HostPath volumes (host filesystem access with DirectoryOrCreate)
+- ✅ Volume mounting to containers with read-only support
+- ✅ PersistentVolume (PV) API with full CRUD operations
+- ✅ PersistentVolumeClaim (PVC) API with full CRUD operations
+- ✅ StorageClass API with full CRUD operations
+- ✅ Automatic volume creation before container start
+- ✅ Automatic volume cleanup on pod deletion
+- ⏹️ ConfigMap volumes (not yet implemented)
+- ⏹️ Secret volumes (not yet implemented)
+- ⏹️ PVC-to-PV binding controller (optional, not yet implemented)
+
 ### Health & Probes
 - ✅ HTTP GET probes
 - ✅ TCP Socket probes
@@ -309,15 +353,18 @@ podman ps | grep etcd
 
 ## Files Modified/Created
 
-### Implementation Files (Total: 14 modified)
+### Implementation Files (Total: 20 modified)
 - `Cargo.toml` - Added rustls crypto provider feature
 - `crates/kubectl/src/main.rs` - Added --token flag
 - `crates/kubectl/src/client.rs` - Token authentication support
-- `crates/api-server/src/handlers/mod.rs` - Registered Job/CronJob handlers
+- `crates/api-server/src/handlers/mod.rs` - Registered Job/CronJob/Volume handlers
 - `crates/api-server/src/handlers/job.rs` - Job CRUD operations
 - `crates/api-server/src/handlers/cronjob.rs` - CronJob CRUD operations
-- `crates/api-server/src/router.rs` - Job/CronJob routes
-- `crates/kubelet/src/runtime.rs` - Pod IP + restart count tracking + list_running_pods() method
+- `crates/api-server/src/handlers/persistentvolume.rs` - PersistentVolume CRUD operations
+- `crates/api-server/src/handlers/persistentvolumeclaim.rs` - PersistentVolumeClaim CRUD operations
+- `crates/api-server/src/handlers/storageclass.rs` - StorageClass CRUD operations
+- `crates/api-server/src/router.rs` - Job/CronJob/Volume routes
+- `crates/kubelet/src/runtime.rs` - Pod IP + restart count tracking + volume creation/mounting/cleanup + list_running_pods() method
 - `crates/kubelet/src/kubelet.rs` - Pod IP population in status + orphaned container cleanup
 - `crates/scheduler/src/advanced.rs` - matchExpressions implementation
 - `crates/common/src/tls.rs` - Crypto provider initialization
@@ -340,6 +387,10 @@ podman ps | grep etcd
 - `examples/test-job.yaml`
 - `examples/test-cronjob.yaml`
 - `examples/test-pod.yaml`
+- `examples/test-pod-emptydir.yaml` - EmptyDir volume example
+- `examples/test-pod-hostpath.yaml` - HostPath volume example
+- `examples/test-pv-pvc.yaml` - PersistentVolume and PersistentVolumeClaim example
+- `examples/test-storageclass.yaml` - StorageClass example
 
 ### Build & Deployment
 - `Dockerfile.*` (7 component-specific files)
@@ -388,6 +439,36 @@ GET    /apis/batch/v1/namespaces/:namespace/cronjobs
 GET    /apis/batch/v1/namespaces/:namespace/cronjobs/:name
 PUT    /apis/batch/v1/namespaces/:namespace/cronjobs/:name
 DELETE /apis/batch/v1/namespaces/:namespace/cronjobs/:name
+```
+
+### Volume and Storage APIs ✅
+```bash
+# PersistentVolume API endpoints operational (cluster-scoped):
+POST   /api/v1/persistentvolumes
+GET    /api/v1/persistentvolumes
+GET    /api/v1/persistentvolumes/:name
+PUT    /api/v1/persistentvolumes/:name
+DELETE /api/v1/persistentvolumes/:name
+
+# PersistentVolumeClaim API endpoints operational (namespace-scoped):
+POST   /api/v1/namespaces/:namespace/persistentvolumeclaims
+GET    /api/v1/namespaces/:namespace/persistentvolumeclaims
+GET    /api/v1/namespaces/:namespace/persistentvolumeclaims/:name
+PUT    /api/v1/namespaces/:namespace/persistentvolumeclaims/:name
+DELETE /api/v1/namespaces/:namespace/persistentvolumeclaims/:name
+
+# StorageClass API endpoints operational (cluster-scoped):
+POST   /apis/storage.k8s.io/v1/storageclasses
+GET    /apis/storage.k8s.io/v1/storageclasses
+GET    /apis/storage.k8s.io/v1/storageclasses/:name
+PUT    /apis/storage.k8s.io/v1/storageclasses/:name
+DELETE /apis/storage.k8s.io/v1/storageclasses/:name
+
+# Volume features working:
+- EmptyDir: Temporary storage created at /tmp/rusternetes/volumes/{pod}/{volume}
+- HostPath: Host filesystem access with DirectoryOrCreate support
+- Volume mounting: Docker/Podman bind mounts with read-only support
+- Volume cleanup: Automatic removal when pod is deleted
 ```
 
 ### Label Selectors ✅

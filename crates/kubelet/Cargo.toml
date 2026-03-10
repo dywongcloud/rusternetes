@@ -9,6 +9,10 @@ license.workspace = true
 name = "kubelet"
 path = "src/main.rs"
 
+[lib]
+name = "rusternetes_kubelet"
+path = "src/lib.rs"
+
 [dependencies]
 rusternetes-common = { path = "../common" }
 rusternetes-storage = { path = "../storage" }

@@ -92,6 +92,9 @@ impl ContainerRuntime {
         let pod_name = &pod.metadata.name;
         info!("Starting pod: {}", pod_name);
 
+        // Create volumes first
+        let volume_binds = self.create_pod_volumes(pod).await?;
+
         for container in &pod.spec.containers {
             // Ensure image is available
             if let Err(e) = self
@@ -105,14 +108,65 @@ impl ContainerRuntime {
                 return Err(e);
             }
 
-            // Start the container
-            self.start_container(pod_name, container).await?;
+            // Start the container with volume bindings
+            self.start_container(pod_name, container, &volume_binds).await?;
         }
 
         Ok(())
     }
 
-    async fn start_container(&self, pod_name: &str, container: &Container) -> Result<()> {
+    /// Create volumes for a pod and return volume bindings for containers
+    async fn create_pod_volumes(&self, pod: &Pod) -> Result<HashMap<String, String>> {
+        let mut volume_paths = HashMap::new();
+
+        if let Some(volumes) = &pod.spec.volumes {
+            for volume in volumes {
+                let volume_path = self.create_volume(pod, volume).await?;
+                volume_paths.insert(volume.name.clone(), volume_path);
+            }
+        }
+
+        Ok(volume_paths)
+    }
+
+    /// Create a single volume and return its host path
+    async fn create_volume(&self, pod: &Pod, volume: &rusternetes_common::resources::Volume) -> Result<String> {
+        let pod_name = &pod.metadata.name;
+
+        // EmptyDir: create a temporary directory
+        if volume.empty_dir.is_some() {
+            let volume_dir = format!("/tmp/rusternetes/volumes/{}/{}", pod_name, volume.name);
+            std::fs::create_dir_all(&volume_dir)
+                .context("Failed to create emptyDir volume")?;
+            info!("Created emptyDir volume {} at {}", volume.name, volume_dir);
+            return Ok(volume_dir);
+        }
+
+        // HostPath: use the specified host path
+        if let Some(host_path) = &volume.host_path {
+            let path = host_path.path.clone();
+            // Optionally create the directory if it doesn't exist
+            if let Some(type_) = &host_path.type_ {
+                if type_ == "DirectoryOrCreate" {
+                    std::fs::create_dir_all(&path)
+                        .context("Failed to create hostPath volume")?;
+                }
+            }
+            info!("Using hostPath volume {} at {}", volume.name, path);
+            return Ok(path);
+        }
+
+        // ConfigMap and Secret volumes would be implemented here
+        // For now, we'll skip them
+        if volume.config_map.is_some() || volume.secret.is_some() {
+            warn!("ConfigMap and Secret volumes are not yet implemented");
+            return Err(anyhow::anyhow!("ConfigMap/Secret volumes not yet supported"));
+        }
+
+        Err(anyhow::anyhow!("Unknown volume type for volume {}", volume.name))
+    }
+
+    async fn start_container(&self, pod_name: &str, container: &Container, volume_paths: &HashMap<String, String>) -> Result<()> {
         let container_name = format!("{}_{}", pod_name, container.name);
 
         info!("Starting container: {}", container_name);
@@ -168,6 +222,19 @@ impl ContainerRuntime {
             }
         }
 
+        // Build volume bindings
+        let mut binds = Vec::new();
+        if let Some(volume_mounts) = &container.volume_mounts {
+            for mount in volume_mounts {
+                if let Some(host_path) = volume_paths.get(&mount.name) {
+                    let read_only = if mount.read_only.unwrap_or(false) { ":ro" } else { "" };
+                    let bind = format!("{}:{}{}", host_path, mount.mount_path, read_only);
+                    binds.push(bind);
+                    info!("Mounting volume {} at {} in container {}", mount.name, mount.mount_path, container.name);
+                }
+            }
+        }
+
         // Create container configuration
         let mut config = Config {
             image: Some(container.image.clone()),
@@ -183,6 +250,11 @@ impl ContainerRuntime {
                     None
                 } else {
                     Some(port_bindings)
+                },
+                binds: if binds.is_empty() {
+                    None
+                } else {
+                    Some(binds)
                 },
                 ..Default::default()
             }),
@@ -252,6 +324,24 @@ impl ContainerRuntime {
                 if let Err(e) = self.docker.remove_container(&id, Some(remove_options)).await {
                     warn!("Failed to remove container {}: {}", id, e);
                 }
+            }
+        }
+
+        // Clean up emptyDir volumes
+        self.cleanup_pod_volumes(pod_name).await?;
+
+        Ok(())
+    }
+
+    /// Clean up volumes created for a pod
+    async fn cleanup_pod_volumes(&self, pod_name: &str) -> Result<()> {
+        let volume_dir = format!("/tmp/rusternetes/volumes/{}", pod_name);
+
+        if std::path::Path::new(&volume_dir).exists() {
+            if let Err(e) = std::fs::remove_dir_all(&volume_dir) {
+                warn!("Failed to remove volume directory {}: {}", volume_dir, e);
+            } else {
+                info!("Cleaned up volumes for pod {}", pod_name);
             }
         }
 
@@ -588,5 +678,76 @@ impl ContainerRuntime {
         }
 
         Ok(pod_names.into_iter().collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_emptydir_volume_path_format() {
+        let pod_name = "test-pod-emptydir";
+        let volume_name = "test-volume";
+        let expected_path = format!("/tmp/rusternetes/volumes/{}/{}", pod_name, volume_name);
+
+        assert_eq!(
+            expected_path,
+            "/tmp/rusternetes/volumes/test-pod-emptydir/test-volume"
+        );
+    }
+
+    #[test]
+    fn test_hostpath_volume_path() {
+        let path = "/tmp/test-hostpath";
+        assert_eq!(path, "/tmp/test-hostpath");
+    }
+
+    #[test]
+    fn test_volume_bind_string_format() {
+        // Test read-write bind
+        let host_path = "/tmp/test";
+        let mount_path = "/data";
+        let read_only = false;
+        let bind_rw = format!(
+            "{}:{}{}",
+            host_path,
+            mount_path,
+            if read_only { ":ro" } else { "" }
+        );
+        assert_eq!(bind_rw, "/tmp/test:/data");
+
+        // Test read-only bind
+        let read_only = true;
+        let bind_ro = format!(
+            "{}:{}{}",
+            host_path,
+            mount_path,
+            if read_only { ":ro" } else { "" }
+        );
+        assert_eq!(bind_ro, "/tmp/test:/data:ro");
+    }
+
+    #[test]
+    fn test_cleanup_volume_path() {
+        let pod_name = "test-pod";
+        let volume_dir = format!("/tmp/rusternetes/volumes/{}", pod_name);
+
+        assert_eq!(volume_dir, "/tmp/rusternetes/volumes/test-pod");
+    }
+
+    #[test]
+    fn test_hostpath_types() {
+        let types = vec![
+            "DirectoryOrCreate",
+            "Directory",
+            "FileOrCreate",
+            "File",
+            "Socket",
+            "CharDevice",
+            "BlockDevice",
+        ];
+
+        for hp_type in types {
+            assert!(hp_type.len() > 0);
+        }
     }
 }
