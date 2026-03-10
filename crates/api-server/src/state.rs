@@ -4,6 +4,7 @@ use rusternetes_common::observability::MetricsRegistry;
 use rusternetes_storage::etcd::EtcdStorage;
 use std::sync::Arc;
 use crate::ip_allocator::ClusterIPAllocator;
+use crate::admission_webhook::AdmissionWebhookManager;
 
 /// Shared state for the API server
 pub struct ApiServerState {
@@ -13,6 +14,7 @@ pub struct ApiServerState {
     pub metrics: Arc<MetricsRegistry>,
     pub skip_auth: bool,
     pub ip_allocator: Arc<ClusterIPAllocator>,
+    pub webhook_manager: Arc<AdmissionWebhookManager<EtcdStorage>>,
 }
 
 impl ApiServerState {
@@ -23,6 +25,8 @@ impl ApiServerState {
         metrics: Arc<MetricsRegistry>,
         skip_auth: bool,
     ) -> Self {
+        let webhook_manager = Arc::new(AdmissionWebhookManager::new(storage.clone()));
+
         Self {
             storage,
             token_manager,
@@ -30,6 +34,7 @@ impl ApiServerState {
             metrics,
             skip_auth,
             ip_allocator: Arc::new(ClusterIPAllocator::new()),
+            webhook_manager,
         }
     }
 }

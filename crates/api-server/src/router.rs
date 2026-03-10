@@ -387,6 +387,32 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             get(handlers::crd::get_crd)
                 .put(handlers::crd::update_crd)
                 .delete(handlers::crd::delete_crd),
+        )
+        // ValidatingWebhookConfiguration (cluster-scoped)
+        .route(
+            "/apis/admissionregistration.k8s.io/v1/validatingwebhookconfigurations",
+            get(handlers::admission_webhook::list_validating_webhooks)
+                .post(handlers::admission_webhook::create_validating_webhook),
+        )
+        .route(
+            "/apis/admissionregistration.k8s.io/v1/validatingwebhookconfigurations/:name",
+            get(handlers::admission_webhook::get_validating_webhook)
+                .put(handlers::admission_webhook::update_validating_webhook)
+                .patch(handlers::admission_webhook::patch_validating_webhook)
+                .delete(handlers::admission_webhook::delete_validating_webhook),
+        )
+        // MutatingWebhookConfiguration (cluster-scoped)
+        .route(
+            "/apis/admissionregistration.k8s.io/v1/mutatingwebhookconfigurations",
+            get(handlers::admission_webhook::list_mutating_webhooks)
+                .post(handlers::admission_webhook::create_mutating_webhook),
+        )
+        .route(
+            "/apis/admissionregistration.k8s.io/v1/mutatingwebhookconfigurations/:name",
+            get(handlers::admission_webhook::get_mutating_webhook)
+                .put(handlers::admission_webhook::update_mutating_webhook)
+                .patch(handlers::admission_webhook::patch_mutating_webhook)
+                .delete(handlers::admission_webhook::delete_mutating_webhook),
         );
 
     // Conditionally apply authentication middleware

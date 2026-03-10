@@ -7,6 +7,7 @@ use axum::{
     Extension, Json,
 };
 use rusternetes_common::{
+    admission::{AdmissionResponse, GroupVersionKind, GroupVersionResource, Operation},
     authz::{Decision, RequestAttributes},
     resources::Pod,
     Result,
@@ -23,6 +24,13 @@ pub async fn create(
 ) -> Result<(StatusCode, Json<Pod>)> {
     info!("Creating pod: {}/{}", namespace, pod.metadata.name);
 
+    // Build user info for admission webhooks early (before auth_ctx.user is moved)
+    let user_info = rusternetes_common::admission::UserInfo {
+        username: auth_ctx.user.username.clone(),
+        uid: auth_ctx.user.uid.clone(),
+        groups: auth_ctx.user.groups.clone(),
+    };
+
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "pods")
         .with_namespace(&namespace)
@@ -37,6 +45,53 @@ pub async fn create(
 
     // Ensure namespace is set correctly
     pod.metadata.namespace = Some(namespace.clone());
+
+    // Define GVK and GVR for Pod
+    let gvk = GroupVersionKind {
+        group: "".to_string(),
+        version: "v1".to_string(),
+        kind: "Pod".to_string(),
+    };
+
+    let gvr = GroupVersionResource {
+        group: "".to_string(),
+        version: "v1".to_string(),
+        resource: "pods".to_string(),
+    };
+
+    // Run mutating webhooks BEFORE other admission checks
+    let pod_value = serde_json::to_value(&pod)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+
+    let (mutation_response, mutated_pod_value) = state
+        .webhook_manager
+        .run_mutating_webhooks(
+            &Operation::Create,
+            &gvk,
+            &gvr,
+            Some(&namespace),
+            &pod.metadata.name,
+            Some(pod_value),
+            None,
+            &user_info,
+        )
+        .await?;
+
+    // Check if mutating webhooks denied the request
+    match mutation_response {
+        AdmissionResponse::Deny(reason) => {
+            warn!("Mutating webhooks denied pod creation: {}", reason);
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+        AdmissionResponse::Allow | AdmissionResponse::AllowWithPatch(_) => {
+            // Continue with the mutated object
+            if let Some(mutated_value) = mutated_pod_value {
+                pod = serde_json::from_value(mutated_value)
+                    .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+                info!("Pod mutated by webhooks: {}/{}", namespace, pod.metadata.name);
+            }
+        }
+    }
 
     // Apply LimitRange defaults and validate constraints
     match crate::admission::apply_limit_range(&state.storage, &namespace, &mut pod).await {
@@ -69,6 +124,35 @@ pub async fn create(
         Err(e) => {
             warn!("Error checking ResourceQuota for pod {}/{}: {}", namespace, pod.metadata.name, e);
             // Continue anyway - don't fail pod creation if quota check fails
+        }
+    }
+
+    // Run validating webhooks AFTER mutations and other admission checks
+    let final_pod_value = serde_json::to_value(&pod)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+
+    let validation_response = state
+        .webhook_manager
+        .run_validating_webhooks(
+            &Operation::Create,
+            &gvk,
+            &gvr,
+            Some(&namespace),
+            &pod.metadata.name,
+            Some(final_pod_value),
+            None,
+            &user_info,
+        )
+        .await?;
+
+    // Check if validating webhooks denied the request
+    match validation_response {
+        AdmissionResponse::Deny(reason) => {
+            warn!("Validating webhooks denied pod creation: {}", reason);
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+        AdmissionResponse::Allow | AdmissionResponse::AllowWithPatch(_) => {
+            info!("Validating webhooks passed for pod {}/{}", namespace, pod.metadata.name);
         }
     }
 
@@ -115,6 +199,13 @@ pub async fn update(
 ) -> Result<Json<Pod>> {
     info!("Updating pod: {}/{}", namespace, name);
 
+    // Build user info for admission webhooks early (before auth_ctx.user is moved)
+    let user_info = rusternetes_common::admission::UserInfo {
+        username: auth_ctx.user.username.clone(),
+        uid: auth_ctx.user.uid.clone(),
+        groups: auth_ctx.user.groups.clone(),
+    };
+
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "pods")
         .with_namespace(&namespace)
@@ -132,7 +223,88 @@ pub async fn update(
     pod.metadata.name = name.clone();
     pod.metadata.namespace = Some(namespace.clone());
 
+    // Get the old pod for webhook comparison
     let key = build_key("pods", Some(&namespace), &name);
+    let old_pod: Pod = state.storage.get(&key).await?;
+    let old_pod_value = serde_json::to_value(&old_pod)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+
+    // Define GVK and GVR for Pod
+    let gvk = GroupVersionKind {
+        group: "".to_string(),
+        version: "v1".to_string(),
+        kind: "Pod".to_string(),
+    };
+
+    let gvr = GroupVersionResource {
+        group: "".to_string(),
+        version: "v1".to_string(),
+        resource: "pods".to_string(),
+    };
+
+    // Run mutating webhooks
+    let pod_value = serde_json::to_value(&pod)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+
+    let (mutation_response, mutated_pod_value) = state
+        .webhook_manager
+        .run_mutating_webhooks(
+            &Operation::Update,
+            &gvk,
+            &gvr,
+            Some(&namespace),
+            &name,
+            Some(pod_value),
+            Some(old_pod_value.clone()),
+            &user_info,
+        )
+        .await?;
+
+    // Check if mutating webhooks denied the request
+    match mutation_response {
+        AdmissionResponse::Deny(reason) => {
+            warn!("Mutating webhooks denied pod update: {}", reason);
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+        AdmissionResponse::Allow | AdmissionResponse::AllowWithPatch(_) => {
+            // Continue with the mutated object
+            if let Some(mutated_value) = mutated_pod_value {
+                pod = serde_json::from_value(mutated_value)
+                    .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+                info!("Pod mutated by webhooks: {}/{}", namespace, name);
+            }
+        }
+    }
+
+    // Run validating webhooks
+    let final_pod_value = serde_json::to_value(&pod)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+
+    let validation_response = state
+        .webhook_manager
+        .run_validating_webhooks(
+            &Operation::Update,
+            &gvk,
+            &gvr,
+            Some(&namespace),
+            &name,
+            Some(final_pod_value),
+            Some(old_pod_value),
+            &user_info,
+        )
+        .await?;
+
+    // Check if validating webhooks denied the request
+    match validation_response {
+        AdmissionResponse::Deny(reason) => {
+            warn!("Validating webhooks denied pod update: {}", reason);
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+        AdmissionResponse::Allow | AdmissionResponse::AllowWithPatch(_) => {
+            info!("Validating webhooks passed for pod {}/{}", namespace, name);
+        }
+    }
+
     let updated = state.storage.update(&key, &pod).await?;
 
     Ok(Json(updated))

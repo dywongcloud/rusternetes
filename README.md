@@ -17,6 +17,10 @@ Rusternetes follows the standard Kubernetes architecture with the following comp
 - **Kubelet** (`kubelet`): Agent that runs on each node and manages containers
 - **Kube-proxy** (`kube-proxy`): Network proxy that maintains network rules
 
+### Additional Components
+
+- **DNS Server** (`dns-server`): Service discovery with Hickory DNS (Kubernetes-compatible)
+
 ### CLI Tools
 
 - **kubectl** (`kubectl`): Command-line interface for interacting with the cluster
@@ -127,6 +131,8 @@ This is an educational project to understand Kubernetes internals while leveragi
 
 ### Security
 - [SECURITY.md](docs/SECURITY.md) - Security features (Admission Controllers, Pod Security Standards, Encryption, Audit)
+- [WEBHOOK_INTEGRATION.md](WEBHOOK_INTEGRATION.md) - Admission webhook integration guide ⭐ NEW
+- [WEBHOOK_TESTING.md](WEBHOOK_TESTING.md) - Comprehensive webhook testing guide ⭐ NEW
 - [TLS_GUIDE.md](docs/TLS_GUIDE.md) - TLS configuration
 
 ### Testing & Observability
@@ -144,14 +150,18 @@ This is an educational project to understand Kubernetes internals while leveragi
 
 Rusternetes implements core Kubernetes features including:
 
-- ✅ API Server with full CRUD operations
-- ✅ Scheduler with node affinity, taints/tolerations
-- ✅ Controllers (Deployment, StatefulSet, Job, DaemonSet, CronJob)
-- ✅ Storage (PV/PVC, Dynamic Provisioning, Snapshots, Expansion)
-- ✅ Networking (Services, DNS, LoadBalancer with MetalLB)
-- ✅ Security (RBAC, Admission Control, Pod Security Standards, Encryption, Audit)
-- ✅ Advanced API Features (PATCH, Field Selectors, Server-Side Apply)
-- ✅ Observability (Metrics, Tracing, Events)
+- ✅ **API Server** - Full CRUD operations with TLS, RBAC, authentication
+- ✅ **Scheduler** - Advanced scheduling with affinity/anti-affinity, taints/tolerations, priority/preemption
+- ✅ **Controllers** - Deployment, StatefulSet, Job, DaemonSet, CronJob, Endpoints, PV/PVC Binder, Dynamic Provisioner, Volume Snapshot, LoadBalancer
+- ✅ **Storage** - PV/PVC, Dynamic Provisioning, Volume Snapshots, Volume Expansion
+- ✅ **Networking** - ClusterIP, NodePort, LoadBalancer services, DNS (Hickory), kube-proxy with iptables
+- ✅ **Security** - RBAC, Admission Webhooks ⭐ NEW, Pod Security Standards, Secrets Encryption, Audit Logging
+- ✅ **Advanced API** - PATCH (all resources), Field Selectors, Server-Side Apply, Watch API, CRDs with hot-reload
+- ✅ **Observability** - Prometheus metrics, Events API, OpenTelemetry tracing
+
+**Latest Addition (March 10, 2026):** Full Kubernetes-compatible admission webhook support with `MutatingWebhookConfiguration` and `ValidatingWebhookConfiguration`. External webhooks can now validate and mutate resources before persistence, enabling policy enforcement (OPA, Kyverno), security scanning, and service mesh integration (Istio, Linkerd).
+
+**Test Coverage:** 127+ tests passing including 21 admission webhook tests
 
 See [STATUS.md](docs/STATUS.md) for detailed implementation status.
 

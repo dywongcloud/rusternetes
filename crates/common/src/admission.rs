@@ -10,6 +10,7 @@ use crate::resources::pod::Pod;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::collections::HashMap;
 
 /// Result of an admission decision
 #[derive(Debug, Clone, PartialEq)]
@@ -459,6 +460,215 @@ fn is_allowed_capability_baseline(cap: &str) -> bool {
     )
 }
 
+// ===== Admission Webhook Types (for external webhooks) =====
+
+/// AdmissionReview is the top-level request/response object for admission webhooks
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdmissionReview {
+    pub api_version: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request: Option<AdmissionReviewRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response: Option<AdmissionReviewResponse>,
+}
+
+impl AdmissionReview {
+    /// Create a new AdmissionReview request
+    pub fn new_request(request: AdmissionReviewRequest) -> Self {
+        Self {
+            api_version: "admission.k8s.io/v1".to_string(),
+            kind: "AdmissionReview".to_string(),
+            request: Some(request),
+            response: None,
+        }
+    }
+
+    /// Create a new AdmissionReview response
+    pub fn new_response(response: AdmissionReviewResponse) -> Self {
+        Self {
+            api_version: "admission.k8s.io/v1".to_string(),
+            kind: "AdmissionReview".to_string(),
+            request: None,
+            response: Some(response),
+        }
+    }
+}
+
+/// AdmissionReviewRequest describes an admission request sent to a webhook
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdmissionReviewRequest {
+    /// UID is a unique identifier for this admission request
+    pub uid: String,
+
+    /// Kind is the fully-qualified type of the object being submitted
+    pub kind: GroupVersionKind,
+
+    /// Resource is the fully-qualified resource being requested
+    pub resource: GroupVersionResource,
+
+    /// SubResource is the sub-resource being requested, if any
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sub_resource: Option<String>,
+
+    /// RequestKind is the type of the object in the original request
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_kind: Option<GroupVersionKind>,
+
+    /// RequestResource is the resource in the original request
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_resource: Option<GroupVersionResource>,
+
+    /// RequestSubResource is the sub-resource in the original request
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_sub_resource: Option<String>,
+
+    /// Name is the name of the object being modified
+    pub name: String,
+
+    /// Namespace is the namespace of the object being modified (if namespaced)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+
+    /// Operation is the operation being performed
+    pub operation: Operation,
+
+    /// UserInfo contains information about the user making the request
+    pub user_info: UserInfo,
+
+    /// Object is the object being admitted (for CREATE and UPDATE operations)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object: Option<serde_json::Value>,
+
+    /// OldObject is the existing object (for UPDATE and DELETE operations)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_object: Option<serde_json::Value>,
+
+    /// DryRun indicates the request is for a dry-run
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dry_run: Option<bool>,
+
+    /// Options contains the operation options (e.g., CreateOptions, UpdateOptions)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<serde_json::Value>,
+}
+
+/// GroupVersionKind identifies a type
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupVersionKind {
+    pub group: String,
+    pub version: String,
+    pub kind: String,
+}
+
+/// GroupVersionResource identifies a resource
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupVersionResource {
+    pub group: String,
+    pub version: String,
+    pub resource: String,
+}
+
+/// AdmissionReviewResponse describes the admission response from a webhook
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdmissionReviewResponse {
+    /// UID echoes the UID from the request
+    pub uid: String,
+
+    /// Allowed indicates whether the request is allowed
+    pub allowed: bool,
+
+    /// Status contains extra details about the result (for denials)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<AdmissionStatus>,
+
+    /// Patch is a JSONPatch to apply to the object (for mutating webhooks)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>, // Base64-encoded JSON patch
+
+    /// PatchType is the type of patch (currently only "JSONPatch" is supported)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patch_type: Option<String>,
+
+    /// AuditAnnotations are key-value pairs to add to the audit event
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audit_annotations: Option<HashMap<String, String>>,
+
+    /// Warnings are messages to return to the user
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warnings: Option<Vec<String>>,
+}
+
+impl AdmissionReviewResponse {
+    /// Create an allowed response
+    pub fn allow(uid: String) -> Self {
+        Self {
+            uid,
+            allowed: true,
+            status: None,
+            patch: None,
+            patch_type: None,
+            audit_annotations: None,
+            warnings: None,
+        }
+    }
+
+    /// Create a denied response
+    pub fn deny(uid: String, message: String) -> Self {
+        Self {
+            uid,
+            allowed: false,
+            status: Some(AdmissionStatus {
+                status: "Failure".to_string(),
+                message: Some(message),
+                reason: Some("Denied by webhook".to_string()),
+                code: Some(403),
+            }),
+            patch: None,
+            patch_type: None,
+            audit_annotations: None,
+            warnings: None,
+        }
+    }
+
+    /// Create an allowed response with a JSON patch
+    pub fn allow_with_patch(uid: String, patch: Vec<PatchOperation>) -> Self {
+        let patch_json = serde_json::to_string(&patch).unwrap_or_default();
+        let patch_base64 = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            patch_json.as_bytes(),
+        );
+
+        Self {
+            uid,
+            allowed: true,
+            status: None,
+            patch: Some(patch_base64),
+            patch_type: Some("JSONPatch".to_string()),
+            audit_annotations: None,
+            warnings: None,
+        }
+    }
+}
+
+/// AdmissionStatus contains extra details about the admission response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdmissionStatus {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<i32>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,5 +702,28 @@ mod tests {
         assert!(is_allowed_capability_baseline("CHOWN"));
         assert!(!is_allowed_capability_baseline("SYS_ADMIN"));
         assert!(!is_allowed_capability_baseline("NET_ADMIN"));
+    }
+
+    #[test]
+    fn test_admission_review_response() {
+        let allow = AdmissionReviewResponse::allow("test-uid".to_string());
+        assert!(allow.allowed);
+        assert!(allow.status.is_none());
+
+        let deny = AdmissionReviewResponse::deny("test-uid".to_string(), "denied".to_string());
+        assert!(!deny.allowed);
+        assert!(deny.status.is_some());
+    }
+
+    #[test]
+    fn test_group_version_kind() {
+        let gvk = GroupVersionKind {
+            group: "apps".to_string(),
+            version: "v1".to_string(),
+            kind: "Deployment".to_string(),
+        };
+        assert_eq!(gvk.group, "apps");
+        assert_eq!(gvk.version, "v1");
+        assert_eq!(gvk.kind, "Deployment");
     }
 }

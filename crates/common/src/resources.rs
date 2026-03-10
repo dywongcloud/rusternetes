@@ -13,6 +13,7 @@ pub mod volume;
 pub mod event;
 pub mod policy;
 pub mod crd;
+pub mod admission_webhook;
 
 pub use pod::{
     Pod, PodSpec, PodStatus, Container, ContainerPort, ContainerStatus, ContainerState,
@@ -61,4 +62,11 @@ pub use crd::{
     CustomResourceSubresourceScale, CustomResourceColumnDefinition, CustomResourceConversion,
     ConversionStrategyType, WebhookConversion, WebhookClientConfig, ServiceReference,
     ResourceScope, CustomResource,
+};
+pub use admission_webhook::{
+    ValidatingWebhookConfiguration, ValidatingWebhook,
+    MutatingWebhookConfiguration, MutatingWebhook,
+    RuleWithOperations, Rule, OperationType, FailurePolicy, MatchPolicy,
+    SideEffectClass, ReinvocationPolicy, LabelSelector, LabelSelectorRequirement,
+    LabelSelectorOperator, MatchCondition,
 };
