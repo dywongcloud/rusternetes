@@ -126,6 +126,106 @@ pub fn check_node_affinity(node: &Node, pod: &Pod) -> (bool, i32) {
     (true, score)
 }
 
+/// Check pod affinity requirements
+/// Returns (passes_hard_requirements, score)
+pub fn check_pod_affinity(
+    node: &Node,
+    pod: &Pod,
+    all_pods: &[Pod],
+) -> (bool, i32) {
+    let affinity = match &pod.spec.as_ref().unwrap().affinity {
+        Some(a) => a,
+        None => return (true, 0), // No affinity requirements
+    };
+
+    let pod_affinity = match &affinity.pod_affinity {
+        Some(pa) => pa,
+        None => return (true, 0),
+    };
+
+    // Check required pod affinity (hard requirement)
+    if let Some(ref required) = pod_affinity.required_during_scheduling_ignored_during_execution {
+        for term in required {
+            if !matches_pod_affinity_term(node, pod, term, all_pods, true) {
+                debug!(
+                    "Pod {} does not meet hard pod affinity requirement on node {}",
+                    pod.metadata.name, node.metadata.name
+                );
+                return (false, 0);
+            }
+        }
+    }
+
+    // Calculate score from preferred pod affinity (soft requirement)
+    let mut score = 0;
+    if let Some(ref preferred) = pod_affinity.preferred_during_scheduling_ignored_during_execution {
+        for weighted_term in preferred {
+            if matches_pod_affinity_term(
+                node,
+                pod,
+                &weighted_term.pod_affinity_term,
+                all_pods,
+                true,
+            ) {
+                score += weighted_term.weight;
+            }
+        }
+    }
+
+    (true, score)
+}
+
+/// Check pod anti-affinity requirements
+/// Returns (passes_hard_requirements, score_penalty)
+pub fn check_pod_anti_affinity(
+    node: &Node,
+    pod: &Pod,
+    all_pods: &[Pod],
+) -> (bool, i32) {
+    let affinity = match &pod.spec.as_ref().unwrap().affinity {
+        Some(a) => a,
+        None => return (true, 0), // No anti-affinity requirements
+    };
+
+    let pod_anti_affinity = match &affinity.pod_anti_affinity {
+        Some(paa) => paa,
+        None => return (true, 0),
+    };
+
+    // Check required pod anti-affinity (hard requirement)
+    if let Some(ref required) = pod_anti_affinity.required_during_scheduling_ignored_during_execution {
+        for term in required {
+            // For anti-affinity, we check if matching pods exist
+            // If they do, we CANNOT schedule on this node
+            if matches_pod_affinity_term(node, pod, term, all_pods, false) {
+                debug!(
+                    "Pod {} violates hard pod anti-affinity requirement on node {}",
+                    pod.metadata.name, node.metadata.name
+                );
+                return (false, 0);
+            }
+        }
+    }
+
+    // Calculate score penalty from preferred pod anti-affinity (soft requirement)
+    let mut penalty = 0;
+    if let Some(ref preferred) = pod_anti_affinity.preferred_during_scheduling_ignored_during_execution {
+        for weighted_term in preferred {
+            if matches_pod_affinity_term(
+                node,
+                pod,
+                &weighted_term.pod_affinity_term,
+                all_pods,
+                false,
+            ) {
+                penalty += weighted_term.weight;
+            }
+        }
+    }
+
+    (true, penalty)
+}
+
 /// Check if node matches a node selector
 fn matches_node_selector(node: &Node, selector: &NodeSelector) -> bool {
     // At least one term must match (OR logic)
@@ -222,6 +322,107 @@ fn get_node_field<'a>(node: &'a Node, field: &str) -> Option<&'a str> {
     }
 }
 
+/// Match a label selector against pod labels
+fn match_selector(
+    selector: &rusternetes_common::types::LabelSelector,
+    labels: &Option<std::collections::HashMap<String, String>>,
+) -> bool {
+    // Check matchLabels
+    if let Some(ref match_labels) = selector.match_labels {
+        let pod_labels = match labels {
+            Some(l) => l,
+            None => return match_labels.is_empty(),
+        };
+
+        for (key, value) in match_labels {
+            if pod_labels.get(key) != Some(value) {
+                return false;
+            }
+        }
+    }
+
+    // Check matchExpressions
+    if let Some(ref match_expressions) = selector.match_expressions {
+        let pod_labels = labels.as_ref();
+
+        for expr in match_expressions {
+            let label_value = pod_labels.and_then(|l| l.get(&expr.key));
+            let values = expr.values.as_deref().unwrap_or(&[]);
+
+            let matches = match expr.operator.as_str() {
+                "In" => {
+                    label_value.map(|v| values.contains(&v.as_str().to_string())).unwrap_or(false)
+                }
+                "NotIn" => {
+                    !label_value.map(|v| values.contains(&v.as_str().to_string())).unwrap_or(false)
+                }
+                "Exists" => label_value.is_some(),
+                "DoesNotExist" => label_value.is_none(),
+                _ => false,
+            };
+
+            if !matches {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+/// Check if a pod affinity term matches
+/// For affinity (is_affinity=true): returns true if matching pods exist on node's topology
+/// For anti-affinity (is_affinity=false): returns true if matching pods exist (indicating a conflict)
+fn matches_pod_affinity_term(
+    node: &Node,
+    _pod: &Pod,
+    term: &rusternetes_common::resources::PodAffinityTerm,
+    all_pods: &[Pod],
+    _is_affinity: bool,
+) -> bool {
+    // Get the topology key value from the node
+    let _topology_value = match node.metadata.labels.as_ref() {
+        Some(labels) => match labels.get(&term.topology_key) {
+            Some(v) => v,
+            None => {
+                // Node doesn't have the topology key label
+                return false;
+            }
+        },
+        None => return false,
+    };
+
+    // Find all pods scheduled on nodes with the same topology value
+    let matching_pods: Vec<&Pod> = all_pods
+        .iter()
+        .filter(|p| {
+            // Skip pods that aren't scheduled yet
+            if p.spec.as_ref().and_then(|s| s.node_name.as_ref()).is_none() {
+                return false;
+            }
+
+            // Check if pod matches the label selector
+            if !match_selector(&term.label_selector, &p.metadata.labels) {
+                return false;
+            }
+
+            // Check namespace constraint
+            if let Some(ref namespaces) = term.namespaces {
+                let pod_ns = p.metadata.namespace.as_deref().unwrap_or("default");
+                if !namespaces.contains(&pod_ns.to_string()) {
+                    return false;
+                }
+            }
+
+            // TODO: Check if the pod is on a node with matching topology value
+            // For now, we simplify by checking if any matching pod exists
+            true
+        })
+        .collect();
+
+    !matching_pods.is_empty()
+}
+
 /// Calculate resource-based node score
 pub fn calculate_resource_score(node: &Node, pod: &Pod) -> i32 {
     let allocatable = match &node.status {
@@ -308,6 +509,137 @@ fn parse_resource_quantity(quantity: &str, resource_type: &str) -> i64 {
     }
 }
 
+
+/// Check if preemption should occur and return pods to evict
+/// Returns (should_preempt, pods_to_evict)
+pub fn check_preemption(
+    node: &Node,
+    pod: &Pod,
+    all_pods: &[Pod],
+) -> (bool, Vec<String>) {
+    // Get the priority of the incoming pod
+    let incoming_priority = pod.spec.as_ref().and_then(|s| s.priority).unwrap_or(0);
+
+    // If incoming pod has priority <= 0, don't preempt
+    if incoming_priority <= 0 {
+        return (false, vec![]);
+    }
+
+    // Find pods running on this node
+    let node_pods: Vec<&Pod> = all_pods
+        .iter()
+        .filter(|p| {
+            p.spec
+                .as_ref()
+                .and_then(|s| s.node_name.as_ref())
+                .map(|n| n == &node.metadata.name)
+                .unwrap_or(false)
+        })
+        .collect();
+
+    // Find pods with lower priority that could be evicted
+    let mut candidates: Vec<(&Pod, i32)> = node_pods
+        .iter()
+        .filter_map(|p| {
+            let pod_priority = p.spec.as_ref().and_then(|s| s.priority).unwrap_or(0);
+            if pod_priority < incoming_priority {
+                Some((*p, pod_priority))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // If no candidates, can't preempt
+    if candidates.is_empty() {
+        return (false, vec![]);
+    }
+
+    // Sort by priority (lowest first) for eviction
+    candidates.sort_by_key(|(_, priority)| *priority);
+
+    // Calculate resources needed by incoming pod
+    let mut cpu_needed = 0i64;
+    let mut memory_needed = 0i64;
+
+    if let Some(spec) = &pod.spec {
+        for container in &spec.containers {
+            if let Some(ref resources) = container.resources {
+                if let Some(ref requests) = resources.requests {
+                    if let Some(cpu) = requests.get("cpu") {
+                        cpu_needed += parse_resource_quantity(cpu, "cpu");
+                    }
+                    if let Some(memory) = requests.get("memory") {
+                        memory_needed += parse_resource_quantity(memory, "memory");
+                    }
+                }
+            }
+        }
+    }
+
+    // Get node's allocatable resources
+    let (available_cpu, available_memory) = if let Some(status) = &node.status {
+        if let Some(allocatable) = &status.allocatable {
+            let cpu = allocatable
+                .get("cpu")
+                .map(|s| parse_resource_quantity(s, "cpu"))
+                .unwrap_or(0);
+            let memory = allocatable
+                .get("memory")
+                .map(|s| parse_resource_quantity(s, "memory"))
+                .unwrap_or(0);
+            (cpu, memory)
+        } else {
+            return (false, vec![]);
+        }
+    } else {
+        return (false, vec![]);
+    };
+
+    // Check if we have enough resources even with preemption
+    if cpu_needed > available_cpu || memory_needed > available_memory {
+        return (false, vec![]);
+    }
+
+    // Try to find a minimal set of pods to evict
+    // Simple strategy: evict lowest priority pods until we have enough resources
+    let mut pods_to_evict = Vec::new();
+    let mut freed_cpu = 0i64;
+    let mut freed_memory = 0i64;
+
+    for (candidate_pod, _) in candidates {
+        // Calculate resources used by this pod
+        if let Some(spec) = &candidate_pod.spec {
+            for container in &spec.containers {
+                if let Some(ref resources) = container.resources {
+                    if let Some(ref requests) = resources.requests {
+                        if let Some(cpu) = requests.get("cpu") {
+                            freed_cpu += parse_resource_quantity(cpu, "cpu");
+                        }
+                        if let Some(memory) = requests.get("memory") {
+                            freed_memory += parse_resource_quantity(memory, "memory");
+                        }
+                    }
+                }
+            }
+        }
+
+        pods_to_evict.push(candidate_pod.metadata.name.clone());
+
+        // Check if we've freed enough resources
+        if freed_cpu >= cpu_needed && freed_memory >= memory_needed {
+            debug!(
+                "Preemption possible on node {}: evicting {} pods",
+                node.metadata.name,
+                pods_to_evict.len()
+            );
+            return (true, pods_to_evict);
+        }
+    }
+
+    // Even after evicting all lower-priority pods, not enough resources
+    (false, vec![])
+}
 
 #[cfg(test)]
 mod tests {

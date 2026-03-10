@@ -97,6 +97,8 @@ async fn create_test_pvc(
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -288,6 +290,8 @@ async fn test_matches_access_modes() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -419,6 +423,8 @@ async fn test_skips_already_bound_pvc() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Bound,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
             capacity: Some({

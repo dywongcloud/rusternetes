@@ -65,7 +65,7 @@ Rusternetes follows the standard Kubernetes architecture with a control plane an
 │  │  ┌────────────────────┐  │         └─────────────────────────┘ │
 │  │  │ Volume mounting    │  │                                      │
 │  │  │ - PV/PVC support   │  │         ┌─────────────────────────┐ │
-│  │  │ - HostPath         │  │◄────────┤   Kube-proxy (stub)     │ │
+│  │  │ - HostPath         │  │◄────────┤   Kube-proxy            │ │
 │  │  │ - NFS/iSCSI        │  │         │  - Service routing      │ │
 │  │  └────────────────────┘  │         │  - Load balancing       │ │
 │  └──────────────────────────┘         └─────────────────────────┘ │
@@ -99,7 +99,7 @@ rusternetes/
 │   ├── scheduler/           # Pod scheduler
 │   ├── controller-manager/  # Resource controllers
 │   ├── kubelet/            # Node agent
-│   ├── kube-proxy/         # Network proxy (stub)
+│   ├── kube-proxy/         # Network proxy
 │   └── kubectl/            # CLI tool
 ├── examples/               # Example YAML manifests
 ├── README.md
@@ -283,9 +283,11 @@ The scheduler assigns pods to nodes using an advanced multi-phase algorithm:
    - Match node selectors
    - Evaluate hard node affinity requirements
 3. **Scoring Phase:**
-   - Resource availability scoring (CPU/memory, 40% weight)
-   - Soft node affinity preferences (40% weight)
-   - Pod priority (20% weight)
+   - Resource availability scoring (CPU/memory, 30% weight)
+   - Node affinity preferences (25% weight)
+   - Pod affinity (20% weight)
+   - Pod priority (15% weight)
+   - Pod anti-affinity penalty (10% weight)
 4. Select best-fit node with highest combined score
 5. Bind pod to node by updating `spec.nodeName`
 
@@ -431,12 +433,21 @@ Node agent that manages containers:
 
 ### 7. Kube-proxy (`rusternetes-kube-proxy`)
 
-Network proxy component (stub implementation):
+Network proxy component providing service networking and load balancing:
 
-**Note:** This is a placeholder. A full implementation would:
-- Watch Service and Endpoints resources
-- Program iptables/ipvs rules
-- Handle NodePort and LoadBalancer types
+**Features:**
+- ✅ Service and Endpoints watching from etcd
+- ✅ iptables-based service networking (NAT rules)
+- ✅ ClusterIP service support with load balancing
+- ✅ NodePort service support (ports 30000-32767)
+- ✅ Probabilistic load balancing across endpoints
+- ✅ Automatic iptables rule synchronization (30-second interval)
+
+**Implementation:**
+- `IptablesManager` - Programs NAT rules for service routing
+- `ServiceProxy` - Watches services and endpoints, manages sync loop
+- Custom chains: RUSTERNETES-SERVICES, RUSTERNETES-NODEPORTS
+- Automatic cleanup on shutdown
 
 ### 8. kubectl (`rusternetes-kubectl`)
 
@@ -672,7 +683,7 @@ HTTP status codes mapped from errors in API server.
 - ✅ Resource-based scheduling (CPU/memory availability)
 - ✅ Priority-based scheduling
 - ✅ Multi-phase filtering and scoring algorithm
-- ✅ Weighted scoring system (resource: 40%, affinity: 40%, priority: 20%)
+- ✅ Weighted scoring system (resources: 30%, node affinity: 25%, pod affinity: 20%, priority: 15%, anti-affinity: 10%)
 - 📋 Pod affinity/anti-affinity types defined (evaluation pending)
 
 ### 3. Observability ✅ (Core Complete)

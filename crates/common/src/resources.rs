@@ -10,6 +10,9 @@ pub mod config_and_secret;
 pub mod workloads;
 pub mod ingress;
 pub mod volume;
+pub mod event;
+pub mod policy;
+pub mod crd;
 
 pub use pod::{
     Pod, PodSpec, PodStatus, Container, ContainerPort, ContainerStatus, ContainerState,
@@ -43,4 +46,19 @@ pub use volume::{
     VolumeSnapshot, VolumeSnapshotSpec, VolumeSnapshotStatus, VolumeSnapshotSource,
     VolumeSnapshotClass, DeletionPolicy,
     VolumeSnapshotContent, VolumeSnapshotContentSpec, VolumeSnapshotContentStatus,
+};
+pub use event::{Event, EventList, EventType, EventSource, EventSeries};
+pub use policy::{
+    ResourceQuota, ResourceQuotaSpec, ResourceQuotaStatus, ScopeSelector, ScopedResourceSelectorRequirement,
+    LimitRange, LimitRangeSpec, LimitRangeItem,
+    PriorityClass,
+};
+pub use crd::{
+    CustomResourceDefinition, CustomResourceDefinitionSpec, CustomResourceDefinitionNames,
+    CustomResourceDefinitionVersion, CustomResourceDefinitionStatus, CustomResourceDefinitionCondition,
+    CustomResourceValidation, JSONSchemaProps, JSONSchemaPropsOrArray, JSONSchemaPropsOrBool,
+    JSONSchemaPropsOrStringArray, CustomResourceSubresources, CustomResourceSubresourceStatus,
+    CustomResourceSubresourceScale, CustomResourceColumnDefinition, CustomResourceConversion,
+    ConversionStrategyType, WebhookConversion, WebhookClientConfig, ServiceReference,
+    ResourceScope, CustomResource,
 };

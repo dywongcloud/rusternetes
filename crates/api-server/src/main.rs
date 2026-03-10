@@ -1,5 +1,7 @@
+mod admission;
 mod handlers;
 mod middleware;
+mod patch;
 mod router;
 mod state;
 mod ip_allocator;

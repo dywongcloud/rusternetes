@@ -1,6 +1,6 @@
 use crate::{handlers, middleware, state::ApiServerState};
 use axum::{
-    middleware as axum_middleware, routing::{get, post}, Extension, Router,
+    middleware as axum_middleware, routing::{get, patch, post}, Extension, Router,
 };
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
@@ -34,6 +34,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/namespaces/:namespace/pods/:name",
             get(handlers::pod::get)
                 .put(handlers::pod::update)
+                .patch(handlers::pod::patch)
                 .delete(handlers::pod::delete_pod),
         )
         // Services
@@ -289,6 +290,76 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             get(handlers::volumesnapshotcontent::get_volumesnapshotcontent)
                 .put(handlers::volumesnapshotcontent::update_volumesnapshotcontent)
                 .delete(handlers::volumesnapshotcontent::delete_volumesnapshotcontent),
+        )
+        // Events (namespace-scoped)
+        .route(
+            "/api/v1/namespaces/:namespace/events",
+            get(handlers::event::list).post(handlers::event::create),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/events/:name",
+            get(handlers::event::get)
+                .put(handlers::event::update)
+                .delete(handlers::event::delete),
+        )
+        // Events (all namespaces)
+        .route(
+            "/api/v1/events",
+            get(handlers::event::list_all),
+        )
+        // ResourceQuotas (namespace-scoped)
+        .route(
+            "/api/v1/namespaces/:namespace/resourcequotas",
+            get(handlers::resourcequota::list).post(handlers::resourcequota::create),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/resourcequotas/:name",
+            get(handlers::resourcequota::get)
+                .put(handlers::resourcequota::update)
+                .delete(handlers::resourcequota::delete),
+        )
+        // ResourceQuotas (all namespaces)
+        .route(
+            "/api/v1/resourcequotas",
+            get(handlers::resourcequota::list_all),
+        )
+        // LimitRanges (namespace-scoped)
+        .route(
+            "/api/v1/namespaces/:namespace/limitranges",
+            get(handlers::limitrange::list).post(handlers::limitrange::create),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/limitranges/:name",
+            get(handlers::limitrange::get)
+                .put(handlers::limitrange::update)
+                .delete(handlers::limitrange::delete),
+        )
+        // LimitRanges (all namespaces)
+        .route(
+            "/api/v1/limitranges",
+            get(handlers::limitrange::list_all),
+        )
+        // PriorityClasses (cluster-scoped)
+        .route(
+            "/apis/scheduling.k8s.io/v1/priorityclasses",
+            get(handlers::priorityclass::list).post(handlers::priorityclass::create),
+        )
+        .route(
+            "/apis/scheduling.k8s.io/v1/priorityclasses/:name",
+            get(handlers::priorityclass::get)
+                .put(handlers::priorityclass::update)
+                .delete(handlers::priorityclass::delete),
+        )
+        // CustomResourceDefinitions (cluster-scoped)
+        .route(
+            "/apis/apiextensions.k8s.io/v1/customresourcedefinitions",
+            get(handlers::crd::list_crds).post(handlers::crd::create_crd),
+        )
+        .route(
+            "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/:name",
+            get(handlers::crd::get_crd)
+                .put(handlers::crd::update_crd)
+                .delete(handlers::crd::delete_crd),
         );
 
     // Conditionally apply authentication middleware

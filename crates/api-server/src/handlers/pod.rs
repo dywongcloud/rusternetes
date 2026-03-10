@@ -1,7 +1,9 @@
-use crate::{middleware::AuthContext, state::ApiServerState};
+use crate::{middleware::AuthContext, patch::{PatchType, apply_patch}, state::ApiServerState};
 use axum::{
+    body::Bytes,
     extract::{Path, State},
-    http::StatusCode,
+    http::{StatusCode, HeaderMap},
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -11,7 +13,7 @@ use rusternetes_common::{
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, warn};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -35,6 +37,41 @@ pub async fn create(
 
     // Ensure namespace is set correctly
     pod.metadata.namespace = Some(namespace.clone());
+
+    // Apply LimitRange defaults and validate constraints
+    match crate::admission::apply_limit_range(&state.storage, &namespace, &mut pod).await {
+        Ok(true) => {
+            info!("LimitRange admission passed for pod {}/{}", namespace, pod.metadata.name);
+        }
+        Ok(false) => {
+            warn!("LimitRange admission denied for pod {}/{}", namespace, pod.metadata.name);
+            return Err(rusternetes_common::Error::Forbidden(
+                "Pod violates LimitRange constraints".to_string(),
+            ));
+        }
+        Err(e) => {
+            warn!("Error checking LimitRange for pod {}/{}: {}", namespace, pod.metadata.name, e);
+            // Continue anyway - don't fail pod creation if LimitRange check fails
+        }
+    }
+
+    // Check ResourceQuota
+    match crate::admission::check_resource_quota(&state.storage, &namespace, &pod).await {
+        Ok(true) => {
+            info!("ResourceQuota admission passed for pod {}/{}", namespace, pod.metadata.name);
+        }
+        Ok(false) => {
+            warn!("ResourceQuota admission denied for pod {}/{}", namespace, pod.metadata.name);
+            return Err(rusternetes_common::Error::Forbidden(
+                "Pod creation would exceed ResourceQuota".to_string(),
+            ));
+        }
+        Err(e) => {
+            warn!("Error checking ResourceQuota for pod {}/{}: {}", namespace, pod.metadata.name, e);
+            // Continue anyway - don't fail pod creation if quota check fails
+        }
+    }
+
     pod.metadata.ensure_uid();
     pod.metadata.ensure_creation_timestamp();
 
@@ -131,7 +168,21 @@ pub async fn list(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
-) -> Result<Json<Vec<Pod>>> {
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<axum::response::Response> {
+    // Check if this is a watch request
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        info!("Starting watch for pods in namespace: {}", namespace);
+        return crate::handlers::watch::watch_namespaced::<Pod>(
+            state,
+            auth_ctx,
+            namespace,
+            "pods",
+            "",
+        )
+        .await;
+    }
+
     info!("Listing pods in namespace: {}", namespace);
 
     // Check authorization
@@ -147,7 +198,92 @@ pub async fn list(
     }
 
     let prefix = build_prefix("pods", Some(&namespace));
-    let pods = state.storage.list(&prefix).await?;
+    let mut pods: Vec<Pod> = state.storage.list(&prefix).await?;
 
-    Ok(Json(pods))
+    // Apply field selector filtering if provided
+    if let Some(field_selector_str) = params.get("fieldSelector") {
+        use rusternetes_common::field_selector::FieldSelector;
+
+        match FieldSelector::parse(field_selector_str) {
+            Ok(selector) => {
+                if !selector.is_empty() {
+                    // Filter pods by field selector
+                    pods.retain(|pod| {
+                        let pod_json = serde_json::to_value(pod).unwrap_or_default();
+                        selector.matches(&pod_json)
+                    });
+                }
+            }
+            Err(e) => {
+                return Err(rusternetes_common::Error::InvalidResource(format!(
+                    "Invalid field selector: {}",
+                    e
+                )));
+            }
+        }
+    }
+
+    Ok(axum::Json(pods).into_response())
+}
+
+pub async fn patch(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((namespace, name)): Path<(String, String)>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Pod>> {
+    info!("Patching pod: {}/{}", namespace, name);
+
+    // Check authorization - use 'patch' verb for RBAC
+    let attrs = RequestAttributes::new(auth_ctx.user, "patch", "pods")
+        .with_namespace(&namespace)
+        .with_api_group("")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Get Content-Type header
+    let content_type = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/strategic-merge-patch+json");
+
+    // Parse patch type
+    let patch_type = PatchType::from_content_type(content_type)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+
+    // Get current resource
+    let key = build_key("pods", Some(&namespace), &name);
+    let current_pod: Pod = state.storage.get(&key).await?;
+
+    // Convert to JSON for patching
+    let current_json = serde_json::to_value(&current_pod)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+
+    // Parse patch document
+    let patch_json: serde_json::Value = serde_json::from_slice(&body)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch: {}", e)))?;
+
+    // Apply patch
+    let patched_json = apply_patch(&current_json, &patch_json, patch_type)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+
+    // Convert back to Pod
+    let mut patched_pod: Pod = serde_json::from_value(patched_json)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e)))?;
+
+    // Ensure metadata matches URL (prevent changing name/namespace via patch)
+    patched_pod.metadata.name = name.clone();
+    patched_pod.metadata.namespace = Some(namespace.clone());
+
+    // Update in storage
+    let updated = state.storage.update(&key, &patched_pod).await?;
+
+    Ok(Json(updated))
 }

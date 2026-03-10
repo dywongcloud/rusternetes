@@ -96,6 +96,8 @@ fn test_persistentvolumeclaim_creation() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,

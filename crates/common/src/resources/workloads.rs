@@ -363,6 +363,8 @@ mod tests {
                 service_account_name: None,
                 hostname: None,
                 host_network: None,
+                host_pid: None,
+                host_ipc: None,
                 affinity: None,
                 tolerations: None,
                 priority: None,

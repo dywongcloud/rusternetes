@@ -361,6 +361,8 @@ mod tests {
                 access_modes: None,
                 capacity: None,
                 conditions: None,
+                allocated_resources: None,
+                resize_status: None,
             }),
         };
 

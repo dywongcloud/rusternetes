@@ -75,6 +75,8 @@ async fn test_provisions_pv_for_pvc_with_storageclass() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -136,6 +138,8 @@ async fn test_skips_pvc_without_storageclass() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -209,6 +213,8 @@ async fn test_skips_already_bound_pvcs() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Bound,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
             capacity: Some({
@@ -289,6 +295,8 @@ async fn test_honors_storage_capacity() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -365,6 +373,8 @@ async fn test_honors_access_modes() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -441,6 +451,8 @@ async fn test_honors_reclaim_policy_delete() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -514,6 +526,8 @@ async fn test_honors_reclaim_policy_retain() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -675,6 +689,8 @@ async fn test_restores_pvc_from_snapshot() {
             }),
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -789,6 +805,8 @@ async fn test_rejects_pvc_restore_from_non_ready_snapshot() {
             }),
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,

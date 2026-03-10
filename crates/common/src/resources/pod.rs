@@ -55,6 +55,12 @@ pub struct PodSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host_network: Option<bool>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_pid: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_ipc: Option<bool>,
+
     /// Affinity rules for pod scheduling
     #[serde(skip_serializing_if = "Option::is_none")]
     pub affinity: Option<Affinity>,
@@ -111,6 +117,49 @@ pub struct Container {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub startup_probe: Option<Probe>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub security_context: Option<SecurityContext>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityContext {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub privileged: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_user: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_non_root: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_privilege_escalation: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Capabilities>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seccomp_profile: Option<SeccompProfile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Capabilities {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub add: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drop: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeccompProfile {
+    pub r#type: String,  // RuntimeDefault, Unconfined, Localhost
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub localhost_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

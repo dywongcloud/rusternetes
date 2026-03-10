@@ -11,8 +11,11 @@ use controllers::{
     pv_binder::PVBinderController,
     dynamic_provisioner::DynamicProvisionerController,
     volume_snapshot::VolumeSnapshotController,
+    volume_expansion::VolumeExpansionController,
     endpoints::EndpointsController,
     loadbalancer::LoadBalancerController,
+    events::EventsController,
+    resource_quota::ResourceQuotaController,
 };
 use rusternetes_storage::etcd::EtcdStorage;
 use std::sync::Arc;
@@ -205,6 +208,14 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Start Volume Expansion controller
+    let volume_expansion_controller = VolumeExpansionController::new(storage.clone());
+    tokio::spawn(async move {
+        if let Err(e) = volume_expansion_controller.run().await {
+            tracing::error!("Volume Expansion controller error: {}", e);
+        }
+    });
+
     // Start Endpoints controller
     let endpoints_controller = EndpointsController::new(storage.clone());
     let sync_interval_secs = args.sync_interval;
@@ -214,6 +225,24 @@ async fn main() -> Result<()> {
                 tracing::error!("Endpoints controller error: {}", e);
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs)).await;
+        }
+    });
+
+    // Start Events controller
+    let events_controller = Arc::new(EventsController::new(storage.clone(), args.sync_interval));
+    tokio::spawn(async move {
+        events_controller.run().await;
+    });
+
+    // Start ResourceQuota controller
+    let resource_quota_controller = ResourceQuotaController::new(storage.clone());
+    let sync_interval_secs2 = args.sync_interval;
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = resource_quota_controller.reconcile_all().await {
+                tracing::error!("ResourceQuota controller error: {}", e);
+            }
+            tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs2)).await;
         }
     });
 

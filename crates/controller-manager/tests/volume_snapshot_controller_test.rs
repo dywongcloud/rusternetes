@@ -50,6 +50,8 @@ async fn create_test_pvc(storage: &MemoryStorage, name: &str, namespace: &str, p
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Bound,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
             capacity: Some({
@@ -366,6 +368,8 @@ async fn test_snapshot_without_bound_pvc_fails() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
+                allocated_resources: None,
+                resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending, // Pending, not Bound
             access_modes: None,
             capacity: None,

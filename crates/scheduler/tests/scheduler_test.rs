@@ -110,6 +110,7 @@ fn create_test_pod(
                 working_dir: None,
                 command: None,
                 args: None,
+                security_context: None,
             }],
             restart_policy: Some("Always".to_string()),
             node_selector,
@@ -122,6 +123,8 @@ fn create_test_pod(
             priority_class_name: None,
             hostname: None,
             host_network: None,
+            host_pid: None,
+            host_ipc: None,
         }),
         status: Some(PodStatus {
             phase: Phase::Pending,
@@ -572,4 +575,420 @@ async fn test_balanced_scheduling() {
         let pod: Pod = storage.get(&key).await.unwrap();
         assert!(pod.spec.is_some());
     }
+}
+
+#[tokio::test]
+async fn test_pod_affinity_required() {
+    let storage = setup_test().await;
+
+    // Create nodes with topology labels
+    let mut labels1 = HashMap::new();
+    labels1.insert("topology.kubernetes.io/zone".to_string(), "us-east-1a".to_string());
+    create_test_node(&storage, "node-1a", Some(labels1), "4", "8Gi", None).await;
+
+    let mut labels2 = HashMap::new();
+    labels2.insert("topology.kubernetes.io/zone".to_string(), "us-east-1b".to_string());
+    create_test_node(&storage, "node-1b", Some(labels2), "4", "8Gi", None).await;
+
+    // Create a running pod with app=cache label on node-1a
+    let mut cache_labels = HashMap::new();
+    cache_labels.insert("app".to_string(), "cache".to_string());
+
+    let mut cache_pod = create_test_pod("cache-pod", "default", None, None, None, None, None);
+    cache_pod.metadata.labels = Some(cache_labels);
+    cache_pod.spec.as_mut().unwrap().node_name = Some("node-1a".to_string());
+    let cache_key = build_key("pods", Some("default"), "cache-pod");
+    storage.create(&cache_key, &cache_pod).await.unwrap();
+
+    // Create pod with required pod affinity to co-locate with cache pods
+    use rusternetes_common::types::LabelSelector;
+    let affinity = Affinity {
+        node_affinity: None,
+        pod_affinity: Some(PodAffinity {
+            required_during_scheduling_ignored_during_execution: Some(vec![PodAffinityTerm {
+                label_selector: LabelSelector {
+                    match_labels: {
+                        let mut labels = HashMap::new();
+                        labels.insert("app".to_string(), "cache".to_string());
+                        Some(labels)
+                    },
+                    match_expressions: None,
+                },
+                namespaces: None,
+                topology_key: "topology.kubernetes.io/zone".to_string(),
+            }]),
+            preferred_during_scheduling_ignored_during_execution: None,
+        }),
+        pod_anti_affinity: None,
+    };
+
+    let web_pod = create_test_pod("web-pod", "default", None, None, Some(affinity), None, None);
+    let web_key = build_key("pods", Some("default"), "web-pod");
+    storage.create(&web_key, &web_pod).await.unwrap();
+
+    // Verify pod has affinity configuration
+    let stored_pod: Pod = storage.get(&web_key).await.unwrap();
+    assert!(stored_pod.spec.as_ref().unwrap().affinity.is_some());
+    let pod_affinity = &stored_pod.spec.as_ref().unwrap().affinity.as_ref().unwrap().pod_affinity;
+    assert!(pod_affinity.is_some());
+    assert!(pod_affinity.as_ref().unwrap().required_during_scheduling_ignored_during_execution.is_some());
+}
+
+#[tokio::test]
+async fn test_pod_affinity_preferred() {
+    let storage = setup_test().await;
+
+    // Create nodes
+    let mut labels1 = HashMap::new();
+    labels1.insert("topology.kubernetes.io/zone".to_string(), "us-west-2a".to_string());
+    create_test_node(&storage, "node-2a", Some(labels1), "4", "8Gi", None).await;
+
+    // Create pod with preferred pod affinity
+    use rusternetes_common::types::LabelSelector;
+    let affinity = Affinity {
+        node_affinity: None,
+        pod_affinity: Some(PodAffinity {
+            required_during_scheduling_ignored_during_execution: None,
+            preferred_during_scheduling_ignored_during_execution: Some(vec![WeightedPodAffinityTerm {
+                weight: 100,
+                pod_affinity_term: PodAffinityTerm {
+                    label_selector: LabelSelector {
+                        match_labels: {
+                            let mut labels = HashMap::new();
+                            labels.insert("tier".to_string(), "backend".to_string());
+                            Some(labels)
+                        },
+                        match_expressions: None,
+                    },
+                    namespaces: None,
+                    topology_key: "topology.kubernetes.io/zone".to_string(),
+                },
+            }]),
+        }),
+        pod_anti_affinity: None,
+    };
+
+    let pod = create_test_pod("affinity-preferred", "default", None, None, Some(affinity), None, None);
+    let key = build_key("pods", Some("default"), "affinity-preferred");
+    storage.create(&key, &pod).await.unwrap();
+
+    // Verify preferred affinity is configured
+    let stored_pod: Pod = storage.get(&key).await.unwrap();
+    let pod_affinity = &stored_pod.spec.as_ref().unwrap().affinity.as_ref().unwrap().pod_affinity;
+    assert!(pod_affinity.is_some());
+    assert!(pod_affinity.as_ref().unwrap().preferred_during_scheduling_ignored_during_execution.is_some());
+}
+
+#[tokio::test]
+async fn test_pod_anti_affinity_required() {
+    let storage = setup_test().await;
+
+    // Create nodes with hostname labels
+    let mut labels1 = HashMap::new();
+    labels1.insert("kubernetes.io/hostname".to_string(), "node-1".to_string());
+    create_test_node(&storage, "node-1", Some(labels1.clone()), "4", "8Gi", None).await;
+
+    let mut labels2 = HashMap::new();
+    labels2.insert("kubernetes.io/hostname".to_string(), "node-2".to_string());
+    create_test_node(&storage, "node-2", Some(labels2), "4", "8Gi", None).await;
+
+    // Create a running pod with app=web label on node-1
+    let mut web_labels = HashMap::new();
+    web_labels.insert("app".to_string(), "web".to_string());
+
+    let mut web_pod_1 = create_test_pod("web-1", "default", None, None, None, None, None);
+    web_pod_1.metadata.labels = Some(web_labels);
+    web_pod_1.spec.as_mut().unwrap().node_name = Some("node-1".to_string());
+    let web_1_key = build_key("pods", Some("default"), "web-1");
+    storage.create(&web_1_key, &web_pod_1).await.unwrap();
+
+    // Create pod with required anti-affinity (should NOT be placed on same node as web-1)
+    use rusternetes_common::types::LabelSelector;
+    let affinity = Affinity {
+        node_affinity: None,
+        pod_affinity: None,
+        pod_anti_affinity: Some(PodAntiAffinity {
+            required_during_scheduling_ignored_during_execution: Some(vec![PodAffinityTerm {
+                label_selector: LabelSelector {
+                    match_labels: {
+                        let mut labels = HashMap::new();
+                        labels.insert("app".to_string(), "web".to_string());
+                        Some(labels)
+                    },
+                    match_expressions: None,
+                },
+                namespaces: None,
+                topology_key: "kubernetes.io/hostname".to_string(),
+            }]),
+            preferred_during_scheduling_ignored_during_execution: None,
+        }),
+    };
+
+    let mut web_pod_2 = create_test_pod("web-2", "default", None, None, Some(affinity), None, None);
+    web_pod_2.metadata.labels = Some({
+        let mut labels = HashMap::new();
+        labels.insert("app".to_string(), "web".to_string());
+        labels
+    });
+    let web_2_key = build_key("pods", Some("default"), "web-2");
+    storage.create(&web_2_key, &web_pod_2).await.unwrap();
+
+    // Verify anti-affinity is configured
+    let stored_pod: Pod = storage.get(&web_2_key).await.unwrap();
+    assert!(stored_pod.spec.as_ref().unwrap().affinity.is_some());
+    let anti_affinity = &stored_pod.spec.as_ref().unwrap().affinity.as_ref().unwrap().pod_anti_affinity;
+    assert!(anti_affinity.is_some());
+    assert!(anti_affinity.as_ref().unwrap().required_during_scheduling_ignored_during_execution.is_some());
+}
+
+#[tokio::test]
+async fn test_pod_anti_affinity_preferred() {
+    let storage = setup_test().await;
+
+    // Create node
+    let mut labels = HashMap::new();
+    labels.insert("kubernetes.io/hostname".to_string(), "node-1".to_string());
+    create_test_node(&storage, "node-1", Some(labels), "4", "8Gi", None).await;
+
+    // Create pod with preferred anti-affinity
+    use rusternetes_common::types::LabelSelector;
+    let affinity = Affinity {
+        node_affinity: None,
+        pod_affinity: None,
+        pod_anti_affinity: Some(PodAntiAffinity {
+            required_during_scheduling_ignored_during_execution: None,
+            preferred_during_scheduling_ignored_during_execution: Some(vec![WeightedPodAffinityTerm {
+                weight: 80,
+                pod_affinity_term: PodAffinityTerm {
+                    label_selector: LabelSelector {
+                        match_labels: {
+                            let mut labels = HashMap::new();
+                            labels.insert("app".to_string(), "database".to_string());
+                            Some(labels)
+                        },
+                        match_expressions: None,
+                    },
+                    namespaces: None,
+                    topology_key: "kubernetes.io/hostname".to_string(),
+                },
+            }]),
+        }),
+    };
+
+    let pod = create_test_pod("anti-affinity-preferred", "default", None, None, Some(affinity), None, None);
+    let key = build_key("pods", Some("default"), "anti-affinity-preferred");
+    storage.create(&key, &pod).await.unwrap();
+
+    // Verify preferred anti-affinity is configured
+    let stored_pod: Pod = storage.get(&key).await.unwrap();
+    let anti_affinity = &stored_pod.spec.as_ref().unwrap().affinity.as_ref().unwrap().pod_anti_affinity;
+    assert!(anti_affinity.is_some());
+    assert!(anti_affinity.as_ref().unwrap().preferred_during_scheduling_ignored_during_execution.is_some());
+}
+
+#[tokio::test]
+async fn test_topology_spread_with_affinity() {
+    let storage = setup_test().await;
+
+    // Create nodes in different zones
+    for zone in &["us-east-1a", "us-east-1b", "us-east-1c"] {
+        let mut labels = HashMap::new();
+        labels.insert("topology.kubernetes.io/zone".to_string(), zone.to_string());
+        create_test_node(&storage, &format!("node-{}", zone), Some(labels), "4", "8Gi", None).await;
+    }
+
+    // Create pods with affinity to spread across zones
+    for i in 1..=3 {
+        use rusternetes_common::types::LabelSelector;
+        let affinity = Affinity {
+            node_affinity: Some(NodeAffinity {
+                required_during_scheduling_ignored_during_execution: None,
+                preferred_during_scheduling_ignored_during_execution: Some(vec![PreferredSchedulingTerm {
+                    weight: 100,
+                    preference: NodeSelectorTerm {
+                        match_expressions: Some(vec![NodeSelectorRequirement {
+                            key: "topology.kubernetes.io/zone".to_string(),
+                            operator: "In".to_string(),
+                            values: Some(vec![
+                                "us-east-1a".to_string(),
+                                "us-east-1b".to_string(),
+                                "us-east-1c".to_string(),
+                            ]),
+                        }]),
+                        match_fields: None,
+                    },
+                }]),
+            }),
+            pod_affinity: None,
+            pod_anti_affinity: Some(PodAntiAffinity {
+                required_during_scheduling_ignored_during_execution: None,
+                preferred_during_scheduling_ignored_during_execution: Some(vec![WeightedPodAffinityTerm {
+                    weight: 100,
+                    pod_affinity_term: PodAffinityTerm {
+                        label_selector: LabelSelector {
+                            match_labels: {
+                                let mut labels = HashMap::new();
+                                labels.insert("app".to_string(), "spread-test".to_string());
+                                Some(labels)
+                            },
+                            match_expressions: None,
+                        },
+                        namespaces: None,
+                        topology_key: "topology.kubernetes.io/zone".to_string(),
+                    },
+                }]),
+            }),
+        };
+
+        let mut pod = create_test_pod(&format!("spread-pod-{}", i), "default", None, None, Some(affinity), None, None);
+        pod.metadata.labels = Some({
+            let mut labels = HashMap::new();
+            labels.insert("app".to_string(), "spread-test".to_string());
+            labels
+        });
+        let key = build_key("pods", Some("default"), &format!("spread-pod-{}", i));
+        storage.create(&key, &pod).await.unwrap();
+    }
+
+    // Verify all pods are created with spread configuration
+    for i in 1..=3 {
+        let key = build_key("pods", Some("default"), &format!("spread-pod-{}", i));
+        let pod: Pod = storage.get(&key).await.unwrap();
+        assert!(pod.spec.as_ref().unwrap().affinity.is_some());
+    }
+}
+
+#[tokio::test]
+async fn test_preemption_high_priority_evicts_low_priority() {
+    let storage = setup_test().await;
+
+    // Create a node with limited resources
+    create_test_node(&storage, "small-node", None, "2", "4Gi", None).await;
+
+    // Create a low-priority pod consuming most resources and mark it as running
+    let mut low_priority_pod = create_test_pod(
+        "low-priority",
+        "default",
+        None,
+        None,
+        None,
+        Some("1500m"),
+        Some("3Gi"),
+    );
+    low_priority_pod.spec.as_mut().unwrap().priority = Some(10);
+    low_priority_pod.spec.as_mut().unwrap().node_name = Some("small-node".to_string());
+    low_priority_pod.status.as_mut().unwrap().phase = Phase::Running;
+    let low_key = build_key("pods", Some("default"), "low-priority");
+    storage.create(&low_key, &low_priority_pod).await.unwrap();
+
+    // Create a high-priority pod that needs resources
+    let mut high_priority_pod = create_test_pod(
+        "high-priority",
+        "default",
+        None,
+        None,
+        None,
+        Some("1000m"),
+        Some("2Gi"),
+    );
+    high_priority_pod.spec.as_mut().unwrap().priority = Some(1000);
+    let high_key = build_key("pods", Some("default"), "high-priority");
+    storage.create(&high_key, &high_priority_pod).await.unwrap();
+
+    // Verify both pods exist
+    let low_stored: Pod = storage.get(&low_key).await.unwrap();
+    let high_stored: Pod = storage.get(&high_key).await.unwrap();
+
+    assert_eq!(low_stored.spec.as_ref().unwrap().priority, Some(10));
+    assert_eq!(high_stored.spec.as_ref().unwrap().priority, Some(1000));
+
+    // Verify high priority pod is pending (waiting for preemption)
+    assert_eq!(high_stored.status.as_ref().unwrap().phase, Phase::Pending);
+}
+
+#[tokio::test]
+async fn test_preemption_multiple_low_priority_pods() {
+    let storage = setup_test().await;
+
+    // Create node
+    create_test_node(&storage, "node-1", None, "4", "8Gi", None).await;
+
+    // Create multiple low-priority pods
+    for i in 1..=3 {
+        let mut pod = create_test_pod(
+            &format!("low-{}", i),
+            "default",
+            None,
+            None,
+            None,
+            Some("800m"),
+            Some("2Gi"),
+        );
+        pod.spec.as_mut().unwrap().priority = Some(50);
+        pod.spec.as_mut().unwrap().node_name = Some("node-1".to_string());
+        pod.status.as_mut().unwrap().phase = Phase::Running;
+        let key = build_key("pods", Some("default"), &format!("low-{}", i));
+        storage.create(&key, &pod).await.unwrap();
+    }
+
+    // Create high-priority pod
+    let mut high_pod = create_test_pod(
+        "high-priority",
+        "default",
+        None,
+        None,
+        None,
+        Some("2"),
+        Some("4Gi"),
+    );
+    high_pod.spec.as_mut().unwrap().priority = Some(1000);
+    let high_key = build_key("pods", Some("default"), "high-priority");
+    storage.create(&high_key, &high_pod).await.unwrap();
+
+    // Verify high priority pod exists
+    let stored: Pod = storage.get(&high_key).await.unwrap();
+    assert_eq!(stored.spec.as_ref().unwrap().priority, Some(1000));
+}
+
+#[tokio::test]
+async fn test_no_preemption_for_zero_priority() {
+    let storage = setup_test().await;
+
+    // Create node
+    create_test_node(&storage, "node-1", None, "2", "4Gi", None).await;
+
+    // Create running pod
+    let mut running_pod = create_test_pod(
+        "running",
+        "default",
+        None,
+        None,
+        None,
+        Some("1500m"),
+        Some("3Gi"),
+    );
+    running_pod.spec.as_mut().unwrap().priority = Some(100);
+    running_pod.spec.as_mut().unwrap().node_name = Some("node-1".to_string());
+    running_pod.status.as_mut().unwrap().phase = Phase::Running;
+    let running_key = build_key("pods", Some("default"), "running");
+    storage.create(&running_key, &running_pod).await.unwrap();
+
+    // Create zero-priority pod (should not trigger preemption)
+    let mut zero_pod = create_test_pod(
+        "zero-priority",
+        "default",
+        None,
+        None,
+        None,
+        Some("1000m"),
+        Some("2Gi"),
+    );
+    zero_pod.spec.as_mut().unwrap().priority = Some(0);
+    let zero_key = build_key("pods", Some("default"), "zero-priority");
+    storage.create(&zero_key, &zero_pod).await.unwrap();
+
+    // Verify zero-priority pod remains pending
+    let stored: Pod = storage.get(&zero_key).await.unwrap();
+    assert_eq!(stored.spec.as_ref().unwrap().priority, Some(0));
+    assert_eq!(stored.status.as_ref().unwrap().phase, Phase::Pending);
 }

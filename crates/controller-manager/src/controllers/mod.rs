@@ -6,5 +6,8 @@ pub mod cronjob;
 pub mod pv_binder;
 pub mod dynamic_provisioner;
 pub mod volume_snapshot;
+pub mod volume_expansion;
 pub mod endpoints;
 pub mod loadbalancer;
+pub mod events;
+pub mod resource_quota;

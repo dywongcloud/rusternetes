@@ -270,6 +270,13 @@ pub struct PersistentVolumeClaimStatus {
     pub capacity: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conditions: Option<Vec<PersistentVolumeClaimCondition>>,
+    /// Allocated resources represents the resources allocated to the PVC
+    /// Used during volume expansion to track the new size
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allocated_resources: Option<HashMap<String, String>>,
+    /// Resize status indicates the state of volume resize operation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resize_status: Option<PersistentVolumeClaimResizeStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -292,6 +299,24 @@ pub struct PersistentVolumeClaimCondition {
     pub reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+}
+
+/// PersistentVolumeClaimResizeStatus indicates the state of a resize operation
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum PersistentVolumeClaimResizeStatus {
+    /// No resize operation in progress
+    #[serde(rename = "")]
+    None,
+    /// Controller resize is in progress
+    ControllerResizeInProgress,
+    /// Controller resize has failed
+    ControllerResizeFailed,
+    /// Node resize is required
+    NodeResizeRequired,
+    /// Node resize is in progress
+    NodeResizeInProgress,
+    /// Node resize has failed
+    NodeResizeFailed,
 }
 
 /// StorageClass describes the parameters for a class of storage
@@ -573,6 +598,8 @@ mod tests {
                 access_modes: None,
                 capacity: None,
                 conditions: None,
+                allocated_resources: None,
+                resize_status: None,
             }),
         };
 

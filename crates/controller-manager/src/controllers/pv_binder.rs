@@ -131,6 +131,8 @@ impl<S: Storage> PVBinderController<S> {
                 access_modes: Some(pv_access_modes),
                 capacity: Some(pv_capacity),
                 conditions: None,
+                allocated_resources: None,
+                resize_status: None,
             });
 
             let pvc_key = build_key("persistentvolumeclaims", Some(namespace), pvc_name);

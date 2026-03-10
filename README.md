@@ -94,13 +94,66 @@ After starting your cluster, you can install MetalLB for local LoadBalancer supp
 
 This gives you working LoadBalancer services without cloud provider credentials! See [docs/METALLB_INTEGRATION.md](docs/METALLB_INTEGRATION.md) for details.
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development workflows, troubleshooting, and advanced usage.
+See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed development workflows, troubleshooting, and advanced usage.
 
 ### Traditional Development
 
-If you prefer to run components locally without containers, see [GETTING_STARTED.md](GETTING_STARTED.md).
+If you prefer to run components locally without containers, see [GETTING_STARTED.md](docs/GETTING_STARTED.md).
 
 This is an educational project to understand Kubernetes internals while leveraging Rust's safety guarantees.
+
+## Documentation
+
+### Getting Started
+- [QUICKSTART.md](docs/QUICKSTART.md) - Quick start guide for trying Rusternetes
+- [GETTING_STARTED.md](docs/GETTING_STARTED.md) - Traditional development setup
+- [DEVELOPMENT.md](docs/DEVELOPMENT.md) - Comprehensive development guide
+- [DEPLOYMENT.md](docs/DEPLOYMENT.md) - Production deployment guide
+
+### Features & Implementation
+- [STATUS.md](docs/STATUS.md) - Current implementation status and roadmap
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture and design
+- [API_FEATURES_COMPLETE.md](docs/API_FEATURES_COMPLETE.md) - API features implementation (PATCH, Field Selectors, Server-Side Apply)
+- [PATCH_IMPLEMENTATION.md](docs/PATCH_IMPLEMENTATION.md) - Detailed PATCH operations guide
+
+### Storage & Volumes
+- [DYNAMIC_PROVISIONING.md](docs/DYNAMIC_PROVISIONING.md) - Dynamic volume provisioning
+- [VOLUME_SNAPSHOTS.md](docs/VOLUME_SNAPSHOTS.md) - Volume snapshot feature
+- [VOLUME_EXPANSION.md](docs/VOLUME_EXPANSION.md) - Volume expansion feature
+
+### Networking
+- [DNS.md](docs/DNS.md) - DNS server and service discovery
+- [LOADBALANCER.md](docs/LOADBALANCER.md) - LoadBalancer service type with MetalLB
+
+### Security
+- [SECURITY.md](docs/SECURITY.md) - Security features (Admission Controllers, Pod Security Standards, Encryption, Audit)
+- [TLS_GUIDE.md](docs/TLS_GUIDE.md) - TLS configuration
+
+### Testing & Observability
+- [TESTING_IMPLEMENTATION_GUIDE.md](docs/TESTING_IMPLEMENTATION_GUIDE.md) - Comprehensive testing guide
+- [TESTING.md](docs/TESTING.md) - Testing procedures
+- [TRACING.md](docs/TRACING.md) - Distributed tracing with OpenTelemetry
+
+### Development & Utilities
+- [CONTRIBUTING.md](docs/CONTRIBUTING.md) - Contribution guidelines
+- [DEV_SETUP_METALLB.md](docs/DEV_SETUP_METALLB.md) - MetalLB setup for LoadBalancer services
+- [PODMAN_TIPS.md](docs/PODMAN_TIPS.md) - Podman troubleshooting and tips
+- [SETUP_NOTES.md](docs/SETUP_NOTES.md) - Setup and configuration notes
+
+## Current Status
+
+Rusternetes implements core Kubernetes features including:
+
+- ✅ API Server with full CRUD operations
+- ✅ Scheduler with node affinity, taints/tolerations
+- ✅ Controllers (Deployment, StatefulSet, Job, DaemonSet, CronJob)
+- ✅ Storage (PV/PVC, Dynamic Provisioning, Snapshots, Expansion)
+- ✅ Networking (Services, DNS, LoadBalancer with MetalLB)
+- ✅ Security (RBAC, Admission Control, Pod Security Standards, Encryption, Audit)
+- ✅ Advanced API Features (PATCH, Field Selectors, Server-Side Apply)
+- ✅ Observability (Metrics, Tracing, Events)
+
+See [STATUS.md](docs/STATUS.md) for detailed implementation status.
 
 ## License
 
