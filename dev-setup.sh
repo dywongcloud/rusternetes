@@ -120,9 +120,10 @@ echo "  6) Build Rust binaries locally"
 echo "  7) Run tests"
 echo "  8) Full setup (build + start)"
 echo "  9) Install MetalLB (local LoadBalancer support)"
-echo " 10) Exit"
+echo " 10) Setup DNS proxy (macOS/Podman Machine local development)"
+echo " 11) Exit"
 echo ""
-read -p "Enter your choice [1-10]: " choice
+read -p "Enter your choice [1-11]: " choice
 
 case $choice in
     1)
@@ -267,6 +268,42 @@ EOF
         echo "  - examples/metallb/QUICKSTART.md"
         ;;
     10)
+        print_step "Setting up DNS proxy for local development..."
+
+        if [ ! -f "./scripts/dns-proxy.sh" ]; then
+            print_error "DNS proxy script not found at ./scripts/dns-proxy.sh"
+            exit 1
+        fi
+
+        echo ""
+        echo "What would you like to do with the DNS proxy?"
+        echo "  1) Start DNS proxy"
+        echo "  2) Stop DNS proxy"
+        echo "  3) Check DNS proxy status"
+        echo "  4) Restart DNS proxy"
+        echo ""
+        read -p "Enter your choice [1-4]: " dns_choice
+
+        case $dns_choice in
+            1)
+                ./scripts/dns-proxy.sh start
+                ;;
+            2)
+                ./scripts/dns-proxy.sh stop
+                ;;
+            3)
+                ./scripts/dns-proxy.sh status
+                ;;
+            4)
+                ./scripts/dns-proxy.sh restart
+                ;;
+            *)
+                print_error "Invalid choice"
+                exit 1
+                ;;
+        esac
+        ;;
+    11)
         echo "Exiting..."
         exit 0
         ;;

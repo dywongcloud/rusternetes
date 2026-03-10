@@ -19,7 +19,7 @@ impl DnsServer {
     }
 
     pub async fn run(self) -> anyhow::Result<()> {
-        let socket = UdpSocket::bind(self.addr).await?;
+        let socket = Arc::new(UdpSocket::bind(self.addr).await?);
         info!("DNS server bound to UDP {}", self.addr);
 
         let mut buf = vec![0u8; 512];
@@ -27,12 +27,14 @@ impl DnsServer {
         loop {
             match socket.recv_from(&mut buf).await {
                 Ok((len, src)) => {
+                    debug!("Received {} bytes from {}", len, src);
                     let data = buf[..len].to_vec();
                     let resolver = self.resolver.clone();
+                    let socket = socket.clone();
 
                     // Spawn a task to handle this request
                     tokio::spawn(async move {
-                        if let Err(e) = Self::handle_request(data, src, resolver).await {
+                        if let Err(e) = Self::handle_request(data, src, resolver, socket).await {
                             warn!("Error handling DNS request from {}: {}", src, e);
                         }
                     });
@@ -48,15 +50,19 @@ impl DnsServer {
         data: Vec<u8>,
         src: SocketAddr,
         resolver: Arc<KubernetesResolver>,
+        socket: Arc<UdpSocket>,
     ) -> anyhow::Result<()> {
         use hickory_proto::serialize::binary::BinDecoder;
+
+        debug!("Processing {} bytes from {}", data.len(), src);
 
         // Parse incoming DNS query
         let mut decoder = BinDecoder::new(&data);
         let message = match hickory_proto::op::Message::read(&mut decoder) {
             Ok(msg) => msg,
             Err(e) => {
-                warn!("Failed to parse DNS message from {}: {}", src, e);
+                warn!("Failed to parse DNS message from {} ({} bytes): {}", src, data.len(), e);
+                debug!("Raw data: {:?}", &data[..std::cmp::min(32, data.len())]);
                 return Ok(());
             }
         };
@@ -125,8 +131,7 @@ impl DnsServer {
             }
         };
 
-        // Send response back to client
-        let socket = UdpSocket::bind("0.0.0.0:0").await?;
+        // Send response back to client using the same socket
         socket.send_to(&response_bytes, src).await?;
 
         Ok(())

@@ -115,14 +115,19 @@ services:
       - api-server
     networks:
       - rusternetes-net
+    ports:
+      - "30000-30100:30000-30100/tcp"
+      - "30000-30100:30000-30100/udp"
     cap_add:
       - NET_ADMIN
       - NET_RAW
     environment:
       - RUST_LOG=info
-    command: ["--node-name", "node-1"]
+    command: ["--node-name", "node-1", "--etcd-servers", "http://etcd:2379"]
 
   # DNS Server - internal DNS for service discovery
+  # Note: DNS is only accessible from inside the cluster (by design)
+  # For local development testing from macOS host, use: ./scripts/dns-proxy.sh start
   dns-server:
     build:
       context: .
@@ -131,9 +136,6 @@ services:
     depends_on:
       etcd:
         condition: service_healthy
-    ports:
-      - "8053:8053/udp"
-      - "8053:8053/tcp"
     networks:
       - rusternetes-net
     environment:

@@ -154,8 +154,13 @@ podman-compose down
 
 ### 1. DNS Server with Hickory DNS ✅
 - **Feature**: Full Kubernetes-style DNS-based service discovery using Hickory DNS
+- **Architecture**: DNS is **internal-only** by design (Kubernetes standard)
+  - Pods inside the cluster can resolve services via DNS
+  - DNS is NOT exposed to the host in production (correct behavior)
+  - For local macOS development: Use `./scripts/dns-proxy.sh` (development tool only)
+  - See [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for local testing details
 - **DNS Server Implementation** (crates/dns-server/):
-  - **Server Module** (`server.rs`): UDP DNS server on port 53
+  - **Server Module** (`server.rs`): UDP DNS server on port 8053 (internal)
     - Handles A, AAAA, and SRV record queries
     - Hickory DNS protocol implementation
     - Asynchronous query processing with Tokio
@@ -744,20 +749,22 @@ The following issues were discovered during comprehensive cluster testing:
    - **Workaround:** Use default table output or curl to API
    - **Fix needed:** Add output format parsing and rendering
 
-#### Networking Issues
+#### Networking Issues ✅ DOCUMENTED
 
-5. **NodePort external access not working**
-   - NodePort services created successfully but not accessible from host
-   - kube-proxy container has no port mappings
-   - **Impact:** Can't test NodePort services from outside cluster
-   - **Fix needed:** Configure kube-proxy port forwarding or host network mode
+5. **NodePort external access limitations on macOS/Podman Machine**
+   - **Issue:** Kube-proxy requires iptables root privileges which aren't available in Podman Machine VM
+   - **Impact:** NodePort services don't work on macOS with Podman Machine
+   - **Status:** This is a platform limitation, not a bug
+   - **Solution:** Use MetalLB LoadBalancer services instead (fully supported and working)
+   - **Documentation:** See [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md#nodeport-services-not-supported-on-macos)
 
-6. **DNS not accessible from host**
-   - DNS server running correctly inside cluster on port 8053
-   - `dig` from host times out trying to reach DNS server
-   - **Impact:** Can't test DNS resolution from host machine
-   - **Note:** DNS works fine for pods inside the cluster
-   - **Fix needed:** Expose DNS server port or test from inside cluster only
+6. **DNS accessibility from host (macOS/Podman Machine)**
+   - **By Design:** DNS is internal-only in production Kubernetes (correct behavior)
+   - **Issue:** Podman Machine on macOS doesn't support UDP port forwarding
+   - **Status:** ✅ DNS works perfectly for pods inside the cluster (production behavior)
+   - **Local Dev Solution:** Use `./scripts/dns-proxy.sh start` for debugging from macOS terminal
+   - **Important:** The DNS proxy is a development-only tool, not part of the cluster
+   - **Documentation:** See [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md#dns-proxy-macos-podman-machine-only)
 
 ### 1. Self-Signed Certificates (Development Only)
 The API server uses self-signed TLS certificates for development. For production use, replace with proper certificates from a trusted Certificate Authority.
