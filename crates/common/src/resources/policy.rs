@@ -1,4 +1,4 @@
-use crate::types::{ObjectMeta, TypeMeta};
+use crate::types::{ObjectMeta, TypeMeta, LabelSelector};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -201,6 +201,111 @@ impl PriorityClass {
     }
 }
 
+/// PodDisruptionBudget limits the number of pods that can be disrupted during voluntary disruptions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PodDisruptionBudget {
+    #[serde(flatten)]
+    pub type_meta: TypeMeta,
+
+    pub metadata: ObjectMeta,
+
+    pub spec: PodDisruptionBudgetSpec,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<PodDisruptionBudgetStatus>,
+}
+
+impl PodDisruptionBudget {
+    pub fn new(name: impl Into<String>, namespace: impl Into<String>, spec: PodDisruptionBudgetSpec) -> Self {
+        Self {
+            type_meta: TypeMeta {
+                kind: "PodDisruptionBudget".to_string(),
+                api_version: "policy/v1".to_string(),
+            },
+            metadata: ObjectMeta::new(name).with_namespace(namespace),
+            spec,
+            status: None,
+        }
+    }
+}
+
+/// PodDisruptionBudgetSpec describes what disruptions are allowed
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PodDisruptionBudgetSpec {
+    /// Minimum number of pods that must be available
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_available: Option<IntOrString>,
+
+    /// Maximum number of pods that can be unavailable
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_unavailable: Option<IntOrString>,
+
+    /// Label selector to identify the set of pods
+    pub selector: LabelSelector,
+
+    /// UnhealthyPodEvictionPolicy controls when unhealthy pods should be considered for eviction
+    /// Valid values: IfHealthyBudget, AlwaysAllow
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unhealthy_pod_eviction_policy: Option<String>,
+}
+
+/// IntOrString can be an integer or a string percentage (e.g., "20%")
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum IntOrString {
+    Int(i32),
+    String(String),
+}
+
+/// PodDisruptionBudgetStatus represents the current status of a PDB
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PodDisruptionBudgetStatus {
+    /// Current number of healthy pods
+    pub current_healthy: i32,
+
+    /// Minimum desired healthy pods
+    pub desired_healthy: i32,
+
+    /// Number of pod disruptions that are currently allowed
+    pub disruptions_allowed: i32,
+
+    /// Total number of pods counted by this disruption budget
+    pub expected_pods: i32,
+
+    /// Most recent generation observed when updating this PDB status
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_generation: Option<i64>,
+
+    /// Conditions contain the latest available observations of the PDB's state
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<Vec<PodDisruptionBudgetCondition>>,
+}
+
+/// PodDisruptionBudgetCondition contains details for the current condition of this PDB
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PodDisruptionBudgetCondition {
+    /// Type of PDB condition
+    pub condition_type: String,
+
+    /// Status of the condition (True, False, Unknown)
+    pub status: String,
+
+    /// Last time the condition transitioned
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_transition_time: Option<String>,
+
+    /// Reason for the condition's last transition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    /// Human-readable message
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -345,5 +450,124 @@ mod tests {
 
         let serialized = serde_json::to_string(&limit_range).unwrap();
         let _: LimitRange = serde_json::from_str(&serialized).unwrap();
+    }
+
+    #[test]
+    fn test_pod_disruption_budget_creation() {
+        let spec = PodDisruptionBudgetSpec {
+            min_available: Some(IntOrString::Int(2)),
+            max_unavailable: None,
+            selector: LabelSelector {
+                match_labels: Some(HashMap::from([
+                    ("app".to_string(), "web".to_string()),
+                ])),
+                match_expressions: None,
+            },
+            unhealthy_pod_eviction_policy: None,
+        };
+
+        let pdb = PodDisruptionBudget::new("test-pdb", "default", spec);
+
+        assert_eq!(pdb.metadata.name, "test-pdb");
+        assert_eq!(pdb.metadata.namespace, Some("default".to_string()));
+        assert_eq!(pdb.type_meta.api_version, "policy/v1");
+        assert!(pdb.spec.min_available.is_some());
+    }
+
+    #[test]
+    fn test_pod_disruption_budget_int_or_string() {
+        // Test integer value
+        let int_spec = PodDisruptionBudgetSpec {
+            min_available: Some(IntOrString::Int(3)),
+            max_unavailable: None,
+            selector: LabelSelector {
+                match_labels: Some(HashMap::new()),
+                match_expressions: None,
+            },
+            unhealthy_pod_eviction_policy: None,
+        };
+
+        let pdb = PodDisruptionBudget::new("int-pdb", "default", int_spec);
+        match &pdb.spec.min_available {
+            Some(IntOrString::Int(n)) => assert_eq!(*n, 3),
+            _ => panic!("Expected IntOrString::Int"),
+        }
+
+        // Test percentage string value
+        let percent_spec = PodDisruptionBudgetSpec {
+            min_available: None,
+            max_unavailable: Some(IntOrString::String("20%".to_string())),
+            selector: LabelSelector {
+                match_labels: Some(HashMap::new()),
+                match_expressions: None,
+            },
+            unhealthy_pod_eviction_policy: None,
+        };
+
+        let pdb2 = PodDisruptionBudget::new("percent-pdb", "default", percent_spec);
+        match &pdb2.spec.max_unavailable {
+            Some(IntOrString::String(s)) => assert_eq!(s, "20%"),
+            _ => panic!("Expected IntOrString::String"),
+        }
+    }
+
+    #[test]
+    fn test_pod_disruption_budget_serialization() {
+        let json = r#"{
+  "apiVersion": "policy/v1",
+  "kind": "PodDisruptionBudget",
+  "metadata": {
+    "name": "web-pdb",
+    "namespace": "default"
+  },
+  "spec": {
+    "minAvailable": 2,
+    "selector": {
+      "matchLabels": {
+        "app": "web"
+      }
+    }
+  }
+}"#;
+
+        let pdb: PodDisruptionBudget = serde_json::from_str(json).unwrap();
+        assert_eq!(pdb.metadata.name, "web-pdb");
+        assert!(pdb.spec.min_available.is_some());
+
+        match &pdb.spec.min_available {
+            Some(IntOrString::Int(n)) => assert_eq!(*n, 2),
+            _ => panic!("Expected IntOrString::Int"),
+        }
+
+        let serialized = serde_json::to_string(&pdb).unwrap();
+        let _: PodDisruptionBudget = serde_json::from_str(&serialized).unwrap();
+    }
+
+    #[test]
+    fn test_pod_disruption_budget_with_percentage() {
+        let json = r#"{
+  "apiVersion": "policy/v1",
+  "kind": "PodDisruptionBudget",
+  "metadata": {
+    "name": "db-pdb",
+    "namespace": "production"
+  },
+  "spec": {
+    "maxUnavailable": "25%",
+    "selector": {
+      "matchLabels": {
+        "app": "database"
+      }
+    }
+  }
+}"#;
+
+        let pdb: PodDisruptionBudget = serde_json::from_str(json).unwrap();
+        assert_eq!(pdb.metadata.name, "db-pdb");
+
+        match &pdb.spec.max_unavailable {
+            Some(IntOrString::String(s)) => assert_eq!(s, "25%"),
+            _ => panic!("Expected IntOrString::String"),
+        }
     }
 }

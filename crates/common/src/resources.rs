@@ -14,6 +14,7 @@ pub mod event;
 pub mod policy;
 pub mod crd;
 pub mod admission_webhook;
+pub mod autoscaling;
 
 pub use pod::{
     Pod, PodSpec, PodStatus, Container, ContainerPort, ContainerStatus, ContainerState,
@@ -53,6 +54,8 @@ pub use policy::{
     ResourceQuota, ResourceQuotaSpec, ResourceQuotaStatus, ScopeSelector, ScopedResourceSelectorRequirement,
     LimitRange, LimitRangeSpec, LimitRangeItem,
     PriorityClass,
+    PodDisruptionBudget, PodDisruptionBudgetSpec, PodDisruptionBudgetStatus, PodDisruptionBudgetCondition,
+    IntOrString,
 };
 pub use crd::{
     CustomResourceDefinition, CustomResourceDefinitionSpec, CustomResourceDefinitionNames,
@@ -69,4 +72,16 @@ pub use admission_webhook::{
     RuleWithOperations, Rule, OperationType, FailurePolicy, MatchPolicy,
     SideEffectClass, ReinvocationPolicy, LabelSelector, LabelSelectorRequirement,
     LabelSelectorOperator, MatchCondition,
+};
+pub use autoscaling::{
+    HorizontalPodAutoscaler, HorizontalPodAutoscalerSpec, HorizontalPodAutoscalerStatus,
+    HorizontalPodAutoscalerCondition, HorizontalPodAutoscalerBehavior,
+    CrossVersionObjectReference, MetricSpec, MetricTarget, MetricIdentifier,
+    ResourceMetricSource, PodsMetricSource, ObjectMetricSource, ExternalMetricSource,
+    ContainerResourceMetricSource, MetricStatus, MetricValueStatus,
+    HPAScalingRules, HPAScalingPolicy,
+    VerticalPodAutoscaler, VerticalPodAutoscalerSpec, VerticalPodAutoscalerStatus,
+    VerticalPodAutoscalerCondition, PodUpdatePolicy, PodResourcePolicy,
+    ContainerResourcePolicy, RecommendedPodResources, RecommendedContainerResources,
+    VerticalPodAutoscalerRecommenderSelector,
 };

@@ -254,6 +254,7 @@ mod tests {
                 annotations: None,
             },
             spec: Some(rusternetes_common::resources::PodSpec {
+                init_containers: None,
                 containers: vec![],
                 volumes: None,
                 restart_policy: None,
@@ -312,6 +313,7 @@ mod tests {
                 annotations: None,
             },
             spec: Some(rusternetes_common::resources::PodSpec {
+                init_containers: None,
                 containers: vec![],
                 volumes: None,
                 restart_policy: None,

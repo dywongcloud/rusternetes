@@ -213,6 +213,7 @@ impl DaemonSetController {
                 pod_ip: None,
                 host_ip: None,
                 container_statuses: None,
+                init_container_statuses: None,
             }),
         };
 
@@ -295,7 +296,8 @@ mod tests {
                         resource_version: None,
                     }),
                     spec: PodSpec {
-                        containers: vec![],
+                        init_containers: None,
+                containers: vec![],
                         node_name: None,
                         node_selector: None,
                         restart_policy: None,

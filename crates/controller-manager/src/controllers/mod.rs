@@ -11,3 +11,6 @@ pub mod endpoints;
 pub mod loadbalancer;
 pub mod events;
 pub mod resource_quota;
+pub mod pod_disruption_budget;
+pub mod hpa;
+pub mod vpa;

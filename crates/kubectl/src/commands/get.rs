@@ -5,6 +5,7 @@ use rusternetes_common::resources::{
     StorageClass, VolumeSnapshot, VolumeSnapshotClass, Endpoints, ConfigMap, Secret,
     StatefulSet, DaemonSet, Ingress, ServiceAccount, Role, RoleBinding, ClusterRole, ClusterRoleBinding,
     ResourceQuota, LimitRange, PriorityClass, CustomResourceDefinition,
+    PodDisruptionBudget, HorizontalPodAutoscaler, VerticalPodAutoscaler,
 };
 use serde::Serialize;
 
@@ -344,6 +345,33 @@ pub async fn execute(
             } else {
                 let crds: Vec<CustomResourceDefinition> = client.get("/apis/apiextensions.k8s.io/v1/customresourcedefinitions").await.map_err(map_get_error)?;
                 format_output(&crds, format)?;
+            }
+        }
+        "poddisruptionbudget" | "poddisruptionbudgets" | "pdb" => {
+            if let Some(name) = name {
+                let pdb: PodDisruptionBudget = client.get(&format!("/apis/policy/v1/namespaces/{}/poddisruptionbudgets/{}", ns, name)).await.map_err(map_get_error)?;
+                format_output(&pdb, format)?;
+            } else {
+                let pdbs: Vec<PodDisruptionBudget> = client.get(&format!("/apis/policy/v1/namespaces/{}/poddisruptionbudgets", ns)).await.map_err(map_get_error)?;
+                format_output(&pdbs, format)?;
+            }
+        }
+        "horizontalpodautoscaler" | "horizontalpodautoscalers" | "hpa" => {
+            if let Some(name) = name {
+                let hpa: HorizontalPodAutoscaler = client.get(&format!("/apis/autoscaling/v2/namespaces/{}/horizontalpodautoscalers/{}", ns, name)).await.map_err(map_get_error)?;
+                format_output(&hpa, format)?;
+            } else {
+                let hpas: Vec<HorizontalPodAutoscaler> = client.get(&format!("/apis/autoscaling/v2/namespaces/{}/horizontalpodautoscalers", ns)).await.map_err(map_get_error)?;
+                format_output(&hpas, format)?;
+            }
+        }
+        "verticalpodautoscaler" | "verticalpodautoscalers" | "vpa" => {
+            if let Some(name) = name {
+                let vpa: VerticalPodAutoscaler = client.get(&format!("/apis/autoscaling.k8s.io/v1/namespaces/{}/verticalpodautoscalers/{}", ns, name)).await.map_err(map_get_error)?;
+                format_output(&vpa, format)?;
+            } else {
+                let vpas: Vec<VerticalPodAutoscaler> = client.get(&format!("/apis/autoscaling.k8s.io/v1/namespaces/{}/verticalpodautoscalers", ns)).await.map_err(map_get_error)?;
+                format_output(&vpas, format)?;
             }
         }
         _ => anyhow::bail!("Unknown resource type: {}", resource_type),

@@ -34,6 +34,10 @@ impl Pod {
 pub struct PodSpec {
     pub containers: Vec<Container>,
 
+    /// Init containers run before app containers and must complete successfully
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub init_containers: Option<Vec<Container>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub volumes: Option<Vec<Volume>>,
 
@@ -296,6 +300,10 @@ pub struct PodStatus {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container_statuses: Option<Vec<ContainerStatus>>,
+
+    /// Status of init containers
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub init_container_statuses: Option<Vec<ContainerStatus>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -618,5 +626,213 @@ mod tests {
         let spec2 = pod2.spec.as_ref().unwrap();
         assert!(spec2.volumes.is_some());
         assert_eq!(spec2.volumes.as_ref().unwrap()[0].name, "test-volume");
+    }
+
+    #[test]
+    fn test_pod_with_init_containers() {
+        let spec = PodSpec {
+            init_containers: Some(vec![
+                Container {
+                    name: "init-myservice".to_string(),
+                    image: "busybox:1.28".to_string(),
+                    command: Some(vec!["sh".to_string(), "-c".to_string(), "echo initializing".to_string()]),
+                    args: None,
+                    working_dir: None,
+                    ports: None,
+                    env: None,
+                    resources: None,
+                    volume_mounts: None,
+                    image_pull_policy: None,
+                    liveness_probe: None,
+                    readiness_probe: None,
+                    startup_probe: None,
+                    security_context: None,
+                },
+                Container {
+                    name: "init-mydb".to_string(),
+                    image: "busybox:1.28".to_string(),
+                    command: Some(vec!["sh".to_string(), "-c".to_string(), "echo waiting for db".to_string()]),
+                    args: None,
+                    working_dir: None,
+                    ports: None,
+                    env: None,
+                    resources: None,
+                    volume_mounts: None,
+                    image_pull_policy: None,
+                    liveness_probe: None,
+                    readiness_probe: None,
+                    startup_probe: None,
+                    security_context: None,
+                },
+            ]),
+            containers: vec![Container {
+                name: "app".to_string(),
+                image: "nginx:latest".to_string(),
+                command: None,
+                args: None,
+                working_dir: None,
+                ports: Some(vec![ContainerPort {
+                    container_port: 80,
+                    name: Some("http".to_string()),
+                    protocol: Some("TCP".to_string()),
+                    host_port: None,
+                }]),
+                env: None,
+                resources: None,
+                volume_mounts: None,
+                image_pull_policy: None,
+                liveness_probe: None,
+                readiness_probe: None,
+                startup_probe: None,
+                security_context: None,
+            }],
+            volumes: None,
+            restart_policy: Some("Always".to_string()),
+            node_name: None,
+            node_selector: None,
+            service_account_name: None,
+            hostname: None,
+            host_network: None,
+            host_pid: None,
+            host_ipc: None,
+            affinity: None,
+            tolerations: None,
+            priority: None,
+            priority_class_name: None,
+        };
+
+        let pod = Pod::new("myapp-pod", spec);
+
+        assert_eq!(pod.metadata.name, "myapp-pod");
+        let pod_spec = pod.spec.as_ref().unwrap();
+
+        // Verify init containers
+        assert!(pod_spec.init_containers.is_some());
+        let init_containers = pod_spec.init_containers.as_ref().unwrap();
+        assert_eq!(init_containers.len(), 2);
+        assert_eq!(init_containers[0].name, "init-myservice");
+        assert_eq!(init_containers[1].name, "init-mydb");
+
+        // Verify main containers
+        assert_eq!(pod_spec.containers.len(), 1);
+        assert_eq!(pod_spec.containers[0].name, "app");
+    }
+
+    #[test]
+    fn test_pod_with_init_containers_serialization() {
+        let json = r#"{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "myapp-pod",
+    "namespace": "default"
+  },
+  "spec": {
+    "initContainers": [
+      {
+        "name": "init-myservice",
+        "image": "busybox:1.28",
+        "command": ["sh", "-c", "until nslookup myservice; do echo waiting for myservice; sleep 2; done;"]
+      },
+      {
+        "name": "init-mydb",
+        "image": "busybox:1.28",
+        "command": ["sh", "-c", "until nslookup mydb; do echo waiting for mydb; sleep 2; done;"]
+      }
+    ],
+    "containers": [
+      {
+        "name": "myapp-container",
+        "image": "nginx:latest",
+        "ports": [
+          {
+            "containerPort": 80
+          }
+        ]
+      }
+    ]
+  }
+}"#;
+
+        let pod: Pod = serde_json::from_str(json).unwrap();
+        assert_eq!(pod.metadata.name, "myapp-pod");
+
+        let spec = pod.spec.as_ref().unwrap();
+        assert!(spec.init_containers.is_some());
+
+        let init_containers = spec.init_containers.as_ref().unwrap();
+        assert_eq!(init_containers.len(), 2);
+        assert_eq!(init_containers[0].name, "init-myservice");
+        assert_eq!(init_containers[0].image, "busybox:1.28");
+        assert_eq!(init_containers[1].name, "init-mydb");
+
+        assert_eq!(spec.containers.len(), 1);
+        assert_eq!(spec.containers[0].name, "myapp-container");
+
+        // Test round-trip serialization
+        let serialized = serde_json::to_string(&pod).unwrap();
+        let pod2: Pod = serde_json::from_str(&serialized).unwrap();
+        assert!(pod2.spec.as_ref().unwrap().init_containers.is_some());
+        assert_eq!(pod2.spec.as_ref().unwrap().init_containers.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_pod_status_with_init_container_statuses() {
+        let status = PodStatus {
+            phase: Phase::Running,
+            message: None,
+            reason: None,
+            host_ip: Some("192.168.1.1".to_string()),
+            pod_ip: Some("10.0.0.1".to_string()),
+            container_statuses: Some(vec![ContainerStatus {
+                name: "app".to_string(),
+                ready: true,
+                restart_count: 0,
+                state: Some(ContainerState::Running {
+                    started_at: Some("2024-01-01T00:00:00Z".to_string()),
+                }),
+                image: Some("nginx:latest".to_string()),
+                container_id: Some("containerd://abc123".to_string()),
+            }]),
+            init_container_statuses: Some(vec![
+                ContainerStatus {
+                    name: "init-myservice".to_string(),
+                    ready: true,
+                    restart_count: 0,
+                    state: Some(ContainerState::Terminated {
+                        exit_code: 0,
+                        reason: Some("Completed".to_string()),
+                    }),
+                    image: Some("busybox:1.28".to_string()),
+                    container_id: Some("containerd://def456".to_string()),
+                },
+                ContainerStatus {
+                    name: "init-mydb".to_string(),
+                    ready: true,
+                    restart_count: 0,
+                    state: Some(ContainerState::Terminated {
+                        exit_code: 0,
+                        reason: Some("Completed".to_string()),
+                    }),
+                    image: Some("busybox:1.28".to_string()),
+                    container_id: Some("containerd://ghi789".to_string()),
+                },
+            ]),
+        };
+
+        assert_eq!(status.phase, Phase::Running);
+        assert!(status.init_container_statuses.is_some());
+
+        let init_statuses = status.init_container_statuses.as_ref().unwrap();
+        assert_eq!(init_statuses.len(), 2);
+        assert_eq!(init_statuses[0].name, "init-myservice");
+        assert_eq!(init_statuses[1].name, "init-mydb");
+
+        // Verify both init containers completed successfully
+        for init_status in init_statuses {
+            if let Some(ContainerState::Terminated { exit_code, .. }) = &init_status.state {
+                assert_eq!(*exit_code, 0);
+            }
+        }
     }
 }

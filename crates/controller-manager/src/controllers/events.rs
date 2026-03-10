@@ -260,6 +260,7 @@ mod tests {
             metadata: ObjectMeta::new(name)
                 .with_namespace(namespace),
             spec: PodSpec {
+                init_containers: None,
                 containers: vec![Container {
                     name: "test-container".to_string(),
                     image: "nginx:latest".to_string(),

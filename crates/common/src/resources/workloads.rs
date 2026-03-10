@@ -356,6 +356,7 @@ mod tests {
             metadata: None,
             spec: PodSpec {
                 containers: vec![],
+                init_containers: None,
                 volumes: None,
                 restart_policy: Some("Never".to_string()),
                 node_name: None,

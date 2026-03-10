@@ -195,6 +195,7 @@ impl StatefulSetController {
                 pod_ip: None,
                 host_ip: None,
                 container_statuses: None,
+                init_container_statuses: None,
             }),
         };
 
