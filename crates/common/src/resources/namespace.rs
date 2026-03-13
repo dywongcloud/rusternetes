@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Namespace provides a scope for resource names
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Namespace {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -30,6 +31,7 @@ impl Namespace {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NamespaceSpec {
     /// Finalizers is a list of finalizers
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -37,6 +39,7 @@ pub struct NamespaceSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NamespaceStatus {
     pub phase: Phase,
 }

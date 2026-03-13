@@ -199,6 +199,7 @@ pub struct LabelSelectorRequirement {
 
 /// Resource requirements for compute resources
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceRequirements {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limits: Option<HashMap<String, String>>,

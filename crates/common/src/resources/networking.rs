@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// NetworkPolicy describes what network traffic is allowed for a set of Pods
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NetworkPolicy {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -47,6 +48,7 @@ pub struct NetworkPolicySpec {
 
 /// NetworkPolicyIngressRule describes a particular set of traffic that is allowed to the pods
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NetworkPolicyIngressRule {
     /// List of ports which should be made accessible
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -59,6 +61,7 @@ pub struct NetworkPolicyIngressRule {
 
 /// NetworkPolicyEgressRule describes a particular set of traffic that is allowed out of pods
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NetworkPolicyEgressRule {
     /// List of destination ports for outgoing traffic
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -71,6 +74,7 @@ pub struct NetworkPolicyEgressRule {
 
 /// NetworkPolicyPort describes a port to allow traffic on
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NetworkPolicyPort {
     /// The protocol (TCP, UDP, SCTP)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,6 +108,7 @@ pub struct NetworkPolicyPeer {
 
 /// IPBlock describes a particular CIDR range
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IPBlock {
     /// CIDR is a string representing the IP Block
     pub cidr: String,

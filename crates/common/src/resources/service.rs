@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 /// Service is an abstraction for exposing applications running on a set of Pods
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Service {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -108,6 +109,7 @@ pub enum ServiceType {
 
 /// ServiceStatus represents the current status of a service
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServiceStatus {
     #[serde(skip_serializing_if = "Option::is_none", rename = "loadBalancer")]
     pub load_balancer: Option<LoadBalancerStatus>,
@@ -115,6 +117,7 @@ pub struct ServiceStatus {
 
 /// LoadBalancerStatus represents the status of a load balancer
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LoadBalancerStatus {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub ingress: Vec<LoadBalancerIngress>,
@@ -122,6 +125,7 @@ pub struct LoadBalancerStatus {
 
 /// LoadBalancerIngress represents the status of a load balancer ingress point
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LoadBalancerIngress {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ip: Option<String>,

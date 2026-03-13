@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Role is a namespaced, logical grouping of PolicyRules that can be referenced as a unit by a RoleBinding
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Role {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -33,6 +34,7 @@ impl Role {
 
 /// ClusterRole is a cluster level, logical grouping of PolicyRules that can be referenced as a unit by a RoleBinding or ClusterRoleBinding
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ClusterRole {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -68,6 +70,7 @@ impl ClusterRole {
 
 /// PolicyRule holds information that describes a policy rule, but does not contain information about who the rule applies to or which namespace the rule applies to
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct PolicyRule {
     /// Verbs is a list of Verbs that apply to ALL the ResourceKinds and AttributeRestrictions contained in this rule
     /// Examples: get, list, watch, create, update, patch, delete
@@ -117,6 +120,7 @@ impl PolicyRule {
 
 /// RoleBinding references a role, but does not contain it. It can reference a Role in the same namespace or a ClusterRole in the global namespace
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct RoleBinding {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -161,6 +165,7 @@ impl RoleBinding {
 
 /// ClusterRoleBinding references a ClusterRole, but not contain it
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ClusterRoleBinding {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -205,6 +210,7 @@ impl ClusterRoleBinding {
 
 /// Subject contains a reference to the object or user identities a role binding applies to
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Subject {
     /// Kind of object being referenced. Values defined by this API group are "User", "Group", and "ServiceAccount"
     pub kind: String,
@@ -285,6 +291,7 @@ impl RoleRef {
 
 /// AggregationRule describes how to locate ClusterRoles to aggregate into the ClusterRole
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct AggregationRule {
     /// ClusterRoleSelectors holds a list of selectors which will be used to find ClusterRoles and create the rules
     #[serde(skip_serializing_if = "Option::is_none")]

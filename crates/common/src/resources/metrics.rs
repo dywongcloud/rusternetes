@@ -16,6 +16,7 @@ pub struct NodeMetrics {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeMetricsMetadata {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -35,6 +36,7 @@ pub struct PodMetrics {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct PodMetricsMetadata {
     pub name: String,
     pub namespace: String,
@@ -43,6 +45,7 @@ pub struct PodMetricsMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ContainerMetrics {
     pub name: String,
     pub usage: BTreeMap<String, String>,

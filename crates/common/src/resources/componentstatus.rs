@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// ComponentStatus represents the status of a component (scheduler, controller-manager, etcd)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ComponentStatus {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -52,6 +53,7 @@ impl ComponentStatus {
 
 /// ComponentCondition represents a condition of a component
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ComponentCondition {
     /// Type of condition (e.g., "Healthy")
     #[serde(rename = "type")]

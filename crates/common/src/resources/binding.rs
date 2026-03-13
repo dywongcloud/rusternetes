@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Binding ties one object to another - typically used to bind a Pod to a Node
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Binding {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -28,6 +29,7 @@ impl Binding {
 
 /// ObjectReference contains enough information to locate the referenced object
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ObjectReference {
     /// API version of the referent
     #[serde(skip_serializing_if = "Option::is_none")]

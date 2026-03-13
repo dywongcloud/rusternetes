@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// HorizontalPodAutoscaler automatically scales the number of pods
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HorizontalPodAutoscaler {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -376,6 +377,7 @@ pub struct HorizontalPodAutoscalerCondition {
 
 /// VerticalPodAutoscaler automatically adjusts CPU and memory requests
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VerticalPodAutoscaler {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -467,6 +469,7 @@ pub struct ContainerResourcePolicy {
 
 /// VerticalPodAutoscalerRecommenderSelector selects a specific VPA recommender
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VerticalPodAutoscalerRecommenderSelector {
     /// Name of the recommender
     pub name: String,

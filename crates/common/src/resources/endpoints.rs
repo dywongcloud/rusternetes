@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 /// Endpoints is a collection of endpoints that implement the actual service.
 /// It tracks the IP addresses and ports of Pods that match a Service's selector.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Endpoints {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -31,6 +32,7 @@ impl Endpoints {
 
 /// EndpointSubset is a group of addresses with a common set of ports.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EndpointSubset {
     /// IP addresses which offer the related ports that are marked as ready.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -47,6 +49,7 @@ pub struct EndpointSubset {
 
 /// EndpointAddress is a tuple that describes single IP address.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EndpointAddress {
     /// The IP of this endpoint.
     pub ip: String,
@@ -66,6 +69,7 @@ pub struct EndpointAddress {
 
 /// EndpointPort is a tuple that describes a single port.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EndpointPort {
     /// The name of this port. Must match a port name in the Service.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,6 +89,7 @@ pub struct EndpointPort {
 
 /// EndpointReference contains enough information to let you identify the referenced object.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EndpointReference {
     /// Kind of the referent.
     #[serde(skip_serializing_if = "Option::is_none")]

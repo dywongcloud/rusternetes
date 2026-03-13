@@ -316,6 +316,7 @@ pub struct CustomResourceSubresources {
 
 /// CustomResourceSubresourceStatus defines how to serve the status subresource
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct CustomResourceSubresourceStatus {}
 
 /// CustomResourceSubresourceScale defines how to serve the scale subresource

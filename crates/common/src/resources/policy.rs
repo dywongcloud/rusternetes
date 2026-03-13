@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 /// ResourceQuota sets aggregate quota restrictions enforced per namespace
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceQuota {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -32,6 +33,7 @@ impl ResourceQuota {
 
 /// ResourceQuotaSpec defines the desired hard limits to enforce for Quota
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceQuotaSpec {
     /// Hard is the set of desired hard limits for each named resource
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -71,6 +73,7 @@ pub struct ScopedResourceSelectorRequirement {
 
 /// ResourceQuotaStatus defines the enforced hard limits and observed use
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceQuotaStatus {
     /// Hard is the set of enforced hard limits for each named resource
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -83,6 +86,7 @@ pub struct ResourceQuotaStatus {
 
 /// LimitRange sets resource usage limits for each kind of resource in a Namespace
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LimitRange {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -107,6 +111,7 @@ impl LimitRange {
 
 /// LimitRangeSpec defines a min/max usage limit for resources that match on kind
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LimitRangeSpec {
     /// Limits is a list of LimitRangeItem objects
     pub limits: Vec<LimitRangeItem>,
@@ -144,6 +149,7 @@ pub struct LimitRangeItem {
 
 /// PriorityClass defines mapping from a priority class name to the priority integer value
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PriorityClass {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -203,6 +209,7 @@ impl PriorityClass {
 
 /// PodDisruptionBudget limits the number of pods that can be disrupted during voluntary disruptions
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PodDisruptionBudget {
     #[serde(flatten)]
     pub type_meta: TypeMeta,

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Lease defines a lease concept
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Lease {
     #[serde(flatten)]
     pub type_meta: TypeMeta,

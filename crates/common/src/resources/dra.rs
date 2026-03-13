@@ -15,6 +15,7 @@ use super::NodeSelector;
 /// for use by workloads. For example, if a workload needs an accelerator device
 /// with specific properties, this is how that request is expressed.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceClaim {
     #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
     pub api_version: String,
@@ -32,12 +33,14 @@ pub struct ResourceClaim {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceClaimSpec {
     #[serde(default)]
     pub devices: DeviceClaim,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceClaim {
     /// Requests represent individual requests for distinct devices which
     /// must all be satisfied.
@@ -55,6 +58,7 @@ pub struct DeviceClaim {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceRequest {
     /// Name can be used to reference this request in a pod.spec.containers[].resources.claims entry
     pub name: String,
@@ -69,6 +73,7 @@ pub struct DeviceRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ExactDeviceRequest {
     /// DeviceClassName references a specific DeviceClass
     #[serde(rename = "deviceClassName")]
@@ -100,6 +105,7 @@ pub struct ExactDeviceRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceSubRequest {
     pub name: String,
 
@@ -117,6 +123,7 @@ pub enum DeviceAllocationMode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceSelector {
     /// CEL expression which evaluates to true when a device is suitable
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -124,12 +131,14 @@ pub struct DeviceSelector {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct CELDeviceSelector {
     /// Expression is a CEL expression which evaluates to a boolean
     pub expression: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceToleration {
     /// Key is the taint key that the toleration applies to
     pub key: String,
@@ -153,12 +162,14 @@ pub enum TolerationOperator {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceCapacityRequirement {
     /// Value defines the requested amount of capacity
     pub value: String, // resource.Quantity as string
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceConstraint {
     /// Requests is a list of one or more requests
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -170,6 +181,7 @@ pub struct DeviceConstraint {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceClaimConfiguration {
     /// Requests lists the names of requests where the configuration applies
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -181,12 +193,14 @@ pub struct DeviceClaimConfiguration {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct OpaqueDeviceConfiguration {
     pub driver: String,
     pub parameters: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceClaimStatus {
     /// Allocation is set once the claim has been allocated successfully
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -206,6 +220,7 @@ pub struct ResourceClaimStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct AllocationResult {
     /// Devices contains the result of allocating devices
     pub devices: DeviceAllocationResult,
@@ -216,6 +231,7 @@ pub struct AllocationResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceAllocationResult {
     /// Results lists all allocated devices
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -227,6 +243,7 @@ pub struct DeviceAllocationResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceRequestAllocationResult {
     /// Request is the name of the request in the claim
     pub request: String,
@@ -242,6 +259,7 @@ pub struct DeviceRequestAllocationResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceAllocationConfiguration {
     /// Source describes where the configuration comes from
     pub source: AllocationConfigSource,
@@ -264,6 +282,7 @@ pub enum AllocationConfigSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct AllocatedDeviceStatus {
     /// Device references one device instance
     pub device: String,
@@ -280,6 +299,7 @@ pub struct AllocatedDeviceStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceCondition {
     #[serde(rename = "type")]
     pub condition_type: String,
@@ -297,6 +317,7 @@ pub struct DeviceCondition {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceClaimConsumerReference {
     #[serde(rename = "apiGroup", default, skip_serializing_if = "Option::is_none")]
     pub api_group: Option<String>,
@@ -313,6 +334,7 @@ pub struct ResourceClaimConsumerReference {
 // =============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceClaimTemplate {
     #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
     pub api_version: String,
@@ -327,6 +349,7 @@ pub struct ResourceClaimTemplate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceClaimTemplateSpec {
     /// Metadata to be applied to ResourceClaims created from this template
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -341,6 +364,7 @@ pub struct ResourceClaimTemplateSpec {
 // =============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceClass {
     #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
     pub api_version: String,
@@ -355,6 +379,7 @@ pub struct DeviceClass {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceClassSpec {
     /// Selectors define criteria for selecting devices
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -370,6 +395,7 @@ pub struct DeviceClassSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceClassConfiguration {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opaque: Option<OpaqueDeviceConfiguration>,
@@ -380,6 +406,7 @@ pub struct DeviceClassConfiguration {
 // =============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceSlice {
     #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
     pub api_version: String,
@@ -394,6 +421,7 @@ pub struct ResourceSlice {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceSliceSpec {
     /// Driver identifies the DRA driver providing the capacity information
     pub driver: String,
@@ -427,6 +455,7 @@ pub struct ResourceSliceSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourcePool {
     /// Name is used to identify the pool
     pub name: String,
@@ -440,6 +469,7 @@ pub struct ResourcePool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Device {
     /// Name is unique identifier among all devices managed by the driver
     pub name: String,
@@ -490,6 +520,7 @@ pub struct Device {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceAttribute {
     #[serde(rename = "int", default, skip_serializing_if = "Option::is_none")]
     pub int_value: Option<i64>,
@@ -505,6 +536,7 @@ pub struct DeviceAttribute {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceCapacity {
     /// Value defines how much capacity the device has
     pub value: String, // resource.Quantity as string
@@ -515,6 +547,7 @@ pub struct DeviceCapacity {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct CapacityRequestPolicy {
     /// Default specifies default consumed amount
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -530,6 +563,7 @@ pub struct CapacityRequestPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct CapacityRequestPolicyRange {
     /// Min specifies minimum capacity allowed
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -545,6 +579,7 @@ pub struct CapacityRequestPolicyRange {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceTaint {
     /// Key is the taint key to be applied to a device
     pub key: String,
@@ -569,6 +604,7 @@ pub enum DeviceTaintEffect {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceCounterConsumption {
     /// CounterSet is the name of the set from which counters are consumed
     #[serde(rename = "counterSet")]
@@ -580,6 +616,7 @@ pub struct DeviceCounterConsumption {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct CounterSet {
     /// Name defines the name of the counter set
     pub name: String,
@@ -590,6 +627,7 @@ pub struct CounterSet {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Counter {
     /// Value defines how much of a counter is available
     pub value: String, // resource.Quantity as string
@@ -604,6 +642,7 @@ pub type QualifiedName = String;
 
 // Re-export ObjectMeta from parent
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ObjectMeta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -637,6 +676,7 @@ pub struct ObjectMeta {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct OwnerReference {
     #[serde(rename = "apiVersion")]
     pub api_version: String,
@@ -651,6 +691,7 @@ pub struct OwnerReference {
 
 // List types
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceClaimList {
     #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
     pub api_version: String,
@@ -665,6 +706,7 @@ pub struct ResourceClaimList {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceClaimTemplateList {
     #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
     pub api_version: String,
@@ -679,6 +721,7 @@ pub struct ResourceClaimTemplateList {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceClassList {
     #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
     pub api_version: String,
@@ -693,6 +736,7 @@ pub struct DeviceClassList {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceSliceList {
     #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
     pub api_version: String,
@@ -707,6 +751,7 @@ pub struct ResourceSliceList {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ListMeta {
     #[serde(rename = "resourceVersion", default, skip_serializing_if = "Option::is_none")]
     pub resource_version: Option<String>,

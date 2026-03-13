@@ -6,6 +6,7 @@ use std::collections::HashMap;
 /// ReplicationController ensures that a specified number of pod replicas are running at any given time
 /// This is a legacy resource - ReplicaSets/Deployments are preferred for new workloads
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplicationController {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -34,6 +35,7 @@ impl ReplicationController {
 
 /// ReplicationControllerSpec defines the desired state of a ReplicationController
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplicationControllerSpec {
     /// Number of desired pods (defaults to 1)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -53,6 +55,7 @@ pub struct ReplicationControllerSpec {
 
 /// ReplicationControllerStatus represents the current state of a ReplicationController
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplicationControllerStatus {
     /// Number of replicas
     pub replicas: i32,
@@ -79,6 +82,7 @@ pub struct ReplicationControllerStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplicationControllerCondition {
     /// Type of replication controller condition
     #[serde(rename = "type")]
@@ -102,6 +106,7 @@ pub struct ReplicationControllerCondition {
 
 /// ReplicaSet ensures that a specified number of pod replicas are running at any given time
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplicaSet {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -130,6 +135,7 @@ impl ReplicaSet {
 
 /// ReplicaSetSpec defines the desired state of a ReplicaSet
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplicaSetSpec {
     /// Number of desired pods
     pub replicas: i32,
@@ -147,6 +153,7 @@ pub struct ReplicaSetSpec {
 
 /// ReplicaSetStatus represents the current state of a ReplicaSet
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplicaSetStatus {
     /// Number of replicas
     pub replicas: i32,
@@ -171,6 +178,7 @@ pub struct ReplicaSetStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplicaSetCondition {
     /// Type of replica set condition
     #[serde(rename = "type")]
@@ -194,6 +202,7 @@ pub struct ReplicaSetCondition {
 
 /// StatefulSet represents a set of pods with consistent identities
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatefulSet {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -248,6 +257,7 @@ pub struct StatefulSetSpec {
 
 /// StatefulSetUpdateStrategy indicates the strategy for updating StatefulSet
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct StatefulSetUpdateStrategy {
     /// Type of update strategy: RollingUpdate or OnDelete
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
@@ -258,6 +268,7 @@ pub struct StatefulSetUpdateStrategy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct RollingUpdateStatefulSetStrategy {
     /// The maximum number of pods that can be unavailable during the update
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -266,6 +277,7 @@ pub struct RollingUpdateStatefulSetStrategy {
 
 /// StatefulSetStatus represents the current state of a StatefulSet
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct StatefulSetStatus {
     /// Number of replicas
     pub replicas: i32,
@@ -282,6 +294,7 @@ pub struct StatefulSetStatus {
 
 /// DaemonSet ensures that all (or some) nodes run a copy of a pod
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DaemonSet {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -310,6 +323,7 @@ impl DaemonSet {
 
 /// DaemonSetSpec defines the desired state of a DaemonSet
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DaemonSetSpec {
     /// Selector for pods
     pub selector: LabelSelector,
@@ -324,6 +338,7 @@ pub struct DaemonSetSpec {
 
 /// DaemonSetUpdateStrategy indicates the strategy for updating DaemonSet
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DaemonSetUpdateStrategy {
     /// Type of update strategy: RollingUpdate or OnDelete
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
@@ -334,6 +349,7 @@ pub struct DaemonSetUpdateStrategy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct RollingUpdateDaemonSet {
     /// The maximum number of pods that can be unavailable during the update
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -342,6 +358,7 @@ pub struct RollingUpdateDaemonSet {
 
 /// DaemonSetStatus represents the current state of a DaemonSet
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct DaemonSetStatus {
     /// Number of nodes that should be running the daemon pod
     pub desired_number_scheduled: i32,
@@ -358,6 +375,7 @@ pub struct DaemonSetStatus {
 
 /// Job represents a single batch process
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Job {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -386,6 +404,7 @@ impl Job {
 
 /// JobSpec defines the desired state of a Job
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct JobSpec {
     /// Template for pod creation
     pub template: PodTemplateSpec,
@@ -409,6 +428,7 @@ pub struct JobSpec {
 
 /// JobStatus represents the current state of a Job
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct JobStatus {
     /// Number of actively running pods
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -428,6 +448,7 @@ pub struct JobStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct JobCondition {
     /// Type of condition: Complete or Failed
     #[serde(rename = "type")]
@@ -453,6 +474,7 @@ pub struct JobCondition {
 
 /// CronJob manages time-based jobs
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CronJob {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -508,6 +530,7 @@ pub struct CronJobSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct JobTemplateSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ObjectMeta>,
@@ -517,6 +540,7 @@ pub struct JobTemplateSpec {
 
 /// CronJobStatus represents the current state of a CronJob
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct CronJobStatus {
     /// List of currently running jobs
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -533,6 +557,7 @@ pub struct CronJobStatus {
 
 /// PodTemplate describes a template for creating copies of a predefined pod
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PodTemplate {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -558,6 +583,7 @@ impl PodTemplate {
 
 /// PodTemplateSpec describes the pod that will be created
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PodTemplateSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ObjectMeta>,

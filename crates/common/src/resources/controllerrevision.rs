@@ -5,6 +5,7 @@ use serde_json::Value;
 /// ControllerRevision represents an immutable snapshot of state data
 /// Used by controllers like StatefulSet and DaemonSet to track rollback history
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ControllerRevision {
     #[serde(flatten)]
     pub type_meta: TypeMeta,

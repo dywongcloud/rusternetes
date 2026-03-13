@@ -1,4 +1,5 @@
 use axum::{
+    body::Body,
     extract::Request,
     http::StatusCode,
     middleware::Next,
@@ -7,7 +8,8 @@ use axum::{
 };
 use rusternetes_common::auth::{BootstrapTokenManager, TokenManager, UserInfo};
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::{debug, warn, error};
+use axum::body::to_bytes;
 
 /// Extension type to carry UserInfo through the request
 #[derive(Clone, Debug)]
@@ -20,6 +22,8 @@ pub async fn skip_auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
+    debug!("skip_auth_middleware called for: {} {}", request.method(), request.uri());
+
     // Create an admin user context
     let admin_user = UserInfo {
         username: "admin".to_string(),
@@ -30,6 +34,8 @@ pub async fn skip_auth_middleware(
 
     // Insert AuthContext into request extensions
     request.extensions_mut().insert(AuthContext { user: admin_user });
+
+    debug!("AuthContext inserted into request extensions");
 
     Ok(next.run(request).await)
 }
@@ -78,4 +84,49 @@ pub async fn auth_middleware(
     request.extensions_mut().insert(AuthContext { user });
 
     Ok(next.run(request).await)
+}
+
+/// Middleware to log request bodies for debugging JSON deserialization errors
+pub async fn log_request_body_middleware(
+    request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    let (parts, body) = request.into_parts();
+
+    // Only log POST/PUT/PATCH requests
+    if parts.method == axum::http::Method::POST ||
+       parts.method == axum::http::Method::PUT ||
+       parts.method == axum::http::Method::PATCH {
+
+        // Read the body
+        let bytes = match to_bytes(body, usize::MAX).await {
+            Ok(b) => b,
+            Err(e) => {
+                error!("Failed to read request body: {}", e);
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to read request body").into_response());
+            }
+        };
+
+        // Log the body if it's not too large
+        if bytes.len() < 10000 {
+            if let Ok(body_str) = String::from_utf8(bytes.to_vec()) {
+                debug!("Request body for {} {}: {}", parts.method, parts.uri, body_str);
+            }
+        }
+
+        // Reconstruct the request with the body
+        let request = Request::from_parts(parts, Body::from(bytes));
+        let response = next.run(request).await;
+
+        // Log if the response is 422
+        if response.status() == StatusCode::UNPROCESSABLE_ENTITY {
+            error!("422 Unprocessable Entity returned - check request body above");
+        }
+
+        Ok(response)
+    } else {
+        // Pass through for GET/DELETE/etc
+        let request = Request::from_parts(parts, body);
+        Ok(next.run(request).await)
+    }
 }

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Ingress is a collection of rules that allow inbound connections to reach the cluster services
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Ingress {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -58,6 +59,7 @@ pub struct IngressSpec {
 
 /// IngressTLS describes the transport layer security associated with an Ingress
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct IngressTLS {
     /// Hosts are a list of hosts included in the TLS certificate
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -70,6 +72,7 @@ pub struct IngressTLS {
 
 /// IngressRule represents a rule to route traffic based on host and path
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct IngressRule {
     /// Host is the fully qualified domain name
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,6 +85,7 @@ pub struct IngressRule {
 
 /// HTTPIngressRuleValue is a list of HTTP paths
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct HTTPIngressRuleValue {
     /// Paths is a collection of paths that map requests to backends
     pub paths: Vec<HTTPIngressPath>,
@@ -106,6 +110,7 @@ pub struct HTTPIngressPath {
 
 /// IngressBackend describes all endpoints for a given service and port
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct IngressBackend {
     /// Service references a Service as a backend
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -118,6 +123,7 @@ pub struct IngressBackend {
 
 /// IngressServiceBackend references a Kubernetes Service as a backend
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct IngressServiceBackend {
     /// Name is the referenced service
     pub name: String,
@@ -129,6 +135,7 @@ pub struct IngressServiceBackend {
 
 /// ServiceBackendPort is the service port being referenced
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ServiceBackendPort {
     /// Name is the name of the port on the Service
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -141,6 +148,7 @@ pub struct ServiceBackendPort {
 
 /// IngressStatus describes the current state of the Ingress
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct IngressStatus {
     /// LoadBalancer contains the current status of the load-balancer
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -149,6 +157,7 @@ pub struct IngressStatus {
 
 /// IngressLoadBalancerStatus represents the status of a load-balancer
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct IngressLoadBalancerStatus {
     /// Ingress is a list containing ingress points for the load-balancer
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -157,6 +166,7 @@ pub struct IngressLoadBalancerStatus {
 
 /// IngressLoadBalancerIngress represents the status of a load-balancer ingress point
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct IngressLoadBalancerIngress {
     /// IP is set for load-balancer ingress points that are IP based
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -173,6 +183,7 @@ pub struct IngressLoadBalancerIngress {
 
 /// IngressPortStatus represents the status of a port exposed by the load-balancer
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct IngressPortStatus {
     /// Port is the port number of the ingress port
     pub port: i32,

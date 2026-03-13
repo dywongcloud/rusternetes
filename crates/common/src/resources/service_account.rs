@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// ServiceAccount binds together a name, a principal that can be authenticated, and a set of secrets
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ServiceAccount {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -38,6 +39,7 @@ impl ServiceAccount {
 
 /// ObjectReference contains enough information to let you inspect or modify the referred object
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ObjectReference {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
@@ -63,6 +65,7 @@ pub struct ObjectReference {
 
 /// LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalObjectReference {
     pub name: String,
 }

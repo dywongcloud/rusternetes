@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// The ingressclass.kubernetes.io/is-default-class annotation can be used to indicate
 /// that an IngressClass should be considered default.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct IngressClass {
     #[serde(flatten)]
     pub type_meta: TypeMeta,

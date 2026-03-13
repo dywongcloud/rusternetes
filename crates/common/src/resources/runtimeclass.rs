@@ -8,6 +8,7 @@ use std::collections::HashMap;
 /// provisioner, and referenced in the PodSpec. The Kubelet is responsible for
 /// resolving the RuntimeClassName reference before running the pod.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct RuntimeClass {
     #[serde(flatten)]
     pub type_meta: TypeMeta,

@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 /// Node is a worker machine in Kubernetes
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Node {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -30,6 +31,7 @@ impl Node {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pod_cidr: Option<String>,
@@ -45,6 +47,7 @@ pub struct NodeSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Taint {
     pub key: String,
     pub value: Option<String>,
@@ -52,6 +55,7 @@ pub struct Taint {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capacity: Option<HashMap<String, String>>,
@@ -70,6 +74,7 @@ pub struct NodeStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeCondition {
     #[serde(rename = "type")]
     pub condition_type: String, // Ready, MemoryPressure, DiskPressure, PIDPressure, NetworkUnavailable
@@ -90,6 +95,7 @@ pub struct NodeCondition {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeAddress {
     #[serde(rename = "type")]
     pub address_type: String, // Hostname, ExternalIP, InternalIP
@@ -98,6 +104,7 @@ pub struct NodeAddress {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeSystemInfo {
     pub machine_id: String,
     pub system_uuid: String,

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 /// Pod is the smallest deployable unit in Kubernetes
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Pod {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -284,6 +285,7 @@ pub struct SecurityContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Capabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub add: Option<Vec<String>>,
@@ -317,6 +319,7 @@ pub struct ContainerPort {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EnvVar {
     pub name: String,
 
@@ -328,6 +331,7 @@ pub struct EnvVar {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EnvVarSource {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config_map_key_ref: Option<ConfigMapKeySelector>,
@@ -337,12 +341,14 @@ pub struct EnvVarSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConfigMapKeySelector {
     pub name: String,
     pub key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SecretKeySelector {
     pub name: String,
     pub key: String,
@@ -395,12 +401,14 @@ pub struct Volume {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EmptyDirVolumeSource {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub medium: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HostPathVolumeSource {
     pub path: String,
 
@@ -409,11 +417,13 @@ pub struct HostPathVolumeSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConfigMapVolumeSource {
     pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SecretVolumeSource {
     pub secret_name: String,
 }
@@ -498,6 +508,7 @@ pub struct EphemeralVolumeSource {
 
 /// PersistentVolumeClaimTemplate is used to produce PVC objects
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PersistentVolumeClaimTemplate {
     /// May contain labels and annotations that will be copied into the PVC
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -564,6 +575,7 @@ pub enum ContainerState {
 
 /// Affinity is a group of affinity scheduling rules
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Affinity {
     /// Node affinity scheduling rules
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -580,6 +592,7 @@ pub struct Affinity {
 
 /// Node affinity is a group of node affinity scheduling rules
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeAffinity {
     /// Hard node affinity requirements
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -592,6 +605,7 @@ pub struct NodeAffinity {
 
 /// A node selector represents the union of the results of one or more label queries
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeSelector {
     /// A list of node selector terms (ORed together)
     pub node_selector_terms: Vec<NodeSelectorTerm>,
@@ -599,6 +613,7 @@ pub struct NodeSelector {
 
 /// A node selector term is associated with the corresponding weight
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeSelectorTerm {
     /// A list of node selector requirements by node's labels
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -611,6 +626,7 @@ pub struct NodeSelectorTerm {
 
 /// A node selector requirement is a selector that contains values, a key, and an operator
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeSelectorRequirement {
     /// The label key
     pub key: String,
@@ -625,6 +641,7 @@ pub struct NodeSelectorRequirement {
 
 /// An empty preferred scheduling term matches all objects with implicit weight 0
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct PreferredSchedulingTerm {
     /// Weight associated with matching the corresponding nodeSelectorTerm, in the range 1-100
     pub weight: i32,
@@ -635,6 +652,7 @@ pub struct PreferredSchedulingTerm {
 
 /// Pod affinity is a group of inter pod affinity scheduling rules
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PodAffinity {
     /// Hard pod affinity requirements
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -647,6 +665,7 @@ pub struct PodAffinity {
 
 /// Pod anti-affinity is a group of inter pod anti affinity scheduling rules
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PodAntiAffinity {
     /// Hard pod anti-affinity requirements
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -659,6 +678,7 @@ pub struct PodAntiAffinity {
 
 /// Defines a set of pods that should be co-located
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PodAffinityTerm {
     /// A label selector over a set of resources
     pub label_selector: crate::types::LabelSelector,
@@ -673,6 +693,7 @@ pub struct PodAffinityTerm {
 
 /// The weights of all the matched WeightedPodAffinityTerm fields are added per-node to find the most preferred node(s)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WeightedPodAffinityTerm {
     /// Weight associated with matching the corresponding podAffinityTerm, in the range 1-100
     pub weight: i32,
@@ -683,6 +704,7 @@ pub struct WeightedPodAffinityTerm {
 
 /// The pod this Toleration is attached to tolerates any taint that matches the triple using the matching operator
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Toleration {
     /// Key is the taint key that the toleration applies to
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -707,6 +729,7 @@ pub struct Toleration {
 
 /// Probe describes a health check to be performed against a container
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Probe {
     /// HTTP GET probe
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -743,6 +766,7 @@ pub struct Probe {
 
 /// HTTPGetAction describes an action based on HTTP Get requests
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HTTPGetAction {
     /// Path to access on the HTTP server
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -766,6 +790,7 @@ pub struct HTTPGetAction {
 
 /// HTTPHeader describes a custom header to be used in HTTP probes
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HTTPHeader {
     pub name: String,
     pub value: String,
@@ -773,6 +798,7 @@ pub struct HTTPHeader {
 
 /// TCPSocketAction describes an action based on opening a socket
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TCPSocketAction {
     /// Port to connect to on the container
     pub port: i32,
@@ -784,6 +810,7 @@ pub struct TCPSocketAction {
 
 /// ExecAction describes a command-based action
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExecAction {
     /// Command to execute
     pub command: Vec<String>,

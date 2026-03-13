@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 /// ConfigMap holds configuration data for pods to consume
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ConfigMap {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -101,6 +102,7 @@ where
 
 /// Secret holds sensitive data such as passwords, tokens, or keys
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Secret {
     #[serde(flatten)]
     pub type_meta: TypeMeta,

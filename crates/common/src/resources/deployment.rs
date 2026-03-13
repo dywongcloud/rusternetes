@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Deployment provides declarative updates for Pods
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Deployment {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -28,6 +29,7 @@ impl Deployment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeploymentSpec {
     pub replicas: i32,
     pub selector: LabelSelector,
@@ -44,6 +46,7 @@ pub struct DeploymentSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeploymentStrategy {
     #[serde(rename = "type")]
     pub strategy_type: String, // Recreate or RollingUpdate
@@ -53,6 +56,7 @@ pub struct DeploymentStrategy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RollingUpdateDeployment {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_unavailable: Option<String>, // Can be int or percentage
@@ -62,6 +66,7 @@ pub struct RollingUpdateDeployment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeploymentStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub replicas: Option<i32>,

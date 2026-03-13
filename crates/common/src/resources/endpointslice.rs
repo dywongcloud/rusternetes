@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 /// EndpointSlice represents a subset of the endpoints that implement a service.
 /// It is part of the discovery.k8s.io/v1 API group.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EndpointSlice {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
@@ -155,6 +156,7 @@ impl EndpointSlice {
 
 /// Endpoint represents a single logical "backend" implementing a service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Endpoint {
     /// addresses of this endpoint. The contents of this field are interpreted according to
     /// the corresponding EndpointSlice addressType field.
@@ -192,6 +194,7 @@ pub struct Endpoint {
 
 /// EndpointConditions represents the current condition of an endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EndpointConditions {
     /// ready indicates that this endpoint is prepared to receive traffic.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -208,6 +211,7 @@ pub struct EndpointConditions {
 
 /// EndpointPort represents a Port used by an EndpointSlice.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EndpointPort {
     /// name represents the name of this port.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -228,6 +232,7 @@ pub struct EndpointPort {
 
 /// EndpointReference contains enough information to let you identify the referenced object.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EndpointReference {
     /// Kind of the referent.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -256,6 +261,7 @@ pub struct EndpointReference {
 
 /// EndpointHints provides hints describing how an endpoint should be consumed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EndpointHints {
     /// forZones indicates the zone(s) this endpoint should be consumed by to enable topology aware routing.
     #[serde(skip_serializing_if = "Option::is_none", rename = "forZones")]
@@ -264,6 +270,7 @@ pub struct EndpointHints {
 
 /// ForZone provides information about which zones should consume this endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ForZone {
     /// name represents the name of the zone.
     pub name: String,
