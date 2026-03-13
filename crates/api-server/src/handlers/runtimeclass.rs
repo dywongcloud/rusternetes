@@ -205,3 +205,57 @@ pub async fn list_runtimeclasses(
 
 // Use the macro to create a PATCH handler for cluster-scoped RuntimeClass
 crate::patch_handler_cluster!(patch_runtimeclass, RuntimeClass, "runtimeclasses", "node.k8s.io");
+
+pub async fn deletecollection_runtimeclasses(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection runtimeclasses with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "runtimeclasses")
+        .with_api_group("node.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: RuntimeClass collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all runtimeclasses
+    let prefix = build_prefix("runtimeclasses", None);
+    let mut items = state.storage.list::<RuntimeClass>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("runtimeclasses", None, &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} runtimeclasses deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

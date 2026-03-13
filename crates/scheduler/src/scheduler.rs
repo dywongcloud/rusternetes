@@ -320,12 +320,13 @@ impl Scheduler {
             spec.node_name = Some(node_name.to_string());
         }
 
-        // Update pod status to Running
+        // Update pod status to Pending (kubelet will update to Running after starting containers)
         if let Some(ref mut status) = pod.status {
-            status.phase = Phase::Running;
+            status.phase = Phase::Pending;
+            status.message = Some("Pod scheduled".to_string());
         } else {
             pod.status = Some(rusternetes_common::resources::PodStatus {
-                phase: Phase::Running,
+                phase: Phase::Pending,
                 message: Some("Pod scheduled".to_string()),
                 reason: None,
                 host_ip: None,

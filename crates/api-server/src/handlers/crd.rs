@@ -424,3 +424,57 @@ mod tests {
         assert!(validate_crd(&crd).is_err());
     }
 }
+
+pub async fn deletecollection_customresourcedefinitions(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection customresourcedefinitions with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "customresourcedefinitions")
+        .with_api_group("apiextensions.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: CustomResourceDefinition collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all customresourcedefinitions
+    let prefix = build_prefix("customresourcedefinitions", None);
+    let mut items = state.storage.list::<CustomResourceDefinition>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("customresourcedefinitions", None, &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} customresourcedefinitions deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

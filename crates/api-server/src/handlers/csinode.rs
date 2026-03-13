@@ -220,3 +220,57 @@ mod tests {
         assert_eq!(deserialized.metadata.name, "node1");
     }
 }
+
+pub async fn deletecollection_csinodes(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection csinodes with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "csinodes")
+        .with_api_group("storage.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: CSINode collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all csinodes
+    let prefix = build_prefix("csinodes", None);
+    let mut items = state.storage.list::<CSINode>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("csinodes", None, &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} csinodes deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

@@ -178,6 +178,10 @@ pub async fn delete_ns(
         return Ok(StatusCode::OK);
     }
 
+    // CASCADE DELETE: Delete all resources in this namespace before deleting the namespace
+    info!("Cascade deleting all resources in namespace: {}", name);
+    cascade_delete_namespace_resources(&*state.storage, &name).await?;
+
     // Handle deletion with finalizers
     // If the namespace has finalizers, it will be marked for deletion (deletionTimestamp set)
     // and remain in storage until controllers remove the finalizers
@@ -202,6 +206,85 @@ pub async fn delete_ns(
         );
         Ok(StatusCode::OK)
     }
+}
+
+/// Cascade delete all resources in a namespace
+/// This ensures proper cleanup when a namespace is deleted
+async fn cascade_delete_namespace_resources(
+    storage: &rusternetes_storage::etcd::EtcdStorage,
+    namespace: &str,
+) -> Result<()> {
+    use tracing::warn;
+    use serde_json::Value;
+
+    // List of resource types that are namespace-scoped and should be deleted
+    // Order matters: delete child resources before parent resources
+    let resource_types = vec![
+        "events",
+        "endpoints",
+        "endpointslices",
+        "configmaps",
+        "secrets",
+        "serviceaccounts",
+        "persistentvolumeclaims",
+        "pods",
+        "replicationcontrollers",
+        "services",
+        "daemonsets",
+        "deployments",
+        "replicasets",
+        "statefulsets",
+        "jobs",
+        "cronjobs",
+        "ingresses",
+        "networkpolicies",
+        "poddisruptionbudgets",
+        "resourcequotas",
+        "limitranges",
+        "horizontalpodautoscalers",
+        "volumesnapshots",
+        "leases",
+        "rolebindings",
+        "roles",
+    ];
+
+    let mut total_deleted = 0;
+    for resource_type in resource_types {
+        let prefix = build_prefix(resource_type, Some(namespace));
+
+        // List all resources with this prefix, then delete each one
+        match storage.list::<Value>(&prefix).await {
+            Ok(resources) => {
+                let count = resources.len();
+                for resource in resources {
+                    // Extract the resource name from the metadata
+                    if let Some(metadata) = resource.get("metadata") {
+                        if let Some(name) = metadata.get("name").and_then(|n| n.as_str()) {
+                            let key = build_key(resource_type, Some(namespace), name);
+                            match storage.delete(&key).await {
+                                Ok(_) => {
+                                    total_deleted += 1;
+                                }
+                                Err(e) => {
+                                    warn!("Failed to delete {} {}/{}: {}", resource_type, namespace, name, e);
+                                }
+                            }
+                        }
+                    }
+                }
+                if count > 0 {
+                    info!("Deleted {} {} resources in namespace {}", count, resource_type, namespace);
+                }
+            }
+            Err(e) => {
+                // Log warning but continue - resource type might not exist or have no resources
+                warn!("Failed to list {} in namespace {}: {}", resource_type, namespace, e);
+            }
+        }
+    }
+
+    info!("Cascade deletion completed for namespace {}: {} resources deleted", namespace, total_deleted);
+    Ok(())
 }
 
 pub async fn list(
@@ -318,3 +401,57 @@ async fn create_default_service_account(
 
 // Use the macro to create a PATCH handler for cluster-scoped namespace
 crate::patch_handler_cluster!(patch, Namespace, "namespaces", "");
+
+pub async fn deletecollection_namespaces(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection namespaces with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "namespaces")
+        .with_api_group("");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: Namespace collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all namespaces
+    let prefix = build_prefix("namespaces", None);
+    let mut items = state.storage.list::<Namespace>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("namespaces", None, &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} namespaces deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

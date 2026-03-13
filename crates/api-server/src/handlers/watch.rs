@@ -107,7 +107,8 @@ where
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
 
     // Extract parameters
-    let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
+    // TODO: Fix bookmark implementation - currently disabled as CoreDNS can't decode them
+    let allow_bookmarks = false; // params.allow_watch_bookmarks.unwrap_or(false);
     let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
 
     // Spawn task to convert watch events to HTTP response
@@ -338,7 +339,8 @@ where
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
 
     // Extract parameters
-    let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
+    // TODO: Fix bookmark implementation - currently disabled as CoreDNS can't decode them
+    let allow_bookmarks = false; // params.allow_watch_bookmarks.unwrap_or(false);
     let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
 
     // Spawn task to convert watch events to HTTP response
@@ -539,6 +541,8 @@ pub trait HasMetadata {
 }
 
 /// Bookmark object containing only metadata with resourceVersion
+/// Note: Bookmarks in Kubernetes watch streams don't need apiVersion/kind
+/// as they are just checkpoint markers
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BookmarkObject {

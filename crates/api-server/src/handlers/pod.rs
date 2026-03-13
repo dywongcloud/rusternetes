@@ -713,3 +713,59 @@ pub async fn patch(
 
     Ok(Json(updated))
 }
+
+pub async fn deletecollection_pods(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection pods in namespace: {} with params: {:?}", namespace, params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "pods")
+        .with_namespace(&namespace)
+        .with_api_group("");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: Pod collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all pods in the namespace
+    let prefix = build_prefix("pods", Some(&namespace));
+    let mut pods = state.storage.list::<Pod>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut pods, &params)?;
+
+    // Delete each matching pod
+    let mut deleted_count = 0;
+    for pod in pods {
+        let key = build_key("pods", Some(&namespace), &pod.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &pod,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} pods deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

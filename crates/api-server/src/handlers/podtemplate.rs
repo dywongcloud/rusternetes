@@ -316,3 +316,59 @@ mod tests {
         assert_eq!(created.0.metadata.name, "test-template");
     }
 }
+
+pub async fn deletecollection_podtemplates(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection podtemplates in namespace: {} with params: {:?}", namespace, params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "podtemplates")
+        .with_namespace(&namespace)
+        .with_api_group("");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: PodTemplate collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all podtemplates in the namespace
+    let prefix = build_prefix("podtemplates", Some(&namespace));
+    let mut items = state.storage.list::<PodTemplate>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("podtemplates", Some(&namespace), &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} podtemplates deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

@@ -604,6 +604,45 @@ impl ContainerRuntime {
                 }
             }
 
+            // Special handling for service account token secrets - add ca.crt
+            // Service account secrets are identified by having a "token" key or by name pattern
+            let is_service_account_secret = secret.data.as_ref()
+                .map(|data| data.contains_key("token"))
+                .unwrap_or(false) || secret_source.secret_name.ends_with("-token");
+
+            if is_service_account_secret {
+                // Check if ca.crt already exists in the secret data
+                let has_ca_cert = secret.data.as_ref()
+                    .map(|data| data.contains_key("ca.crt"))
+                    .unwrap_or(false);
+
+                if !has_ca_cert {
+                    // Inject ca.crt from the cluster CA certificate
+                    // Try multiple locations: environment variable, volumes/_certs, then fallback to .rusternetes/certs
+                    let ca_cert_source = std::env::var("CA_CERT_PATH")
+                        .unwrap_or_else(|_| {
+                            // First try volumes/_certs (accessible from kubelet container)
+                            let volumes_cert_path = format!("{}/_certs/ca.crt", self.volumes_base_path);
+                            if std::path::Path::new(&volumes_cert_path).exists() {
+                                volumes_cert_path
+                            } else {
+                                // Fallback to .rusternetes/certs (for host-based kubelet)
+                                format!("{}/.rusternetes/certs/ca.crt",
+                                    std::env::var("HOME").unwrap_or_else(|_| "/root".to_string()))
+                            }
+                        });
+
+                    let ca_path = format!("{}/ca.crt", volume_dir);
+                    if let Ok(ca_content) = std::fs::read(&ca_cert_source) {
+                        std::fs::write(&ca_path, ca_content)
+                            .context("Failed to write CA certificate")?;
+                        info!("Injected CA certificate into service account secret volume at {} (from {})", ca_path, ca_cert_source);
+                    } else {
+                        warn!("CA certificate not found at {}, pods may not be able to verify API server", ca_cert_source);
+                    }
+                }
+            }
+
             info!("Created Secret volume {} at {}", volume.name, volume_dir);
             return Ok(volume_dir);
         }

@@ -352,3 +352,57 @@ pub async fn list_flow_schemas(
 }
 
 crate::patch_handler_cluster!(patch_flow_schema, FlowSchema, "flowschemas", "flowcontrol.apiserver.k8s.io");
+
+pub async fn deletecollection_prioritylevelconfigurations(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection prioritylevelconfigurations with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "prioritylevelconfigurations")
+        .with_api_group("flowcontrol.apiserver.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: PriorityLevelConfiguration collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all prioritylevelconfigurations
+    let prefix = build_prefix("prioritylevelconfigurations", None);
+    let mut items = state.storage.list::<PriorityLevelConfiguration>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("prioritylevelconfigurations", None, &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} prioritylevelconfigurations deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

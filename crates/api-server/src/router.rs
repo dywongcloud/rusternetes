@@ -371,10 +371,19 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/watch/namespaces",
             get(handlers::watch::watch_namespaces),
         )
+        // ComponentStatus (cluster-scoped, deprecated but still used)
+        .route(
+            "/api/v1/componentstatuses",
+            get(handlers::componentstatus::list),
+        )
+        .route(
+            "/api/v1/componentstatuses/:name",
+            get(handlers::componentstatus::get),
+        )
         // Pods
         .route(
             "/api/v1/namespaces/:namespace/pods",
-            get(handlers::pod::list).post(handlers::pod::create),
+            get(handlers::pod::list).post(handlers::pod::create).delete(handlers::pod::deletecollection_pods),
         )
         .route(
             "/api/v1/namespaces/:namespace/pods/:name",
@@ -437,7 +446,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Services
         .route(
             "/api/v1/namespaces/:namespace/services",
-            get(handlers::service::list).post(handlers::service::create),
+            get(handlers::service::list).post(handlers::service::create).delete(handlers::service::deletecollection_services),
         )
         .route(
             "/api/v1/namespaces/:namespace/services/:name",
@@ -473,7 +482,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Endpoints
         .route(
             "/api/v1/namespaces/:namespace/endpoints",
-            get(handlers::endpoints::list_endpoints).post(handlers::endpoints::create_endpoints),
+            get(handlers::endpoints::list_endpoints).post(handlers::endpoints::create_endpoints).delete(handlers::endpoints::deletecollection_endpoints),
         )
         .route(
             "/api/v1/namespaces/:namespace/endpoints/:name",
@@ -494,7 +503,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // ConfigMaps
         .route(
             "/api/v1/namespaces/:namespace/configmaps",
-            get(handlers::configmap::list).post(handlers::configmap::create),
+            get(handlers::configmap::list).post(handlers::configmap::create).delete(handlers::configmap::deletecollection_configmaps),
         )
         .route(
             "/api/v1/namespaces/:namespace/configmaps/:name",
@@ -516,7 +525,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Secrets
         .route(
             "/api/v1/namespaces/:namespace/secrets",
-            get(handlers::secret::list).post(handlers::secret::create),
+            get(handlers::secret::list).post(handlers::secret::create).delete(handlers::secret::deletecollection_secrets),
         )
         .route(
             "/api/v1/namespaces/:namespace/secrets/:name",
@@ -538,7 +547,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Nodes
         .route(
             "/api/v1/nodes",
-            get(handlers::node::list).post(handlers::node::create),
+            get(handlers::node::list).post(handlers::node::create).delete(handlers::node::deletecollection_nodes),
         )
         .route(
             "/api/v1/nodes/:name",
@@ -569,7 +578,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Apps v1 API - Deployments
         .route(
             "/apis/apps/v1/namespaces/:namespace/deployments",
-            get(handlers::deployment::list).post(handlers::deployment::create),
+            get(handlers::deployment::list).post(handlers::deployment::create).delete(handlers::deployment::deletecollection_deployments),
         )
         .route(
             "/apis/apps/v1/namespaces/:namespace/deployments/:name",
@@ -603,7 +612,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Apps v1 API - ReplicaSets
         .route(
             "/apis/apps/v1/namespaces/:namespace/replicasets",
-            get(handlers::replicaset::list).post(handlers::replicaset::create),
+            get(handlers::replicaset::list).post(handlers::replicaset::create).delete(handlers::replicaset::deletecollection_replicasets),
         )
         .route(
             "/apis/apps/v1/namespaces/:namespace/replicasets/:name",
@@ -637,7 +646,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Apps v1 API - StatefulSets
         .route(
             "/apis/apps/v1/namespaces/:namespace/statefulsets",
-            get(handlers::statefulset::list).post(handlers::statefulset::create),
+            get(handlers::statefulset::list).post(handlers::statefulset::create).delete(handlers::statefulset::deletecollection_statefulsets),
         )
         .route(
             "/apis/apps/v1/namespaces/:namespace/statefulsets/:name",
@@ -671,7 +680,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Apps v1 API - DaemonSets
         .route(
             "/apis/apps/v1/namespaces/:namespace/daemonsets",
-            get(handlers::daemonset::list).post(handlers::daemonset::create),
+            get(handlers::daemonset::list).post(handlers::daemonset::create).delete(handlers::daemonset::deletecollection_daemonsets),
         )
         .route(
             "/apis/apps/v1/namespaces/:namespace/daemonsets/:name",
@@ -705,7 +714,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Batch v1 API - Jobs
         .route(
             "/apis/batch/v1/namespaces/:namespace/jobs",
-            get(handlers::job::list).post(handlers::job::create),
+            get(handlers::job::list).post(handlers::job::create).delete(handlers::job::deletecollection_jobs),
         )
         .route(
             "/apis/batch/v1/namespaces/:namespace/jobs/:name",
@@ -733,7 +742,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Batch v1 API - CronJobs
         .route(
             "/apis/batch/v1/namespaces/:namespace/cronjobs",
-            get(handlers::cronjob::list).post(handlers::cronjob::create),
+            get(handlers::cronjob::list).post(handlers::cronjob::create).delete(handlers::cronjob::deletecollection_cronjobs),
         )
         .route(
             "/apis/batch/v1/namespaces/:namespace/cronjobs/:name",
@@ -761,7 +770,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // ServiceAccounts
         .route(
             "/api/v1/namespaces/:namespace/serviceaccounts",
-            get(handlers::service_account::list).post(handlers::service_account::create),
+            get(handlers::service_account::list).post(handlers::service_account::create).delete(handlers::service_account::deletecollection_serviceaccounts),
         )
         .route(
             "/api/v1/namespaces/:namespace/serviceaccounts/:name",
@@ -783,7 +792,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // RBAC - Roles
         .route(
             "/apis/rbac.authorization.k8s.io/v1/namespaces/:namespace/roles",
-            get(handlers::rbac::list_roles).post(handlers::rbac::create_role),
+            get(handlers::rbac::list_roles).post(handlers::rbac::create_role).delete(handlers::rbac::deletecollection_roles),
         )
         .route(
             "/apis/rbac.authorization.k8s.io/v1/namespaces/:namespace/roles/:name",
@@ -800,7 +809,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // RBAC - RoleBindings
         .route(
             "/apis/rbac.authorization.k8s.io/v1/namespaces/:namespace/rolebindings",
-            get(handlers::rbac::list_rolebindings).post(handlers::rbac::create_rolebinding),
+            get(handlers::rbac::list_rolebindings).post(handlers::rbac::create_rolebinding).delete(handlers::rbac::deletecollection_rolebindings),
         )
         .route(
             "/apis/rbac.authorization.k8s.io/v1/namespaces/:namespace/rolebindings/:name",
@@ -817,7 +826,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // RBAC - ClusterRoles
         .route(
             "/apis/rbac.authorization.k8s.io/v1/clusterroles",
-            get(handlers::rbac::list_clusterroles).post(handlers::rbac::create_clusterrole),
+            get(handlers::rbac::list_clusterroles).post(handlers::rbac::create_clusterrole).delete(handlers::rbac::deletecollection_clusterroles),
         )
         .route(
             "/apis/rbac.authorization.k8s.io/v1/clusterroles/:name",
@@ -829,7 +838,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // RBAC - ClusterRoleBindings
         .route(
             "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings",
-            get(handlers::rbac::list_clusterrolebindings).post(handlers::rbac::create_clusterrolebinding),
+            get(handlers::rbac::list_clusterrolebindings).post(handlers::rbac::create_clusterrolebinding).delete(handlers::rbac::deletecollection_clusterrolebindings),
         )
         .route(
             "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/:name",
@@ -892,7 +901,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Networking v1 API - Ingresses
         .route(
             "/apis/networking.k8s.io/v1/namespaces/:namespace/ingresses",
-            get(handlers::ingress::list).post(handlers::ingress::create),
+            get(handlers::ingress::list).post(handlers::ingress::create).delete(handlers::ingress::deletecollection_ingresses),
         )
         .route(
             "/apis/networking.k8s.io/v1/namespaces/:namespace/ingresses/:name",
@@ -915,7 +924,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Networking v1 API - NetworkPolicies
         .route(
             "/apis/networking.k8s.io/v1/namespaces/:namespace/networkpolicies",
-            get(handlers::networkpolicy::list).post(handlers::networkpolicy::create),
+            get(handlers::networkpolicy::list).post(handlers::networkpolicy::create).delete(handlers::networkpolicy::deletecollection_networkpolicies),
         )
         .route(
             "/apis/networking.k8s.io/v1/namespaces/:namespace/networkpolicies/:name",
@@ -976,7 +985,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Events (namespace-scoped)
         .route(
             "/api/v1/namespaces/:namespace/events",
-            get(handlers::event::list).post(handlers::event::create),
+            get(handlers::event::list).post(handlers::event::create).delete(handlers::event::deletecollection_events),
         )
         .route(
             "/api/v1/namespaces/:namespace/events/:name",
@@ -998,7 +1007,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // ResourceQuotas (namespace-scoped)
         .route(
             "/api/v1/namespaces/:namespace/resourcequotas",
-            get(handlers::resourcequota::list).post(handlers::resourcequota::create),
+            get(handlers::resourcequota::list).post(handlers::resourcequota::create).delete(handlers::resourcequota::deletecollection_resourcequotas),
         )
         .route(
             "/api/v1/namespaces/:namespace/resourcequotas/:name",
@@ -1015,7 +1024,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // LimitRanges (namespace-scoped)
         .route(
             "/api/v1/namespaces/:namespace/limitranges",
-            get(handlers::limitrange::list).post(handlers::limitrange::create),
+            get(handlers::limitrange::list).post(handlers::limitrange::create).delete(handlers::limitrange::deletecollection_limitranges),
         )
         .route(
             "/api/v1/namespaces/:namespace/limitranges/:name",
@@ -1032,7 +1041,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // PriorityClasses (cluster-scoped)
         .route(
             "/apis/scheduling.k8s.io/v1/priorityclasses",
-            get(handlers::priorityclass::list).post(handlers::priorityclass::create),
+            get(handlers::priorityclass::list).post(handlers::priorityclass::create).delete(handlers::priorityclass::deletecollection_priorityclasses),
         )
         .route(
             "/apis/scheduling.k8s.io/v1/priorityclasses/:name",
@@ -1082,7 +1091,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Coordination v1 API - Leases (namespace-scoped)
         .route(
             "/apis/coordination.k8s.io/v1/namespaces/:namespace/leases",
-            get(handlers::lease::list).post(handlers::lease::create),
+            get(handlers::lease::list).post(handlers::lease::create).delete(handlers::lease::deletecollection_leases),
         )
         .route(
             "/apis/coordination.k8s.io/v1/namespaces/:namespace/leases/:name",
@@ -1556,7 +1565,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             get(handlers::custom_metrics::get_custom_metric),
         )
         .route(
-            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/:resource/*/:metric",
+            "/apis/custom.metrics.k8s.io/v1beta2/namespaces/:namespace/:resource/:metric",
             get(handlers::custom_metrics::list_custom_metrics),
         )
         .route(

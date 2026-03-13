@@ -227,3 +227,59 @@ pub async fn list_all_networkpolicies(
 }
 
 crate::patch_handler_namespaced!(patch, NetworkPolicy, "networkpolicies", "networking.k8s.io");
+
+pub async fn deletecollection_networkpolicies(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection networkpolicies in namespace: {} with params: {:?}", namespace, params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "networkpolicies")
+        .with_namespace(&namespace)
+        .with_api_group("networking.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: NetworkPolicy collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all networkpolicies in the namespace
+    let prefix = build_prefix("networkpolicies", Some(&namespace));
+    let mut items = state.storage.list::<NetworkPolicy>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("networkpolicies", Some(&namespace), &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} networkpolicies deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

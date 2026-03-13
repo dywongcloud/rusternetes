@@ -390,3 +390,111 @@ pub async fn list_mutating_webhooks(
 
 // Use the macro to create a PATCH handler
 crate::patch_handler_cluster!(patch_mutating_webhook, MutatingWebhookConfiguration, "mutatingwebhookconfigurations", "admissionregistration.k8s.io");
+
+pub async fn deletecollection_validatingwebhookconfigurations(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection validatingwebhookconfigurations with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "validatingwebhookconfigurations")
+        .with_api_group("admissionregistration.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ValidatingWebhookConfiguration collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all validatingwebhookconfigurations
+    let prefix = build_prefix("validatingwebhookconfigurations", None);
+    let mut items = state.storage.list::<ValidatingWebhookConfiguration>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("validatingwebhookconfigurations", None, &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} validatingwebhookconfigurations deleted", deleted_count);
+    Ok(StatusCode::OK)
+}
+
+pub async fn deletecollection_mutatingwebhookconfigurations(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection mutatingwebhookconfigurations with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "mutatingwebhookconfigurations")
+        .with_api_group("admissionregistration.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: MutatingWebhookConfiguration collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all mutatingwebhookconfigurations
+    let prefix = build_prefix("mutatingwebhookconfigurations", None);
+    let mut items = state.storage.list::<MutatingWebhookConfiguration>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("mutatingwebhookconfigurations", None, &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} mutatingwebhookconfigurations deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

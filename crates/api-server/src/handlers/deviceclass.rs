@@ -186,3 +186,55 @@ pub async fn delete_deviceclass(
 
 // Use the macro to create a PATCH handler
 crate::patch_handler_cluster!(patch_deviceclass, DeviceClass, "deviceclasses", "resource.k8s.io");
+
+pub async fn deletecollection_deviceclasses(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection deviceclasses with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "deviceclasses")
+        .with_api_group("resource.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: DeviceClass collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all deviceclasses
+    let prefix = build_prefix("deviceclasses", None);
+    let mut items = state.storage.list::<DeviceClass>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        // Extract name from metadata (handle Option)
+        if let Some(metadata) = &item.metadata {
+            if let Some(name) = &metadata.name {
+                let key = build_key("deviceclasses", None, name);
+
+                // NOTE: DRA resources use dra::ObjectMeta which is incompatible with finalizers.
+                // We perform a simple delete without finalizer support.
+                state.storage.delete(&key).await?;
+                deleted_count += 1;
+            }
+        }
+    }
+
+    info!("DeleteCollection completed: {} deviceclasses deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

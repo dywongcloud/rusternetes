@@ -244,3 +244,57 @@ pub async fn approve_certificate_signing_request(
 }
 
 crate::patch_handler_cluster!(patch_certificate_signing_request, CertificateSigningRequest, "certificatesigningrequests", "certificates.k8s.io");
+
+pub async fn deletecollection_certificatesigningrequests(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection certificatesigningrequests with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "certificatesigningrequests")
+        .with_api_group("certificates.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: CertificateSigningRequest collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all certificatesigningrequests
+    let prefix = build_prefix("certificatesigningrequests", None);
+    let mut items = state.storage.list::<CertificateSigningRequest>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("certificatesigningrequests", None, &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} certificatesigningrequests deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

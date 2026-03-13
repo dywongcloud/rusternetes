@@ -186,3 +186,55 @@ pub async fn delete_resourceslice(
 
 // Use the macro to create a PATCH handler
 crate::patch_handler_cluster!(patch_resourceslice, ResourceSlice, "resourceslices", "resource.k8s.io");
+
+pub async fn deletecollection_resourceslices(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection resourceslices with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "resourceslices")
+        .with_api_group("resource.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ResourceSlice collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all resourceslices
+    let prefix = build_prefix("resourceslices", None);
+    let mut items = state.storage.list::<ResourceSlice>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        // Extract name from metadata (handle Option)
+        if let Some(metadata) = &item.metadata {
+            if let Some(name) = &metadata.name {
+                let key = build_key("resourceslices", None, name);
+
+                // NOTE: DRA resources use dra::ObjectMeta which is incompatible with finalizers.
+                // We perform a simple delete without finalizer support.
+                state.storage.delete(&key).await?;
+                deleted_count += 1;
+            }
+        }
+    }
+
+    info!("DeleteCollection completed: {} resourceslices deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

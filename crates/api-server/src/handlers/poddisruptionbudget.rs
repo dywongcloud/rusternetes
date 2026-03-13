@@ -338,3 +338,59 @@ mod tests {
         assert_eq!(pdb.metadata.namespace, Some("default".to_string()));
     }
 }
+
+pub async fn deletecollection_poddisruptionbudgets(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection poddisruptionbudgets in namespace: {} with params: {:?}", namespace, params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "poddisruptionbudgets")
+        .with_namespace(&namespace)
+        .with_api_group("policy");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: PodDisruptionBudget collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all poddisruptionbudgets in the namespace
+    let prefix = build_prefix("poddisruptionbudgets", Some(&namespace));
+    let mut items = state.storage.list::<PodDisruptionBudget>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("poddisruptionbudgets", Some(&namespace), &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} poddisruptionbudgets deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

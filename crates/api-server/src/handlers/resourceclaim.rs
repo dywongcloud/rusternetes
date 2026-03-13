@@ -260,3 +260,57 @@ pub async fn delete_resourceclaim(
 
 // Use the macro to create a PATCH handler (namespace-scoped)
 crate::patch_handler_namespaced!(patch_resourceclaim, ResourceClaim, "resourceclaims", "resource.k8s.io");
+
+pub async fn deletecollection_resourceclaims(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection resourceclaims in namespace: {} with params: {:?}", namespace, params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "resourceclaims")
+        .with_namespace(&namespace)
+        .with_api_group("resource.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ResourceClaim collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all resourceclaims in the namespace
+    let prefix = build_prefix("resourceclaims", Some(&namespace));
+    let mut items = state.storage.list::<ResourceClaim>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        // Extract name from metadata (handle Option)
+        if let Some(metadata) = &item.metadata {
+            if let Some(name) = &metadata.name {
+                let key = build_key("resourceclaims", Some(&namespace), name);
+
+                // NOTE: DRA resources use dra::ObjectMeta which is incompatible with finalizers.
+                // We perform a simple delete without finalizer support.
+                state.storage.delete(&key).await?;
+                deleted_count += 1;
+            }
+        }
+    }
+
+    info!("DeleteCollection completed: {} resourceclaims deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

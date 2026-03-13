@@ -40,8 +40,9 @@ cargo build --release
 
 ### Prerequisites
 
-- etcd cluster running (for state storage)
-- Container runtime (Docker or containerd)
+- Container runtime:
+  - **macOS**: Docker Desktop (required - see note below)
+  - **Linux**: Docker or Podman in rootful mode
 
 ### Start Control Plane
 

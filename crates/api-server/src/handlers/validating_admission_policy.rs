@@ -390,3 +390,111 @@ pub async fn list_validating_admission_policy_bindings(
 
 // Use the macro to create a PATCH handler
 crate::patch_handler_cluster!(patch_validating_admission_policy_binding, ValidatingAdmissionPolicyBinding, "validatingadmissionpolicybindings", "admissionregistration.k8s.io");
+
+pub async fn deletecollection_validatingadmissionpolicies(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection validatingadmissionpolicies with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "validatingadmissionpolicies")
+        .with_api_group("admissionregistration.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ValidatingAdmissionPolicy collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all validatingadmissionpolicies
+    let prefix = build_prefix("validatingadmissionpolicies", None);
+    let mut items = state.storage.list::<ValidatingAdmissionPolicy>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("validatingadmissionpolicies", None, &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} validatingadmissionpolicies deleted", deleted_count);
+    Ok(StatusCode::OK)
+}
+
+pub async fn deletecollection_validatingadmissionpolicybindings(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection validatingadmissionpolicybindings with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "validatingadmissionpolicybindings")
+        .with_api_group("admissionregistration.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ValidatingAdmissionPolicyBinding collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all validatingadmissionpolicybindings
+    let prefix = build_prefix("validatingadmissionpolicybindings", None);
+    let mut items = state.storage.list::<ValidatingAdmissionPolicyBinding>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("validatingadmissionpolicybindings", None, &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} validatingadmissionpolicybindings deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

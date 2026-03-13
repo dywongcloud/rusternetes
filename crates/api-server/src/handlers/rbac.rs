@@ -817,6 +817,227 @@ pub async fn list_clusterrolebindings(
     Ok(Json(list))
 }
 
+// DeleteCollection handlers for RBAC resources
+pub async fn deletecollection_roles(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection roles in namespace: {} with params: {:?}", namespace, params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "roles")
+        .with_namespace(&namespace)
+        .with_api_group("rbac.authorization.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: Role collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all roles in the namespace
+    let prefix = build_prefix("roles", Some(&namespace));
+    let mut roles = state.storage.list::<Role>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut roles, &params)?;
+
+    // Delete each matching role
+    let mut deleted_count = 0;
+    for role in roles {
+        let key = build_key("roles", Some(&namespace), &role.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &role,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} roles deleted", deleted_count);
+    Ok(StatusCode::OK)
+}
+
+pub async fn deletecollection_rolebindings(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection rolebindings in namespace: {} with params: {:?}", namespace, params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "rolebindings")
+        .with_namespace(&namespace)
+        .with_api_group("rbac.authorization.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: RoleBinding collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all rolebindings in the namespace
+    let prefix = build_prefix("rolebindings", Some(&namespace));
+    let mut rolebindings = state.storage.list::<RoleBinding>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut rolebindings, &params)?;
+
+    // Delete each matching rolebinding
+    let mut deleted_count = 0;
+    for rolebinding in rolebindings {
+        let key = build_key("rolebindings", Some(&namespace), &rolebinding.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &rolebinding,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} rolebindings deleted", deleted_count);
+    Ok(StatusCode::OK)
+}
+
+pub async fn deletecollection_clusterroles(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection clusterroles with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "clusterroles")
+        .with_api_group("rbac.authorization.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ClusterRole collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all clusterroles
+    let prefix = build_prefix("clusterroles", None);
+    let mut clusterroles = state.storage.list::<ClusterRole>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut clusterroles, &params)?;
+
+    // Delete each matching clusterrole
+    let mut deleted_count = 0;
+    for clusterrole in clusterroles {
+        let key = build_key("clusterroles", None, &clusterrole.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &clusterrole,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} clusterroles deleted", deleted_count);
+    Ok(StatusCode::OK)
+}
+
+pub async fn deletecollection_clusterrolebindings(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection clusterrolebindings with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "clusterrolebindings")
+        .with_api_group("rbac.authorization.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: ClusterRoleBinding collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all clusterrolebindings
+    let prefix = build_prefix("clusterrolebindings", None);
+    let mut clusterrolebindings = state.storage.list::<ClusterRoleBinding>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut clusterrolebindings, &params)?;
+
+    // Delete each matching clusterrolebinding
+    let mut deleted_count = 0;
+    for clusterrolebinding in clusterrolebindings {
+        let key = build_key("clusterrolebindings", None, &clusterrolebinding.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &clusterrolebinding,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} clusterrolebindings deleted", deleted_count);
+    Ok(StatusCode::OK)
+}
+
 // Use macros to create PATCH handlers for RBAC resources
 crate::patch_handler_namespaced!(patch_role, Role, "roles", "rbac.authorization.k8s.io");
 crate::patch_handler_namespaced!(patch_rolebinding, RoleBinding, "rolebindings", "rbac.authorization.k8s.io");

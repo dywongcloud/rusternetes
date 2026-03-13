@@ -223,3 +223,59 @@ pub async fn list_all_jobs(
 
 // Use the macro to create a PATCH handler
 crate::patch_handler_namespaced!(patch, Job, "jobs", "batch");
+
+pub async fn deletecollection_jobs(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection jobs in namespace: {} with params: {:?}", namespace, params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "jobs")
+        .with_namespace(&namespace)
+        .with_api_group("batch");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: Job collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all jobs in the namespace
+    let prefix = build_prefix("jobs", Some(&namespace));
+    let mut items = state.storage.list::<Job>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("jobs", Some(&namespace), &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} jobs deleted", deleted_count);
+    Ok(StatusCode::OK)
+}

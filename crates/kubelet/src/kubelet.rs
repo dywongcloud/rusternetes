@@ -242,15 +242,16 @@ impl Kubelet {
         // Check current runtime status
         let is_running = self.runtime.is_pod_running(pod_name).await?;
 
-        // Get desired phase from pod status
-        let desired_phase = pod
+        // Get current phase from pod status
+        let current_phase = pod
             .status
             .as_ref()
             .map(|s| &s.phase)
             .unwrap_or(&Phase::Pending);
 
-        match desired_phase {
-            Phase::Running if !is_running => {
+        match current_phase {
+            // If pod is Pending and has been scheduled to this node, start it
+            Phase::Pending if !is_running => {
                 info!("Starting pod: {}/{}", namespace, pod_name);
 
                 // Update status to indicate we're starting
@@ -288,6 +289,32 @@ impl Kubelet {
                         self.update_pod_status(pod, Phase::Failed, Some("FailedToStart"), Some(&e.to_string())).await?;
                     }
                 }
+            }
+            // If pod is Pending but containers are already running, update to Running
+            Phase::Pending if is_running => {
+                info!("Pod {}/{} containers are running, updating status to Running", namespace, pod_name);
+
+                // Get container statuses
+                let container_statuses = self.runtime.get_container_statuses(pod).await.ok();
+
+                // Get pod IP
+                let pod_ip = self.runtime.get_pod_ip(pod_name).await.ok().flatten();
+
+                // Update status to Running
+                let mut new_pod = pod.clone();
+                new_pod.status = Some(PodStatus {
+                    phase: Phase::Running,
+                    message: Some("All containers started".to_string()),
+                    reason: None,
+                    host_ip: Some("127.0.0.1".to_string()),
+                    pod_ip,
+                    container_statuses,
+                    init_container_statuses: None,
+                    ephemeral_container_statuses: None,
+                });
+
+                let key = build_key("pods", new_pod.metadata.namespace.as_deref(), &new_pod.metadata.name);
+                self.storage.update(&key, &new_pod).await?;
             }
             Phase::Running if is_running => {
                 debug!("Pod {}/{} is running, checking health", namespace, pod_name);
@@ -360,7 +387,7 @@ impl Kubelet {
             _ => {
                 debug!(
                     "Pod {}/{} is in sync (phase: {:?}, running: {})",
-                    namespace, pod_name, desired_phase, is_running
+                    namespace, pod_name, current_phase, is_running
                 );
             }
         }

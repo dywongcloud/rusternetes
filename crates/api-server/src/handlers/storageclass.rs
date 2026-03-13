@@ -185,3 +185,57 @@ pub async fn delete_storageclass(
 
 // Use the macro to create a PATCH handler
 crate::patch_handler_cluster!(patch_storageclass, StorageClass, "storageclasses", "storage.k8s.io");
+
+pub async fn deletecollection_storageclasses(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection storageclasses with params: {:?}", params);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "storageclasses")
+        .with_api_group("storage.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Handle dry-run
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: StorageClass collection would be deleted (not deleted)");
+        return Ok(StatusCode::OK);
+    }
+
+    // Get all storageclasses
+    let prefix = build_prefix("storageclasses", None);
+    let mut items = state.storage.list::<StorageClass>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut items, &params)?;
+
+    // Delete each matching resource
+    let mut deleted_count = 0;
+    for item in items {
+        let key = build_key("storageclasses", None, &item.metadata.name);
+
+        // Handle deletion with finalizers
+        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+            &state.storage,
+            &key,
+            &item,
+        )
+        .await?;
+
+        if deleted_immediately {
+            deleted_count += 1;
+        }
+    }
+
+    info!("DeleteCollection completed: {} storageclasses deleted", deleted_count);
+    Ok(StatusCode::OK)
+}
