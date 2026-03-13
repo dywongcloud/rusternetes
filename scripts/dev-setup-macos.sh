@@ -261,15 +261,33 @@ case $choice in
         print_success "Cluster started!"
 
         echo ""
+        print_step "Waiting for cluster to be ready..."
+        sleep 5
+
+        print_step "Bootstrapping cluster (ServiceAccounts, tokens, CoreDNS)..."
+        if [ -f "./scripts/bootstrap-cluster.sh" ]; then
+            ./scripts/bootstrap-cluster.sh
+            print_success "Cluster bootstrapped!"
+        else
+            print_warning "Bootstrap script not found, skipping bootstrap"
+            echo "You can manually bootstrap later with: ./scripts/bootstrap-cluster.sh"
+        fi
+
+        echo ""
         print_success "Development environment is ready!"
         echo ""
-        echo "API Server: http://localhost:6443"
+        echo "API Server: https://localhost:6443"
         echo "etcd: http://localhost:2379"
         echo ""
+        echo "Cluster is bootstrapped with:"
+        echo "  ✓ Default ServiceAccounts and tokens"
+        echo "  ✓ CoreDNS for cluster DNS"
+        echo "  ✓ kube-system and default namespaces"
+        echo ""
         echo "Next steps:"
-        echo "  - Install MetalLB: ./scripts/dev-setup.sh (choose option 9)"
+        echo "  - Install MetalLB: ./scripts/dev-setup-macos.sh (choose option 9)"
         echo "  - View logs: $COMPOSE_CMD logs -f"
-        echo "  - Run kubectl: cargo run --bin kubectl -- --server http://localhost:6443 get pods"
+        echo "  - Run kubectl: ./target/release/kubectl get pods -A"
         echo "  - Stop cluster: $COMPOSE_CMD down"
         ;;
     9)

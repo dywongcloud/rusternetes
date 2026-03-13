@@ -5,7 +5,7 @@ mod eviction;
 mod cni;
 
 use anyhow::Result;
-use axum::{routing::get, Router};
+use axum::{routing::get, Router, Json};
 use clap::Parser;
 use config::{KubeletConfiguration, RuntimeConfig};
 use kubelet::Kubelet;
@@ -151,14 +151,31 @@ async fn main() -> Result<()> {
     let metrics = Arc::new(MetricsRegistry::new().with_kubelet_metrics()?);
     let metrics_clone = metrics.clone();
 
-    // Start metrics server
+    // Convert RuntimeConfig to KubeletConfiguration for /configz endpoint
+    let kubelet_config = KubeletConfiguration {
+        api_version: "kubelet.config.k8s.io/v1beta1".to_string(),
+        kind: "KubeletConfiguration".to_string(),
+        root_dir: Some(runtime_config.root_dir.to_string_lossy().to_string()),
+        volume_dir: Some(runtime_config.volume_dir.to_string_lossy().to_string()),
+        volume_plugin_dir: Some(runtime_config.volume_plugin_dir.to_string_lossy().to_string()),
+        sync_frequency: Some(runtime_config.sync_frequency),
+        metrics_bind_port: Some(runtime_config.metrics_bind_port),
+        log_level: Some(runtime_config.log_level.clone()),
+    };
+    let kubelet_config = Arc::new(kubelet_config);
+    let kubelet_config_clone = kubelet_config.clone();
+
+    // Start metrics and config server
     let metrics_addr = format!("0.0.0.0:{}", runtime_config.metrics_bind_port);
-    info!("Starting metrics server on {}", metrics_addr);
+    info!("Starting kubelet API server on {} (metrics + configz)", metrics_addr);
 
     tokio::spawn(async move {
         let app = Router::new()
             .route("/metrics", get(|| async move {
                 metrics_clone.gather()
+            }))
+            .route("/configz", get(|| async move {
+                Json(kubelet_config_clone.as_ref().clone())
             }));
 
         let listener = tokio::net::TcpListener::bind(&metrics_addr).await.unwrap();

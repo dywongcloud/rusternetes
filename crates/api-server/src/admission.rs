@@ -547,7 +547,10 @@ pub async fn inject_service_account_token<S: Storage>(
         host_path: None,
         config_map: None,
         secret: Some(SecretVolumeSource {
-            secret_name: token_secret_name.clone(),
+            secret_name: Some(token_secret_name.clone()),
+            items: None,
+            default_mode: None,
+            optional: None,
         }),
         persistent_volume_claim: None,
         downward_api: None,

@@ -246,7 +246,7 @@ impl Kubelet {
         let current_phase = pod
             .status
             .as_ref()
-            .map(|s| &s.phase)
+            .and_then(|s| s.phase.as_ref())
             .unwrap_or(&Phase::Pending);
 
         match current_phase {
@@ -271,14 +271,14 @@ impl Kubelet {
                         // Update status to Running
                         let mut new_pod = pod.clone();
                         new_pod.status = Some(PodStatus {
-                            phase: Phase::Running,
+                            phase: Some(Phase::Running),
                             message: Some("All containers started".to_string()),
                             reason: None,
                             host_ip: Some("127.0.0.1".to_string()),
                             pod_ip,
                             container_statuses,
                             init_container_statuses: None,
-            ephemeral_container_statuses: None,
+                            ephemeral_container_statuses: None,
                         });
 
                         let key = build_key("pods", new_pod.metadata.namespace.as_deref(), &new_pod.metadata.name);
@@ -303,7 +303,7 @@ impl Kubelet {
                 // Update status to Running
                 let mut new_pod = pod.clone();
                 new_pod.status = Some(PodStatus {
-                    phase: Phase::Running,
+                    phase: Some(Phase::Running),
                     message: Some("All containers started".to_string()),
                     reason: None,
                     host_ip: Some("127.0.0.1".to_string()),
@@ -405,7 +405,7 @@ impl Kubelet {
         let mut new_pod = pod.clone();
 
         new_pod.status = Some(PodStatus {
-            phase,
+            phase: Some(phase),
             message: message.map(|s| s.to_string()),
             reason: reason.map(|s| s.to_string()),
             host_ip: Some("127.0.0.1".to_string()),
@@ -446,7 +446,7 @@ impl Kubelet {
                 // Only consider running pods for eviction
                 p.status
                     .as_ref()
-                    .map(|s| s.phase == Phase::Running)
+                    .map(|s| s.phase == Some(Phase::Running))
                     .unwrap_or(false)
             })
             .collect();

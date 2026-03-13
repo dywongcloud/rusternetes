@@ -56,10 +56,13 @@ impl Scheduler {
             .iter()
             .filter(|p| {
                 // Check if pod is pending and unscheduled
+                // A pod is considered pending if:
+                // 1. It has no node assignment, AND
+                // 2. Either it has no status, OR phase is None, OR phase is Pending
                 let is_pending = p.spec.as_ref().and_then(|s| s.node_name.as_ref()).is_none()
                     && p.status
                         .as_ref()
-                        .map(|s| s.phase == Phase::Pending)
+                        .map(|s| s.phase.is_none() || s.phase == Some(Phase::Pending))
                         .unwrap_or(true);
 
                 if !is_pending {
@@ -322,18 +325,18 @@ impl Scheduler {
 
         // Update pod status to Pending (kubelet will update to Running after starting containers)
         if let Some(ref mut status) = pod.status {
-            status.phase = Phase::Pending;
+            status.phase = Some(Phase::Pending);
             status.message = Some("Pod scheduled".to_string());
         } else {
             pod.status = Some(rusternetes_common::resources::PodStatus {
-                phase: Phase::Pending,
+                phase: Some(Phase::Pending),
                 message: Some("Pod scheduled".to_string()),
                 reason: None,
                 host_ip: None,
                 pod_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
-            ephemeral_container_statuses: None,
+                ephemeral_container_statuses: None,
             });
         }
 

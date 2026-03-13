@@ -255,14 +255,14 @@ impl HasPodInfo for rusternetes_common::resources::Pod {
 
         // Calculate ready count and status
         let (ready_count, total_count, status, restarts) = if let Some(pod_status) = &self.status {
-            let phase = &pod_status.phase;
-            let status_str = match phase {
-                Phase::Pending => "Pending",
-                Phase::Running => "Running",
-                Phase::Succeeded => "Succeeded",
-                Phase::Failed => "Failed",
-                Phase::Unknown => "Unknown",
-                Phase::Active => "Active",
+            let status_str = match &pod_status.phase {
+                Some(Phase::Pending) => "Pending",
+                Some(Phase::Running) => "Running",
+                Some(Phase::Succeeded) => "Succeeded",
+                Some(Phase::Failed) => "Failed",
+                Some(Phase::Unknown) => "Unknown",
+                Some(Phase::Active) => "Active",
+                None => "Pending",
             }.to_string();
 
             // Count ready containers

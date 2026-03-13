@@ -551,9 +551,12 @@ impl ContainerRuntime {
             let storage = self.storage.as_ref()
                 .context("Storage not available for ConfigMap volumes")?;
 
-            let key = build_key("configmaps", Some(namespace), &configmap_source.name);
+            let configmap_name = configmap_source.name.as_ref()
+                .context("ConfigMap volume must specify name")?;
+
+            let key = build_key("configmaps", Some(namespace), configmap_name);
             let configmap: ConfigMap = storage.get(&key).await
-                .with_context(|| format!("ConfigMap {} not found in namespace {}", configmap_source.name, namespace))?;
+                .with_context(|| format!("ConfigMap {} not found in namespace {}", configmap_name, namespace))?;
 
             // Create volume directory
             let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
@@ -579,9 +582,12 @@ impl ContainerRuntime {
             let storage = self.storage.as_ref()
                 .context("Storage not available for Secret volumes")?;
 
-            let key = build_key("secrets", Some(namespace), &secret_source.secret_name);
+            let secret_name = secret_source.secret_name.as_ref()
+                .context("Secret volume must specify secret_name")?;
+
+            let key = build_key("secrets", Some(namespace), secret_name);
             let secret: Secret = storage.get(&key).await
-                .with_context(|| format!("Secret {} not found in namespace {}", secret_source.secret_name, namespace))?;
+                .with_context(|| format!("Secret {} not found in namespace {}", secret_name, namespace))?;
 
             // Create volume directory
             let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
@@ -608,7 +614,7 @@ impl ContainerRuntime {
             // Service account secrets are identified by having a "token" key or by name pattern
             let is_service_account_secret = secret.data.as_ref()
                 .map(|data| data.contains_key("token"))
-                .unwrap_or(false) || secret_source.secret_name.ends_with("-token");
+                .unwrap_or(false) || secret_name.ends_with("-token");
 
             if is_service_account_secret {
                 // Check if ca.crt already exists in the secret data

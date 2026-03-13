@@ -419,13 +419,43 @@ pub struct HostPathVolumeSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigMapVolumeSource {
-    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<KeyToPath>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_mode: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optional: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretVolumeSource {
-    pub secret_name: String,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "secret_name")]
+    pub secret_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<KeyToPath>>,
+
+    #[serde(skip_serializing_if = "Option::is_none", alias = "default_mode")]
+    pub default_mode: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optional: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyToPath {
+    pub key: String,
+    pub path: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -522,7 +552,8 @@ pub struct PersistentVolumeClaimTemplate {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PodStatus {
-    pub phase: Phase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<Phase>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,

@@ -469,14 +469,10 @@ EOF
     # Bootstrap script
     cat > "$HELPER_DIR/bootstrap.sh" <<EOF
 #!/bin/bash
-# Bootstrap cluster with CoreDNS
+# Bootstrap cluster with ServiceAccounts, tokens, and CoreDNS
 cd "$PROJECT_DIR"
 export KUBELET_VOLUMES_PATH="$PROJECT_DIR/.rusternetes/volumes"
-cat bootstrap-cluster.yaml | envsubst > /tmp/bootstrap-expanded.yaml
-KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify apply -f /tmp/bootstrap-expanded.yaml
-echo "Bootstrap applied. Waiting for CoreDNS..."
-sleep 10
-KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify get pods -n kube-system
+./scripts/bootstrap-cluster.sh
 EOF
 
     # Rebuild script

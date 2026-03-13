@@ -32,19 +32,8 @@ if [ "$COREDNS_STATUS" != "Running" ]; then
     # Delete if it exists
     curl -sk -X DELETE https://localhost:6443/api/v1/namespaces/kube-system/pods/coredns >/dev/null 2>&1 || true
     sleep 2
-    # Recreate via bootstrap
-    ./target/release/kubectl apply -f bootstrap-cluster.yaml
-    sleep 5
-    echo "Waiting for CoreDNS to be ready..."
-    for i in {1..30}; do
-        COREDNS_STATUS=$(curl -sk https://localhost:6443/api/v1/namespaces/kube-system/pods/coredns 2>/dev/null | grep -o '"phase":"[^"]*"' | cut -d'"' -f4 || echo "NotFound")
-        if [ "$COREDNS_STATUS" == "Running" ]; then
-            echo "CoreDNS is ready!"
-            break
-        fi
-        echo "  Waiting... ($i/30) Status: $COREDNS_STATUS"
-        sleep 2
-    done
+    # Recreate via bootstrap script (includes ServiceAccount/token generation)
+    ./scripts/bootstrap-cluster.sh
 else
     echo "CoreDNS is already running"
 fi
