@@ -2,7 +2,7 @@ use crate::eviction::{EvictionManager, EvictionSignal, get_node_stats, get_pod_s
 use crate::runtime::ContainerRuntime;
 use anyhow::Result;
 use rusternetes_common::{
-    resources::{Node, NodeAddress, NodeCondition, NodeStatus, Pod, PodStatus},
+    resources::{Node, NodeAddress, NodeCondition, NodeSpec, NodeStatus, Pod, PodStatus},
     types::Phase,
 };
 use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
@@ -26,8 +26,9 @@ impl Kubelet {
         cluster_dns: String,
         cluster_domain: String,
         network: String,
+        kubernetes_service_host: String,
     ) -> Result<Self> {
-        let runtime = ContainerRuntime::new(volume_dir, cluster_dns, cluster_domain, network)
+        let runtime = ContainerRuntime::new(volume_dir, cluster_dns, cluster_domain, network, kubernetes_service_host)
             .await?
             .with_storage(storage.clone());
 
@@ -68,6 +69,14 @@ impl Kubelet {
 
         let mut node = Node::new(&self.node_name);
 
+        // Set node spec to mark it as schedulable
+        node.spec = Some(NodeSpec {
+            pod_cidr: None,
+            provider_id: None,
+            unschedulable: Some(false),
+            taints: None,
+        });
+
         // Set node status
         node.status = Some(NodeStatus {
             capacity: Some(HashMap::from([
@@ -102,6 +111,10 @@ impl Kubelet {
         });
 
         let key = build_key("nodes", None, &self.node_name);
+
+        // Debug: log what we're trying to store
+        let node_json = serde_json::to_string_pretty(&node).unwrap_or_else(|_| "failed to serialize".to_string());
+        info!("Registering node with spec: {}", node_json);
 
         // Try to create, if it exists, update it
         match self.storage.create(&key, &node).await {

@@ -132,7 +132,7 @@ impl StatefulSetController {
             .filter(|pod| {
                 pod.status
                     .as_ref()
-                    .map(|s| s.phase == Phase::Running)
+                    .map(|s| s.phase == Some(Phase::Running))
                     .unwrap_or(false)
             })
             .count() as i32;
@@ -189,7 +189,7 @@ impl StatefulSetController {
             metadata,
             spec: Some(template.spec.clone()),
             status: Some(PodStatus {
-                phase: Phase::Pending,
+                phase: Some(Phase::Pending),
                 message: None,
                 reason: None,
                 pod_ip: None,

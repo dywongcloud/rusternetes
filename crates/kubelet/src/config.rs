@@ -38,6 +38,11 @@ pub struct KubeletConfiguration {
     /// Log verbosity level
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_level: Option<String>,
+
+    /// Cluster service CIDR (e.g., "10.96.0.0/12")
+    /// The first IP in this range is used for the kubernetes service
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster_service_cidr: Option<String>,
 }
 
 fn default_api_version() -> String {
@@ -59,6 +64,7 @@ impl Default for KubeletConfiguration {
             sync_frequency: None,
             metrics_bind_port: None,
             log_level: None,
+            cluster_service_cidr: None,
         }
     }
 }
@@ -185,6 +191,40 @@ pub struct RuntimeConfig {
 
     /// Etcd endpoints
     pub etcd_endpoints: Vec<String>,
+
+    /// Kubernetes service ClusterIP (first IP in service CIDR)
+    pub kubernetes_service_host: String,
+}
+
+/// Extract the first usable IP address from a CIDR range
+/// For example, "10.96.0.0/12" -> "10.96.0.1"
+fn first_ip_from_cidr(cidr: &str) -> Result<String> {
+    use std::net::IpAddr;
+
+    let parts: Vec<&str> = cidr.split('/').collect();
+    if parts.len() != 2 {
+        anyhow::bail!("Invalid CIDR format: {}", cidr);
+    }
+
+    let base_ip: IpAddr = parts[0].parse()
+        .with_context(|| format!("Invalid IP address in CIDR: {}", parts[0]))?;
+
+    match base_ip {
+        IpAddr::V4(ipv4) => {
+            // Get the IP as u32, add 1, convert back
+            let ip_u32 = u32::from(ipv4);
+            let first_ip_u32 = ip_u32 + 1;
+            let first_ip = std::net::Ipv4Addr::from(first_ip_u32);
+            Ok(first_ip.to_string())
+        }
+        IpAddr::V6(ipv6) => {
+            // For IPv6, convert to u128, add 1, convert back
+            let ip_u128 = u128::from(ipv6);
+            let first_ip_u128 = ip_u128 + 1;
+            let first_ip = std::net::Ipv6Addr::from(first_ip_u128);
+            Ok(first_ip.to_string())
+        }
+    }
 }
 
 impl RuntimeConfig {
@@ -245,6 +285,17 @@ impl RuntimeConfig {
             .or_else(|| std::env::var("RUST_LOG").ok())
             .unwrap_or_else(|| "info".to_string());
 
+        // Determine cluster service CIDR and extract kubernetes service host IP
+        // Precedence: Config > Env > Default (10.96.0.0/12)
+        let cluster_service_cidr = config_file
+            .as_ref()
+            .and_then(|c| c.cluster_service_cidr.clone())
+            .or_else(|| std::env::var("CLUSTER_SERVICE_CIDR").ok())
+            .unwrap_or_else(|| "10.96.0.0/12".to_string());
+
+        let kubernetes_service_host = first_ip_from_cidr(&cluster_service_cidr)
+            .with_context(|| format!("Failed to extract kubernetes service IP from CIDR: {}", cluster_service_cidr))?;
+
         let config = Self {
             root_dir: PathBuf::from(root_dir),
             volume_dir: PathBuf::from(volume_dir),
@@ -254,6 +305,7 @@ impl RuntimeConfig {
             log_level,
             node_name,
             etcd_endpoints,
+            kubernetes_service_host,
         };
 
         config.validate()?;

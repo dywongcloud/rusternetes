@@ -161,6 +161,7 @@ async fn main() -> Result<()> {
         sync_frequency: Some(runtime_config.sync_frequency),
         metrics_bind_port: Some(runtime_config.metrics_bind_port),
         log_level: Some(runtime_config.log_level.clone()),
+        cluster_service_cidr: None, // Not exposed in config endpoint
     };
     let kubelet_config = Arc::new(kubelet_config);
     let kubelet_config_clone = kubelet_config.clone();
@@ -191,6 +192,7 @@ async fn main() -> Result<()> {
         cluster_dns,
         args.cluster_domain,
         args.network,
+        runtime_config.kubernetes_service_host.clone(),
     ).await?;
     kubelet.run().await?;
 

@@ -212,7 +212,7 @@ impl EndpointsController {
         };
 
         // Pod must be in Running phase
-        if status.phase != rusternetes_common::types::Phase::Running {
+        if status.phase != Some(rusternetes_common::types::Phase::Running) {
             return false;
         }
 
@@ -361,7 +361,7 @@ mod tests {
         // Pod in Pending phase
         let pod_pending = Pod {
             status: Some(rusternetes_common::resources::PodStatus {
-                phase: rusternetes_common::types::Phase::Pending,
+                phase: Some(rusternetes_common::types::Phase::Pending),
                 message: None,
                 reason: None,
                 host_ip: None,
@@ -377,7 +377,7 @@ mod tests {
         // Pod in Running phase with ready container
         let pod_ready = Pod {
             status: Some(rusternetes_common::resources::PodStatus {
-                phase: rusternetes_common::types::Phase::Running,
+                phase: Some(rusternetes_common::types::Phase::Running),
                 message: None,
                 reason: None,
                 host_ip: None,
@@ -402,7 +402,7 @@ mod tests {
         // Pod in Running phase with not-ready container
         let pod_not_ready = Pod {
             status: Some(rusternetes_common::resources::PodStatus {
-                phase: rusternetes_common::types::Phase::Running,
+                phase: Some(rusternetes_common::types::Phase::Running),
                 message: None,
                 reason: None,
                 host_ip: None,

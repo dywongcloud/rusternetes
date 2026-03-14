@@ -2,6 +2,21 @@ use crate::types::{ObjectMeta, Phase, ResourceRequirements, TypeMeta};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Macro to create a skip_serializing_if function for Option<T> where T has all optional fields.
+/// This prevents serializing empty structs as {} when all fields are None.
+macro_rules! skip_if_empty {
+    ($fn_name:ident, $type:ty, $($field:ident),+) => {
+        fn $fn_name(value: &Option<$type>) -> bool {
+            match value {
+                None => true,
+                Some(v) => {
+                    $(v.$field.is_none())&&+
+                }
+            }
+        }
+    };
+}
+
 /// Pod is the smallest deployable unit in Kubernetes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -116,7 +131,7 @@ pub struct PodResourceClaim {
     pub name: String,
 
     /// Source describes where to find the ResourceClaim
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_claim_source")]
     pub source: Option<ClaimSource>,
 }
 
@@ -318,6 +333,16 @@ pub struct ContainerPort {
     pub host_port: Option<u16>,
 }
 
+// Generate skip functions for structs with all-optional fields
+skip_if_empty!(skip_empty_env_var_source, EnvVarSource, config_map_key_ref, secret_key_ref, field_ref, resource_field_ref);
+skip_if_empty!(skip_empty_claim_source, ClaimSource, resource_claim_name, resource_claim_template_name);
+skip_if_empty!(skip_empty_security_context, SecurityContext, privileged, run_as_user, run_as_non_root, allow_privilege_escalation, capabilities, seccomp_profile);
+skip_if_empty!(skip_empty_capabilities, Capabilities, add, drop);
+skip_if_empty!(skip_empty_empty_dir_volume_source, EmptyDirVolumeSource, medium);
+skip_if_empty!(skip_empty_config_map_volume_source, ConfigMapVolumeSource, name, items, default_mode, optional);
+skip_if_empty!(skip_empty_secret_volume_source, SecretVolumeSource, secret_name, items, default_mode, optional);
+skip_if_empty!(skip_empty_downward_api_volume_source, DownwardAPIVolumeSource, items, default_mode);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvVar {
@@ -326,7 +351,7 @@ pub struct EnvVar {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_env_var_source")]
     pub value_from: Option<EnvVarSource>,
 }
 
@@ -338,6 +363,12 @@ pub struct EnvVarSource {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secret_key_ref: Option<SecretKeySelector>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field_ref: Option<ObjectFieldSelector>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_field_ref: Option<ResourceFieldSelector>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1077,7 +1108,7 @@ mod tests {
     #[test]
     fn test_pod_status_with_init_container_statuses() {
         let status = PodStatus {
-            phase: Phase::Running,
+            phase: Some(Phase::Running),
             message: None,
             reason: None,
             host_ip: Some("192.168.1.1".to_string()),
@@ -1119,7 +1150,7 @@ mod tests {
             ephemeral_container_statuses: None,
         };
 
-        assert_eq!(status.phase, Phase::Running);
+        assert_eq!(status.phase, Some(Phase::Running));
         assert!(status.init_container_statuses.is_some());
 
         let init_statuses = status.init_container_statuses.as_ref().unwrap();
@@ -1133,5 +1164,53 @@ mod tests {
                 assert_eq!(*exit_code, 0);
             }
         }
+    }
+
+    #[test]
+    fn test_env_var_with_field_ref_serialization() {
+        // Test deserialization of env var with fieldRef
+        let json = r#"{"name":"NODE_NAME","valueFrom":{"fieldRef":{"fieldPath":"spec.nodeName"}}}"#;
+        let env_var: EnvVar = serde_json::from_str(json).expect("Failed to deserialize EnvVar");
+
+        assert_eq!(env_var.name, "NODE_NAME");
+        assert!(env_var.value.is_none());
+        assert!(env_var.value_from.is_some());
+
+        let value_from = env_var.value_from.as_ref().unwrap();
+        assert!(value_from.field_ref.is_some());
+        assert_eq!(value_from.field_ref.as_ref().unwrap().field_path, "spec.nodeName");
+
+        // Test serialization - should preserve the fieldRef
+        let serialized = serde_json::to_string(&env_var).expect("Failed to serialize EnvVar");
+        println!("Serialized: {}", serialized);
+
+        // Verify valueFrom is in the serialized output
+        assert!(serialized.contains("valueFrom"));
+        assert!(serialized.contains("fieldRef"));
+        assert!(serialized.contains("spec.nodeName"));
+
+        // Test round-trip
+        let env_var2: EnvVar = serde_json::from_str(&serialized).expect("Failed to deserialize serialized EnvVar");
+        assert!(env_var2.value_from.is_some());
+        assert!(env_var2.value_from.as_ref().unwrap().field_ref.is_some());
+    }
+
+    #[test]
+    fn test_env_var_with_field_ref_via_value() {
+        // Test the round-trip through serde_json::Value (what the API server does)
+        let json = r#"{"name":"NODE_NAME","valueFrom":{"fieldRef":{"fieldPath":"spec.nodeName"}}}"#;
+        let env_var: EnvVar = serde_json::from_str(json).expect("Failed to deserialize EnvVar");
+
+        // Convert to Value and back (simulating webhook flow)
+        let value = serde_json::to_value(&env_var).expect("Failed to convert to Value");
+        println!("As Value: {}", serde_json::to_string_pretty(&value).unwrap());
+
+        let env_var2: EnvVar = serde_json::from_value(value).expect("Failed to convert from Value");
+
+        // Verify fieldRef is still there after round-trip through Value
+        assert!(env_var2.value_from.is_some(), "valueFrom should be Some after Value round-trip");
+        let value_from = env_var2.value_from.as_ref().unwrap();
+        assert!(value_from.field_ref.is_some(), "fieldRef should be Some after Value round-trip");
+        assert_eq!(value_from.field_ref.as_ref().unwrap().field_path, "spec.nodeName");
     }
 }

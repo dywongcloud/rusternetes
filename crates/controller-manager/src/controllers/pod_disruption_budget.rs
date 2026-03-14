@@ -157,7 +157,7 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
         // Check if pod is in Running phase
         let is_running = pod.status
             .as_ref()
-            .map(|s| matches!(s.phase, rusternetes_common::types::Phase::Running))
+            .map(|s| matches!(s.phase, Some(rusternetes_common::types::Phase::Running)))
             .unwrap_or(false);
 
         if !is_running {
@@ -331,7 +331,7 @@ mod tests {
                 ..Default::default()
             }),
             status: Some(rusternetes_common::resources::PodStatus {
-                phase: Phase::Running,
+                phase: Some(Phase::Running),
                 message: None,
                 reason: None,
                 host_ip: None,
@@ -346,7 +346,7 @@ mod tests {
 
         // Test with Pending pod
         if let Some(ref mut status) = pod.status {
-            status.phase = Phase::Pending;
+            status.phase = Some(Phase::Pending);
         }
         assert!(!controller.is_pod_healthy(&pod));
     }

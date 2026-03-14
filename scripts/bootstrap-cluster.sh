@@ -79,7 +79,14 @@ else
     print_warning "Continuing with bootstrap, but pods may not have valid tokens"
 fi
 
-# Step 3: Apply bootstrap cluster resources
+# Step 3: Delete existing CoreDNS resources to ensure fresh creation with proper service account token
+print_step "Cleaning up existing CoreDNS resources (if any)..."
+# Remove CoreDNS container
+docker rm -f $(docker ps -a --filter "name=coredns" --format "{{.ID}}") 2>/dev/null && echo "  Deleted CoreDNS container" || echo "  No CoreDNS container to delete"
+# Remove CoreDNS pod from etcd
+docker exec rusternetes-etcd etcdctl del /registry/pods/kube-system/coredns 2>/dev/null && echo "  Deleted CoreDNS pod from etcd" || echo "  No CoreDNS pod in etcd"
+
+# Step 4: Apply bootstrap cluster resources
 print_step "Applying bootstrap resources (namespaces, services, CoreDNS)..."
 if [ -f "$PROJECT_ROOT/bootstrap-cluster.yaml" ]; then
     $KUBECTL $KUBECTL_FLAGS apply -f "$PROJECT_ROOT/bootstrap-cluster.yaml"
@@ -89,7 +96,7 @@ else
     exit 1
 fi
 
-# Step 4: Wait for CoreDNS to be ready
+# Step 5: Wait for CoreDNS to be ready
 print_step "Waiting for CoreDNS to be ready..."
 MAX_WAIT=30
 for i in $(seq 1 $MAX_WAIT); do

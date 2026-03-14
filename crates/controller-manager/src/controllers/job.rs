@@ -77,10 +77,10 @@ impl JobController {
 
         for pod in job_pods.iter() {
             if let Some(status) = &pod.status {
-                match status.phase {
-                    Phase::Running | Phase::Pending => active += 1,
-                    Phase::Succeeded => succeeded += 1,
-                    Phase::Failed => failed += 1,
+                match &status.phase {
+                    Some(Phase::Running) | Some(Phase::Pending) => active += 1,
+                    Some(Phase::Succeeded) => succeeded += 1,
+                    Some(Phase::Failed) => failed += 1,
                     _ => {}
                 }
             }
@@ -205,7 +205,7 @@ impl JobController {
             },
             spec: Some(spec),
             status: Some(PodStatus {
-                phase: Phase::Pending,
+                phase: Some(Phase::Pending),
                 message: None,
                 reason: None,
                 pod_ip: None,

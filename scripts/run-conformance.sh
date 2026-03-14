@@ -23,8 +23,14 @@ echo "[2/5] Cleaning up sonobuoy resources..."
 sonobuoy delete --wait 2>/dev/null || true
 sleep 2
 
-# Step 3: Ensure CoreDNS is running
-echo "[3/5] Checking CoreDNS status..."
+# Step 3: Add required labels to node (required for sonobuoy e2e tests)
+echo "[3/5] Adding required labels to node..."
+curl -sk -X PATCH https://localhost:6443/api/v1/nodes/node-1 \
+    -H "Content-Type: application/merge-patch+json" \
+    -d '{"metadata":{"labels":{"kubernetes.io/os":"linux","kubernetes.io/arch":"amd64","kubernetes.io/hostname":"node-1"}}}' >/dev/null 2>&1 || echo "Warning: Could not label node"
+
+# Step 4: Ensure CoreDNS is running
+echo "[4/5] Checking CoreDNS status..."
 COREDNS_STATUS=$(curl -sk https://localhost:6443/api/v1/namespaces/kube-system/pods/coredns 2>/dev/null | grep -o '"phase":"[^"]*"' | cut -d'"' -f4 || echo "NotFound")
 
 if [ "$COREDNS_STATUS" != "Running" ]; then
@@ -38,8 +44,8 @@ else
     echo "CoreDNS is already running"
 fi
 
-# Step 4: Run conformance tests
-echo "[4/5] Starting conformance tests (this will take several minutes)..."
+# Step 5: Run conformance tests
+echo "[5/6] Starting conformance tests (this will take several minutes)..."
 echo "Running: sonobuoy run --mode=quick --wait"
 echo ""
 
@@ -50,9 +56,9 @@ else
     TEST_RESULT="FAILED"
 fi
 
-# Step 5: Retrieve and display results
+# Step 6: Retrieve and display results
 echo ""
-echo "[5/5] Retrieving test results..."
+echo "[6/6] Retrieving test results..."
 echo ""
 
 # Get the results

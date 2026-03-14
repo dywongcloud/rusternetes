@@ -157,7 +157,7 @@ impl<S: Storage> ReplicationControllerController<S> {
             metadata,
             spec: Some(rc.spec.template.spec.clone()),
             status: Some(PodStatus {
-                phase: Phase::Pending,
+                phase: Some(Phase::Pending),
                 message: None,
                 reason: None,
                 host_ip: None,

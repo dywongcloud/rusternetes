@@ -10,7 +10,6 @@ pub struct Node {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
     pub metadata: ObjectMeta,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub spec: Option<NodeSpec>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<NodeStatus>,
@@ -39,11 +38,18 @@ pub struct NodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_id: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "is_unschedulable_none")]
+    #[serde(default)]
     pub unschedulable: Option<bool>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub taints: Option<Vec<Taint>>,
+}
+
+fn is_unschedulable_none(value: &Option<bool>) -> bool {
+    // Always serialize unschedulable field, even if it's Some(false)
+    // Only skip if it's None
+    value.is_none()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

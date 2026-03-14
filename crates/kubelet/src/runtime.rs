@@ -33,6 +33,7 @@ pub struct ContainerRuntime {
     network: String,
     cni: Option<CniRuntime>,
     use_cni: bool,
+    kubernetes_service_host: String,
 }
 
 impl ContainerRuntime {
@@ -41,11 +42,13 @@ impl ContainerRuntime {
         cluster_dns: String,
         cluster_domain: String,
         network: String,
+        kubernetes_service_host: String,
     ) -> Result<Self> {
         let docker = Docker::connect_with_local_defaults()?;
 
         info!("Using volumes base path: {}", volumes_base_path);
         info!("Cluster DNS: {}, domain: {}, network: {}", cluster_dns, cluster_domain, network);
+        info!("Kubernetes service host: {}", kubernetes_service_host);
 
         // Initialize CNI if plugins are available
         let (cni, use_cni) = match Self::initialize_cni() {
@@ -68,6 +71,7 @@ impl ContainerRuntime {
             network,
             cni,
             use_cni,
+            kubernetes_service_host,
         })
     }
 
@@ -328,7 +332,8 @@ impl ContainerRuntime {
     /// Start all containers for a pod
     pub async fn start_pod(&self, pod: &Pod) -> Result<()> {
         let pod_name = &pod.metadata.name;
-        info!("Starting pod: {}", pod_name);
+        let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
+        info!("Starting pod: {}/{}", namespace, pod_name);
 
         // Create network namespace and setup CNI networking if enabled
         // If CNI setup fails, netns_path will be None and we fall back to Podman networking
@@ -365,7 +370,7 @@ impl ContainerRuntime {
                     }
 
                     // Start the init container
-                    self.start_container(pod_name, container, &volume_binds, netns_path.as_deref()).await?;
+                    self.start_container(pod, container, &volume_binds, netns_path.as_deref()).await?;
 
                     // Wait for init container to complete
                     self.wait_for_container_completion(pod_name, &container.name).await?;
@@ -396,7 +401,7 @@ impl ContainerRuntime {
                     }
 
                     // Start the sidecar container (it will run alongside main containers)
-                    self.start_container(pod_name, container, &volume_binds, netns_path.as_deref()).await?;
+                    self.start_container(pod, container, &volume_binds, netns_path.as_deref()).await?;
                 }
             }
         }
@@ -416,7 +421,7 @@ impl ContainerRuntime {
             }
 
             // Start the container with volume bindings
-            self.start_container(pod_name, container, &volume_binds, netns_path.as_deref()).await?;
+            self.start_container(pod, container, &volume_binds, netns_path.as_deref()).await?;
         }
 
         Ok(())
@@ -892,7 +897,9 @@ impl ContainerRuntime {
         Ok(volume_dir)
     }
 
-    async fn start_container(&self, pod_name: &str, container: &Container, volume_paths: &HashMap<String, String>, netns_path: Option<&str>) -> Result<()> {
+    async fn start_container(&self, pod: &Pod, container: &Container, volume_paths: &HashMap<String, String>, netns_path: Option<&str>) -> Result<()> {
+        let pod_name = &pod.metadata.name;
+        let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
         let container_name = format!("{}_{}", pod_name, container.name);
 
         info!("Starting container: {} (netns: {:?})", container_name, netns_path);
@@ -921,18 +928,17 @@ impl ContainerRuntime {
 
         // Build environment variables
         let mut env_list = Vec::new();
-        let namespace = pod_name.split('_').next().unwrap_or("default");
 
         // Inject Kubernetes service environment variables for in-cluster access
-        // Use kubernetes.default.svc.cluster.local which resolves via CoreDNS to the kubernetes service
-        env_list.push("KUBERNETES_SERVICE_HOST=kubernetes.default.svc.cluster.local".to_string());
+        // Use ClusterIP instead of DNS name to avoid chicken-and-egg DNS dependency
+        env_list.push(format!("KUBERNETES_SERVICE_HOST={}", self.kubernetes_service_host));
         env_list.push("KUBERNETES_SERVICE_PORT=443".to_string());
         env_list.push("KUBERNETES_SERVICE_PORT_HTTPS=443".to_string());
-        env_list.push("KUBERNETES_PORT=tcp://kubernetes.default.svc.cluster.local:443".to_string());
-        env_list.push("KUBERNETES_PORT_443_TCP=tcp://kubernetes.default.svc.cluster.local:443".to_string());
+        env_list.push(format!("KUBERNETES_PORT=tcp://{}:443", self.kubernetes_service_host));
+        env_list.push(format!("KUBERNETES_PORT_443_TCP=tcp://{}:443", self.kubernetes_service_host));
         env_list.push("KUBERNETES_PORT_443_TCP_PROTO=tcp".to_string());
         env_list.push("KUBERNETES_PORT_443_TCP_PORT=443".to_string());
-        env_list.push("KUBERNETES_PORT_443_TCP_ADDR=kubernetes.default.svc.cluster.local".to_string());
+        env_list.push(format!("KUBERNETES_PORT_443_TCP_ADDR={}", self.kubernetes_service_host));
 
         // Add user-defined environment variables
         if let Some(env_vars) = &container.env {
@@ -943,7 +949,7 @@ impl ContainerRuntime {
                     continue;
                 }
 
-                // Value from ConfigMap or Secret
+                // Value from ConfigMap, Secret, or Downward API
                 if let Some(value_from) = &env_var.value_from {
                     // ConfigMap reference
                     if let Some(configmap_ref) = &value_from.config_map_key_ref {
@@ -966,6 +972,39 @@ impl ContainerRuntime {
                             }
                             Err(e) => {
                                 warn!("Failed to get Secret value for {}: {}", env_var.name, e);
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Field reference (Downward API)
+                    if let Some(field_ref) = &value_from.field_ref {
+                        match self.get_pod_field_value(pod, &field_ref.field_path) {
+                            Ok(value) => {
+                                // Only add the env var if the value is not empty
+                                // This handles cases like status.podIP which may not be available yet
+                                if !value.is_empty() {
+                                    env_list.push(format!("{}={}", env_var.name, value));
+                                    info!("Set env var {} from field {}: {}", env_var.name, field_ref.field_path, value);
+                                } else {
+                                    debug!("Skipping env var {} - field {} is empty (may not be available yet)", env_var.name, field_ref.field_path);
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to get pod field value for {}: {}", env_var.name, e);
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Resource field reference
+                    if let Some(resource_ref) = &value_from.resource_field_ref {
+                        match self.get_container_resource_value(pod, resource_ref) {
+                            Ok(value) => {
+                                env_list.push(format!("{}={}", env_var.name, value));
+                            }
+                            Err(e) => {
+                                warn!("Failed to get resource field value for {}: {}", env_var.name, e);
                             }
                         }
                         continue;
@@ -1557,6 +1596,8 @@ impl ContainerRuntime {
         let secret: Secret = storage.get(&secret_key).await
             .with_context(|| format!("Secret {} not found in namespace {}", name, namespace))?;
 
+        // Secret data is stored base64-encoded in storage, but needs to be decoded
+        // for environment variables
         secret.data
             .as_ref()
             .and_then(|data| data.get(key))

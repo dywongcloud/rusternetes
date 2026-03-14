@@ -298,7 +298,7 @@ impl NodeController {
         // Initialize status if needed
         if pod.status.is_none() {
             pod.status = Some(PodStatus {
-                phase: Phase::Pending,
+                phase: Some(Phase::Pending),
                 message: None,
                 reason: None,
                 host_ip: None,
@@ -310,7 +310,7 @@ impl NodeController {
         }
 
         let status = pod.status.as_mut().unwrap();
-        status.phase = Phase::Failed;
+        status.phase = Some(Phase::Failed);
         status.reason = Some(reason.to_string());
         status.message = Some(format!("Node {} is not ready", reason));
 

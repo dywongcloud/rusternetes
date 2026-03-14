@@ -72,7 +72,7 @@ impl<S: Storage> EventsController<S> {
             use rusternetes_common::types::Phase;
 
             match &status.phase {
-                Phase::Pending => {
+                Some(Phase::Pending) => {
                     // Check if pod is scheduled
                     if let Some(spec) = &pod.spec {
                         if spec.node_name.is_some() {
@@ -87,7 +87,7 @@ impl<S: Storage> EventsController<S> {
                         }
                     }
                 }
-                Phase::Running => {
+                Some(Phase::Running) => {
                     self.create_event_if_new(
                         namespace,
                         &pod_ref,
@@ -144,7 +144,7 @@ impl<S: Storage> EventsController<S> {
                         }
                     }
                 }
-                Phase::Succeeded => {
+                Some(Phase::Succeeded) => {
                     self.create_event_if_new(
                         namespace,
                         &pod_ref,
@@ -154,7 +154,7 @@ impl<S: Storage> EventsController<S> {
                         Some("kubelet".to_string()),
                     ).await?;
                 }
-                Phase::Failed => {
+                Some(Phase::Failed) => {
                     let reason = status.reason.as_deref().unwrap_or("Unknown");
                     let message = status.message.as_deref().unwrap_or("Pod failed");
                     self.create_event_if_new(
@@ -166,9 +166,12 @@ impl<S: Storage> EventsController<S> {
                         Some("kubelet".to_string()),
                     ).await?;
                 }
-                Phase::Unknown => {}
-                Phase::Active => {
+                Some(Phase::Unknown) => {}
+                Some(Phase::Active) => {
                     // Active phase for namespaces - not relevant for pod events
+                }
+                None => {
+                    // Pod has no phase set
                 }
             }
         }
@@ -306,13 +309,13 @@ mod tests {
                 resource_claims: None,
             }),
             status: Some(PodStatus {
-                phase: match phase {
+                phase: Some(match phase {
                     "Pending" => Phase::Pending,
                     "Running" => Phase::Running,
                     "Succeeded" => Phase::Succeeded,
                     "Failed" => Phase::Failed,
                     _ => Phase::Unknown,
-                },
+                }),
                 message: None,
                 reason: None,
                 pod_ip: None,

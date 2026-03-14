@@ -163,7 +163,7 @@ impl<S: Storage> DeploymentController<S> {
             metadata,
             spec: Some(deployment.spec.template.spec.clone()),
             status: Some(PodStatus {
-                phase: Phase::Pending,
+                phase: Some(Phase::Pending),
                 message: None,
                 reason: None,
                 host_ip: None,

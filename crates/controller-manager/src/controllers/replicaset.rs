@@ -152,7 +152,7 @@ impl<S: Storage> ReplicaSetController<S> {
 
     fn is_pod_ready(&self, pod: &Pod) -> bool {
         if let Some(status) = &pod.status {
-            status.phase == Phase::Running
+            status.phase == Some(Phase::Running)
         } else {
             false
         }
@@ -253,7 +253,7 @@ impl<S: Storage> ReplicaSetController<S> {
             metadata,
             spec: Some(replicaset.spec.template.spec.clone()),
             status: Some(PodStatus {
-                phase: Phase::Pending,
+                phase: Some(Phase::Pending),
                 message: None,
                 reason: None,
                 host_ip: None,

@@ -120,6 +120,8 @@ services:
       # IMPORTANT: KUBELET_VOLUMES_PATH must be set to an absolute path. Example:
       #   export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
       - ${KUBELET_VOLUMES_PATH}:${KUBELET_VOLUMES_PATH}:rw
+      # Mount TLS certificates so kubelet can inject CA cert into service account volumes
+      - ./.rusternetes/certs:/root/.rusternetes/certs:ro
       # NOTE: CNI is fully implemented and included in the kubelet container.
       # However, in Podman Machine on macOS, CNI cannot work due to network namespace
       # isolation between containers. The kubelet automatically detects this and falls

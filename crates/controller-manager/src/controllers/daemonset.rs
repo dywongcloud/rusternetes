@@ -1,11 +1,12 @@
 use anyhow::Result;
 use rusternetes_common::resources::{DaemonSet, DaemonSetStatus, Node, Pod, PodStatus};
+use rusternetes_common::resources::pod::{SecretVolumeSource, Volume, VolumeMount};
 use rusternetes_common::types::Phase;
 use rusternetes_storage::{etcd::EtcdStorage, Storage};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub struct DaemonSetController {
     storage: Arc<EtcdStorage>,
@@ -129,7 +130,8 @@ impl DaemonSetController {
             .filter(|pod| {
                 pod.status
                     .as_ref()
-                    .map(|s| s.phase == Phase::Running)
+                    .and_then(|s| s.phase.as_ref())
+                    .map(|phase| *phase == Phase::Running)
                     .unwrap_or(false)
             })
             .count() as i32;
@@ -186,8 +188,22 @@ impl DaemonSetController {
             daemonset.metadata.uid.clone(),
         );
 
-        let spec = template.spec.clone();
-        // Note: In production, would set node_name here but PodSpec doesn't have this field yet
+        let mut spec = template.spec.clone();
+
+        // Debug: Check if NODE_NAME env var has valueFrom
+        for container in &spec.containers {
+            if let Some(env) = &container.env {
+                for env_var in env {
+                    if env_var.name == "NODE_NAME" {
+                        info!("DaemonSet pod template NODE_NAME: value={:?}, value_from={:?}",
+                            env_var.value, env_var.value_from);
+                    }
+                }
+            }
+        }
+
+        // Inject service account token volume
+        self.inject_service_account_token(&mut spec, namespace);
 
         let mut metadata = rusternetes_common::types::ObjectMeta::new(pod_name.clone())
             .with_namespace(namespace.to_string())
@@ -207,14 +223,14 @@ impl DaemonSetController {
             metadata,
             spec: Some(spec),
             status: Some(PodStatus {
-                phase: Phase::Pending,
+                phase: Some(Phase::Pending),
                 message: None,
                 reason: None,
                 pod_ip: None,
                 host_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
-            ephemeral_container_statuses: None,
+                ephemeral_container_statuses: None,
             }),
         };
 
@@ -222,6 +238,96 @@ impl DaemonSetController {
         self.storage.create(&key, &pod).await?;
 
         Ok(())
+    }
+
+    fn inject_service_account_token(
+        &self,
+        spec: &mut rusternetes_common::resources::PodSpec,
+        namespace: &str,
+    ) {
+        // Get service account name, default to "default"
+        let sa_name = spec
+            .service_account_name
+            .as_deref()
+            .unwrap_or("default");
+
+        // The service account token secret name follows the pattern: {sa-name}-token
+        let token_secret_name = format!("{}-token", sa_name);
+
+        // Define the service account token volume
+        let sa_token_volume = Volume {
+            name: "kube-api-access".to_string(),
+            empty_dir: None,
+            host_path: None,
+            config_map: None,
+            secret: Some(SecretVolumeSource {
+                secret_name: Some(token_secret_name.clone()),
+                items: None,
+                default_mode: None,
+                optional: None,
+            }),
+            persistent_volume_claim: None,
+            downward_api: None,
+            csi: None,
+            ephemeral: None,
+        };
+
+        // Add volume to pod spec
+        if let Some(volumes) = &mut spec.volumes {
+            // Check if volume already exists
+            if !volumes.iter().any(|v| v.name == "kube-api-access") {
+                volumes.push(sa_token_volume);
+                info!(
+                    "Injected service account token volume for DaemonSet pod in namespace {}",
+                    namespace
+                );
+            }
+        } else {
+            spec.volumes = Some(vec![sa_token_volume]);
+            info!(
+                "Injected service account token volume for DaemonSet pod in namespace {}",
+                namespace
+            );
+        }
+
+        // Define the volume mount for the token
+        let sa_token_mount = VolumeMount {
+            name: "kube-api-access".to_string(),
+            mount_path: "/var/run/secrets/kubernetes.io/serviceaccount".to_string(),
+            read_only: Some(true),
+            sub_path: None,
+        };
+
+        // Add volume mount to all containers
+        for container in &mut spec.containers {
+            if let Some(mounts) = &mut container.volume_mounts {
+                // Check if mount already exists
+                if !mounts
+                    .iter()
+                    .any(|m| m.mount_path == "/var/run/secrets/kubernetes.io/serviceaccount")
+                {
+                    mounts.push(sa_token_mount.clone());
+                }
+            } else {
+                container.volume_mounts = Some(vec![sa_token_mount.clone()]);
+            }
+        }
+
+        // Also add to init containers if present
+        if let Some(init_containers) = &mut spec.init_containers {
+            for container in init_containers {
+                if let Some(mounts) = &mut container.volume_mounts {
+                    if !mounts
+                        .iter()
+                        .any(|m| m.mount_path == "/var/run/secrets/kubernetes.io/serviceaccount")
+                    {
+                        mounts.push(sa_token_mount.clone());
+                    }
+                } else {
+                    container.volume_mounts = Some(vec![sa_token_mount.clone()]);
+                }
+            }
+        }
     }
 }
 

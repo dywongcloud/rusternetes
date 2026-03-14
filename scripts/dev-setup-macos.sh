@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Rusternetes Development Environment Setup Script
-# This script helps set up a local development environment using Podman
+# This script helps set up a local development environment using Docker on macOS
 
 set -e
 
@@ -55,22 +55,30 @@ if ! check_command "cargo"; then
     MISSING_DEPS=1
 fi
 
-# Check for Podman or Docker
+# Check for Docker or Podman (prefer Docker on macOS)
 CONTAINER_RUNTIME=""
-if check_command "podman"; then
-    CONTAINER_RUNTIME="podman"
-elif check_command "docker"; then
+if check_command "docker"; then
     CONTAINER_RUNTIME="docker"
-    print_warning "Docker detected. This project is optimized for Podman."
+elif check_command "podman"; then
+    CONTAINER_RUNTIME="podman"
+    print_warning "Podman detected. This script is optimized for Docker on macOS."
 else
-    print_error "Neither Podman nor Docker is installed"
-    echo "  Install Podman from https://podman.io/getting-started/installation"
+    print_error "Neither Docker nor Podman is installed"
+    echo "  Install Docker Desktop from https://www.docker.com/products/docker-desktop"
     MISSING_DEPS=1
 fi
 
-# Check for podman-compose or docker-compose
+# Check for docker-compose or podman-compose (prefer docker-compose on macOS)
 COMPOSE_CMD=""
-if [ "$CONTAINER_RUNTIME" = "podman" ]; then
+if [ "$CONTAINER_RUNTIME" = "docker" ]; then
+    if check_command "docker-compose"; then
+        COMPOSE_CMD="docker-compose"
+    else
+        print_error "docker-compose is not installed"
+        echo "  docker-compose should be included with Docker Desktop"
+        MISSING_DEPS=1
+    fi
+else
     if check_command "podman-compose"; then
         COMPOSE_CMD="podman-compose"
     elif check_command "docker-compose"; then
@@ -79,13 +87,6 @@ if [ "$CONTAINER_RUNTIME" = "podman" ]; then
     else
         print_error "podman-compose is not installed"
         echo "  Install with: pip3 install podman-compose"
-        MISSING_DEPS=1
-    fi
-else
-    if check_command "docker-compose"; then
-        COMPOSE_CMD="docker-compose"
-    else
-        print_error "docker-compose is not installed"
         MISSING_DEPS=1
     fi
 fi
