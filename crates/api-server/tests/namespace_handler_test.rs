@@ -2,8 +2,8 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for namespaces
 
-use rusternetes_common::resources::{Namespace, NamespacePhase, NamespaceSpec, NamespaceStatus};
-use rusternetes_common::types::Metadata;
+use rusternetes_common::resources::Namespace;
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,26 +14,25 @@ fn create_test_namespace(name: &str) -> Namespace {
     labels.insert("env".to_string(), "test".to_string());
 
     Namespace {
-        metadata: Metadata {
+        type_meta: TypeMeta {
+            kind: "Namespace".to_string(),
+            api_version: "v1".to_string(),
+        },
+        metadata: ObjectMeta {
             name: name.to_string(),
             namespace: None, // Namespaces are cluster-scoped
             labels: Some(labels),
-            uid: None,
+            uid: String::new(),
             creation_timestamp: None,
             resource_version: None,
             finalizers: None,
             deletion_timestamp: None,
+            deletion_grace_period_seconds: None,
             owner_references: None,
             annotations: None,
-            generation: None,
         },
-        spec: Some(NamespaceSpec {
-            finalizers: None,
-        }),
-        status: Some(NamespaceStatus {
-            phase: Some(NamespacePhase::Active),
-            conditions: None,
-        }),
+        spec: None,
+        status: None,
     }
 }
 
@@ -47,13 +46,11 @@ async fn test_namespace_create_and_get() {
     // Create
     let created: Namespace = storage.create(&key, &namespace).await.unwrap();
     assert_eq!(created.metadata.name, "test-ns-create");
-    assert_eq!(created.status.as_ref().unwrap().phase, Some(NamespacePhase::Active));
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
 
     // Get
     let retrieved: Namespace = storage.get(&key).await.unwrap();
     assert_eq!(retrieved.metadata.name, "test-ns-create");
-    assert_eq!(retrieved.status.as_ref().unwrap().phase, Some(NamespacePhase::Active));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -158,9 +155,7 @@ async fn test_namespace_with_finalizers() {
         Some(vec!["kubernetes".to_string()])
     );
 
-    // Clean up - remove finalizer first
-    namespace.metadata.finalizers = None;
-    storage.update(&key, &namespace).await.unwrap();
+    // Clean up
     storage.delete(&key).await.unwrap();
 }
 
@@ -169,19 +164,14 @@ async fn test_namespace_terminating_phase() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut namespace = create_test_namespace("test-ns-terminating");
-    namespace.status = Some(NamespaceStatus {
-        phase: Some(NamespacePhase::Terminating),
-        conditions: None,
-    });
+    // Mark namespace for deletion using deletion timestamp
+    namespace.metadata.deletion_timestamp = Some(chrono::Utc::now());
 
     let key = build_key("namespaces", None, "test-ns-terminating");
 
-    // Create with terminating phase
+    // Create with deletion timestamp
     let created: Namespace = storage.create(&key, &namespace).await.unwrap();
-    assert_eq!(
-        created.status.as_ref().unwrap().phase,
-        Some(NamespacePhase::Terminating)
-    );
+    assert!(created.metadata.deletion_timestamp.is_some());
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -268,21 +258,18 @@ async fn test_namespace_update_not_found() {
 }
 
 #[tokio::test]
-async fn test_namespace_with_spec_finalizers() {
+async fn test_namespace_with_metadata_finalizers() {
     let storage = Arc::new(MemoryStorage::new());
 
-    let mut namespace = create_test_namespace("test-ns-spec-finalizers");
-    namespace.spec = Some(NamespaceSpec {
-        finalizers: Some(vec!["kubernetes".to_string()]),
-    });
+    let mut namespace = create_test_namespace("test-ns-metadata-finalizers");
+    namespace.metadata.finalizers = Some(vec!["kubernetes".to_string()]);
 
-    let key = build_key("namespaces", None, "test-ns-spec-finalizers");
+    let key = build_key("namespaces", None, "test-ns-metadata-finalizers");
 
-    // Create with spec finalizers
+    // Create with metadata finalizers
     let created: Namespace = storage.create(&key, &namespace).await.unwrap();
-    assert!(created.spec.is_some());
     assert_eq!(
-        created.spec.as_ref().unwrap().finalizers,
+        created.metadata.finalizers,
         Some(vec!["kubernetes".to_string()])
     );
 
@@ -291,26 +278,20 @@ async fn test_namespace_with_spec_finalizers() {
 }
 
 #[tokio::test]
-async fn test_namespace_active_to_terminating_transition() {
+async fn test_namespace_deletion_transition() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut namespace = create_test_namespace("test-ns-transition");
     let key = build_key("namespaces", None, "test-ns-transition");
 
-    // Create with Active phase
+    // Create namespace
     storage.create(&key, &namespace).await.unwrap();
 
-    // Update to Terminating phase
-    namespace.status = Some(NamespaceStatus {
-        phase: Some(NamespacePhase::Terminating),
-        conditions: None,
-    });
+    // Update with deletion timestamp
+    namespace.metadata.deletion_timestamp = Some(chrono::Utc::now());
 
     let updated: Namespace = storage.update(&key, &namespace).await.unwrap();
-    assert_eq!(
-        updated.status.as_ref().unwrap().phase,
-        Some(NamespacePhase::Terminating)
-    );
+    assert!(updated.metadata.deletion_timestamp.is_some());
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -344,18 +325,15 @@ async fn test_namespace_multiple_labels() {
 }
 
 #[tokio::test]
-async fn test_namespace_empty_spec() {
+async fn test_namespace_with_none_spec() {
     let storage = Arc::new(MemoryStorage::new());
 
-    let mut namespace = create_test_namespace("test-ns-empty-spec");
-    namespace.spec = Some(NamespaceSpec { finalizers: None });
+    let namespace = create_test_namespace("test-ns-none-spec");
+    let key = build_key("namespaces", None, "test-ns-none-spec");
 
-    let key = build_key("namespaces", None, "test-ns-empty-spec");
-
-    // Create with empty spec
+    // Create with None spec
     let created: Namespace = storage.create(&key, &namespace).await.unwrap();
-    assert!(created.spec.is_some());
-    assert!(created.spec.as_ref().unwrap().finalizers.is_none());
+    assert!(created.spec.is_none());
 
     // Clean up
     storage.delete(&key).await.unwrap();

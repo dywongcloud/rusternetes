@@ -72,10 +72,13 @@ pub use workloads::{
     StatefulSet, StatefulSetSpec, StatefulSetStatus,
     DaemonSet, DaemonSetSpec, DaemonSetStatus,
     Job, JobSpec, JobStatus,
-    CronJob, CronJobSpec, CronJobStatus,
+    CronJob, CronJobSpec, CronJobStatus, JobTemplateSpec,
 };
 pub use controllerrevision::ControllerRevision;
-pub use ingress::{Ingress, IngressSpec, IngressRule, IngressBackend, HTTPIngressPath};
+pub use ingress::{
+    Ingress, IngressSpec, IngressRule, IngressBackend, HTTPIngressPath,
+    HTTPIngressRuleValue, IngressServiceBackend, IngressTLS, ServiceBackendPort,
+};
 pub use ingressclass::{IngressClass, IngressClassSpec, IngressClassParametersReference};
 pub use networking::{
     NetworkPolicy, NetworkPolicySpec, NetworkPolicyIngressRule, NetworkPolicyEgressRule,

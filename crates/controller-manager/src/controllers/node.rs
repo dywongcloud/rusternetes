@@ -17,12 +17,12 @@ use tracing::{debug, error, info, warn};
 const NODE_MONITOR_GRACE_PERIOD_SECONDS: i64 = 40;
 const POD_EVICTION_TIMEOUT_SECONDS: i64 = 300; // 5 minutes
 
-pub struct NodeController {
-    storage: Arc<EtcdStorage>,
+pub struct NodeController<S: Storage> {
+    storage: Arc<S>,
 }
 
-impl NodeController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> NodeController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 

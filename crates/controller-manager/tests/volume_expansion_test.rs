@@ -8,28 +8,17 @@ use rusternetes_common::resources::volume::{
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::volume_expansion::VolumeExpansionController;
-use rusternetes_storage::etcd::EtcdStorage;
+use rusternetes_storage::memory::MemoryStorage;
 use rusternetes_storage::{build_key, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-async fn setup_test() -> Arc<EtcdStorage> {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .expect("Failed to connect to etcd"),
-    );
-
-    // Clean up any existing test data
-    let _ = storage.delete("/registry/persistentvolumeclaims/").await;
-    let _ = storage.delete("/registry/persistentvolumes/").await;
-    let _ = storage.delete("/registry/storageclasses/").await;
-
-    storage
+fn setup_test() -> Arc<MemoryStorage> {
+    Arc::new(MemoryStorage::new())
 }
 
 async fn create_test_storage_class(
-    storage: &Arc<EtcdStorage>,
+    storage: &Arc<MemoryStorage>,
     name: &str,
     allow_expansion: bool,
 ) -> StorageClass {
@@ -53,7 +42,7 @@ async fn create_test_storage_class(
 }
 
 async fn create_test_pv(
-    storage: &Arc<EtcdStorage>,
+    storage: &Arc<MemoryStorage>,
     name: &str,
     storage_class: &str,
     capacity_gi: u32,
@@ -98,7 +87,7 @@ async fn create_test_pv(
 }
 
 async fn create_bound_pvc(
-    storage: &Arc<EtcdStorage>,
+    storage: &Arc<MemoryStorage>,
     name: &str,
     namespace: &str,
     storage_class: &str,
@@ -150,9 +139,8 @@ async fn create_bound_pvc(
 }
 
 #[tokio::test]
-#[ignore] // Requires etcd
 async fn test_volume_expansion_allowed() {
-    let storage = setup_test().await;
+    let storage = setup_test();
 
     // Create StorageClass with expansion enabled
     create_test_storage_class(&storage, "expandable", true).await;
@@ -198,9 +186,8 @@ async fn test_volume_expansion_allowed() {
 }
 
 #[tokio::test]
-#[ignore] // Requires etcd
 async fn test_volume_expansion_not_allowed() {
-    let storage = setup_test().await;
+    let storage = setup_test();
 
     // Create StorageClass with expansion disabled
     create_test_storage_class(&storage, "non-expandable", false).await;
@@ -241,9 +228,8 @@ async fn test_volume_expansion_not_allowed() {
 }
 
 #[tokio::test]
-#[ignore] // Requires etcd
 async fn test_expansion_only_for_bound_pvcs() {
-    let storage = setup_test().await;
+    let storage = setup_test();
 
     // Create StorageClass with expansion enabled
     create_test_storage_class(&storage, "expandable-2", true).await;
@@ -299,9 +285,8 @@ async fn test_expansion_only_for_bound_pvcs() {
 }
 
 #[tokio::test]
-#[ignore] // Requires etcd
 async fn test_no_expansion_when_sizes_equal() {
-    let storage = setup_test().await;
+    let storage = setup_test();
 
     // Create StorageClass with expansion enabled
     create_test_storage_class(&storage, "expandable-3", true).await;

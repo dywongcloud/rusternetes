@@ -2,8 +2,9 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for persistent volume claims
 
-use rusternetes_common::resources::{PersistentVolumeClaim, PersistentVolumeClaimSpec, PersistentVolumeClaimStatus, VolumeResourceRequirements, LabelSelector};
-use rusternetes_common::types::Metadata;
+use rusternetes_common::resources::{PersistentVolumeClaim, PersistentVolumeClaimSpec, PersistentVolumeClaimStatus, PersistentVolumeAccessMode};
+use rusternetes_common::resources::volume::{PersistentVolumeClaimPhase, PersistentVolumeMode, ResourceRequirements, LabelSelector};
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,41 +15,42 @@ fn create_test_pvc(name: &str, namespace: &str, storage: &str) -> PersistentVolu
     requests.insert("storage".to_string(), storage.to_string());
 
     PersistentVolumeClaim {
-        metadata: Metadata {
+        type_meta: TypeMeta {
+            kind: "PersistentVolumeClaim".to_string(),
+            api_version: "v1".to_string(),
+        },
+        metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
             labels: None,
-            uid: None,
+            uid: String::new(),
             creation_timestamp: None,
             resource_version: None,
             finalizers: None,
             deletion_timestamp: None,
+            deletion_grace_period_seconds: None,
             owner_references: None,
             annotations: None,
-            generation: None,
         },
         spec: PersistentVolumeClaimSpec {
-            access_modes: Some(vec!["ReadWriteOnce".to_string()]),
-            resources: Some(VolumeResourceRequirements {
+            access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
+            resources: ResourceRequirements {
                 requests: Some(requests),
                 limits: None,
-            }),
+            },
             storage_class_name: Some("standard".to_string()),
-            volume_mode: Some("Filesystem".to_string()),
+            volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
             volume_name: None,
             data_source: None,
-            data_source_ref: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-            phase: Some("Pending".to_string()),
+            phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
-            conditions: None,
             allocated_resources: None,
-            allocated_resource_statuses: None,
-            current_volume_attributes_class_name: None,
-            modify_volume_status: None,
+            conditions: None,
+            resize_status: None,
         }),
     }
 }
@@ -64,9 +66,9 @@ async fn test_pvc_create_and_get() {
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
     assert_eq!(created.metadata.name, "test-pvc");
     assert_eq!(created.metadata.namespace, Some("default".to_string()));
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
     assert_eq!(
-        created.spec.resources.as_ref().unwrap().requests.as_ref().unwrap().get("storage"),
+        created.spec.resources.requests.as_ref().unwrap().get("storage"),
         Some(&"10Gi".to_string())
     );
 
@@ -91,21 +93,21 @@ async fn test_pvc_update() {
     // Update storage request
     let mut requests = HashMap::new();
     requests.insert("storage".to_string(), "20Gi".to_string());
-    pvc.spec.resources = Some(VolumeResourceRequirements {
+    pvc.spec.resources = ResourceRequirements {
         requests: Some(requests),
         limits: None,
-    });
+    };
 
     let updated: PersistentVolumeClaim = storage.update(&key, &pvc).await.unwrap();
     assert_eq!(
-        updated.spec.resources.as_ref().unwrap().requests.as_ref().unwrap().get("storage"),
+        updated.spec.resources.requests.as_ref().unwrap().get("storage"),
         Some(&"20Gi".to_string())
     );
 
     // Verify update
     let retrieved: PersistentVolumeClaim = storage.get(&key).await.unwrap();
     assert_eq!(
-        retrieved.spec.resources.as_ref().unwrap().requests.as_ref().unwrap().get("storage"),
+        retrieved.spec.resources.requests.as_ref().unwrap().get("storage"),
         Some(&"20Gi".to_string())
     );
 
@@ -195,19 +197,19 @@ async fn test_pvc_access_modes() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut pvc = create_test_pvc("test-access", "default", "10Gi");
-    pvc.spec.access_modes = Some(vec![
-        "ReadWriteOnce".to_string(),
-        "ReadOnlyMany".to_string(),
-    ]);
+    pvc.spec.access_modes = vec![
+        PersistentVolumeAccessMode::ReadWriteOnce,
+        PersistentVolumeAccessMode::ReadOnlyMany,
+    ];
 
     let key = build_key("persistentvolumeclaims", Some("default"), "test-access");
 
     // Create with multiple access modes
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
-    let modes = created.spec.access_modes.unwrap();
+    let modes = &created.spec.access_modes;
     assert_eq!(modes.len(), 2);
-    assert!(modes.contains(&"ReadWriteOnce".to_string()));
-    assert!(modes.contains(&"ReadOnlyMany".to_string()));
+    assert!(modes.contains(&PersistentVolumeAccessMode::ReadWriteOnce));
+    assert!(modes.contains(&PersistentVolumeAccessMode::ReadOnlyMany));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -239,7 +241,7 @@ async fn test_pvc_volume_mode_filesystem() {
 
     // Create with Filesystem mode
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
-    assert_eq!(created.spec.volume_mode, Some("Filesystem".to_string()));
+    assert_eq!(created.spec.volume_mode, Some(PersistentVolumeMode::Filesystem));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -250,13 +252,13 @@ async fn test_pvc_volume_mode_block() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut pvc = create_test_pvc("test-block", "default", "10Gi");
-    pvc.spec.volume_mode = Some("Block".to_string());
+    pvc.spec.volume_mode = Some(PersistentVolumeMode::Block);
 
     let key = build_key("persistentvolumeclaims", Some("default"), "test-block");
 
     // Create with Block mode
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
-    assert_eq!(created.spec.volume_mode, Some("Block".to_string()));
+    assert_eq!(created.spec.volume_mode, Some(PersistentVolumeMode::Block));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -271,7 +273,7 @@ async fn test_pvc_status_pending() {
 
     // Create with Pending status
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
-    assert_eq!(created.status.as_ref().unwrap().phase, Some("Pending".to_string()));
+    assert_eq!(created.status.as_ref().unwrap().phase, PersistentVolumeClaimPhase::Pending);
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -283,21 +285,19 @@ async fn test_pvc_status_bound() {
 
     let mut pvc = create_test_pvc("test-bound", "default", "10Gi");
     pvc.status = Some(PersistentVolumeClaimStatus {
-        phase: Some("Bound".to_string()),
-        access_modes: Some(vec!["ReadWriteOnce".to_string()]),
+        phase: PersistentVolumeClaimPhase::Bound,
+        access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
         capacity: None,
-        conditions: None,
         allocated_resources: None,
-        allocated_resource_statuses: None,
-        current_volume_attributes_class_name: None,
-        modify_volume_status: None,
+        conditions: None,
+        resize_status: None,
     });
 
     let key = build_key("persistentvolumeclaims", Some("default"), "test-bound");
 
     // Create with Bound status
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
-    assert_eq!(created.status.as_ref().unwrap().phase, Some("Bound".to_string()));
+    assert_eq!(created.status.as_ref().unwrap().phase, PersistentVolumeClaimPhase::Bound);
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -476,18 +476,18 @@ async fn test_pvc_with_resource_limits() {
     limits.insert("storage".to_string(), "20Gi".to_string());
 
     let mut pvc = create_test_pvc("test-limits", "default", "10Gi");
-    pvc.spec.resources = Some(VolumeResourceRequirements {
+    pvc.spec.resources = ResourceRequirements {
         requests: Some(requests),
         limits: Some(limits),
-    });
+    };
 
     let key = build_key("persistentvolumeclaims", Some("default"), "test-limits");
 
     // Create with resource limits
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
-    assert!(created.spec.resources.as_ref().unwrap().limits.is_some());
+    assert!(created.spec.resources.limits.is_some());
     assert_eq!(
-        created.spec.resources.as_ref().unwrap().limits.as_ref().unwrap().get("storage"),
+        created.spec.resources.limits.as_ref().unwrap().get("storage"),
         Some(&"20Gi".to_string())
     );
 

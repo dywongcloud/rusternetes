@@ -1,6 +1,6 @@
 use anyhow::Result;
 use rusternetes_common::resources::{Endpoints, EndpointSlice};
-use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
@@ -12,12 +12,12 @@ use tracing::{debug, error, info};
 /// 1. Watches all Endpoints resources
 /// 2. For each Endpoints object, creates corresponding EndpointSlice(s)
 /// 3. Syncs changes from Endpoints to EndpointSlices
-pub struct EndpointSliceController {
-    storage: Arc<EtcdStorage>,
+pub struct EndpointSliceController<S: Storage> {
+    storage: Arc<S>,
 }
 
-impl EndpointSliceController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> EndpointSliceController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 
@@ -169,11 +169,11 @@ impl EndpointSliceController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_common::types::ObjectMeta;
+    use rusternetes_storage::MemoryStorage;
 
     #[tokio::test]
     async fn test_endpointslice_controller_creation() {
-        let storage = Arc::new(EtcdStorage::new(vec!["http://localhost:2379".to_string()]).await.unwrap());
+        let storage = Arc::new(MemoryStorage::new());
         let _controller = EndpointSliceController::new(storage);
     }
 }

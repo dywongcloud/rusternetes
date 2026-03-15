@@ -31,7 +31,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
         }
     }
 
-    async fn reconcile_all(&self) -> Result<()> {
+    pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Reconciling all HorizontalPodAutoscalers");
 
         // Get all HPAs across all namespaces
@@ -484,13 +484,33 @@ mod tests {
                 },
                 template: rusternetes_common::resources::PodTemplateSpec {
                     metadata: Some(ObjectMeta::new("web-pod")),
-                    spec: None,
+                    spec: rusternetes_common::resources::PodSpec {
+                        containers: vec![],
+                        init_containers: None,
+                        restart_policy: None,
+                        node_selector: None,
+                        node_name: None,
+                        volumes: None,
+                        affinity: None,
+                        tolerations: None,
+                        service_account_name: None,
+                        priority: None,
+                        priority_class_name: None,
+                        hostname: None,
+                        host_network: None,
+                        host_pid: None,
+                        host_ipc: None,
+                        automount_service_account_token: None,
+                        ephemeral_containers: None,
+                        overhead: None,
+                        scheduler_name: None,
+                        topology_spread_constraints: None,
+                        resource_claims: None,
+                    },
                 },
                 strategy: None,
                 min_ready_seconds: None,
                 revision_history_limit: None,
-                paused: None,
-                progress_deadline_seconds: None,
             },
             status: None,
         };
@@ -573,13 +593,33 @@ mod tests {
                 },
                 template: rusternetes_common::resources::PodTemplateSpec {
                     metadata: Some(ObjectMeta::new("web-pod")),
-                    spec: None,
+                    spec: rusternetes_common::resources::PodSpec {
+                        containers: vec![],
+                        init_containers: None,
+                        restart_policy: None,
+                        node_selector: None,
+                        node_name: None,
+                        volumes: None,
+                        affinity: None,
+                        tolerations: None,
+                        service_account_name: None,
+                        priority: None,
+                        priority_class_name: None,
+                        hostname: None,
+                        host_network: None,
+                        host_pid: None,
+                        host_ipc: None,
+                        automount_service_account_token: None,
+                        ephemeral_containers: None,
+                        overhead: None,
+                        scheduler_name: None,
+                        topology_spread_constraints: None,
+                        resource_claims: None,
+                    },
                 },
                 strategy: None,
                 min_ready_seconds: None,
                 revision_history_limit: None,
-                paused: None,
-                progress_deadline_seconds: None,
             },
             status: None,
         };

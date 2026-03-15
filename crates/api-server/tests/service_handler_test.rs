@@ -2,8 +2,8 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for services
 
-use rusternetes_common::resources::{Service, ServicePort, ServiceSpec, ServiceType};
-use rusternetes_common::types::Metadata;
+use rusternetes_common::resources::{Service, ServiceSpec, ServiceType, ServicePort};
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,45 +17,41 @@ fn create_test_service(name: &str, namespace: &str, service_type: ServiceType) -
     selector.insert("app".to_string(), name.to_string());
 
     Service {
-        metadata: Metadata {
+        type_meta: TypeMeta {
+            kind: "Service".to_string(),
+            api_version: "v1".to_string(),
+        },
+        metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
             labels: Some(labels),
-            uid: None,
+            uid: String::new(),
             creation_timestamp: None,
             resource_version: None,
             finalizers: None,
             deletion_timestamp: None,
+            deletion_grace_period_seconds: None,
             owner_references: None,
             annotations: None,
-            generation: None,
         },
         spec: ServiceSpec {
             selector: Some(selector),
-            ports: Some(vec![ServicePort {
+            ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 protocol: Some("TCP".to_string()),
                 port: 80,
-                target_port: Some(rusternetes_common::types::IntOrString::Int(8080)),
+                target_port: Some(8080),
                 node_port: None,
-                app_protocol: None,
-            }]),
+            }],
             cluster_ip: None,
             cluster_ips: None,
             service_type: Some(service_type),
             external_ips: None,
             session_affinity: Some("None".to_string()),
-            load_balancer_ip: None,
-            load_balancer_source_ranges: None,
             external_name: None,
             external_traffic_policy: None,
-            health_check_node_port: None,
-            publish_not_ready_addresses: None,
-            session_affinity_config: None,
             ip_families: None,
             ip_family_policy: None,
-            allocate_load_balancer_node_ports: None,
-            load_balancer_class: None,
             internal_traffic_policy: None,
         },
         status: None,
@@ -77,7 +73,7 @@ async fn test_service_create_and_get() {
         created.spec.service_type,
         Some(ServiceType::ClusterIP)
     );
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
 
     // Get
     let retrieved: Service = storage.get(&key).await.unwrap();
@@ -198,16 +194,14 @@ async fn test_service_with_nodeport() {
     let mut service = create_test_service("test-nodeport", "default", ServiceType::NodePort);
 
     // Set NodePort
-    if let Some(ports) = &mut service.spec.ports {
-        ports[0].node_port = Some(30080);
-    }
+    service.spec.ports[0].node_port = Some(30080);
 
     let key = build_key("services", Some("default"), "test-nodeport");
 
     // Create with NodePort
     let created: Service = storage.create(&key, &service).await.unwrap();
     assert_eq!(created.spec.service_type, Some(ServiceType::NodePort));
-    assert_eq!(created.spec.ports.as_ref().unwrap()[0].node_port, Some(30080));
+    assert_eq!(created.spec.ports[0].node_port, Some(30080));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -217,15 +211,13 @@ async fn test_service_with_nodeport() {
 async fn test_service_with_loadbalancer() {
     let storage = Arc::new(MemoryStorage::new());
 
-    let mut service = create_test_service("test-lb", "default", ServiceType::LoadBalancer);
-    service.spec.load_balancer_ip = Some("1.2.3.4".to_string());
+    let service = create_test_service("test-lb", "default", ServiceType::LoadBalancer);
 
     let key = build_key("services", Some("default"), "test-lb");
 
     // Create with LoadBalancer
     let created: Service = storage.create(&key, &service).await.unwrap();
     assert_eq!(created.spec.service_type, Some(ServiceType::LoadBalancer));
-    assert_eq!(created.spec.load_balancer_ip, Some("1.2.3.4".to_string()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -308,32 +300,30 @@ async fn test_service_with_multiple_ports() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut service = create_test_service("test-multiport", "default", ServiceType::ClusterIP);
-    service.spec.ports = Some(vec![
+    service.spec.ports = vec![
         ServicePort {
             name: Some("http".to_string()),
             protocol: Some("TCP".to_string()),
             port: 80,
-            target_port: Some(rusternetes_common::types::IntOrString::Int(8080)),
+            target_port: Some(8080),
             node_port: None,
-            app_protocol: None,
         },
         ServicePort {
             name: Some("https".to_string()),
             protocol: Some("TCP".to_string()),
             port: 443,
-            target_port: Some(rusternetes_common::types::IntOrString::Int(8443)),
+            target_port: Some(8443),
             node_port: None,
-            app_protocol: None,
         },
-    ]);
+    ];
 
     let key = build_key("services", Some("default"), "test-multiport");
 
     // Create with multiple ports
     let created: Service = storage.create(&key, &service).await.unwrap();
-    assert_eq!(created.spec.ports.as_ref().unwrap().len(), 2);
+    assert_eq!(created.spec.ports.len(), 2);
 
-    let ports = created.spec.ports.unwrap();
+    let ports = created.spec.ports;
     assert_eq!(ports[0].port, 80);
     assert_eq!(ports[1].port, 443);
 

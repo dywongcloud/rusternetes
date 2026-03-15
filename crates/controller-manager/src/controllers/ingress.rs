@@ -3,7 +3,7 @@ use rusternetes_common::resources::{
     Ingress, Service,
     ingress::{IngressTLS, IngressSpec, IngressBackend, IngressRule, HTTPIngressPath},
 };
-use rusternetes_storage::{build_key, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -17,12 +17,12 @@ use tracing::{debug, error, info, warn};
 ///
 /// This controller provides basic validation and status management for conformance.
 /// Actual traffic routing would be handled by external ingress implementations.
-pub struct IngressController {
-    storage: Arc<EtcdStorage>,
+pub struct IngressController<S: Storage> {
+    storage: Arc<S>,
 }
 
-impl IngressController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> IngressController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 
@@ -357,14 +357,11 @@ mod tests {
         HTTPIngressRuleValue, IngressServiceBackend, ServiceBackendPort,
     };
     use rusternetes_common::types::ObjectMeta;
+    use rusternetes_storage::memory::MemoryStorage;
 
     #[tokio::test]
     async fn test_validate_path_type_valid() {
-        let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = IngressController::new(storage);
 
         let backend = IngressBackend {
@@ -389,11 +386,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_path_type_invalid() {
-        let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = IngressController::new(storage);
 
         let backend = IngressBackend {
@@ -418,11 +411,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_backend_with_port_number() {
-        let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = IngressController::new(storage);
 
         let backend = IngressBackend {
@@ -441,11 +430,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_backend_with_port_name() {
-        let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = IngressController::new(storage);
 
         let backend = IngressBackend {
@@ -464,11 +449,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_backend_missing_port_spec() {
-        let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = IngressController::new(storage);
 
         let backend = IngressBackend {
@@ -487,11 +468,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_ingress_rule() {
-        let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = IngressController::new(storage);
 
         let backend = IngressBackend {
@@ -523,12 +500,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_reconcile_valid_ingress() {
-        let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
-        );
-        let controller = IngressController::new(storage);
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = IngressController::new(storage.clone());
 
         let backend = IngressBackend {
             service: Some(IngressServiceBackend {
@@ -566,11 +539,26 @@ mod tests {
                 kind: "Ingress".to_string(),
                 api_version: "networking.k8s.io/v1".to_string(),
             },
-            metadata: ObjectMeta::new("test-ingress").with_namespace("default"),
+            metadata: {
+                let mut meta = ObjectMeta::new("test-ingress").with_namespace("default");
+                meta.uid = uuid::Uuid::new_v4().to_string();
+                meta
+            },
             spec: Some(spec),
             status: None,
         };
 
+        // Create ingress in storage first (like API server would)
+        let ingress_key = build_key("ingresses", Some("default"), "test-ingress");
+        storage.create(&ingress_key, &ingress).await.unwrap();
+
+        // Reconcile should validate and update status
         assert!(controller.reconcile_ingress(&ingress).await.is_ok());
+
+        // Verify ingress was updated with load balancer status
+        let updated_ingress: Ingress = storage.get(&ingress_key).await.unwrap();
+        assert!(updated_ingress.status.is_some());
+        let status = updated_ingress.status.unwrap();
+        assert!(status.load_balancer.is_some());
     }
 }

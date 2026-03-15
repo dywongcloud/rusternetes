@@ -2,8 +2,9 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for jobs
 
-use rusternetes_common::resources::{Job, JobSpec, JobStatus, LabelSelector, PodTemplateSpec, PodSpec};
-use rusternetes_common::types::{Container, Metadata};
+use rusternetes_common::resources::{Job, JobSpec, JobStatus, LabelSelector, PodTemplateSpec};
+use rusternetes_common::resources::pod::{PodSpec, Container};
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,43 +15,28 @@ fn create_test_job(name: &str, namespace: &str) -> Job {
     labels.insert("job-name".to_string(), name.to_string());
 
     Job {
-        metadata: Metadata {
-            name: name.to_string(),
-            namespace: Some(namespace.to_string()),
-            labels: Some(labels.clone()),
-            uid: None,
-            creation_timestamp: None,
-            resource_version: None,
-            finalizers: None,
-            deletion_timestamp: None,
-            owner_references: None,
-            annotations: None,
-            generation: None,
+        type_meta: TypeMeta {
+            kind: "Job".to_string(),
+            api_version: "batch/v1".to_string(),
+        },
+        metadata: {
+            let mut meta = ObjectMeta::new(name);
+            meta.namespace = Some(namespace.to_string());
+            meta.labels = Some(labels.clone());
+            meta
         },
         spec: JobSpec {
             parallelism: Some(1),
             completions: Some(1),
-            active_deadline_seconds: None,
             backoff_limit: Some(6),
-            selector: Some(LabelSelector {
-                match_labels: Some(labels.clone()),
-                match_expressions: None,
-            }),
             template: PodTemplateSpec {
-                metadata: Some(Metadata {
-                    name: format!("{}-pod", name),
-                    namespace: Some(namespace.to_string()),
-                    labels: Some(labels),
-                    uid: None,
-                    creation_timestamp: None,
-                    resource_version: None,
-                    finalizers: None,
-                    deletion_timestamp: None,
-                    owner_references: None,
-                    annotations: None,
-                    generation: None,
+                metadata: Some({
+                    let mut meta = ObjectMeta::new(&format!("{}-pod", name));
+                    meta.namespace = Some(namespace.to_string());
+                    meta.labels = Some(labels);
+                    meta
                 }),
-                spec: Some(PodSpec {
+                spec: PodSpec {
                     containers: vec![Container {
                         name: "job-container".to_string(),
                         image: "busybox:latest".to_string(),
@@ -60,23 +46,16 @@ fn create_test_job(name: &str, namespace: &str) -> Job {
                         ports: None,
                         volume_mounts: None,
                         resources: None,
-                        security_context: None,
                         liveness_probe: None,
                         readiness_probe: None,
                         startup_probe: None,
-                        lifecycle: None,
                         image_pull_policy: None,
-                        stdin: None,
-                        stdin_once: None,
-                        tty: None,
                         working_dir: None,
-                        termination_message_path: None,
-                        termination_message_policy: None,
+                        restart_policy: None,
+                        security_context: None,
                     }],
                     init_containers: None,
                     restart_policy: Some("OnFailure".to_string()),
-                    termination_grace_period_seconds: Some(30),
-                    dns_policy: Some("ClusterFirst".to_string()),
                     service_account_name: None,
                     automount_service_account_token: None,
                     node_selector: None,
@@ -87,45 +66,23 @@ fn create_test_job(name: &str, namespace: &str) -> Job {
                     host_pid: None,
                     host_ipc: None,
                     hostname: None,
-                    subdomain: None,
                     priority_class_name: None,
                     priority: None,
                     scheduler_name: None,
                     volumes: None,
-                    image_pull_secrets: None,
-                    security_context: None,
-                    runtime_class_name: None,
-                    enable_service_links: None,
-                    preemption_policy: None,
                     overhead: None,
                     topology_spread_constraints: None,
-                    set_hostname_as_fqdn: None,
-                    os: None,
-                    scheduling_gates: None,
                     resource_claims: None,
-                }),
+                    ephemeral_containers: None,
+                },
             },
-            ttl_seconds_after_finished: None,
-            completion_mode: None,
-            suspend: None,
-            manual_selector: None,
-            pod_failure_policy: None,
-            backoff_limit_per_index: None,
-            max_failed_indexes: None,
-            pod_replacement_policy: None,
+            active_deadline_seconds: None,
         },
         status: Some(JobStatus {
             active: Some(0),
             succeeded: Some(0),
             failed: Some(0),
-            completion_time: None,
-            start_time: None,
             conditions: None,
-            ready: None,
-            terminating: None,
-            uncounted_terminated_pods: None,
-            completed_indexes: None,
-            failed_indexes: None,
         }),
     }
 }
@@ -142,7 +99,7 @@ async fn test_job_create_and_get() {
     assert_eq!(created.metadata.name, "test-job");
     assert_eq!(created.metadata.namespace, Some("default".to_string()));
     assert_eq!(created.spec.completions, Some(1));
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
 
     // Get
     let retrieved: Job = storage.get(&key).await.unwrap();
@@ -262,14 +219,7 @@ async fn test_job_with_status() {
         active: Some(2),
         succeeded: Some(0),
         failed: Some(0),
-        completion_time: None,
-        start_time: Some(chrono::Utc::now()),
         conditions: None,
-        ready: Some(2),
-        terminating: None,
-        uncounted_terminated_pods: None,
-        completed_indexes: None,
-        failed_indexes: None,
     });
 
     let key = build_key("jobs", Some("default"), "test-status");
@@ -337,34 +287,15 @@ async fn test_job_with_active_deadline() {
 }
 
 #[tokio::test]
-async fn test_job_with_ttl_after_finished() {
+async fn test_job_basic_creation() {
     let storage = Arc::new(MemoryStorage::new());
 
-    let mut job = create_test_job("test-ttl", "default");
-    job.spec.ttl_seconds_after_finished = Some(100);
+    let job = create_test_job("test-basic", "default");
+    let key = build_key("jobs", Some("default"), "test-basic");
 
-    let key = build_key("jobs", Some("default"), "test-ttl");
-
-    // Create with TTL after finished
+    // Create job
     let created: Job = storage.create(&key, &job).await.unwrap();
-    assert_eq!(created.spec.ttl_seconds_after_finished, Some(100));
-
-    // Clean up
-    storage.delete(&key).await.unwrap();
-}
-
-#[tokio::test]
-async fn test_job_suspended() {
-    let storage = Arc::new(MemoryStorage::new());
-
-    let mut job = create_test_job("test-suspended", "default");
-    job.spec.suspend = Some(true);
-
-    let key = build_key("jobs", Some("default"), "test-suspended");
-
-    // Create suspended job
-    let created: Job = storage.create(&key, &job).await.unwrap();
-    assert_eq!(created.spec.suspend, Some(true));
+    assert_eq!(created.spec.completions, Some(1));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -394,7 +325,7 @@ async fn test_job_metadata_immutability() {
 }
 
 #[tokio::test]
-async fn test_job_label_selector() {
+async fn test_job_with_labels() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut labels = HashMap::new();
@@ -403,10 +334,6 @@ async fn test_job_label_selector() {
 
     let mut job = create_test_job("test-labels", "default");
     job.metadata.labels = Some(labels.clone());
-    job.spec.selector = Some(LabelSelector {
-        match_labels: Some(labels),
-        match_expressions: None,
-    });
 
     let key = build_key("jobs", Some("default"), "test-labels");
 
@@ -480,8 +407,7 @@ async fn test_job_restart_policy_on_failure() {
 
     // Create job with OnFailure restart policy
     let created: Job = storage.create(&key, &job).await.unwrap();
-    let pod_spec = created.spec.template.spec.unwrap();
-    assert_eq!(pod_spec.restart_policy, Some("OnFailure".to_string()));
+    assert_eq!(created.spec.template.spec.restart_policy, Some("OnFailure".to_string()));
 
     // Clean up
     storage.delete(&key).await.unwrap();

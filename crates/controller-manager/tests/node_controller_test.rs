@@ -1,29 +1,21 @@
 //! Integration tests for NodeController
 
 use chrono::{Duration, Utc};
-use rusternetes_common::resources::{Node, NodeCondition};
-use rusternetes_common::types::{NodeStatus, ObjectMeta, TypeMeta};
+use rusternetes_common::resources::{Node, NodeCondition, NodeStatus};
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::node::NodeController;
-use rusternetes_storage::{build_key, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_node_controller_creation() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let _controller = NodeController::new(storage);
 }
 
 #[tokio::test]
 async fn test_node_ready_with_recent_heartbeat() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = NodeController::new(storage.clone());
 
     // Create a node with recent heartbeat
@@ -85,11 +77,7 @@ async fn test_node_ready_with_recent_heartbeat() {
 
 #[tokio::test]
 async fn test_node_not_ready_with_old_heartbeat() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = NodeController::new(storage.clone());
 
     // Create a node with old heartbeat (60 seconds ago)
@@ -156,11 +144,7 @@ async fn test_node_not_ready_with_old_heartbeat() {
 
 #[tokio::test]
 async fn test_node_without_ready_condition() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = NodeController::new(storage.clone());
 
     // Create a node without Ready condition
@@ -184,7 +168,7 @@ async fn test_node_without_ready_condition() {
         },
         spec: None,
         status: Some(NodeStatus {
-            conditions: None, // No conditions
+            conditions: None,
             addresses: None,
             capacity: None,
             allocatable: None,

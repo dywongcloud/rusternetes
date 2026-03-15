@@ -3,7 +3,7 @@ use rusternetes_common::resources::{
     Endpoints, EndpointSubset, EndpointAddress, EndpointPort, EndpointReference,
     Pod, Service,
 };
-use rusternetes_storage::{build_key, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -13,12 +13,12 @@ use tracing::{debug, error, info};
 /// 1. Service selector matching pod labels
 /// 2. Pod readiness status
 /// 3. Pod IP assignment
-pub struct EndpointsController {
-    storage: Arc<EtcdStorage>,
+pub struct EndpointsController<S: Storage> {
+    storage: Arc<S>,
 }
 
-impl EndpointsController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> EndpointsController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 
@@ -229,11 +229,12 @@ impl EndpointsController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusternetes_storage::MemoryStorage;
     use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_pod_matches_selector() {
-        let storage = Arc::new(EtcdStorage::new(vec!["http://localhost:2379".to_string()]).await.unwrap());
+        let storage = Arc::new(MemoryStorage::new());
         let controller = EndpointsController {
             storage,
         };
@@ -307,7 +308,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_pod_ready() {
-        let storage = Arc::new(EtcdStorage::new(vec!["http://localhost:2379".to_string()]).await.unwrap());
+        let storage = Arc::new(MemoryStorage::new());
         let controller = EndpointsController {
             storage,
         };

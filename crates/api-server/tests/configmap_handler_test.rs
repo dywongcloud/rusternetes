@@ -3,7 +3,7 @@
 //! Tests all CRUD operations, edge cases, and error handling for configmaps
 
 use rusternetes_common::resources::ConfigMap;
-use rusternetes_common::types::Metadata;
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,18 +18,22 @@ fn create_test_configmap(name: &str, namespace: &str) -> ConfigMap {
     labels.insert("app".to_string(), name.to_string());
 
     ConfigMap {
-        metadata: Metadata {
+        type_meta: TypeMeta {
+            kind: "ConfigMap".to_string(),
+            api_version: "v1".to_string(),
+        },
+        metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
             labels: Some(labels),
-            uid: None,
+            uid: String::new(),
             creation_timestamp: None,
             resource_version: None,
             finalizers: None,
             deletion_timestamp: None,
+            deletion_grace_period_seconds: None,
             owner_references: None,
             annotations: None,
-            generation: None,
         },
         data: Some(data),
         binary_data: None,
@@ -48,7 +52,7 @@ async fn test_configmap_create_and_get() {
     let created: ConfigMap = storage.create(&key, &configmap).await.unwrap();
     assert_eq!(created.metadata.name, "test-cm");
     assert_eq!(created.metadata.namespace, Some("default".to_string()));
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
     assert!(created.data.is_some());
 
     // Get
@@ -166,7 +170,7 @@ async fn test_configmap_with_binary_data() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut binary_data = HashMap::new();
-    binary_data.insert("logo.png".to_string(), "iVBORw0KGgo...".to_string());
+    binary_data.insert("logo.png".to_string(), vec![0x89, 0x50, 0x4E, 0x47]);
 
     let mut configmap = create_test_configmap("test-binary", "default");
     configmap.binary_data = Some(binary_data);
@@ -177,7 +181,7 @@ async fn test_configmap_with_binary_data() {
     let created: ConfigMap = storage.create(&key, &configmap).await.unwrap();
     assert!(created.binary_data.is_some());
     let binary_data = created.binary_data.unwrap();
-    assert_eq!(binary_data.get("logo.png"), Some(&"iVBORw0KGgo...".to_string()));
+    assert_eq!(binary_data.get("logo.png"), Some(&vec![0x89, 0x50, 0x4E, 0x47]));
 
     // Clean up
     storage.delete(&key).await.unwrap();

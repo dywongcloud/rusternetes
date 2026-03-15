@@ -105,7 +105,7 @@ fn test_init_container_status_sequence() {
     // Simulate init containers running in sequence
     // Stage 1: First init container running, others waiting
     pod.status = Some(PodStatus {
-        phase: Phase::Pending,
+        phase: Some(Phase::Pending),
         message: Some("Initializing".to_string()),
         reason: Some("PodInitializing".to_string()),
         pod_ip: None,
@@ -128,7 +128,7 @@ fn test_init_container_status_sequence() {
     });
 
     let status = pod.status.as_ref().unwrap();
-    assert_eq!(status.phase, Phase::Pending);
+    assert_eq!(status.phase, Some(Phase::Pending));
     assert_eq!(status.reason, Some("PodInitializing".to_string()));
 
     let init_statuses = status.init_container_statuses.as_ref().unwrap();
@@ -144,7 +144,7 @@ fn test_init_containers_completed_app_starting() {
 
     // All init containers completed, app container starting
     pod.status = Some(PodStatus {
-        phase: Phase::Running,
+        phase: Some(Phase::Running),
         message: None,
         reason: None,
         pod_ip: Some("10.244.0.5".to_string()),
@@ -189,7 +189,7 @@ fn test_init_containers_completed_app_starting() {
     });
 
     let status = pod.status.as_ref().unwrap();
-    assert_eq!(status.phase, Phase::Running);
+    assert_eq!(status.phase, Some(Phase::Running));
 
     // Verify all init containers completed successfully
     let init_statuses = status.init_container_statuses.as_ref().unwrap();
@@ -218,7 +218,7 @@ fn test_init_container_failure_blocks_app() {
 
     // First init container failed - app should not start
     pod.status = Some(PodStatus {
-        phase: Phase::Failed,
+        phase: Some(Phase::Failed),
         message: Some("Init container init-0 failed".to_string()),
         reason: Some("Init:Error".to_string()),
         pod_ip: None,
@@ -241,7 +241,7 @@ fn test_init_container_failure_blocks_app() {
     });
 
     let status = pod.status.as_ref().unwrap();
-    assert_eq!(status.phase, Phase::Failed);
+    assert_eq!(status.phase, Some(Phase::Failed));
     assert_eq!(status.reason, Some("Init:Error".to_string()));
 
     // Init container should have failed
@@ -264,7 +264,7 @@ fn test_init_container_restart_count() {
 
     // Init container that has restarted multiple times
     pod.status = Some(PodStatus {
-        phase: Phase::Pending,
+        phase: Some(Phase::Pending),
         message: Some("Init container restarting".to_string()),
         reason: Some("Init:CrashLoopBackOff".to_string()),
         pod_ip: None,
@@ -287,7 +287,7 @@ fn test_init_container_restart_count() {
     });
 
     let status = pod.status.as_ref().unwrap();
-    assert_eq!(status.phase, Phase::Pending);
+    assert_eq!(status.phase, Some(Phase::Pending));
 
     let init_statuses = status.init_container_statuses.as_ref().unwrap();
     assert_eq!(init_statuses[0].restart_count, 5);

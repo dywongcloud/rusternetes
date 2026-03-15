@@ -2,18 +2,18 @@ use anyhow::Result;
 use rusternetes_common::resources::workloads::{Job, JobCondition, JobStatus};
 use rusternetes_common::resources::{Pod, PodStatus};
 use rusternetes_common::types::Phase;
-use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use rusternetes_storage::Storage;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
 use tracing::{error, info, warn};
 
-pub struct JobController {
-    storage: Arc<EtcdStorage>,
+pub struct JobController<S: Storage> {
+    storage: Arc<S>,
 }
 
-impl JobController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> JobController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 
@@ -146,6 +146,36 @@ impl JobController {
                         job_pods.len() + i as usize + 1,
                         completions
                     );
+                }
+
+                // Re-count pods after creation to get accurate status
+                let all_pods_after: Vec<Pod> = self.storage.list(&pod_prefix).await?;
+                let job_pods_after: Vec<Pod> = all_pods_after
+                    .into_iter()
+                    .filter(|pod| {
+                        pod.metadata
+                            .labels
+                            .as_ref()
+                            .and_then(|labels| labels.get("job-name"))
+                            .map(|j| j == name)
+                            .unwrap_or(false)
+                    })
+                    .collect();
+
+                // Recalculate counts
+                active = 0;
+                succeeded = 0;
+                failed = 0;
+
+                for pod in job_pods_after.iter() {
+                    if let Some(status) = &pod.status {
+                        match &status.phase {
+                            Some(Phase::Running) | Some(Phase::Pending) => active += 1,
+                            Some(Phase::Succeeded) => succeeded += 1,
+                            Some(Phase::Failed) => failed += 1,
+                            _ => {}
+                        }
+                    }
                 }
             }
 

@@ -2,35 +2,41 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for EndpointSlices
 
-use rusternetes_common::resources::{EndpointSlice, EndpointSliceEndpoint, EndpointSlicePort};
-use rusternetes_common::types::ObjectMeta;
+use rusternetes_common::resources::endpointslice::{EndpointSlice, Endpoint, EndpointPort};
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // Helper function to create test EndpointSlice
 fn create_test_endpointslice(name: &str, namespace: &str) -> EndpointSlice {
     EndpointSlice {
+        type_meta: TypeMeta {
+            kind: "EndpointSlice".to_string(),
+            api_version: "discovery.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
         address_type: "IPv4".to_string(),
-        endpoints: Some(vec![EndpointSliceEndpoint {
+        endpoints: vec![Endpoint {
             addresses: vec!["10.0.0.1".to_string()],
             conditions: None,
             hostname: Some("pod-1".to_string()),
             target_ref: None,
             node_name: Some("node-1".to_string()),
             zone: None,
-        }]),
-        ports: Some(vec![EndpointSlicePort {
+            hints: None,
+            deprecated_topology: None,
+        }],
+        ports: vec![EndpointPort {
             name: Some("http".to_string()),
             protocol: Some("TCP".to_string()),
             port: Some(80),
             app_protocol: None,
-        }]),
+        }],
     }
 }
 
@@ -47,7 +53,7 @@ async fn test_endpointslice_create_and_get() {
     assert_eq!(created.metadata.name, "test-endpointslice");
     assert_eq!(created.metadata.namespace, Some(namespace.to_string()));
     assert_eq!(created.address_type, "IPv4");
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
     assert!(created.metadata.creation_timestamp.is_some());
 
     // Get the endpointslice
@@ -69,19 +75,19 @@ async fn test_endpointslice_update() {
     storage.create(&key, &endpointslice).await.unwrap();
 
     // Update endpointslice with additional endpoint
-    if let Some(ref mut endpoints) = endpointslice.endpoints {
-        endpoints.push(EndpointSliceEndpoint {
+    endpointslice.endpoints.push(Endpoint {
             addresses: vec!["10.0.0.2".to_string()],
             conditions: None,
             hostname: Some("pod-2".to_string()),
             target_ref: None,
             node_name: Some("node-2".to_string()),
             zone: None,
-        });
-    }
+            hints: None,
+            deprecated_topology: None,
+    });
 
     let updated: EndpointSlice = storage.update(&key, &endpointslice).await.unwrap();
-    assert_eq!(updated.endpoints.as_ref().unwrap().len(), 2);
+    assert_eq!(updated.endpoints.len(), 2);
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -171,34 +177,40 @@ async fn test_endpointslice_with_ipv6_addresses() {
 
     let namespace = "test-endpointslice-ipv6";
     let endpointslice = EndpointSlice {
+        type_meta: TypeMeta {
+            kind: "EndpointSlice".to_string(),
+            api_version: "discovery.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "ipv6-endpointslice".to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
         address_type: "IPv6".to_string(),
-        endpoints: Some(vec![EndpointSliceEndpoint {
+        endpoints: vec![Endpoint {
             addresses: vec!["2001:db8::1".to_string(), "2001:db8::2".to_string()],
             conditions: None,
             hostname: Some("pod-1".to_string()),
             target_ref: None,
             node_name: Some("node-1".to_string()),
             zone: None,
-        }]),
-        ports: Some(vec![EndpointSlicePort {
+            hints: None,
+            deprecated_topology: None,
+        }],
+        ports: vec![EndpointPort {
             name: Some("http".to_string()),
             protocol: Some("TCP".to_string()),
             port: Some(80),
             app_protocol: None,
-        }]),
+        }],
     };
 
     let key = build_key("endpointslices", Some(namespace), "ipv6-endpointslice");
     let created: EndpointSlice = storage.create(&key, &endpointslice).await.unwrap();
 
     assert_eq!(created.address_type, "IPv6");
-    assert_eq!(created.endpoints.as_ref().unwrap()[0].addresses.len(), 2);
-    assert_eq!(created.endpoints.as_ref().unwrap()[0].addresses[0], "2001:db8::1");
+    assert_eq!(created.endpoints[0].addresses.len(), 2);
+    assert_eq!(created.endpoints[0].addresses[0], "2001:db8::1");
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -210,49 +222,55 @@ async fn test_endpointslice_with_multiple_ports() {
 
     let namespace = "test-endpointslice-multi-port";
     let endpointslice = EndpointSlice {
+        type_meta: TypeMeta {
+            kind: "EndpointSlice".to_string(),
+            api_version: "discovery.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "multi-port-endpointslice".to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
         address_type: "IPv4".to_string(),
-        endpoints: Some(vec![EndpointSliceEndpoint {
+        endpoints: vec![Endpoint {
             addresses: vec!["10.0.0.1".to_string()],
             conditions: None,
             hostname: Some("pod-1".to_string()),
             target_ref: None,
             node_name: Some("node-1".to_string()),
             zone: None,
-        }]),
-        ports: Some(vec![
-            EndpointSlicePort {
+            hints: None,
+            deprecated_topology: None,
+        }],
+        ports: vec![
+            EndpointPort {
                 name: Some("http".to_string()),
                 protocol: Some("TCP".to_string()),
                 port: Some(80),
                 app_protocol: Some("http".to_string()),
             },
-            EndpointSlicePort {
+            EndpointPort {
                 name: Some("https".to_string()),
                 protocol: Some("TCP".to_string()),
                 port: Some(443),
                 app_protocol: Some("https".to_string()),
             },
-            EndpointSlicePort {
+            EndpointPort {
                 name: Some("metrics".to_string()),
                 protocol: Some("TCP".to_string()),
                 port: Some(9090),
                 app_protocol: None,
             },
-        ]),
+        ],
     };
 
     let key = build_key("endpointslices", Some(namespace), "multi-port-endpointslice");
     let created: EndpointSlice = storage.create(&key, &endpointslice).await.unwrap();
 
-    assert_eq!(created.ports.as_ref().unwrap().len(), 3);
-    assert_eq!(created.ports.as_ref().unwrap()[0].port, Some(80));
-    assert_eq!(created.ports.as_ref().unwrap()[1].port, Some(443));
-    assert_eq!(created.ports.as_ref().unwrap()[2].port, Some(9090));
+    assert_eq!(created.ports.len(), 3);
+    assert_eq!(created.ports[0].port, Some(80));
+    assert_eq!(created.ports[1].port, Some(443));
+    assert_eq!(created.ports[2].port, Some(9090));
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -264,14 +282,18 @@ async fn test_endpointslice_with_endpoint_conditions() {
 
     let namespace = "test-endpointslice-conditions";
     let endpointslice = EndpointSlice {
+        type_meta: TypeMeta {
+            kind: "EndpointSlice".to_string(),
+            api_version: "discovery.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "conditions-endpointslice".to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
         address_type: "IPv4".to_string(),
-        endpoints: Some(vec![
-            EndpointSliceEndpoint {
+        endpoints: vec![
+            Endpoint {
                 addresses: vec!["10.0.0.1".to_string()],
                 conditions: Some(rusternetes_common::resources::EndpointConditions {
                     ready: Some(true),
@@ -282,8 +304,10 @@ async fn test_endpointslice_with_endpoint_conditions() {
                 target_ref: None,
                 node_name: Some("node-1".to_string()),
                 zone: None,
+            hints: None,
+            deprecated_topology: None,
             },
-            EndpointSliceEndpoint {
+            Endpoint {
                 addresses: vec!["10.0.0.2".to_string()],
                 conditions: Some(rusternetes_common::resources::EndpointConditions {
                     ready: Some(false),
@@ -294,22 +318,24 @@ async fn test_endpointslice_with_endpoint_conditions() {
                 target_ref: None,
                 node_name: Some("node-2".to_string()),
                 zone: None,
+            hints: None,
+            deprecated_topology: None,
             },
-        ]),
-        ports: Some(vec![EndpointSlicePort {
+        ],
+        ports: vec![EndpointPort {
             name: Some("http".to_string()),
             protocol: Some("TCP".to_string()),
             port: Some(80),
             app_protocol: None,
-        }]),
+        }],
     };
 
     let key = build_key("endpointslices", Some(namespace), "conditions-endpointslice");
     let created: EndpointSlice = storage.create(&key, &endpointslice).await.unwrap();
 
-    assert_eq!(created.endpoints.as_ref().unwrap().len(), 2);
-    assert_eq!(created.endpoints.as_ref().unwrap()[0].conditions.as_ref().unwrap().ready, Some(true));
-    assert_eq!(created.endpoints.as_ref().unwrap()[1].conditions.as_ref().unwrap().terminating, Some(true));
+    assert_eq!(created.endpoints.len(), 2);
+    assert_eq!(created.endpoints[0].conditions.as_ref().unwrap().ready, Some(true));
+    assert_eq!(created.endpoints[1].conditions.as_ref().unwrap().terminating, Some(true));
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -321,43 +347,51 @@ async fn test_endpointslice_with_zone_hints() {
 
     let namespace = "test-endpointslice-zones";
     let endpointslice = EndpointSlice {
+        type_meta: TypeMeta {
+            kind: "EndpointSlice".to_string(),
+            api_version: "discovery.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "zoned-endpointslice".to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
         address_type: "IPv4".to_string(),
-        endpoints: Some(vec![
-            EndpointSliceEndpoint {
+        endpoints: vec![
+            Endpoint {
                 addresses: vec!["10.0.0.1".to_string()],
                 conditions: None,
                 hostname: Some("pod-us-west".to_string()),
                 target_ref: None,
                 node_name: Some("node-1".to_string()),
                 zone: Some("us-west-1a".to_string()),
+            hints: None,
+            deprecated_topology: None,
             },
-            EndpointSliceEndpoint {
+            Endpoint {
                 addresses: vec!["10.0.0.2".to_string()],
                 conditions: None,
                 hostname: Some("pod-us-east".to_string()),
                 target_ref: None,
                 node_name: Some("node-2".to_string()),
                 zone: Some("us-east-1b".to_string()),
+            hints: None,
+            deprecated_topology: None,
             },
-        ]),
-        ports: Some(vec![EndpointSlicePort {
+        ],
+        ports: vec![EndpointPort {
             name: Some("http".to_string()),
             protocol: Some("TCP".to_string()),
             port: Some(80),
             app_protocol: None,
-        }]),
+        }],
     };
 
     let key = build_key("endpointslices", Some(namespace), "zoned-endpointslice");
     let created: EndpointSlice = storage.create(&key, &endpointslice).await.unwrap();
 
-    assert_eq!(created.endpoints.as_ref().unwrap()[0].zone, Some("us-west-1a".to_string()));
-    assert_eq!(created.endpoints.as_ref().unwrap()[1].zone, Some("us-east-1b".to_string()));
+    assert_eq!(created.endpoints[0].zone, Some("us-west-1a".to_string()));
+    assert_eq!(created.endpoints[1].zone, Some("us-east-1b".to_string()));
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -369,25 +403,29 @@ async fn test_endpointslice_empty_endpoints() {
 
     let namespace = "test-endpointslice-empty";
     let endpointslice = EndpointSlice {
+        type_meta: TypeMeta {
+            kind: "EndpointSlice".to_string(),
+            api_version: "discovery.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "empty-endpointslice".to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
         address_type: "IPv4".to_string(),
-        endpoints: Some(vec![]),
-        ports: Some(vec![EndpointSlicePort {
+        endpoints: vec![],
+        ports: vec![EndpointPort {
             name: Some("http".to_string()),
             protocol: Some("TCP".to_string()),
             port: Some(80),
             app_protocol: None,
-        }]),
+        }],
     };
 
     let key = build_key("endpointslices", Some(namespace), "empty-endpointslice");
     let created: EndpointSlice = storage.create(&key, &endpointslice).await.unwrap();
 
-    assert!(created.endpoints.as_ref().unwrap().is_empty());
+    assert!(created.endpoints.is_empty());
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -401,7 +439,7 @@ async fn test_endpointslice_with_labels() {
     let mut endpointslice = create_test_endpointslice("labeled-endpointslice", namespace);
 
     endpointslice.metadata.labels = Some({
-        let mut labels = BTreeMap::new();
+        let mut labels = HashMap::new();
         labels.insert("app".to_string(), "nginx".to_string());
         labels.insert("tier".to_string(), "frontend".to_string());
         labels.insert("kubernetes.io/service-name".to_string(), "nginx-service".to_string());
@@ -427,7 +465,7 @@ async fn test_endpointslice_with_annotations() {
     let mut endpointslice = create_test_endpointslice("annotated-endpointslice", namespace);
 
     endpointslice.metadata.annotations = Some({
-        let mut annotations = BTreeMap::new();
+        let mut annotations = HashMap::new();
         annotations.insert("description".to_string(), "Test endpointslice".to_string());
         annotations.insert("managed-by".to_string(), "test-controller".to_string());
         annotations
@@ -531,34 +569,40 @@ async fn test_endpointslice_with_fqdn_address_type() {
 
     let namespace = "test-endpointslice-fqdn";
     let endpointslice = EndpointSlice {
+        type_meta: TypeMeta {
+            kind: "EndpointSlice".to_string(),
+            api_version: "discovery.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "fqdn-endpointslice".to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
         address_type: "FQDN".to_string(),
-        endpoints: Some(vec![EndpointSliceEndpoint {
+        endpoints: vec![Endpoint {
             addresses: vec!["example.com".to_string(), "api.example.com".to_string()],
             conditions: None,
             hostname: None,
             target_ref: None,
             node_name: None,
             zone: None,
-        }]),
-        ports: Some(vec![EndpointSlicePort {
+            hints: None,
+            deprecated_topology: None,
+        }],
+        ports: vec![EndpointPort {
             name: Some("https".to_string()),
             protocol: Some("TCP".to_string()),
             port: Some(443),
             app_protocol: Some("https".to_string()),
-        }]),
+        }],
     };
 
     let key = build_key("endpointslices", Some(namespace), "fqdn-endpointslice");
     let created: EndpointSlice = storage.create(&key, &endpointslice).await.unwrap();
 
     assert_eq!(created.address_type, "FQDN");
-    assert_eq!(created.endpoints.as_ref().unwrap()[0].addresses[0], "example.com");
-    assert_eq!(created.endpoints.as_ref().unwrap()[0].addresses[1], "api.example.com");
+    assert_eq!(created.endpoints[0].addresses[0], "example.com");
+    assert_eq!(created.endpoints[0].addresses[1], "api.example.com");
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -570,42 +614,48 @@ async fn test_endpointslice_with_udp_protocol() {
 
     let namespace = "test-endpointslice-udp";
     let endpointslice = EndpointSlice {
+        type_meta: TypeMeta {
+            kind: "EndpointSlice".to_string(),
+            api_version: "discovery.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "udp-endpointslice".to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
         address_type: "IPv4".to_string(),
-        endpoints: Some(vec![EndpointSliceEndpoint {
+        endpoints: vec![Endpoint {
             addresses: vec!["10.0.0.1".to_string()],
             conditions: None,
             hostname: Some("dns-pod".to_string()),
             target_ref: None,
             node_name: Some("node-1".to_string()),
             zone: None,
-        }]),
-        ports: Some(vec![
-            EndpointSlicePort {
+            hints: None,
+            deprecated_topology: None,
+        }],
+        ports: vec![
+            EndpointPort {
                 name: Some("dns".to_string()),
                 protocol: Some("UDP".to_string()),
                 port: Some(53),
                 app_protocol: None,
             },
-            EndpointSlicePort {
+            EndpointPort {
                 name: Some("dns-tcp".to_string()),
                 protocol: Some("TCP".to_string()),
                 port: Some(53),
                 app_protocol: None,
             },
-        ]),
+        ],
     };
 
     let key = build_key("endpointslices", Some(namespace), "udp-endpointslice");
     let created: EndpointSlice = storage.create(&key, &endpointslice).await.unwrap();
 
-    assert_eq!(created.ports.as_ref().unwrap()[0].protocol, Some("UDP".to_string()));
-    assert_eq!(created.ports.as_ref().unwrap()[1].protocol, Some("TCP".to_string()));
-    assert_eq!(created.ports.as_ref().unwrap()[0].port, Some(53));
+    assert_eq!(created.ports[0].protocol, Some("UDP".to_string()));
+    assert_eq!(created.ports[1].protocol, Some("TCP".to_string()));
+    assert_eq!(created.ports[0].port, Some(53));
 
     // Cleanup
     storage.delete(&key).await.unwrap();

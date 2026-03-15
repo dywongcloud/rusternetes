@@ -135,7 +135,7 @@ fn create_test_pod(
             resource_claims: None,
         }),
         status: Some(PodStatus {
-            phase: Phase::Pending,
+            phase: Some(Phase::Pending),
             message: None,
             reason: None,
             host_ip: None,
@@ -173,7 +173,7 @@ async fn test_node_selector_scheduling() {
     // For this test, we verify the pod exists and is pending
     let stored_pod: Pod = storage.get(&pod_key).await.unwrap();
     assert_eq!(stored_pod.spec.as_ref().unwrap().node_name, None);
-    assert_eq!(stored_pod.status.as_ref().unwrap().phase, Phase::Pending);
+    assert_eq!(stored_pod.status.as_ref().unwrap().phase, Some(Phase::Pending));
 }
 
 #[tokio::test]
@@ -212,8 +212,8 @@ async fn test_taint_toleration_scheduling() {
     let stored_pod1: Pod = storage.get(&key1).await.unwrap();
     let stored_pod2: Pod = storage.get(&key2).await.unwrap();
 
-    assert_eq!(stored_pod1.status.as_ref().unwrap().phase, Phase::Pending);
-    assert_eq!(stored_pod2.status.as_ref().unwrap().phase, Phase::Pending);
+    assert_eq!(stored_pod1.status.as_ref().unwrap().phase, Some(Phase::Pending));
+    assert_eq!(stored_pod2.status.as_ref().unwrap().phase, Some(Phase::Pending));
 }
 
 #[tokio::test]
@@ -559,7 +559,7 @@ async fn test_no_available_nodes() {
 
     // Verify pod remains pending
     let stored_pod: Pod = storage.get(&key).await.unwrap();
-    assert_eq!(stored_pod.status.as_ref().unwrap().phase, Phase::Pending);
+    assert_eq!(stored_pod.status.as_ref().unwrap().phase, Some(Phase::Pending));
     assert_eq!(stored_pod.spec.as_ref().unwrap().node_name, None);
 }
 
@@ -887,7 +887,7 @@ async fn test_preemption_high_priority_evicts_low_priority() {
     );
     low_priority_pod.spec.as_mut().unwrap().priority = Some(10);
     low_priority_pod.spec.as_mut().unwrap().node_name = Some("small-node".to_string());
-    low_priority_pod.status.as_mut().unwrap().phase = Phase::Running;
+    low_priority_pod.status.as_mut().unwrap().phase = Some(Phase::Running);
     let low_key = build_key("pods", Some("default"), "low-priority");
     storage.create(&low_key, &low_priority_pod).await.unwrap();
 
@@ -913,7 +913,7 @@ async fn test_preemption_high_priority_evicts_low_priority() {
     assert_eq!(high_stored.spec.as_ref().unwrap().priority, Some(1000));
 
     // Verify high priority pod is pending (waiting for preemption)
-    assert_eq!(high_stored.status.as_ref().unwrap().phase, Phase::Pending);
+    assert_eq!(high_stored.status.as_ref().unwrap().phase, Some(Phase::Pending));
 }
 
 #[tokio::test]
@@ -936,7 +936,7 @@ async fn test_preemption_multiple_low_priority_pods() {
         );
         pod.spec.as_mut().unwrap().priority = Some(50);
         pod.spec.as_mut().unwrap().node_name = Some("node-1".to_string());
-        pod.status.as_mut().unwrap().phase = Phase::Running;
+        pod.status.as_mut().unwrap().phase = Some(Phase::Running);
         let key = build_key("pods", Some("default"), &format!("low-{}", i));
         storage.create(&key, &pod).await.unwrap();
     }
@@ -979,7 +979,7 @@ async fn test_no_preemption_for_zero_priority() {
     );
     running_pod.spec.as_mut().unwrap().priority = Some(100);
     running_pod.spec.as_mut().unwrap().node_name = Some("node-1".to_string());
-    running_pod.status.as_mut().unwrap().phase = Phase::Running;
+    running_pod.status.as_mut().unwrap().phase = Some(Phase::Running);
     let running_key = build_key("pods", Some("default"), "running");
     storage.create(&running_key, &running_pod).await.unwrap();
 
@@ -1000,5 +1000,5 @@ async fn test_no_preemption_for_zero_priority() {
     // Verify zero-priority pod remains pending
     let stored: Pod = storage.get(&zero_key).await.unwrap();
     assert_eq!(stored.spec.as_ref().unwrap().priority, Some(0));
-    assert_eq!(stored.status.as_ref().unwrap().phase, Phase::Pending);
+    assert_eq!(stored.status.as_ref().unwrap().phase, Some(Phase::Pending));
 }

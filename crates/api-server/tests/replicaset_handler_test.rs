@@ -2,8 +2,8 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for replicasets
 
-use rusternetes_common::resources::{ReplicaSet, ReplicaSetSpec, ReplicaSetStatus, LabelSelector, PodTemplateSpec, PodSpec};
-use rusternetes_common::types::{Container, Metadata};
+use rusternetes_common::resources::{ReplicaSet, ReplicaSetSpec, ReplicaSetStatus, PodTemplateSpec, PodSpec, Container};
+use rusternetes_common::types::{ObjectMeta, TypeMeta, LabelSelector};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,66 +14,47 @@ fn create_test_replicaset(name: &str, namespace: &str, replicas: i32) -> Replica
     labels.insert("app".to_string(), name.to_string());
 
     ReplicaSet {
-        metadata: Metadata {
+        type_meta: TypeMeta { api_version: "apps/v1".to_string(), kind: "ReplicaSet".to_string() },
+        metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
             labels: Some(labels.clone()),
-            uid: None,
-            creation_timestamp: None,
-            resource_version: None,
-            finalizers: None,
-            deletion_timestamp: None,
-            owner_references: None,
-            annotations: None,
-            generation: None,
+            ..Default::default()
         },
         spec: ReplicaSetSpec {
-            replicas: Some(replicas),
+            replicas: replicas,
             selector: LabelSelector {
                 match_labels: Some(labels.clone()),
                 match_expressions: None,
             },
             template: PodTemplateSpec {
-                metadata: Some(Metadata {
+                metadata: Some(ObjectMeta {
                     name: format!("{}-pod", name),
                     namespace: Some(namespace.to_string()),
                     labels: Some(labels),
-                    uid: None,
-                    creation_timestamp: None,
-                    resource_version: None,
-                    finalizers: None,
-                    deletion_timestamp: None,
-                    owner_references: None,
-                    annotations: None,
-                    generation: None,
+                    ..Default::default()
                 }),
-                spec: Some(PodSpec {
+                spec: PodSpec {
                     containers: vec![Container {
                         name: "nginx".to_string(),
                         image: "nginx:latest".to_string(),
                         command: None,
                         args: None,
-                        env: None,
+                        working_dir: None,
                         ports: None,
-                        volume_mounts: None,
+                        env: None,
                         resources: None,
-                        security_context: None,
+                        volume_mounts: None,
+                        image_pull_policy: None,
                         liveness_probe: None,
                         readiness_probe: None,
                         startup_probe: None,
-                        lifecycle: None,
-                        image_pull_policy: None,
-                        stdin: None,
-                        stdin_once: None,
-                        tty: None,
-                        working_dir: None,
-                        termination_message_path: None,
-                        termination_message_policy: None,
+                        restart_policy: None,
+                        security_context: None,
                     }],
                     init_containers: None,
+                    ephemeral_containers: None,
                     restart_policy: Some("Always".to_string()),
-                    termination_grace_period_seconds: Some(30),
-                    dns_policy: Some("ClusterFirst".to_string()),
                     service_account_name: None,
                     automount_service_account_token: None,
                     node_selector: None,
@@ -84,23 +65,14 @@ fn create_test_replicaset(name: &str, namespace: &str, replicas: i32) -> Replica
                     host_pid: None,
                     host_ipc: None,
                     hostname: None,
-                    subdomain: None,
                     priority_class_name: None,
                     priority: None,
                     scheduler_name: None,
                     volumes: None,
-                    image_pull_secrets: None,
-                    security_context: None,
-                    runtime_class_name: None,
-                    enable_service_links: None,
-                    preemption_policy: None,
                     overhead: None,
                     topology_spread_constraints: None,
-                    set_hostname_as_fqdn: None,
-                    os: None,
-                    scheduling_gates: None,
                     resource_claims: None,
-                }),
+                },
             },
             min_ready_seconds: Some(0),
         },
@@ -126,13 +98,13 @@ async fn test_replicaset_create_and_get() {
     let created: ReplicaSet = storage.create(&key, &replicaset).await.unwrap();
     assert_eq!(created.metadata.name, "test-rs");
     assert_eq!(created.metadata.namespace, Some("default".to_string()));
-    assert_eq!(created.spec.replicas, Some(3));
-    assert!(created.metadata.uid.is_some());
+    assert_eq!(created.spec.replicas, 3);
+    assert!(!created.metadata.uid.is_empty());
 
     // Get
     let retrieved: ReplicaSet = storage.get(&key).await.unwrap();
     assert_eq!(retrieved.metadata.name, "test-rs");
-    assert_eq!(retrieved.spec.replicas, Some(3));
+    assert_eq!(retrieved.spec.replicas, 3);
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -149,13 +121,13 @@ async fn test_replicaset_update() {
     storage.create(&key, &replicaset).await.unwrap();
 
     // Update replicas
-    replicaset.spec.replicas = Some(5);
+    replicaset.spec.replicas = 5;
     let updated: ReplicaSet = storage.update(&key, &replicaset).await.unwrap();
-    assert_eq!(updated.spec.replicas, Some(5));
+    assert_eq!(updated.spec.replicas, 5);
 
     // Verify update
     let retrieved: ReplicaSet = storage.get(&key).await.unwrap();
-    assert_eq!(retrieved.spec.replicas, Some(5));
+    assert_eq!(retrieved.spec.replicas, 5);
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -306,11 +278,11 @@ async fn test_replicaset_metadata_immutability() {
 
     // Try to update - UID should remain unchanged
     let mut updated_rs = created.clone();
-    updated_rs.spec.replicas = Some(10);
+    updated_rs.spec.replicas = 10;
 
     let updated: ReplicaSet = storage.update(&key, &updated_rs).await.unwrap();
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.spec.replicas, Some(10));
+    assert_eq!(updated.spec.replicas, 10);
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -390,7 +362,7 @@ async fn test_replicaset_zero_replicas() {
 
     // Create with zero replicas
     let created: ReplicaSet = storage.create(&key, &replicaset).await.unwrap();
-    assert_eq!(created.spec.replicas, Some(0));
+    assert_eq!(created.spec.replicas, 0);
 
     // Clean up
     storage.delete(&key).await.unwrap();

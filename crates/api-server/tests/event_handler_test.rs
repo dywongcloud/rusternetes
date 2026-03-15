@@ -5,12 +5,14 @@
 use rusternetes_common::resources::{Event, EventSource, EventType, ObjectReference};
 use rusternetes_common::types::ObjectMeta;
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
-use std::collections::BTreeMap;
+use std::collections::{HashMap, BTreeMap};
 use std::sync::Arc;
 
 // Helper function to create test Event
 fn create_test_event(name: &str, namespace: &str) -> Event {
     Event {
+        api_version: "v1".to_string(),
+        kind: "Event".to_string(),
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
@@ -27,18 +29,17 @@ fn create_test_event(name: &str, namespace: &str) -> Event {
         },
         reason: "PodStarted".to_string(),
         message: "Pod started successfully".to_string(),
-        source: Some(EventSource {
-            component: Some("kubelet".to_string()),
+        source: EventSource {
+            component: "kubelet".to_string(),
             host: Some("node-1".to_string()),
-        }),
-        first_timestamp: Some(chrono::Utc::now()),
-        last_timestamp: Some(chrono::Utc::now()),
+        },
+        first_timestamp: chrono::Utc::now(),
+        last_timestamp: chrono::Utc::now(),
         count: 1,
         event_type: EventType::Normal,
         action: Some("Started".to_string()),
         related: None,
-        reporting_component: Some("kubelet".to_string()),
-        reporting_instance: Some("node-1".to_string()),
+        series: None,
     }
 }
 
@@ -56,7 +57,7 @@ async fn test_event_create_and_get() {
     assert_eq!(created.metadata.namespace, Some(namespace.to_string()));
     assert_eq!(created.reason, "PodStarted");
     assert_eq!(created.count, 1);
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
     assert!(created.metadata.creation_timestamp.is_some());
 
     // Get the event
@@ -80,7 +81,7 @@ async fn test_event_update() {
     // Update event count (simulating repeated event)
     event.count = 5;
     event.message = "Pod started successfully (repeated 5 times)".to_string();
-    event.last_timestamp = Some(chrono::Utc::now());
+    event.last_timestamp = chrono::Utc::now();
 
     let updated: Event = storage.update(&key, &event).await.unwrap();
     assert_eq!(updated.count, 5);
@@ -259,41 +260,38 @@ async fn test_event_source_components() {
 
     // Kubelet event
     let mut kubelet_event = create_test_event("kubelet-event", namespace);
-    kubelet_event.source = Some(EventSource {
-        component: Some("kubelet".to_string()),
+    kubelet_event.source = EventSource {
+        component: "kubelet".to_string(),
         host: Some("node-1".to_string()),
-    });
-    kubelet_event.reporting_component = Some("kubelet".to_string());
+    };
 
     let key1 = build_key("events", Some(namespace), "kubelet-event");
     let created1: Event = storage.create(&key1, &kubelet_event).await.unwrap();
-    assert_eq!(created1.source.as_ref().unwrap().component, Some("kubelet".to_string()));
+    assert_eq!(created1.source.component, "kubelet".to_string());
 
     // Scheduler event
     let mut scheduler_event = create_test_event("scheduler-event", namespace);
-    scheduler_event.source = Some(EventSource {
-        component: Some("default-scheduler".to_string()),
+    scheduler_event.source = EventSource {
+        component: "default-scheduler".to_string(),
         host: None,
-    });
-    scheduler_event.reporting_component = Some("default-scheduler".to_string());
+    };
     scheduler_event.reason = "Scheduled".to_string();
 
     let key2 = build_key("events", Some(namespace), "scheduler-event");
     let created2: Event = storage.create(&key2, &scheduler_event).await.unwrap();
-    assert_eq!(created2.source.as_ref().unwrap().component, Some("default-scheduler".to_string()));
+    assert_eq!(created2.source.component, "default-scheduler".to_string());
 
     // Controller manager event
     let mut controller_event = create_test_event("controller-event", namespace);
-    controller_event.source = Some(EventSource {
-        component: Some("replicaset-controller".to_string()),
+    controller_event.source = EventSource {
+        component: "replicaset-controller".to_string(),
         host: None,
-    });
-    controller_event.reporting_component = Some("replicaset-controller".to_string());
+    };
     controller_event.reason = "SuccessfulCreate".to_string();
 
     let key3 = build_key("events", Some(namespace), "controller-event");
     let created3: Event = storage.create(&key3, &controller_event).await.unwrap();
-    assert_eq!(created3.source.as_ref().unwrap().component, Some("replicaset-controller".to_string()));
+    assert_eq!(created3.source.component, "replicaset-controller".to_string());
 
     // Cleanup
     storage.delete(&key1).await.unwrap();
@@ -312,22 +310,20 @@ async fn test_event_count_aggregation() {
 
     // Create initial event
     event.count = 1;
-    event.first_timestamp = Some(chrono::Utc::now());
-    event.last_timestamp = Some(chrono::Utc::now());
+    event.first_timestamp = chrono::Utc::now();
+    event.last_timestamp = chrono::Utc::now();
     storage.create(&key, &event).await.unwrap();
 
     // Simulate event aggregation (count increases over time)
     for count in 2..=10 {
         event.count = count;
-        event.last_timestamp = Some(chrono::Utc::now());
+        event.last_timestamp = chrono::Utc::now();
         storage.update(&key, &event).await.unwrap();
     }
 
     // Verify final count
     let final_event: Event = storage.get(&key).await.unwrap();
     assert_eq!(final_event.count, 10);
-    assert!(final_event.first_timestamp.is_some());
-    assert!(final_event.last_timestamp.is_some());
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -422,8 +418,8 @@ async fn test_event_with_labels() {
     let mut event = create_test_event("labeled-event", namespace);
 
     event.metadata.labels = Some({
-        let mut labels = BTreeMap::new();
-        labels.insert("component".to_string(), "kubelet".to_string());
+        let mut labels = HashMap::new();
+        labels.insert("app".to_string(), "test-app".to_string());
         labels.insert("severity".to_string(), "warning".to_string());
         labels
     });
@@ -432,7 +428,7 @@ async fn test_event_with_labels() {
     let created: Event = storage.create(&key, &event).await.unwrap();
 
     assert!(created.metadata.labels.is_some());
-    assert_eq!(created.metadata.labels.as_ref().unwrap().get("component"), Some(&"kubelet".to_string()));
+    assert_eq!(created.metadata.labels.as_ref().unwrap().get("app"), Some(&"test-app".to_string()));
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -446,7 +442,7 @@ async fn test_event_with_annotations() {
     let mut event = create_test_event("annotated-event", namespace);
 
     event.metadata.annotations = Some({
-        let mut annotations = BTreeMap::new();
+        let mut annotations = HashMap::new();
         annotations.insert("description".to_string(), "Test event for monitoring".to_string());
         annotations.insert("alert-level".to_string(), "info".to_string());
         annotations

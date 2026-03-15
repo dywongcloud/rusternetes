@@ -1,20 +1,26 @@
-use crate::{Storage, WatchStream};
+use crate::{Storage, WatchEvent, WatchStream};
 use async_trait::async_trait;
 use rusternetes_common::{Error, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use tokio::sync::broadcast;
 
 /// In-memory storage implementation for testing
 #[derive(Clone)]
 pub struct MemoryStorage {
     data: Arc<RwLock<HashMap<String, String>>>,
+    // Broadcast channel for watch events
+    watch_tx: broadcast::Sender<WatchEvent>,
 }
 
 impl MemoryStorage {
     pub fn new() -> Self {
+        // Create a broadcast channel with capacity of 1000 events
+        let (watch_tx, _) = broadcast::channel(1000);
         Self {
             data: Arc::new(RwLock::new(HashMap::new())),
+            watch_tx,
         }
     }
 
@@ -46,7 +52,30 @@ impl Storage for MemoryStorage {
     where
         T: Serialize + DeserializeOwned + Send + Sync,
     {
-        let serialized = serde_json::to_string(value)?;
+        let mut value_json: serde_json::Value = serde_json::to_value(value)?;
+
+        // Generate UID if not already set or empty
+        if let Some(metadata) = value_json.get_mut("metadata") {
+            if let Some(metadata_obj) = metadata.as_object_mut() {
+                // Check if uid field exists and is empty/null, or doesn't exist
+                let should_generate_uid = match metadata_obj.get("uid") {
+                    Some(serde_json::Value::String(s)) if !s.is_empty() => false,
+                    _ => true, // None, null, empty string, or non-string
+                };
+
+                if should_generate_uid {
+                    metadata_obj.insert("uid".to_string(), serde_json::Value::String(uuid::Uuid::new_v4().to_string()));
+                }
+
+                // Set creation timestamp if not set
+                if metadata_obj.get("creationTimestamp").is_none() || metadata_obj.get("creationTimestamp") == Some(&serde_json::Value::Null) {
+                    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                    metadata_obj.insert("creationTimestamp".to_string(), serde_json::Value::String(now));
+                }
+            }
+        }
+
+        let serialized = serde_json::to_string(&value_json)?;
 
         let mut data = self.data.write().unwrap();
         if data.contains_key(key) {
@@ -54,6 +83,10 @@ impl Storage for MemoryStorage {
         }
 
         data.insert(key.to_string(), serialized.clone());
+        drop(data); // Release lock before sending event
+
+        // Emit watch event
+        let _ = self.watch_tx.send(WatchEvent::Added(key.to_string(), serialized.clone()));
 
         Ok(serde_json::from_str(&serialized)?)
     }
@@ -82,6 +115,10 @@ impl Storage for MemoryStorage {
         }
 
         data.insert(key.to_string(), serialized.clone());
+        drop(data); // Release lock before sending event
+
+        // Emit watch event
+        let _ = self.watch_tx.send(WatchEvent::Modified(key.to_string(), serialized.clone()));
 
         Ok(serde_json::from_str(&serialized)?)
     }
@@ -94,14 +131,23 @@ impl Storage for MemoryStorage {
             return Err(Error::NotFound(key.to_string()));
         }
 
-        data.insert(key.to_string(), serialized);
+        data.insert(key.to_string(), serialized.clone());
+        drop(data); // Release lock before sending event
+
+        // Emit watch event
+        let _ = self.watch_tx.send(WatchEvent::Modified(key.to_string(), serialized));
+
         Ok(())
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
         let mut data = self.data.write().unwrap();
-        data.remove(key)
+        let previous_value = data.remove(key)
             .ok_or_else(|| Error::NotFound(key.to_string()))?;
+        drop(data); // Release lock before sending event
+
+        // Emit watch event with previous value
+        let _ = self.watch_tx.send(WatchEvent::Deleted(key.to_string(), previous_value));
 
         Ok(())
     }
@@ -122,11 +168,28 @@ impl Storage for MemoryStorage {
         Ok(results)
     }
 
-    async fn watch(&self, _prefix: &str) -> Result<WatchStream> {
-        // For testing, return an empty stream
-        // In a real implementation, you could use channels to send events
-        use futures::stream;
-        Ok(Box::pin(stream::empty()))
+    async fn watch(&self, prefix: &str) -> Result<WatchStream> {
+        use futures::stream::StreamExt;
+
+        let mut rx = self.watch_tx.subscribe();
+        let prefix = prefix.to_string();
+
+        let stream = async_stream::stream! {
+            while let Ok(event) = rx.recv().await {
+                // Filter events by prefix
+                let matches = match &event {
+                    WatchEvent::Added(key, _) => key.starts_with(&prefix),
+                    WatchEvent::Modified(key, _) => key.starts_with(&prefix),
+                    WatchEvent::Deleted(key, _) => key.starts_with(&prefix),
+                };
+
+                if matches {
+                    yield Ok(event);
+                }
+            }
+        };
+
+        Ok(Box::pin(stream))
     }
 }
 

@@ -6,14 +6,18 @@ use rusternetes_common::resources::{
     HTTPIngressPath, HTTPIngressRuleValue, Ingress, IngressBackend, IngressRule, IngressServiceBackend,
     IngressSpec, IngressTLS, ServiceBackendPort,
 };
-use rusternetes_common::types::ObjectMeta;
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // Helper function to create test Ingress
 fn create_test_ingress(name: &str, namespace: &str) -> Ingress {
     Ingress {
+        type_meta: TypeMeta {
+            kind: "Ingress".to_string(),
+            api_version: "networking.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
@@ -59,7 +63,7 @@ async fn test_ingress_create_and_get() {
 
     assert_eq!(created.metadata.name, "test-ingress");
     assert_eq!(created.metadata.namespace, Some(namespace.to_string()));
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
     assert!(created.metadata.creation_timestamp.is_some());
 
     // Get the ingress
@@ -256,6 +260,10 @@ async fn test_ingress_with_multiple_paths() {
 
     let namespace = "test-ingress-multi-path";
     let ingress = Ingress {
+        type_meta: TypeMeta {
+            kind: "Ingress".to_string(),
+            api_version: "networking.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "multi-path-ingress".to_string(),
             namespace: Some(namespace.to_string()),
@@ -327,6 +335,10 @@ async fn test_ingress_with_exact_path_type() {
 
     let namespace = "test-ingress-exact-path";
     let ingress = Ingress {
+        type_meta: TypeMeta {
+            kind: "Ingress".to_string(),
+            api_version: "networking.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "exact-path-ingress".to_string(),
             namespace: Some(namespace.to_string()),
@@ -382,6 +394,10 @@ async fn test_ingress_with_named_port() {
 
     let namespace = "test-ingress-named-port";
     let ingress = Ingress {
+        type_meta: TypeMeta {
+            kind: "Ingress".to_string(),
+            api_version: "networking.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "named-port-ingress".to_string(),
             namespace: Some(namespace.to_string()),
@@ -446,7 +462,7 @@ async fn test_ingress_with_labels() {
     let mut ingress = create_test_ingress("labeled-ingress", namespace);
 
     ingress.metadata.labels = Some({
-        let mut labels = BTreeMap::new();
+        let mut labels = HashMap::new();
         labels.insert("app".to_string(), "myapp".to_string());
         labels.insert("tier".to_string(), "frontend".to_string());
         labels
@@ -470,7 +486,7 @@ async fn test_ingress_with_annotations() {
     let mut ingress = create_test_ingress("annotated-ingress", namespace);
 
     ingress.metadata.annotations = Some({
-        let mut annotations = BTreeMap::new();
+        let mut annotations = HashMap::new();
         annotations.insert("nginx.ingress.kubernetes.io/rewrite-target".to_string(), "/".to_string());
         annotations.insert("cert-manager.io/cluster-issuer".to_string(), "letsencrypt".to_string());
         annotations
@@ -574,6 +590,10 @@ async fn test_ingress_with_wildcard_host() {
 
     let namespace = "test-ingress-wildcard";
     let ingress = Ingress {
+        type_meta: TypeMeta {
+            kind: "Ingress".to_string(),
+            api_version: "networking.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "wildcard-ingress".to_string(),
             namespace: Some(namespace.to_string()),

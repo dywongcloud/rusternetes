@@ -316,10 +316,12 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let controller = CertificateSigningRequestController::new(storage);
 
-        // Create a simple CSR for testing (using rcgen for test data generation)
-        let params = rcgen::CertificateParams::new(vec!["test.example.com".to_string()]).unwrap();
-        let cert = rcgen::Certificate::from_params(params).unwrap();
-        let csr_pem = cert.serialize_request_pem().unwrap();
+        // Create a CSR for testing (using rcgen for test data generation)
+        let mut params = rcgen::CertificateParams::new(vec!["test.example.com".to_string()]).unwrap();
+        let key_pair = rcgen::KeyPair::generate().unwrap();
+        // Generate CSR, not a certificate
+        let csr_der = params.serialize_request(&key_pair).unwrap();
+        let csr_pem = pem::encode(&pem::Pem::new("CERTIFICATE REQUEST", csr_der.der().to_vec()));
         let csr_b64 = general_purpose::STANDARD.encode(csr_pem);
 
         let spec = CertificateSigningRequestSpec {
@@ -362,9 +364,10 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let controller = CertificateSigningRequestController::new(storage);
 
-        let params = rcgen::CertificateParams::new(vec!["test.example.com".to_string()]).unwrap();
-        let cert = rcgen::Certificate::from_params(params).unwrap();
-        let csr_pem = cert.serialize_request_pem().unwrap();
+        let mut params = rcgen::CertificateParams::new(vec!["test.example.com".to_string()]).unwrap();
+        let key_pair = rcgen::KeyPair::generate().unwrap();
+        let csr_der = params.serialize_request(&key_pair).unwrap();
+        let csr_pem = pem::encode(&pem::Pem::new("CERTIFICATE REQUEST", csr_der.der().to_vec()));
         let csr_b64 = general_purpose::STANDARD.encode(csr_pem);
 
         let spec = CertificateSigningRequestSpec {
@@ -388,9 +391,10 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let controller = CertificateSigningRequestController::new(storage);
 
-        let params = rcgen::CertificateParams::new(vec!["test.example.com".to_string()]).unwrap();
-        let cert = rcgen::Certificate::from_params(params).unwrap();
-        let csr_pem = cert.serialize_request_pem().unwrap();
+        let mut params = rcgen::CertificateParams::new(vec!["test.example.com".to_string()]).unwrap();
+        let key_pair = rcgen::KeyPair::generate().unwrap();
+        let csr_der = params.serialize_request(&key_pair).unwrap();
+        let csr_pem = pem::encode(&pem::Pem::new("CERTIFICATE REQUEST", csr_der.der().to_vec()));
         let csr_b64 = general_purpose::STANDARD.encode(csr_pem);
 
         let spec = CertificateSigningRequestSpec {
@@ -430,9 +434,10 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let controller = CertificateSigningRequestController::new(storage);
 
-        let params = rcgen::CertificateParams::new(vec!["system:node:test".to_string()]).unwrap();
-        let cert = rcgen::Certificate::from_params(params).unwrap();
-        let csr_pem = cert.serialize_request_pem().unwrap();
+        let mut params = rcgen::CertificateParams::new(vec!["system:node:test".to_string()]).unwrap();
+        let key_pair = rcgen::KeyPair::generate().unwrap();
+        let csr_der = params.serialize_request(&key_pair).unwrap();
+        let csr_pem = pem::encode(&pem::Pem::new("CERTIFICATE REQUEST", csr_der.der().to_vec()));
         let csr_b64 = general_purpose::STANDARD.encode(csr_pem);
 
         let csr = CertificateSigningRequest {
@@ -462,9 +467,10 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let controller = CertificateSigningRequestController::new(storage);
 
-        let params = rcgen::CertificateParams::new(vec!["node1.example.com".to_string()]).unwrap();
-        let cert = rcgen::Certificate::from_params(params).unwrap();
-        let csr_pem = cert.serialize_request_pem().unwrap();
+        let mut params = rcgen::CertificateParams::new(vec!["node1.example.com".to_string()]).unwrap();
+        let key_pair = rcgen::KeyPair::generate().unwrap();
+        let csr_der = params.serialize_request(&key_pair).unwrap();
+        let csr_pem = pem::encode(&pem::Pem::new("CERTIFICATE REQUEST", csr_der.der().to_vec()));
         let csr_b64 = general_purpose::STANDARD.encode(csr_pem);
 
         let csr = CertificateSigningRequest {

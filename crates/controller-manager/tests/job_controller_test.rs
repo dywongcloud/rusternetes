@@ -1,19 +1,20 @@
-// Integration tests for Job Controller
+// Job Controller Integration Tests
+// Tests the Job controller's ability to manage batch workloads
 
 use rusternetes_common::resources::pod::*;
 use rusternetes_common::resources::*;
 use rusternetes_common::resources::workloads::*;
 use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::job::JobController;
-use rusternetes_storage::{build_key, Storage};
-use rusternetes_storage::etcd::EtcdStorage;
+use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
-async fn setup_test() -> Arc<EtcdStorage> {
-    let endpoints = vec!["http://localhost:2379".to_string()];
-    Arc::new(EtcdStorage::new(endpoints).await.expect("Failed to create EtcdStorage"))
+async fn setup_test() -> Arc<MemoryStorage> {
+    let storage = Arc::new(MemoryStorage::new());
+    storage.clear();
+    storage
 }
 
 fn create_test_job(name: &str, namespace: &str, completions: i32, parallelism: i32) -> Job {
@@ -35,6 +36,7 @@ fn create_test_job(name: &str, namespace: &str, completions: i32, parallelism: i
             completions: Some(completions),
             parallelism: Some(parallelism),
             backoff_limit: Some(3),
+            active_deadline_seconds: None,
             template: PodTemplateSpec {
                 metadata: Some({
                     let mut meta = ObjectMeta::new(&format!("{}-pod", name));
@@ -47,7 +49,7 @@ fn create_test_job(name: &str, namespace: &str, completions: i32, parallelism: i
                         image: "busybox:latest".to_string(),
                         image_pull_policy: Some("IfNotPresent".to_string()),
                         command: Some(vec!["sh".to_string(), "-c".to_string(), "echo Hello".to_string()]),
-                        ports: Some(vec![]),
+                        ports: None,
                         env: None,
                         volume_mounts: None,
                         liveness_probe: None,
@@ -56,6 +58,7 @@ fn create_test_job(name: &str, namespace: &str, completions: i32, parallelism: i
                         resources: None,
                         working_dir: None,
                         args: None,
+                        restart_policy: None,
                         security_context: None,
                     }],
                     init_containers: None,
@@ -72,38 +75,34 @@ fn create_test_job(name: &str, namespace: &str, completions: i32, parallelism: i
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
+                    automount_service_account_token: None,
+                    ephemeral_containers: None,
+                    overhead: None,
+                    scheduler_name: None,
+                    topology_spread_constraints: None,
+                    resource_claims: None,
                 },
             },
-            active_deadline_seconds: None,
         },
         status: None,
     }
 }
 
 #[tokio::test]
-#[ignore] // Requires running etcd instance
 async fn test_job_creates_pods() {
     let storage = setup_test().await;
 
-    // Clean up
-    let _ = storage.delete("/registry/jobs/test-ns/task").await;
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap_or_default();
-    for pod in pods {
-        let _ = storage.delete(&build_key("pods", Some("test-ns"), &pod.metadata.name)).await;
-    }
-
     // Create job with 3 completions, parallelism 2
-    let job = create_test_job("task", "test-ns", 3, 2);
-    let key = build_key("jobs", Some("test-ns"), "task");
+    let job = create_test_job("task", "default", 3, 2);
+    let key = build_key("jobs", Some("default"), "task");
     storage.create(&key, &job).await.unwrap();
 
     // Run controller
     let controller = JobController::new(storage.clone());
     controller.reconcile_all().await.unwrap();
-    sleep(Duration::from_millis(500)).await;
 
     // Verify 2 pods created (parallelism limit)
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap();
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
     assert_eq!(pods.len(), 2, "Should create 2 pods initially (parallelism limit)");
 
     // Verify pods have correct labels
@@ -112,88 +111,63 @@ async fn test_job_creates_pods() {
         assert_eq!(labels.get("job-name"), Some(&"task".to_string()));
     }
 
-    // Cleanup
-    let _ = storage.delete(&key).await;
-    for pod in pods {
-        let _ = storage.delete(&build_key("pods", Some("test-ns"), &pod.metadata.name)).await;
+    // Verify restart policy is Never
+    for pod in &pods {
+        assert_eq!(pod.spec.as_ref().unwrap().restart_policy, Some("Never".to_string()));
     }
 }
 
 #[tokio::test]
-#[ignore] // Requires running etcd instance
 async fn test_job_respects_parallelism() {
     let storage = setup_test().await;
 
-    // Clean up
-    let _ = storage.delete("/registry/jobs/test-ns/parallel").await;
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap_or_default();
-    for pod in pods {
-        let _ = storage.delete(&build_key("pods", Some("test-ns"), &pod.metadata.name)).await;
-    }
-
     // Create job with 10 completions, parallelism 3
-    let job = create_test_job("parallel", "test-ns", 10, 3);
-    let key = build_key("jobs", Some("test-ns"), "parallel");
+    let job = create_test_job("parallel", "default", 10, 3);
+    let key = build_key("jobs", Some("default"), "parallel");
     storage.create(&key, &job).await.unwrap();
 
     // Run controller
     let controller = JobController::new(storage.clone());
     controller.reconcile_all().await.unwrap();
-    sleep(Duration::from_millis(500)).await;
 
-    // Verify at most 3 pods created
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap();
-    assert!(pods.len() <= 3, "Should respect parallelism limit of 3");
-
-    // Cleanup
-    let _ = storage.delete(&key).await;
-    for pod in pods {
-        let _ = storage.delete(&build_key("pods", Some("test-ns"), &pod.metadata.name)).await;
-    }
+    // Verify exactly 3 pods created (parallelism limit)
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 3, "Should respect parallelism limit of 3");
 }
 
 #[tokio::test]
-#[ignore] // Requires running etcd instance
 async fn test_job_completion_detection() {
     let storage = setup_test().await;
 
-    // Clean up
-    let _ = storage.delete("/registry/jobs/test-ns/complete").await;
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap_or_default();
-    for pod in pods {
-        let _ = storage.delete(&build_key("pods", Some("test-ns"), &pod.metadata.name)).await;
-    }
-
     // Create job with 2 completions
-    let job = create_test_job("complete", "test-ns", 2, 2);
-    let key = build_key("jobs", Some("test-ns"), "complete");
+    let job = create_test_job("complete", "default", 2, 2);
+    let key = build_key("jobs", Some("default"), "complete");
     storage.create(&key, &job).await.unwrap();
 
     // Run controller to create pods
     let controller = JobController::new(storage.clone());
     controller.reconcile_all().await.unwrap();
-    sleep(Duration::from_millis(500)).await;
 
     // Mark both pods as succeeded
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap();
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
     for pod in &pods {
         let mut updated_pod = pod.clone();
         updated_pod.status = Some(PodStatus {
-            phase: Phase::Succeeded,
+            phase: Some(Phase::Succeeded),
             message: None,
             reason: None,
             pod_ip: None,
             host_ip: None,
             container_statuses: None,
             init_container_statuses: None,
+            ephemeral_container_statuses: None,
         });
-        let pod_key = build_key("pods", Some("test-ns"), &pod.metadata.name);
+        let pod_key = build_key("pods", Some("default"), &pod.metadata.name);
         storage.update(&pod_key, &updated_pod).await.unwrap();
     }
 
     // Run controller again
     controller.reconcile_all().await.unwrap();
-    sleep(Duration::from_millis(500)).await;
 
     // Verify job is marked as complete
     let job: Job = storage.get(&key).await.unwrap();
@@ -204,10 +178,161 @@ async fn test_job_completion_detection() {
     if let Some(conditions) = status.conditions {
         assert!(conditions.iter().any(|c| c.condition_type == "Complete" && c.status == "True"));
     }
+}
 
-    // Cleanup
-    let _ = storage.delete(&key).await;
-    for pod in pods {
-        let _ = storage.delete(&build_key("pods", Some("test-ns"), &pod.metadata.name)).await;
+#[tokio::test]
+async fn test_job_creates_more_pods_as_they_complete() {
+    let storage = setup_test().await;
+
+    // Create job with 5 completions, parallelism 2
+    let job = create_test_job("sequential", "default", 5, 2);
+    let key = build_key("jobs", Some("default"), "sequential");
+    storage.create(&key, &job).await.unwrap();
+
+    let controller = JobController::new(storage.clone());
+
+    // First reconcile - creates 2 pods
+    controller.reconcile_all().await.unwrap();
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 2);
+
+    // Mark one pod as succeeded
+    let pod_to_complete = &pods[0];
+    let mut updated_pod = pod_to_complete.clone();
+    updated_pod.status = Some(PodStatus {
+        phase: Some(Phase::Succeeded),
+        message: None,
+        reason: None,
+        pod_ip: None,
+        host_ip: None,
+        container_statuses: None,
+        init_container_statuses: None,
+        ephemeral_container_statuses: None,
+    });
+    let pod_key = build_key("pods", Some("default"), &pod_to_complete.metadata.name);
+    storage.update(&pod_key, &updated_pod).await.unwrap();
+
+    // Second reconcile - should create one more pod (1 succeeded, 1 active, need 2 active)
+    controller.reconcile_all().await.unwrap();
+    let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods_after.len(), 3, "Should create another pod to maintain parallelism");
+}
+
+#[tokio::test]
+async fn test_job_backoff_limit() {
+    let storage = setup_test().await;
+
+    // Create job with backoff limit of 2
+    let mut job = create_test_job("failing", "default", 5, 2);
+    job.spec.backoff_limit = Some(2);
+    let key = build_key("jobs", Some("default"), "failing");
+    storage.create(&key, &job).await.unwrap();
+
+    let controller = JobController::new(storage.clone());
+    controller.reconcile_all().await.unwrap();
+
+    // Mark 3 pods as failed (exceeds backoff limit of 2)
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    for i in 0..2 {
+        let mut failed_pod = pods[i].clone();
+        failed_pod.status = Some(PodStatus {
+            phase: Some(Phase::Failed),
+            message: None,
+            reason: None,
+            pod_ip: None,
+            host_ip: None,
+            container_statuses: None,
+            init_container_statuses: None,
+            ephemeral_container_statuses: None,
+        });
+        let pod_key = build_key("pods", Some("default"), &pods[i].metadata.name);
+        storage.update(&pod_key, &failed_pod).await.unwrap();
     }
+
+    // Create one more failed pod manually to exceed limit
+    let extra_pod_name = format!("failing-extra");
+    let mut extra_pod = pods[0].clone();
+    extra_pod.metadata.name = extra_pod_name.clone();
+    extra_pod.metadata.uid = uuid::Uuid::new_v4().to_string();
+    extra_pod.status = Some(PodStatus {
+        phase: Some(Phase::Failed),
+        message: None,
+        reason: None,
+        pod_ip: None,
+        host_ip: None,
+        container_statuses: None,
+        init_container_statuses: None,
+        ephemeral_container_statuses: None,
+    });
+    let extra_key = build_key("pods", Some("default"), &extra_pod_name);
+    storage.create(&extra_key, &extra_pod).await.unwrap();
+
+    // Reconcile - should mark job as failed
+    controller.reconcile_all().await.unwrap();
+
+    let updated_job: Job = storage.get(&key).await.unwrap();
+    let status = updated_job.status.unwrap();
+
+    if let Some(conditions) = status.conditions {
+        assert!(conditions.iter().any(|c| c.condition_type == "Failed" && c.status == "True"));
+    }
+}
+
+#[tokio::test]
+async fn test_job_single_completion() {
+    let storage = setup_test().await;
+
+    // Create job with 1 completion (default behavior)
+    let job = create_test_job("single", "default", 1, 1);
+    let key = build_key("jobs", Some("default"), "single");
+    storage.create(&key, &job).await.unwrap();
+
+    let controller = JobController::new(storage.clone());
+    controller.reconcile_all().await.unwrap();
+
+    // Should create exactly 1 pod
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 1);
+
+    // Mark pod as succeeded
+    let mut pod = pods[0].clone();
+    pod.status = Some(PodStatus {
+        phase: Some(Phase::Succeeded),
+        message: None,
+        reason: None,
+        pod_ip: None,
+        host_ip: None,
+        container_statuses: None,
+        init_container_statuses: None,
+        ephemeral_container_statuses: None,
+    });
+    let pod_key = build_key("pods", Some("default"), &pod.metadata.name);
+    storage.update(&pod_key, &pod).await.unwrap();
+
+    // Reconcile - job should be complete
+    controller.reconcile_all().await.unwrap();
+
+    let updated_job: Job = storage.get(&key).await.unwrap();
+    let status = updated_job.status.unwrap();
+    assert_eq!(status.succeeded, Some(1));
+    assert_eq!(status.active, Some(0));
+}
+
+#[tokio::test]
+async fn test_job_updates_status() {
+    let storage = setup_test().await;
+
+    let job = create_test_job("status-test", "default", 3, 2);
+    let key = build_key("jobs", Some("default"), "status-test");
+    storage.create(&key, &job).await.unwrap();
+
+    let controller = JobController::new(storage.clone());
+    controller.reconcile_all().await.unwrap();
+
+    // Check status after first reconcile
+    let updated_job: Job = storage.get(&key).await.unwrap();
+    let status = updated_job.status.unwrap();
+    assert_eq!(status.active, Some(2));
+    assert_eq!(status.succeeded, Some(0));
+    assert_eq!(status.failed, Some(0));
 }

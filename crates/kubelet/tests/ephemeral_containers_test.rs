@@ -51,7 +51,7 @@ fn create_running_pod(name: &str) -> Pod {
             resource_claims: None,
         }),
         status: Some(PodStatus {
-            phase: Phase::Running,
+            phase: Some(Phase::Running),
             message: Some("Pod is running".to_string()),
             reason: None,
             pod_ip: Some("10.244.0.5".to_string()),

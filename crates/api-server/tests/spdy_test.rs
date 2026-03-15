@@ -24,7 +24,7 @@ fn test_spdy_frame_decoding() {
 
     let (decoded, remaining) = SpdyFrame::decode(encoded).unwrap().unwrap();
     assert_eq!(decoded.channel, SpdyChannel::Stderr);
-    assert_eq!(decoded.data, b"Error message");
+    assert_eq!(decoded.data, Bytes::from(&b"Error message"[..]));
     assert_eq!(remaining.len(), 0);
 }
 
@@ -51,9 +51,9 @@ fn test_spdy_frame_incomplete_data() {
 fn test_spdy_multiple_frames() {
     // Create multiple frames
     let frames = vec![
-        SpdyFrame::new(SpdyChannel::Stdout, b"First message"),
-        SpdyFrame::new(SpdyChannel::Stderr, b"Second message"),
-        SpdyFrame::new(SpdyChannel::Stdout, b"Third message"),
+        SpdyFrame::new(SpdyChannel::Stdout, b"First message".to_vec()),
+        SpdyFrame::new(SpdyChannel::Stderr, b"Second message".to_vec()),
+        SpdyFrame::new(SpdyChannel::Stdout, b"Third message".to_vec()),
     ];
 
     // Encode all frames into a single buffer
@@ -79,11 +79,11 @@ fn test_spdy_multiple_frames() {
     // Verify all frames decoded correctly
     assert_eq!(decoded_frames.len(), 3);
     assert_eq!(decoded_frames[0].channel, SpdyChannel::Stdout);
-    assert_eq!(decoded_frames[0].data, b"First message");
+    assert_eq!(decoded_frames[0].data, Bytes::from(&b"First message"[..]));
     assert_eq!(decoded_frames[1].channel, SpdyChannel::Stderr);
-    assert_eq!(decoded_frames[1].data, b"Second message");
+    assert_eq!(decoded_frames[1].data, Bytes::from(&b"Second message"[..]));
     assert_eq!(decoded_frames[2].channel, SpdyChannel::Stdout);
-    assert_eq!(decoded_frames[2].data, b"Third message");
+    assert_eq!(decoded_frames[2].data, Bytes::from(&b"Third message"[..]));
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn test_spdy_large_frame() {
     let (decoded, _) = SpdyFrame::decode(encoded).unwrap().unwrap();
     assert_eq!(decoded.channel, SpdyChannel::Stdout);
     assert_eq!(decoded.data.len(), 1024 * 1024);
-    assert_eq!(decoded.data, &data[..]);
+    assert_eq!(decoded.data, Bytes::copy_from_slice(&data[..]));
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn test_spdy_error_channel() {
 
     let (decoded, _) = SpdyFrame::decode(encoded).unwrap().unwrap();
     assert_eq!(decoded.channel, SpdyChannel::Error);
-    assert_eq!(decoded.data, error_msg);
+    assert_eq!(decoded.data, Bytes::copy_from_slice(&error_msg[..]));
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn test_spdy_resize_channel() {
 
     let (decoded, _) = SpdyFrame::decode(encoded).unwrap().unwrap();
     assert_eq!(decoded.channel, SpdyChannel::Resize);
-    assert_eq!(decoded.data, &resize_data[..]);
+    assert_eq!(decoded.data, Bytes::copy_from_slice(&resize_data[..]));
 }
 
 #[test]
@@ -185,7 +185,7 @@ fn test_spdy_stdin_stream() {
 
         let (decoded, _) = SpdyFrame::decode(encoded).unwrap().unwrap();
         assert_eq!(decoded.channel, SpdyChannel::Stdin);
-        assert_eq!(decoded.data, &input[..]);
+        assert_eq!(decoded.data, Bytes::copy_from_slice(&input[..]));
     }
 }
 
@@ -207,7 +207,7 @@ fn test_spdy_bidirectional_stream() {
 
         let (decoded, _) = SpdyFrame::decode(encoded).unwrap().unwrap();
         assert_eq!(decoded.channel, channel);
-        assert_eq!(decoded.data, &data[..]);
+        assert_eq!(decoded.data, Bytes::copy_from_slice(&data[..]));
     }
 }
 
@@ -220,7 +220,7 @@ fn test_spdy_frame_with_binary_data() {
 
     let (decoded, _) = SpdyFrame::decode(encoded).unwrap().unwrap();
     assert_eq!(decoded.channel, SpdyChannel::Stdout);
-    assert_eq!(decoded.data, &binary_data[..]);
+    assert_eq!(decoded.data, Bytes::copy_from_slice(&binary_data[..]));
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn test_spdy_frame_roundtrip() {
         let (decoded, remaining) = SpdyFrame::decode(encoded).unwrap().unwrap();
 
         assert_eq!(decoded.channel, channel);
-        assert_eq!(decoded.data, &data[..]);
+        assert_eq!(decoded.data, Bytes::copy_from_slice(&data[..]));
         assert_eq!(remaining.len(), 0);
     }
 }

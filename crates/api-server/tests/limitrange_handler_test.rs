@@ -3,14 +3,15 @@
 //! Tests all CRUD operations, edge cases, and error handling for LimitRanges
 
 use rusternetes_common::resources::{LimitRange, LimitRangeItem, LimitRangeSpec};
-use rusternetes_common::types::ObjectMeta;
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // Helper function to create test LimitRange
 fn create_test_limitrange(name: &str, namespace: &str) -> LimitRange {
     LimitRange {
+        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "LimitRange".to_string() },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
@@ -18,15 +19,15 @@ fn create_test_limitrange(name: &str, namespace: &str) -> LimitRange {
         },
         spec: LimitRangeSpec {
             limits: vec![LimitRangeItem {
-                limit_type: "Container".to_string(),
+                item_type: "Container".to_string(),
                 max: Some({
-                    let mut max = BTreeMap::new();
+                    let mut max = HashMap::new();
                     max.insert("cpu".to_string(), "2".to_string());
                     max.insert("memory".to_string(), "1Gi".to_string());
                     max
                 }),
                 min: Some({
-                    let mut min = BTreeMap::new();
+                    let mut min = HashMap::new();
                     min.insert("cpu".to_string(), "100m".to_string());
                     min.insert("memory".to_string(), "128Mi".to_string());
                     min
@@ -52,7 +53,7 @@ async fn test_limitrange_create_and_get() {
     assert_eq!(created.metadata.name, "test-limitrange");
     assert_eq!(created.metadata.namespace, Some(namespace.to_string()));
     assert_eq!(created.spec.limits.len(), 1);
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
     assert!(created.metadata.creation_timestamp.is_some());
 
     // Get the limitrange
@@ -75,9 +76,9 @@ async fn test_limitrange_update() {
 
     // Update limitrange with additional limit item
     limitrange.spec.limits.push(LimitRangeItem {
-        limit_type: "Pod".to_string(),
+        item_type: "Pod".to_string(),
         max: Some({
-            let mut max = BTreeMap::new();
+            let mut max = HashMap::new();
             max.insert("cpu".to_string(), "4".to_string());
             max.insert("memory".to_string(), "2Gi".to_string());
             max
@@ -179,6 +180,7 @@ async fn test_limitrange_with_defaults() {
 
     let namespace = "test-limitrange-defaults";
     let limitrange = LimitRange {
+        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "LimitRange".to_string() },
         metadata: ObjectMeta {
             name: "defaults-limitrange".to_string(),
             namespace: Some(namespace.to_string()),
@@ -186,17 +188,17 @@ async fn test_limitrange_with_defaults() {
         },
         spec: LimitRangeSpec {
             limits: vec![LimitRangeItem {
-                limit_type: "Container".to_string(),
+                item_type: "Container".to_string(),
                 max: None,
                 min: None,
                 default: Some({
-                    let mut default = BTreeMap::new();
+                    let mut default = HashMap::new();
                     default.insert("cpu".to_string(), "500m".to_string());
                     default.insert("memory".to_string(), "512Mi".to_string());
                     default
                 }),
                 default_request: Some({
-                    let mut default_request = BTreeMap::new();
+                    let mut default_request = HashMap::new();
                     default_request.insert("cpu".to_string(), "250m".to_string());
                     default_request.insert("memory".to_string(), "256Mi".to_string());
                     default_request
@@ -223,6 +225,7 @@ async fn test_limitrange_with_ratio() {
 
     let namespace = "test-limitrange-ratio";
     let limitrange = LimitRange {
+        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "LimitRange".to_string() },
         metadata: ObjectMeta {
             name: "ratio-limitrange".to_string(),
             namespace: Some(namespace.to_string()),
@@ -230,13 +233,13 @@ async fn test_limitrange_with_ratio() {
         },
         spec: LimitRangeSpec {
             limits: vec![LimitRangeItem {
-                limit_type: "Container".to_string(),
+                item_type: "Container".to_string(),
                 max: None,
                 min: None,
                 default: None,
                 default_request: None,
                 max_limit_request_ratio: Some({
-                    let mut ratio = BTreeMap::new();
+                    let mut ratio = HashMap::new();
                     ratio.insert("cpu".to_string(), "10".to_string());
                     ratio.insert("memory".to_string(), "2".to_string());
                     ratio
@@ -264,6 +267,7 @@ async fn test_limitrange_pod_type() {
 
     let namespace = "test-limitrange-pod";
     let limitrange = LimitRange {
+        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "LimitRange".to_string() },
         metadata: ObjectMeta {
             name: "pod-limitrange".to_string(),
             namespace: Some(namespace.to_string()),
@@ -271,15 +275,15 @@ async fn test_limitrange_pod_type() {
         },
         spec: LimitRangeSpec {
             limits: vec![LimitRangeItem {
-                limit_type: "Pod".to_string(),
+                item_type: "Pod".to_string(),
                 max: Some({
-                    let mut max = BTreeMap::new();
+                    let mut max = HashMap::new();
                     max.insert("cpu".to_string(), "8".to_string());
                     max.insert("memory".to_string(), "4Gi".to_string());
                     max
                 }),
                 min: Some({
-                    let mut min = BTreeMap::new();
+                    let mut min = HashMap::new();
                     min.insert("cpu".to_string(), "200m".to_string());
                     min.insert("memory".to_string(), "256Mi".to_string());
                     min
@@ -294,7 +298,7 @@ async fn test_limitrange_pod_type() {
     let key = build_key("limitranges", Some(namespace), "pod-limitrange");
     let created: LimitRange = storage.create(&key, &limitrange).await.unwrap();
 
-    assert_eq!(created.spec.limits[0].limit_type, "Pod");
+    assert_eq!(created.spec.limits[0].item_type, "Pod");
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -306,6 +310,7 @@ async fn test_limitrange_pvc_type() {
 
     let namespace = "test-limitrange-pvc";
     let limitrange = LimitRange {
+        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "LimitRange".to_string() },
         metadata: ObjectMeta {
             name: "pvc-limitrange".to_string(),
             namespace: Some(namespace.to_string()),
@@ -313,14 +318,14 @@ async fn test_limitrange_pvc_type() {
         },
         spec: LimitRangeSpec {
             limits: vec![LimitRangeItem {
-                limit_type: "PersistentVolumeClaim".to_string(),
+                item_type: "PersistentVolumeClaim".to_string(),
                 max: Some({
-                    let mut max = BTreeMap::new();
+                    let mut max = HashMap::new();
                     max.insert("storage".to_string(), "10Gi".to_string());
                     max
                 }),
                 min: Some({
-                    let mut min = BTreeMap::new();
+                    let mut min = HashMap::new();
                     min.insert("storage".to_string(), "1Gi".to_string());
                     min
                 }),
@@ -334,7 +339,7 @@ async fn test_limitrange_pvc_type() {
     let key = build_key("limitranges", Some(namespace), "pvc-limitrange");
     let created: LimitRange = storage.create(&key, &limitrange).await.unwrap();
 
-    assert_eq!(created.spec.limits[0].limit_type, "PersistentVolumeClaim");
+    assert_eq!(created.spec.limits[0].item_type, "PersistentVolumeClaim");
     assert_eq!(
         created.spec.limits[0].max.as_ref().unwrap().get("storage"),
         Some(&"10Gi".to_string())
@@ -350,6 +355,7 @@ async fn test_limitrange_with_multiple_types() {
 
     let namespace = "test-limitrange-multi-type";
     let limitrange = LimitRange {
+        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "LimitRange".to_string() },
         metadata: ObjectMeta {
             name: "multi-type-limitrange".to_string(),
             namespace: Some(namespace.to_string()),
@@ -358,9 +364,9 @@ async fn test_limitrange_with_multiple_types() {
         spec: LimitRangeSpec {
             limits: vec![
                 LimitRangeItem {
-                    limit_type: "Container".to_string(),
+                    item_type: "Container".to_string(),
                     max: Some({
-                        let mut max = BTreeMap::new();
+                        let mut max = HashMap::new();
                         max.insert("cpu".to_string(), "2".to_string());
                         max
                     }),
@@ -370,9 +376,9 @@ async fn test_limitrange_with_multiple_types() {
                     max_limit_request_ratio: None,
                 },
                 LimitRangeItem {
-                    limit_type: "Pod".to_string(),
+                    item_type: "Pod".to_string(),
                     max: Some({
-                        let mut max = BTreeMap::new();
+                        let mut max = HashMap::new();
                         max.insert("cpu".to_string(), "8".to_string());
                         max
                     }),
@@ -382,9 +388,9 @@ async fn test_limitrange_with_multiple_types() {
                     max_limit_request_ratio: None,
                 },
                 LimitRangeItem {
-                    limit_type: "PersistentVolumeClaim".to_string(),
+                    item_type: "PersistentVolumeClaim".to_string(),
                     max: Some({
-                        let mut max = BTreeMap::new();
+                        let mut max = HashMap::new();
                         max.insert("storage".to_string(), "10Gi".to_string());
                         max
                     }),
@@ -401,9 +407,9 @@ async fn test_limitrange_with_multiple_types() {
     let created: LimitRange = storage.create(&key, &limitrange).await.unwrap();
 
     assert_eq!(created.spec.limits.len(), 3);
-    assert_eq!(created.spec.limits[0].limit_type, "Container");
-    assert_eq!(created.spec.limits[1].limit_type, "Pod");
-    assert_eq!(created.spec.limits[2].limit_type, "PersistentVolumeClaim");
+    assert_eq!(created.spec.limits[0].item_type, "Container");
+    assert_eq!(created.spec.limits[1].item_type, "Pod");
+    assert_eq!(created.spec.limits[2].item_type, "PersistentVolumeClaim");
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -417,7 +423,7 @@ async fn test_limitrange_with_labels() {
     let mut limitrange = create_test_limitrange("labeled-limitrange", namespace);
 
     limitrange.metadata.labels = Some({
-        let mut labels = BTreeMap::new();
+        let mut labels = HashMap::new();
         labels.insert("env".to_string(), "production".to_string());
         labels.insert("team".to_string(), "platform".to_string());
         labels
@@ -441,7 +447,7 @@ async fn test_limitrange_with_annotations() {
     let mut limitrange = create_test_limitrange("annotated-limitrange", namespace);
 
     limitrange.metadata.annotations = Some({
-        let mut annotations = BTreeMap::new();
+        let mut annotations = HashMap::new();
         annotations.insert("description".to_string(), "Default resource limits".to_string());
         annotations.insert("managed-by".to_string(), "platform-team".to_string());
         annotations

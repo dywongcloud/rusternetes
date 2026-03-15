@@ -2,10 +2,36 @@
 
 use chrono::Utc;
 use rusternetes_api_server::handlers::finalizers::{handle_delete_with_finalizers, HasMetadata};
-use rusternetes_common::resources::Pod;
-use rusternetes_common::types::{ObjectMeta, PodSpec, TypeMeta};
+use rusternetes_common::resources::{Pod, PodSpec};
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{etcd::EtcdStorage, Storage};
 use std::sync::Arc;
+
+fn empty_pod_spec() -> PodSpec {
+    PodSpec {
+        containers: vec![],
+        init_containers: None,
+        ephemeral_containers: None,
+        restart_policy: None,
+        node_selector: None,
+        service_account_name: None,
+        node_name: None,
+        host_network: None,
+        host_pid: None,
+        host_ipc: None,
+        volumes: None,
+        hostname: None,
+        affinity: None,
+        scheduler_name: None,
+        tolerations: None,
+        priority_class_name: None,
+        priority: None,
+        overhead: None,
+        topology_spread_constraints: None,
+        automount_service_account_token: None,
+        resource_claims: None,
+    }
+}
 
 #[tokio::test]
 async fn test_delete_resource_with_empty_finalizers_list() {
@@ -16,7 +42,8 @@ async fn test_delete_resource_with_empty_finalizers_list() {
     );
 
     // Create pod with empty finalizers list
-    let mut pod = Pod::new("test-pod-empty-finalizers", "default");
+    let mut pod = Pod::new("test-pod-empty-finalizers", empty_pod_spec());
+    pod.metadata.namespace = Some("default".to_string());
     pod.metadata.ensure_uid();
     pod.metadata.ensure_creation_timestamp();
     pod.metadata.finalizers = Some(Vec::new()); // Empty list
@@ -48,7 +75,8 @@ async fn test_delete_resource_with_multiple_finalizers() {
     );
 
     // Create pod with multiple finalizers
-    let mut pod = Pod::new("test-pod-multiple-finalizers", "default");
+    let mut pod = Pod::new("test-pod-multiple-finalizers", empty_pod_spec());
+    pod.metadata.namespace = Some("default".to_string());
     pod.metadata.ensure_uid();
     pod.metadata.ensure_creation_timestamp();
     pod.metadata.finalizers = Some(vec![
@@ -85,7 +113,8 @@ async fn test_delete_already_marked_logs_correctly() {
     );
 
     // Create pod with finalizer and deletion timestamp
-    let mut pod = Pod::new("test-pod-already-marked", "default");
+    let mut pod = Pod::new("test-pod-already-marked", empty_pod_spec());
+    pod.metadata.namespace = Some("default".to_string());
     pod.metadata.ensure_uid();
     pod.metadata.ensure_creation_timestamp();
     pod.metadata.finalizers = Some(vec!["test.finalizer.io".to_string()]);
@@ -124,7 +153,8 @@ async fn test_delete_finalizer_workflow_complete() {
     );
 
     // Step 1: Create pod with finalizers
-    let mut pod = Pod::new("test-pod-workflow", "default");
+    let mut pod = Pod::new("test-pod-workflow", empty_pod_spec());
+    pod.metadata.namespace = Some("default".to_string());
     pod.metadata.ensure_uid();
     pod.metadata.ensure_creation_timestamp();
     pod.metadata.finalizers = Some(vec![
@@ -171,7 +201,7 @@ async fn test_delete_finalizer_workflow_complete() {
 #[tokio::test]
 async fn test_has_metadata_trait_implementations() {
     // Test that HasMetadata trait is implemented for common types
-    let pod = Pod::new("test-pod", "default");
+    let pod = Pod::new("test-pod", empty_pod_spec());
     assert_eq!(pod.metadata().name, "test-pod");
 
     let mut pod_mut = pod.clone();
@@ -179,52 +209,27 @@ async fn test_has_metadata_trait_implementations() {
     assert_eq!(pod_mut.metadata().name, "modified-pod");
 
     // Test with other resource types
-    use rusternetes_common::resources::{Deployment, Namespace, Service};
+    use rusternetes_common::resources::{Deployment, DeploymentSpec, Namespace, PodTemplateSpec};
+    use rusternetes_common::types::LabelSelector;
+    use std::collections::HashMap;
 
-    let deployment = Deployment {
-        type_meta: TypeMeta {
-            kind: "Deployment".to_string(),
-            api_version: "apps/v1".to_string(),
+    let deployment = Deployment::new("test-deployment", DeploymentSpec {
+        replicas: 1,
+        selector: LabelSelector {
+            match_labels: Some(HashMap::new()),
+            match_expressions: None,
         },
-        metadata: ObjectMeta {
-            name: "test-deployment".to_string(),
-            namespace: Some("default".to_string()),
-            uid: String::new(),
-            resource_version: None,
-            deletion_grace_period_seconds: None,
-            finalizers: None,
-            owner_references: None,
-            creation_timestamp: None,
-            deletion_timestamp: None,
-            labels: None,
-            annotations: None,
+        template: PodTemplateSpec {
+            metadata: None,
+            spec: empty_pod_spec(),
         },
-        spec: None,
-        status: None,
-    };
+        strategy: None,
+        min_ready_seconds: None,
+        revision_history_limit: None,
+    });
     assert_eq!(deployment.metadata().name, "test-deployment");
 
-    let namespace = Namespace {
-        type_meta: TypeMeta {
-            kind: "Namespace".to_string(),
-            api_version: "v1".to_string(),
-        },
-        metadata: ObjectMeta {
-            name: "test-namespace".to_string(),
-            namespace: None,
-            uid: String::new(),
-            resource_version: None,
-            deletion_grace_period_seconds: None,
-            finalizers: None,
-            owner_references: None,
-            creation_timestamp: None,
-            deletion_timestamp: None,
-            labels: None,
-            annotations: None,
-        },
-        spec: None,
-        status: None,
-    };
+    let namespace = Namespace::new("test-namespace");
     assert_eq!(namespace.metadata().name, "test-namespace");
 }
 
@@ -237,7 +242,8 @@ async fn test_delete_with_finalizer_race_condition() {
     );
 
     // Create pod with finalizer
-    let mut pod = Pod::new("test-pod-race", "default");
+    let mut pod = Pod::new("test-pod-race", empty_pod_spec());
+    pod.metadata.namespace = Some("default".to_string());
     pod.metadata.ensure_uid();
     pod.metadata.ensure_creation_timestamp();
     pod.metadata.finalizers = Some(vec!["test.finalizer.io".to_string()]);
@@ -275,7 +281,8 @@ async fn test_delete_without_finalizers_multiple_times() {
     );
 
     // Create pod without finalizers
-    let mut pod = Pod::new("test-pod-no-finalizer", "default");
+    let mut pod = Pod::new("test-pod-no-finalizer", empty_pod_spec());
+    pod.metadata.namespace = Some("default".to_string());
     pod.metadata.ensure_uid();
     pod.metadata.ensure_creation_timestamp();
 

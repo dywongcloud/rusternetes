@@ -1,8 +1,8 @@
 //! Integration tests for proxy handlers (node, service, pod)
 
 use axum::http::StatusCode;
-use rusternetes_common::resources::{Node, Pod, Service, ServicePort, ServiceSpec, ServiceType};
-use rusternetes_common::types::{NodeStatus, ObjectMeta, PodSpec, PodStatus, Phase, TypeMeta};
+use rusternetes_common::resources::{Node, NodeStatus, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec, ServiceType};
+use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
 use rusternetes_storage::{etcd::EtcdStorage, Storage};
 use std::sync::Arc;
 
@@ -148,37 +148,26 @@ async fn test_proxy_pod_missing_ip() {
             init_containers: None,
             ephemeral_containers: None,
             restart_policy: None,
-            termination_grace_period_seconds: None,
-            active_deadline_seconds: None,
-            dns_policy: None,
             node_selector: None,
             service_account_name: None,
-            service_account: None,
             node_name: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
             volumes: None,
-            image_pull_secrets: None,
             hostname: None,
-            subdomain: None,
             affinity: None,
             scheduler_name: None,
             tolerations: None,
             priority_class_name: None,
             priority: None,
-            dns_config: None,
-            runtime_class_name: None,
-            enable_service_links: None,
-            preemption_policy: None,
             overhead: None,
             topology_spread_constraints: None,
-            set_hostname_as_fqdn: None,
-            os: None,
-            security_context: None,
+            automount_service_account_token: None,
+            resource_claims: None,
         }),
         status: Some(PodStatus {
-            phase: Phase::Pending,
+            phase: Some(Phase::Pending),
             message: None,
             reason: None,
             host_ip: None,

@@ -9,12 +9,17 @@ use rusternetes_common::resources::{
 };
 use rusternetes_common::types::ObjectMeta;
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // Helper function to create test Role
 fn create_test_role(name: &str, namespace: &str) -> Role {
+    use rusternetes_common::types::TypeMeta;
     Role {
+        type_meta: TypeMeta {
+            kind: "Role".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
@@ -27,13 +32,17 @@ fn create_test_role(name: &str, namespace: &str) -> Role {
             resource_names: None,
             non_resource_urls: None,
         }],
-        aggregation_rule: None,
     }
 }
 
 // Helper function to create test RoleBinding
 fn create_test_rolebinding(name: &str, namespace: &str, role_name: &str) -> RoleBinding {
+    use rusternetes_common::types::TypeMeta;
     RoleBinding {
+        type_meta: TypeMeta {
+            kind: "RoleBinding".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
@@ -55,7 +64,12 @@ fn create_test_rolebinding(name: &str, namespace: &str, role_name: &str) -> Role
 
 // Helper function to create test ClusterRole
 fn create_test_clusterrole(name: &str) -> ClusterRole {
+    use rusternetes_common::types::TypeMeta;
     ClusterRole {
+        type_meta: TypeMeta {
+            kind: "ClusterRole".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: None,
@@ -74,7 +88,12 @@ fn create_test_clusterrole(name: &str) -> ClusterRole {
 
 // Helper function to create test ClusterRoleBinding
 fn create_test_clusterrolebinding(name: &str, role_name: &str) -> ClusterRoleBinding {
+    use rusternetes_common::types::TypeMeta;
     ClusterRoleBinding {
+        type_meta: TypeMeta {
+            kind: "ClusterRoleBinding".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: None,
@@ -108,7 +127,7 @@ async fn test_role_create_and_get() {
 
     assert_eq!(created.metadata.name, "test-role");
     assert_eq!(created.rules.len(), 1);
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
     assert!(created.metadata.creation_timestamp.is_some());
 
     // Get the role
@@ -228,7 +247,12 @@ async fn test_role_with_multiple_rules() {
     let storage = Arc::new(MemoryStorage::new());
 
     let namespace = "test-role-multi-rules";
+    use rusternetes_common::types::TypeMeta;
     let role = Role {
+        type_meta: TypeMeta {
+            kind: "Role".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "multi-rule-role".to_string(),
             namespace: Some(namespace.to_string()),
@@ -257,7 +281,6 @@ async fn test_role_with_multiple_rules() {
                 non_resource_urls: None,
             },
         ],
-        aggregation_rule: None,
     };
 
     let key = build_key("roles", Some(namespace), "multi-rule-role");
@@ -277,7 +300,12 @@ async fn test_role_with_resource_names() {
     let storage = Arc::new(MemoryStorage::new());
 
     let namespace = "test-role-resource-names";
+    use rusternetes_common::types::TypeMeta;
     let role = Role {
+        type_meta: TypeMeta {
+            kind: "Role".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "specific-resources".to_string(),
             namespace: Some(namespace.to_string()),
@@ -290,7 +318,6 @@ async fn test_role_with_resource_names() {
             resource_names: Some(vec!["my-config".to_string(), "another-config".to_string()]),
             non_resource_urls: None,
         }],
-        aggregation_rule: None,
     };
 
     let key = build_key("roles", Some(namespace), "specific-resources");
@@ -328,7 +355,12 @@ async fn test_rolebinding_with_multiple_subjects() {
     let storage = Arc::new(MemoryStorage::new());
 
     let namespace = "test-rb-multi-subjects";
+    use rusternetes_common::types::TypeMeta;
     let rb = RoleBinding {
+        type_meta: TypeMeta {
+            kind: "RoleBinding".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "multi-subject-rb".to_string(),
             namespace: Some(namespace.to_string()),
@@ -378,7 +410,12 @@ async fn test_rolebinding_referencing_clusterrole() {
     let storage = Arc::new(MemoryStorage::new());
 
     let namespace = "test-rb-clusterrole-ref";
+    use rusternetes_common::types::TypeMeta;
     let rb = RoleBinding {
+        type_meta: TypeMeta {
+            kind: "RoleBinding".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "rb-with-clusterrole".to_string(),
             namespace: Some(namespace.to_string()),
@@ -458,7 +495,12 @@ async fn test_clusterrole_list() {
 async fn test_clusterrole_with_non_resource_urls() {
     let storage = Arc::new(MemoryStorage::new());
 
+    use rusternetes_common::types::TypeMeta;
     let cr = ClusterRole {
+        type_meta: TypeMeta {
+            kind: "ClusterRole".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "non-resource-urls".to_string(),
             namespace: None,
@@ -524,7 +566,12 @@ async fn test_clusterrolebinding_create_and_get() {
 async fn test_clusterrolebinding_with_multiple_subjects() {
     let storage = Arc::new(MemoryStorage::new());
 
+    use rusternetes_common::types::TypeMeta;
     let crb = ClusterRoleBinding {
+        type_meta: TypeMeta {
+            kind: "ClusterRoleBinding".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "multi-subject-crb".to_string(),
             namespace: None,
@@ -593,14 +640,18 @@ async fn test_role_with_empty_rules() {
     let storage = Arc::new(MemoryStorage::new());
 
     let namespace = "test-empty-rules";
+    use rusternetes_common::types::TypeMeta;
     let role = Role {
+        type_meta: TypeMeta {
+            kind: "Role".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "empty-rules".to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
         rules: vec![],
-        aggregation_rule: None,
     };
 
     let key = build_key("roles", Some(namespace), "empty-rules");
@@ -617,7 +668,12 @@ async fn test_rolebinding_without_subjects() {
     let storage = Arc::new(MemoryStorage::new());
 
     let namespace = "test-no-subjects";
+    use rusternetes_common::types::TypeMeta;
     let rb = RoleBinding {
+        type_meta: TypeMeta {
+            kind: "RoleBinding".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "no-subjects-rb".to_string(),
             namespace: Some(namespace.to_string()),
@@ -648,14 +704,14 @@ async fn test_role_with_labels_and_annotations() {
     let mut role = create_test_role("labeled-role", namespace);
 
     role.metadata.labels = Some({
-        let mut labels = BTreeMap::new();
+        let mut labels = HashMap::new();
         labels.insert("app".to_string(), "test".to_string());
         labels.insert("environment".to_string(), "dev".to_string());
         labels
     });
 
     role.metadata.annotations = Some({
-        let mut annotations = BTreeMap::new();
+        let mut annotations = HashMap::new();
         annotations.insert("description".to_string(), "Test role".to_string());
         annotations
     });
@@ -675,7 +731,12 @@ async fn test_role_with_labels_and_annotations() {
 async fn test_clusterrole_with_wildcard_permissions() {
     let storage = Arc::new(MemoryStorage::new());
 
+    use rusternetes_common::types::TypeMeta;
     let cr = ClusterRole {
+        type_meta: TypeMeta {
+            kind: "ClusterRole".to_string(),
+            api_version: "rbac.authorization.k8s.io/v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "wildcard-cr".to_string(),
             namespace: None,

@@ -3,7 +3,7 @@
 //! Tests all CRUD operations, edge cases, and error handling for secrets
 
 use rusternetes_common::resources::Secret;
-use rusternetes_common::types::Metadata;
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,25 +12,19 @@ use std::sync::Arc;
 fn create_test_secret(name: &str, namespace: &str, secret_type: &str) -> Secret {
     let mut data = HashMap::new();
     // Base64 encoded values
-    data.insert("username".to_string(), "YWRtaW4=".to_string()); // "admin" in base64
-    data.insert("password".to_string(), "cGFzc3dvcmQ=".to_string()); // "password" in base64
+    data.insert("username".to_string(), "YWRtaW4=".as_bytes().to_vec()); // "admin" in base64
+    data.insert("password".to_string(), "cGFzc3dvcmQ=".as_bytes().to_vec()); // "password" in base64
 
     let mut labels = HashMap::new();
     labels.insert("app".to_string(), name.to_string());
 
     Secret {
-        metadata: Metadata {
+        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "Secret".to_string() },
+        metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
             labels: Some(labels),
-            uid: None,
-            creation_timestamp: None,
-            resource_version: None,
-            finalizers: None,
-            deletion_timestamp: None,
-            owner_references: None,
-            annotations: None,
-            generation: None,
+            ..Default::default()
         },
         data: Some(data),
         string_data: None,
@@ -51,13 +45,13 @@ async fn test_secret_create_and_get() {
     assert_eq!(created.metadata.name, "test-secret");
     assert_eq!(created.metadata.namespace, Some("default".to_string()));
     assert_eq!(created.secret_type, Some("Opaque".to_string()));
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
 
     // Get
     let retrieved: Secret = storage.get(&key).await.unwrap();
     assert_eq!(retrieved.metadata.name, "test-secret");
     let data = retrieved.data.unwrap();
-    assert_eq!(data.get("username"), Some(&"YWRtaW4=".to_string()));
+    assert_eq!(data.get("username"), Some(&"YWRtaW4=".as_bytes().to_vec()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -75,12 +69,12 @@ async fn test_secret_update() {
 
     // Update data
     let mut new_data = HashMap::new();
-    new_data.insert("api-key".to_string(), "bmV3LWtleQ==".to_string()); // "new-key" in base64
+    new_data.insert("api-key".to_string(), "bmV3LWtleQ==".as_bytes().to_vec()); // "new-key" in base64
     secret.data = Some(new_data);
 
     let updated: Secret = storage.update(&key, &secret).await.unwrap();
     let data = updated.data.unwrap();
-    assert_eq!(data.get("api-key"), Some(&"bmV3LWtleQ==".to_string()));
+    assert_eq!(data.get("api-key"), Some(&"bmV3LWtleQ==".as_bytes().to_vec()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -168,8 +162,8 @@ async fn test_secret_tls_type() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut data = HashMap::new();
-    data.insert("tls.crt".to_string(), "Y2VydGlmaWNhdGU=".to_string());
-    data.insert("tls.key".to_string(), "cHJpdmF0ZS1rZXk=".to_string());
+    data.insert("tls.crt".to_string(), "Y2VydGlmaWNhdGU=".as_bytes().to_vec());
+    data.insert("tls.key".to_string(), "cHJpdmF0ZS1rZXk=".as_bytes().to_vec());
 
     let mut secret = create_test_secret("test-tls", "default", "kubernetes.io/tls");
     secret.data = Some(data);
@@ -193,7 +187,7 @@ async fn test_secret_dockerconfigjson_type() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut data = HashMap::new();
-    data.insert(".dockerconfigjson".to_string(), "eyJhdXRocyI6e319".to_string());
+    data.insert(".dockerconfigjson".to_string(), "eyJhdXRocyI6e319".as_bytes().to_vec());
 
     let mut secret = create_test_secret("test-docker", "default", "kubernetes.io/dockerconfigjson");
     secret.data = Some(data);
@@ -213,7 +207,7 @@ async fn test_secret_service_account_token_type() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut data = HashMap::new();
-    data.insert("token".to_string(), "dG9rZW4=".to_string());
+    data.insert("token".to_string(), "dG9rZW4=".as_bytes().to_vec());
 
     let mut secret = create_test_secret("test-sa-token", "default", "kubernetes.io/service-account-token");
     secret.data = Some(data);
@@ -264,7 +258,7 @@ async fn test_secret_metadata_immutability() {
     // Try to update data - UID should remain unchanged
     let mut updated_secret = created.clone();
     let mut new_data = HashMap::new();
-    new_data.insert("new-key".to_string(), "bmV3LXZhbHVl".to_string());
+    new_data.insert("new-key".to_string(), "bmV3LXZhbHVl".as_bytes().to_vec());
     updated_secret.data = Some(new_data);
 
     let updated: Secret = storage.update(&key, &updated_secret).await.unwrap();
@@ -294,11 +288,13 @@ async fn test_secret_string_data_normalization() {
     // Create with string_data
     let created: Secret = storage.create(&key, &secret).await.unwrap();
 
-    // After normalization, string_data should be converted to base64 in data
+    // After normalization and storage round-trip, string_data should be converted to data
     assert!(created.data.is_some());
     let data = created.data.unwrap();
-    // "admin" in base64 is "YWRtaW4="
-    assert_eq!(data.get("plain-username"), Some(&"YWRtaW4=".to_string()));
+    // Data should contain the raw bytes ("admin"), not base64-encoded bytes
+    // (serialization encodes to base64, deserialization decodes back to raw bytes)
+    assert_eq!(data.get("plain-username"), Some(&"admin".as_bytes().to_vec()));
+    assert_eq!(data.get("plain-password"), Some(&"secret123".as_bytes().to_vec()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -373,10 +369,10 @@ async fn test_secret_multiple_keys() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut data = HashMap::new();
-    data.insert("db-host".to_string(), "bG9jYWxob3N0".to_string());
-    data.insert("db-port".to_string(), "NTQzMg==".to_string());
-    data.insert("db-user".to_string(), "YWRtaW4=".to_string());
-    data.insert("db-password".to_string(), "cGFzc3dvcmQ=".to_string());
+    data.insert("db-host".to_string(), "bG9jYWxob3N0".as_bytes().to_vec());
+    data.insert("db-port".to_string(), "NTQzMg==".as_bytes().to_vec());
+    data.insert("db-user".to_string(), "YWRtaW4=".as_bytes().to_vec());
+    data.insert("db-password".to_string(), "cGFzc3dvcmQ=".as_bytes().to_vec());
 
     let mut secret = create_test_secret("test-multi-keys", "default", "Opaque");
     secret.data = Some(data);

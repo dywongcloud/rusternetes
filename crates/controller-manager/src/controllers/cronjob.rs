@@ -1,17 +1,17 @@
 use anyhow::Result;
 use rusternetes_common::resources::workloads::{CronJob, CronJobStatus, Job};
-use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use rusternetes_storage::Storage;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
 use tracing::{error, info, warn};
 
-pub struct CronJobController {
-    storage: Arc<EtcdStorage>,
+pub struct CronJobController<S: Storage> {
+    storage: Arc<S>,
 }
 
-impl CronJobController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> CronJobController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 

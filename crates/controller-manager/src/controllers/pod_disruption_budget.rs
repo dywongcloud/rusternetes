@@ -28,7 +28,7 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
         }
     }
 
-    async fn reconcile_all(&self) -> rusternetes_common::Result<()> {
+    pub async fn reconcile_all(&self) -> rusternetes_common::Result<()> {
         debug!("Reconciling all PodDisruptionBudgets");
 
         // Get all PDBs
@@ -200,8 +200,8 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_common::resources::{IntOrString, PodDisruptionBudgetSpec, PodSpec};
-    use rusternetes_common::types::{Container, ObjectMeta, TypeMeta, Phase};
+    use rusternetes_common::resources::{IntOrString, PodDisruptionBudgetSpec, PodSpec, Container};
+    use rusternetes_common::types::{ObjectMeta, TypeMeta, Phase};
     use rusternetes_storage::MemoryStorage;
     use std::collections::HashMap;
 
@@ -280,9 +280,40 @@ mod tests {
                 containers: vec![Container {
                     name: "test".to_string(),
                     image: "nginx".to_string(),
-                    ..Default::default()
+                    image_pull_policy: None,
+                    command: None,
+                    args: None,
+                    ports: None,
+                    env: None,
+                    volume_mounts: None,
+                    liveness_probe: None,
+                    readiness_probe: None,
+                    startup_probe: None,
+                    resources: None,
+                    working_dir: None,
+                    security_context: None,
+                    restart_policy: None,
                 }],
-                ..Default::default()
+                init_containers: None,
+                restart_policy: None,
+                node_selector: None,
+                node_name: None,
+                volumes: None,
+                affinity: None,
+                tolerations: None,
+                service_account_name: None,
+                priority: None,
+                priority_class_name: None,
+                hostname: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                automount_service_account_token: None,
+                ephemeral_containers: None,
+                overhead: None,
+                scheduler_name: None,
+                topology_spread_constraints: None,
+                resource_claims: None,
             }),
             status: None,
         };
@@ -326,9 +357,40 @@ mod tests {
                 containers: vec![Container {
                     name: "test".to_string(),
                     image: "nginx".to_string(),
-                    ..Default::default()
+                    image_pull_policy: None,
+                    command: None,
+                    args: None,
+                    ports: None,
+                    env: None,
+                    volume_mounts: None,
+                    liveness_probe: None,
+                    readiness_probe: None,
+                    startup_probe: None,
+                    resources: None,
+                    working_dir: None,
+                    security_context: None,
+                    restart_policy: None,
                 }],
-                ..Default::default()
+                init_containers: None,
+                restart_policy: None,
+                node_selector: None,
+                node_name: None,
+                volumes: None,
+                affinity: None,
+                tolerations: None,
+                service_account_name: None,
+                priority: None,
+                priority_class_name: None,
+                hostname: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                automount_service_account_token: None,
+                ephemeral_containers: None,
+                overhead: None,
+                scheduler_name: None,
+                topology_spread_constraints: None,
+                resource_claims: None,
             }),
             status: Some(rusternetes_common::resources::PodStatus {
                 phase: Some(Phase::Running),

@@ -111,8 +111,20 @@ impl<S: Storage> ReplicationControllerController<S> {
             }
         }
 
-        // Update status
-        self.update_status(rc, current_replicas, rc_pods.len() as i32).await?;
+        // Re-fetch and recount pods after create/delete operations to get accurate status
+        let pods_prefix = build_prefix("pods", Some(namespace));
+        let all_pods_after: Vec<Pod> = self.storage.list(&pods_prefix).await?;
+
+        let rc_pods_after: Vec<Pod> = all_pods_after
+            .into_iter()
+            .filter(|p| self.matches_selector(p, rc))
+            .collect();
+
+        let final_current_replicas = rc_pods_after.len() as i32;
+        let final_ready_replicas = rc_pods_after.len() as i32; // All matched pods
+
+        // Update status with accurate counts
+        self.update_status(rc, final_current_replicas, final_ready_replicas).await?;
 
         Ok(())
     }

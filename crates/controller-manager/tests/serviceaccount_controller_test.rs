@@ -3,26 +3,18 @@
 use rusternetes_common::resources::{namespace::{NamespaceSpec, NamespaceStatus}, Namespace, Secret, ServiceAccount};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::serviceaccount::ServiceAccountController;
-use rusternetes_storage::{build_key, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_serviceaccount_controller_creation() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let _controller = ServiceAccountController::new(storage);
 }
 
 #[tokio::test]
 async fn test_serviceaccount_creates_default_in_namespace() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = ServiceAccountController::new(storage.clone());
 
     // Create a test namespace
@@ -46,7 +38,7 @@ async fn test_serviceaccount_creates_default_in_namespace() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: Some("Active".to_string()),
+            phase: rusternetes_common::types::Phase::Active,
         }),
     };
 
@@ -82,11 +74,7 @@ async fn test_serviceaccount_creates_default_in_namespace() {
 
 #[tokio::test]
 async fn test_serviceaccount_does_not_recreate_existing() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = ServiceAccountController::new(storage.clone());
 
     // Create a namespace
@@ -110,7 +98,7 @@ async fn test_serviceaccount_does_not_recreate_existing() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: Some("Active".to_string()),
+            phase: rusternetes_common::types::Phase::Active,
         }),
     };
 
@@ -158,11 +146,7 @@ async fn test_serviceaccount_does_not_recreate_existing() {
 
 #[tokio::test]
 async fn test_serviceaccount_token_contains_required_fields() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = ServiceAccountController::new(storage.clone());
 
     // Create a namespace
@@ -186,7 +170,7 @@ async fn test_serviceaccount_token_contains_required_fields() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: Some("Active".to_string()),
+            phase: rusternetes_common::types::Phase::Active,
         }),
     };
 
@@ -227,11 +211,7 @@ async fn test_serviceaccount_token_contains_required_fields() {
 
 #[tokio::test]
 async fn test_serviceaccount_skips_terminating_namespaces() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = ServiceAccountController::new(storage.clone());
 
     // Create a namespace that's being deleted
@@ -255,7 +235,7 @@ async fn test_serviceaccount_skips_terminating_namespaces() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: Some("Terminating".to_string()),
+            phase: rusternetes_common::types::Phase::Terminating,
         }),
     };
 

@@ -170,6 +170,9 @@ impl<S: Storage> EventsController<S> {
                 Some(Phase::Active) => {
                     // Active phase for namespaces - not relevant for pod events
                 }
+                Some(Phase::Terminating) => {
+                    // Terminating phase for namespaces - not relevant for pod events
+                }
                 None => {
                     // Pod has no phase set
                 }

@@ -2,18 +2,18 @@ use anyhow::Result;
 use rusternetes_common::resources::{DaemonSet, DaemonSetStatus, Node, Pod, PodStatus};
 use rusternetes_common::resources::pod::{SecretVolumeSource, Volume, VolumeMount};
 use rusternetes_common::types::Phase;
-use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use rusternetes_storage::Storage;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
 use tracing::{error, info, warn};
 
-pub struct DaemonSetController {
-    storage: Arc<EtcdStorage>,
+pub struct DaemonSetController<S: Storage> {
+    storage: Arc<S>,
 }
 
-impl DaemonSetController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> DaemonSetController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 
@@ -122,10 +122,31 @@ impl DaemonSetController {
             }
         }
 
-        // Update status
-        let current_number_scheduled = pods_by_node.len() as i32;
+        // Re-fetch pods after creating/deleting to get accurate count for status
+        let all_pods_after: Vec<Pod> = self.storage.list(&pod_prefix).await?;
+        let daemonset_pods_after: Vec<Pod> = all_pods_after
+            .into_iter()
+            .filter(|pod| {
+                pod.metadata
+                    .labels
+                    .as_ref()
+                    .and_then(|labels| labels.get("app"))
+                    .map(|app| app == name)
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        let mut final_pods_by_node = std::collections::HashMap::new();
+        for pod in daemonset_pods_after.iter() {
+            if let Some(node_name) = pod.spec.as_ref().and_then(|s| s.node_name.as_ref()) {
+                final_pods_by_node.insert(node_name.clone(), pod.clone());
+            }
+        }
+
+        // Update status with accurate counts
+        let current_number_scheduled = final_pods_by_node.len() as i32;
         let desired_number_scheduled = eligible_nodes.len() as i32;
-        let number_ready = pods_by_node
+        let number_ready = final_pods_by_node
             .values()
             .filter(|pod| {
                 pod.status
@@ -189,6 +210,9 @@ impl DaemonSetController {
         );
 
         let mut spec = template.spec.clone();
+
+        // CRITICAL: Assign the pod to the specific node
+        spec.node_name = Some(node_name.to_string());
 
         // Debug: Check if NODE_NAME env var has valueFrom before and after
         info!("Before injection - Checking environment variables in pod template:");
@@ -355,12 +379,13 @@ impl DaemonSetController {
 mod tests {
     use super::*;
     use rusternetes_common::resources::PodSpec;
+    use rusternetes_storage::memory::MemoryStorage;
     use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_node_selector_matching() {
-        let storage = Arc::new(EtcdStorage::new(vec!["http://localhost:2379".to_string()]).await.unwrap());
-        let controller = DaemonSetController { storage };
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = DaemonSetController::new(storage);
 
         let mut node_labels = HashMap::new();
         node_labels.insert("disktype".to_string(), "ssd".to_string());

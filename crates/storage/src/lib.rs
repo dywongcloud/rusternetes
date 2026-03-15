@@ -6,6 +6,9 @@ pub mod concurrency;
 pub mod etcd;
 pub mod memory;
 
+// Re-export MemoryStorage for convenient testing
+pub use memory::MemoryStorage;
+
 /// Storage trait for persisting Kubernetes resources
 #[async_trait]
 pub trait Storage: Send + Sync {

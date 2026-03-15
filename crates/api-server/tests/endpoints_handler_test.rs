@@ -3,20 +3,24 @@
 //! Tests all CRUD operations, edge cases, and error handling for Endpoints
 
 use rusternetes_common::resources::{Endpoints, EndpointSubset, EndpointAddress, EndpointPort};
-use rusternetes_common::types::ObjectMeta;
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // Helper function to create test Endpoints
 fn create_test_endpoints(name: &str, namespace: &str) -> Endpoints {
     Endpoints {
+        type_meta: TypeMeta {
+            kind: "Endpoints".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
-        subsets: Some(vec![EndpointSubset {
+        subsets: vec![EndpointSubset {
             addresses: Some(vec![EndpointAddress {
                 ip: "10.0.0.1".to_string(),
                 hostname: Some("pod-1".to_string()),
@@ -30,7 +34,7 @@ fn create_test_endpoints(name: &str, namespace: &str) -> Endpoints {
                 protocol: Some("TCP".to_string()),
                 app_protocol: None,
             }]),
-        }]),
+        }],
     }
 }
 
@@ -46,7 +50,7 @@ async fn test_endpoints_create_and_get() {
 
     assert_eq!(created.metadata.name, "test-endpoints");
     assert_eq!(created.metadata.namespace, Some(namespace.to_string()));
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
     assert!(created.metadata.creation_timestamp.is_some());
 
     // Get the endpoints
@@ -68,19 +72,17 @@ async fn test_endpoints_update() {
     storage.create(&key, &endpoints).await.unwrap();
 
     // Update endpoints with additional address
-    if let Some(ref mut subsets) = endpoints.subsets {
-        if let Some(ref mut addresses) = subsets[0].addresses {
-            addresses.push(EndpointAddress {
-                ip: "10.0.0.2".to_string(),
-                hostname: Some("pod-2".to_string()),
-                node_name: Some("node-2".to_string()),
-                target_ref: None,
-            });
-        }
+    if let Some(ref mut addresses) = endpoints.subsets[0].addresses {
+        addresses.push(EndpointAddress {
+            ip: "10.0.0.2".to_string(),
+            hostname: Some("pod-2".to_string()),
+            node_name: Some("node-2".to_string()),
+            target_ref: None,
+        });
     }
 
     let updated: Endpoints = storage.update(&key, &endpoints).await.unwrap();
-    assert_eq!(updated.subsets.as_ref().unwrap()[0].addresses.as_ref().unwrap().len(), 2);
+    assert_eq!(updated.subsets[0].addresses.as_ref().unwrap().len(), 2);
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -170,12 +172,16 @@ async fn test_endpoints_with_multiple_subsets() {
 
     let namespace = "test-endpoints-multi-subset";
     let endpoints = Endpoints {
+        type_meta: TypeMeta {
+            kind: "Endpoints".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "multi-subset-endpoints".to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
-        subsets: Some(vec![
+        subsets: vec![
             EndpointSubset {
                 addresses: Some(vec![EndpointAddress {
                     ip: "10.0.0.1".to_string(),
@@ -206,15 +212,15 @@ async fn test_endpoints_with_multiple_subsets() {
                     app_protocol: None,
                 }]),
             },
-        ]),
+        ],
     };
 
     let key = build_key("endpoints", Some(namespace), "multi-subset-endpoints");
     let created: Endpoints = storage.create(&key, &endpoints).await.unwrap();
 
-    assert_eq!(created.subsets.as_ref().unwrap().len(), 2);
-    assert_eq!(created.subsets.as_ref().unwrap()[0].ports.as_ref().unwrap()[0].name, Some("http".to_string()));
-    assert_eq!(created.subsets.as_ref().unwrap()[1].ports.as_ref().unwrap()[0].name, Some("https".to_string()));
+    assert_eq!(created.subsets.len(), 2);
+    assert_eq!(created.subsets[0].ports.as_ref().unwrap()[0].name, Some("http".to_string()));
+    assert_eq!(created.subsets[1].ports.as_ref().unwrap()[0].name, Some("https".to_string()));
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -226,12 +232,16 @@ async fn test_endpoints_with_not_ready_addresses() {
 
     let namespace = "test-endpoints-not-ready";
     let endpoints = Endpoints {
+        type_meta: TypeMeta {
+            kind: "Endpoints".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "not-ready-endpoints".to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
-        subsets: Some(vec![EndpointSubset {
+        subsets: vec![EndpointSubset {
             addresses: Some(vec![EndpointAddress {
                 ip: "10.0.0.1".to_string(),
                 hostname: Some("pod-1".to_string()),
@@ -250,15 +260,15 @@ async fn test_endpoints_with_not_ready_addresses() {
                 protocol: Some("TCP".to_string()),
                 app_protocol: None,
             }]),
-        }]),
+        }],
     };
 
     let key = build_key("endpoints", Some(namespace), "not-ready-endpoints");
     let created: Endpoints = storage.create(&key, &endpoints).await.unwrap();
 
-    assert!(created.subsets.as_ref().unwrap()[0].addresses.is_some());
-    assert!(created.subsets.as_ref().unwrap()[0].not_ready_addresses.is_some());
-    assert_eq!(created.subsets.as_ref().unwrap()[0].not_ready_addresses.as_ref().unwrap().len(), 1);
+    assert!(created.subsets[0].addresses.is_some());
+    assert!(created.subsets[0].not_ready_addresses.is_some());
+    assert_eq!(created.subsets[0].not_ready_addresses.as_ref().unwrap().len(), 1);
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -270,12 +280,16 @@ async fn test_endpoints_with_multiple_ports() {
 
     let namespace = "test-endpoints-multi-port";
     let endpoints = Endpoints {
+        type_meta: TypeMeta {
+            kind: "Endpoints".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "multi-port-endpoints".to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
-        subsets: Some(vec![EndpointSubset {
+        subsets: vec![EndpointSubset {
             addresses: Some(vec![EndpointAddress {
                 ip: "10.0.0.1".to_string(),
                 hostname: Some("pod-1".to_string()),
@@ -303,13 +317,13 @@ async fn test_endpoints_with_multiple_ports() {
                     app_protocol: None,
                 },
             ]),
-        }]),
+        }],
     };
 
     let key = build_key("endpoints", Some(namespace), "multi-port-endpoints");
     let created: Endpoints = storage.create(&key, &endpoints).await.unwrap();
 
-    assert_eq!(created.subsets.as_ref().unwrap()[0].ports.as_ref().unwrap().len(), 3);
+    assert_eq!(created.subsets[0].ports.as_ref().unwrap().len(), 3);
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -321,18 +335,22 @@ async fn test_endpoints_empty_subsets() {
 
     let namespace = "test-endpoints-empty";
     let endpoints = Endpoints {
+        type_meta: TypeMeta {
+            kind: "Endpoints".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "empty-endpoints".to_string(),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
-        subsets: Some(vec![]),
+        subsets: vec![],
     };
 
     let key = build_key("endpoints", Some(namespace), "empty-endpoints");
     let created: Endpoints = storage.create(&key, &endpoints).await.unwrap();
 
-    assert!(created.subsets.as_ref().unwrap().is_empty());
+    assert!(created.subsets.is_empty());
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -346,7 +364,7 @@ async fn test_endpoints_with_labels() {
     let mut endpoints = create_test_endpoints("labeled-endpoints", namespace);
 
     endpoints.metadata.labels = Some({
-        let mut labels = BTreeMap::new();
+        let mut labels = HashMap::new();
         labels.insert("app".to_string(), "nginx".to_string());
         labels.insert("tier".to_string(), "frontend".to_string());
         labels
@@ -371,7 +389,7 @@ async fn test_endpoints_with_annotations() {
     let mut endpoints = create_test_endpoints("annotated-endpoints", namespace);
 
     endpoints.metadata.annotations = Some({
-        let mut annotations = BTreeMap::new();
+        let mut annotations = HashMap::new();
         annotations.insert("description".to_string(), "Test endpoints".to_string());
         annotations.insert("managed-by".to_string(), "test-controller".to_string());
         annotations

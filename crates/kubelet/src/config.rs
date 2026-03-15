@@ -436,6 +436,7 @@ mod tests {
             sync_frequency: Some(15),
             metrics_bind_port: Some(10250),
             log_level: Some("info".to_string()),
+            cluster_service_cidr: Some("10.96.0.0/12".to_string()),
         };
 
         // Write to temp file
@@ -457,17 +458,26 @@ mod tests {
 
     #[test]
     fn test_runtime_config_precedence() {
+        use tempfile::tempdir;
+
+        // Create temp directories for testing
+        let tmp_dir = tempdir().unwrap();
+        let cli_root = tmp_dir.path().join("cli/root");
+        let cli_volumes = tmp_dir.path().join("cli/volumes");
+        let config_root = tmp_dir.path().join("config/root");
+        let config_volumes = tmp_dir.path().join("config/volumes");
+
         // CLI values should take precedence
         let runtime = RuntimeConfig::build(
-            Some("/cli/root".to_string()),
-            Some("/cli/volumes".to_string()),
+            Some(cli_root.to_str().unwrap().to_string()),
+            Some(cli_volumes.to_str().unwrap().to_string()),
             None,
             Some(20),
             Some(9090),
             Some("debug".to_string()),
             Some(KubeletConfiguration {
-                root_dir: Some("/config/root".to_string()),
-                volume_dir: Some("/config/volumes".to_string()),
+                root_dir: Some(config_root.to_str().unwrap().to_string()),
+                volume_dir: Some(config_volumes.to_str().unwrap().to_string()),
                 sync_frequency: Some(30),
                 ..Default::default()
             }),
@@ -476,8 +486,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(runtime.root_dir, PathBuf::from("/cli/root"));
-        assert_eq!(runtime.volume_dir, PathBuf::from("/cli/volumes"));
+        assert_eq!(runtime.root_dir, cli_root);
+        assert_eq!(runtime.volume_dir, cli_volumes);
         assert_eq!(runtime.sync_frequency, 20);
         assert_eq!(runtime.metrics_bind_port, 9090);
         assert_eq!(runtime.log_level, "debug");

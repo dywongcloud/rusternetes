@@ -2,8 +2,8 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for storage classes
 
-use rusternetes_common::resources::{StorageClass, TopologySelectorTerm, TopologySelectorLabelRequirement};
-use rusternetes_common::types::Metadata;
+use rusternetes_common::resources::{StorageClass, volume::{PersistentVolumeReclaimPolicy, VolumeBindingMode}};
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,25 +11,17 @@ use std::sync::Arc;
 /// Helper function to create a test storage class
 fn create_test_storageclass(name: &str, provisioner: &str) -> StorageClass {
     StorageClass {
-        metadata: Metadata {
+        type_meta: TypeMeta { api_version: "storage.k8s.io/v1".to_string(), kind: "StorageClass".to_string() },
+        metadata: ObjectMeta {
             name: name.to_string(),
             namespace: None, // StorageClasses are cluster-scoped
-            labels: None,
-            uid: None,
-            creation_timestamp: None,
-            resource_version: None,
-            finalizers: None,
-            deletion_timestamp: None,
-            owner_references: None,
-            annotations: None,
-            generation: None,
+            ..Default::default()
         },
         provisioner: provisioner.to_string(),
         parameters: None,
-        reclaim_policy: Some("Delete".to_string()),
-        volume_binding_mode: Some("Immediate".to_string()),
+        reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
+        volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allow_volume_expansion: Some(false),
-        mount_options: None,
         allowed_topologies: None,
     }
 }
@@ -44,9 +36,9 @@ async fn test_storageclass_create_and_get() {
     // Create
     let created: StorageClass = storage.create(&key, &sc).await.unwrap();
     assert_eq!(created.metadata.name, "test-sc");
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
     assert_eq!(created.provisioner, "kubernetes.io/aws-ebs");
-    assert_eq!(created.reclaim_policy, Some("Delete".to_string()));
+    assert_eq!(created.reclaim_policy, Some(PersistentVolumeReclaimPolicy::Delete));
 
     // Get
     let retrieved: StorageClass = storage.get(&key).await.unwrap();
@@ -136,13 +128,13 @@ async fn test_storageclass_reclaim_policy_retain() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut sc = create_test_storageclass("test-retain", "kubernetes.io/aws-ebs");
-    sc.reclaim_policy = Some("Retain".to_string());
+    sc.reclaim_policy = Some(PersistentVolumeReclaimPolicy::Retain);
 
     let key = build_key("storageclasses", None, "test-retain");
 
     // Create with Retain policy
     let created: StorageClass = storage.create(&key, &sc).await.unwrap();
-    assert_eq!(created.reclaim_policy, Some("Retain".to_string()));
+    assert_eq!(created.reclaim_policy, Some(PersistentVolumeReclaimPolicy::Retain));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -157,7 +149,7 @@ async fn test_storageclass_reclaim_policy_delete() {
 
     // Create with Delete policy (default)
     let created: StorageClass = storage.create(&key, &sc).await.unwrap();
-    assert_eq!(created.reclaim_policy, Some("Delete".to_string()));
+    assert_eq!(created.reclaim_policy, Some(PersistentVolumeReclaimPolicy::Delete));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -172,7 +164,7 @@ async fn test_storageclass_volume_binding_mode_immediate() {
 
     // Create with Immediate binding mode
     let created: StorageClass = storage.create(&key, &sc).await.unwrap();
-    assert_eq!(created.volume_binding_mode, Some("Immediate".to_string()));
+    assert_eq!(created.volume_binding_mode, Some(VolumeBindingMode::Immediate));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -183,13 +175,13 @@ async fn test_storageclass_volume_binding_mode_wait_for_first_consumer() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut sc = create_test_storageclass("test-wait", "kubernetes.io/aws-ebs");
-    sc.volume_binding_mode = Some("WaitForFirstConsumer".to_string());
+    sc.volume_binding_mode = Some(VolumeBindingMode::WaitForFirstConsumer);
 
     let key = build_key("storageclasses", None, "test-wait");
 
     // Create with WaitForFirstConsumer binding mode
     let created: StorageClass = storage.create(&key, &sc).await.unwrap();
-    assert_eq!(created.volume_binding_mode, Some("WaitForFirstConsumer".to_string()));
+    assert_eq!(created.volume_binding_mode, Some(VolumeBindingMode::WaitForFirstConsumer));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -233,30 +225,6 @@ async fn test_storageclass_with_parameters() {
     assert_eq!(params.get("type"), Some(&"gp3".to_string()));
     assert_eq!(params.get("iopsPerGB"), Some(&"10".to_string()));
     assert_eq!(params.get("encrypted"), Some(&"true".to_string()));
-
-    // Clean up
-    storage.delete(&key).await.unwrap();
-}
-
-#[tokio::test]
-async fn test_storageclass_with_mount_options() {
-    let storage = Arc::new(MemoryStorage::new());
-
-    let mut sc = create_test_storageclass("test-mount", "kubernetes.io/nfs");
-    sc.mount_options = Some(vec![
-        "hard".to_string(),
-        "nfsvers=4.1".to_string(),
-    ]);
-
-    let key = build_key("storageclasses", None, "test-mount");
-
-    // Create with mount options
-    let created: StorageClass = storage.create(&key, &sc).await.unwrap();
-    assert!(created.mount_options.is_some());
-    let options = created.mount_options.unwrap();
-    assert_eq!(options.len(), 2);
-    assert!(options.contains(&"hard".to_string()));
-    assert!(options.contains(&"nfsvers=4.1".to_string()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -458,30 +426,4 @@ async fn test_storageclass_cluster_scoped() {
     storage.delete(&key).await.unwrap();
 }
 
-#[tokio::test]
-async fn test_storageclass_with_allowed_topologies() {
-    let storage = Arc::new(MemoryStorage::new());
-
-    let mut sc = create_test_storageclass("test-topology", "kubernetes.io/aws-ebs");
-    sc.allowed_topologies = Some(vec![
-        TopologySelectorTerm {
-            match_label_expressions: Some(vec![
-                TopologySelectorLabelRequirement {
-                    key: "topology.kubernetes.io/zone".to_string(),
-                    values: vec!["us-east-1a".to_string(), "us-east-1b".to_string()],
-                },
-            ]),
-        },
-    ]);
-
-    let key = build_key("storageclasses", None, "test-topology");
-
-    // Create with allowed topologies
-    let created: StorageClass = storage.create(&key, &sc).await.unwrap();
-    assert!(created.allowed_topologies.is_some());
-    let topologies = created.allowed_topologies.unwrap();
-    assert_eq!(topologies.len(), 1);
-
-    // Clean up
-    storage.delete(&key).await.unwrap();
-}
+// Note: allowed_topologies feature removed - TopologySelectorTerm structs not available

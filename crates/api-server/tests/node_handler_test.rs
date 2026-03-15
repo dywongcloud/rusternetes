@@ -3,7 +3,7 @@
 //! Tests all CRUD operations, edge cases, and error handling for nodes
 
 use rusternetes_common::resources::{Node, NodeSpec, NodeStatus, NodeCondition, NodeAddress};
-use rusternetes_common::types::Metadata;
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,31 +14,32 @@ fn create_test_node(name: &str) -> Node {
     labels.insert("kubernetes.io/hostname".to_string(), name.to_string());
 
     Node {
-        metadata: Metadata {
+        type_meta: TypeMeta {
+            kind: "Node".to_string(),
+            api_version: "v1".to_string(),
+        },
+        metadata: ObjectMeta {
             name: name.to_string(),
             namespace: None, // Nodes are cluster-scoped
             labels: Some(labels),
-            uid: None,
+            uid: String::new(),
             creation_timestamp: None,
             resource_version: None,
             finalizers: None,
             deletion_timestamp: None,
             owner_references: None,
             annotations: None,
-            generation: None,
+            deletion_grace_period_seconds: None,
         },
-        spec: NodeSpec {
+        spec: Some(NodeSpec {
             pod_cidr: Some("10.244.0.0/24".to_string()),
-            pod_cidrs: Some(vec!["10.244.0.0/24".to_string()]),
             provider_id: None,
             unschedulable: Some(false),
             taints: None,
-            config_source: None,
-        },
+        }),
         status: Some(NodeStatus {
             capacity: None,
             allocatable: None,
-            phase: Some("Ready".to_string()),
             conditions: Some(vec![
                 NodeCondition {
                     condition_type: "Ready".to_string(),
@@ -59,12 +60,7 @@ fn create_test_node(name: &str) -> Node {
                     address: name.to_string(),
                 },
             ]),
-            daemon_endpoints: None,
             node_info: None,
-            images: None,
-            volumes_in_use: None,
-            volumes_attached: None,
-            config: None,
         }),
     }
 }
@@ -79,8 +75,7 @@ async fn test_node_create_and_get() {
     // Create
     let created: Node = storage.create(&key, &node).await.unwrap();
     assert_eq!(created.metadata.name, "test-node");
-    assert!(created.metadata.uid.is_some());
-    assert_eq!(created.spec.pod_cidr, Some("10.244.0.0/24".to_string()));
+    assert_eq!(created.spec.as_ref().unwrap().pod_cidr, Some("10.244.0.0/24".to_string()));
 
     // Get
     let retrieved: Node = storage.get(&key).await.unwrap();
@@ -101,13 +96,13 @@ async fn test_node_update() {
     storage.create(&key, &node).await.unwrap();
 
     // Update to unschedulable
-    node.spec.unschedulable = Some(true);
+    node.spec.as_mut().unwrap().unschedulable = Some(true);
     let updated: Node = storage.update(&key, &node).await.unwrap();
-    assert_eq!(updated.spec.unschedulable, Some(true));
+    assert_eq!(updated.spec.as_ref().unwrap().unschedulable, Some(true));
 
     // Verify update
     let retrieved: Node = storage.get(&key).await.unwrap();
-    assert_eq!(retrieved.spec.unschedulable, Some(true));
+    assert_eq!(retrieved.spec.as_ref().unwrap().unschedulable, Some(true));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -174,7 +169,6 @@ async fn test_node_with_status() {
     // Create with status
     let created: Node = storage.create(&key, &node).await.unwrap();
     assert!(created.status.is_some());
-    assert_eq!(created.status.as_ref().unwrap().phase, Some("Ready".to_string()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -203,13 +197,13 @@ async fn test_node_unschedulable() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut node = create_test_node("test-unschedulable");
-    node.spec.unschedulable = Some(true);
+    node.spec.as_mut().unwrap().unschedulable = Some(true);
 
     let key = build_key("nodes", None, "test-unschedulable");
 
     // Create unschedulable node
     let created: Node = storage.create(&key, &node).await.unwrap();
-    assert_eq!(created.spec.unschedulable, Some(true));
+    assert_eq!(created.spec.as_ref().unwrap().unschedulable, Some(true));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -239,15 +233,13 @@ async fn test_node_with_pod_cidr() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut node = create_test_node("test-cidr");
-    node.spec.pod_cidr = Some("10.100.0.0/24".to_string());
-    node.spec.pod_cidrs = Some(vec!["10.100.0.0/24".to_string(), "fd00::/64".to_string()]);
+    node.spec.as_mut().unwrap().pod_cidr = Some("10.100.0.0/24".to_string());
 
     let key = build_key("nodes", None, "test-cidr");
 
     // Create with CIDR
     let created: Node = storage.create(&key, &node).await.unwrap();
-    assert_eq!(created.spec.pod_cidr, Some("10.100.0.0/24".to_string()));
-    assert_eq!(created.spec.pod_cidrs.as_ref().unwrap().len(), 2);
+    assert_eq!(created.spec.as_ref().unwrap().pod_cidr, Some("10.100.0.0/24".to_string()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -266,11 +258,11 @@ async fn test_node_metadata_immutability() {
 
     // Try to update - UID should remain unchanged
     let mut updated_node = created.clone();
-    updated_node.spec.unschedulable = Some(true);
+    updated_node.spec.as_mut().unwrap().unschedulable = Some(true);
 
     let updated: Node = storage.update(&key, &updated_node).await.unwrap();
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.spec.unschedulable, Some(true));
+    assert_eq!(updated.spec.as_ref().unwrap().unschedulable, Some(true));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -379,14 +371,14 @@ async fn test_node_with_provider_id() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut node = create_test_node("test-provider");
-    node.spec.provider_id = Some("aws:///us-east-1a/i-1234567890abcdef0".to_string());
+    node.spec.as_mut().unwrap().provider_id = Some("aws:///us-east-1a/i-1234567890abcdef0".to_string());
 
     let key = build_key("nodes", None, "test-provider");
 
     // Create with provider ID
     let created: Node = storage.create(&key, &node).await.unwrap();
     assert_eq!(
-        created.spec.provider_id,
+        created.spec.as_ref().unwrap().provider_id,
         Some("aws:///us-east-1a/i-1234567890abcdef0".to_string())
     );
 

@@ -3,16 +3,12 @@
 use rusternetes_common::resources::{Service, ServicePort, ServiceSpec, ServiceType};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::service::ServiceController;
-use rusternetes_storage::{build_key, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_service_controller_creation_and_initialization() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = ServiceController::new(storage.clone());
 
     // Initialize the controller
@@ -21,11 +17,7 @@ async fn test_service_controller_creation_and_initialization() {
 
 #[tokio::test]
 async fn test_service_clusterip_allocation() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = ServiceController::new(storage.clone());
     controller.initialize().await.unwrap();
 
@@ -92,11 +84,7 @@ async fn test_service_clusterip_allocation() {
 
 #[tokio::test]
 async fn test_service_nodeport_allocation() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = ServiceController::new(storage.clone());
     controller.initialize().await.unwrap();
 
@@ -163,11 +151,7 @@ async fn test_service_nodeport_allocation() {
 
 #[tokio::test]
 async fn test_service_headless_no_clusterip() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = ServiceController::new(storage.clone());
     controller.initialize().await.unwrap();
 
@@ -229,11 +213,7 @@ async fn test_service_headless_no_clusterip() {
 
 #[tokio::test]
 async fn test_service_multiple_allocations_unique() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = ServiceController::new(storage.clone());
     controller.initialize().await.unwrap();
 

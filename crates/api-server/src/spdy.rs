@@ -309,7 +309,7 @@ mod tests {
         // Decode
         let (decoded, remaining) = SpdyFrame::decode(encoded).unwrap().unwrap();
         assert_eq!(decoded.channel, SpdyChannel::Stdout);
-        assert_eq!(decoded.data, b"Hello, SPDY!");
+        assert_eq!(decoded.data.as_ref(), b"Hello, SPDY!");
         assert_eq!(remaining.len(), 0);
     }
 
@@ -324,8 +324,8 @@ mod tests {
     #[test]
     fn test_spdy_frame_multiple() {
         // Encode two frames
-        let frame1 = SpdyFrame::new(SpdyChannel::Stdout, b"First");
-        let frame2 = SpdyFrame::new(SpdyChannel::Stderr, b"Second");
+        let frame1 = SpdyFrame::new(SpdyChannel::Stdout, b"First".to_vec());
+        let frame2 = SpdyFrame::new(SpdyChannel::Stderr, b"Second".to_vec());
 
         let mut combined = BytesMut::new();
         combined.extend_from_slice(&frame1.encode());
@@ -334,12 +334,12 @@ mod tests {
         // Decode first frame
         let (decoded1, remaining1) = SpdyFrame::decode(combined.freeze()).unwrap().unwrap();
         assert_eq!(decoded1.channel, SpdyChannel::Stdout);
-        assert_eq!(decoded1.data, b"First");
+        assert_eq!(decoded1.data.as_ref(), b"First");
 
         // Decode second frame
         let (decoded2, remaining2) = SpdyFrame::decode(remaining1).unwrap().unwrap();
         assert_eq!(decoded2.channel, SpdyChannel::Stderr);
-        assert_eq!(decoded2.data, b"Second");
+        assert_eq!(decoded2.data.as_ref(), b"Second");
         assert_eq!(remaining2.len(), 0);
     }
 

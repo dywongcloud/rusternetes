@@ -107,9 +107,6 @@ impl<S: Storage> ReplicaSetController<S> {
             namespace, replicaset.metadata.name, current_replicas, ready_count, available_count, desired_replicas
         );
 
-        // Update status
-        self.update_status(replicaset, current_replicas, ready_count, available_count).await?;
-
         // Reconcile pod count
         if current_replicas < desired_replicas {
             // Need to create more pods
@@ -132,6 +129,30 @@ impl<S: Storage> ReplicaSetController<S> {
                 self.delete_pod(&pod.metadata.name, namespace).await?;
             }
         }
+
+        // Re-fetch and recount pods after create/delete operations to get accurate status
+        let pods_prefix = build_prefix("pods", Some(namespace));
+        let all_pods_after: Vec<Pod> = self.storage.list(&pods_prefix).await?;
+
+        let replicaset_pods_after: Vec<Pod> = all_pods_after
+            .into_iter()
+            .filter(|p| self.matches_selector(p, replicaset))
+            .collect();
+
+        let final_ready_count = replicaset_pods_after
+            .iter()
+            .filter(|p| self.is_pod_ready(p))
+            .count() as i32;
+
+        let final_available_count = replicaset_pods_after
+            .iter()
+            .filter(|p| self.is_pod_available(p, replicaset))
+            .count() as i32;
+
+        let final_current_replicas = replicaset_pods_after.len() as i32;
+
+        // Update status with accurate counts
+        self.update_status(replicaset, final_current_replicas, final_ready_count, final_available_count).await?;
 
         Ok(())
     }

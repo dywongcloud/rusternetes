@@ -175,6 +175,7 @@ pub enum Phase {
     Failed,
     Unknown,
     Active,
+    Terminating,
 }
 
 /// Label selector for matching resources

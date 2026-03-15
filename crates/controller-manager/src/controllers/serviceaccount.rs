@@ -59,15 +59,15 @@ struct PodRef {
 /// 1. Create "default" ServiceAccount in each namespace
 /// 2. Create ServiceAccount tokens as Secrets
 /// 3. Handle ServiceAccount deletion and cleanup
-pub struct ServiceAccountController {
-    storage: Arc<EtcdStorage>,
+pub struct ServiceAccountController<S: Storage> {
+    storage: Arc<S>,
     /// RSA private key for signing tokens (PEM format)
     /// In production, this would be loaded from a secure key file
     signing_key: Option<EncodingKey>,
 }
 
-impl ServiceAccountController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> ServiceAccountController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         // Try to load the signing key from environment or default location
         let signing_key = Self::load_signing_key();
 

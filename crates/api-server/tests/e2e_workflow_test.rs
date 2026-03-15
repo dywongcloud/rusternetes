@@ -6,6 +6,7 @@ use rusternetes_common::resources::volume::*;
 use rusternetes_common::resources::*;
 use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta, LabelSelector};
 use rusternetes_controller_manager::controllers::deployment::DeploymentController;
+use rusternetes_controller_manager::controllers::replicaset::ReplicaSetController;
 use rusternetes_controller_manager::controllers::dynamic_provisioner::DynamicProvisionerController;
 use rusternetes_controller_manager::controllers::pv_binder::PVBinderController;
 use rusternetes_controller_manager::controllers::volume_snapshot::VolumeSnapshotController;
@@ -72,8 +73,8 @@ async fn test_complete_pod_lifecycle() {
                 working_dir: None,
                 command: None,
                 args: None,
-                security_context: None,
                 restart_policy: None,
+                security_context: None,
             }],
             init_containers: None,
             restart_policy: Some("Always".to_string()),
@@ -97,7 +98,7 @@ async fn test_complete_pod_lifecycle() {
             resource_claims: None,
         }),
         status: Some(PodStatus {
-            phase: Phase::Pending,
+            phase: Some(Phase::Pending),
             message: None,
             reason: None,
             host_ip: None,
@@ -114,7 +115,7 @@ async fn test_complete_pod_lifecycle() {
     // 3. Verify pod stored in etcd
     let stored_pod: Pod = storage.get(&pod_key).await.unwrap();
     assert_eq!(stored_pod.metadata.name, "test-pod");
-    assert_eq!(stored_pod.status.as_ref().unwrap().phase, Phase::Pending);
+    assert_eq!(stored_pod.status.as_ref().unwrap().phase, Some(Phase::Pending));
 
     // 4. Simulate scheduler assignment
     let mut updated_pod = stored_pod;
@@ -128,7 +129,7 @@ async fn test_complete_pod_lifecycle() {
     // 6. Simulate kubelet updating status
     let mut running_pod = scheduled_pod;
     running_pod.status = Some(PodStatus {
-        phase: Phase::Running,
+        phase: Some(Phase::Running),
         message: None,
         reason: None,
         host_ip: Some("192.168.1.10".to_string()),
@@ -141,7 +142,7 @@ async fn test_complete_pod_lifecycle() {
 
     // 7. Verify pod phase is Running
     let final_pod: Pod = storage.get(&pod_key).await.unwrap();
-    assert_eq!(final_pod.status.as_ref().unwrap().phase, Phase::Running);
+    assert_eq!(final_pod.status.as_ref().unwrap().phase, Some(Phase::Running));
     assert_eq!(final_pod.status.as_ref().unwrap().pod_ip, Some("10.244.1.5".to_string()));
 }
 
@@ -170,6 +171,8 @@ async fn test_deployment_workflow() {
                 match_labels: Some(labels.clone()),
                 match_expressions: None,
             },
+            min_ready_seconds: None,
+            revision_history_limit: None,
             template: PodTemplateSpec {
                 metadata: Some({
                     let mut meta = ObjectMeta::new("web-pod");
@@ -191,8 +194,8 @@ async fn test_deployment_workflow() {
                         working_dir: None,
                         command: None,
                         args: None,
-                        security_context: None,
                         restart_policy: None,
+                        security_context: None,
                     }],
                     init_containers: None,
                     restart_policy: Some("Always".to_string()),
@@ -217,8 +220,6 @@ async fn test_deployment_workflow() {
                 },
             },
             strategy: None,
-            min_ready_seconds: None,
-            revision_history_limit: None,
         },
         status: Some(DeploymentStatus {
             replicas: Some(0),
@@ -232,16 +233,21 @@ async fn test_deployment_workflow() {
     let deployment_key = build_key("deployments", Some("default"), "web-deployment");
     storage.create(&deployment_key, &deployment).await.unwrap();
 
-    // 2. Controller creates pods
-    let controller = DeploymentController::new(storage.clone(), 10);
-    controller.reconcile_all().await.unwrap();
+    // 2. DeploymentController creates ReplicaSet
+    let deployment_controller = DeploymentController::new(storage.clone(), 10);
+    deployment_controller.reconcile_all().await.unwrap();
+    sleep(Duration::from_millis(100)).await;
+
+    // 3. ReplicaSetController creates Pods
+    let replicaset_controller = ReplicaSetController::new(storage.clone(), 10);
+    replicaset_controller.reconcile_all().await.unwrap();
     sleep(Duration::from_millis(500)).await;
 
-    // 3. Verify all pods created
+    // 4. Verify all pods created
     let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
     assert_eq!(pods.len(), 3, "Should create 3 pods");
 
-    // 4. Simulate scheduler assigning pods
+    // 5. Simulate scheduler assigning pods
     for pod in &pods {
         let mut updated_pod = pod.clone();
         updated_pod.spec.as_mut().unwrap().node_name = Some("worker-1".to_string());
@@ -249,12 +255,12 @@ async fn test_deployment_workflow() {
         storage.update(&pod_key, &updated_pod).await.unwrap();
     }
 
-    // 5. Simulate kubelet running containers
+    // 6. Simulate kubelet running containers
     for pod in &pods {
         let pod_key = build_key("pods", Some("default"), &pod.metadata.name);
         let mut updated_pod: Pod = storage.get(&pod_key).await.unwrap();
         updated_pod.status = Some(PodStatus {
-            phase: Phase::Running,
+            phase: Some(Phase::Running),
             message: None,
             reason: None,
             host_ip: Some("192.168.1.10".to_string()),
@@ -266,11 +272,11 @@ async fn test_deployment_workflow() {
         storage.update(&pod_key, &updated_pod).await.unwrap();
     }
 
-    // 6. Verify all pods running
+    // 7. Verify all pods running
     let final_pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
     assert_eq!(final_pods.len(), 3);
     for pod in &final_pods {
-        assert_eq!(pod.status.as_ref().unwrap().phase, Phase::Running);
+        assert_eq!(pod.status.as_ref().unwrap().phase, Some(Phase::Running));
     }
 }
 
@@ -331,9 +337,9 @@ async fn test_dynamic_pvc_workflow() {
                 allocated_resources: None,
                 resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
-            conditions: None,
             access_modes: None,
             capacity: None,
+            conditions: None,
         }),
     };
 
@@ -453,9 +459,9 @@ async fn test_snapshot_workflow() {
                 allocated_resources: None,
                 resize_status: None,
             phase: PersistentVolumeClaimPhase::Bound,
-            conditions: None,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
             capacity: Some(capacity),
+            conditions: None,
         }),
     };
 

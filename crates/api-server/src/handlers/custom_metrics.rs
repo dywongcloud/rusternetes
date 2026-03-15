@@ -139,7 +139,7 @@ pub async fn list_custom_metrics(
         ).await {
             Ok(metric_map) => {
                 // Convert HashMap<String, String> to Vec<MetricValue>
-                metric_map.into_iter().map(|(resource_name, value)| {
+                let values: Vec<MetricValue> = metric_map.into_iter().map(|(resource_name, value)| {
                     MetricValue {
                         api_version: "custom.metrics.k8s.io/v1beta2".to_string(),
                         kind: "MetricValue".to_string(),
@@ -155,7 +155,8 @@ pub async fn list_custom_metrics(
                         value,
                         selector: selector.clone(),
                     }
-                }).collect()
+                }).collect();
+                values
             }
             Err(e) => {
                 warn!("Failed to query Prometheus for list metric {}: {}. Using fallback values.", metric_name, e);

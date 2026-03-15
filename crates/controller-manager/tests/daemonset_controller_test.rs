@@ -1,18 +1,19 @@
-// Integration tests for DaemonSet Controller
+// DaemonSet Controller Integration Tests
+// Tests the DaemonSet controller's ability to ensure one pod per node
 
 use rusternetes_common::resources::pod::*;
 use rusternetes_common::resources::*;
 use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta, LabelSelector};
 use rusternetes_controller_manager::controllers::daemonset::DaemonSetController;
-use rusternetes_storage::{build_key, Storage};
-use rusternetes_storage::etcd::EtcdStorage;
+use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
-async fn setup_test() -> Arc<EtcdStorage> {
-    let endpoints = vec!["http://localhost:2379".to_string()];
-    Arc::new(EtcdStorage::new(endpoints).await.expect("Failed to create EtcdStorage"))
+async fn setup_test() -> Arc<MemoryStorage> {
+    let storage = Arc::new(MemoryStorage::new());
+    storage.clear();
+    storage
 }
 
 fn create_test_node(name: &str, labels: Option<HashMap<String, String>>) -> Node {
@@ -75,7 +76,7 @@ fn create_test_daemonset(name: &str, namespace: &str, node_selector: Option<Hash
                         name: "logger".to_string(),
                         image: "busybox:latest".to_string(),
                         image_pull_policy: Some("IfNotPresent".to_string()),
-                        ports: Some(vec![]),
+                        ports: None,
                         env: None,
                         volume_mounts: None,
                         liveness_probe: None,
@@ -85,6 +86,7 @@ fn create_test_daemonset(name: &str, namespace: &str, node_selector: Option<Hash
                         working_dir: None,
                         command: None,
                         args: None,
+                        restart_policy: None,
                         security_context: None,
                     }],
                     init_containers: None,
@@ -101,170 +103,264 @@ fn create_test_daemonset(name: &str, namespace: &str, node_selector: Option<Hash
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
+                    automount_service_account_token: None,
+                    ephemeral_containers: None,
+                    overhead: None,
+                    scheduler_name: None,
+                    topology_spread_constraints: None,
+                    resource_claims: None,
                 },
             },
             update_strategy: None,
         },
-        status: Some(DaemonSetStatus {
-            desired_number_scheduled: 0,
-            current_number_scheduled: 0,
-            number_ready: 0,
-            number_misscheduled: 0,
-        }),
+        status: None,
     }
 }
 
 #[tokio::test]
-#[ignore] // Requires running etcd instance
 async fn test_daemonset_creates_pod_per_node() {
     let storage = setup_test().await;
 
-    // Clean up
-    let _ = storage.delete("/registry/daemonsets/test-ns/logger").await;
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap_or_default();
-    for pod in pods {
-        let _ = storage.delete(&build_key("pods", Some("test-ns"), &pod.metadata.name)).await;
-    }
-
     // Create 3 nodes
-    for i in 0..3 {
+    for i in 1..=3 {
         let node = create_test_node(&format!("node-{}", i), None);
-        let key = build_key("nodes", None, &format!("node-{}", i));
+        let key = build_key("nodes", None, &node.metadata.name);
         storage.create(&key, &node).await.unwrap();
     }
 
-    // Create DaemonSet (no node selector = all nodes)
-    let daemonset = create_test_daemonset("logger", "test-ns", None);
-    let key = build_key("daemonsets", Some("test-ns"), "logger");
-    storage.create(&key, &daemonset).await.unwrap();
+    // Create DaemonSet
+    let ds = create_test_daemonset("test-ds", "default", None);
+    let ds_key = build_key("daemonsets", Some("default"), &ds.metadata.name);
+    storage.create(&ds_key, &ds).await.unwrap();
 
     // Run controller
     let controller = DaemonSetController::new(storage.clone());
     controller.reconcile_all().await.unwrap();
-    sleep(Duration::from_millis(500)).await;
 
-    // Verify 3 pods created (one per node)
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap();
+    // Should create 3 pods (one per node)
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
     assert_eq!(pods.len(), 3, "Should create one pod per node");
 
-    // Cleanup
-    let _ = storage.delete(&key).await;
-    for i in 0..3 {
-        let _ = storage.delete(&build_key("nodes", None, &format!("node-{}", i))).await;
-    }
-    for pod in pods {
-        let _ = storage.delete(&build_key("pods", Some("test-ns"), &pod.metadata.name)).await;
-    }
+    // Each pod should be assigned to a different node
+    let node_names: std::collections::HashSet<_> = pods
+        .iter()
+        .filter_map(|p| p.spec.as_ref()?.node_name.as_ref())
+        .collect();
+    assert_eq!(node_names.len(), 3, "Each pod should be on a different node");
 }
 
 #[tokio::test]
-#[ignore] // Requires running etcd instance
-async fn test_daemonset_node_selector() {
+async fn test_daemonset_respects_node_selector() {
     let storage = setup_test().await;
-
-    // Clean up
-    let _ = storage.delete("/registry/daemonsets/test-ns/ssd-logger").await;
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap_or_default();
-    for pod in pods {
-        let _ = storage.delete(&build_key("pods", Some("test-ns"), &pod.metadata.name)).await;
-    }
 
     // Create nodes with different labels
     let mut ssd_labels = HashMap::new();
     ssd_labels.insert("disktype".to_string(), "ssd".to_string());
 
-    for i in 0..2 {
-        let node = create_test_node(&format!("ssd-node-{}", i), Some(ssd_labels.clone()));
-        let key = build_key("nodes", None, &format!("ssd-node-{}", i));
-        storage.create(&key, &node).await.unwrap();
-    }
+    let mut hdd_labels = HashMap::new();
+    hdd_labels.insert("disktype".to_string(), "hdd".to_string());
 
-    // Create nodes without SSD label
-    for i in 0..2 {
-        let node = create_test_node(&format!("hdd-node-{}", i), None);
-        let key = build_key("nodes", None, &format!("hdd-node-{}", i));
-        storage.create(&key, &node).await.unwrap();
-    }
+    let node1 = create_test_node("node-1", Some(ssd_labels.clone()));
+    let node2 = create_test_node("node-2", Some(hdd_labels));
+    let node3 = create_test_node("node-3", Some(ssd_labels));
 
-    // Create DaemonSet with node selector for disktype=ssd
+    storage.create(&build_key("nodes", None, &node1.metadata.name), &node1).await.unwrap();
+    storage.create(&build_key("nodes", None, &node2.metadata.name), &node2).await.unwrap();
+    storage.create(&build_key("nodes", None, &node3.metadata.name), &node3).await.unwrap();
+
+    // Create DaemonSet with node selector for SSD nodes only
     let mut node_selector = HashMap::new();
     node_selector.insert("disktype".to_string(), "ssd".to_string());
-    let daemonset = create_test_daemonset("ssd-logger", "test-ns", Some(node_selector));
-    let key = build_key("daemonsets", Some("test-ns"), "ssd-logger");
-    storage.create(&key, &daemonset).await.unwrap();
+
+    let ds = create_test_daemonset("ssd-ds", "default", Some(node_selector));
+    storage.create(&build_key("daemonsets", Some("default"), &ds.metadata.name), &ds).await.unwrap();
 
     // Run controller
     let controller = DaemonSetController::new(storage.clone());
     controller.reconcile_all().await.unwrap();
-    sleep(Duration::from_millis(500)).await;
 
-    // Verify only 2 pods created (on SSD nodes only)
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap();
-    assert_eq!(pods.len(), 2, "Should only create pods on nodes matching selector");
+    // Should only create pods on SSD nodes (node-1 and node-3)
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 2, "Should only create pods on SSD nodes");
 
-    // Cleanup
-    let _ = storage.delete(&key).await;
-    for i in 0..2 {
-        let _ = storage.delete(&build_key("nodes", None, &format!("ssd-node-{}", i))).await;
-        let _ = storage.delete(&build_key("nodes", None, &format!("hdd-node-{}", i))).await;
-    }
-    for pod in pods {
-        let _ = storage.delete(&build_key("pods", Some("test-ns"), &pod.metadata.name)).await;
-    }
+    let node_names: std::collections::HashSet<_> = pods
+        .iter()
+        .filter_map(|p| p.spec.as_ref()?.node_name.as_ref())
+        .map(|s| s.as_str())
+        .collect();
+
+    assert!(node_names.contains("node-1"));
+    assert!(node_names.contains("node-3"));
+    assert!(!node_names.contains("node-2"));
 }
 
 #[tokio::test]
-#[ignore] // Requires running etcd instance
-async fn test_daemonset_node_addition() {
+async fn test_daemonset_adds_pods_when_nodes_added() {
     let storage = setup_test().await;
 
-    // Clean up
-    let _ = storage.delete("/registry/daemonsets/test-ns/logger").await;
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap_or_default();
-    for pod in pods {
-        let _ = storage.delete(&build_key("pods", Some("test-ns"), &pod.metadata.name)).await;
-    }
-
     // Create 2 nodes initially
-    for i in 0..2 {
+    for i in 1..=2 {
         let node = create_test_node(&format!("node-{}", i), None);
-        let key = build_key("nodes", None, &format!("node-{}", i));
-        storage.create(&key, &node).await.unwrap();
+        storage.create(&build_key("nodes", None, &node.metadata.name), &node).await.unwrap();
     }
 
     // Create DaemonSet
-    let daemonset = create_test_daemonset("logger", "test-ns", None);
-    let key = build_key("daemonsets", Some("test-ns"), "logger");
-    storage.create(&key, &daemonset).await.unwrap();
+    let ds = create_test_daemonset("test-ds", "default", None);
+    storage.create(&build_key("daemonsets", Some("default"), &ds.metadata.name), &ds).await.unwrap();
+
+    // Run controller - should create 2 pods
+    let controller = DaemonSetController::new(storage.clone());
+    controller.reconcile_all().await.unwrap();
+
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 2);
+
+    // Add a third node
+    let node3 = create_test_node("node-3", None);
+    storage.create(&build_key("nodes", None, &node3.metadata.name), &node3).await.unwrap();
+
+    // Run controller again - should create pod on new node
+    controller.reconcile_all().await.unwrap();
+
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 3, "Should create pod on newly added node");
+}
+
+#[tokio::test]
+async fn test_daemonset_removes_pods_when_nodes_removed() {
+    let storage = setup_test().await;
+
+    // Create 3 nodes
+    for i in 1..=3 {
+        let node = create_test_node(&format!("node-{}", i), None);
+        storage.create(&build_key("nodes", None, &node.metadata.name), &node).await.unwrap();
+    }
+
+    // Create DaemonSet
+    let ds = create_test_daemonset("test-ds", "default", None);
+    storage.create(&build_key("daemonsets", Some("default"), &ds.metadata.name), &ds).await.unwrap();
+
+    // Run controller - should create 3 pods
+    let controller = DaemonSetController::new(storage.clone());
+    controller.reconcile_all().await.unwrap();
+
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 3);
+
+    // Remove node-2
+    storage.delete(&build_key("nodes", None, "node-2")).await.unwrap();
+
+    // Run controller again - should remove pod from deleted node
+    controller.reconcile_all().await.unwrap();
+
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 2, "Should remove pod from deleted node");
+
+    let node_names: std::collections::HashSet<_> = pods
+        .iter()
+        .filter_map(|p| p.spec.as_ref()?.node_name.as_ref())
+        .map(|s| s.as_str())
+        .collect();
+
+    assert!(node_names.contains("node-1"));
+    assert!(!node_names.contains("node-2"));
+    assert!(node_names.contains("node-3"));
+}
+
+#[tokio::test]
+async fn test_daemonset_updates_status() {
+    let storage = setup_test().await;
+
+    // Create 3 nodes
+    for i in 1..=3 {
+        let node = create_test_node(&format!("node-{}", i), None);
+        storage.create(&build_key("nodes", None, &node.metadata.name), &node).await.unwrap();
+    }
+
+    // Create DaemonSet
+    let ds = create_test_daemonset("test-ds", "default", None);
+    let ds_key = build_key("daemonsets", Some("default"), &ds.metadata.name);
+    storage.create(&ds_key, &ds).await.unwrap();
 
     // Run controller
     let controller = DaemonSetController::new(storage.clone());
     controller.reconcile_all().await.unwrap();
-    sleep(Duration::from_millis(500)).await;
 
-    // Verify 2 pods created
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap();
-    assert_eq!(pods.len(), 2);
+    // Check status
+    let updated_ds: DaemonSet = storage.get(&ds_key).await.unwrap();
+    let status = updated_ds.status.unwrap();
 
-    // Add a new node
-    let node = create_test_node("node-2", None);
-    let node_key = build_key("nodes", None, "node-2");
-    storage.create(&node_key, &node).await.unwrap();
+    assert_eq!(status.desired_number_scheduled, 3);
+    assert_eq!(status.current_number_scheduled, 3);
+}
 
-    // Run controller again
+#[tokio::test]
+async fn test_daemonset_multiple_namespaces() {
+    let storage = setup_test().await;
+
+    // Create nodes
+    for i in 1..=2 {
+        let node = create_test_node(&format!("node-{}", i), None);
+        storage.create(&build_key("nodes", None, &node.metadata.name), &node).await.unwrap();
+    }
+
+    // Create DaemonSets in different namespaces
+    let ds1 = create_test_daemonset("test-ds", "namespace-1", None);
+    let ds2 = create_test_daemonset("test-ds", "namespace-2", None);
+
+    storage.create(&build_key("daemonsets", Some("namespace-1"), &ds1.metadata.name), &ds1).await.unwrap();
+    storage.create(&build_key("daemonsets", Some("namespace-2"), &ds2.metadata.name), &ds2).await.unwrap();
+
+    // Run controller
+    let controller = DaemonSetController::new(storage.clone());
     controller.reconcile_all().await.unwrap();
-    sleep(Duration::from_millis(500)).await;
 
-    // Verify 3 pods now exist
-    let pods: Vec<Pod> = storage.list("/registry/pods/test-ns/").await.unwrap();
-    assert_eq!(pods.len(), 3, "Should create pod on newly added node");
+    // Each namespace should have 2 pods
+    let ns1_pods: Vec<Pod> = storage.list("/registry/pods/namespace-1/").await.unwrap();
+    let ns2_pods: Vec<Pod> = storage.list("/registry/pods/namespace-2/").await.unwrap();
 
-    // Cleanup
-    let _ = storage.delete(&key).await;
-    for i in 0..3 {
-        let _ = storage.delete(&build_key("nodes", None, &format!("node-{}", i))).await;
-    }
-    for pod in pods {
-        let _ = storage.delete(&build_key("pods", Some("test-ns"), &pod.metadata.name)).await;
-    }
+    assert_eq!(ns1_pods.len(), 2, "Namespace 1 should have 2 pods");
+    assert_eq!(ns2_pods.len(), 2, "Namespace 2 should have 2 pods");
+}
+
+#[tokio::test]
+async fn test_daemonset_no_nodes_no_pods() {
+    let storage = setup_test().await;
+
+    // Create DaemonSet but NO nodes
+    let ds = create_test_daemonset("test-ds", "default", None);
+    storage.create(&build_key("daemonsets", Some("default"), &ds.metadata.name), &ds).await.unwrap();
+
+    // Run controller
+    let controller = DaemonSetController::new(storage.clone());
+    controller.reconcile_all().await.unwrap();
+
+    // Should create 0 pods (no nodes available)
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 0, "Should not create pods when no nodes exist");
+}
+
+#[tokio::test]
+async fn test_daemonset_pod_naming_convention() {
+    let storage = setup_test().await;
+
+    // Create a node with dots in the name
+    let node = create_test_node("node.example.com", None);
+    storage.create(&build_key("nodes", None, &node.metadata.name), &node).await.unwrap();
+
+    // Create DaemonSet
+    let ds = create_test_daemonset("test-ds", "default", None);
+    storage.create(&build_key("daemonsets", Some("default"), &ds.metadata.name), &ds).await.unwrap();
+
+    // Run controller
+    let controller = DaemonSetController::new(storage.clone());
+    controller.reconcile_all().await.unwrap();
+
+    // Check pod name - dots should be replaced with dashes
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 1);
+
+    let pod = &pods[0];
+    assert_eq!(pod.metadata.name, "test-ds-node-example-com");
+    assert!(!pod.metadata.name.contains('.'), "Pod name should not contain dots");
 }

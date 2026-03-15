@@ -14,16 +14,16 @@ use tokio::time;
 use tracing::{debug, error, info, warn};
 
 /// LoadBalancerController reconciles LoadBalancer-type Services with cloud provider load balancers
-pub struct LoadBalancerController {
-    storage: Arc<EtcdStorage>,
+pub struct LoadBalancerController<S: Storage> {
+    storage: Arc<S>,
     cloud_provider: Option<Arc<dyn CloudProvider>>,
     cluster_name: String,
     sync_interval: Duration,
 }
 
-impl LoadBalancerController {
+impl<S: Storage> LoadBalancerController<S> {
     pub fn new(
-        storage: Arc<EtcdStorage>,
+        storage: Arc<S>,
         cloud_provider: Option<Arc<dyn CloudProvider>>,
         cluster_name: String,
         sync_interval_secs: u64,
@@ -321,14 +321,12 @@ impl LoadBalancerController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusternetes_storage::memory::MemoryStorage;
 
     #[test]
-    #[ignore] // Requires etcd storage to be properly initialized
     fn test_controller_creation() {
         // Test that we can create a controller without cloud provider
-        // Note: This test is ignored because it needs a proper EtcdStorage instance
-        // which cannot be created with zeroed memory
-        let storage = Arc::new(unsafe { std::mem::zeroed() });
+        let storage = Arc::new(MemoryStorage::new());
         let controller = LoadBalancerController::new(
             storage,
             None,

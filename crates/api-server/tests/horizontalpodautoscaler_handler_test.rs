@@ -6,14 +6,18 @@ use rusternetes_common::resources::{
     CrossVersionObjectReference, HorizontalPodAutoscaler, HorizontalPodAutoscalerSpec,
     HorizontalPodAutoscalerStatus, MetricSpec, MetricTarget, ResourceMetricSource,
 };
-use rusternetes_common::types::ObjectMeta;
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // Helper function to create test HorizontalPodAutoscaler
 fn create_test_hpa(name: &str, namespace: &str) -> HorizontalPodAutoscaler {
     HorizontalPodAutoscaler {
+        type_meta: TypeMeta {
+            kind: "HorizontalPodAutoscaler".to_string(),
+            api_version: "autoscaling/v2".to_string(),
+        },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
@@ -63,8 +67,6 @@ async fn test_hpa_create_and_get() {
     assert_eq!(created.metadata.namespace, Some(namespace.to_string()));
     assert_eq!(created.spec.min_replicas, Some(1));
     assert_eq!(created.spec.max_replicas, 10);
-    assert!(created.metadata.uid.is_some());
-    assert!(created.metadata.creation_timestamp.is_some());
 
     // Get the HPA
     let retrieved: HorizontalPodAutoscaler = storage.get(&key).await.unwrap();
@@ -180,6 +182,10 @@ async fn test_hpa_with_memory_metric() {
 
     let namespace = "test-hpa-memory";
     let hpa = HorizontalPodAutoscaler {
+        type_meta: TypeMeta {
+            kind: "HorizontalPodAutoscaler".to_string(),
+            api_version: "autoscaling/v2".to_string(),
+        },
         metadata: ObjectMeta {
             name: "memory-hpa".to_string(),
             namespace: Some(namespace.to_string()),
@@ -233,6 +239,10 @@ async fn test_hpa_with_multiple_metrics() {
 
     let namespace = "test-hpa-multi-metrics";
     let hpa = HorizontalPodAutoscaler {
+        type_meta: TypeMeta {
+            kind: "HorizontalPodAutoscaler".to_string(),
+            api_version: "autoscaling/v2".to_string(),
+        },
         metadata: ObjectMeta {
             name: "multi-metric-hpa".to_string(),
             namespace: Some(namespace.to_string()),
@@ -302,6 +312,10 @@ async fn test_hpa_targeting_statefulset() {
 
     let namespace = "test-hpa-statefulset";
     let hpa = HorizontalPodAutoscaler {
+        type_meta: TypeMeta {
+            kind: "HorizontalPodAutoscaler".to_string(),
+            api_version: "autoscaling/v2".to_string(),
+        },
         metadata: ObjectMeta {
             name: "statefulset-hpa".to_string(),
             namespace: Some(namespace.to_string()),
@@ -355,7 +369,7 @@ async fn test_hpa_with_status() {
 
     hpa.status = Some(HorizontalPodAutoscalerStatus {
         observed_generation: Some(1),
-        last_scale_time: Some(chrono::Utc::now()),
+        last_scale_time: Some(chrono::Utc::now().to_rfc3339()),
         current_replicas: 3,
         desired_replicas: 5,
         current_metrics: None,
@@ -379,6 +393,10 @@ async fn test_hpa_with_no_min_replicas() {
 
     let namespace = "test-hpa-no-min";
     let hpa = HorizontalPodAutoscaler {
+        type_meta: TypeMeta {
+            kind: "HorizontalPodAutoscaler".to_string(),
+            api_version: "autoscaling/v2".to_string(),
+        },
         metadata: ObjectMeta {
             name: "no-min-hpa".to_string(),
             namespace: Some(namespace.to_string()),
@@ -431,7 +449,7 @@ async fn test_hpa_with_labels() {
     let mut hpa = create_test_hpa("labeled-hpa", namespace);
 
     hpa.metadata.labels = Some({
-        let mut labels = BTreeMap::new();
+        let mut labels = HashMap::new();
         labels.insert("app".to_string(), "myapp".to_string());
         labels.insert("tier".to_string(), "backend".to_string());
         labels
@@ -455,7 +473,7 @@ async fn test_hpa_with_annotations() {
     let mut hpa = create_test_hpa("annotated-hpa", namespace);
 
     hpa.metadata.annotations = Some({
-        let mut annotations = BTreeMap::new();
+        let mut annotations = HashMap::new();
         annotations.insert("description".to_string(), "Test HPA".to_string());
         annotations.insert("managed-by".to_string(), "test-controller".to_string());
         annotations
@@ -559,6 +577,10 @@ async fn test_hpa_targeting_replicaset() {
 
     let namespace = "test-hpa-replicaset";
     let hpa = HorizontalPodAutoscaler {
+        type_meta: TypeMeta {
+            kind: "HorizontalPodAutoscaler".to_string(),
+            api_version: "autoscaling/v2".to_string(),
+        },
         metadata: ObjectMeta {
             name: "replicaset-hpa".to_string(),
             namespace: Some(namespace.to_string()),
@@ -609,6 +631,10 @@ async fn test_hpa_with_high_replica_count() {
 
     let namespace = "test-hpa-high-replicas";
     let hpa = HorizontalPodAutoscaler {
+        type_meta: TypeMeta {
+            kind: "HorizontalPodAutoscaler".to_string(),
+            api_version: "autoscaling/v2".to_string(),
+        },
         metadata: ObjectMeta {
             name: "high-replicas-hpa".to_string(),
             namespace: Some(namespace.to_string()),

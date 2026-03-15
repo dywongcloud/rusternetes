@@ -2,8 +2,8 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for cronjobs
 
-use rusternetes_common::resources::{CronJob, CronJobSpec, CronJobStatus, JobSpec, LabelSelector, PodTemplateSpec, PodSpec};
-use rusternetes_common::types::{Container, Metadata};
+use rusternetes_common::resources::{Container, CronJob, CronJobSpec, CronJobStatus, JobSpec, JobTemplateSpec, LabelSelector, PodTemplateSpec, PodSpec};
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,49 +14,29 @@ fn create_test_cronjob(name: &str, namespace: &str, schedule: &str) -> CronJob {
     labels.insert("app".to_string(), name.to_string());
 
     CronJob {
-        metadata: Metadata {
-            name: name.to_string(),
-            namespace: Some(namespace.to_string()),
-            labels: Some(labels.clone()),
-            uid: None,
-            creation_timestamp: None,
-            resource_version: None,
-            finalizers: None,
-            deletion_timestamp: None,
-            owner_references: None,
-            annotations: None,
-            generation: None,
+        type_meta: TypeMeta {
+            kind: "CronJob".to_string(),
+            api_version: "batch/v1".to_string(),
         },
+        metadata: ObjectMeta::new(name)
+            .with_namespace(namespace)
+            .with_labels(labels.clone()),
         spec: CronJobSpec {
             schedule: schedule.to_string(),
-            timezone: None,
-            starting_deadline_seconds: None,
             concurrency_policy: Some("Allow".to_string()),
             suspend: Some(false),
-            job_template: JobSpec {
-                parallelism: Some(1),
-                completions: Some(1),
-                active_deadline_seconds: None,
-                backoff_limit: Some(6),
-                selector: Some(LabelSelector {
-                    match_labels: Some(labels.clone()),
-                    match_expressions: None,
-                }),
-                template: PodTemplateSpec {
-                    metadata: Some(Metadata {
-                        name: format!("{}-pod", name),
-                        namespace: Some(namespace.to_string()),
-                        labels: Some(labels),
-                        uid: None,
-                        creation_timestamp: None,
-                        resource_version: None,
-                        finalizers: None,
-                        deletion_timestamp: None,
-                        owner_references: None,
-                        annotations: None,
-                        generation: None,
-                    }),
-                    spec: Some(PodSpec {
+            job_template: JobTemplateSpec {
+                metadata: None,
+                spec: JobSpec {
+                    parallelism: Some(1),
+                    completions: Some(1),
+                    backoff_limit: Some(6),
+                    active_deadline_seconds: None,
+                    template: PodTemplateSpec {
+                    metadata: Some(ObjectMeta::new(&format!("{}-pod", name))
+                        .with_namespace(namespace)
+                        .with_labels(labels)),
+                    spec: PodSpec {
                         containers: vec![Container {
                             name: "job-container".to_string(),
                             image: "busybox:latest".to_string(),
@@ -66,23 +46,17 @@ fn create_test_cronjob(name: &str, namespace: &str, schedule: &str) -> CronJob {
                             ports: None,
                             volume_mounts: None,
                             resources: None,
-                            security_context: None,
                             liveness_probe: None,
                             readiness_probe: None,
                             startup_probe: None,
-                            lifecycle: None,
                             image_pull_policy: None,
-                            stdin: None,
-                            stdin_once: None,
-                            tty: None,
                             working_dir: None,
-                            termination_message_path: None,
-                            termination_message_policy: None,
+                            security_context: None,
+                            restart_policy: None,
                         }],
                         init_containers: None,
+                        ephemeral_containers: None,
                         restart_policy: Some("OnFailure".to_string()),
-                        termination_grace_period_seconds: Some(30),
-                        dns_policy: Some("ClusterFirst".to_string()),
                         service_account_name: None,
                         automount_service_account_token: None,
                         node_selector: None,
@@ -93,32 +67,16 @@ fn create_test_cronjob(name: &str, namespace: &str, schedule: &str) -> CronJob {
                         host_pid: None,
                         host_ipc: None,
                         hostname: None,
-                        subdomain: None,
                         priority_class_name: None,
                         priority: None,
                         scheduler_name: None,
                         volumes: None,
-                        image_pull_secrets: None,
-                        security_context: None,
-                        runtime_class_name: None,
-                        enable_service_links: None,
-                        preemption_policy: None,
                         overhead: None,
                         topology_spread_constraints: None,
-                        set_hostname_as_fqdn: None,
-                        os: None,
-                        scheduling_gates: None,
                         resource_claims: None,
-                    }),
+                    },
                 },
-                ttl_seconds_after_finished: None,
-                completion_mode: None,
-                suspend: None,
-                manual_selector: None,
-                pod_failure_policy: None,
-                backoff_limit_per_index: None,
-                max_failed_indexes: None,
-                pod_replacement_policy: None,
+                },
             },
             successful_jobs_history_limit: Some(3),
             failed_jobs_history_limit: Some(1),
@@ -143,7 +101,7 @@ async fn test_cronjob_create_and_get() {
     assert_eq!(created.metadata.name, "test-cron");
     assert_eq!(created.metadata.namespace, Some("default".to_string()));
     assert_eq!(created.spec.schedule, "*/5 * * * *");
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
 
     // Get
     let retrieved: CronJob = storage.get(&key).await.unwrap();
@@ -365,22 +323,9 @@ async fn test_cronjob_suspended() {
     storage.delete(&key).await.unwrap();
 }
 
-#[tokio::test]
-async fn test_cronjob_starting_deadline_seconds() {
-    let storage = Arc::new(MemoryStorage::new());
-
-    let mut cronjob = create_test_cronjob("test-deadline", "default", "0 0 * * *");
-    cronjob.spec.starting_deadline_seconds = Some(600); // 10 minutes
-
-    let key = build_key("cronjobs", Some("default"), "test-deadline");
-
-    // Create with starting deadline
-    let created: CronJob = storage.create(&key, &cronjob).await.unwrap();
-    assert_eq!(created.spec.starting_deadline_seconds, Some(600));
-
-    // Clean up
-    storage.delete(&key).await.unwrap();
-}
+// Note: starting_deadline_seconds field removed from CronJobSpec
+// #[tokio::test]
+// async fn test_cronjob_starting_deadline_seconds() { ... }
 
 #[tokio::test]
 async fn test_cronjob_history_limits() {
@@ -544,22 +489,9 @@ async fn test_cronjob_with_annotations() {
     storage.delete(&key).await.unwrap();
 }
 
-#[tokio::test]
-async fn test_cronjob_timezone() {
-    let storage = Arc::new(MemoryStorage::new());
-
-    let mut cronjob = create_test_cronjob("test-timezone", "default", "0 9 * * *");
-    cronjob.spec.timezone = Some("America/New_York".to_string());
-
-    let key = build_key("cronjobs", Some("default"), "test-timezone");
-
-    // Create with timezone
-    let created: CronJob = storage.create(&key, &cronjob).await.unwrap();
-    assert_eq!(created.spec.timezone, Some("America/New_York".to_string()));
-
-    // Clean up
-    storage.delete(&key).await.unwrap();
-}
+// Note: timezone field removed from CronJobSpec
+// #[tokio::test]
+// async fn test_cronjob_timezone() { ... }
 
 #[tokio::test]
 async fn test_cronjob_complex_schedule() {

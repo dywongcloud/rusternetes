@@ -126,8 +126,10 @@ pub fn detect_cloud_provider() -> CloudProviderType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_detect_cloud_provider_none() {
         // Clear any environment variables that might interfere
         std::env::remove_var("CLOUD_PROVIDER");
@@ -142,14 +144,20 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_detect_cloud_provider_from_env_var() {
-        // This test may be flaky due to parallel test execution
-        // We'll just check that the detection mechanism works
+        // Clear all env vars first to ensure clean state
+        std::env::remove_var("CLOUD_PROVIDER");
+        std::env::remove_var("AWS_REGION");
+        std::env::remove_var("AWS_DEFAULT_REGION");
+        std::env::remove_var("GCP_PROJECT");
+        std::env::remove_var("GOOGLE_CLOUD_PROJECT");
+        std::env::remove_var("AZURE_SUBSCRIPTION_ID");
+
+        // Now set the specific env var we want to test
         std::env::set_var("CLOUD_PROVIDER", "gcp");
         let detected = detect_cloud_provider();
-        // Could be GCP if our env var is honored, or could be something else
-        // if another test interferes. Just verify it's a valid value
-        assert!(matches!(detected, CloudProviderType::AWS | CloudProviderType::GCP | CloudProviderType::Azure | CloudProviderType::None));
+        assert_eq!(detected, CloudProviderType::GCP);
         std::env::remove_var("CLOUD_PROVIDER");
     }
 

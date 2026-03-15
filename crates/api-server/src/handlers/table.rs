@@ -262,6 +262,7 @@ impl HasPodInfo for rusternetes_common::resources::Pod {
                 Some(Phase::Failed) => "Failed",
                 Some(Phase::Unknown) => "Unknown",
                 Some(Phase::Active) => "Active",
+                Some(Phase::Terminating) => "Terminating",
                 None => "Pending",
             }.to_string();
 

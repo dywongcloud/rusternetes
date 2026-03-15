@@ -1,18 +1,18 @@
 use anyhow::Result;
 use rusternetes_common::resources::{Pod, PodStatus, StatefulSet, StatefulSetStatus};
 use rusternetes_common::types::Phase;
-use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use rusternetes_storage::Storage;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
 use tracing::{error, info};
 
-pub struct StatefulSetController {
-    storage: Arc<EtcdStorage>,
+pub struct StatefulSetController<S: Storage> {
+    storage: Arc<S>,
 }
 
-impl StatefulSetController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> StatefulSetController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 
@@ -126,8 +126,24 @@ impl StatefulSetController {
             }
         }
 
-        // Update status
-        let ready_pods = statefulset_pods
+        // Re-fetch and recount pods after create/delete operations to get accurate status
+        let pod_prefix = format!("/registry/pods/{}/", namespace);
+        let all_pods_after: Vec<Pod> = self.storage.list(&pod_prefix).await?;
+
+        let statefulset_pods_after: Vec<Pod> = all_pods_after
+            .into_iter()
+            .filter(|pod| {
+                pod.metadata
+                    .labels
+                    .as_ref()
+                    .and_then(|labels| labels.get("app"))
+                    .map(|app| app == name)
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        let final_current_replicas = statefulset_pods_after.len() as i32;
+        let final_ready_pods = statefulset_pods_after
             .iter()
             .filter(|pod| {
                 pod.status
@@ -137,11 +153,12 @@ impl StatefulSetController {
             })
             .count() as i32;
 
+        // Update status with accurate counts
         statefulset.status = Some(StatefulSetStatus {
-            replicas: current_replicas.min(desired_replicas),
-            ready_replicas: ready_pods,
-            current_replicas,
-            updated_replicas: current_replicas.min(desired_replicas),
+            replicas: final_current_replicas.min(desired_replicas),
+            ready_replicas: final_ready_pods,
+            current_replicas: final_current_replicas,
+            updated_replicas: final_current_replicas.min(desired_replicas),
         });
 
         // Save updated status

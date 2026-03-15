@@ -137,7 +137,7 @@ fn test_sidecar_runs_alongside_main_containers() {
     // 1. Regular init container has completed
     // 2. Sidecar is running alongside main container
     pod.status = Some(PodStatus {
-        phase: Phase::Running,
+        phase: Some(Phase::Running),
         message: Some("All containers running".to_string()),
         reason: None,
         pod_ip: Some("10.244.0.5".to_string()),
@@ -183,7 +183,7 @@ fn test_sidecar_runs_alongside_main_containers() {
     });
 
     let status = pod.status.as_ref().unwrap();
-    assert_eq!(status.phase, Phase::Running);
+    assert_eq!(status.phase, Some(Phase::Running));
 
     // Verify init container statuses
     let init_statuses = status.init_container_statuses.as_ref().unwrap();
@@ -294,7 +294,7 @@ fn test_sidecar_failure_should_not_block_pod() {
     // Simulate sidecar failing but pod still running
     // (In Kubernetes, sidecar failures don't necessarily fail the whole pod)
     pod.status = Some(PodStatus {
-        phase: Phase::Running,
+        phase: Some(Phase::Running),
         message: Some("Main container running despite sidecar issues".to_string()),
         reason: None,
         pod_ip: Some("10.244.0.5".to_string()),
@@ -330,7 +330,7 @@ fn test_sidecar_failure_should_not_block_pod() {
     let status = pod.status.as_ref().unwrap();
 
     // Pod should still be running
-    assert_eq!(status.phase, Phase::Running);
+    assert_eq!(status.phase, Some(Phase::Running));
 
     // Verify sidecar has restarted multiple times
     let init_statuses = status.init_container_statuses.as_ref().unwrap();

@@ -46,7 +46,7 @@ async fn test_namespace_active_not_deleted() {
             annotations: None,
         },
         spec: Some(NamespaceSpec { finalizers: None }),
-        status: Some(NamespaceStatus { phase: Some("Active".to_string()) }),
+        status: Some(NamespaceStatus { phase: rusternetes_common::types::Phase::Active }),
     };
 
     let key = build_key("namespaces", None, "test-namespace");
@@ -93,7 +93,7 @@ async fn test_namespace_with_finalizer_marked_for_deletion() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: Some("Terminating".to_string()),
+            phase: rusternetes_common::types::Phase::Terminating,
         }),
     };
 
@@ -146,7 +146,7 @@ async fn test_namespace_deletion_removes_finalizers() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: Some("Terminating".to_string()),
+            phase: rusternetes_common::types::Phase::Terminating,
         }),
     };
 

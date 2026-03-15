@@ -35,9 +35,12 @@ use tracing::{debug, info};
 /// ```no_run
 /// use rusternetes_api_server::handlers::finalizers::handle_delete_with_finalizers;
 /// use rusternetes_common::resources::Pod;
+/// use rusternetes_common::Result;
+/// use rusternetes_storage::etcd::EtcdStorage;
 /// use rusternetes_storage::Storage;
+/// use tracing::info;
 ///
-/// async fn delete_pod(storage: &impl Storage, key: &str) -> Result<()> {
+/// async fn delete_pod(storage: &EtcdStorage, key: &str) -> Result<()> {
 ///     // Get the resource
 ///     let pod: Pod = storage.get(key).await?;
 ///
@@ -701,7 +704,32 @@ mod tests {
             .unwrap();
 
         // Create a pod without finalizers
-        let mut pod = Pod::new("test-pod", "default");
+        use rusternetes_common::resources::PodSpec;
+        let spec = PodSpec {
+            containers: vec![],
+            init_containers: None,
+            ephemeral_containers: None,
+            volumes: None,
+            restart_policy: None,
+            node_name: None,
+            node_selector: None,
+            service_account_name: None,
+            hostname: None,
+            host_network: None,
+            host_pid: None,
+            host_ipc: None,
+            affinity: None,
+            tolerations: None,
+            priority: None,
+            priority_class_name: None,
+            automount_service_account_token: None,
+            topology_spread_constraints: None,
+            overhead: None,
+            scheduler_name: None,
+            resource_claims: None,
+        };
+        let mut pod = Pod::new("test-pod", spec);
+        pod.metadata.namespace = Some("default".to_string());
         pod.metadata.ensure_uid();
         pod.metadata.ensure_creation_timestamp();
 
@@ -730,7 +758,32 @@ mod tests {
             .unwrap();
 
         // Create a pod with finalizers
-        let mut pod = Pod::new("test-pod-finalizers", "default");
+        use rusternetes_common::resources::PodSpec;
+        let spec = PodSpec {
+            containers: vec![],
+            init_containers: None,
+            ephemeral_containers: None,
+            volumes: None,
+            restart_policy: None,
+            node_name: None,
+            node_selector: None,
+            service_account_name: None,
+            hostname: None,
+            host_network: None,
+            host_pid: None,
+            host_ipc: None,
+            affinity: None,
+            tolerations: None,
+            priority: None,
+            priority_class_name: None,
+            automount_service_account_token: None,
+            topology_spread_constraints: None,
+            overhead: None,
+            scheduler_name: None,
+            resource_claims: None,
+        };
+        let mut pod = Pod::new("test-pod-finalizers", spec);
+        pod.metadata.namespace = Some("default".to_string());
         pod.metadata.ensure_uid();
         pod.metadata.ensure_creation_timestamp();
         pod.metadata.finalizers = Some(vec!["test.finalizer.io".to_string()]);
@@ -778,7 +831,32 @@ mod tests {
             .unwrap();
 
         // Create a pod with finalizers
-        let mut pod = Pod::new("test-pod-remove-finalizer", "default");
+        use rusternetes_common::resources::PodSpec;
+        let spec = PodSpec {
+            containers: vec![],
+            init_containers: None,
+            ephemeral_containers: None,
+            volumes: None,
+            restart_policy: None,
+            node_name: None,
+            node_selector: None,
+            service_account_name: None,
+            hostname: None,
+            host_network: None,
+            host_pid: None,
+            host_ipc: None,
+            affinity: None,
+            tolerations: None,
+            priority: None,
+            priority_class_name: None,
+            automount_service_account_token: None,
+            topology_spread_constraints: None,
+            overhead: None,
+            scheduler_name: None,
+            resource_claims: None,
+        };
+        let mut pod = Pod::new("test-pod-remove-finalizer", spec);
+        pod.metadata.namespace = Some("default".to_string());
         pod.metadata.ensure_uid();
         pod.metadata.ensure_creation_timestamp();
         pod.metadata.finalizers = Some(vec!["test.finalizer.io".to_string()]);

@@ -2,8 +2,9 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for persistent volumes
 
-use rusternetes_common::resources::{PersistentVolume, PersistentVolumeSpec, PersistentVolumeStatus, HostPathVolumeSource, NFSVolumeSource, VolumeNodeAffinity, NodeSelector, NodeSelectorTerm, NodeSelectorRequirement};
-use rusternetes_common::types::Metadata;
+use rusternetes_common::resources::{PersistentVolume, PersistentVolumeSpec, PersistentVolumeStatus, PersistentVolumeAccessMode};
+use rusternetes_common::resources::volume::{PersistentVolumeSource, HostPathVolumeSource, HostPathType, NFSVolumeSource, PersistentVolumeReclaimPolicy, PersistentVolumeMode, PersistentVolumePhase, VolumeNodeAffinity, NodeSelector, NodeSelectorTerm, NodeSelectorRequirement};
+use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,42 +15,41 @@ fn create_test_pv(name: &str, capacity: &str) -> PersistentVolume {
     capacity_map.insert("storage".to_string(), capacity.to_string());
 
     PersistentVolume {
-        metadata: Metadata {
+        type_meta: TypeMeta {
+            kind: "PersistentVolume".to_string(),
+            api_version: "v1".to_string(),
+        },
+        metadata: ObjectMeta {
             name: name.to_string(),
             namespace: None, // PVs are cluster-scoped
             labels: None,
-            uid: None,
+            uid: String::new(),
             creation_timestamp: None,
             resource_version: None,
             finalizers: None,
             deletion_timestamp: None,
+            deletion_grace_period_seconds: None,
             owner_references: None,
             annotations: None,
-            generation: None,
         },
         spec: PersistentVolumeSpec {
-            capacity: Some(capacity_map),
-            access_modes: Some(vec!["ReadWriteOnce".to_string()]),
-            persistent_volume_reclaim_policy: Some("Retain".to_string()),
-            storage_class_name: Some("standard".to_string()),
-            volume_mode: Some("Filesystem".to_string()),
-            mount_options: None,
-            host_path: Some(HostPathVolumeSource {
+            capacity: capacity_map,
+            volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
                 path: "/mnt/data".to_string(),
-                volume_type: Some("Directory".to_string()),
+                r#type: Some(HostPathType::Directory),
             }),
-            nfs: None,
-            iscsi: None,
-            csi: None,
-            local: None,
-            claim_ref: None,
+            access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
+            persistent_volume_reclaim_policy: Some(PersistentVolumeReclaimPolicy::Retain),
+            storage_class_name: Some("standard".to_string()),
+            volume_mode: Some(PersistentVolumeMode::Filesystem),
+            mount_options: None,
             node_affinity: None,
+            claim_ref: None,
         },
         status: Some(PersistentVolumeStatus {
-            phase: Some("Available".to_string()),
+            phase: PersistentVolumePhase::Available,
             message: None,
             reason: None,
-            last_phase_transition_time: None,
         }),
     }
 }
@@ -64,9 +64,9 @@ async fn test_pv_create_and_get() {
     // Create
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
     assert_eq!(created.metadata.name, "test-pv");
-    assert!(created.metadata.uid.is_some());
-    assert_eq!(created.spec.capacity.as_ref().unwrap().get("storage"), Some(&"10Gi".to_string()));
-    assert_eq!(created.status.as_ref().unwrap().phase, Some("Available".to_string()));
+    assert!(!created.metadata.uid.is_empty());
+    assert_eq!(created.spec.capacity.get("storage"), Some(&"10Gi".to_string()));
+    assert_eq!(created.status.as_ref().unwrap().phase, PersistentVolumePhase::Available);
 
     // Get
     let retrieved: PersistentVolume = storage.get(&key).await.unwrap();
@@ -89,14 +89,14 @@ async fn test_pv_update() {
     // Update capacity
     let mut new_capacity = HashMap::new();
     new_capacity.insert("storage".to_string(), "20Gi".to_string());
-    pv.spec.capacity = Some(new_capacity);
+    pv.spec.capacity = new_capacity;
 
     let updated: PersistentVolume = storage.update(&key, &pv).await.unwrap();
-    assert_eq!(updated.spec.capacity.as_ref().unwrap().get("storage"), Some(&"20Gi".to_string()));
+    assert_eq!(updated.spec.capacity.get("storage"), Some(&"20Gi".to_string()));
 
     // Verify update
     let retrieved: PersistentVolume = storage.get(&key).await.unwrap();
-    assert_eq!(retrieved.spec.capacity.as_ref().unwrap().get("storage"), Some(&"20Gi".to_string()));
+    assert_eq!(retrieved.spec.capacity.get("storage"), Some(&"20Gi".to_string()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -162,7 +162,7 @@ async fn test_pv_reclaim_policy_retain() {
 
     // Create with Retain policy
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.spec.persistent_volume_reclaim_policy, Some("Retain".to_string()));
+    assert_eq!(created.spec.persistent_volume_reclaim_policy, Some(PersistentVolumeReclaimPolicy::Retain));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -173,13 +173,13 @@ async fn test_pv_reclaim_policy_delete() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut pv = create_test_pv("test-delete-policy", "10Gi");
-    pv.spec.persistent_volume_reclaim_policy = Some("Delete".to_string());
+    pv.spec.persistent_volume_reclaim_policy = Some(PersistentVolumeReclaimPolicy::Delete);
 
     let key = build_key("persistentvolumes", None, "test-delete-policy");
 
     // Create with Delete policy
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.spec.persistent_volume_reclaim_policy, Some("Delete".to_string()));
+    assert_eq!(created.spec.persistent_volume_reclaim_policy, Some(PersistentVolumeReclaimPolicy::Delete));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -190,13 +190,13 @@ async fn test_pv_reclaim_policy_recycle() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut pv = create_test_pv("test-recycle", "10Gi");
-    pv.spec.persistent_volume_reclaim_policy = Some("Recycle".to_string());
+    pv.spec.persistent_volume_reclaim_policy = Some(PersistentVolumeReclaimPolicy::Recycle);
 
     let key = build_key("persistentvolumes", None, "test-recycle");
 
     // Create with Recycle policy
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.spec.persistent_volume_reclaim_policy, Some("Recycle".to_string()));
+    assert_eq!(created.spec.persistent_volume_reclaim_policy, Some(PersistentVolumeReclaimPolicy::Recycle));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -207,19 +207,19 @@ async fn test_pv_access_modes() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut pv = create_test_pv("test-access", "10Gi");
-    pv.spec.access_modes = Some(vec![
-        "ReadWriteOnce".to_string(),
-        "ReadOnlyMany".to_string(),
-    ]);
+    pv.spec.access_modes = vec![
+        PersistentVolumeAccessMode::ReadWriteOnce,
+        PersistentVolumeAccessMode::ReadOnlyMany,
+    ];
 
     let key = build_key("persistentvolumes", None, "test-access");
 
     // Create with multiple access modes
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    let modes = created.spec.access_modes.unwrap();
+    let modes = &created.spec.access_modes;
     assert_eq!(modes.len(), 2);
-    assert!(modes.contains(&"ReadWriteOnce".to_string()));
-    assert!(modes.contains(&"ReadOnlyMany".to_string()));
+    assert!(modes.contains(&PersistentVolumeAccessMode::ReadWriteOnce));
+    assert!(modes.contains(&PersistentVolumeAccessMode::ReadOnlyMany));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -230,8 +230,7 @@ async fn test_pv_with_nfs() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut pv = create_test_pv("test-nfs", "10Gi");
-    pv.spec.host_path = None;
-    pv.spec.nfs = Some(NFSVolumeSource {
+    pv.spec.volume_source = PersistentVolumeSource::NFS(NFSVolumeSource {
         server: "nfs.example.com".to_string(),
         path: "/exports/data".to_string(),
         read_only: Some(false),
@@ -241,8 +240,12 @@ async fn test_pv_with_nfs() {
 
     // Create with NFS
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert!(created.spec.nfs.is_some());
-    assert_eq!(created.spec.nfs.as_ref().unwrap().server, "nfs.example.com");
+    match &created.spec.volume_source {
+        PersistentVolumeSource::NFS(nfs) => {
+            assert_eq!(nfs.server, "nfs.example.com");
+        }
+        _ => panic!("Expected NFS volume source"),
+    }
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -257,7 +260,7 @@ async fn test_pv_status_available() {
 
     // Create with Available status
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.status.as_ref().unwrap().phase, Some("Available".to_string()));
+    assert_eq!(created.status.as_ref().unwrap().phase, PersistentVolumePhase::Available);
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -269,17 +272,16 @@ async fn test_pv_status_bound() {
 
     let mut pv = create_test_pv("test-bound", "10Gi");
     pv.status = Some(PersistentVolumeStatus {
-        phase: Some("Bound".to_string()),
+        phase: PersistentVolumePhase::Bound,
         message: None,
         reason: None,
-        last_phase_transition_time: None,
     });
 
     let key = build_key("persistentvolumes", None, "test-bound");
 
     // Create with Bound status
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.status.as_ref().unwrap().phase, Some("Bound".to_string()));
+    assert_eq!(created.status.as_ref().unwrap().phase, PersistentVolumePhase::Bound);
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -311,7 +313,7 @@ async fn test_pv_volume_mode_filesystem() {
 
     // Create with Filesystem mode
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.spec.volume_mode, Some("Filesystem".to_string()));
+    assert_eq!(created.spec.volume_mode, Some(PersistentVolumeMode::Filesystem));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -322,13 +324,13 @@ async fn test_pv_volume_mode_block() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut pv = create_test_pv("test-block", "10Gi");
-    pv.spec.volume_mode = Some("Block".to_string());
+    pv.spec.volume_mode = Some(PersistentVolumeMode::Block);
 
     let key = build_key("persistentvolumes", None, "test-block");
 
     // Create with Block mode
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.spec.volume_mode, Some("Block".to_string()));
+    assert_eq!(created.spec.volume_mode, Some(PersistentVolumeMode::Block));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -347,11 +349,11 @@ async fn test_pv_metadata_immutability() {
 
     // Try to update - UID should remain unchanged
     let mut updated_pv = created.clone();
-    updated_pv.spec.persistent_volume_reclaim_policy = Some("Delete".to_string());
+    updated_pv.spec.persistent_volume_reclaim_policy = Some(PersistentVolumeReclaimPolicy::Delete);
 
     let updated: PersistentVolume = storage.update(&key, &updated_pv).await.unwrap();
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.spec.persistent_volume_reclaim_policy, Some("Delete".to_string()));
+    assert_eq!(updated.spec.persistent_volume_reclaim_policy, Some(PersistentVolumeReclaimPolicy::Delete));
 
     // Clean up
     storage.delete(&key).await.unwrap();

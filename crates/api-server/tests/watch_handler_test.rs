@@ -4,12 +4,13 @@
 
 use axum::http::StatusCode;
 use futures::StreamExt;
-use rusternetes_common::resources::{ConfigMap, Pod, PodSpec, PodStatus, Service};
-use rusternetes_common::types::{ObjectMeta, ServicePort, ServiceSpec};
+use rusternetes_common::resources::{ConfigMap, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec, Container};
+use rusternetes_common::resources::namespace::{Namespace, NamespaceSpec, NamespaceStatus};
+use rusternetes_common::types::{ObjectMeta, TypeMeta, Phase};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -33,6 +34,63 @@ async fn parse_watch_events<T: DeserializeOwned>(
     events
 }
 
+// Helper to create minimal PodSpec (no Default impl)
+fn create_minimal_pod_spec() -> PodSpec {
+    PodSpec {
+        containers: vec![Container {
+            name: "test".to_string(),
+            image: "nginx:latest".to_string(),
+            image_pull_policy: Some("IfNotPresent".to_string()),
+            ports: None,
+            env: None,
+            volume_mounts: None,
+            liveness_probe: None,
+            readiness_probe: None,
+            startup_probe: None,
+            resources: None,
+            working_dir: None,
+            command: None,
+            args: None,
+            restart_policy: None,
+            security_context: None,
+        }],
+        init_containers: None,
+        ephemeral_containers: None,
+        volumes: None,
+        restart_policy: Some("Always".to_string()),
+        node_name: None,
+        node_selector: None,
+        service_account_name: None,
+        automount_service_account_token: None,
+        hostname: None,
+        host_network: None,
+        host_pid: None,
+        host_ipc: None,
+        affinity: None,
+        tolerations: None,
+        priority: None,
+        priority_class_name: None,
+        scheduler_name: None,
+        overhead: None,
+        topology_spread_constraints: None,
+        resource_claims: None,
+    }
+}
+
+// Helper to create minimal PodStatus (no Default impl)
+fn create_minimal_pod_status() -> PodStatus {
+    PodStatus {
+        phase: Some(Phase::Pending),
+        message: None,
+        reason: None,
+        host_ip: None,
+        pod_ip: None,
+        container_statuses: None,
+        init_container_statuses: None,
+        ephemeral_container_statuses: None,
+    }
+}
+
 #[tokio::test]
 async fn test_watch_initial_state_events() {
     let storage = Arc::new(MemoryStorage::new());
@@ -42,14 +100,18 @@ async fn test_watch_initial_state_events() {
     // Create some pods first
     for i in 1..=3 {
         let pod = Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
             metadata: ObjectMeta {
                 name: format!("pod-{}", i),
                 namespace: Some(namespace.to_string()),
                 resource_version: Some(format!("{}", i)),
                 ..Default::default()
             },
-            spec: PodSpec::default(),
-            status: Some(PodStatus::default()),
+            spec: Some(create_minimal_pod_spec()),
+            status: Some(create_minimal_pod_status()),
         };
 
         let key = build_key("pods", Some(namespace), &format!("pod-{}", i));
@@ -68,14 +130,18 @@ async fn test_watch_initial_state_events() {
 
     // Create a new pod and verify we get the event
     let new_pod = Pod {
+        type_meta: TypeMeta {
+            kind: "Pod".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "pod-new".to_string(),
             namespace: Some(namespace.to_string()),
             resource_version: Some("4".to_string()),
             ..Default::default()
         },
-        spec: PodSpec::default(),
-        status: Some(PodStatus::default()),
+        spec: Some(create_minimal_pod_spec()),
+        status: Some(create_minimal_pod_status()),
     };
 
     let key = build_key("pods", Some(namespace), "pod-new");
@@ -112,14 +178,18 @@ async fn test_watch_added_event() {
 
     // Create a pod
     let pod = Pod {
+        type_meta: TypeMeta {
+            kind: "Pod".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "test-pod".to_string(),
             namespace: Some(namespace.to_string()),
             resource_version: Some("1".to_string()),
             ..Default::default()
         },
-        spec: PodSpec::default(),
-        status: Some(PodStatus::default()),
+        spec: Some(create_minimal_pod_spec()),
+        status: Some(create_minimal_pod_status()),
     };
 
     let key = build_key("pods", Some(namespace), "test-pod");
@@ -150,14 +220,18 @@ async fn test_watch_modified_event() {
 
     // Create initial pod
     let mut pod = Pod {
+        type_meta: TypeMeta {
+            kind: "Pod".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "test-pod".to_string(),
             namespace: Some(namespace.to_string()),
             resource_version: Some("1".to_string()),
             ..Default::default()
         },
-        spec: PodSpec::default(),
-        status: Some(PodStatus::default()),
+        spec: Some(create_minimal_pod_spec()),
+        status: Some(create_minimal_pod_status()),
     };
 
     storage.create(&key, &pod).await.unwrap();
@@ -169,7 +243,7 @@ async fn test_watch_modified_event() {
     // Update the pod
     pod.metadata.resource_version = Some("2".to_string());
     pod.metadata.labels = Some({
-        let mut labels = BTreeMap::new();
+        let mut labels = HashMap::new();
         labels.insert("updated".to_string(), "true".to_string());
         labels
     });
@@ -204,14 +278,18 @@ async fn test_watch_deleted_event() {
 
     // Create pod
     let pod = Pod {
+        type_meta: TypeMeta {
+            kind: "Pod".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "test-pod".to_string(),
             namespace: Some(namespace.to_string()),
             resource_version: Some("1".to_string()),
             ..Default::default()
         },
-        spec: PodSpec::default(),
-        status: Some(PodStatus::default()),
+        spec: Some(create_minimal_pod_spec()),
+        status: Some(create_minimal_pod_status()),
     };
 
     storage.create(&key, &pod).await.unwrap();
@@ -249,14 +327,18 @@ async fn test_watch_multiple_resources() {
     // Create multiple pods
     for i in 1..=5 {
         let pod = Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
             metadata: ObjectMeta {
                 name: format!("pod-{}", i),
                 namespace: Some(namespace.to_string()),
                 resource_version: Some(i.to_string()),
                 ..Default::default()
             },
-            spec: PodSpec::default(),
-            status: Some(PodStatus::default()),
+            spec: Some(create_minimal_pod_spec()),
+            status: Some(create_minimal_pod_status()),
         };
 
         let key = build_key("pods", Some(namespace), &format!("pod-{}", i));
@@ -294,19 +376,22 @@ async fn test_watch_cluster_scoped_resources() {
     let mut watch_stream = storage.watch(&prefix).await.unwrap();
 
     // Create a namespace (cluster-scoped)
-    let namespace = rusternetes_common::resources::Namespace {
+    let namespace = Namespace {
+        type_meta: TypeMeta {
+            kind: "Namespace".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "test-namespace".to_string(),
             namespace: None, // Cluster-scoped
             resource_version: Some("1".to_string()),
             ..Default::default()
         },
-        spec: rusternetes_common::resources::NamespaceSpec {
+        spec: Some(NamespaceSpec {
             finalizers: None,
-        },
-        status: Some(rusternetes_common::resources::NamespaceStatus {
-            phase: Some("Active".to_string()),
-            conditions: None,
+        }),
+        status: Some(NamespaceStatus {
+            phase: Phase::Active,
         }),
     };
 
@@ -336,6 +421,10 @@ async fn test_watch_resource_version_tracking() {
 
     // Create configmap
     let mut cm = ConfigMap {
+        type_meta: TypeMeta {
+            kind: "ConfigMap".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "test-cm".to_string(),
             namespace: Some(namespace.to_string()),
@@ -343,7 +432,7 @@ async fn test_watch_resource_version_tracking() {
             ..Default::default()
         },
         data: Some({
-            let mut data = BTreeMap::new();
+            let mut data = HashMap::new();
             data.insert("key1".to_string(), "value1".to_string());
             data
         }),
@@ -398,6 +487,10 @@ async fn test_watch_namespace_isolation() {
 
     // Create service in ns1
     let svc1 = Service {
+        type_meta: TypeMeta {
+            kind: "Service".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "svc1".to_string(),
             namespace: Some(ns1.to_string()),
@@ -405,11 +498,24 @@ async fn test_watch_namespace_isolation() {
             ..Default::default()
         },
         spec: ServiceSpec {
-            ports: Some(vec![ServicePort {
+            selector: None,
+            ports: vec![ServicePort {
+                name: None,
+                protocol: Some("TCP".to_string()),
                 port: 80,
-                ..Default::default()
-            }]),
-            ..Default::default()
+                target_port: None,
+                node_port: None,
+            }],
+            cluster_ip: None,
+            cluster_ips: None,
+            service_type: None,
+            external_ips: None,
+            session_affinity: None,
+            external_name: None,
+            external_traffic_policy: None,
+            ip_families: None,
+            ip_family_policy: None,
+            internal_traffic_policy: None,
         },
         status: None,
     };
@@ -419,6 +525,10 @@ async fn test_watch_namespace_isolation() {
 
     // Create service in ns2 (should NOT appear in watch)
     let svc2 = Service {
+        type_meta: TypeMeta {
+            kind: "Service".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "svc2".to_string(),
             namespace: Some(ns2.to_string()),
@@ -426,11 +536,24 @@ async fn test_watch_namespace_isolation() {
             ..Default::default()
         },
         spec: ServiceSpec {
-            ports: Some(vec![ServicePort {
+            selector: None,
+            ports: vec![ServicePort {
+                name: None,
+                protocol: Some("TCP".to_string()),
                 port: 80,
-                ..Default::default()
-            }]),
-            ..Default::default()
+                target_port: None,
+                node_port: None,
+            }],
+            cluster_ip: None,
+            cluster_ips: None,
+            service_type: None,
+            external_ips: None,
+            session_affinity: None,
+            external_name: None,
+            external_traffic_policy: None,
+            ip_families: None,
+            ip_family_policy: None,
+            internal_traffic_policy: None,
         },
         status: None,
     };
@@ -476,14 +599,18 @@ async fn test_watch_stream_disconnection() {
 
     // Create a pod
     let pod = Pod {
+        type_meta: TypeMeta {
+            kind: "Pod".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "test-pod".to_string(),
             namespace: Some(namespace.to_string()),
             resource_version: Some("1".to_string()),
             ..Default::default()
         },
-        spec: PodSpec::default(),
-        status: Some(PodStatus::default()),
+        spec: Some(create_minimal_pod_spec()),
+        status: Some(create_minimal_pod_status()),
     };
 
     let key = build_key("pods", Some(namespace), "test-pod");
@@ -498,14 +625,18 @@ async fn test_watch_stream_disconnection() {
     // Storage should handle this gracefully
     // Create another resource (no one watching)
     let pod2 = Pod {
+        type_meta: TypeMeta {
+            kind: "Pod".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "test-pod2".to_string(),
             namespace: Some(namespace.to_string()),
             resource_version: Some("2".to_string()),
             ..Default::default()
         },
-        spec: PodSpec::default(),
-        status: Some(PodStatus::default()),
+        spec: Some(create_minimal_pod_spec()),
+        status: Some(create_minimal_pod_status()),
     };
 
     let key2 = build_key("pods", Some(namespace), "test-pod2");
@@ -534,14 +665,18 @@ async fn test_watch_concurrent_watches() {
 
     // Create a pod
     let pod = Pod {
+        type_meta: TypeMeta {
+            kind: "Pod".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "test-pod".to_string(),
             namespace: Some(namespace.to_string()),
             resource_version: Some("1".to_string()),
             ..Default::default()
         },
-        spec: PodSpec::default(),
-        status: Some(PodStatus::default()),
+        spec: Some(create_minimal_pod_spec()),
+        status: Some(create_minimal_pod_status()),
     };
 
     let key = build_key("pods", Some(namespace), "test-pod");
@@ -572,14 +707,18 @@ async fn test_watch_event_ordering() {
 
     // Create -> Modify -> Delete sequence
     let mut pod = Pod {
+        type_meta: TypeMeta {
+            kind: "Pod".to_string(),
+            api_version: "v1".to_string(),
+        },
         metadata: ObjectMeta {
             name: "test-pod".to_string(),
             namespace: Some(namespace.to_string()),
             resource_version: Some("1".to_string()),
             ..Default::default()
         },
-        spec: PodSpec::default(),
-        status: Some(PodStatus::default()),
+        spec: Some(create_minimal_pod_spec()),
+        status: Some(create_minimal_pod_status()),
     };
 
     let key = build_key("pods", Some(namespace), "test-pod");

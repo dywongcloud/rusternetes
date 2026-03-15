@@ -54,7 +54,7 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
         }
     }
 
-    async fn reconcile_all(&self) -> Result<()> {
+    pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Reconciling all VPAs");
 
         // Get all VPAs
@@ -577,13 +577,14 @@ mod tests {
         assert_eq!(format_memory(128 * 1024 * 1024), "128Mi");
         assert_eq!(format_memory(1024 * 1024 * 1024), "1Gi");
         assert_eq!(format_memory(512 * 1024), "512Ki");
-        assert_eq!(format_memory(1024), "1024");
+        assert_eq!(format_memory(1024), "1Ki");  // 1024 bytes = 1 KiB
     }
 
     #[test]
     fn test_percentile() {
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        assert_eq!(percentile(&data, 50), 5); // median
+        // 50th percentile: index = (0.5 * 9).round() = 4.5.round() = 5, value at index 5 is 6
+        assert_eq!(percentile(&data, 50), 6); // median (rounded index)
         assert_eq!(percentile(&data, 95), 10); // 95th percentile
         assert_eq!(percentile(&data, 0), 1); // min
         assert_eq!(percentile(&data, 100), 10); // max

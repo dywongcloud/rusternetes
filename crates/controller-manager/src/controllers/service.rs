@@ -14,7 +14,7 @@
 use anyhow::Result;
 use rusternetes_common::resources::Service;
 use rusternetes_common::resources::ServiceType;
-use rusternetes_storage::{build_key, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, Storage};
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
@@ -30,8 +30,8 @@ const NODE_PORT_MAX: u16 = 32767;
 const KUBERNETES_SERVICE_IP: &str = "10.96.0.1";
 
 /// ServiceController manages service IP and port allocation
-pub struct ServiceController {
-    storage: Arc<EtcdStorage>,
+pub struct ServiceController<S: Storage> {
+    storage: Arc<S>,
     /// Tracks allocated ClusterIPs to avoid collisions
     allocated_ips: Arc<Mutex<HashSet<String>>>,
     /// Tracks allocated NodePorts to avoid collisions
@@ -40,8 +40,8 @@ pub struct ServiceController {
     service_cidr: String,
 }
 
-impl ServiceController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> ServiceController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self {
             storage,
             allocated_ips: Arc::new(Mutex::new(HashSet::new())),
@@ -292,7 +292,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_allocate_cluster_ip() {
-        let storage = Arc::new(EtcdStorage::new(vec!["http://localhost:2379".to_string()]).await.unwrap());
+        use rusternetes_storage::memory::MemoryStorage;
+        let storage = Arc::new(MemoryStorage::new());
         let controller = ServiceController::new(storage);
 
         // Allocate first IP (should be 10.96.0.2, as .1 is reserved)
@@ -309,7 +310,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_allocate_node_port() {
-        let storage = Arc::new(EtcdStorage::new(vec!["http://localhost:2379".to_string()]).await.unwrap());
+        use rusternetes_storage::memory::MemoryStorage;
+        let storage = Arc::new(MemoryStorage::new());
         let controller = ServiceController::new(storage);
 
         // Allocate first NodePort
@@ -326,10 +328,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_reconcile_clusterip_service() {
-        let storage = Arc::new(EtcdStorage::new(vec!["http://localhost:2379".to_string()]).await.unwrap());
+        use rusternetes_storage::memory::MemoryStorage;
+        let storage = Arc::new(MemoryStorage::new());
         let controller = ServiceController::new(storage.clone());
 
-        let mut service = Service {
+        let service = Service {
             type_meta: rusternetes_common::types::TypeMeta {
                 kind: "Service".to_string(),
                 api_version: "v1".to_string(),
@@ -337,7 +340,7 @@ mod tests {
             metadata: ObjectMeta {
                 name: "test-service".to_string(),
                 namespace: Some("default".to_string()),
-                uid: String::new(),
+                uid: uuid::Uuid::new_v4().to_string(),
                 resource_version: None,
                 deletion_grace_period_seconds: None,
                 finalizers: None,
@@ -370,17 +373,26 @@ mod tests {
             status: None,
         };
 
+        // Create service in storage first (like API server would)
+        let service_key = build_key("services", Some("default"), "test-service");
+        storage.create(&service_key, &service).await.unwrap();
+
         // Reconcile should allocate ClusterIP
         controller.reconcile_service(&service).await.unwrap();
 
         // Verify ClusterIP was allocated
         let ips = controller.allocated_ips.lock().await;
         assert!(!ips.is_empty());
+
+        // Verify service was updated in storage with ClusterIP
+        let updated_service: Service = storage.get(&service_key).await.unwrap();
+        assert!(updated_service.spec.cluster_ip.is_some());
     }
 
     #[tokio::test]
     async fn test_reconcile_nodeport_service() {
-        let storage = Arc::new(EtcdStorage::new(vec!["http://localhost:2379".to_string()]).await.unwrap());
+        use rusternetes_storage::memory::MemoryStorage;
+        let storage = Arc::new(MemoryStorage::new());
         let controller = ServiceController::new(storage.clone());
 
         let service = Service {
@@ -391,7 +403,7 @@ mod tests {
             metadata: ObjectMeta {
                 name: "test-nodeport-service".to_string(),
                 namespace: Some("default".to_string()),
-                uid: String::new(),
+                uid: uuid::Uuid::new_v4().to_string(),
                 resource_version: None,
                 deletion_grace_period_seconds: None,
                 finalizers: None,
@@ -424,6 +436,10 @@ mod tests {
             status: None,
         };
 
+        // Create service in storage first (like API server would)
+        let service_key = build_key("services", Some("default"), "test-nodeport-service");
+        storage.create(&service_key, &service).await.unwrap();
+
         // Reconcile should allocate both ClusterIP and NodePort
         controller.reconcile_service(&service).await.unwrap();
 
@@ -434,5 +450,10 @@ mod tests {
         // Verify NodePort was allocated
         let ports = controller.allocated_node_ports.lock().await;
         assert!(!ports.is_empty());
+
+        // Verify service was updated in storage
+        let updated_service: Service = storage.get(&service_key).await.unwrap();
+        assert!(updated_service.spec.cluster_ip.is_some());
+        assert!(updated_service.spec.ports[0].node_port.is_some());
     }
 }

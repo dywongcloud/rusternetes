@@ -2,8 +2,10 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for daemonsets
 
-use rusternetes_common::resources::{DaemonSet, DaemonSetSpec, DaemonSetStatus, DaemonSetUpdateStrategy, LabelSelector, PodTemplateSpec, PodSpec};
-use rusternetes_common::types::{Container, Metadata};
+use rusternetes_common::resources::workloads::{DaemonSet, DaemonSetSpec, DaemonSetStatus, DaemonSetUpdateStrategy};
+use rusternetes_common::resources::PodTemplateSpec;
+use rusternetes_common::resources::pod::{PodSpec, Container};
+use rusternetes_common::types::{ObjectMeta, TypeMeta, LabelSelector};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,18 +16,15 @@ fn create_test_daemonset(name: &str, namespace: &str) -> DaemonSet {
     labels.insert("app".to_string(), name.to_string());
 
     DaemonSet {
-        metadata: Metadata {
-            name: name.to_string(),
-            namespace: Some(namespace.to_string()),
-            labels: Some(labels.clone()),
-            uid: None,
-            creation_timestamp: None,
-            resource_version: None,
-            finalizers: None,
-            deletion_timestamp: None,
-            owner_references: None,
-            annotations: None,
-            generation: None,
+        type_meta: TypeMeta {
+            kind: "DaemonSet".to_string(),
+            api_version: "apps/v1".to_string(),
+        },
+        metadata: {
+            let mut meta = ObjectMeta::new(name);
+            meta.namespace = Some(namespace.to_string());
+            meta.labels = Some(labels.clone());
+            meta
         },
         spec: DaemonSetSpec {
             selector: LabelSelector {
@@ -33,20 +32,13 @@ fn create_test_daemonset(name: &str, namespace: &str) -> DaemonSet {
                 match_expressions: None,
             },
             template: PodTemplateSpec {
-                metadata: Some(Metadata {
-                    name: format!("{}-pod", name),
-                    namespace: Some(namespace.to_string()),
-                    labels: Some(labels),
-                    uid: None,
-                    creation_timestamp: None,
-                    resource_version: None,
-                    finalizers: None,
-                    deletion_timestamp: None,
-                    owner_references: None,
-                    annotations: None,
-                    generation: None,
+                metadata: Some({
+                    let mut meta = ObjectMeta::new(&format!("{}-pod", name));
+                    meta.namespace = Some(namespace.to_string());
+                    meta.labels = Some(labels);
+                    meta
                 }),
-                spec: Some(PodSpec {
+                spec: PodSpec {
                     containers: vec![Container {
                         name: "agent".to_string(),
                         image: "agent:latest".to_string(),
@@ -56,23 +48,16 @@ fn create_test_daemonset(name: &str, namespace: &str) -> DaemonSet {
                         ports: None,
                         volume_mounts: None,
                         resources: None,
-                        security_context: None,
                         liveness_probe: None,
                         readiness_probe: None,
                         startup_probe: None,
-                        lifecycle: None,
                         image_pull_policy: None,
-                        stdin: None,
-                        stdin_once: None,
-                        tty: None,
                         working_dir: None,
-                        termination_message_path: None,
-                        termination_message_policy: None,
+                        restart_policy: None,
+                        security_context: None,
                     }],
                     init_containers: None,
                     restart_policy: Some("Always".to_string()),
-                    termination_grace_period_seconds: Some(30),
-                    dns_policy: Some("ClusterFirst".to_string()),
                     service_account_name: None,
                     automount_service_account_token: None,
                     node_selector: None,
@@ -83,27 +68,17 @@ fn create_test_daemonset(name: &str, namespace: &str) -> DaemonSet {
                     host_pid: None,
                     host_ipc: None,
                     hostname: None,
-                    subdomain: None,
                     priority_class_name: None,
                     priority: None,
                     scheduler_name: None,
                     volumes: None,
-                    image_pull_secrets: None,
-                    security_context: None,
-                    runtime_class_name: None,
-                    enable_service_links: None,
-                    preemption_policy: None,
                     overhead: None,
                     topology_spread_constraints: None,
-                    set_hostname_as_fqdn: None,
-                    os: None,
-                    scheduling_gates: None,
                     resource_claims: None,
-                }),
+                    ephemeral_containers: None,
+                },
             },
-            update_strategy: Some(DaemonSetUpdateStrategy::RollingUpdate),
-            min_ready_seconds: Some(0),
-            revision_history_limit: Some(10),
+            update_strategy: None,
         },
         status: None,
     }
@@ -120,7 +95,7 @@ async fn test_daemonset_create_and_get() {
     let created: DaemonSet = storage.create(&key, &daemonset).await.unwrap();
     assert_eq!(created.metadata.name, "test-ds");
     assert_eq!(created.metadata.namespace, Some("default".to_string()));
-    assert!(created.metadata.uid.is_some());
+    assert!(!created.metadata.uid.is_empty());
 
     // Get
     let retrieved: DaemonSet = storage.get(&key).await.unwrap();
@@ -141,13 +116,16 @@ async fn test_daemonset_update() {
     storage.create(&key, &daemonset).await.unwrap();
 
     // Update update strategy
-    daemonset.spec.update_strategy = Some(DaemonSetUpdateStrategy::OnDelete);
+    daemonset.spec.update_strategy = Some(DaemonSetUpdateStrategy {
+        strategy_type: Some("OnDelete".to_string()),
+        rolling_update: None,
+    });
     let updated: DaemonSet = storage.update(&key, &daemonset).await.unwrap();
-    assert_eq!(updated.spec.update_strategy, Some(DaemonSetUpdateStrategy::OnDelete));
+    assert_eq!(updated.spec.update_strategy.as_ref().unwrap().strategy_type, Some("OnDelete".to_string()));
 
     // Verify update
     let retrieved: DaemonSet = storage.get(&key).await.unwrap();
-    assert_eq!(retrieved.spec.update_strategy, Some(DaemonSetUpdateStrategy::OnDelete));
+    assert_eq!(retrieved.spec.update_strategy.as_ref().unwrap().strategy_type, Some("OnDelete".to_string()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -240,12 +218,6 @@ async fn test_daemonset_with_status() {
         number_misscheduled: 0,
         desired_number_scheduled: 3,
         number_ready: 2,
-        observed_generation: Some(1),
-        updated_number_scheduled: Some(3),
-        number_available: Some(2),
-        number_unavailable: Some(1),
-        collision_count: None,
-        conditions: None,
     });
 
     let key = build_key("daemonsets", Some("default"), "test-status");
@@ -264,12 +236,16 @@ async fn test_daemonset_with_status() {
 async fn test_daemonset_rolling_update_strategy() {
     let storage = Arc::new(MemoryStorage::new());
 
-    let daemonset = create_test_daemonset("test-rolling", "default");
+    let mut daemonset = create_test_daemonset("test-rolling", "default");
+    daemonset.spec.update_strategy = Some(DaemonSetUpdateStrategy {
+        strategy_type: Some("RollingUpdate".to_string()),
+        rolling_update: None,
+    });
     let key = build_key("daemonsets", Some("default"), "test-rolling");
 
     // Create with RollingUpdate strategy
     let created: DaemonSet = storage.create(&key, &daemonset).await.unwrap();
-    assert_eq!(created.spec.update_strategy, Some(DaemonSetUpdateStrategy::RollingUpdate));
+    assert_eq!(created.spec.update_strategy.as_ref().unwrap().strategy_type, Some("RollingUpdate".to_string()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -280,13 +256,16 @@ async fn test_daemonset_on_delete_strategy() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut daemonset = create_test_daemonset("test-ondelete", "default");
-    daemonset.spec.update_strategy = Some(DaemonSetUpdateStrategy::OnDelete);
+    daemonset.spec.update_strategy = Some(DaemonSetUpdateStrategy {
+        strategy_type: Some("OnDelete".to_string()),
+        rolling_update: None,
+    });
 
     let key = build_key("daemonsets", Some("default"), "test-ondelete");
 
     // Create with OnDelete strategy
     let created: DaemonSet = storage.create(&key, &daemonset).await.unwrap();
-    assert_eq!(created.spec.update_strategy, Some(DaemonSetUpdateStrategy::OnDelete));
+    assert_eq!(created.spec.update_strategy.as_ref().unwrap().strategy_type, Some("OnDelete".to_string()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -300,17 +279,15 @@ async fn test_daemonset_with_node_selector() {
     node_selector.insert("disk".to_string(), "ssd".to_string());
 
     let mut daemonset = create_test_daemonset("test-node-selector", "default");
-    if let Some(ref mut template_spec) = daemonset.spec.template.spec {
-        template_spec.node_selector = Some(node_selector.clone());
-    }
+    daemonset.spec.template.spec.node_selector = Some(node_selector.clone());
 
     let key = build_key("daemonsets", Some("default"), "test-node-selector");
 
     // Create with node selector
     let created: DaemonSet = storage.create(&key, &daemonset).await.unwrap();
-    let spec = created.spec.template.spec.unwrap();
+    let spec = &created.spec.template.spec;
     assert!(spec.node_selector.is_some());
-    assert_eq!(spec.node_selector.unwrap().get("disk"), Some(&"ssd".to_string()));
+    assert_eq!(spec.node_selector.as_ref().unwrap().get("disk"), Some(&"ssd".to_string()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -328,12 +305,8 @@ async fn test_daemonset_metadata_immutability() {
     let original_uid = created.metadata.uid.clone();
 
     // Try to update - UID should remain unchanged
-    let mut updated_ds = created.clone();
-    updated_ds.spec.min_ready_seconds = Some(60);
-
-    let updated: DaemonSet = storage.update(&key, &updated_ds).await.unwrap();
+    let updated: DaemonSet = storage.update(&key, &created).await.unwrap();
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.spec.min_ready_seconds, Some(60));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -361,32 +334,14 @@ async fn test_daemonset_update_not_found() {
 }
 
 #[tokio::test]
-async fn test_daemonset_min_ready_seconds() {
+async fn test_daemonset_basic_spec() {
     let storage = Arc::new(MemoryStorage::new());
 
-    let mut daemonset = create_test_daemonset("test-min-ready", "default");
-    daemonset.spec.min_ready_seconds = Some(30);
-
-    let key = build_key("daemonsets", Some("default"), "test-min-ready");
+    let daemonset = create_test_daemonset("test-basic", "default");
+    let key = build_key("daemonsets", Some("default"), "test-basic");
 
     let created: DaemonSet = storage.create(&key, &daemonset).await.unwrap();
-    assert_eq!(created.spec.min_ready_seconds, Some(30));
-
-    // Clean up
-    storage.delete(&key).await.unwrap();
-}
-
-#[tokio::test]
-async fn test_daemonset_revision_history_limit() {
-    let storage = Arc::new(MemoryStorage::new());
-
-    let mut daemonset = create_test_daemonset("test-revision", "default");
-    daemonset.spec.revision_history_limit = Some(5);
-
-    let key = build_key("daemonsets", Some("default"), "test-revision");
-
-    let created: DaemonSet = storage.create(&key, &daemonset).await.unwrap();
-    assert_eq!(created.spec.revision_history_limit, Some(5));
+    assert_eq!(created.metadata.name, "test-basic");
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -397,16 +352,13 @@ async fn test_daemonset_with_host_network() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut daemonset = create_test_daemonset("test-host-network", "default");
-    if let Some(ref mut template_spec) = daemonset.spec.template.spec {
-        template_spec.host_network = Some(true);
-    }
+    daemonset.spec.template.spec.host_network = Some(true);
 
     let key = build_key("daemonsets", Some("default"), "test-host-network");
 
     // Create with host network
     let created: DaemonSet = storage.create(&key, &daemonset).await.unwrap();
-    let spec = created.spec.template.spec.unwrap();
-    assert_eq!(spec.host_network, Some(true));
+    assert_eq!(created.spec.template.spec.host_network, Some(true));
 
     // Clean up
     storage.delete(&key).await.unwrap();
