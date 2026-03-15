@@ -242,7 +242,7 @@ impl Storage for EtcdStorage {
 
     async fn list<T>(&self, prefix: &str) -> Result<Vec<T>>
     where
-        T: DeserializeOwned + Send + Sync,
+        T: Serialize + DeserializeOwned + Send + Sync,
     {
         let mut client = self.client.lock().await;
 
@@ -272,8 +272,10 @@ impl Storage for EtcdStorage {
                 metadata["resourceVersion"] = serde_json::json!(crate::concurrency::mod_revision_to_resource_version(mod_revision));
             }
 
-            match serde_json::from_value(resource) {
-                Ok(value) => results.push(value),
+            match serde_json::from_value::<T>(resource) {
+                Ok(value) => {
+                    results.push(value);
+                },
                 Err(e) => {
                     error!("Failed to deserialize enhanced value: {}", e);
                     continue;
@@ -383,7 +385,7 @@ impl AuthzStorage for EtcdStorage {
 
     async fn list<T>(&self, namespace: Option<&str>) -> Result<Vec<T>>
     where
-        T: DeserializeOwned + Send + Sync,
+        T: Serialize + DeserializeOwned + Send + Sync,
     {
         // Build the prefix based on resource type and namespace
         let prefix = match namespace {

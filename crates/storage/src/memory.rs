@@ -108,7 +108,7 @@ impl Storage for MemoryStorage {
 
     async fn list<T>(&self, prefix: &str) -> Result<Vec<T>>
     where
-        T: DeserializeOwned + Send + Sync,
+        T: Serialize + DeserializeOwned + Send + Sync,
     {
         let data = self.data.read().unwrap();
         let mut results = Vec::new();

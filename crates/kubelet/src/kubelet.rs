@@ -384,6 +384,7 @@ impl Kubelet {
                             }
 
                             let key = build_key("pods", new_pod.metadata.namespace.as_deref(), &new_pod.metadata.name);
+
                             if let Err(e) = self.storage.update(&key, &new_pod).await {
                                 debug!("Failed to update pod status: {}", e);
                             }

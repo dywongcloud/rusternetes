@@ -14,7 +14,7 @@ pub trait AuthzStorage: Send + Sync {
 
     async fn list<T>(&self, namespace: Option<&str>) -> Result<Vec<T>>
     where
-        T: DeserializeOwned + Send + Sync;
+        T: serde::Serialize + DeserializeOwned + Send + Sync;
 }
 
 /// Request attributes for authorization

@@ -68,6 +68,11 @@ pub async fn create(
     let pod_value = serde_json::to_value(&pod)
         .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
 
+    // Debug: Log pod_value to see if valueFrom is present
+    if pod.metadata.name.contains("test-env-fieldref") || pod.metadata.name.contains("sonobuoy") {
+        info!("POD CREATE - Before webhooks - pod_value: {}", serde_json::to_string(&pod_value).unwrap());
+    }
+
     let (mutation_response, mutated_pod_value) = state
         .webhook_manager
         .run_mutating_webhooks(

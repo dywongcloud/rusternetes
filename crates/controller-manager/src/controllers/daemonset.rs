@@ -190,13 +190,17 @@ impl DaemonSetController {
 
         let mut spec = template.spec.clone();
 
-        // Debug: Check if NODE_NAME env var has valueFrom
+        // Debug: Check if NODE_NAME env var has valueFrom before and after
+        info!("Before injection - Checking environment variables in pod template:");
         for container in &spec.containers {
             if let Some(env) = &container.env {
                 for env_var in env {
-                    if env_var.name == "NODE_NAME" {
-                        info!("DaemonSet pod template NODE_NAME: value={:?}, value_from={:?}",
-                            env_var.value, env_var.value_from);
+                    if env_var.name.contains("NODE_NAME") || env_var.name.contains("SONOBUOY_NS") || env_var.name.contains("SONOBUOY_PLUGIN_POD") {
+                        info!("  Container '{}': {} - value={:?}, value_from.field_ref={:?}",
+                            container.name,
+                            env_var.name,
+                            env_var.value,
+                            env_var.value_from.as_ref().and_then(|vf| vf.field_ref.as_ref()));
                     }
                 }
             }
@@ -204,6 +208,22 @@ impl DaemonSetController {
 
         // Inject service account token volume
         self.inject_service_account_token(&mut spec, namespace);
+
+        // Debug: Check again after injection
+        info!("After injection - Checking environment variables:");
+        for container in &spec.containers {
+            if let Some(env) = &container.env {
+                for env_var in env {
+                    if env_var.name.contains("NODE_NAME") || env_var.name.contains("SONOBUOY_NS") || env_var.name.contains("SONOBUOY_PLUGIN_POD") {
+                        info!("  Container '{}': {} - value={:?}, value_from.field_ref={:?}",
+                            container.name,
+                            env_var.name,
+                            env_var.value,
+                            env_var.value_from.as_ref().and_then(|vf| vf.field_ref.as_ref()));
+                    }
+                }
+            }
+        }
 
         let mut metadata = rusternetes_common::types::ObjectMeta::new(pod_name.clone())
             .with_namespace(namespace.to_string())

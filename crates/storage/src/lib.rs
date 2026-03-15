@@ -33,7 +33,7 @@ pub trait Storage: Send + Sync {
     /// List resources with a given prefix
     async fn list<T>(&self, prefix: &str) -> Result<Vec<T>>
     where
-        T: DeserializeOwned + Send + Sync;
+        T: Serialize + DeserializeOwned + Send + Sync;
 
     /// Watch for changes to resources with a given prefix
     async fn watch(&self, prefix: &str) -> Result<WatchStream>;

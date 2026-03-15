@@ -131,7 +131,7 @@ pub struct PodResourceClaim {
     pub name: String,
 
     /// Source describes where to find the ResourceClaim
-    #[serde(skip_serializing_if = "skip_empty_claim_source")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<ClaimSource>,
 }
 
@@ -334,8 +334,10 @@ pub struct ContainerPort {
 }
 
 // Generate skip functions for structs with all-optional fields
-skip_if_empty!(skip_empty_env_var_source, EnvVarSource, config_map_key_ref, secret_key_ref, field_ref, resource_field_ref);
-skip_if_empty!(skip_empty_claim_source, ClaimSource, resource_claim_name, resource_claim_template_name);
+// NOTE: Do NOT use skip_if_empty for structs with mutually exclusive fields:
+// - EnvVarSource: only one of (config_map_key_ref, secret_key_ref, field_ref, resource_field_ref) should be set
+// - ClaimSource: only one of (resource_claim_name, resource_claim_template_name) should be set
+// Using skip_if_empty would incorrectly skip serialization when only one field is set.
 skip_if_empty!(skip_empty_security_context, SecurityContext, privileged, run_as_user, run_as_non_root, allow_privilege_escalation, capabilities, seccomp_profile);
 skip_if_empty!(skip_empty_capabilities, Capabilities, add, drop);
 skip_if_empty!(skip_empty_empty_dir_volume_source, EmptyDirVolumeSource, medium);
@@ -351,7 +353,7 @@ pub struct EnvVar {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
 
-    #[serde(skip_serializing_if = "skip_empty_env_var_source")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub value_from: Option<EnvVarSource>,
 }
 
@@ -1212,5 +1214,161 @@ mod tests {
         let value_from = env_var2.value_from.as_ref().unwrap();
         assert!(value_from.field_ref.is_some(), "fieldRef should be Some after Value round-trip");
         assert_eq!(value_from.field_ref.as_ref().unwrap().field_path, "spec.nodeName");
+    }
+
+    #[test]
+    fn test_pod_spec_clone_serialization() {
+        use super::*;
+
+        // Create a PodSpec with env vars that have valueFrom.fieldRef
+        let original_spec = PodSpec {
+            containers: vec![Container {
+                name: "test".to_string(),
+                image: "busybox".to_string(),
+                env: Some(vec![
+                    EnvVar {
+                        name: "NODE_NAME".to_string(),
+                        value: None,
+                        value_from: Some(EnvVarSource {
+                            field_ref: Some(ObjectFieldSelector {
+                                field_path: "spec.nodeName".to_string(),
+                                api_version: None,
+                            }),
+                            config_map_key_ref: None,
+                            secret_key_ref: None,
+                            resource_field_ref: None,
+                        }),
+                    },
+                ]),
+                command: None,
+                args: None,
+                working_dir: None,
+                ports: None,
+                resources: None,
+                volume_mounts: None,
+                image_pull_policy: None,
+                liveness_probe: None,
+                readiness_probe: None,
+                startup_probe: None,
+                security_context: None,
+                restart_policy: None,
+            }],
+            init_containers: None,
+            ephemeral_containers: None,
+            volumes: None,
+            restart_policy: None,
+            node_name: None,
+            node_selector: None,
+            service_account_name: None,
+            hostname: None,
+            host_network: None,
+            host_pid: None,
+            host_ipc: None,
+            affinity: None,
+            tolerations: None,
+            priority: None,
+            priority_class_name: None,
+            automount_service_account_token: None,
+            topology_spread_constraints: None,
+            overhead: None,
+            scheduler_name: None,
+            resource_claims: None,
+        };
+
+        // Clone it (like DaemonSet controller does)
+        let cloned_spec = original_spec.clone();
+
+        // Serialize and deserialize (like etcd storage does)
+        let json = serde_json::to_string(&cloned_spec).unwrap();
+        println!("Serialized JSON:\n{}", json);
+
+        let deserialized: PodSpec = serde_json::from_str(&json).unwrap();
+
+        // Check if valueFrom.fieldRef is preserved
+        let env_var = &deserialized.containers[0].env.as_ref().unwrap()[0];
+        assert_eq!(env_var.name, "NODE_NAME");
+        assert!(env_var.value_from.is_some(), "value_from should be Some");
+        assert!(env_var.value_from.as_ref().unwrap().field_ref.is_some(),
+                "field_ref should be Some");
+        assert_eq!(
+            env_var.value_from.as_ref().unwrap().field_ref.as_ref().unwrap().field_path,
+            "spec.nodeName"
+        );
+    }
+
+    #[test]
+    fn test_claim_source_serialization() {
+        // Test that ClaimSource with only resource_claim_name set serializes correctly
+        // (not as an empty object {})
+        let claim_source = ClaimSource {
+            resource_claim_name: Some("my-claim".to_string()),
+            resource_claim_template_name: None,
+        };
+
+        let json = serde_json::to_string(&claim_source).expect("Failed to serialize ClaimSource");
+        println!("Serialized ClaimSource: {}", json);
+
+        // Should NOT be an empty object
+        assert!(!json.contains("{}"), "ClaimSource should not serialize as empty object");
+
+        // Should contain the resource_claim_name field
+        assert!(json.contains("resourceClaimName"), "Should contain resourceClaimName field");
+        assert!(json.contains("my-claim"), "Should contain the claim name");
+
+        // Test round-trip
+        let deserialized: ClaimSource = serde_json::from_str(&json)
+            .expect("Failed to deserialize ClaimSource");
+        assert_eq!(deserialized.resource_claim_name, Some("my-claim".to_string()));
+        assert_eq!(deserialized.resource_claim_template_name, None);
+
+        // Test with resource_claim_template_name set instead
+        let claim_source2 = ClaimSource {
+            resource_claim_name: None,
+            resource_claim_template_name: Some("my-template".to_string()),
+        };
+
+        let json2 = serde_json::to_string(&claim_source2).expect("Failed to serialize ClaimSource");
+        println!("Serialized ClaimSource (template): {}", json2);
+
+        assert!(!json2.contains("{}"), "ClaimSource should not serialize as empty object");
+        assert!(json2.contains("resourceClaimTemplateName"), "Should contain resourceClaimTemplateName field");
+        assert!(json2.contains("my-template"), "Should contain the template name");
+
+        // Test round-trip for template
+        let deserialized2: ClaimSource = serde_json::from_str(&json2)
+            .expect("Failed to deserialize ClaimSource with template");
+        assert_eq!(deserialized2.resource_claim_name, None);
+        assert_eq!(deserialized2.resource_claim_template_name, Some("my-template".to_string()));
+    }
+
+    #[test]
+    fn test_pod_resource_claim_serialization() {
+        // Test that PodResourceClaim with ClaimSource serializes correctly
+        let resource_claim = PodResourceClaim {
+            name: "test-claim".to_string(),
+            source: Some(ClaimSource {
+                resource_claim_name: Some("my-resource-claim".to_string()),
+                resource_claim_template_name: None,
+            }),
+        };
+
+        let json = serde_json::to_string(&resource_claim)
+            .expect("Failed to serialize PodResourceClaim");
+        println!("Serialized PodResourceClaim: {}", json);
+
+        // Verify source is present and not empty
+        assert!(json.contains("source"), "Should contain source field");
+        assert!(json.contains("resourceClaimName"), "Should contain resourceClaimName in source");
+        assert!(json.contains("my-resource-claim"), "Should contain the claim name");
+
+        // Test round-trip
+        let deserialized: PodResourceClaim = serde_json::from_str(&json)
+            .expect("Failed to deserialize PodResourceClaim");
+        assert_eq!(deserialized.name, "test-claim");
+        assert!(deserialized.source.is_some(), "source should be Some");
+
+        let source = deserialized.source.unwrap();
+        assert_eq!(source.resource_claim_name, Some("my-resource-claim".to_string()));
+        assert_eq!(source.resource_claim_template_name, None);
     }
 }
