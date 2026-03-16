@@ -365,19 +365,36 @@ impl ContainerRuntime {
         // Create volumes first (includes service account token volumes injected by admission controller)
         let volume_binds = self.create_pod_volumes(pod).await?;
 
-        // Get pod IP from CNI (available after network setup) and create /etc/hosts
-        // For non-CNI mode the IP is not known yet, so we create a hosts file with just localhost entries
-        let pod_ip = if self.use_cni {
+        // Get pod IP. For CNI mode, IP is available right after network setup.
+        // For non-CNI (Docker bridge) mode, we start a pause container first so we
+        // can learn the pod's IP before creating real containers (which need the IP
+        // in their environment for Downward API env vars like SONOBUOY_ADVERTISE_IP).
+        let mut pod_ip: Option<String> = if self.use_cni {
             if let Some(cni) = &self.cni {
                 cni.get_container_ip(pod_name)
             } else {
                 None
             }
         } else {
-            None
+            // Start a pause container to obtain the pod's Docker-assigned IP before
+            // creating any real containers.
+            match self.start_pause_container(pod_name).await {
+                Ok(ip) => {
+                    info!("Pause container assigned IP {} for pod {}", ip, pod_name);
+                    Some(ip)
+                }
+                Err(e) => {
+                    warn!("Failed to start pause container for pod {}: {}", pod_name, e);
+                    None
+                }
+            }
         };
 
+        // Create /etc/hosts now that we know the pod IP.
         let hosts_file_path = self.create_pod_hosts_file(pod, pod_ip.as_deref())?;
+
+        // resolved_ip is only used in the non-CNI/non-pause fallback path now.
+        let mut resolved_ip = pod_ip.is_some();
 
         // Step 1: Run init containers sequentially (non-sidecar init containers)
         // Sidecar init containers (with restartPolicy: Always) will be started with main containers
@@ -409,8 +426,18 @@ impl ContainerRuntime {
                         &volume_binds,
                         netns_path.as_deref(),
                         hosts_file_path.as_deref(),
+                        pod_ip.as_deref(),
                     )
                     .await?;
+
+                    // Resolve pod IP from first container for non-CNI mode
+                    if !resolved_ip && pod_ip.is_none() {
+                        if let Ok(Some(ip)) = self.get_pod_ip(pod_name).await {
+                            pod_ip = Some(ip);
+                            resolved_ip = true;
+                            self.create_pod_hosts_file(pod, pod_ip.as_deref())?;
+                        }
+                    }
 
                     // Wait for init container to complete
                     self.wait_for_container_completion(pod_name, &container.name)
@@ -448,14 +475,25 @@ impl ContainerRuntime {
                         &volume_binds,
                         netns_path.as_deref(),
                         hosts_file_path.as_deref(),
+                        pod_ip.as_deref(),
                     )
                     .await?;
+
+                    // Resolve pod IP from first container for non-CNI mode
+                    if !resolved_ip && pod_ip.is_none() {
+                        if let Ok(Some(ip)) = self.get_pod_ip(pod_name).await {
+                            pod_ip = Some(ip);
+                            resolved_ip = true;
+                            self.create_pod_hosts_file(pod, pod_ip.as_deref())?;
+                        }
+                    }
                 }
             }
         }
 
         // Step 3: Start main containers
-        for container in &pod.spec.as_ref().unwrap().containers {
+        let spec_containers = pod.spec.as_ref().unwrap().containers.clone();
+        for container in &spec_containers {
             // Ensure image is available
             if let Err(e) = self
                 .ensure_image(&container.image, container.image_pull_policy.as_deref())
@@ -475,8 +513,19 @@ impl ContainerRuntime {
                 &volume_binds,
                 netns_path.as_deref(),
                 hosts_file_path.as_deref(),
+                pod_ip.as_deref(),
             )
             .await?;
+
+            // Resolve pod IP from first container for non-CNI mode
+            if !resolved_ip && pod_ip.is_none() {
+                if let Ok(Some(ip)) = self.get_pod_ip(pod_name).await {
+                    pod_ip = Some(ip.clone());
+                    resolved_ip = true;
+                    self.create_pod_hosts_file(pod, pod_ip.as_deref())?;
+                    info!("Resolved pod IP {} for pod {} (non-CNI mode)", ip, pod_name);
+                }
+            }
         }
 
         Ok(())
@@ -540,6 +589,95 @@ impl ContainerRuntime {
             .with_context(|| format!("Failed to write /etc/hosts for pod {}", pod_name))?;
 
         Ok(Some(hosts_path))
+    }
+
+    /// Start a pause (infra) container for a pod in non-CNI mode.
+    ///
+    /// The pause container holds the pod's network namespace. All real containers
+    /// join its network via `--network container:<pause_name>`. This lets us know
+    /// the pod's IP before creating any real containers, which is required to
+    /// correctly populate Downward API env vars like `status.podIP`.
+    ///
+    /// Returns the IP address assigned to the pause container.
+    async fn start_pause_container(&self, pod_name: &str) -> Result<String> {
+        let pause_name = format!("{}_pause", pod_name);
+
+        // Remove any existing pause container for this pod
+        if let Ok(_) = self
+            .docker
+            .inspect_container(&pause_name, None::<InspectContainerOptions>)
+            .await
+        {
+            let remove_options = RemoveContainerOptions {
+                force: true,
+                ..Default::default()
+            };
+            let _ = self
+                .docker
+                .remove_container(&pause_name, Some(remove_options))
+                .await;
+        }
+
+        // Create the pause container using busybox with sleep infinity.
+        // This holds the pod's network namespace so all real containers can
+        // join it via --network container:<pause_name>.
+        // The pause container owns the DNS configuration for the pod network namespace.
+        let config = Config {
+            image: Some("busybox:latest".to_string()),
+            cmd: Some(vec!["sleep".to_string(), "infinity".to_string()]),
+            host_config: Some(bollard::models::HostConfig {
+                network_mode: Some(self.network.clone()),
+                dns: Some(vec![self.cluster_dns.clone()]),
+                dns_options: Some(vec!["ndots:5".to_string()]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let options = CreateContainerOptions {
+            name: pause_name.clone(),
+            ..Default::default()
+        };
+
+        self.docker
+            .create_container(Some(options), config)
+            .await
+            .context("Failed to create pause container")?;
+
+        self.docker
+            .start_container(&pause_name, None::<StartContainerOptions<String>>)
+            .await
+            .context("Failed to start pause container")?;
+
+        info!("Pause container {} started", pause_name);
+
+        // Inspect to get the assigned IP
+        let inspect = self
+            .docker
+            .inspect_container(&pause_name, None::<InspectContainerOptions>)
+            .await
+            .context("Failed to inspect pause container")?;
+
+        if let Some(network_settings) = inspect.network_settings {
+            if let Some(networks) = network_settings.networks {
+                if let Some(network_info) = networks.get(&self.network) {
+                    if let Some(ip) = &network_info.ip_address {
+                        if !ip.is_empty() && ip != "0.0.0.0" {
+                            return Ok(ip.clone());
+                        }
+                    }
+                }
+            }
+            if let Some(ip) = network_settings.ip_address {
+                if !ip.is_empty() && ip != "0.0.0.0" {
+                    return Ok(ip);
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!(
+            "Pause container started but no IP address was assigned"
+        ))
     }
 
     /// Wait for a container to complete (used for init containers)
@@ -1148,6 +1286,7 @@ impl ContainerRuntime {
         volume_paths: &HashMap<String, String>,
         netns_path: Option<&str>,
         hosts_file_path: Option<&str>,
+        pod_ip: Option<&str>,
     ) -> Result<()> {
         let pod_name = &pod.metadata.name;
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
@@ -1253,13 +1392,23 @@ impl ContainerRuntime {
                     if let Some(field_ref) = &value_from.field_ref {
                         match self.get_pod_field_value(pod, &field_ref.field_path) {
                             Ok(value) => {
-                                // Only add the env var if the value is not empty
-                                // This handles cases like status.podIP which may not be available yet
-                                if !value.is_empty() {
-                                    env_list.push(format!("{}={}", env_var.name, value));
+                                // For status.podIP, fall back to the CNI-assigned IP when
+                                // pod status hasn't been written to etcd yet (i.e., at first
+                                // container creation). This ensures SONOBUOY_ADVERTISE_IP and
+                                // similar env vars get the correct IP.
+                                let resolved = if value.is_empty()
+                                    && field_ref.field_path == "status.podIP"
+                                {
+                                    pod_ip.unwrap_or("").to_string()
+                                } else {
+                                    value
+                                };
+
+                                if !resolved.is_empty() {
+                                    env_list.push(format!("{}={}", env_var.name, resolved));
                                     info!(
                                         "Set env var {} from field {}: {}",
-                                        env_var.name, field_ref.field_path, value
+                                        env_var.name, field_ref.field_path, resolved
                                     );
                                 } else {
                                     debug!("Skipping env var {} - field {} is empty (may not be available yet)", env_var.name, field_ref.field_path);
@@ -1340,8 +1489,8 @@ impl ContainerRuntime {
             }
         }
 
-        // Create and mount custom resolv.conf for non-CoreDNS pods
-        // This bypasses Podman's aardvark-dns which overrides our DNS configuration
+        // Create and mount custom resolv.conf for non-CoreDNS pods.
+        // This overrides Docker's default resolv.conf to point to our cluster DNS.
         if pod_name != "coredns" {
             let resolv_conf_path = format!("{}/{}/resolv.conf", self.volumes_base_path, pod_name);
             let resolv_conf_content = format!(
@@ -1377,9 +1526,15 @@ impl ContainerRuntime {
         }
 
         // Create container configuration
-        // Skip cluster DNS configuration for CoreDNS to avoid circular dependency
+        // Skip cluster DNS configuration for:
+        //   - CoreDNS (to avoid circular dependency)
+        //   - Non-CNI containers (they join the pause container's network namespace,
+        //     which owns the DNS config; Docker rejects dns options in container mode)
         let (dns_servers, dns_search_domains, dns_options) = if pod_name == "coredns" {
             info!("Skipping cluster DNS configuration for CoreDNS pod (using default/host DNS)");
+            (None, None, None)
+        } else if !self.use_cni {
+            // DNS is inherited from the pause container's network namespace
             (None, None, None)
         } else {
             info!(
@@ -1423,9 +1578,13 @@ impl ContainerRuntime {
                 dns: dns_servers,
                 dns_search: dns_search_domains,
                 dns_options: dns_options,
-                // Use CNI network namespace if available, otherwise use Podman bridge network
+                // Use CNI network namespace if available, pause container network for
+                // non-CNI mode (so all containers share the same pod network), or fall
+                // back to the Docker bridge network.
                 network_mode: if let Some(netns) = netns_path {
                     Some(format!("ns:{}", netns))
+                } else if !self.use_cni {
+                    Some(format!("container:{}_pause", pod_name))
                 } else {
                     Some(self.network.clone())
                 },
@@ -2450,5 +2609,70 @@ mod tests {
         let volume_name = "csi-vol";
         let volume_dir = format!("/volumes/{}/{}", pod_name, volume_name);
         assert_eq!(volume_dir, "/volumes/test-pod/csi-vol");
+    }
+
+    // --- pause container (non-CNI network sandbox) tests ---
+
+    #[test]
+    fn test_pause_container_name_format() {
+        // The pause container for a pod must be named {pod_name}_pause so that
+        // get_pod_ip (which filters by "{pod_name}_") discovers it.
+        let pod_name = "sonobuoy";
+        let pause_name = format!("{}_pause", pod_name);
+        assert_eq!(pause_name, "sonobuoy_pause");
+
+        // Verify it matches the pod prefix filter used by get_pod_ip
+        assert!(pause_name.starts_with(&format!("{}_", pod_name)));
+    }
+
+    #[test]
+    fn test_pause_container_name_format_various_pods() {
+        for pod_name in &["web-0", "redis-0", "my-app-abc123", "kube-dns"] {
+            let pause_name = format!("{}_pause", pod_name);
+            assert!(pause_name.starts_with(&format!("{}_", pod_name)));
+            assert!(pause_name.ends_with("_pause"));
+        }
+    }
+
+    #[test]
+    fn test_non_cni_network_mode_uses_pause_container() {
+        // In non-CNI mode, real containers join the pause container's network
+        // namespace so they share the pod IP and localhost.
+        let pod_name = "my-pod";
+        let use_cni = false;
+        let network_mode = if use_cni {
+            "rusternetes-network".to_string()
+        } else {
+            format!("container:{}_pause", pod_name)
+        };
+        assert_eq!(network_mode, "container:my-pod_pause");
+    }
+
+    #[test]
+    fn test_cni_network_mode_uses_bridge_network() {
+        // In CNI mode, containers join the named Docker network directly.
+        let pod_name = "my-pod";
+        let use_cni = true;
+        let bridge_network = "rusternetes-network";
+        let network_mode = if use_cni {
+            bridge_network.to_string()
+        } else {
+            format!("container:{}_pause", pod_name)
+        };
+        assert_eq!(network_mode, "rusternetes-network");
+    }
+
+    #[test]
+    fn test_pause_container_ip_is_pod_ip() {
+        // The pause container holds the network namespace, so its IP is the pod IP.
+        // Verify this convention by checking that get_pod_ip searches by pod name prefix,
+        // which matches both real containers AND the pause container.
+        let pod_name = "web-0";
+        let pause_name = format!("{}_pause", pod_name);
+        let filter_prefix = format!("{}_", pod_name);
+
+        // Both the pause container and real containers match this filter
+        assert!(pause_name.starts_with(&filter_prefix));
+        assert!(format!("{}_app", pod_name).starts_with(&filter_prefix));
     }
 }

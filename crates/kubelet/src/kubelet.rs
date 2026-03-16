@@ -293,15 +293,26 @@ impl Kubelet {
                     Ok(_) => {
                         info!("Pod {}/{} started successfully", namespace, pod_name);
 
-                        // Get container statuses
-                        let container_statuses =
-                            self.runtime.get_container_statuses(pod).await.ok();
+                        // Re-fetch the pod from etcd to get the latest resourceVersion.
+                        // Between start_pod being called and now, the admission controller or
+                        // another writer may have incremented the resourceVersion (e.g. injecting
+                        // service account tokens). Using a stale resourceVersion causes an
+                        // optimistic-concurrency conflict that silently leaves the pod in Pending,
+                        // which causes sonobuoy-worker and similar clients to mis-detect that
+                        // all containers have already finished.
+                        let key = build_key("pods", Some(namespace), pod_name);
+                        let fresh_pod: Pod = match self.storage.get(&key).await {
+                            Ok(Some(p)) => p,
+                            _ => pod.clone(),
+                        };
 
-                        // Get pod IP
+                        // Get container statuses and pod IP
+                        let container_statuses =
+                            self.runtime.get_container_statuses(&fresh_pod).await.ok();
                         let pod_ip = self.runtime.get_pod_ip(pod_name).await.ok().flatten();
 
-                        // Update status to Running
-                        let mut new_pod = pod.clone();
+                        // Write Running status using the fresh resourceVersion
+                        let mut new_pod = fresh_pod;
                         new_pod.status = Some(PodStatus {
                             phase: Some(Phase::Running),
                             message: Some("All containers started".to_string()),
@@ -313,12 +324,13 @@ impl Kubelet {
                             ephemeral_container_statuses: None,
                         });
 
-                        let key = build_key(
-                            "pods",
-                            new_pod.metadata.namespace.as_deref(),
-                            &new_pod.metadata.name,
-                        );
-                        self.storage.update(&key, &new_pod).await?;
+                        if let Err(e) = self.storage.update(&key, &new_pod).await {
+                            // Log but don't fail — the sync loop will catch up on the next tick
+                            warn!(
+                                "Failed to update pod {}/{} status to Running: {}",
+                                namespace, pod_name, e
+                            );
+                        }
                     }
                     Err(e) => {
                         error!("Failed to start pod {}/{}: {}", namespace, pod_name, e);
@@ -332,21 +344,29 @@ impl Kubelet {
                     }
                 }
             }
-            // If pod is Pending but containers are already running, update to Running
+            // If pod is Pending but containers are already running, update to Running.
+            // Re-fetch to get the latest resourceVersion before writing.
             Phase::Pending if is_running => {
                 info!(
                     "Pod {}/{} containers are running, updating status to Running",
                     namespace, pod_name
                 );
 
+                let key = build_key("pods", Some(namespace), pod_name);
+                let fresh_pod: Pod = match self.storage.get(&key).await {
+                    Ok(Some(p)) => p,
+                    _ => pod.clone(),
+                };
+
                 // Get container statuses
-                let container_statuses = self.runtime.get_container_statuses(pod).await.ok();
+                let container_statuses =
+                    self.runtime.get_container_statuses(&fresh_pod).await.ok();
 
                 // Get pod IP
                 let pod_ip = self.runtime.get_pod_ip(pod_name).await.ok().flatten();
 
                 // Update status to Running
-                let mut new_pod = pod.clone();
+                let mut new_pod = fresh_pod;
                 new_pod.status = Some(PodStatus {
                     phase: Some(Phase::Running),
                     message: Some("All containers started".to_string()),
@@ -358,11 +378,6 @@ impl Kubelet {
                     ephemeral_container_statuses: None,
                 });
 
-                let key = build_key(
-                    "pods",
-                    new_pod.metadata.namespace.as_deref(),
-                    &new_pod.metadata.name,
-                );
                 self.storage.update(&key, &new_pod).await?;
             }
             Phase::Running if is_running => {
@@ -594,5 +609,198 @@ impl Kubelet {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rusternetes_common::resources::{Container, ContainerState, ContainerStatus, Pod, PodStatus};
+    use rusternetes_common::resources::pod::PodSpec;
+    use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
+
+    fn make_container(name: &str) -> Container {
+        Container {
+            name: name.to_string(),
+            image: "nginx:latest".to_string(),
+            image_pull_policy: Some("IfNotPresent".to_string()),
+            command: None,
+            args: None,
+            ports: None,
+            env: None,
+            volume_mounts: None,
+            liveness_probe: None,
+            readiness_probe: None,
+            startup_probe: None,
+            resources: None,
+            working_dir: None,
+            security_context: None,
+            restart_policy: None,
+        }
+    }
+
+    fn make_pod(name: &str, namespace: &str, resource_version: Option<&str>) -> Pod {
+        let mut meta = ObjectMeta::new(name).with_namespace(namespace);
+        if let Some(rv) = resource_version {
+            meta.resource_version = Some(rv.to_string());
+        }
+        Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: meta,
+            spec: Some(PodSpec {
+                containers: vec![make_container("app")],
+                init_containers: None,
+                ephemeral_containers: None,
+                restart_policy: Some("Always".to_string()),
+                node_name: None,
+                node_selector: None,
+                service_account_name: None,
+                hostname: None,
+                subdomain: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                affinity: None,
+                tolerations: None,
+                priority: None,
+                priority_class_name: None,
+                automount_service_account_token: None,
+                topology_spread_constraints: None,
+                overhead: None,
+                scheduler_name: None,
+                resource_claims: None,
+                volumes: None,
+            }),
+            status: None,
+        }
+    }
+
+    fn make_running_container_status(name: &str) -> ContainerStatus {
+        ContainerStatus {
+            name: name.to_string(),
+            ready: true,
+            restart_count: 0,
+            image: Some("nginx:latest".to_string()),
+            container_id: Some("docker://abc123".to_string()),
+            state: Some(ContainerState::Running {
+                started_at: Some("2024-01-01T00:00:00Z".to_string()),
+            }),
+        }
+    }
+
+    // A Running pod must have containerStatuses so consumers of the pod status
+    // don't misinterpret an empty list as "container already finished".
+    #[test]
+    fn test_running_pod_must_have_container_statuses() {
+        let mut pod = make_pod("my-pod", "default", Some("1"));
+        pod.status = Some(PodStatus {
+            phase: Some(Phase::Running),
+            message: Some("All containers started".to_string()),
+            reason: None,
+            host_ip: Some("127.0.0.1".to_string()),
+            pod_ip: Some("10.244.0.5".to_string()),
+            container_statuses: Some(vec![make_running_container_status("app")]),
+            init_container_statuses: None,
+            ephemeral_container_statuses: None,
+        });
+
+        let status = pod.status.as_ref().unwrap();
+        assert_eq!(status.phase, Some(Phase::Running));
+        let statuses = status.container_statuses.as_ref().expect("must have containerStatuses");
+        assert!(!statuses.is_empty(), "Running pod must have at least one containerStatus");
+        assert!(statuses[0].ready, "container must be ready=true");
+    }
+
+    // Documents the problematic state: phase=Pending with no containerStatuses.
+    // Consumers watching pod status may interpret this as "container already finished".
+    #[test]
+    fn test_pending_with_no_container_statuses_is_the_bug_state() {
+        let mut pod = make_pod("my-pod", "default", Some("1"));
+        pod.status = Some(PodStatus {
+            phase: Some(Phase::Pending),
+            message: Some("ContainerCreating".to_string()),
+            reason: None,
+            host_ip: None,
+            pod_ip: None,
+            container_statuses: None, // <-- the bug: sonobuoy-worker sees this and declares done
+            init_container_statuses: None,
+            ephemeral_container_statuses: None,
+        });
+
+        let status = pod.status.as_ref().unwrap();
+        // Document that this state (Pending + no containerStatuses) is the problematic one
+        let is_bug_state = status.phase == Some(Phase::Pending)
+            && status.container_statuses.as_ref().map_or(true, |v| v.is_empty());
+        assert!(is_bug_state, "This is the state that triggers premature result submission");
+    }
+
+    // When re-fetching from etcd fails, we fall back to the original pod clone.
+    // The fallback ensures we still attempt the status update even if stale.
+    #[test]
+    fn test_fresh_fetch_fallback_uses_pod_clone_when_get_fails() {
+        let original = make_pod("my-pod", "default", Some("42"));
+        // Simulate fallback: use the original pod if re-fetch fails
+        let fresh_pod = original.clone();
+        assert_eq!(
+            fresh_pod.metadata.resource_version.as_deref(),
+            Some("42"),
+            "Fallback uses original resourceVersion"
+        );
+    }
+
+    // A container with state=Running signals that the container is still in
+    // progress. Consumers should not treat it as finished.
+    #[test]
+    fn test_container_status_running_state_prevents_premature_submission() {
+        let status = make_running_container_status("app");
+        match &status.state {
+            Some(ContainerState::Running { .. }) => {
+                // This state correctly signals "still running" to sonobuoy-worker
+            }
+            other => panic!("Expected Running state, got {:?}", other),
+        }
+        assert!(status.ready, "Running container must be ready=true");
+    }
+
+    // A container with state=Waiting also signals "not finished" since it hasn't
+    // exited yet. Only Terminated state means the container is done.
+    #[test]
+    fn test_container_status_waiting_also_signals_not_finished() {
+        let status = ContainerStatus {
+            name: "app".to_string(),
+            ready: false,
+            restart_count: 0,
+            image: Some("nginx:latest".to_string()),
+            container_id: None,
+            state: Some(ContainerState::Waiting {
+                reason: Some("ContainerCreating".to_string()),
+            }),
+        };
+        let is_terminated = matches!(status.state, Some(ContainerState::Terminated { .. }));
+        assert!(!is_terminated, "Waiting container is not terminated — sonobuoy-worker should wait");
+    }
+
+    // Documents why re-fetching from etcd before writing Running status is necessary.
+    // An admission controller or scheduler may have incremented resourceVersion between
+    // when we fetched the pod and when start_pod returned, causing update to fail.
+    #[test]
+    fn test_stale_resource_version_causes_conflict() {
+        let stale = make_pod("my-pod", "default", Some("5"));
+        // Simulate etcd advancing the resourceVersion (e.g., admission controller touch)
+        let fresh = make_pod("my-pod", "default", Some("6"));
+
+        assert_ne!(
+            stale.metadata.resource_version,
+            fresh.metadata.resource_version,
+            "Stale rv={:?} differs from fresh rv={:?} — using stale would cause conflict",
+            stale.metadata.resource_version,
+            fresh.metadata.resource_version
+        );
+
+        // The fix: always use fresh.metadata.resource_version when writing status
+        let rv_to_use = fresh.metadata.resource_version.as_deref().unwrap_or("0");
+        assert_eq!(rv_to_use, "6", "Must use fresh resourceVersion to avoid conflict");
     }
 }

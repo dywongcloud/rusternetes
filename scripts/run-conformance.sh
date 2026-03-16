@@ -45,12 +45,14 @@ else
 fi
 
 # Step 5: Run conformance tests
+# Accept an optional mode argument (default: certified-conformance)
+SONOBUOY_MODE="${1:-certified-conformance}"
 echo "[5/6] Starting conformance tests (this will take several minutes)..."
-echo "Running: sonobuoy run --mode=quick --wait"
+echo "Running: sonobuoy run --mode=${SONOBUOY_MODE} --wait"
 echo ""
 
 # Run sonobuoy and capture output
-if sonobuoy run --mode=quick --wait 2>&1 | tee /tmp/sonobuoy-latest.log; then
+if sonobuoy run --mode="${SONOBUOY_MODE}" --wait 2>&1 | tee /tmp/sonobuoy-latest.log; then
     TEST_RESULT="PASSED"
 else
     TEST_RESULT="FAILED"
