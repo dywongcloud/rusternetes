@@ -44,3 +44,4 @@ url = "2.5.8"
 [dev-dependencies]
 tokio-test = "0.4"
 rusternetes-controller-manager = { path = "../controller-manager" }
+warp.workspace = true
