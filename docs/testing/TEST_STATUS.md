@@ -9,9 +9,9 @@
 
 | Component | Unit Tests | Integration Tests | E2E Tests | Status |
 |-----------|------------|-------------------|-----------|--------|
-| Controller Manager | 212+ | 72 | 4 | ✅ Excellent |
+| Controller Manager | 726 | 72 | - | ✅ Excellent |
 | Scheduler | 98 | 19 | - | ✅ Excellent |
-| API Server | 549+ | 549+ | 4 | ✅ Excellent |
+| API Server | 21 | 255 | 11 | ✅ Excellent |
 | Kubelet | 16+ | 16 | 7 | ✅ Excellent |
 | Storage (MemoryStorage) | 80+ | - | - | ✅ Excellent |
 | Cloud Providers | 4 | - | - | ✅ Good |
