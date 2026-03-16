@@ -1,7 +1,6 @@
 use anyhow::Result;
 use rusternetes_common::resources::{
-    Endpoints, EndpointSubset, EndpointAddress, EndpointPort, EndpointReference,
-    Pod, Service,
+    EndpointAddress, EndpointPort, EndpointReference, EndpointSubset, Endpoints, Pod, Service,
 };
 use rusternetes_storage::{build_key, Storage};
 use std::collections::HashMap;
@@ -33,7 +32,11 @@ impl<S: Storage> EndpointsController<S> {
             if let Err(e) = self.reconcile_service(&service).await {
                 error!(
                     "Failed to reconcile endpoints for service {}/{}: {}",
-                    service.metadata.namespace.as_ref().unwrap_or(&"default".to_string()),
+                    service
+                        .metadata
+                        .namespace
+                        .as_ref()
+                        .unwrap_or(&"default".to_string()),
                     &service.metadata.name,
                     e
                 );
@@ -45,17 +48,26 @@ impl<S: Storage> EndpointsController<S> {
 
     /// Reconcile endpoints for a single service
     async fn reconcile_service(&self, service: &Service) -> Result<()> {
-        let namespace = service.metadata.namespace.as_ref()
+        let namespace = service
+            .metadata
+            .namespace
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Service has no namespace"))?;
         let service_name = &service.metadata.name;
 
-        debug!("Reconciling endpoints for service {}/{}", namespace, service_name);
+        debug!(
+            "Reconciling endpoints for service {}/{}",
+            namespace, service_name
+        );
 
         // Skip services without selectors (headless services without selector)
         let selector = match &service.spec.selector {
             Some(s) if !s.is_empty() => s,
             _ => {
-                debug!("Service {}/{} has no selector, skipping endpoint creation", namespace, service_name);
+                debug!(
+                    "Service {}/{} has no selector, skipping endpoint creation",
+                    namespace, service_name
+                );
                 return Ok(());
             }
         };
@@ -105,10 +117,10 @@ impl<S: Storage> EndpointsController<S> {
         let endpoints_key = build_key("endpoints", Some(namespace), service_name);
         // Try to update first, if it doesn't exist, create it
         match self.storage.update(&endpoints_key, &endpoints).await {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(rusternetes_common::Error::NotFound(_)) => {
                 self.storage.create(&endpoints_key, &endpoints).await?;
-            },
+            }
             Err(e) => return Err(e.into()),
         }
 
@@ -130,13 +142,17 @@ impl<S: Storage> EndpointsController<S> {
         };
 
         // All selector labels must match pod labels
-        selector.iter().all(|(key, value)| {
-            pod_labels.get(key).map(|v| v == value).unwrap_or(false)
-        })
+        selector
+            .iter()
+            .all(|(key, value)| pod_labels.get(key).map(|v| v == value).unwrap_or(false))
     }
 
     /// Build endpoint subsets from pods, separating ready and not-ready pods
-    fn build_endpoint_subsets(&self, pods: &[&Pod], service_ports: &[rusternetes_common::resources::ServicePort]) -> Vec<EndpointSubset> {
+    fn build_endpoint_subsets(
+        &self,
+        pods: &[&Pod],
+        service_ports: &[rusternetes_common::resources::ServicePort],
+    ) -> Vec<EndpointSubset> {
         // Separate pods by readiness
         let mut ready_addresses = Vec::new();
         let mut not_ready_addresses = Vec::new();
@@ -147,16 +163,26 @@ impl<S: Storage> EndpointsController<S> {
                 Some(status) => match &status.pod_ip {
                     Some(ip) if !ip.is_empty() => ip.clone(),
                     _ => {
-                        debug!("Pod {}/{} has no IP, skipping",
-                            pod.metadata.namespace.as_ref().unwrap_or(&"default".to_string()),
-                            &pod.metadata.name);
+                        debug!(
+                            "Pod {}/{} has no IP, skipping",
+                            pod.metadata
+                                .namespace
+                                .as_ref()
+                                .unwrap_or(&"default".to_string()),
+                            &pod.metadata.name
+                        );
                         continue;
                     }
                 },
                 None => {
-                    debug!("Pod {}/{} has no status, skipping",
-                        pod.metadata.namespace.as_ref().unwrap_or(&"default".to_string()),
-                        &pod.metadata.name);
+                    debug!(
+                        "Pod {}/{} has no status, skipping",
+                        pod.metadata
+                            .namespace
+                            .as_ref()
+                            .unwrap_or(&"default".to_string()),
+                        &pod.metadata.name
+                    );
                     continue;
                 }
             };
@@ -197,9 +223,21 @@ impl<S: Storage> EndpointsController<S> {
             vec![]
         } else {
             vec![EndpointSubset {
-                addresses: if ready_addresses.is_empty() { None } else { Some(ready_addresses) },
-                not_ready_addresses: if not_ready_addresses.is_empty() { None } else { Some(not_ready_addresses) },
-                ports: if endpoint_ports.is_empty() { None } else { Some(endpoint_ports) },
+                addresses: if ready_addresses.is_empty() {
+                    None
+                } else {
+                    Some(ready_addresses)
+                },
+                not_ready_addresses: if not_ready_addresses.is_empty() {
+                    None
+                } else {
+                    Some(not_ready_addresses)
+                },
+                ports: if endpoint_ports.is_empty() {
+                    None
+                } else {
+                    Some(endpoint_ports)
+                },
             }]
         }
     }
@@ -235,9 +273,7 @@ mod tests {
     #[tokio::test]
     async fn test_pod_matches_selector() {
         let storage = Arc::new(MemoryStorage::new());
-        let controller = EndpointsController {
-            storage,
-        };
+        let controller = EndpointsController { storage };
 
         let mut pod_labels = HashMap::new();
         pod_labels.insert("app".to_string(), "nginx".to_string());
@@ -270,6 +306,7 @@ mod tests {
                 node_selector: None,
                 service_account_name: None,
                 hostname: None,
+                subdomain: None,
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,
@@ -309,9 +346,7 @@ mod tests {
     #[tokio::test]
     async fn test_is_pod_ready() {
         let storage = Arc::new(MemoryStorage::new());
-        let controller = EndpointsController {
-            storage,
-        };
+        let controller = EndpointsController { storage };
 
         // Pod without status
         let pod_no_status = Pod {
@@ -341,6 +376,7 @@ mod tests {
                 node_selector: None,
                 service_account_name: None,
                 hostname: None,
+                subdomain: None,
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,
@@ -369,7 +405,7 @@ mod tests {
                 pod_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
-            ephemeral_container_statuses: None,
+                ephemeral_container_statuses: None,
             }),
             ..pod_no_status.clone()
         };
@@ -383,18 +419,16 @@ mod tests {
                 reason: None,
                 host_ip: None,
                 pod_ip: None,
-                container_statuses: Some(vec![
-                    rusternetes_common::resources::ContainerStatus {
-                        name: "nginx".to_string(),
-                        ready: true,
-                        restart_count: 0,
-                        state: None,
-                        image: Some("nginx:latest".to_string()),
-                        container_id: Some("container-123".to_string()),
-                    },
-                ]),
+                container_statuses: Some(vec![rusternetes_common::resources::ContainerStatus {
+                    name: "nginx".to_string(),
+                    ready: true,
+                    restart_count: 0,
+                    state: None,
+                    image: Some("nginx:latest".to_string()),
+                    container_id: Some("container-123".to_string()),
+                }]),
                 init_container_statuses: None,
-            ephemeral_container_statuses: None,
+                ephemeral_container_statuses: None,
             }),
             ..pod_no_status.clone()
         };
@@ -408,18 +442,16 @@ mod tests {
                 reason: None,
                 host_ip: None,
                 pod_ip: None,
-                container_statuses: Some(vec![
-                    rusternetes_common::resources::ContainerStatus {
-                        name: "nginx".to_string(),
-                        ready: false,
-                        restart_count: 0,
-                        state: None,
-                        image: Some("nginx:latest".to_string()),
-                        container_id: Some("container-123".to_string()),
-                    },
-                ]),
+                container_statuses: Some(vec![rusternetes_common::resources::ContainerStatus {
+                    name: "nginx".to_string(),
+                    ready: false,
+                    restart_count: 0,
+                    state: None,
+                    image: Some("nginx:latest".to_string()),
+                    container_id: Some("container-123".to_string()),
+                }]),
                 init_container_statuses: None,
-            ephemeral_container_statuses: None,
+                ephemeral_container_statuses: None,
             }),
             ..pod_no_status
         };

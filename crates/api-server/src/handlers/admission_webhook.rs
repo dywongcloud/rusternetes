@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::{MutatingWebhookConfiguration, ValidatingWebhookConfiguration},
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -23,7 +22,10 @@ pub async fn create_validating_webhook(
     Query(params): Query<HashMap<String, String>>,
     Json(mut config): Json<ValidatingWebhookConfiguration>,
 ) -> Result<(StatusCode, Json<ValidatingWebhookConfiguration>)> {
-    info!("Creating ValidatingWebhookConfiguration: {}", config.metadata.name);
+    info!(
+        "Creating ValidatingWebhookConfiguration: {}",
+        config.metadata.name
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "validatingwebhookconfigurations")
@@ -47,7 +49,11 @@ pub async fn create_validating_webhook(
         return Ok((StatusCode::CREATED, Json(config)));
     }
 
-    let key = build_key("validatingwebhookconfigurations", None, &config.metadata.name);
+    let key = build_key(
+        "validatingwebhookconfigurations",
+        None,
+        &config.metadata.name,
+    );
     let created = state.storage.create(&key, &config).await?;
 
     Ok((StatusCode::CREATED, Json(created)))
@@ -112,9 +118,7 @@ pub async fn update_validating_webhook(
 
     let result = match state.storage.update(&key, &config).await {
         Ok(updated) => updated,
-        Err(rusternetes_common::Error::NotFound(_)) => {
-            state.storage.create(&key, &config).await?
-        }
+        Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &config).await?,
         Err(e) => return Err(e),
     };
 
@@ -196,12 +200,21 @@ pub async fn list_validating_webhooks(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut configs, &params)?;
 
-    let list = List::new("ValidatingWebhookConfigurationList", "admissionregistration.k8s.io/v1", configs);
+    let list = List::new(
+        "ValidatingWebhookConfigurationList",
+        "admissionregistration.k8s.io/v1",
+        configs,
+    );
     Ok(Json(list))
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_cluster!(patch_validating_webhook, ValidatingWebhookConfiguration, "validatingwebhookconfigurations", "admissionregistration.k8s.io");
+crate::patch_handler_cluster!(
+    patch_validating_webhook,
+    ValidatingWebhookConfiguration,
+    "validatingwebhookconfigurations",
+    "admissionregistration.k8s.io"
+);
 
 // ===== MutatingWebhookConfiguration Handlers =====
 
@@ -211,7 +224,10 @@ pub async fn create_mutating_webhook(
     Query(params): Query<HashMap<String, String>>,
     Json(mut config): Json<MutatingWebhookConfiguration>,
 ) -> Result<(StatusCode, Json<MutatingWebhookConfiguration>)> {
-    info!("Creating MutatingWebhookConfiguration: {}", config.metadata.name);
+    info!(
+        "Creating MutatingWebhookConfiguration: {}",
+        config.metadata.name
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "mutatingwebhookconfigurations")
@@ -300,9 +316,7 @@ pub async fn update_mutating_webhook(
 
     let result = match state.storage.update(&key, &config).await {
         Ok(updated) => updated,
-        Err(rusternetes_common::Error::NotFound(_)) => {
-            state.storage.create(&key, &config).await?
-        }
+        Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &config).await?,
         Err(e) => return Err(e),
     };
 
@@ -384,23 +398,39 @@ pub async fn list_mutating_webhooks(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut configs, &params)?;
 
-    let list = List::new("MutatingWebhookConfigurationList", "admissionregistration.k8s.io/v1", configs);
+    let list = List::new(
+        "MutatingWebhookConfigurationList",
+        "admissionregistration.k8s.io/v1",
+        configs,
+    );
     Ok(Json(list))
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_cluster!(patch_mutating_webhook, MutatingWebhookConfiguration, "mutatingwebhookconfigurations", "admissionregistration.k8s.io");
+crate::patch_handler_cluster!(
+    patch_mutating_webhook,
+    MutatingWebhookConfiguration,
+    "mutatingwebhookconfigurations",
+    "admissionregistration.k8s.io"
+);
 
 pub async fn deletecollection_validatingwebhookconfigurations(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection validatingwebhookconfigurations with params: {:?}", params);
+    info!(
+        "DeleteCollection validatingwebhookconfigurations with params: {:?}",
+        params
+    );
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "validatingwebhookconfigurations")
-        .with_api_group("admissionregistration.k8s.io");
+    let attrs = RequestAttributes::new(
+        auth_ctx.user,
+        "deletecollection",
+        "validatingwebhookconfigurations",
+    )
+    .with_api_group("admissionregistration.k8s.io");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -418,7 +448,10 @@ pub async fn deletecollection_validatingwebhookconfigurations(
 
     // Get all validatingwebhookconfigurations
     let prefix = build_prefix("validatingwebhookconfigurations", None);
-    let mut items = state.storage.list::<ValidatingWebhookConfiguration>(&prefix).await?;
+    let mut items = state
+        .storage
+        .list::<ValidatingWebhookConfiguration>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;
@@ -441,7 +474,10 @@ pub async fn deletecollection_validatingwebhookconfigurations(
         }
     }
 
-    info!("DeleteCollection completed: {} validatingwebhookconfigurations deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} validatingwebhookconfigurations deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }
 
@@ -450,11 +486,18 @@ pub async fn deletecollection_mutatingwebhookconfigurations(
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection mutatingwebhookconfigurations with params: {:?}", params);
+    info!(
+        "DeleteCollection mutatingwebhookconfigurations with params: {:?}",
+        params
+    );
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "mutatingwebhookconfigurations")
-        .with_api_group("admissionregistration.k8s.io");
+    let attrs = RequestAttributes::new(
+        auth_ctx.user,
+        "deletecollection",
+        "mutatingwebhookconfigurations",
+    )
+    .with_api_group("admissionregistration.k8s.io");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -472,7 +515,10 @@ pub async fn deletecollection_mutatingwebhookconfigurations(
 
     // Get all mutatingwebhookconfigurations
     let prefix = build_prefix("mutatingwebhookconfigurations", None);
-    let mut items = state.storage.list::<MutatingWebhookConfiguration>(&prefix).await?;
+    let mut items = state
+        .storage
+        .list::<MutatingWebhookConfiguration>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;
@@ -495,6 +541,9 @@ pub async fn deletecollection_mutatingwebhookconfigurations(
         }
     }
 
-    info!("DeleteCollection completed: {} mutatingwebhookconfigurations deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} mutatingwebhookconfigurations deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

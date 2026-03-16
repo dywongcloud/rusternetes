@@ -17,7 +17,11 @@ pub struct HorizontalPodAutoscaler {
 }
 
 impl HorizontalPodAutoscaler {
-    pub fn new(name: impl Into<String>, namespace: impl Into<String>, spec: HorizontalPodAutoscalerSpec) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        namespace: impl Into<String>,
+        spec: HorizontalPodAutoscalerSpec,
+    ) -> Self {
         Self {
             type_meta: TypeMeta {
                 kind: "HorizontalPodAutoscaler".to_string(),
@@ -391,7 +395,11 @@ pub struct VerticalPodAutoscaler {
 }
 
 impl VerticalPodAutoscaler {
-    pub fn new(name: impl Into<String>, namespace: impl Into<String>, spec: VerticalPodAutoscalerSpec) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        namespace: impl Into<String>,
+        spec: VerticalPodAutoscalerSpec,
+    ) -> Self {
         Self {
             type_meta: TypeMeta {
                 kind: "VerticalPodAutoscaler".to_string(),

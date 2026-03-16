@@ -14,8 +14,7 @@ use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::{CustomResource, CustomResourceDefinition},
     schema_validation::SchemaValidator,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -144,10 +143,7 @@ pub async fn list_custom_resources(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((group, version, plural, namespace)): Path<(String, String, String, Option<String>)>,
 ) -> Result<Json<List<CustomResource>>> {
-    info!(
-        "Listing custom resources {}/{}/{}",
-        group, version, plural
-    );
+    info!("Listing custom resources {}/{}/{}", group, version, plural);
 
     // Find the CRD for this resource type
     let crd_name = format!("{}.{}", plural, group);
@@ -315,24 +311,34 @@ pub async fn patch_custom_resource(
         .unwrap_or("application/json-patch+json");
 
     // Read the patch body
-    let body_bytes = to_bytes(body, usize::MAX).await
-        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Failed to read patch body: {}", e)))?;
-    let patch_value: serde_json::Value = serde_json::from_slice(&body_bytes)
-        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch JSON: {}", e)))?;
+    let body_bytes = to_bytes(body, usize::MAX).await.map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("Failed to read patch body: {}", e))
+    })?;
+    let patch_value: serde_json::Value = serde_json::from_slice(&body_bytes).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("Invalid patch JSON: {}", e))
+    })?;
 
     // Apply the patch based on Content-Type
-    let current_json = serde_json::to_value(&current)
-        .map_err(|e| rusternetes_common::Error::Internal(format!("Failed to serialize current resource: {}", e)))?;
+    let current_json = serde_json::to_value(&current).map_err(|e| {
+        rusternetes_common::Error::Internal(format!("Failed to serialize current resource: {}", e))
+    })?;
 
-    let patch_type = crate::patch::PatchType::from_content_type(content_type)
-        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Unsupported patch content type: {}", e)))?;
+    let patch_type = crate::patch::PatchType::from_content_type(content_type).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("Unsupported patch content type: {}", e))
+    })?;
 
-    let patched_json = crate::patch::apply_patch(&current_json, &patch_value, patch_type)
-        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Failed to apply patch: {}", e)))?;
+    let patched_json =
+        crate::patch::apply_patch(&current_json, &patch_value, patch_type).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Failed to apply patch: {}", e))
+        })?;
 
     // Deserialize the patched JSON back to CustomResource
-    let mut patched: CustomResource = serde_json::from_value(patched_json)
-        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Failed to deserialize patched resource: {}", e)))?;
+    let mut patched: CustomResource = serde_json::from_value(patched_json).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!(
+            "Failed to deserialize patched resource: {}",
+            e
+        ))
+    })?;
 
     // Validate the patched resource against CRD schema
     validate_custom_resource(&crd, &version, &patched)?;
@@ -435,19 +441,31 @@ pub async fn patch_custom_resource_status(
         .unwrap_or("application/json-patch+json");
 
     // Read the patch body
-    let body_bytes = to_bytes(body, usize::MAX).await
-        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Failed to read patch body: {}", e)))?;
-    let patch_value: serde_json::Value = serde_json::from_slice(&body_bytes)
-        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch JSON: {}", e)))?;
+    let body_bytes = to_bytes(body, usize::MAX).await.map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("Failed to read patch body: {}", e))
+    })?;
+    let patch_value: serde_json::Value = serde_json::from_slice(&body_bytes).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("Invalid patch JSON: {}", e))
+    })?;
 
     // Apply the patch to the status field only
-    let current_status = current.status.as_ref().unwrap_or(&serde_json::Value::Null).clone();
+    let current_status = current
+        .status
+        .as_ref()
+        .unwrap_or(&serde_json::Value::Null)
+        .clone();
 
-    let patch_type = crate::patch::PatchType::from_content_type(content_type)
-        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Unsupported patch content type: {}", e)))?;
+    let patch_type = crate::patch::PatchType::from_content_type(content_type).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("Unsupported patch content type: {}", e))
+    })?;
 
     let patched_status = crate::patch::apply_patch(&current_status, &patch_value, patch_type)
-        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Failed to apply status patch: {}", e)))?;
+        .map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!(
+                "Failed to apply status patch: {}",
+                e
+            ))
+        })?;
 
     // Update only the status field
     current.status = Some(patched_status);
@@ -512,7 +530,10 @@ pub async fn delete_custom_resource(
 
     // Check for dry-run
     if crate::handlers::dryrun::is_dry_run(&params) {
-        info!("Dry-run: CustomResource {}/{}/{} validated successfully (not deleted)", group, plural, name);
+        info!(
+            "Dry-run: CustomResource {}/{}/{} validated successfully (not deleted)",
+            group, plural, name
+        );
         return Ok(StatusCode::OK);
     }
 

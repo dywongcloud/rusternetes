@@ -13,18 +13,33 @@ mod condition_tests {
             }
         }
 
-        assert_eq!(parse_condition("condition=Ready").unwrap(), ("condition", "Ready"));
-        assert_eq!(parse_condition("condition=Available").unwrap(), ("condition", "Available"));
-        assert_eq!(parse_condition("jsonpath=.status.phase=Running").unwrap(), ("jsonpath", ".status.phase=Running"));
+        assert_eq!(
+            parse_condition("condition=Ready").unwrap(),
+            ("condition", "Ready")
+        );
+        assert_eq!(
+            parse_condition("condition=Available").unwrap(),
+            ("condition", "Available")
+        );
+        assert_eq!(
+            parse_condition("jsonpath=.status.phase=Running").unwrap(),
+            ("jsonpath", ".status.phase=Running")
+        );
         assert!(parse_condition("invalid").is_err());
     }
 
     #[test]
     fn test_condition_types() {
         fn is_valid_condition(condition: &str) -> bool {
-            matches!(condition,
-                "Ready" | "Available" | "Progressing" | "Complete" |
-                "Failed" | "Established" | "NamesAccepted"
+            matches!(
+                condition,
+                "Ready"
+                    | "Available"
+                    | "Progressing"
+                    | "Complete"
+                    | "Failed"
+                    | "Established"
+                    | "NamesAccepted"
             )
         }
 
@@ -89,20 +104,22 @@ mod timeout_tests {
     fn test_timeout_parsing() {
         fn parse_timeout(timeout: &str) -> Result<Duration, String> {
             if let Some(seconds) = timeout.strip_suffix('s') {
-                let secs = seconds.parse::<u64>()
+                let secs = seconds
+                    .parse::<u64>()
                     .map_err(|_| "Invalid timeout value")?;
                 Ok(Duration::from_secs(secs))
             } else if let Some(minutes) = timeout.strip_suffix('m') {
-                let mins = minutes.parse::<u64>()
+                let mins = minutes
+                    .parse::<u64>()
                     .map_err(|_| "Invalid timeout value")?;
                 Ok(Duration::from_secs(mins * 60))
             } else if let Some(hours) = timeout.strip_suffix('h') {
-                let hrs = hours.parse::<u64>()
-                    .map_err(|_| "Invalid timeout value")?;
+                let hrs = hours.parse::<u64>().map_err(|_| "Invalid timeout value")?;
                 Ok(Duration::from_secs(hrs * 3600))
             } else {
                 // Default to seconds if no suffix
-                let secs = timeout.parse::<u64>()
+                let secs = timeout
+                    .parse::<u64>()
                     .map_err(|_| "Invalid timeout value")?;
                 Ok(Duration::from_secs(secs))
             }
@@ -152,7 +169,8 @@ mod resource_wait_tests {
     #[test]
     fn test_wait_for_pod_ready() {
         fn is_pod_ready(conditions: &[(&str, &str)]) -> bool {
-            conditions.iter()
+            conditions
+                .iter()
                 .any(|(ctype, status)| *ctype == "Ready" && status.eq_ignore_ascii_case("true"))
         }
 
@@ -175,19 +193,14 @@ mod resource_wait_tests {
     #[test]
     fn test_wait_for_deployment_available() {
         fn is_deployment_available(conditions: &[(&str, &str)]) -> bool {
-            conditions.iter()
+            conditions
+                .iter()
                 .any(|(ctype, status)| *ctype == "Available" && status.eq_ignore_ascii_case("true"))
         }
 
-        let available_conditions = vec![
-            ("Progressing", "True"),
-            ("Available", "True"),
-        ];
+        let available_conditions = vec![("Progressing", "True"), ("Available", "True")];
 
-        let not_available_conditions = vec![
-            ("Progressing", "True"),
-            ("Available", "False"),
-        ];
+        let not_available_conditions = vec![("Progressing", "True"), ("Available", "False")];
 
         assert!(is_deployment_available(&available_conditions));
         assert!(!is_deployment_available(&not_available_conditions));
@@ -196,7 +209,8 @@ mod resource_wait_tests {
     #[test]
     fn test_wait_for_job_complete() {
         fn is_job_complete(conditions: &[(&str, &str)]) -> bool {
-            conditions.iter()
+            conditions
+                .iter()
                 .any(|(ctype, status)| *ctype == "Complete" && status.eq_ignore_ascii_case("true"))
         }
 
@@ -231,9 +245,18 @@ mod polling_tests {
             Duration::from_secs(std::cmp::max(interval_secs, 1))
         }
 
-        assert_eq!(calculate_poll_interval(Duration::from_secs(10)), Duration::from_secs(1));
-        assert_eq!(calculate_poll_interval(Duration::from_secs(50)), Duration::from_secs(5));
-        assert_eq!(calculate_poll_interval(Duration::from_secs(100)), Duration::from_secs(5));
+        assert_eq!(
+            calculate_poll_interval(Duration::from_secs(10)),
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            calculate_poll_interval(Duration::from_secs(50)),
+            Duration::from_secs(5)
+        );
+        assert_eq!(
+            calculate_poll_interval(Duration::from_secs(100)),
+            Duration::from_secs(5)
+        );
     }
 
     #[test]
@@ -258,7 +281,10 @@ mod field_selector_tests {
         }
 
         assert_eq!(build_field_selector("test-pod"), "metadata.name=test-pod");
-        assert_eq!(build_field_selector("nginx-deployment"), "metadata.name=nginx-deployment");
+        assert_eq!(
+            build_field_selector("nginx-deployment"),
+            "metadata.name=nginx-deployment"
+        );
     }
 
     #[test]

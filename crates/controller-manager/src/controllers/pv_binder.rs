@@ -1,8 +1,10 @@
 use anyhow::Result;
+use rusternetes_common::resources::volume::{
+    PersistentVolumeClaimPhase, PersistentVolumeClaimStatus, PersistentVolumePhase,
+};
 use rusternetes_common::resources::{
     PersistentVolume, PersistentVolumeClaim, PersistentVolumeStatus,
 };
-use rusternetes_common::resources::volume::{PersistentVolumeClaimPhase, PersistentVolumePhase, PersistentVolumeClaimStatus};
 use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,10 +40,7 @@ impl<S: Storage> PVBinderController<S> {
 
         for mut pvc in pvcs {
             if let Err(e) = self.bind_pvc(&mut pvc).await {
-                error!(
-                    "Failed to bind PVC {}: {}",
-                    pvc.metadata.name, e
-                );
+                error!("Failed to bind PVC {}: {}", pvc.metadata.name, e);
             }
         }
 
@@ -60,16 +59,19 @@ impl<S: Storage> PVBinderController<S> {
         let pvc_spec = &pvc.spec;
 
         info!("Looking for PV to bind to PVC {}/{}", namespace, pvc_name);
-        info!("PVC requirements: storage_class={:?}, capacity={:?}, access_modes={:?}",
+        info!(
+            "PVC requirements: storage_class={:?}, capacity={:?}, access_modes={:?}",
             pvc_spec.storage_class_name,
-            pvc_spec.resources.requests.as_ref().and_then(|r| r.get("storage")),
-            pvc_spec.access_modes);
+            pvc_spec
+                .resources
+                .requests
+                .as_ref()
+                .and_then(|r| r.get("storage")),
+            pvc_spec.access_modes
+        );
 
         // Get all available PVs
-        let pvs: Vec<PersistentVolume> = self
-            .storage
-            .list("/registry/persistentvolumes/")
-            .await?;
+        let pvs: Vec<PersistentVolume> = self.storage.list("/registry/persistentvolumes/").await?;
 
         info!("Found {} PVs to check for binding", pvs.len());
 
@@ -89,12 +91,18 @@ impl<S: Storage> PVBinderController<S> {
 
             // Check if PV matches PVC requirements
             let matches = self.pv_matches_pvc(&pv.spec, pvc_spec);
-            info!("PV {} matches PVC requirements: {}", pv.metadata.name, matches);
+            info!(
+                "PV {} matches PVC requirements: {}",
+                pv.metadata.name, matches
+            );
             if !matches {
                 continue;
             }
 
-            info!("Binding PVC {}/{} to PV {}", namespace, pvc_name, pv.metadata.name);
+            info!(
+                "Binding PVC {}/{} to PV {}",
+                namespace, pvc_name, pv.metadata.name
+            );
 
             // Clone values we need before mutating pv
             let pv_access_modes = pv.spec.access_modes.clone();
@@ -102,15 +110,17 @@ impl<S: Storage> PVBinderController<S> {
             let pv_name = pv.metadata.name.clone();
 
             // Bind PV to PVC
-            pv.spec.claim_ref = Some(rusternetes_common::resources::service_account::ObjectReference {
-                kind: Some("PersistentVolumeClaim".to_string()),
-                namespace: Some(namespace.to_string()),
-                name: Some(pvc_name.to_string()),
-                uid: Some(pvc.metadata.uid.clone()),
-                api_version: Some("v1".to_string()),
-                resource_version: None,
-                field_path: None,
-            });
+            pv.spec.claim_ref = Some(
+                rusternetes_common::resources::service_account::ObjectReference {
+                    kind: Some("PersistentVolumeClaim".to_string()),
+                    namespace: Some(namespace.to_string()),
+                    name: Some(pvc_name.to_string()),
+                    uid: Some(pvc.metadata.uid.clone()),
+                    api_version: Some("v1".to_string()),
+                    resource_version: None,
+                    field_path: None,
+                },
+            );
 
             // Update PV status to Bound
             pv.status = Some(PersistentVolumeStatus {
@@ -138,7 +148,10 @@ impl<S: Storage> PVBinderController<S> {
             let pvc_key = build_key("persistentvolumeclaims", Some(namespace), pvc_name);
             self.storage.update(&pvc_key, pvc).await?;
 
-            info!("Successfully bound PVC {}/{} to PV {}", namespace, pvc_name, pv.metadata.name);
+            info!(
+                "Successfully bound PVC {}/{} to PV {}",
+                namespace, pvc_name, pv.metadata.name
+            );
             return Ok(());
         }
 
@@ -153,7 +166,9 @@ impl<S: Storage> PVBinderController<S> {
         pvc_spec: &rusternetes_common::resources::PersistentVolumeClaimSpec,
     ) -> bool {
         // Check storage class match
-        if let (Some(pv_class), Some(pvc_class)) = (&pv_spec.storage_class_name, &pvc_spec.storage_class_name) {
+        if let (Some(pv_class), Some(pvc_class)) =
+            (&pv_spec.storage_class_name, &pvc_spec.storage_class_name)
+        {
             if pv_class != pvc_class {
                 return false;
             }
@@ -162,7 +177,11 @@ impl<S: Storage> PVBinderController<S> {
         // Check capacity
         if let (Some(pv_storage), Some(pvc_storage)) = (
             pv_spec.capacity.get("storage"),
-            pvc_spec.resources.requests.as_ref().and_then(|r| r.get("storage"))
+            pvc_spec
+                .resources
+                .requests
+                .as_ref()
+                .and_then(|r| r.get("storage")),
         ) {
             // Simple string comparison - in real Kubernetes, this would parse quantities
             // For now, we'll just check if PV storage >= PVC storage
@@ -196,17 +215,25 @@ impl<S: Storage> PVBinderController<S> {
             (Some((pv_num, pv_unit)), Some((pvc_num, pvc_unit))) => {
                 // Units must match
                 if pv_unit != pvc_unit {
-                    info!("Storage units don't match: PV has {}, PVC needs {}", pv_unit, pvc_unit);
+                    info!(
+                        "Storage units don't match: PV has {}, PVC needs {}",
+                        pv_unit, pvc_unit
+                    );
                     return false;
                 }
                 // PV must have at least as much storage as PVC
                 let sufficient = pv_num >= pvc_num;
-                info!("Storage comparison: PV has {}{}, PVC needs {}{} -> sufficient: {}",
-                    pv_num, pv_unit, pvc_num, pvc_unit, sufficient);
+                info!(
+                    "Storage comparison: PV has {}{}, PVC needs {}{} -> sufficient: {}",
+                    pv_num, pv_unit, pvc_num, pvc_unit, sufficient
+                );
                 sufficient
             }
             _ => {
-                info!("Failed to parse storage values: PV='{}', PVC='{}'", pv_storage, pvc_storage);
+                info!(
+                    "Failed to parse storage values: PV='{}', PVC='{}'",
+                    pv_storage, pvc_storage
+                );
                 // Fall back to string comparison if parsing fails
                 pv_storage >= pvc_storage
             }

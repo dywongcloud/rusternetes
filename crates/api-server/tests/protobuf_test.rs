@@ -2,7 +2,6 @@
 ///
 /// These tests verify that the API server can encode responses in protobuf format
 /// when requested via the Accept header.
-
 use rusternetes_common::protobuf::{decode_protobuf, encode_protobuf, is_protobuf, TypeMeta};
 use serde::{Deserialize, Serialize};
 
@@ -50,8 +49,7 @@ fn test_protobuf_encode_decode_pod() {
     };
 
     // Encode to protobuf
-    let encoded = encode_protobuf(&pod, "v1", "Pod")
-        .expect("Failed to encode pod to protobuf");
+    let encoded = encode_protobuf(&pod, "v1", "Pod").expect("Failed to encode pod to protobuf");
 
     // Verify it's protobuf format
     assert!(is_protobuf(&encoded), "Encoded data should be protobuf");
@@ -112,8 +110,8 @@ fn test_protobuf_with_list() {
     };
 
     // Encode to protobuf
-    let encoded = encode_protobuf(&pod_list, "v1", "PodList")
-        .expect("Failed to encode pod list to protobuf");
+    let encoded =
+        encode_protobuf(&pod_list, "v1", "PodList").expect("Failed to encode pod list to protobuf");
 
     // Verify it's protobuf format
     assert!(is_protobuf(&encoded), "Encoded data should be protobuf");
@@ -133,8 +131,8 @@ fn test_protobuf_with_list() {
 #[test]
 #[ignore]
 fn test_content_negotiation() {
-    use rusternetes_api_server::response::{negotiate_content_type, ContentType};
     use axum::http::{header, HeaderMap};
+    use rusternetes_api_server::response::{negotiate_content_type, ContentType};
 
     let pod = Pod {
         api_version: "v1".to_string(),

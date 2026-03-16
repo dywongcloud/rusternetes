@@ -67,13 +67,17 @@ impl LabelSelector {
     }
 
     /// Try to parse a set-based selector (in/notin)
-    fn try_parse_set_based(input: &str) -> Result<Option<(LabelRequirement, &str)>, LabelSelectorError> {
+    fn try_parse_set_based(
+        input: &str,
+    ) -> Result<Option<(LabelRequirement, &str)>, LabelSelectorError> {
         // Look for "notin" operator first (longer match)
         // Match with or without spaces: "notin" or " notin "
         if let Some(notin_pos) = input.find("notin") {
             // Ensure it's not part of another word
             let before_ok = notin_pos == 0 || input.as_bytes()[notin_pos - 1].is_ascii_whitespace();
-            let after_ok = notin_pos + 6 >= input.len() || input.as_bytes()[notin_pos + 6].is_ascii_whitespace() || input.as_bytes()[notin_pos + 6] == b'(';
+            let after_ok = notin_pos + 6 >= input.len()
+                || input.as_bytes()[notin_pos + 6].is_ascii_whitespace()
+                || input.as_bytes()[notin_pos + 6] == b'(';
 
             if before_ok && after_ok {
                 let key = input[..notin_pos].trim();
@@ -96,9 +100,11 @@ impl LabelSelector {
         if let Some(in_pos) = input.find("in") {
             // Ensure it's not part of another word (like "notin")
             let before_ok = in_pos == 0 || input.as_bytes()[in_pos - 1].is_ascii_whitespace();
-            let after_ok = in_pos + 2 >= input.len() || input.as_bytes()[in_pos + 2].is_ascii_whitespace() || input.as_bytes()[in_pos + 2] == b'(';
+            let after_ok = in_pos + 2 >= input.len()
+                || input.as_bytes()[in_pos + 2].is_ascii_whitespace()
+                || input.as_bytes()[in_pos + 2] == b'(';
             // Make sure it's not "notin"
-            let not_notin = in_pos < 3 || &input[in_pos-3..in_pos] != "not";
+            let not_notin = in_pos < 3 || &input[in_pos - 3..in_pos] != "not";
 
             if before_ok && after_ok && not_notin {
                 let key = input[..in_pos].trim();
@@ -151,7 +157,9 @@ impl LabelSelector {
     }
 
     /// Try to parse an equality-based selector (=, ==, !=)
-    fn try_parse_equality_based(input: &str) -> Result<Option<(LabelRequirement, &str)>, LabelSelectorError> {
+    fn try_parse_equality_based(
+        input: &str,
+    ) -> Result<Option<(LabelRequirement, &str)>, LabelSelectorError> {
         // Find the next comma or end of string
         let end_pos = input.find(',').unwrap_or(input.len());
         let selector_part = &input[..end_pos];
@@ -236,7 +244,9 @@ impl LabelSelector {
     }
 
     /// Try to parse an existence-based selector (key or !key)
-    fn try_parse_existence_based(input: &str) -> Result<Option<(LabelRequirement, &str)>, LabelSelectorError> {
+    fn try_parse_existence_based(
+        input: &str,
+    ) -> Result<Option<(LabelRequirement, &str)>, LabelSelectorError> {
         // Find the next comma or end of string
         let end_pos = input.find(',').unwrap_or(input.len());
         let selector_part = &input[..end_pos].trim();
@@ -247,7 +257,10 @@ impl LabelSelector {
         };
 
         // Check if it contains operators (then it's not existence-based)
-        if selector_part.contains('=') || selector_part.contains(" in ") || selector_part.contains(" notin ") {
+        if selector_part.contains('=')
+            || selector_part.contains(" in ")
+            || selector_part.contains(" notin ")
+        {
             return Ok(None);
         }
 
@@ -437,9 +450,19 @@ impl fmt::Display for LabelSelector {
             .iter()
             .map(|req| match req.operator {
                 LabelOperator::Equals => format!("{}={}", req.key, req.values.as_ref().unwrap()[0]),
-                LabelOperator::NotEquals => format!("{}!={}", req.key, req.values.as_ref().unwrap()[0]),
-                LabelOperator::In => format!("{} in ({})", req.key, req.values.as_ref().unwrap().join(", ")),
-                LabelOperator::NotIn => format!("{} notin ({})", req.key, req.values.as_ref().unwrap().join(", ")),
+                LabelOperator::NotEquals => {
+                    format!("{}!={}", req.key, req.values.as_ref().unwrap()[0])
+                }
+                LabelOperator::In => format!(
+                    "{} in ({})",
+                    req.key,
+                    req.values.as_ref().unwrap().join(", ")
+                ),
+                LabelOperator::NotIn => format!(
+                    "{} notin ({})",
+                    req.key,
+                    req.values.as_ref().unwrap().join(", ")
+                ),
                 LabelOperator::Exists => req.key.clone(),
                 LabelOperator::DoesNotExist => format!("!{}", req.key),
             })
@@ -459,7 +482,10 @@ mod tests {
         assert_eq!(selector.requirements.len(), 1);
         assert_eq!(selector.requirements[0].key, "app");
         assert_eq!(selector.requirements[0].operator, LabelOperator::Equals);
-        assert_eq!(selector.requirements[0].values, Some(vec!["nginx".to_string()]));
+        assert_eq!(
+            selector.requirements[0].values,
+            Some(vec!["nginx".to_string()])
+        );
     }
 
     #[test]
@@ -472,7 +498,10 @@ mod tests {
     fn test_parse_not_equals() {
         let selector = LabelSelector::parse("tier!=backend").unwrap();
         assert_eq!(selector.requirements[0].operator, LabelOperator::NotEquals);
-        assert_eq!(selector.requirements[0].values, Some(vec!["backend".to_string()]));
+        assert_eq!(
+            selector.requirements[0].values,
+            Some(vec!["backend".to_string()])
+        );
     }
 
     #[test]
@@ -520,12 +549,17 @@ mod tests {
         let selector = LabelSelector::parse("!deprecated").unwrap();
         assert_eq!(selector.requirements.len(), 1);
         assert_eq!(selector.requirements[0].key, "deprecated");
-        assert_eq!(selector.requirements[0].operator, LabelOperator::DoesNotExist);
+        assert_eq!(
+            selector.requirements[0].operator,
+            LabelOperator::DoesNotExist
+        );
     }
 
     #[test]
     fn test_parse_mixed() {
-        let selector = LabelSelector::parse("app=nginx,environment in (production, qa),tier!=backend").unwrap();
+        let selector =
+            LabelSelector::parse("app=nginx,environment in (production, qa),tier!=backend")
+                .unwrap();
         assert_eq!(selector.requirements.len(), 3);
         assert_eq!(selector.requirements[0].operator, LabelOperator::Equals);
         assert_eq!(selector.requirements[1].operator, LabelOperator::In);

@@ -1,7 +1,6 @@
 /// WebSocket streaming support for kubectl
 ///
 /// Implements the Kubernetes streaming protocol for exec, attach, and port-forward
-
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
@@ -81,16 +80,13 @@ impl StreamMessage {
 }
 
 /// Execute a command in a pod with WebSocket streaming
-pub async fn exec_stream(
-    ws_url: String,
-    stdin_enabled: bool,
-    tty_enabled: bool,
-) -> Result<()> {
+pub async fn exec_stream(ws_url: String, stdin_enabled: bool, tty_enabled: bool) -> Result<()> {
     // Parse URL
     let url = Url::parse(&ws_url)?;
 
     // Connect WebSocket
-    let (ws_stream, _) = connect_async(url).await
+    let (ws_stream, _) = connect_async(url)
+        .await
         .map_err(|e| anyhow!("Failed to connect WebSocket: {}", e))?;
 
     let (mut write, mut read) = ws_stream.split();
@@ -230,7 +226,10 @@ pub async fn port_forward_stream(
     // Bind local TCP listener
     let listener = TcpListener::bind(format!("{}:{}", bind_address, local_port)).await?;
 
-    println!("Forwarding from {}:{} -> pod port {}", bind_address, local_port, remote_port);
+    println!(
+        "Forwarding from {}:{} -> pod port {}",
+        bind_address, local_port, remote_port
+    );
 
     loop {
         // Accept connection
@@ -272,7 +271,11 @@ async fn handle_port_forward_connection(
                     // Copy data to avoid borrow issues
                     let data = buf[..n].to_vec();
                     let frame = PortForwardFrame::new(remote_port, 0, data);
-                    if ws_write.send(Message::Binary(frame.encode())).await.is_err() {
+                    if ws_write
+                        .send(Message::Binary(frame.encode()))
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -293,7 +296,10 @@ async fn handle_port_forward_connection(
                                 break;
                             }
                         } else if frame.stream_type == 1 {
-                            eprintln!("Port-forward error: {}", String::from_utf8_lossy(&frame.data));
+                            eprintln!(
+                                "Port-forward error: {}",
+                                String::from_utf8_lossy(&frame.data)
+                            );
                         }
                     }
                 }

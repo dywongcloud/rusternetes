@@ -82,11 +82,7 @@ impl ContentType {
 
 /// Create a response with content negotiation
 /// Note: Protobuf encoding requires api_version and kind, so this is a simplified version
-pub fn create_response<T>(
-    data: T,
-    status: StatusCode,
-    content_type: ContentType,
-) -> Response
+pub fn create_response<T>(data: T, status: StatusCode, content_type: ContentType) -> Response
 where
     T: Serialize,
 {
@@ -121,10 +117,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         assert_eq!(negotiate_content_type(&headers), ContentType::Json);
 
-        headers.insert(
-            header::ACCEPT,
-            "application/json".parse().unwrap(),
-        );
+        headers.insert(header::ACCEPT, "application/json".parse().unwrap());
         assert_eq!(negotiate_content_type(&headers), ContentType::Json);
 
         headers.insert(

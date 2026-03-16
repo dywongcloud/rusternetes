@@ -1,7 +1,5 @@
 use super::*;
-use rusternetes_common::resources::volume::{
-    VolumeSnapshotSpec, VolumeSnapshotSource,
-};
+use rusternetes_common::resources::volume::{VolumeSnapshotSource, VolumeSnapshotSpec};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::memory::MemoryStorage;
 
@@ -67,7 +65,10 @@ fn test_create_snapshot_content_structure() {
         content.spec.volume_snapshot_ref.namespace,
         Some("default".to_string())
     );
-    assert_eq!(content.spec.source.volume_handle, Some("test-pv".to_string()));
+    assert_eq!(
+        content.spec.source.volume_handle,
+        Some("test-pv".to_string())
+    );
     assert!(content.status.is_some());
     assert_eq!(content.status.as_ref().unwrap().ready_to_use, Some(true));
 }

@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::DaemonSet,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -48,7 +47,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: DaemonSet {}/{} validated successfully (not created)", namespace, daemonset.metadata.name);
+        info!(
+            "Dry-run: DaemonSet {}/{} validated successfully (not created)",
+            namespace, daemonset.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(daemonset)));
     }
 
@@ -114,7 +116,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: DaemonSet {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: DaemonSet {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(daemonset));
     }
 
@@ -163,11 +168,15 @@ pub async fn delete_daemonset(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: DaemonSet {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: DaemonSet {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &daemonset).await?;
+    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &daemonset)
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -211,8 +220,7 @@ pub async fn list_all_daemonsets(
     info!("Listing all daemonsets");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "daemonsets")
-        .with_api_group("apps");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "daemonsets").with_api_group("apps");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -240,7 +248,10 @@ pub async fn deletecollection_daemonsets(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection daemonsets in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection daemonsets in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "daemonsets")
@@ -286,6 +297,9 @@ pub async fn deletecollection_daemonsets(
         }
     }
 
-    info!("DeleteCollection completed: {} daemonsets deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} daemonsets deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

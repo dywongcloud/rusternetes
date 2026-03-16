@@ -4,9 +4,11 @@
 
 use axum::http::StatusCode;
 use futures::StreamExt;
-use rusternetes_common::resources::{ConfigMap, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec, Container};
 use rusternetes_common::resources::namespace::{Namespace, NamespaceSpec, NamespaceStatus};
-use rusternetes_common::types::{ObjectMeta, TypeMeta, Phase};
+use rusternetes_common::resources::{
+    ConfigMap, Container, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec,
+};
+use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -16,9 +18,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 // Helper to parse watch stream response
-async fn parse_watch_events<T: DeserializeOwned>(
-    body: &str,
-) -> Vec<(String, T)> {
+async fn parse_watch_events<T: DeserializeOwned>(body: &str) -> Vec<(String, T)> {
     let mut events = Vec::new();
     for line in body.lines() {
         if line.is_empty() {
@@ -63,6 +63,7 @@ fn create_minimal_pod_spec() -> PodSpec {
         service_account_name: None,
         automount_service_account_token: None,
         hostname: None,
+        subdomain: None,
         host_network: None,
         host_pid: None,
         host_ipc: None,
@@ -115,10 +116,7 @@ async fn test_watch_initial_state_events() {
         };
 
         let key = build_key("pods", Some(namespace), &format!("pod-{}", i));
-        storage
-            .create(&key, &pod)
-            .await
-            .unwrap();
+        storage.create(&key, &pod).await.unwrap();
     }
 
     // Start watching - should get initial ADDED events for existing pods
@@ -257,7 +255,12 @@ async fn test_watch_modified_event() {
                 assert!(k.contains("test-pod"));
                 let received_pod: Pod = serde_json::from_str(&v).unwrap();
                 assert_eq!(
-                    received_pod.metadata.labels.as_ref().unwrap().get("updated"),
+                    received_pod
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .unwrap()
+                        .get("updated"),
                     Some(&"true".to_string())
                 );
             }
@@ -387,9 +390,7 @@ async fn test_watch_cluster_scoped_resources() {
             resource_version: Some("1".to_string()),
             ..Default::default()
         },
-        spec: Some(NamespaceSpec {
-            finalizers: None,
-        }),
+        spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
             phase: Phase::Active,
         }),
@@ -449,10 +450,10 @@ async fn test_watch_resource_version_tracking() {
     // Update multiple times and track resource versions
     for i in 2..=5 {
         cm.metadata.resource_version = Some(i.to_string());
-        cm.data.as_mut().unwrap().insert(
-            format!("key{}", i),
-            format!("value{}", i),
-        );
+        cm.data
+            .as_mut()
+            .unwrap()
+            .insert(format!("key{}", i), format!("value{}", i));
         storage.update(&key, &cm).await.unwrap();
 
         // Verify event has updated resource version
@@ -460,10 +461,7 @@ async fn test_watch_resource_version_tracking() {
             match event {
                 rusternetes_storage::WatchEvent::Modified(_, v) => {
                     let received_cm: ConfigMap = serde_json::from_str(&v).unwrap();
-                    assert_eq!(
-                        received_cm.metadata.resource_version,
-                        Some(i.to_string())
-                    );
+                    assert_eq!(received_cm.metadata.resource_version, Some(i.to_string()));
                 }
                 _ => panic!("Expected Modified event"),
             }

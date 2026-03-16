@@ -63,7 +63,11 @@ impl RequestAttributes {
         }
     }
 
-    pub fn new_non_resource(user: UserInfo, verb: impl Into<String>, path: impl Into<String>) -> Self {
+    pub fn new_non_resource(
+        user: UserInfo,
+        verb: impl Into<String>,
+        path: impl Into<String>,
+    ) -> Self {
         Self {
             user,
             verb: verb.into(),
@@ -111,7 +115,14 @@ pub trait Authorizer: Send + Sync {
     async fn authorize(&self, attrs: &RequestAttributes) -> Result<Decision>;
 
     /// Get all rules that apply to a user in a given namespace
-    async fn get_user_rules(&self, user: &UserInfo, namespace: &str) -> Result<(Vec<crate::resources::ResourceRule>, Vec<crate::resources::NonResourceRule>)>;
+    async fn get_user_rules(
+        &self,
+        user: &UserInfo,
+        namespace: &str,
+    ) -> Result<(
+        Vec<crate::resources::ResourceRule>,
+        Vec<crate::resources::NonResourceRule>,
+    )>;
 }
 
 /// RBAC Authorizer that uses Role and RoleBinding resources
@@ -194,8 +205,7 @@ impl<S: AuthzStorage> RBACAuthorizer<S> {
             .into_iter()
             .filter(|binding| {
                 binding.subjects.iter().any(|subject| {
-                    subject.name == attrs.user.username
-                        || attrs.user.groups.contains(&subject.name)
+                    subject.name == attrs.user.username || attrs.user.groups.contains(&subject.name)
                 })
             })
             .collect())
@@ -212,8 +222,7 @@ impl<S: AuthzStorage> RBACAuthorizer<S> {
             .into_iter()
             .filter(|binding| {
                 binding.subjects.iter().any(|subject| {
-                    subject.name == attrs.user.username
-                        || attrs.user.groups.contains(&subject.name)
+                    subject.name == attrs.user.username || attrs.user.groups.contains(&subject.name)
                 })
             })
             .collect())
@@ -236,9 +245,9 @@ impl<S: AuthzStorage> RBACAuthorizer<S> {
             if let Some(ref non_resource_urls) = rule.non_resource_urls {
                 if let Some(ref path) = attrs.path {
                     // Check if the path matches any of the non-resource URLs
-                    return non_resource_urls.iter().any(|url| {
-                        url == "*" || url == path || path.starts_with(url)
-                    });
+                    return non_resource_urls
+                        .iter()
+                        .any(|url| url == "*" || url == path || path.starts_with(url));
                 }
             }
             return false;
@@ -283,7 +292,14 @@ impl<S: AuthzStorage> Authorizer for RBACAuthorizer<S> {
         self.check_rbac(attrs).await
     }
 
-    async fn get_user_rules(&self, user: &UserInfo, namespace: &str) -> Result<(Vec<crate::resources::ResourceRule>, Vec<crate::resources::NonResourceRule>)> {
+    async fn get_user_rules(
+        &self,
+        user: &UserInfo,
+        namespace: &str,
+    ) -> Result<(
+        Vec<crate::resources::ResourceRule>,
+        Vec<crate::resources::NonResourceRule>,
+    )> {
         let mut resource_rules = Vec::new();
         let mut non_resource_rules = Vec::new();
 
@@ -304,7 +320,11 @@ impl<S: AuthzStorage> Authorizer for RBACAuthorizer<S> {
 
             // Get the role/cluster role referenced by this binding
             if binding.role_ref.kind == "Role" {
-                if let Ok(role) = self.storage.get::<Role>(&binding.role_ref.name, Some(namespace)).await {
+                if let Ok(role) = self
+                    .storage
+                    .get::<Role>(&binding.role_ref.name, Some(namespace))
+                    .await
+                {
                     // Convert PolicyRules to ResourceRules
                     for rule in &role.rules {
                         resource_rules.push(crate::resources::ResourceRule {
@@ -316,7 +336,11 @@ impl<S: AuthzStorage> Authorizer for RBACAuthorizer<S> {
                     }
                 }
             } else if binding.role_ref.kind == "ClusterRole" {
-                if let Ok(cluster_role) = self.storage.get::<ClusterRole>(&binding.role_ref.name, None).await {
+                if let Ok(cluster_role) = self
+                    .storage
+                    .get::<ClusterRole>(&binding.role_ref.name, None)
+                    .await
+                {
                     for rule in &cluster_role.rules {
                         resource_rules.push(crate::resources::ResourceRule {
                             verbs: rule.verbs.clone(),
@@ -347,7 +371,11 @@ impl<S: AuthzStorage> Authorizer for RBACAuthorizer<S> {
                 continue;
             }
 
-            if let Ok(cluster_role) = self.storage.get::<ClusterRole>(&binding.role_ref.name, None).await {
+            if let Ok(cluster_role) = self
+                .storage
+                .get::<ClusterRole>(&binding.role_ref.name, None)
+                .await
+            {
                 for rule in &cluster_role.rules {
                     resource_rules.push(crate::resources::ResourceRule {
                         verbs: rule.verbs.clone(),
@@ -379,7 +407,14 @@ impl Authorizer for AlwaysAllowAuthorizer {
         Ok(Decision::Allow)
     }
 
-    async fn get_user_rules(&self, _user: &UserInfo, _namespace: &str) -> Result<(Vec<crate::resources::ResourceRule>, Vec<crate::resources::NonResourceRule>)> {
+    async fn get_user_rules(
+        &self,
+        _user: &UserInfo,
+        _namespace: &str,
+    ) -> Result<(
+        Vec<crate::resources::ResourceRule>,
+        Vec<crate::resources::NonResourceRule>,
+    )> {
         // Return wildcard rules for testing
         Ok((
             vec![crate::resources::ResourceRule {
@@ -405,7 +440,14 @@ impl Authorizer for AlwaysDenyAuthorizer {
         Ok(Decision::Deny("Access denied".to_string()))
     }
 
-    async fn get_user_rules(&self, _user: &UserInfo, _namespace: &str) -> Result<(Vec<crate::resources::ResourceRule>, Vec<crate::resources::NonResourceRule>)> {
+    async fn get_user_rules(
+        &self,
+        _user: &UserInfo,
+        _namespace: &str,
+    ) -> Result<(
+        Vec<crate::resources::ResourceRule>,
+        Vec<crate::resources::NonResourceRule>,
+    )> {
         // Return empty rules for testing
         Ok((vec![], vec![]))
     }
@@ -420,8 +462,7 @@ pub struct NodeAuthorizer;
 impl NodeAuthorizer {
     /// Extract the node name from a node username (system:node:<nodename>)
     fn extract_node_name(username: &str) -> Option<String> {
-        username.strip_prefix("system:node:")
-            .map(|s| s.to_string())
+        username.strip_prefix("system:node:").map(|s| s.to_string())
     }
 
     /// Check if the request is for the node's own Node object
@@ -446,9 +487,9 @@ impl NodeAuthorizer {
             ("storage.k8s.io", "csinodes"),
         ];
 
-        allowed_resources.iter().any(|(group, resource)| {
-            attrs.api_group == *group && attrs.resource == *resource
-        })
+        allowed_resources
+            .iter()
+            .any(|(group, resource)| attrs.api_group == *group && attrs.resource == *resource)
     }
 
     /// Check if the request is for node-related API groups
@@ -456,9 +497,9 @@ impl NodeAuthorizer {
         matches!(
             attrs.api_group.as_str(),
             "authentication.k8s.io"
-            | "authorization.k8s.io"
-            | "certificates.k8s.io"
-            | "coordination.k8s.io"
+                | "authorization.k8s.io"
+                | "certificates.k8s.io"
+                | "coordination.k8s.io"
         )
     }
 }
@@ -487,8 +528,16 @@ impl Authorizer for NodeAuthorizer {
 
         // Allow nodes to update their own Node status
         if attrs.resource == "nodes"
-            && attrs.subresource.as_ref().map(|s| s == "status").unwrap_or(false)
-            && attrs.name.as_ref().map(|n| n == &node_name).unwrap_or(false)
+            && attrs
+                .subresource
+                .as_ref()
+                .map(|s| s == "status")
+                .unwrap_or(false)
+            && attrs
+                .name
+                .as_ref()
+                .map(|n| n == &node_name)
+                .unwrap_or(false)
         {
             return Ok(Decision::Allow);
         }
@@ -504,7 +553,10 @@ impl Authorizer for NodeAuthorizer {
         // (authentication, authorization, certificates, coordination)
         if self.is_node_api_group(attrs) {
             // Nodes can create TokenReviews, SubjectAccessReviews, CSRs, and Leases
-            if matches!(attrs.verb.as_str(), "create" | "get" | "list" | "watch" | "update" | "patch") {
+            if matches!(
+                attrs.verb.as_str(),
+                "create" | "get" | "list" | "watch" | "update" | "patch"
+            ) {
                 return Ok(Decision::Allow);
             }
         }
@@ -514,11 +566,20 @@ impl Authorizer for NodeAuthorizer {
         // bound to this specific node by querying storage. For now, we allow
         // read access to pods and let RBAC provide additional restrictions.
         if attrs.resource == "pods" && attrs.namespace.is_some() {
-            if matches!(attrs.verb.as_str(), "get" | "list" | "watch" | "update" | "patch") {
+            if matches!(
+                attrs.verb.as_str(),
+                "get" | "list" | "watch" | "update" | "patch"
+            ) {
                 return Ok(Decision::Allow);
             }
             // Allow updating pod status
-            if attrs.verb == "update" && attrs.subresource.as_ref().map(|s| s == "status").unwrap_or(false) {
+            if attrs.verb == "update"
+                && attrs
+                    .subresource
+                    .as_ref()
+                    .map(|s| s == "status")
+                    .unwrap_or(false)
+            {
                 return Ok(Decision::Allow);
             }
         }
@@ -545,7 +606,14 @@ impl Authorizer for NodeAuthorizer {
         )))
     }
 
-    async fn get_user_rules(&self, user: &UserInfo, _namespace: &str) -> Result<(Vec<crate::resources::ResourceRule>, Vec<crate::resources::NonResourceRule>)> {
+    async fn get_user_rules(
+        &self,
+        user: &UserInfo,
+        _namespace: &str,
+    ) -> Result<(
+        Vec<crate::resources::ResourceRule>,
+        Vec<crate::resources::NonResourceRule>,
+    )> {
         // Extract node name
         let _node_name = match Self::extract_node_name(&user.username) {
             Some(name) => name,
@@ -598,13 +666,16 @@ impl WebhookAuthorizer {
     pub fn new(webhook_url: String, ca_cert: Option<String>) -> crate::error::Result<Self> {
         let http_client = if let Some(ref cert_pem) = ca_cert {
             // Build client with custom CA certificate
-            let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())
-                .map_err(|e| crate::error::Error::Internal(format!("Failed to parse CA certificate: {}", e)))?;
+            let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes()).map_err(|e| {
+                crate::error::Error::Internal(format!("Failed to parse CA certificate: {}", e))
+            })?;
 
             reqwest::Client::builder()
                 .add_root_certificate(cert)
                 .build()
-                .map_err(|e| crate::error::Error::Internal(format!("Failed to create HTTP client: {}", e)))?
+                .map_err(|e| {
+                    crate::error::Error::Internal(format!("Failed to create HTTP client: {}", e))
+                })?
         } else {
             reqwest::Client::new()
         };
@@ -621,8 +692,8 @@ impl WebhookAuthorizer {
 impl Authorizer for WebhookAuthorizer {
     async fn authorize(&self, attrs: &RequestAttributes) -> Result<Decision> {
         use crate::resources::authorization::{
-            SubjectAccessReview, SubjectAccessReviewSpec, ResourceAttributes as SARResourceAttributes,
-            NonResourceAttributes,
+            NonResourceAttributes, ResourceAttributes as SARResourceAttributes,
+            SubjectAccessReview, SubjectAccessReviewSpec,
         };
         use crate::types::ObjectMeta;
 
@@ -669,12 +740,15 @@ impl Authorizer for WebhookAuthorizer {
         };
 
         // Send request to webhook
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&self.webhook_url)
             .json(&sar)
             .send()
             .await
-            .map_err(|e| crate::error::Error::Authorization(format!("Webhook request failed: {}", e)))?;
+            .map_err(|e| {
+                crate::error::Error::Authorization(format!("Webhook request failed: {}", e))
+            })?;
 
         if !response.status().is_success() {
             return Ok(Decision::Deny(format!(
@@ -684,25 +758,34 @@ impl Authorizer for WebhookAuthorizer {
         }
 
         // Parse response
-        let sar_response: SubjectAccessReview = response
-            .json()
-            .await
-            .map_err(|e| crate::error::Error::Authorization(format!("Failed to parse webhook response: {}", e)))?;
+        let sar_response: SubjectAccessReview = response.json().await.map_err(|e| {
+            crate::error::Error::Authorization(format!("Failed to parse webhook response: {}", e))
+        })?;
 
         // Check if authorization succeeded
-        let status = sar_response.status
-            .ok_or_else(|| crate::error::Error::Authorization("Webhook response missing status".to_string()))?;
+        let status = sar_response.status.ok_or_else(|| {
+            crate::error::Error::Authorization("Webhook response missing status".to_string())
+        })?;
 
         if status.allowed {
             Ok(Decision::Allow)
         } else {
             Ok(Decision::Deny(
-                status.reason.unwrap_or_else(|| "Authorization denied".to_string())
+                status
+                    .reason
+                    .unwrap_or_else(|| "Authorization denied".to_string()),
             ))
         }
     }
 
-    async fn get_user_rules(&self, _user: &UserInfo, _namespace: &str) -> Result<(Vec<crate::resources::ResourceRule>, Vec<crate::resources::NonResourceRule>)> {
+    async fn get_user_rules(
+        &self,
+        _user: &UserInfo,
+        _namespace: &str,
+    ) -> Result<(
+        Vec<crate::resources::ResourceRule>,
+        Vec<crate::resources::NonResourceRule>,
+    )> {
         // Webhook authorizers don't support listing user rules
         // This would require a different API call or mechanism
         Ok((vec![], vec![]))

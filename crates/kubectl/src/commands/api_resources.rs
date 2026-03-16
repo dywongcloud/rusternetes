@@ -70,13 +70,10 @@ pub async fn execute(
     let mut resources = Vec::new();
 
     // Get core API resources (v1)
-    let core_resources: ApiResourceList = client
-        .get("/api/v1")
-        .await
-        .map_err(|e| match e {
-            crate::client::GetError::NotFound => anyhow::anyhow!("Core API not found"),
-            crate::client::GetError::Other(e) => e,
-        })?;
+    let core_resources: ApiResourceList = client.get("/api/v1").await.map_err(|e| match e {
+        crate::client::GetError::NotFound => anyhow::anyhow!("Core API not found"),
+        crate::client::GetError::Other(e) => e,
+    })?;
 
     for resource in core_resources.resources {
         // Skip subresources (contain /)
@@ -86,13 +83,10 @@ pub async fn execute(
     }
 
     // Get API groups
-    let api_groups: ApiGroupList = client
-        .get("/apis")
-        .await
-        .map_err(|e| match e {
-            crate::client::GetError::NotFound => anyhow::anyhow!("API groups not found"),
-            crate::client::GetError::Other(e) => e,
-        })?;
+    let api_groups: ApiGroupList = client.get("/apis").await.map_err(|e| match e {
+        crate::client::GetError::NotFound => anyhow::anyhow!("API groups not found"),
+        crate::client::GetError::Other(e) => e,
+    })?;
 
     for group in api_groups.groups {
         // Filter by API group if specified
@@ -155,8 +149,10 @@ pub async fn execute(
                 // Remove headers - tabled doesn't have a simple way to do this,
                 // so we'll just print without table
                 for row in rows {
-                    println!("{}\t{}\t{}\t{}\t{}",
-                        row.name, row.short_names, row.api_version, row.namespaced, row.kind);
+                    println!(
+                        "{}\t{}\t{}\t{}\t{}",
+                        row.name, row.short_names, row.api_version, row.namespaced, row.kind
+                    );
                 }
             } else {
                 println!("{}", table);

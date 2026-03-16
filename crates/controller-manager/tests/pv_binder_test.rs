@@ -1,8 +1,8 @@
 // Integration tests for PV Binder Controller
 // Note: These tests use in-memory storage for fast, isolated testing
 
-use rusternetes_common::resources::volume::*;
 use rusternetes_common::resources::service_account::ObjectReference;
+use rusternetes_common::resources::volume::*;
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::pv_binder::PVBinderController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
@@ -97,8 +97,8 @@ async fn create_test_pvc(
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -118,7 +118,14 @@ async fn test_binds_matching_pv_to_pvc() {
     let _pv = create_test_pv(&storage, "test-pv-1", Some("fast".to_string()), 10).await;
 
     // Create pending PVC
-    let _pvc = create_test_pvc(&storage, "test-pvc-1", "default", Some("fast".to_string()), 5).await;
+    let _pvc = create_test_pvc(
+        &storage,
+        "test-pvc-1",
+        "default",
+        Some("fast".to_string()),
+        5,
+    )
+    .await;
 
     // Run binder
     let controller = PVBinderController::new(storage.clone());
@@ -133,15 +140,24 @@ async fn test_binds_matching_pv_to_pvc() {
     let updated_pvc: PersistentVolumeClaim = storage.get(&pvc_key).await.unwrap();
 
     // Check PV is bound to PVC
-    assert!(updated_pv.spec.claim_ref.is_some(), "PV should have claim_ref set");
+    assert!(
+        updated_pv.spec.claim_ref.is_some(),
+        "PV should have claim_ref set"
+    );
     let claim_ref = updated_pv.spec.claim_ref.as_ref().unwrap();
     assert_eq!(claim_ref.name.as_deref().unwrap(), "test-pvc-1");
     assert_eq!(claim_ref.namespace.as_deref().unwrap(), "default");
-    assert_eq!(updated_pv.status.as_ref().unwrap().phase, PersistentVolumePhase::Bound);
+    assert_eq!(
+        updated_pv.status.as_ref().unwrap().phase,
+        PersistentVolumePhase::Bound
+    );
 
     // Check PVC is bound to PV
     assert_eq!(updated_pvc.spec.volume_name, Some("test-pv-1".to_string()));
-    assert_eq!(updated_pvc.status.as_ref().unwrap().phase, PersistentVolumeClaimPhase::Bound);
+    assert_eq!(
+        updated_pvc.status.as_ref().unwrap().phase,
+        PersistentVolumeClaimPhase::Bound
+    );
 }
 
 #[tokio::test]
@@ -171,7 +187,10 @@ async fn test_matches_storage_class() {
     // Verify slow PV is still available
     let pv_slow_key = build_key("persistentvolumes", None, "pv-slow");
     let pv_slow: PersistentVolume = storage.get(&pv_slow_key).await.unwrap();
-    assert_eq!(pv_slow.status.as_ref().unwrap().phase, PersistentVolumePhase::Available);
+    assert_eq!(
+        pv_slow.status.as_ref().unwrap().phase,
+        PersistentVolumePhase::Available
+    );
 }
 
 #[tokio::test]
@@ -182,7 +201,14 @@ async fn test_matches_capacity_sufficient() {
     let _pv = create_test_pv(&storage, "big-pv", Some("fast".to_string()), 10).await;
 
     // Create PVC requesting 5Gi (PV has sufficient capacity)
-    let _pvc = create_test_pvc(&storage, "small-pvc", "default", Some("fast".to_string()), 5).await;
+    let _pvc = create_test_pvc(
+        &storage,
+        "small-pvc",
+        "default",
+        Some("fast".to_string()),
+        5,
+    )
+    .await;
 
     // Run binder
     let controller = PVBinderController::new(storage.clone());
@@ -194,7 +220,10 @@ async fn test_matches_capacity_sufficient() {
     let updated_pvc: PersistentVolumeClaim = storage.get(&pvc_key).await.unwrap();
 
     assert_eq!(updated_pvc.spec.volume_name, Some("big-pv".to_string()));
-    assert_eq!(updated_pvc.status.as_ref().unwrap().phase, PersistentVolumeClaimPhase::Bound);
+    assert_eq!(
+        updated_pvc.status.as_ref().unwrap().phase,
+        PersistentVolumeClaimPhase::Bound
+    );
 }
 
 #[tokio::test]
@@ -217,7 +246,10 @@ async fn test_matches_capacity_insufficient() {
     let updated_pvc: PersistentVolumeClaim = storage.get(&pvc_key).await.unwrap();
 
     assert_eq!(updated_pvc.spec.volume_name, None);
-    assert_eq!(updated_pvc.status.as_ref().unwrap().phase, PersistentVolumeClaimPhase::Pending);
+    assert_eq!(
+        updated_pvc.status.as_ref().unwrap().phase,
+        PersistentVolumeClaimPhase::Pending
+    );
 }
 
 #[tokio::test]
@@ -290,8 +322,8 @@ async fn test_matches_access_modes() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -311,7 +343,10 @@ async fn test_matches_access_modes() {
     let updated_pvc: PersistentVolumeClaim = storage.get(&pvc_key).await.unwrap();
 
     assert_eq!(updated_pvc.spec.volume_name, None);
-    assert_eq!(updated_pvc.status.as_ref().unwrap().phase, PersistentVolumeClaimPhase::Pending);
+    assert_eq!(
+        updated_pvc.status.as_ref().unwrap().phase,
+        PersistentVolumeClaimPhase::Pending
+    );
 }
 
 #[tokio::test]
@@ -377,12 +412,22 @@ async fn test_skips_already_bound_pv() {
     let updated_pvc: PersistentVolumeClaim = storage.get(&pvc_key).await.unwrap();
 
     assert_eq!(updated_pvc.spec.volume_name, None);
-    assert_eq!(updated_pvc.status.as_ref().unwrap().phase, PersistentVolumeClaimPhase::Pending);
+    assert_eq!(
+        updated_pvc.status.as_ref().unwrap().phase,
+        PersistentVolumeClaimPhase::Pending
+    );
 
     // Verify PV still bound to original claim
     let updated_pv: PersistentVolume = storage.get(&pv_key).await.unwrap();
     assert_eq!(
-        updated_pv.spec.claim_ref.as_ref().unwrap().name.as_deref().unwrap(),
+        updated_pv
+            .spec
+            .claim_ref
+            .as_ref()
+            .unwrap()
+            .name
+            .as_deref()
+            .unwrap(),
         "existing-claim"
     );
 }
@@ -423,8 +468,8 @@ async fn test_skips_already_bound_pvc() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Bound,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
             capacity: Some({
@@ -451,5 +496,8 @@ async fn test_skips_already_bound_pvc() {
     // Verify pv-2 is still available
     let pv2_key = build_key("persistentvolumes", None, "pv-2");
     let pv2: PersistentVolume = storage.get(&pv2_key).await.unwrap();
-    assert_eq!(pv2.status.as_ref().unwrap().phase, PersistentVolumePhase::Available);
+    assert_eq!(
+        pv2.status.as_ref().unwrap().phase,
+        PersistentVolumePhase::Available
+    );
 }

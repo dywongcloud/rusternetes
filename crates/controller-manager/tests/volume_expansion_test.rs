@@ -1,10 +1,10 @@
-use rusternetes_common::resources::{
-    PersistentVolume, PersistentVolumeClaim, PersistentVolumeClaimStatus, StorageClass,
-};
 use rusternetes_common::resources::volume::{
     HostPathType, HostPathVolumeSource, PersistentVolumeAccessMode, PersistentVolumeClaimPhase,
-    PersistentVolumeMode, PersistentVolumePhase,
-    PersistentVolumeReclaimPolicy, PersistentVolumeSource, ResourceRequirements,
+    PersistentVolumeMode, PersistentVolumePhase, PersistentVolumeReclaimPolicy,
+    PersistentVolumeSource, ResourceRequirements,
+};
+use rusternetes_common::resources::{
+    PersistentVolume, PersistentVolumeClaim, PersistentVolumeClaimStatus, StorageClass,
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::volume_expansion::VolumeExpansionController;
@@ -149,13 +149,16 @@ async fn test_volume_expansion_allowed() {
     let pv = create_test_pv(&storage, "test-pv", "expandable", 5).await;
 
     // Create bound PVC with 5Gi
-    let mut pvc = create_bound_pvc(&storage, "test-pvc", "default", "expandable", "test-pv", 5).await;
+    let mut pvc =
+        create_bound_pvc(&storage, "test-pvc", "default", "expandable", "test-pv", 5).await;
 
     // Update PVC to request 10Gi (expansion)
-    pvc.spec.resources.requests.as_mut().unwrap().insert(
-        "storage".to_string(),
-        "10Gi".to_string(),
-    );
+    pvc.spec
+        .resources
+        .requests
+        .as_mut()
+        .unwrap()
+        .insert("storage".to_string(), "10Gi".to_string());
 
     let pvc_key = build_key("persistentvolumeclaims", Some("default"), "test-pvc");
     storage.update(&pvc_key, &pvc).await.unwrap();
@@ -167,11 +170,25 @@ async fn test_volume_expansion_allowed() {
     // Verify PVC was expanded
     let updated_pvc: PersistentVolumeClaim = storage.get(&pvc_key).await.unwrap();
     assert_eq!(
-        updated_pvc.status.as_ref().unwrap().capacity.as_ref().unwrap().get("storage"),
+        updated_pvc
+            .status
+            .as_ref()
+            .unwrap()
+            .capacity
+            .as_ref()
+            .unwrap()
+            .get("storage"),
         Some(&"10Gi".to_string())
     );
     assert_eq!(
-        updated_pvc.status.as_ref().unwrap().allocated_resources.as_ref().unwrap().get("storage"),
+        updated_pvc
+            .status
+            .as_ref()
+            .unwrap()
+            .allocated_resources
+            .as_ref()
+            .unwrap()
+            .get("storage"),
         Some(&"10Gi".to_string())
     );
     assert_eq!(updated_pvc.status.as_ref().unwrap().resize_status, None); // Completed
@@ -196,13 +213,23 @@ async fn test_volume_expansion_not_allowed() {
     create_test_pv(&storage, "test-pv-2", "non-expandable", 5).await;
 
     // Create bound PVC with 5Gi
-    let mut pvc = create_bound_pvc(&storage, "test-pvc-2", "default", "non-expandable", "test-pv-2", 5).await;
+    let mut pvc = create_bound_pvc(
+        &storage,
+        "test-pvc-2",
+        "default",
+        "non-expandable",
+        "test-pv-2",
+        5,
+    )
+    .await;
 
     // Update PVC to request 10Gi
-    pvc.spec.resources.requests.as_mut().unwrap().insert(
-        "storage".to_string(),
-        "10Gi".to_string(),
-    );
+    pvc.spec
+        .resources
+        .requests
+        .as_mut()
+        .unwrap()
+        .insert("storage".to_string(), "10Gi".to_string());
 
     let pvc_key = build_key("persistentvolumeclaims", Some("default"), "test-pvc-2");
     storage.update(&pvc_key, &pvc).await.unwrap();
@@ -214,7 +241,14 @@ async fn test_volume_expansion_not_allowed() {
     // Verify PVC was NOT expanded (capacity remains 5Gi)
     let updated_pvc: PersistentVolumeClaim = storage.get(&pvc_key).await.unwrap();
     assert_eq!(
-        updated_pvc.status.as_ref().unwrap().capacity.as_ref().unwrap().get("storage"),
+        updated_pvc
+            .status
+            .as_ref()
+            .unwrap()
+            .capacity
+            .as_ref()
+            .unwrap()
+            .get("storage"),
         Some(&"5Gi".to_string())
     );
 
@@ -271,7 +305,11 @@ async fn test_expansion_only_for_bound_pvcs() {
         }),
     };
 
-    let pvc_key = build_key("persistentvolumeclaims", Some("default"), "test-pvc-unbound");
+    let pvc_key = build_key(
+        "persistentvolumeclaims",
+        Some("default"),
+        "test-pvc-unbound",
+    );
     storage.create(&pvc_key, &pvc).await.unwrap();
 
     // Run expansion controller
@@ -280,7 +318,10 @@ async fn test_expansion_only_for_bound_pvcs() {
 
     // Verify PVC was NOT expanded (still pending, no capacity)
     let updated_pvc: PersistentVolumeClaim = storage.get(&pvc_key).await.unwrap();
-    assert_eq!(updated_pvc.status.as_ref().unwrap().phase, PersistentVolumeClaimPhase::Pending);
+    assert_eq!(
+        updated_pvc.status.as_ref().unwrap().phase,
+        PersistentVolumeClaimPhase::Pending
+    );
     assert!(updated_pvc.status.as_ref().unwrap().capacity.is_none());
 }
 
@@ -295,7 +336,15 @@ async fn test_no_expansion_when_sizes_equal() {
     create_test_pv(&storage, "test-pv-3", "expandable-3", 5).await;
 
     // Create bound PVC with 5Gi (request and capacity match)
-    let pvc = create_bound_pvc(&storage, "test-pvc-3", "default", "expandable-3", "test-pv-3", 5).await;
+    let pvc = create_bound_pvc(
+        &storage,
+        "test-pvc-3",
+        "default",
+        "expandable-3",
+        "test-pv-3",
+        5,
+    )
+    .await;
 
     let pvc_key = build_key("persistentvolumeclaims", Some("default"), "test-pvc-3");
 
@@ -306,9 +355,21 @@ async fn test_no_expansion_when_sizes_equal() {
     // Verify PVC status hasn't changed (no expansion needed)
     let updated_pvc: PersistentVolumeClaim = storage.get(&pvc_key).await.unwrap();
     assert_eq!(
-        updated_pvc.status.as_ref().unwrap().capacity.as_ref().unwrap().get("storage"),
+        updated_pvc
+            .status
+            .as_ref()
+            .unwrap()
+            .capacity
+            .as_ref()
+            .unwrap()
+            .get("storage"),
         Some(&"5Gi".to_string())
     );
-    assert!(updated_pvc.status.as_ref().unwrap().allocated_resources.is_none());
+    assert!(updated_pvc
+        .status
+        .as_ref()
+        .unwrap()
+        .allocated_resources
+        .is_none());
     assert_eq!(updated_pvc.status.as_ref().unwrap().resize_status, None);
 }

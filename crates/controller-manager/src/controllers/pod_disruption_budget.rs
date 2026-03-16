@@ -1,8 +1,10 @@
-use rusternetes_common::resources::{PodDisruptionBudget, PodDisruptionBudgetStatus, IntOrString, Pod};
+use rusternetes_common::resources::{
+    IntOrString, Pod, PodDisruptionBudget, PodDisruptionBudgetStatus,
+};
 use rusternetes_common::types::LabelSelector;
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
-use tracing::{info, warn, error, debug};
+use tracing::{debug, error, info, warn};
 
 pub struct PodDisruptionBudgetController<S: Storage> {
     storage: Arc<S>,
@@ -10,9 +12,7 @@ pub struct PodDisruptionBudgetController<S: Storage> {
 
 impl<S: Storage> PodDisruptionBudgetController<S> {
     pub fn new(storage: Arc<S>) -> Self {
-        Self {
-            storage,
-        }
+        Self { storage }
     }
 
     pub async fn run(&self) -> rusternetes_common::Result<()> {
@@ -47,7 +47,10 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
     async fn reconcile_pdb(&self, pdb: &PodDisruptionBudget) -> rusternetes_common::Result<()> {
         let namespace = pdb.metadata.namespace.as_deref().unwrap_or("default");
 
-        info!("Reconciling PodDisruptionBudget: {}/{}", namespace, pdb.metadata.name);
+        info!(
+            "Reconciling PodDisruptionBudget: {}/{}",
+            namespace, pdb.metadata.name
+        );
 
         // 1. Find all pods matching the selector in the PDB's namespace
         let pods_prefix = build_prefix("pods", Some(namespace));
@@ -102,7 +105,11 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
     }
 
     /// Calculate desired_healthy based on min_available or max_unavailable
-    fn calculate_desired_healthy(&self, pdb: &PodDisruptionBudget, total_pods: i32) -> rusternetes_common::Result<i32> {
+    fn calculate_desired_healthy(
+        &self,
+        pdb: &PodDisruptionBudget,
+        total_pods: i32,
+    ) -> rusternetes_common::Result<i32> {
         if let Some(ref min_available) = pdb.spec.min_available {
             // Use min_available (either int or percentage)
             match min_available {
@@ -110,16 +117,19 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
                 IntOrString::String(s) => {
                     // Parse percentage (e.g., "50%")
                     if let Some(stripped) = s.strip_suffix('%') {
-                        let percentage: f64 = stripped.parse()
-                            .map_err(|_| rusternetes_common::Error::InvalidResource(
-                                format!("Invalid percentage in minAvailable: {}", s)
-                            ))?;
+                        let percentage: f64 = stripped.parse().map_err(|_| {
+                            rusternetes_common::Error::InvalidResource(format!(
+                                "Invalid percentage in minAvailable: {}",
+                                s
+                            ))
+                        })?;
                         let desired = ((total_pods as f64) * (percentage / 100.0)).ceil() as i32;
                         Ok(desired)
                     } else {
-                        Err(rusternetes_common::Error::InvalidResource(
-                            format!("Invalid minAvailable string format: {}", s)
-                        ))
+                        Err(rusternetes_common::Error::InvalidResource(format!(
+                            "Invalid minAvailable string format: {}",
+                            s
+                        )))
                     }
                 }
             }
@@ -130,15 +140,18 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
                 IntOrString::String(s) => {
                     // Parse percentage (e.g., "20%")
                     if let Some(stripped) = s.strip_suffix('%') {
-                        let percentage: f64 = stripped.parse()
-                            .map_err(|_| rusternetes_common::Error::InvalidResource(
-                                format!("Invalid percentage in maxUnavailable: {}", s)
-                            ))?;
+                        let percentage: f64 = stripped.parse().map_err(|_| {
+                            rusternetes_common::Error::InvalidResource(format!(
+                                "Invalid percentage in maxUnavailable: {}",
+                                s
+                            ))
+                        })?;
                         ((total_pods as f64) * (percentage / 100.0)).floor() as i32
                     } else {
-                        return Err(rusternetes_common::Error::InvalidResource(
-                            format!("Invalid maxUnavailable string format: {}", s)
-                        ));
+                        return Err(rusternetes_common::Error::InvalidResource(format!(
+                            "Invalid maxUnavailable string format: {}",
+                            s
+                        )));
                     }
                 }
             };
@@ -147,7 +160,8 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
         } else {
             // No min_available or max_unavailable specified - invalid PDB
             Err(rusternetes_common::Error::InvalidResource(
-                "PodDisruptionBudget must specify either minAvailable or maxUnavailable".to_string()
+                "PodDisruptionBudget must specify either minAvailable or maxUnavailable"
+                    .to_string(),
             ))
         }
     }
@@ -155,7 +169,8 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
     /// Check if a pod is healthy (Running and Ready)
     fn is_pod_healthy(&self, pod: &Pod) -> bool {
         // Check if pod is in Running phase
-        let is_running = pod.status
+        let is_running = pod
+            .status
             .as_ref()
             .map(|s| matches!(s.phase, Some(rusternetes_common::types::Phase::Running)))
             .unwrap_or(false);
@@ -194,14 +209,13 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
 
         true
     }
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_common::resources::{IntOrString, PodDisruptionBudgetSpec, PodSpec, Container};
-    use rusternetes_common::types::{ObjectMeta, TypeMeta, Phase};
+    use rusternetes_common::resources::{Container, IntOrString, PodDisruptionBudgetSpec, PodSpec};
+    use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
     use rusternetes_storage::MemoryStorage;
     use std::collections::HashMap;
 
@@ -305,6 +319,7 @@ mod tests {
                 priority: None,
                 priority_class_name: None,
                 hostname: None,
+                subdomain: None,
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,
@@ -324,18 +339,14 @@ mod tests {
         ]));
 
         let selector = LabelSelector {
-            match_labels: Some(HashMap::from([
-                ("app".to_string(), "web".to_string()),
-            ])),
+            match_labels: Some(HashMap::from([("app".to_string(), "web".to_string())])),
             match_expressions: None,
         };
 
         assert!(controller.pod_matches_selector(&pod, &selector));
 
         let selector_no_match = LabelSelector {
-            match_labels: Some(HashMap::from([
-                ("app".to_string(), "api".to_string()),
-            ])),
+            match_labels: Some(HashMap::from([("app".to_string(), "api".to_string())])),
             match_expressions: None,
         };
 
@@ -382,6 +393,7 @@ mod tests {
                 priority: None,
                 priority_class_name: None,
                 hostname: None,
+                subdomain: None,
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,

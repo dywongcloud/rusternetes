@@ -122,8 +122,14 @@ fn test_external_name_service_serialization() {
     // Deserialize back
     let deserialized: Service = serde_json::from_str(&json).unwrap();
 
-    assert_eq!(deserialized.spec.service_type, Some(ServiceType::ExternalName));
-    assert_eq!(deserialized.spec.external_name, Some("external.example.com".to_string()));
+    assert_eq!(
+        deserialized.spec.service_type,
+        Some(ServiceType::ExternalName)
+    );
+    assert_eq!(
+        deserialized.spec.external_name,
+        Some("external.example.com".to_string())
+    );
 }
 
 // ===== Dual-Stack Service Tests =====
@@ -258,10 +264,7 @@ fn test_service_types() {
 #[test]
 fn test_cluster_ips_for_dual_stack() {
     let mut spec = create_basic_service_spec();
-    spec.cluster_ips = Some(vec![
-        "10.96.0.10".to_string(),
-        "fd00::1234".to_string(),
-    ]);
+    spec.cluster_ips = Some(vec!["10.96.0.10".to_string(), "fd00::1234".to_string()]);
     spec.ip_families = Some(vec![IPFamily::IPv4, IPFamily::IPv6]);
     spec.ip_family_policy = Some(IPFamilyPolicy::RequireDualStack);
 
@@ -291,7 +294,10 @@ fn test_empty_ports_for_external_name() {
 
     // Check if ports is present and empty, or not present at all
     if let Some(ports) = parsed["spec"]["ports"].as_array() {
-        assert!(ports.is_empty(), "ports should be an empty array for ExternalName services");
+        assert!(
+            ports.is_empty(),
+            "ports should be an empty array for ExternalName services"
+        );
     }
 }
 

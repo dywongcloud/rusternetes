@@ -1,5 +1,5 @@
-use crate::types::ObjectMeta;
 use crate::resources::ObjectReference;
+use crate::types::ObjectMeta;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -90,7 +90,13 @@ impl Event {
         let obj_name = involved_object.name.as_deref().unwrap_or("unknown");
         let uid = involved_object.uid.as_deref().unwrap_or("unknown");
         let timestamp = Utc::now().timestamp();
-        format!("{}.{}.{}.{}", obj_name, reason.to_lowercase(), uid[..8.min(uid.len())].to_lowercase(), timestamp)
+        format!(
+            "{}.{}.{}.{}",
+            obj_name,
+            reason.to_lowercase(),
+            uid[..8.min(uid.len())].to_lowercase(),
+            timestamp
+        )
     }
 }
 

@@ -1,15 +1,14 @@
-use crate::{middleware::AuthContext, state::ApiServerState, handlers::watch::WatchParams};
+use crate::{handlers::watch::WatchParams, middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
-    http::{StatusCode, HeaderMap},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::{Service, ServiceType},
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -47,7 +46,10 @@ pub async fn create(
     service.metadata.ensure_creation_timestamp();
 
     // Allocate ClusterIP if needed
-    let service_type = service.spec.service_type.as_ref()
+    let service_type = service
+        .spec
+        .service_type
+        .as_ref()
         .unwrap_or(&ServiceType::ClusterIP);
 
     // Validate ExternalName services
@@ -55,39 +57,51 @@ pub async fn create(
         // ExternalName services must have an externalName field
         if service.spec.external_name.is_none() {
             return Err(rusternetes_common::Error::InvalidResource(
-                "ExternalName service must have spec.externalName set".to_string()
+                "ExternalName service must have spec.externalName set".to_string(),
             ));
         }
         // ExternalName services cannot have a ClusterIP
         if service.spec.cluster_ip.is_some() && service.spec.cluster_ip.as_deref() != Some("None") {
             return Err(rusternetes_common::Error::InvalidResource(
-                "ExternalName service cannot have a ClusterIP".to_string()
+                "ExternalName service cannot have a ClusterIP".to_string(),
             ));
         }
         // ExternalName services don't need ClusterIP allocation
         service.spec.cluster_ip = Some("None".to_string());
     } else {
         // Only allocate ClusterIP for ClusterIP, NodePort, and LoadBalancer services
-        if matches!(service_type, ServiceType::ClusterIP | ServiceType::NodePort | ServiceType::LoadBalancer) {
+        if matches!(
+            service_type,
+            ServiceType::ClusterIP | ServiceType::NodePort | ServiceType::LoadBalancer
+        ) {
             // If ClusterIP is not specified or is "None", allocate one
-            if service.spec.cluster_ip.is_none() || service.spec.cluster_ip.as_deref() == Some("None") {
+            if service.spec.cluster_ip.is_none()
+                || service.spec.cluster_ip.as_deref() == Some("None")
+            {
                 if let Some(allocated_ip) = state.ip_allocator.allocate() {
-                    info!("Allocated ClusterIP {} for service {}/{}", allocated_ip, namespace, service.metadata.name);
+                    info!(
+                        "Allocated ClusterIP {} for service {}/{}",
+                        allocated_ip, namespace, service.metadata.name
+                    );
                     service.spec.cluster_ip = Some(allocated_ip);
                 } else {
                     return Err(rusternetes_common::Error::Internal(
-                        "Failed to allocate ClusterIP: no IPs available".to_string()
+                        "Failed to allocate ClusterIP: no IPs available".to_string(),
                     ));
                 }
             } else {
                 // User specified a ClusterIP, try to allocate it
                 let requested_ip = service.spec.cluster_ip.clone().unwrap();
                 if !state.ip_allocator.allocate_specific(requested_ip.clone()) {
-                    return Err(rusternetes_common::Error::InvalidResource(
-                        format!("ClusterIP {} is already allocated or invalid", requested_ip)
-                    ));
+                    return Err(rusternetes_common::Error::InvalidResource(format!(
+                        "ClusterIP {} is already allocated or invalid",
+                        requested_ip
+                    )));
                 }
-                info!("Allocated specific ClusterIP {} for service {}/{}", requested_ip, namespace, service.metadata.name);
+                info!(
+                    "Allocated specific ClusterIP {} for service {}/{}",
+                    requested_ip, namespace, service.metadata.name
+                );
             }
         }
     }
@@ -96,7 +110,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Service {}/{} validated successfully (not created)", namespace, service.metadata.name);
+        info!(
+            "Dry-run: Service {}/{} validated successfully (not created)",
+            namespace, service.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(service)));
     }
 
@@ -163,7 +180,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Service {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: Service {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(service));
     }
 
@@ -202,33 +222,34 @@ pub async fn delete_service(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: Service {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: Service {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
     // Handle deletion with finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
-        &state.storage,
-        &key,
-        &service,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &service)
+            .await?;
 
     if deleted_immediately {
         // Resource had no finalizers and was deleted immediately
         // Release the ClusterIP back to the pool
         if let Some(cluster_ip) = &service.spec.cluster_ip {
             state.ip_allocator.release(cluster_ip);
-            info!("Released ClusterIP {} from service {}/{}", cluster_ip, namespace, name);
+            info!(
+                "Released ClusterIP {} from service {}/{}",
+                cluster_ip, namespace, name
+            );
         }
         Ok(StatusCode::NO_CONTENT)
     } else {
         // Resource has finalizers and was marked for deletion
         info!(
             "Service {}/{} marked for deletion (has finalizers: {:?})",
-            namespace,
-            name,
-            service.metadata.finalizers
+            namespace, name, service.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -313,11 +334,7 @@ pub async fn list_all_services(
     if params.watch.unwrap_or(false) {
         info!("Watch request for all services");
         return crate::handlers::watch::watch_cluster_scoped::<Service>(
-            state,
-            auth_ctx,
-            "services",
-            "",
-            params,
+            state, auth_ctx, "services", "", params,
         )
         .await;
     }
@@ -325,8 +342,7 @@ pub async fn list_all_services(
     info!("Listing all services");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "services")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "services").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -375,7 +391,10 @@ pub async fn deletecollection_services(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection services in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection services in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "services")
@@ -421,6 +440,9 @@ pub async fn deletecollection_services(
         }
     }
 
-    info!("DeleteCollection completed: {} services deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} services deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

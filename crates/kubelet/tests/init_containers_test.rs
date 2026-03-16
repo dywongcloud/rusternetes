@@ -11,7 +11,11 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             name: format!("init-{}", i),
             image: format!("busybox:{}", i),
             image_pull_policy: Some("IfNotPresent".to_string()),
-            command: Some(vec!["sh".to_string(), "-c".to_string(), format!("echo init-{}", i)]),
+            command: Some(vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                format!("echo init-{}", i),
+            ]),
             args: None,
             ports: None,
             env: None,
@@ -67,6 +71,7 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             priority: None,
             priority_class_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -134,7 +139,10 @@ fn test_init_container_status_sequence() {
     let init_statuses = status.init_container_statuses.as_ref().unwrap();
     assert_eq!(init_statuses.len(), 1);
     assert_eq!(init_statuses[0].name, "init-0");
-    assert!(matches!(init_statuses[0].state, Some(ContainerState::Running { .. })));
+    assert!(matches!(
+        init_statuses[0].state,
+        Some(ContainerState::Running { .. })
+    ));
     assert!(!init_statuses[0].ready); // Init containers are never "ready"
 }
 
@@ -173,18 +181,16 @@ fn test_init_containers_completed_app_starting() {
                 container_id: Some("init-1-container".to_string()),
             },
         ]),
-        container_statuses: Some(vec![
-            ContainerStatus {
-                name: "app-0".to_string(),
-                state: Some(ContainerState::Running {
-                    started_at: Some("2024-01-01T00:00:11Z".to_string()),
-                }),
-                ready: true,
-                restart_count: 0,
-                image: Some("nginx:0".to_string()),
-                container_id: Some("app-0-container".to_string()),
-            },
-        ]),
+        container_statuses: Some(vec![ContainerStatus {
+            name: "app-0".to_string(),
+            state: Some(ContainerState::Running {
+                started_at: Some("2024-01-01T00:00:11Z".to_string()),
+            }),
+            ready: true,
+            restart_count: 0,
+            image: Some("nginx:0".to_string()),
+            container_id: Some("app-0-container".to_string()),
+        }]),
         ephemeral_container_statuses: None,
     });
 
@@ -208,7 +214,10 @@ fn test_init_containers_completed_app_starting() {
     // Verify app container is running
     let app_statuses = status.container_statuses.as_ref().unwrap();
     assert_eq!(app_statuses.len(), 1);
-    assert!(matches!(app_statuses[0].state, Some(ContainerState::Running { .. })));
+    assert!(matches!(
+        app_statuses[0].state,
+        Some(ContainerState::Running { .. })
+    ));
     assert!(app_statuses[0].ready);
 }
 
@@ -223,19 +232,17 @@ fn test_init_container_failure_blocks_app() {
         reason: Some("Init:Error".to_string()),
         pod_ip: None,
         host_ip: None,
-        init_container_statuses: Some(vec![
-            ContainerStatus {
-                name: "init-0".to_string(),
-                state: Some(ContainerState::Terminated {
-                    exit_code: 1,
-                    reason: Some("Error".to_string()),
-                }),
-                ready: false,
-                restart_count: 1,
-                image: Some("busybox:0".to_string()),
-                container_id: Some("init-0-container".to_string()),
-            },
-        ]),
+        init_container_statuses: Some(vec![ContainerStatus {
+            name: "init-0".to_string(),
+            state: Some(ContainerState::Terminated {
+                exit_code: 1,
+                reason: Some("Error".to_string()),
+            }),
+            ready: false,
+            restart_count: 1,
+            image: Some("busybox:0".to_string()),
+            container_id: Some("init-0-container".to_string()),
+        }]),
         container_statuses: None, // App container never started
         ephemeral_container_statuses: None,
     });
@@ -269,19 +276,17 @@ fn test_init_container_restart_count() {
         reason: Some("Init:CrashLoopBackOff".to_string()),
         pod_ip: None,
         host_ip: None,
-        init_container_statuses: Some(vec![
-            ContainerStatus {
-                name: "init-0".to_string(),
-                state: Some(ContainerState::Terminated {
-                    exit_code: 1,
-                    reason: Some("Error".to_string()),
-                }),
-                ready: false,
-                restart_count: 5, // Container has restarted 5 times
-                image: Some("busybox:0".to_string()),
-                container_id: Some("init-0-container-5".to_string()),
-            },
-        ]),
+        init_container_statuses: Some(vec![ContainerStatus {
+            name: "init-0".to_string(),
+            state: Some(ContainerState::Terminated {
+                exit_code: 1,
+                reason: Some("Error".to_string()),
+            }),
+            ready: false,
+            restart_count: 5, // Container has restarted 5 times
+            image: Some("busybox:0".to_string()),
+            container_id: Some("init-0-container-5".to_string()),
+        }]),
         container_statuses: None,
         ephemeral_container_statuses: None,
     });

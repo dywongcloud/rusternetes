@@ -15,9 +15,6 @@ async fn setup_test() -> Arc<MemoryStorage> {
 
     // Clean up test data
 
-
-
-
     storage
 }
 
@@ -35,7 +32,10 @@ async fn test_provisions_pv_for_pvc_with_storageclass() {
         provisioner: "rusternetes.io/hostpath".to_string(),
         parameters: Some({
             let mut params = HashMap::new();
-            params.insert("path".to_string(), "/tmp/rusternetes/test-dynamic-pvs".to_string());
+            params.insert(
+                "path".to_string(),
+                "/tmp/rusternetes/test-dynamic-pvs".to_string(),
+            );
             params
         }),
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
@@ -75,8 +75,8 @@ async fn test_provisions_pv_for_pvc_with_storageclass() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -102,8 +102,14 @@ async fn test_provisions_pv_for_pvc_with_storageclass() {
 
     assert_eq!(pv.spec.storage_class_name, Some("fast".to_string()));
     assert_eq!(pv.spec.capacity.get("storage"), Some(&"5Gi".to_string()));
-    assert_eq!(pv.spec.access_modes, vec![PersistentVolumeAccessMode::ReadWriteOnce]);
-    assert_eq!(pv.spec.persistent_volume_reclaim_policy, Some(PersistentVolumeReclaimPolicy::Delete));
+    assert_eq!(
+        pv.spec.access_modes,
+        vec![PersistentVolumeAccessMode::ReadWriteOnce]
+    );
+    assert_eq!(
+        pv.spec.persistent_volume_reclaim_policy,
+        Some(PersistentVolumeReclaimPolicy::Delete)
+    );
 }
 
 #[tokio::test]
@@ -138,8 +144,8 @@ async fn test_skips_pvc_without_storageclass() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -160,7 +166,10 @@ async fn test_skips_pvc_without_storageclass() {
     let pv_key = build_key("persistentvolumes", None, pv_name);
     let pv: Result<PersistentVolume, _> = storage.get(&pv_key).await;
 
-    assert!(pv.is_err(), "PV should not be created for PVC without storage class");
+    assert!(
+        pv.is_err(),
+        "PV should not be created for PVC without storage class"
+    );
 }
 
 #[tokio::test]
@@ -213,8 +222,8 @@ async fn test_skips_already_bound_pvcs() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Bound,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
             capacity: Some({
@@ -230,7 +239,10 @@ async fn test_skips_already_bound_pvcs() {
     storage.create(&pvc_key, &pvc).await.unwrap();
 
     // Count existing PVs before provisioning
-    let pvs_before: Vec<PersistentVolume> = storage.list("/registry/persistentvolumes/").await.unwrap_or_default();
+    let pvs_before: Vec<PersistentVolume> = storage
+        .list("/registry/persistentvolumes/")
+        .await
+        .unwrap_or_default();
     let count_before = pvs_before.len();
 
     // Run provisioner
@@ -239,10 +251,16 @@ async fn test_skips_already_bound_pvcs() {
     sleep(Duration::from_millis(500)).await;
 
     // Verify no new PV was created
-    let pvs_after: Vec<PersistentVolume> = storage.list("/registry/persistentvolumes/").await.unwrap_or_default();
+    let pvs_after: Vec<PersistentVolume> = storage
+        .list("/registry/persistentvolumes/")
+        .await
+        .unwrap_or_default();
     let count_after = pvs_after.len();
 
-    assert_eq!(count_after, count_before, "No new PV should be created for already bound PVC");
+    assert_eq!(
+        count_after, count_before,
+        "No new PV should be created for already bound PVC"
+    );
 }
 
 #[tokio::test]
@@ -295,8 +313,8 @@ async fn test_honors_storage_capacity() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -304,7 +322,11 @@ async fn test_honors_storage_capacity() {
         }),
     };
 
-    let pvc_key = build_key("persistentvolumeclaims", Some("default"), "capacity-test-pvc");
+    let pvc_key = build_key(
+        "persistentvolumeclaims",
+        Some("default"),
+        "capacity-test-pvc",
+    );
     storage.create(&pvc_key, &pvc).await.unwrap();
 
     // Run provisioner
@@ -373,8 +395,8 @@ async fn test_honors_access_modes() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -395,10 +417,13 @@ async fn test_honors_access_modes() {
     let pv_key = build_key("persistentvolumes", None, pv_name);
     let pv: PersistentVolume = storage.get(&pv_key).await.unwrap();
 
-    assert_eq!(pv.spec.access_modes, vec![
-        PersistentVolumeAccessMode::ReadWriteMany,
-        PersistentVolumeAccessMode::ReadOnlyMany,
-    ]);
+    assert_eq!(
+        pv.spec.access_modes,
+        vec![
+            PersistentVolumeAccessMode::ReadWriteMany,
+            PersistentVolumeAccessMode::ReadOnlyMany,
+        ]
+    );
 }
 
 #[tokio::test]
@@ -451,8 +476,8 @@ async fn test_honors_reclaim_policy_delete() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -473,7 +498,10 @@ async fn test_honors_reclaim_policy_delete() {
     let pv_key = build_key("persistentvolumes", None, pv_name);
     let pv: PersistentVolume = storage.get(&pv_key).await.unwrap();
 
-    assert_eq!(pv.spec.persistent_volume_reclaim_policy, Some(PersistentVolumeReclaimPolicy::Delete));
+    assert_eq!(
+        pv.spec.persistent_volume_reclaim_policy,
+        Some(PersistentVolumeReclaimPolicy::Delete)
+    );
 }
 
 #[tokio::test]
@@ -526,8 +554,8 @@ async fn test_honors_reclaim_policy_retain() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -548,7 +576,10 @@ async fn test_honors_reclaim_policy_retain() {
     let pv_key = build_key("persistentvolumes", None, pv_name);
     let pv: PersistentVolume = storage.get(&pv_key).await.unwrap();
 
-    assert_eq!(pv.spec.persistent_volume_reclaim_policy, Some(PersistentVolumeReclaimPolicy::Retain));
+    assert_eq!(
+        pv.spec.persistent_volume_reclaim_policy,
+        Some(PersistentVolumeReclaimPolicy::Retain)
+    );
 }
 
 #[tokio::test]
@@ -624,7 +655,11 @@ async fn test_restores_pvc_from_snapshot() {
             error: None,
         }),
     };
-    let content_key = build_key("volumesnapshotcontents", None, "snapcontent-default-test-snapshot");
+    let content_key = build_key(
+        "volumesnapshotcontents",
+        None,
+        "snapcontent-default-test-snapshot",
+    );
     storage.create(&content_key, &content).await.unwrap();
 
     // Step 4: Create VolumeSnapshot (ready to use)
@@ -647,7 +682,9 @@ async fn test_restores_pvc_from_snapshot() {
             volume_snapshot_class_name: "hostpath-snapclass".to_string(),
         },
         status: Some(VolumeSnapshotStatus {
-            bound_volume_snapshot_content_name: Some("snapcontent-default-test-snapshot".to_string()),
+            bound_volume_snapshot_content_name: Some(
+                "snapcontent-default-test-snapshot".to_string(),
+            ),
             creation_time: Some(chrono::Utc::now().to_rfc3339()),
             ready_to_use: Some(true),
             restore_size: Some("5Gi".to_string()),
@@ -689,8 +726,8 @@ async fn test_restores_pvc_from_snapshot() {
             }),
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -711,7 +748,10 @@ async fn test_restores_pvc_from_snapshot() {
     let pv_key = build_key("persistentvolumes", None, pv_name);
     let pv: Result<PersistentVolume, _> = storage.get(&pv_key).await;
 
-    assert!(pv.is_ok(), "PV should be created for PVC with snapshot dataSource");
+    assert!(
+        pv.is_ok(),
+        "PV should be created for PVC with snapshot dataSource"
+    );
     let pv = pv.unwrap();
 
     // Verify PV was provisioned correctly
@@ -719,7 +759,14 @@ async fn test_restores_pvc_from_snapshot() {
     assert_eq!(pv.spec.capacity.get("storage"), Some(&"5Gi".to_string()));
 
     // Verify status message indicates snapshot restore
-    assert!(pv.status.as_ref().unwrap().message.as_ref().unwrap().contains("snapshot"));
+    assert!(pv
+        .status
+        .as_ref()
+        .unwrap()
+        .message
+        .as_ref()
+        .unwrap()
+        .contains("snapshot"));
 }
 
 #[tokio::test]
@@ -805,8 +852,8 @@ async fn test_rejects_pvc_restore_from_non_ready_snapshot() {
             }),
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -814,7 +861,11 @@ async fn test_rejects_pvc_restore_from_non_ready_snapshot() {
         }),
     };
 
-    let pvc_key = build_key("persistentvolumeclaims", Some("default"), "fail-restored-pvc");
+    let pvc_key = build_key(
+        "persistentvolumeclaims",
+        Some("default"),
+        "fail-restored-pvc",
+    );
     storage.create(&pvc_key, &pvc).await.unwrap();
 
     // Step 4: Run provisioner - should fail or skip
@@ -829,5 +880,8 @@ async fn test_rejects_pvc_restore_from_non_ready_snapshot() {
     let pv_key = build_key("persistentvolumes", None, pv_name);
     let pv: Result<PersistentVolume, _> = storage.get(&pv_key).await;
 
-    assert!(pv.is_err(), "PV should not be created for PVC with non-ready snapshot");
+    assert!(
+        pv.is_err(),
+        "PV should not be created for PVC with non-ready snapshot"
+    );
 }

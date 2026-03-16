@@ -1,13 +1,10 @@
-use crate::types::ConfigCommands;
 use crate::kubeconfig::KubeConfig;
+use crate::types::ConfigCommands;
 use anyhow::Result;
 use std::path::PathBuf;
 
 /// Execute config commands for kubeconfig management
-pub async fn execute(
-    command: ConfigCommands,
-    kubeconfig_path: Option<&str>,
-) -> Result<()> {
+pub async fn execute(command: ConfigCommands, kubeconfig_path: Option<&str>) -> Result<()> {
     let config_path = if let Some(path) = kubeconfig_path {
         PathBuf::from(path)
     } else {
@@ -44,8 +41,15 @@ pub async fn execute(
             let config = KubeConfig::load_from_file(&config_path)?;
             println!("CURRENT   NAME                CLUSTER             AUTHINFO");
             for ctx in &config.contexts {
-                let current = if ctx.name == config.current_context { "*" } else { " " };
-                println!("{}         {:<20} {:<20} {}", current, ctx.name, ctx.context.cluster, ctx.context.user);
+                let current = if ctx.name == config.current_context {
+                    "*"
+                } else {
+                    " "
+                };
+                println!(
+                    "{}         {:<20} {:<20} {}",
+                    current, ctx.name, ctx.context.cluster, ctx.context.user
+                );
             }
         }
         ConfigCommands::GetClusters {} => {

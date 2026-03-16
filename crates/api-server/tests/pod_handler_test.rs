@@ -3,7 +3,7 @@
 //! Tests all CRUD operations, admission control, finalizers, pagination, filtering, and error cases
 
 use axum::http::StatusCode;
-use rusternetes_common::resources::{Pod, Container, PodSpec};
+use rusternetes_common::resources::{Container, Pod, PodSpec};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
 use std::sync::Arc;
@@ -57,6 +57,7 @@ fn create_test_pod(name: &str, namespace: &str) -> Pod {
             host_ipc: Some(false),
             volumes: None,
             hostname: None,
+            subdomain: None,
             affinity: None,
             scheduler_name: None,
             tolerations: None,
@@ -65,7 +66,8 @@ fn create_test_pod(name: &str, namespace: &str) -> Pod {
             overhead: None,
             topology_spread_constraints: None,
             automount_service_account_token: None,
-            resource_claims: None,        }),
+            resource_claims: None,
+        }),
         status: None,
     }
 }
@@ -119,7 +121,13 @@ async fn test_pod_update() {
     let updated: Pod = storage.get(&key).await.unwrap();
     assert!(updated.metadata.labels.is_some());
     assert_eq!(
-        updated.metadata.labels.as_ref().unwrap().get("app").unwrap(),
+        updated
+            .metadata
+            .labels
+            .as_ref()
+            .unwrap()
+            .get("app")
+            .unwrap(),
         "nginx"
     );
 
@@ -301,8 +309,12 @@ async fn test_pod_list_with_label_selector() {
     );
 
     // Clean up any existing pods from previous test runs (only this test's pods)
-    let _ = storage.delete(&build_key("pods", Some("default"), "pod-label-1")).await;
-    let _ = storage.delete(&build_key("pods", Some("default"), "pod-label-2")).await;
+    let _ = storage
+        .delete(&build_key("pods", Some("default"), "pod-label-1"))
+        .await;
+    let _ = storage
+        .delete(&build_key("pods", Some("default"), "pod-label-2"))
+        .await;
 
     // Create pods with different labels
     let mut pod1 = create_test_pod("pod-label-1", "default");
@@ -336,7 +348,10 @@ async fn test_pod_list_with_label_selector() {
 
     // Should find at least our pod with app=nginx label
     assert!(pods.len() >= 1, "Should find at least 1 pod with app=nginx");
-    assert!(pods.iter().any(|p| p.metadata.name == "pod-label-1"), "Should find pod-label-1");
+    assert!(
+        pods.iter().any(|p| p.metadata.name == "pod-label-1"),
+        "Should find pod-label-1"
+    );
 
     // Clean up
     storage
@@ -386,10 +401,7 @@ async fn test_pod_with_multiple_containers() {
     // Retrieve and verify
     let retrieved: Pod = storage.get(&key).await.unwrap();
     assert_eq!(retrieved.spec.as_ref().unwrap().containers.len(), 2);
-    assert_eq!(
-        retrieved.spec.as_ref().unwrap().containers[0].name,
-        "nginx"
-    );
+    assert_eq!(retrieved.spec.as_ref().unwrap().containers[0].name, "nginx");
     assert_eq!(
         retrieved.spec.as_ref().unwrap().containers[1].name,
         "sidecar"

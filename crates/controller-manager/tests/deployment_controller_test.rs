@@ -3,7 +3,7 @@
 
 use rusternetes_common::resources::pod::*;
 use rusternetes_common::resources::*;
-use rusternetes_common::types::{ObjectMeta, TypeMeta, LabelSelector};
+use rusternetes_common::types::{LabelSelector, ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::deployment::DeploymentController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -74,6 +74,7 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                     priority: None,
                     priority_class_name: None,
                     hostname: None,
+                    subdomain: None,
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
@@ -112,7 +113,10 @@ async fn test_deployment_creates_replicaset() {
     sleep(Duration::from_millis(500)).await;
 
     // Verify 1 ReplicaSet created (Deployment -> ReplicaSet -> Pods is the correct architecture)
-    let replicasets: Vec<ReplicaSet> = storage.list("/registry/replicasets/default/").await.unwrap();
+    let replicasets: Vec<ReplicaSet> = storage
+        .list("/registry/replicasets/default/")
+        .await
+        .unwrap();
     assert_eq!(replicasets.len(), 1, "Should create 1 ReplicaSet");
 
     // Verify ReplicaSet has correct spec
@@ -120,7 +124,11 @@ async fn test_deployment_creates_replicaset() {
     assert_eq!(rs.spec.replicas, 3, "ReplicaSet should have 3 replicas");
 
     // Verify ReplicaSet has owner reference to Deployment
-    let owner_refs = rs.metadata.owner_references.as_ref().expect("ReplicaSet should have owner references");
+    let owner_refs = rs
+        .metadata
+        .owner_references
+        .as_ref()
+        .expect("ReplicaSet should have owner references");
     assert_eq!(owner_refs.len(), 1);
     assert_eq!(owner_refs[0].kind, "Deployment");
     assert_eq!(owner_refs[0].name, "nginx");
@@ -142,9 +150,15 @@ async fn test_deployment_scales_up_replicaset() {
     sleep(Duration::from_millis(500)).await;
 
     // Verify 1 ReplicaSet created with 2 replicas
-    let replicasets: Vec<ReplicaSet> = storage.list("/registry/replicasets/default/").await.unwrap();
+    let replicasets: Vec<ReplicaSet> = storage
+        .list("/registry/replicasets/default/")
+        .await
+        .unwrap();
     assert_eq!(replicasets.len(), 1, "Should create 1 ReplicaSet");
-    assert_eq!(replicasets[0].spec.replicas, 2, "ReplicaSet should have 2 replicas");
+    assert_eq!(
+        replicasets[0].spec.replicas, 2,
+        "ReplicaSet should have 2 replicas"
+    );
 
     // Update deployment to 5 replicas
     deployment.spec.replicas = 5;
@@ -155,9 +169,15 @@ async fn test_deployment_scales_up_replicaset() {
     sleep(Duration::from_millis(500)).await;
 
     // Verify ReplicaSet scaled to 5 replicas
-    let replicasets: Vec<ReplicaSet> = storage.list("/registry/replicasets/default/").await.unwrap();
+    let replicasets: Vec<ReplicaSet> = storage
+        .list("/registry/replicasets/default/")
+        .await
+        .unwrap();
     assert_eq!(replicasets.len(), 1, "Should still have 1 ReplicaSet");
-    assert_eq!(replicasets[0].spec.replicas, 5, "ReplicaSet should scale to 5 replicas");
+    assert_eq!(
+        replicasets[0].spec.replicas, 5,
+        "ReplicaSet should scale to 5 replicas"
+    );
 }
 
 #[tokio::test]
@@ -175,9 +195,15 @@ async fn test_deployment_scales_down_replicaset() {
     sleep(Duration::from_millis(500)).await;
 
     // Verify ReplicaSet created with 5 replicas
-    let replicasets: Vec<ReplicaSet> = storage.list("/registry/replicasets/default/").await.unwrap();
+    let replicasets: Vec<ReplicaSet> = storage
+        .list("/registry/replicasets/default/")
+        .await
+        .unwrap();
     assert_eq!(replicasets.len(), 1, "Should create 1 ReplicaSet");
-    assert_eq!(replicasets[0].spec.replicas, 5, "ReplicaSet should have 5 replicas");
+    assert_eq!(
+        replicasets[0].spec.replicas, 5,
+        "ReplicaSet should have 5 replicas"
+    );
 
     // Update deployment to 2 replicas
     deployment.spec.replicas = 2;
@@ -188,9 +214,15 @@ async fn test_deployment_scales_down_replicaset() {
     sleep(Duration::from_millis(500)).await;
 
     // Verify ReplicaSet scaled down to 2 replicas
-    let replicasets: Vec<ReplicaSet> = storage.list("/registry/replicasets/default/").await.unwrap();
+    let replicasets: Vec<ReplicaSet> = storage
+        .list("/registry/replicasets/default/")
+        .await
+        .unwrap();
     assert_eq!(replicasets.len(), 1, "Should still have 1 ReplicaSet");
-    assert_eq!(replicasets[0].spec.replicas, 2, "ReplicaSet should scale down to 2 replicas");
+    assert_eq!(
+        replicasets[0].spec.replicas, 2,
+        "ReplicaSet should scale down to 2 replicas"
+    );
 }
 
 #[tokio::test]
@@ -208,7 +240,10 @@ async fn test_deployment_template_change_creates_new_replicaset() {
     sleep(Duration::from_millis(500)).await;
 
     // Verify 1 ReplicaSet created
-    let replicasets: Vec<ReplicaSet> = storage.list("/registry/replicasets/default/").await.unwrap();
+    let replicasets: Vec<ReplicaSet> = storage
+        .list("/registry/replicasets/default/")
+        .await
+        .unwrap();
     assert_eq!(replicasets.len(), 1, "Should create 1 ReplicaSet");
     let old_rs_name = replicasets[0].metadata.name.clone();
 
@@ -221,15 +256,34 @@ async fn test_deployment_template_change_creates_new_replicaset() {
     sleep(Duration::from_millis(500)).await;
 
     // Verify 2 ReplicaSets exist (old scaled to 0, new with 3 replicas)
-    let replicasets: Vec<ReplicaSet> = storage.list("/registry/replicasets/default/").await.unwrap();
-    assert_eq!(replicasets.len(), 2, "Should have 2 ReplicaSets after template change");
+    let replicasets: Vec<ReplicaSet> = storage
+        .list("/registry/replicasets/default/")
+        .await
+        .unwrap();
+    assert_eq!(
+        replicasets.len(),
+        2,
+        "Should have 2 ReplicaSets after template change"
+    );
 
     // Find new and old ReplicaSets
-    let new_rs = replicasets.iter().find(|rs| rs.metadata.name != old_rs_name).expect("Should find new ReplicaSet");
-    let old_rs = replicasets.iter().find(|rs| rs.metadata.name == old_rs_name).expect("Should find old ReplicaSet");
+    let new_rs = replicasets
+        .iter()
+        .find(|rs| rs.metadata.name != old_rs_name)
+        .expect("Should find new ReplicaSet");
+    let old_rs = replicasets
+        .iter()
+        .find(|rs| rs.metadata.name == old_rs_name)
+        .expect("Should find old ReplicaSet");
 
-    assert_eq!(new_rs.spec.replicas, 3, "New ReplicaSet should have 3 replicas");
-    assert_eq!(old_rs.spec.replicas, 0, "Old ReplicaSet should be scaled to 0");
+    assert_eq!(
+        new_rs.spec.replicas, 3,
+        "New ReplicaSet should have 3 replicas"
+    );
+    assert_eq!(
+        old_rs.spec.replicas, 0,
+        "Old ReplicaSet should be scaled to 0"
+    );
 }
 
 #[tokio::test]
@@ -247,9 +301,15 @@ async fn test_deployment_zero_replicas() {
     sleep(Duration::from_millis(500)).await;
 
     // Verify ReplicaSet created with 0 replicas
-    let replicasets: Vec<ReplicaSet> = storage.list("/registry/replicasets/default/").await.unwrap();
+    let replicasets: Vec<ReplicaSet> = storage
+        .list("/registry/replicasets/default/")
+        .await
+        .unwrap();
     assert_eq!(replicasets.len(), 1, "Should create 1 ReplicaSet");
-    assert_eq!(replicasets[0].spec.replicas, 0, "ReplicaSet should have 0 replicas");
+    assert_eq!(
+        replicasets[0].spec.replicas, 0,
+        "ReplicaSet should have 0 replicas"
+    );
 }
 
 #[tokio::test]
@@ -272,12 +332,24 @@ async fn test_deployment_multiple_namespaces() {
     sleep(Duration::from_millis(500)).await;
 
     // Verify ReplicaSets in namespace1
-    let rs1: Vec<ReplicaSet> = storage.list("/registry/replicasets/namespace1/").await.unwrap();
+    let rs1: Vec<ReplicaSet> = storage
+        .list("/registry/replicasets/namespace1/")
+        .await
+        .unwrap();
     assert_eq!(rs1.len(), 1, "Should create 1 ReplicaSet in namespace1");
-    assert_eq!(rs1[0].spec.replicas, 2, "Namespace1 ReplicaSet should have 2 replicas");
+    assert_eq!(
+        rs1[0].spec.replicas, 2,
+        "Namespace1 ReplicaSet should have 2 replicas"
+    );
 
     // Verify ReplicaSets in namespace2
-    let rs2: Vec<ReplicaSet> = storage.list("/registry/replicasets/namespace2/").await.unwrap();
+    let rs2: Vec<ReplicaSet> = storage
+        .list("/registry/replicasets/namespace2/")
+        .await
+        .unwrap();
     assert_eq!(rs2.len(), 1, "Should create 1 ReplicaSet in namespace2");
-    assert_eq!(rs2[0].spec.replicas, 3, "Namespace2 ReplicaSet should have 3 replicas");
+    assert_eq!(
+        rs2[0].spec.replicas, 3,
+        "Namespace2 ReplicaSet should have 3 replicas"
+    );
 }

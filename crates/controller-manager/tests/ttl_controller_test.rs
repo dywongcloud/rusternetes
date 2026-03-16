@@ -3,7 +3,9 @@
 
 use chrono::{Duration, Utc};
 use rusternetes_common::resources::pod::*;
-use rusternetes_common::resources::workloads::{Job, JobCondition, JobSpec, JobStatus, PodTemplateSpec};
+use rusternetes_common::resources::workloads::{
+    Job, JobCondition, JobSpec, JobStatus, PodTemplateSpec,
+};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::ttl_controller::TTLController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
@@ -70,6 +72,7 @@ fn create_test_job(name: &str, namespace: &str, ttl_seconds: i32, finished: bool
                     priority: None,
                     priority_class_name: None,
                     hostname: None,
+                    subdomain: None,
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
@@ -195,8 +198,7 @@ async fn test_ttl_controller_deletes_job_pods() {
                 kind: "Pod".to_string(),
                 api_version: "v1".to_string(),
             },
-            metadata: ObjectMeta::new(&format!("job-pod-{}", i))
-                .with_namespace("default"),
+            metadata: ObjectMeta::new(&format!("job-pod-{}", i)).with_namespace("default"),
             spec: Some(PodSpec {
                 containers: vec![Container {
                     name: "test".to_string(),
@@ -226,6 +228,7 @@ async fn test_ttl_controller_deletes_job_pods() {
                 priority: None,
                 priority_class_name: None,
                 hostname: None,
+                subdomain: None,
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,
@@ -249,15 +252,13 @@ async fn test_ttl_controller_deletes_job_pods() {
         };
 
         // Add owner reference to the job
-        pod.metadata.owner_references = Some(vec![
-            rusternetes_common::types::OwnerReference::new(
-                "batch/v1",
-                "Job",
-                "job-with-pods",
-                &job_uid,
-            )
-            .with_controller(true),
-        ]);
+        pod.metadata.owner_references = Some(vec![rusternetes_common::types::OwnerReference::new(
+            "batch/v1",
+            "Job",
+            "job-with-pods",
+            &job_uid,
+        )
+        .with_controller(true)]);
 
         let pod_key = build_key("pods", Some("default"), &format!("job-pod-{}", i));
         storage.create(&pod_key, &pod).await.unwrap();
@@ -326,10 +327,10 @@ async fn test_ttl_controller_handles_multiple_jobs() {
 
     // Create multiple jobs with different TTLs
     let jobs = vec![
-        ("expired-1", 30, true),  // Expired (finished 120s ago, TTL 30s)
-        ("expired-2", 60, true),  // Expired (finished 120s ago, TTL 60s)
-        ("recent", 3600, true),   // Not expired (TTL 1 hour)
-        ("running", 60, false),   // Running (not finished)
+        ("expired-1", 30, true), // Expired (finished 120s ago, TTL 30s)
+        ("expired-2", 60, true), // Expired (finished 120s ago, TTL 60s)
+        ("recent", 3600, true),  // Not expired (TTL 1 hour)
+        ("running", 60, false),  // Running (not finished)
     ];
 
     for (name, ttl, finished) in &jobs {
@@ -350,12 +351,24 @@ async fn test_ttl_controller_handles_multiple_jobs() {
     sleep(TokioDuration::from_millis(500)).await;
 
     // Verify expired jobs are deleted
-    assert!(storage.get::<Job>(&build_key("jobs", Some("default"), "expired-1")).await.is_err());
-    assert!(storage.get::<Job>(&build_key("jobs", Some("default"), "expired-2")).await.is_err());
+    assert!(storage
+        .get::<Job>(&build_key("jobs", Some("default"), "expired-1"))
+        .await
+        .is_err());
+    assert!(storage
+        .get::<Job>(&build_key("jobs", Some("default"), "expired-2"))
+        .await
+        .is_err());
 
     // Verify non-expired jobs still exist
-    assert!(storage.get::<Job>(&build_key("jobs", Some("default"), "recent")).await.is_ok());
-    assert!(storage.get::<Job>(&build_key("jobs", Some("default"), "running")).await.is_ok());
+    assert!(storage
+        .get::<Job>(&build_key("jobs", Some("default"), "recent"))
+        .await
+        .is_ok());
+    assert!(storage
+        .get::<Job>(&build_key("jobs", Some("default"), "running"))
+        .await
+        .is_ok());
 }
 
 #[tokio::test]
@@ -376,7 +389,10 @@ async fn test_ttl_zero_immediate_cleanup() {
 
     // Verify job is deleted immediately
     let result = storage.get::<Job>(&job_key).await;
-    assert!(result.is_err(), "Job with TTL=0 should be deleted immediately");
+    assert!(
+        result.is_err(),
+        "Job with TTL=0 should be deleted immediately"
+    );
 }
 
 #[tokio::test]

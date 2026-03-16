@@ -36,7 +36,11 @@ impl std::fmt::Display for GetError {
 impl std::error::Error for GetError {}
 
 impl ApiClient {
-    pub fn new(base_url: &str, insecure_skip_tls_verify: bool, token: Option<String>) -> Result<Self> {
+    pub fn new(
+        base_url: &str,
+        insecure_skip_tls_verify: bool,
+        token: Option<String>,
+    ) -> Result<Self> {
         let client = if insecure_skip_tls_verify {
             Client::builder()
                 .danger_accept_invalid_certs(true)
@@ -74,10 +78,17 @@ impl ApiClient {
 
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            return Err(GetError::Other(anyhow::anyhow!("Request failed with status {}: {}", status, body)));
+            return Err(GetError::Other(anyhow::anyhow!(
+                "Request failed with status {}: {}",
+                status,
+                body
+            )));
         }
 
-        response.json().await.map_err(|e| GetError::Other(anyhow::anyhow!("Failed to parse response: {}", e)))
+        response
+            .json()
+            .await
+            .map_err(|e| GetError::Other(anyhow::anyhow!("Failed to parse response: {}", e)))
     }
 
     /// Get a list of resources, automatically unwrapping the Kubernetes List wrapper
@@ -116,10 +127,7 @@ impl ApiClient {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
 
-        let response = request
-            .send()
-            .await
-            .context("Failed to send PUT request")?;
+        let response = request.send().await.context("Failed to send PUT request")?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -159,7 +167,9 @@ impl ApiClient {
         content_type: &str,
     ) -> Result<R> {
         let url = format!("{}{}", self.base_url, path);
-        let mut request = self.client.patch(&url)
+        let mut request = self
+            .client
+            .patch(&url)
             .header("Content-Type", content_type)
             .json(body);
 
@@ -190,10 +200,7 @@ impl ApiClient {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
 
-        let response = request
-            .send()
-            .await
-            .context("Failed to send GET request")?;
+        let response = request.send().await.context("Failed to send GET request")?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -201,7 +208,10 @@ impl ApiClient {
             anyhow::bail!("Request failed with status {}: {}", status, body);
         }
 
-        response.text().await.context("Failed to read response text")
+        response
+            .text()
+            .await
+            .context("Failed to read response text")
     }
 
     /// Convert HTTP(S) base URL to WebSocket URL for streaming endpoints

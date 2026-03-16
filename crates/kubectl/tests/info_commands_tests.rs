@@ -9,15 +9,9 @@ mod version_tests {
             format!("v{}.{} ({})", major, minor, git_version)
         }
 
-        assert_eq!(
-            format_version("1", "35", "v1.35.0"),
-            "v1.35 (v1.35.0)"
-        );
+        assert_eq!(format_version("1", "35", "v1.35.0"), "v1.35 (v1.35.0)");
 
-        assert_eq!(
-            format_version("1", "34", "v1.34.2"),
-            "v1.34 (v1.34.2)"
-        );
+        assert_eq!(format_version("1", "34", "v1.34.2"), "v1.34 (v1.34.2)");
     }
 
     #[test]
@@ -53,7 +47,10 @@ mod version_tests {
             if short {
                 version.to_string()
             } else {
-                format!("Version: {}\nCommit: abc123\nBuild Date: 2024-01-01", version)
+                format!(
+                    "Version: {}\nCommit: abc123\nBuild Date: 2024-01-01",
+                    version
+                )
             }
         }
 
@@ -83,7 +80,10 @@ mod cluster_info_tests {
         }
 
         assert_eq!(format_component_status("etcd-0", true), "etcd-0: Healthy");
-        assert_eq!(format_component_status("controller-manager", false), "controller-manager: Unhealthy");
+        assert_eq!(
+            format_component_status("controller-manager", false),
+            "controller-manager: Unhealthy"
+        );
     }
 
     #[test]
@@ -101,16 +101,14 @@ mod cluster_info_tests {
         fn parse_server_url(url: &str) -> Result<(&str, u16), String> {
             if let Some(stripped) = url.strip_prefix("https://") {
                 if let Some((host, port)) = stripped.split_once(':') {
-                    let port_num = port.parse::<u16>()
-                        .map_err(|_| "Invalid port")?;
+                    let port_num = port.parse::<u16>().map_err(|_| "Invalid port")?;
                     Ok((host, port_num))
                 } else {
                     Ok((stripped, 443)) // Default HTTPS port
                 }
             } else if let Some(stripped) = url.strip_prefix("http://") {
                 if let Some((host, port)) = stripped.split_once(':') {
-                    let port_num = port.parse::<u16>()
-                        .map_err(|_| "Invalid port")?;
+                    let port_num = port.parse::<u16>().map_err(|_| "Invalid port")?;
                     Ok((host, port_num))
                 } else {
                     Ok((stripped, 80)) // Default HTTP port
@@ -120,9 +118,18 @@ mod cluster_info_tests {
             }
         }
 
-        assert_eq!(parse_server_url("https://localhost:6443").unwrap(), ("localhost", 6443));
-        assert_eq!(parse_server_url("https://api.example.com").unwrap(), ("api.example.com", 443));
-        assert_eq!(parse_server_url("http://localhost:8080").unwrap(), ("localhost", 8080));
+        assert_eq!(
+            parse_server_url("https://localhost:6443").unwrap(),
+            ("localhost", 6443)
+        );
+        assert_eq!(
+            parse_server_url("https://api.example.com").unwrap(),
+            ("api.example.com", 443)
+        );
+        assert_eq!(
+            parse_server_url("http://localhost:8080").unwrap(),
+            ("localhost", 8080)
+        );
         assert!(parse_server_url("ftp://invalid").is_err());
     }
 }
@@ -161,13 +168,18 @@ mod api_resources_tests {
 
     #[test]
     fn test_namespaced_flag() {
-        fn filter_namespaced<'a>(resources: &'a [(&'a str, bool)], namespaced: Option<bool>) -> Vec<&'a str> {
+        fn filter_namespaced<'a>(
+            resources: &'a [(&'a str, bool)],
+            namespaced: Option<bool>,
+        ) -> Vec<&'a str> {
             match namespaced {
-                Some(true) => resources.iter()
+                Some(true) => resources
+                    .iter()
                     .filter(|(_, ns)| *ns)
                     .map(|(name, _)| *name)
                     .collect(),
-                Some(false) => resources.iter()
+                Some(false) => resources
+                    .iter()
                     .filter(|(_, ns)| !*ns)
                     .map(|(name, _)| *name)
                     .collect(),
@@ -201,7 +213,8 @@ mod api_resources_tests {
             api_group: Option<&str>,
         ) -> Vec<&'a str> {
             match api_group {
-                Some(group) => resources.iter()
+                Some(group) => resources
+                    .iter()
                     .filter(|(_, g)| *g == group)
                     .map(|(name, _)| *name)
                     .collect(),
@@ -234,10 +247,7 @@ mod api_resources_tests {
             "get, list, watch, create, update, patch, delete"
         );
 
-        assert_eq!(
-            format_verbs(&["get", "list", "watch"]),
-            "get, list, watch"
-        );
+        assert_eq!(format_verbs(&["get", "list", "watch"]), "get, list, watch");
     }
 
     #[test]
@@ -287,15 +297,9 @@ mod api_versions_tests {
             versions.first().unwrap_or(&"")
         }
 
-        assert_eq!(
-            get_preferred_version(&["v1beta1", "v1beta2", "v1"]),
-            "v1"
-        );
+        assert_eq!(get_preferred_version(&["v1beta1", "v1beta2", "v1"]), "v1");
 
-        assert_eq!(
-            get_preferred_version(&["v1alpha1", "v1beta1"]),
-            "v1beta1"
-        );
+        assert_eq!(get_preferred_version(&["v1alpha1", "v1beta1"]), "v1beta1");
     }
 
     #[test]
@@ -310,7 +314,10 @@ mod api_versions_tests {
 
         assert_eq!(parse_group_version("apps/v1"), ("apps", "v1"));
         assert_eq!(parse_group_version("v1"), ("", "v1"));
-        assert_eq!(parse_group_version("networking.k8s.io/v1"), ("networking.k8s.io", "v1"));
+        assert_eq!(
+            parse_group_version("networking.k8s.io/v1"),
+            ("networking.k8s.io", "v1")
+        );
     }
 }
 
@@ -341,12 +348,7 @@ mod explain_tests {
             format!("{} <{}> {}\n  {}", field, field_type, req, description)
         }
 
-        let desc = format_field_description(
-            "replicas",
-            "integer",
-            "Number of desired pods",
-            false,
-        );
+        let desc = format_field_description("replicas", "integer", "Number of desired pods", false);
 
         assert!(desc.contains("replicas"));
         assert!(desc.contains("integer"));

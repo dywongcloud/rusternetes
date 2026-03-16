@@ -17,6 +17,8 @@
 //! - Channel 4: Terminal resize events
 
 use anyhow::{Context, Result};
+use axum::body::Body;
+use axum::http::HeaderMap;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use hyper::{
     body::Incoming,
@@ -29,8 +31,6 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tracing::{debug, info};
-use axum::body::Body;
-use axum::http::HeaderMap;
 
 /// SPDY stream channels
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,7 +170,10 @@ impl SpdyConnection {
                     buffer.extend_from_slice(&buf[..n]);
                 }
                 Err(e) => {
-                    return Err(anyhow::anyhow!("Failed to read from SPDY connection: {}", e));
+                    return Err(anyhow::anyhow!(
+                        "Failed to read from SPDY connection: {}",
+                        e
+                    ));
                 }
             }
         }
@@ -185,7 +188,9 @@ impl SpdyConnection {
             .await
             .context("Failed to write SPDY frame")?;
 
-        conn.flush().await.context("Failed to flush SPDY connection")?;
+        conn.flush()
+            .await
+            .context("Failed to flush SPDY connection")?;
 
         Ok(())
     }
@@ -198,7 +203,8 @@ impl SpdyConnection {
 
     /// Write error message
     pub async fn write_error(&self, error_msg: &str) -> Result<()> {
-        self.write_channel(SpdyChannel::Error, error_msg.as_bytes().to_vec()).await
+        self.write_channel(SpdyChannel::Error, error_msg.as_bytes().to_vec())
+            .await
     }
 
     /// Close the connection
@@ -304,7 +310,10 @@ mod tests {
 
         // Verify encoding format
         assert_eq!(encoded[0], 2); // Stdout channel
-        assert_eq!(u32::from_be_bytes([encoded[1], encoded[2], encoded[3], encoded[4]]), 12); // Length
+        assert_eq!(
+            u32::from_be_bytes([encoded[1], encoded[2], encoded[3], encoded[4]]),
+            12
+        ); // Length
 
         // Decode
         let (decoded, remaining) = SpdyFrame::decode(encoded).unwrap().unwrap();

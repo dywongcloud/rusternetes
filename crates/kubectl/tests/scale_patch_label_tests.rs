@@ -24,11 +24,19 @@ mod scale_tests {
     #[test]
     fn test_scale_resource_type_support() {
         fn supports_scaling(resource_type: &str) -> bool {
-            matches!(resource_type,
-                "deployment" | "deployments" | "deploy" |
-                "replicaset" | "replicasets" | "rs" |
-                "statefulset" | "statefulsets" | "sts" |
-                "replicationcontroller" | "rc"
+            matches!(
+                resource_type,
+                "deployment"
+                    | "deployments"
+                    | "deploy"
+                    | "replicaset"
+                    | "replicasets"
+                    | "rs"
+                    | "statefulset"
+                    | "statefulsets"
+                    | "sts"
+                    | "replicationcontroller"
+                    | "rc"
             )
         }
 
@@ -42,12 +50,28 @@ mod scale_tests {
 
     #[test]
     fn test_scale_path_generation() {
-        fn get_scale_path(resource_type: &str, namespace: &str, name: &str) -> Result<String, String> {
+        fn get_scale_path(
+            resource_type: &str,
+            namespace: &str,
+            name: &str,
+        ) -> Result<String, String> {
             match resource_type {
-                "deployment" => Ok(format!("/apis/apps/v1/namespaces/{}/deployments/{}/scale", namespace, name)),
-                "statefulset" => Ok(format!("/apis/apps/v1/namespaces/{}/statefulsets/{}/scale", namespace, name)),
-                "replicaset" => Ok(format!("/apis/apps/v1/namespaces/{}/replicasets/{}/scale", namespace, name)),
-                _ => Err(format!("Resource {} does not support scaling", resource_type)),
+                "deployment" => Ok(format!(
+                    "/apis/apps/v1/namespaces/{}/deployments/{}/scale",
+                    namespace, name
+                )),
+                "statefulset" => Ok(format!(
+                    "/apis/apps/v1/namespaces/{}/statefulsets/{}/scale",
+                    namespace, name
+                )),
+                "replicaset" => Ok(format!(
+                    "/apis/apps/v1/namespaces/{}/replicasets/{}/scale",
+                    namespace, name
+                )),
+                _ => Err(format!(
+                    "Resource {} does not support scaling",
+                    resource_type
+                )),
             }
         }
 
@@ -115,10 +139,7 @@ mod patch_tests {
             format!("{{{}}}", patches.join(", "))
         }
 
-        let patch = create_strategic_patch(vec![
-            ("replicas", "5"),
-            ("minReadySeconds", "10"),
-        ]);
+        let patch = create_strategic_patch(vec![("replicas", "5"), ("minReadySeconds", "10")]);
 
         assert!(patch.contains("replicas"));
         assert!(patch.contains("5"));
@@ -138,7 +159,10 @@ mod patch_tests {
 
         assert_eq!(get_content_type("json"), "application/json-patch+json");
         assert_eq!(get_content_type("merge"), "application/merge-patch+json");
-        assert_eq!(get_content_type("strategic"), "application/strategic-merge-patch+json");
+        assert_eq!(
+            get_content_type("strategic"),
+            "application/strategic-merge-patch+json"
+        );
     }
 }
 
@@ -160,9 +184,18 @@ mod label_tests {
             }
         }
 
-        assert_eq!(parse_label("app=nginx").unwrap(), ("app".to_string(), Some("nginx".to_string())));
-        assert_eq!(parse_label("env=prod").unwrap(), ("env".to_string(), Some("prod".to_string())));
-        assert_eq!(parse_label("deprecated-").unwrap(), ("deprecated".to_string(), None));
+        assert_eq!(
+            parse_label("app=nginx").unwrap(),
+            ("app".to_string(), Some("nginx".to_string()))
+        );
+        assert_eq!(
+            parse_label("env=prod").unwrap(),
+            ("env".to_string(), Some("prod".to_string()))
+        );
+        assert_eq!(
+            parse_label("deprecated-").unwrap(),
+            ("deprecated".to_string(), None)
+        );
         assert!(parse_label("invalid").is_err());
     }
 
@@ -170,7 +203,11 @@ mod label_tests {
     fn test_label_validation() {
         fn validate_label_key(key: &str) -> bool {
             // Simplified validation
-            !key.is_empty() && key.len() <= 253 && key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '/')
+            !key.is_empty()
+                && key.len() <= 253
+                && key
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '/')
         }
 
         assert!(validate_label_key("app"));
@@ -182,7 +219,11 @@ mod label_tests {
 
     #[test]
     fn test_label_overwrite_flag() {
-        fn should_overwrite(existing_labels: &HashMap<String, String>, key: &str, overwrite: bool) -> bool {
+        fn should_overwrite(
+            existing_labels: &HashMap<String, String>,
+            key: &str,
+            overwrite: bool,
+        ) -> bool {
             !existing_labels.contains_key(key) || overwrite
         }
 
@@ -201,8 +242,12 @@ mod label_tests {
 
             for (key, value) in labels {
                 match value {
-                    Some(v) => { result.insert(key.to_string(), v.to_string()); },
-                    None => { result.remove(key); },
+                    Some(v) => {
+                        result.insert(key.to_string(), v.to_string());
+                    }
+                    None => {
+                        result.remove(key);
+                    }
                 }
             }
 
@@ -285,8 +330,12 @@ mod annotate_tests {
 
             for (key, value) in annotations {
                 match value {
-                    Some(v) => { result.insert(key.to_string(), v.to_string()); },
-                    None => { result.remove(key); },
+                    Some(v) => {
+                        result.insert(key.to_string(), v.to_string());
+                    }
+                    None => {
+                        result.remove(key);
+                    }
                 }
             }
 

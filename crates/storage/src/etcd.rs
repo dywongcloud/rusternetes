@@ -71,12 +71,14 @@ impl Storage for EtcdStorage {
 
         if let Some(kv) = get_resp.kvs().first() {
             let mod_revision = kv.mod_revision();
-            let mut resource: serde_json::Value = serde_json::from_str(&json)
-                .map_err(|e| Error::Serialization(e))?;
+            let mut resource: serde_json::Value =
+                serde_json::from_str(&json).map_err(|e| Error::Serialization(e))?;
 
             // Set resourceVersion in metadata if it exists
             if let Some(metadata) = resource.get_mut("metadata") {
-                metadata["resourceVersion"] = serde_json::json!(crate::concurrency::mod_revision_to_resource_version(mod_revision));
+                metadata["resourceVersion"] = serde_json::json!(
+                    crate::concurrency::mod_revision_to_resource_version(mod_revision)
+                );
             }
 
             serde_json::from_value(resource).map_err(|e| Error::Serialization(e))
@@ -103,11 +105,13 @@ impl Storage for EtcdStorage {
 
             // Add resourceVersion from etcd mod_revision
             let mod_revision = kv.mod_revision();
-            let mut resource: serde_json::Value = serde_json::from_str(json)
-                .map_err(|e| Error::Serialization(e))?;
+            let mut resource: serde_json::Value =
+                serde_json::from_str(json).map_err(|e| Error::Serialization(e))?;
 
             if let Some(metadata) = resource.get_mut("metadata") {
-                metadata["resourceVersion"] = serde_json::json!(crate::concurrency::mod_revision_to_resource_version(mod_revision));
+                metadata["resourceVersion"] = serde_json::json!(
+                    crate::concurrency::mod_revision_to_resource_version(mod_revision)
+                );
             }
 
             serde_json::from_value(resource).map_err(|e| Error::Serialization(e))
@@ -137,24 +141,29 @@ impl Storage for EtcdStorage {
         let current_mod_revision = current_kv.mod_revision();
 
         // Extract resourceVersion from the incoming resource
-        let incoming_resource: serde_json::Value = serde_json::from_str(&json)
-            .map_err(|e| Error::Serialization(e))?;
+        let incoming_resource: serde_json::Value =
+            serde_json::from_str(&json).map_err(|e| Error::Serialization(e))?;
         let incoming_rv = crate::concurrency::extract_resource_version(
-            incoming_resource.get("metadata").unwrap_or(&serde_json::json!({}))
+            incoming_resource
+                .get("metadata")
+                .unwrap_or(&serde_json::json!({})),
         );
 
         // Validate optimistic concurrency if resourceVersion is provided
         if let Some(incoming_rv) = incoming_rv.as_deref() {
-            let current_rv = crate::concurrency::mod_revision_to_resource_version(current_mod_revision);
-            crate::concurrency::validate_resource_version(
-                Some(incoming_rv),
-                Some(&current_rv)
-            )?;
+            let current_rv =
+                crate::concurrency::mod_revision_to_resource_version(current_mod_revision);
+            crate::concurrency::validate_resource_version(Some(incoming_rv), Some(&current_rv))?;
 
             // Use a transaction to ensure atomic update with version check
-            let expected_mod_revision = crate::concurrency::resource_version_to_mod_revision(incoming_rv)?;
+            let expected_mod_revision =
+                crate::concurrency::resource_version_to_mod_revision(incoming_rv)?;
             let txn = etcd_client::Txn::new()
-                .when(vec![Compare::mod_revision(key, CompareOp::Equal, expected_mod_revision)])
+                .when(vec![Compare::mod_revision(
+                    key,
+                    CompareOp::Equal,
+                    expected_mod_revision,
+                )])
                 .and_then(vec![TxnOp::put(key, json.clone(), None)])
                 .or_else(vec![]);
 
@@ -187,11 +196,13 @@ impl Storage for EtcdStorage {
 
         if let Some(kv) = get_resp.kvs().first() {
             let mod_revision = kv.mod_revision();
-            let mut resource: serde_json::Value = serde_json::from_str(&json)
-                .map_err(|e| Error::Serialization(e))?;
+            let mut resource: serde_json::Value =
+                serde_json::from_str(&json).map_err(|e| Error::Serialization(e))?;
 
             if let Some(metadata) = resource.get_mut("metadata") {
-                metadata["resourceVersion"] = serde_json::json!(crate::concurrency::mod_revision_to_resource_version(mod_revision));
+                metadata["resourceVersion"] = serde_json::json!(
+                    crate::concurrency::mod_revision_to_resource_version(mod_revision)
+                );
             }
 
             serde_json::from_value(resource).map_err(|e| Error::Serialization(e))
@@ -202,8 +213,7 @@ impl Storage for EtcdStorage {
 
     async fn update_raw(&self, key: &str, value: &serde_json::Value) -> Result<()> {
         let mut client = self.client.lock().await;
-        let json = serde_json::to_string(value)
-            .map_err(|e| Error::Serialization(e))?;
+        let json = serde_json::to_string(value).map_err(|e| Error::Serialization(e))?;
 
         // Check if the key exists first
         let get_resp = client
@@ -269,13 +279,15 @@ impl Storage for EtcdStorage {
             };
 
             if let Some(metadata) = resource.get_mut("metadata") {
-                metadata["resourceVersion"] = serde_json::json!(crate::concurrency::mod_revision_to_resource_version(mod_revision));
+                metadata["resourceVersion"] = serde_json::json!(
+                    crate::concurrency::mod_revision_to_resource_version(mod_revision)
+                );
             }
 
             match serde_json::from_value::<T>(resource) {
                 Ok(value) => {
                     results.push(value);
-                },
+                }
                 Err(e) => {
                     error!("Failed to deserialize enhanced value: {}", e);
                     continue;
@@ -360,9 +372,13 @@ impl AuthzStorage for EtcdStorage {
                 // For namespaced resources, the key pattern is /registry/{resource_type}/{namespace}/{name}
                 // We need to determine the resource type from T
                 // For now, we'll construct keys for RBAC resources
-                if std::any::type_name::<T>().contains("Role") && !std::any::type_name::<T>().contains("Cluster") {
+                if std::any::type_name::<T>().contains("Role")
+                    && !std::any::type_name::<T>().contains("Cluster")
+                {
                     format!("/registry/roles/{}/{}", ns, key)
-                } else if std::any::type_name::<T>().contains("RoleBinding") && !std::any::type_name::<T>().contains("Cluster") {
+                } else if std::any::type_name::<T>().contains("RoleBinding")
+                    && !std::any::type_name::<T>().contains("Cluster")
+                {
                     format!("/registry/rolebindings/{}/{}", ns, key)
                 } else {
                     format!("/registry/unknown/{}/{}", ns, key)
@@ -370,7 +386,9 @@ impl AuthzStorage for EtcdStorage {
             }
             None => {
                 // For cluster-scoped resources
-                if std::any::type_name::<T>().contains("ClusterRole") && !std::any::type_name::<T>().contains("Binding") {
+                if std::any::type_name::<T>().contains("ClusterRole")
+                    && !std::any::type_name::<T>().contains("Binding")
+                {
                     format!("/registry/clusterroles/{}", key)
                 } else if std::any::type_name::<T>().contains("ClusterRoleBinding") {
                     format!("/registry/clusterrolebindings/{}", key)
@@ -390,16 +408,22 @@ impl AuthzStorage for EtcdStorage {
         // Build the prefix based on resource type and namespace
         let prefix = match namespace {
             Some(ns) => {
-                if std::any::type_name::<T>().contains("Role") && !std::any::type_name::<T>().contains("Cluster") {
+                if std::any::type_name::<T>().contains("Role")
+                    && !std::any::type_name::<T>().contains("Cluster")
+                {
                     format!("/registry/roles/{}/", ns)
-                } else if std::any::type_name::<T>().contains("RoleBinding") && !std::any::type_name::<T>().contains("Cluster") {
+                } else if std::any::type_name::<T>().contains("RoleBinding")
+                    && !std::any::type_name::<T>().contains("Cluster")
+                {
                     format!("/registry/rolebindings/{}/", ns)
                 } else {
                     format!("/registry/unknown/{}/", ns)
                 }
             }
             None => {
-                if std::any::type_name::<T>().contains("ClusterRole") && !std::any::type_name::<T>().contains("Binding") {
+                if std::any::type_name::<T>().contains("ClusterRole")
+                    && !std::any::type_name::<T>().contains("Binding")
+                {
                     "/registry/clusterroles/".to_string()
                 } else if std::any::type_name::<T>().contains("ClusterRoleBinding") {
                     "/registry/clusterrolebindings/".to_string()

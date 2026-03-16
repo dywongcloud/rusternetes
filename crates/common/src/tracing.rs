@@ -202,8 +202,8 @@ pub fn init_tracing(config: TracingConfig) -> Result<()> {
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
     // Create log filter
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&config.log_level));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.log_level));
 
     // Create formatting layer
     let formatting_layer = tracing_subscriber::fmt::layer()
@@ -247,8 +247,8 @@ fn init_stdout_tracing(config: &TracingConfig) -> Result<()> {
 
 /// Initialize basic tracing without OpenTelemetry
 fn init_basic_tracing(config: &TracingConfig) -> Result<()> {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&config.log_level));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.log_level));
 
     tracing_subscriber::fmt()
         .with_env_filter(env_filter)
@@ -257,7 +257,10 @@ fn init_basic_tracing(config: &TracingConfig) -> Result<()> {
         .with_line_number(true)
         .init();
 
-    tracing::info!("Initialized basic tracing for service '{}'", config.service_name);
+    tracing::info!(
+        "Initialized basic tracing for service '{}'",
+        config.service_name
+    );
 
     Ok(())
 }
@@ -288,7 +291,10 @@ mod tests {
 
         assert_eq!(config.service_name, "test-service");
         assert_eq!(config.exporter, TracingExporter::Jaeger);
-        assert_eq!(config.jaeger_endpoint, Some("http://localhost:14268".to_string()));
+        assert_eq!(
+            config.jaeger_endpoint,
+            Some("http://localhost:14268".to_string())
+        );
         assert_eq!(config.sample_rate, 0.5);
         assert_eq!(config.log_level, "debug");
     }

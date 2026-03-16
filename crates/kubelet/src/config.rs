@@ -104,14 +104,20 @@ impl KubeletConfiguration {
         if let Some(root_dir) = &self.root_dir {
             let path = PathBuf::from(root_dir);
             if !path.exists() {
-                tracing::warn!("Root directory does not exist and will be created: {}", root_dir);
+                tracing::warn!(
+                    "Root directory does not exist and will be created: {}",
+                    root_dir
+                );
             }
         }
 
         if let Some(volume_dir) = &self.volume_dir {
             let path = PathBuf::from(volume_dir);
             if !path.exists() {
-                tracing::warn!("Volume directory does not exist and will be created: {}", volume_dir);
+                tracing::warn!(
+                    "Volume directory does not exist and will be created: {}",
+                    volume_dir
+                );
             }
         }
 
@@ -131,10 +137,7 @@ impl KubeletConfiguration {
         // Validate metrics port
         if let Some(port) = self.metrics_bind_port {
             if port < 1024 {
-                tracing::warn!(
-                    "metricsBindPort {} is a privileged port (< 1024)",
-                    port
-                );
+                tracing::warn!("metricsBindPort {} is a privileged port (< 1024)", port);
             }
         }
 
@@ -154,8 +157,7 @@ impl KubeletConfiguration {
 
     /// Save configuration to a YAML file
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let contents = serde_yaml::to_string(self)
-            .context("Failed to serialize configuration")?;
+        let contents = serde_yaml::to_string(self).context("Failed to serialize configuration")?;
 
         std::fs::write(path.as_ref(), contents)
             .with_context(|| format!("Failed to write config file: {:?}", path.as_ref()))?;
@@ -206,7 +208,8 @@ fn first_ip_from_cidr(cidr: &str) -> Result<String> {
         anyhow::bail!("Invalid CIDR format: {}", cidr);
     }
 
-    let base_ip: IpAddr = parts[0].parse()
+    let base_ip: IpAddr = parts[0]
+        .parse()
         .with_context(|| format!("Invalid IP address in CIDR: {}", parts[0]))?;
 
     match base_ip {
@@ -263,11 +266,13 @@ impl RuntimeConfig {
 
         // Determine volume plugin directory
         let volume_plugin_dir = cli_volume_plugin_dir
-            .or_else(|| config_file.as_ref().and_then(|c| c.volume_plugin_dir.clone()))
+            .or_else(|| {
+                config_file
+                    .as_ref()
+                    .and_then(|c| c.volume_plugin_dir.clone())
+            })
             .or_else(|| std::env::var("KUBELET_VOLUME_PLUGIN_DIR").ok())
-            .unwrap_or_else(|| {
-                "/usr/libexec/kubernetes/kubelet-plugins/volume/exec".to_string()
-            });
+            .unwrap_or_else(|| "/usr/libexec/kubernetes/kubelet-plugins/volume/exec".to_string());
 
         // Determine sync frequency
         let sync_frequency = cli_sync_frequency
@@ -293,8 +298,13 @@ impl RuntimeConfig {
             .or_else(|| std::env::var("CLUSTER_SERVICE_CIDR").ok())
             .unwrap_or_else(|| "10.96.0.0/12".to_string());
 
-        let kubernetes_service_host = first_ip_from_cidr(&cluster_service_cidr)
-            .with_context(|| format!("Failed to extract kubernetes service IP from CIDR: {}", cluster_service_cidr))?;
+        let kubernetes_service_host =
+            first_ip_from_cidr(&cluster_service_cidr).with_context(|| {
+                format!(
+                    "Failed to extract kubernetes service IP from CIDR: {}",
+                    cluster_service_cidr
+                )
+            })?;
 
         let config = Self {
             root_dir: PathBuf::from(root_dir),
@@ -432,7 +442,9 @@ mod tests {
             kind: "KubeletConfiguration".to_string(),
             root_dir: Some("/var/lib/kubelet".to_string()),
             volume_dir: Some("/var/lib/kubelet/volumes".to_string()),
-            volume_plugin_dir: Some("/usr/libexec/kubernetes/kubelet-plugins/volume/exec".to_string()),
+            volume_plugin_dir: Some(
+                "/usr/libexec/kubernetes/kubelet-plugins/volume/exec".to_string(),
+            ),
             sync_frequency: Some(15),
             metrics_bind_port: Some(10250),
             log_level: Some("info".to_string()),

@@ -93,7 +93,11 @@ async fn test_pod_create_get_update_delete_lifecycle() {
             priority: None,
             priority_class_name: None,
             hostname: None,
+
+            subdomain: None,
+
             host_network: None,
+
             host_pid: None,
             host_ipc: None,
         }),
@@ -347,7 +351,11 @@ async fn test_namespace_isolation() {
             priority: None,
             priority_class_name: None,
             hostname: None,
+
+            subdomain: None,
+
             host_network: None,
+
             host_pid: None,
             host_ipc: None,
         }),
@@ -538,7 +546,11 @@ async fn test_label_selectors() {
                 priority: None,
                 priority_class_name: None,
                 hostname: None,
+
+                subdomain: None,
+
                 host_network: None,
+
                 host_pid: None,
                 host_ipc: None,
             }),

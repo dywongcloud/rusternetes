@@ -1,10 +1,13 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
-use axum::{extract::{Path, State}, Extension, Json};
+use axum::{
+    extract::{Path, State},
+    Extension, Json,
+};
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::{
-        TokenReview, TokenReviewStatus, TokenRequest, TokenRequestStatus, SelfSubjectReview,
-        SelfSubjectReviewStatus, UserInfo,
+        SelfSubjectReview, SelfSubjectReviewStatus, TokenRequest, TokenRequestStatus, TokenReview,
+        TokenReviewStatus, UserInfo,
     },
     Result,
 };
@@ -36,7 +39,10 @@ pub async fn create_token_review(
         TokenReviewStatus {
             authenticated: Some(true),
             user: Some(UserInfo {
-                username: Some(format!("system:serviceaccount:{}:{}", claims.namespace, claims.sub)),
+                username: Some(format!(
+                    "system:serviceaccount:{}:{}",
+                    claims.namespace, claims.sub
+                )),
                 uid: Some(claims.uid),
                 groups: Some(vec![
                     "system:serviceaccounts".to_string(),
@@ -56,7 +62,9 @@ pub async fn create_token_review(
             authenticated: Some(false),
             user: None,
             audiences: None,
-            error: Some("Token authentication failed - not a valid service account token".to_string()),
+            error: Some(
+                "Token authentication failed - not a valid service account token".to_string(),
+            ),
         }
     };
 
@@ -88,7 +96,10 @@ pub async fn create_token_request(
     }
 
     // Verify the service account exists
-    let sa_key = format!("/api/v1/namespaces/{}/serviceaccounts/{}", namespace, service_account_name);
+    let sa_key = format!(
+        "/api/v1/namespaces/{}/serviceaccounts/{}",
+        namespace, service_account_name
+    );
     let sa: rusternetes_common::resources::ServiceAccount = state.storage.get(&sa_key).await?;
 
     // Calculate expiration time
@@ -134,9 +145,8 @@ pub async fn create_self_subject_review(
     info!("Creating self subject review for user: {:?}", auth_ctx.user);
 
     // Check authorization - creating a SelfSubjectReview is always allowed
-    let attrs =
-        RequestAttributes::new(auth_ctx.user.clone(), "create", "selfsubjectreviews")
-            .with_api_group("authentication.k8s.io");
+    let attrs = RequestAttributes::new(auth_ctx.user.clone(), "create", "selfsubjectreviews")
+        .with_api_group("authentication.k8s.io");
 
     if let Decision::Deny(reason) = state.authorizer.authorize(&attrs).await? {
         return Err(rusternetes_common::Error::Forbidden(reason));
@@ -156,7 +166,7 @@ pub async fn create_self_subject_review(
 }
 
 #[cfg(test)]
-#[cfg(feature = "integration-tests")]  // Disable incomplete tests
+#[cfg(feature = "integration-tests")] // Disable incomplete tests
 mod tests {
     use super::*;
     use crate::state::MockAuth;

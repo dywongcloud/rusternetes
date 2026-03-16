@@ -8,7 +8,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use client::ApiClient;
 use kubeconfig::KubeConfig;
-use types::{RolloutCommands, TopCommands, AuthCommands, ConfigCommands};
+use types::{AuthCommands, ConfigCommands, RolloutCommands, TopCommands};
 
 #[derive(Parser)]
 #[command(name = "kubectl")]
@@ -661,7 +661,12 @@ async fn main() -> Result<()> {
     // Load kubeconfig or use CLI flags
     let (server, skip_tls, token, default_namespace) = if let Some(server_url) = cli.server {
         // CLI flags override kubeconfig
-        (server_url, cli.insecure_skip_tls_verify, cli.token, "default".to_string())
+        (
+            server_url,
+            cli.insecure_skip_tls_verify,
+            cli.token,
+            "default".to_string(),
+        )
     } else {
         // Try to load from kubeconfig
         let config = if let Some(path) = &cli.kubeconfig {
@@ -682,10 +687,16 @@ async fn main() -> Result<()> {
             })
         };
 
-        let server = config.get_server().unwrap_or_else(|_| "https://localhost:6443".to_string());
-        let skip_tls = config.should_skip_tls_verify().unwrap_or(cli.insecure_skip_tls_verify);
+        let server = config
+            .get_server()
+            .unwrap_or_else(|_| "https://localhost:6443".to_string());
+        let skip_tls = config
+            .should_skip_tls_verify()
+            .unwrap_or(cli.insecure_skip_tls_verify);
         let token = cli.token.or_else(|| config.get_token().ok().flatten());
-        let namespace = config.get_namespace().unwrap_or_else(|_| "default".to_string());
+        let namespace = config
+            .get_namespace()
+            .unwrap_or_else(|_| "default".to_string());
 
         (server, skip_tls, token, namespace)
     };
@@ -722,13 +733,23 @@ async fn main() -> Result<()> {
                 field_selector.as_deref(),
                 watch,
                 show_labels,
-            ).await?;
+            )
+            .await?;
         }
-        Commands::Create { file, namespace, args } => {
+        Commands::Create {
+            file,
+            namespace,
+            args,
+        } => {
             if let Some(file_path) = file {
                 commands::create::execute(&client, &file_path).await?;
             } else if !args.is_empty() {
-                commands::create::execute_inline(&client, &args, namespace.as_deref().unwrap_or(&default_namespace)).await?;
+                commands::create::execute_inline(
+                    &client,
+                    &args,
+                    namespace.as_deref().unwrap_or(&default_namespace),
+                )
+                .await?;
             } else {
                 anyhow::bail!("Either --file or resource arguments must be provided");
             }
@@ -753,14 +774,27 @@ async fn main() -> Result<()> {
                     namespace.as_deref().unwrap_or(&default_namespace),
                     force,
                     grace_period,
-                ).await?;
+                )
+                .await?;
             } else if let (Some(rt), Some(sel)) = (resource_type, selector) {
-                commands::delete::execute_with_selector(&client, &rt, &sel, namespace.as_deref().unwrap_or(&default_namespace)).await?;
+                commands::delete::execute_with_selector(
+                    &client,
+                    &rt,
+                    &sel,
+                    namespace.as_deref().unwrap_or(&default_namespace),
+                )
+                .await?;
             } else {
                 anyhow::bail!("Must provide either resource type/name, file, or selector");
             }
         }
-        Commands::Apply { file, namespace, dry_run, server_side, force } => {
+        Commands::Apply {
+            file,
+            namespace,
+            dry_run,
+            server_side,
+            force,
+        } => {
             commands::apply::execute_enhanced(
                 &client,
                 &file,
@@ -768,7 +802,8 @@ async fn main() -> Result<()> {
                 dry_run.as_deref(),
                 server_side,
                 force,
-            ).await?;
+            )
+            .await?;
         }
         Commands::Describe {
             resource_type,
@@ -784,7 +819,8 @@ async fn main() -> Result<()> {
                 namespace.as_deref().unwrap_or(&default_namespace),
                 selector.as_deref(),
                 all_namespaces,
-            ).await?;
+            )
+            .await?;
         }
         Commands::Logs {
             pod_name,
@@ -808,7 +844,8 @@ async fn main() -> Result<()> {
                 since_time.as_deref(),
                 since.as_deref(),
                 previous,
-            ).await?;
+            )
+            .await?;
         }
         Commands::Exec {
             pod_name,
@@ -826,7 +863,8 @@ async fn main() -> Result<()> {
                 &command,
                 tty,
                 stdin,
-            ).await?;
+            )
+            .await?;
         }
         Commands::PortForward {
             pod_name,
@@ -840,7 +878,8 @@ async fn main() -> Result<()> {
                 namespace.as_deref().unwrap_or(&default_namespace),
                 &ports,
                 &address,
-            ).await?;
+            )
+            .await?;
         }
         Commands::Cp {
             source,
@@ -854,7 +893,8 @@ async fn main() -> Result<()> {
                 &destination,
                 namespace.as_deref().unwrap_or(&default_namespace),
                 container.as_deref(),
-            ).await?;
+            )
+            .await?;
         }
         Commands::Edit {
             resource_type,
@@ -868,7 +908,8 @@ async fn main() -> Result<()> {
                 &name,
                 namespace.as_deref().unwrap_or(&default_namespace),
                 &output,
-            ).await?;
+            )
+            .await?;
         }
         Commands::Patch {
             resource_type,
@@ -886,7 +927,8 @@ async fn main() -> Result<()> {
                 patch.as_deref(),
                 patch_file.as_deref(),
                 &patch_type,
-            ).await?;
+            )
+            .await?;
         }
         Commands::Scale {
             resource_type,
@@ -900,7 +942,8 @@ async fn main() -> Result<()> {
                 &name,
                 namespace.as_deref().unwrap_or(&default_namespace),
                 replicas,
-            ).await?;
+            )
+            .await?;
         }
         Commands::Rollout { command } => {
             commands::rollout::execute(&client, command, &default_namespace).await?;
@@ -922,7 +965,8 @@ async fn main() -> Result<()> {
                 namespace.as_deref().unwrap_or(&default_namespace),
                 &labels,
                 overwrite,
-            ).await?;
+            )
+            .await?;
         }
         Commands::Annotate {
             resource_type,
@@ -938,7 +982,8 @@ async fn main() -> Result<()> {
                 namespace.as_deref().unwrap_or(&default_namespace),
                 &annotations,
                 overwrite,
-            ).await?;
+            )
+            .await?;
         }
         Commands::Explain {
             resource,
@@ -963,14 +1008,16 @@ async fn main() -> Result<()> {
                 namespace.as_deref().unwrap_or(&default_namespace),
                 &timeout,
                 selector.as_deref(),
-            ).await?;
+            )
+            .await?;
         }
         Commands::Diff { file, namespace } => {
             commands::diff::execute(
                 &client,
                 &file,
                 namespace.as_deref().unwrap_or(&default_namespace),
-            ).await?;
+            )
+            .await?;
         }
         Commands::Auth { command } => {
             commands::auth::execute(&client, command, &default_namespace).await?;
@@ -981,7 +1028,14 @@ async fn main() -> Result<()> {
             no_headers,
             output,
         } => {
-            commands::api_resources::execute(&client, namespaced, api_group.as_deref(), no_headers, output.as_deref()).await?;
+            commands::api_resources::execute(
+                &client,
+                namespaced,
+                api_group.as_deref(),
+                no_headers,
+                output.as_deref(),
+            )
+            .await?;
         }
         Commands::ApiVersions {} => {
             commands::api_versions::execute(&client).await?;
@@ -992,7 +1046,10 @@ async fn main() -> Result<()> {
         Commands::ClusterInfo { dump } => {
             commands::cluster_info::execute(&client, dump).await?;
         }
-        Commands::Version { client: client_only, output } => {
+        Commands::Version {
+            client: client_only,
+            output,
+        } => {
             commands::version::execute(&client, client_only, output.as_deref()).await?;
         }
     }

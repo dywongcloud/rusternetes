@@ -2,7 +2,10 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for statefulsets
 
-use rusternetes_common::resources::{StatefulSet, StatefulSetSpec, StatefulSetStatus, PodTemplateSpec, Container, PodSpec, PersistentVolumeClaim, PersistentVolumeClaimSpec};
+use rusternetes_common::resources::{
+    Container, PersistentVolumeClaim, PersistentVolumeClaimSpec, PodSpec, PodTemplateSpec,
+    StatefulSet, StatefulSetSpec, StatefulSetStatus,
+};
 use rusternetes_common::types::{LabelSelector, ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -78,6 +81,7 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
                     service_account_name: None,
                     automount_service_account_token: None,
                     hostname: None,
+                    subdomain: None,
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
@@ -191,7 +195,10 @@ async fn test_statefulset_list() {
     let statefulsets: Vec<StatefulSet> = storage.list(&prefix).await.unwrap();
 
     assert!(statefulsets.len() >= 3);
-    let names: Vec<String> = statefulsets.iter().map(|sts| sts.metadata.name.clone()).collect();
+    let names: Vec<String> = statefulsets
+        .iter()
+        .map(|sts| sts.metadata.name.clone())
+        .collect();
     assert!(names.contains(&"sts-1".to_string()));
     assert!(names.contains(&"sts-2".to_string()));
     assert!(names.contains(&"sts-3".to_string()));
@@ -260,7 +267,10 @@ async fn test_statefulset_ordered_ready_policy() {
 
     // Create with OrderedReady policy
     let created: StatefulSet = storage.create(&key, &statefulset).await.unwrap();
-    assert_eq!(created.spec.pod_management_policy, Some("OrderedReady".to_string()));
+    assert_eq!(
+        created.spec.pod_management_policy,
+        Some("OrderedReady".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -277,7 +287,10 @@ async fn test_statefulset_parallel_policy() {
 
     // Create with Parallel policy
     let created: StatefulSet = storage.create(&key, &statefulset).await.unwrap();
-    assert_eq!(created.spec.pod_management_policy, Some("Parallel".to_string()));
+    assert_eq!(
+        created.spec.pod_management_policy,
+        Some("Parallel".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();

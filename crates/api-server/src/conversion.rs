@@ -106,15 +106,11 @@ impl ConversionWebhookClient {
         desired_version: &str,
     ) -> Result<Vec<CustomResource>> {
         // Check if conversion is enabled
-        let conversion = crd
-            .spec
-            .conversion
-            .as_ref()
-            .ok_or_else(|| {
-                rusternetes_common::Error::InvalidResource(
-                    "Conversion not configured for CRD".to_string(),
-                )
-            })?;
+        let conversion = crd.spec.conversion.as_ref().ok_or_else(|| {
+            rusternetes_common::Error::InvalidResource(
+                "Conversion not configured for CRD".to_string(),
+            )
+        })?;
 
         // Get webhook configuration
         let webhook = conversion.webhook.as_ref().ok_or_else(|| {
@@ -168,15 +164,21 @@ impl ConversionWebhookClient {
             )));
         }
 
-        let review_response: ConversionReview = response.json::<ConversionReview>().await.map_err(|e| {
-            rusternetes_common::Error::Network(format!("Failed to parse webhook response: {}", e))
-        })?;
+        let review_response: ConversionReview =
+            response.json::<ConversionReview>().await.map_err(|e| {
+                rusternetes_common::Error::Network(format!(
+                    "Failed to parse webhook response: {}",
+                    e
+                ))
+            })?;
 
         debug!("Received conversion response: {:?}", review_response);
 
         // Extract response
         let conv_response = review_response.response.ok_or_else(|| {
-            rusternetes_common::Error::Network("Webhook response missing response field".to_string())
+            rusternetes_common::Error::Network(
+                "Webhook response missing response field".to_string(),
+            )
         })?;
 
         // Check result
@@ -226,10 +228,7 @@ impl ConversionWebhookClient {
             let port = service.port.unwrap_or(443);
 
             // In-cluster service URL
-            let url = format!(
-                "https://{}.{}.svc:{}{}",
-                name, namespace, port, path
-            );
+            let url = format!("https://{}.{}.svc:{}{}", name, namespace, port, path);
 
             return Ok(url);
         }

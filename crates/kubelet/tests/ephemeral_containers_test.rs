@@ -41,6 +41,7 @@ fn create_running_pod(name: &str) -> Pod {
             priority: None,
             priority_class_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -213,8 +214,7 @@ fn test_ephemeral_container_serialization() {
     let json = serde_json::to_string(&pod).expect("Failed to serialize pod");
 
     // Deserialize back
-    let deserialized: Pod =
-        serde_json::from_str(&json).expect("Failed to deserialize pod");
+    let deserialized: Pod = serde_json::from_str(&json).expect("Failed to deserialize pod");
 
     // Verify ephemeral containers preserved
     assert!(deserialized.spec.is_some());
@@ -224,7 +224,10 @@ fn test_ephemeral_container_serialization() {
     let ephemeral_containers = spec.ephemeral_containers.as_ref().unwrap();
     assert_eq!(ephemeral_containers.len(), 1);
     assert_eq!(ephemeral_containers[0].name, "debugger");
-    assert_eq!(ephemeral_containers[0].target_container_name, Some("main".to_string()));
+    assert_eq!(
+        ephemeral_containers[0].target_container_name,
+        Some("main".to_string())
+    );
 }
 
 #[test]

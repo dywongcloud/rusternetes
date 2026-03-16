@@ -49,6 +49,7 @@ fn create_minimal_pod(name: &str, namespace: &str) -> Pod {
             node_selector: None,
             service_account_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -74,7 +75,10 @@ async fn test_limit_range_allows_when_no_limit_exists() {
 
     let result = apply_limit_range(&storage, "test-namespace", &mut pod).await;
     assert!(result.is_ok());
-    assert!(result.unwrap(), "Pod should be allowed when no LimitRange exists");
+    assert!(
+        result.unwrap(),
+        "Pod should be allowed when no LimitRange exists"
+    );
 }
 
 #[tokio::test]
@@ -84,7 +88,10 @@ async fn test_quota_allows_when_no_quota_exists() {
 
     let result = check_resource_quota(&storage, "test-namespace", &pod).await;
     assert!(result.is_ok());
-    assert!(result.unwrap(), "Pod should be allowed when no quota exists");
+    assert!(
+        result.unwrap(),
+        "Pod should be allowed when no quota exists"
+    );
 }
 
 #[tokio::test]
@@ -195,16 +202,19 @@ async fn test_quota_rejects_when_exceeding_pod_count() {
 
     let result = check_resource_quota(&storage, "test-namespace", &new_pod).await;
     assert!(result.is_ok());
-    assert!(!result.unwrap(), "Pod should be rejected for exceeding pod count quota");
+    assert!(
+        !result.unwrap(),
+        "Pod should be rejected for exceeding pod count quota"
+    );
 }
 
 // ===== DefaultStorageClass admission tests =====
 
 use rusternetes_api_server::admission::set_default_storage_class;
-use rusternetes_common::resources::{
-    PersistentVolumeClaim, PersistentVolumeClaimSpec, PersistentVolumeAccessMode, StorageClass,
-};
 use rusternetes_common::resources::volume::ResourceRequirements;
+use rusternetes_common::resources::{
+    PersistentVolumeAccessMode, PersistentVolumeClaim, PersistentVolumeClaimSpec, StorageClass,
+};
 
 fn create_test_pvc(name: &str, namespace: &str) -> PersistentVolumeClaim {
     let mut requests = HashMap::new();
@@ -316,7 +326,10 @@ async fn test_default_storage_class_already_set() {
     assert!(result.is_ok());
 
     // storageClassName should remain "my-custom-sc"
-    assert_eq!(pvc.spec.storage_class_name, Some("my-custom-sc".to_string()));
+    assert_eq!(
+        pvc.spec.storage_class_name,
+        Some("my-custom-sc".to_string())
+    );
 }
 
 #[tokio::test]

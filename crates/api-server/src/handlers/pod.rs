@@ -1,8 +1,12 @@
-use crate::{middleware::AuthContext, patch::{PatchType, apply_patch}, state::ApiServerState};
+use crate::{
+    middleware::AuthContext,
+    patch::{apply_patch, PatchType},
+    state::ApiServerState,
+};
 use axum::{
     body::Bytes,
     extract::{Path, State},
-    http::{StatusCode, HeaderMap},
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Extension, Json,
 };
@@ -10,8 +14,7 @@ use rusternetes_common::{
     admission::{AdmissionResponse, GroupVersionKind, GroupVersionResource, Operation},
     authz::{Decision, RequestAttributes},
     resources::Pod,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
@@ -70,7 +73,10 @@ pub async fn create(
 
     // Debug: Log pod_value to see if valueFrom is present
     if pod.metadata.name.contains("test-env-fieldref") || pod.metadata.name.contains("sonobuoy") {
-        info!("POD CREATE - Before webhooks - pod_value: {}", serde_json::to_string(&pod_value).unwrap());
+        info!(
+            "POD CREATE - Before webhooks - pod_value: {}",
+            serde_json::to_string(&pod_value).unwrap()
+        );
     }
 
     let (mutation_response, mutated_pod_value) = state
@@ -98,30 +104,47 @@ pub async fn create(
             if let Some(mutated_value) = mutated_pod_value {
                 pod = serde_json::from_value(mutated_value)
                     .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
-                info!("Pod mutated by webhooks: {}/{}", namespace, pod.metadata.name);
+                info!(
+                    "Pod mutated by webhooks: {}/{}",
+                    namespace, pod.metadata.name
+                );
             }
         }
     }
 
     // Inject service account token (built-in admission controller)
-    if let Err(e) = crate::admission::inject_service_account_token(&state.storage, &namespace, &mut pod).await {
-        warn!("Error injecting service account token for pod {}/{}: {}", namespace, pod.metadata.name, e);
+    if let Err(e) =
+        crate::admission::inject_service_account_token(&state.storage, &namespace, &mut pod).await
+    {
+        warn!(
+            "Error injecting service account token for pod {}/{}: {}",
+            namespace, pod.metadata.name, e
+        );
         // Continue anyway - don't fail pod creation if SA injection fails
     }
 
     // Apply LimitRange defaults and validate constraints
     match crate::admission::apply_limit_range(&state.storage, &namespace, &mut pod).await {
         Ok(true) => {
-            info!("LimitRange admission passed for pod {}/{}", namespace, pod.metadata.name);
+            info!(
+                "LimitRange admission passed for pod {}/{}",
+                namespace, pod.metadata.name
+            );
         }
         Ok(false) => {
-            warn!("LimitRange admission denied for pod {}/{}", namespace, pod.metadata.name);
+            warn!(
+                "LimitRange admission denied for pod {}/{}",
+                namespace, pod.metadata.name
+            );
             return Err(rusternetes_common::Error::Forbidden(
                 "Pod violates LimitRange constraints".to_string(),
             ));
         }
         Err(e) => {
-            warn!("Error checking LimitRange for pod {}/{}: {}", namespace, pod.metadata.name, e);
+            warn!(
+                "Error checking LimitRange for pod {}/{}: {}",
+                namespace, pod.metadata.name, e
+            );
             // Continue anyway - don't fail pod creation if LimitRange check fails
         }
     }
@@ -129,16 +152,25 @@ pub async fn create(
     // Check ResourceQuota
     match crate::admission::check_resource_quota(&state.storage, &namespace, &pod).await {
         Ok(true) => {
-            info!("ResourceQuota admission passed for pod {}/{}", namespace, pod.metadata.name);
+            info!(
+                "ResourceQuota admission passed for pod {}/{}",
+                namespace, pod.metadata.name
+            );
         }
         Ok(false) => {
-            warn!("ResourceQuota admission denied for pod {}/{}", namespace, pod.metadata.name);
+            warn!(
+                "ResourceQuota admission denied for pod {}/{}",
+                namespace, pod.metadata.name
+            );
             return Err(rusternetes_common::Error::Forbidden(
                 "Pod creation would exceed ResourceQuota".to_string(),
             ));
         }
         Err(e) => {
-            warn!("Error checking ResourceQuota for pod {}/{}: {}", namespace, pod.metadata.name, e);
+            warn!(
+                "Error checking ResourceQuota for pod {}/{}: {}",
+                namespace, pod.metadata.name, e
+            );
             // Continue anyway - don't fail pod creation if quota check fails
         }
     }
@@ -168,7 +200,10 @@ pub async fn create(
             return Err(rusternetes_common::Error::Forbidden(reason));
         }
         AdmissionResponse::Allow | AdmissionResponse::AllowWithPatch(_) => {
-            info!("Validating webhooks passed for pod {}/{}", namespace, pod.metadata.name);
+            info!(
+                "Validating webhooks passed for pod {}/{}",
+                namespace, pod.metadata.name
+            );
         }
     }
 
@@ -179,17 +214,26 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Pod {}/{} validated successfully (not created)", namespace, pod.metadata.name);
+        info!(
+            "Dry-run: Pod {}/{} validated successfully (not created)",
+            namespace, pod.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(pod)));
     }
 
     match state.storage.create(&key, &pod).await {
         Ok(created) => {
-            info!("Pod created successfully: {}/{}", namespace, pod.metadata.name);
+            info!(
+                "Pod created successfully: {}/{}",
+                namespace, pod.metadata.name
+            );
             Ok((StatusCode::CREATED, Json(created)))
         }
         Err(e) => {
-            warn!("Failed to create pod {}/{}: {}", namespace, pod.metadata.name, e);
+            warn!(
+                "Failed to create pod {}/{}: {}",
+                namespace, pod.metadata.name, e
+            );
             Err(e)
         }
     }
@@ -341,7 +385,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Pod {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: Pod {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(pod));
     }
 
@@ -381,19 +428,19 @@ pub async fn delete_pod(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: Pod {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: Pod {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
     // Handle deletion with finalizers
     // If the pod has finalizers, it will be marked for deletion (deletionTimestamp set)
     // and remain in storage until controllers remove the finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
-        &state.storage,
-        &key,
-        &pod,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &pod)
+            .await?;
 
     if deleted_immediately {
         // Pod had no finalizers and was deleted immediately
@@ -402,9 +449,7 @@ pub async fn delete_pod(
         // Pod has finalizers and was marked for deletion
         info!(
             "Pod {}/{} marked for deletion (has finalizers: {:?})",
-            namespace,
-            name,
-            pod.metadata.finalizers
+            namespace, name, pod.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -418,16 +463,24 @@ pub async fn list(
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         info!("Starting watch for pods in namespace: {}", namespace);
         // Parse WatchParams from the query parameters
         let watch_params = crate::handlers::watch::WatchParams {
             resource_version: params.get("resourceVersion").map(|s| s.clone()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_namespaced::<Pod>(
             state,
@@ -461,8 +514,7 @@ pub async fn list(
     crate::handlers::filtering::apply_selectors(&mut pods, &params)?;
 
     // Parse pagination parameters
-    let limit = params.get("limit")
-        .and_then(|l| l.parse::<i64>().ok());
+    let limit = params.get("limit").and_then(|l| l.parse::<i64>().ok());
     let continue_token = params.get("continue").cloned();
 
     let pagination_params = rusternetes_common::PaginationParams {
@@ -481,10 +533,8 @@ pub async fn list(
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());
     if crate::handlers::table::wants_table(accept) {
-        let table = crate::handlers::table::pods_table(
-            paginated.items,
-            Some(resource_version.to_string()),
-        );
+        let table =
+            crate::handlers::table::pods_table(paginated.items, Some(resource_version.to_string()));
         return Ok(axum::Json(table).into_response());
     }
 
@@ -505,16 +555,24 @@ pub async fn list_all_pods(
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         info!("Watch request for all pods");
         // Parse WatchParams from the query parameters
         let watch_params = crate::handlers::watch::WatchParams {
             resource_version: params.get("resourceVersion").map(|s| s.clone()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_cluster_scoped::<Pod>(
             state,
@@ -529,8 +587,7 @@ pub async fn list_all_pods(
     info!("Listing all pods");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "pods")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "pods").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -546,8 +603,7 @@ pub async fn list_all_pods(
     crate::handlers::filtering::apply_selectors(&mut pods, &params)?;
 
     // Parse pagination parameters
-    let limit = params.get("limit")
-        .and_then(|l| l.parse::<i64>().ok());
+    let limit = params.get("limit").and_then(|l| l.parse::<i64>().ok());
     let continue_token = params.get("continue").cloned();
 
     let pagination_params = rusternetes_common::PaginationParams {
@@ -565,10 +621,8 @@ pub async fn list_all_pods(
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());
     if crate::handlers::table::wants_table(accept) {
-        let table = crate::handlers::table::pods_table(
-            paginated.items,
-            Some(resource_version.to_string()),
-        );
+        let table =
+            crate::handlers::table::pods_table(paginated.items, Some(resource_version.to_string()));
         return Ok(axum::Json(table).into_response());
     }
 
@@ -614,23 +668,30 @@ pub async fn patch(
     if let Some(field_manager) = params.get("fieldManager") {
         use rusternetes_common::server_side_apply::{server_side_apply, ApplyParams, ApplyResult};
 
-        info!("Server-side apply for pod {}/{} by manager {}", namespace, name, field_manager);
+        info!(
+            "Server-side apply for pod {}/{} by manager {}",
+            namespace, name, field_manager
+        );
 
         // Get current resource (if exists)
         let key = build_key("pods", Some(&namespace), &name);
         let current_json = match state.storage.get::<Pod>(&key).await {
-            Ok(current) => Some(serde_json::to_value(&current)
-                .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?),
+            Ok(current) => Some(
+                serde_json::to_value(&current)
+                    .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?,
+            ),
             Err(rusternetes_common::Error::NotFound(_)) => None,
             Err(e) => return Err(e),
         };
 
         // Parse desired resource
-        let desired_json: serde_json::Value = serde_json::from_slice(&body)
-            .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e)))?;
+        let desired_json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e))
+        })?;
 
         // Apply with server-side apply semantics
-        let force = params.get("force")
+        let force = params
+            .get("force")
             .and_then(|v| v.parse::<bool>().ok())
             .unwrap_or(false);
 
@@ -646,8 +707,9 @@ pub async fn patch(
         match result {
             ApplyResult::Success(applied_json) => {
                 // Convert to Pod type
-                let mut applied_pod: Pod = serde_json::from_value(applied_json)
-                    .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e)))?;
+                let mut applied_pod: Pod = serde_json::from_value(applied_json).map_err(|e| {
+                    rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e))
+                })?;
 
                 // Ensure metadata matches URL
                 applied_pod.metadata.name = name.clone();
@@ -706,8 +768,9 @@ pub async fn patch(
         .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
 
     // Convert back to Pod
-    let mut patched_pod: Pod = serde_json::from_value(patched_json)
-        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e)))?;
+    let mut patched_pod: Pod = serde_json::from_value(patched_json).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e))
+    })?;
 
     // Ensure metadata matches URL (prevent changing name/namespace via patch)
     patched_pod.metadata.name = name.clone();
@@ -725,7 +788,10 @@ pub async fn deletecollection_pods(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection pods in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection pods in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "pods")
@@ -759,12 +825,9 @@ pub async fn deletecollection_pods(
         let key = build_key("pods", Some(&namespace), &pod.metadata.name);
 
         // Handle deletion with finalizers
-        let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
-            &state.storage,
-            &key,
-            &pod,
-        )
-        .await?;
+        let deleted_immediately =
+            !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &pod)
+                .await?;
 
         if deleted_immediately {
             deleted_count += 1;

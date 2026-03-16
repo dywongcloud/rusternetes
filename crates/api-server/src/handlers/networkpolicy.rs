@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::NetworkPolicy,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -45,11 +44,18 @@ pub async fn create(
     network_policy.metadata.ensure_uid();
     network_policy.metadata.ensure_creation_timestamp();
 
-    let key = build_key("networkpolicies", Some(&namespace), &network_policy.metadata.name);
+    let key = build_key(
+        "networkpolicies",
+        Some(&namespace),
+        &network_policy.metadata.name,
+    );
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: NetworkPolicy {}/{} validated successfully (not created)", namespace, network_policy.metadata.name);
+        info!(
+            "Dry-run: NetworkPolicy {}/{} validated successfully (not created)",
+            namespace, network_policy.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(network_policy)));
     }
 
@@ -114,7 +120,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: NetworkPolicy {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: NetworkPolicy {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(network_policy));
     }
 
@@ -159,11 +168,19 @@ pub async fn delete_networkpolicy(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: NetworkPolicy {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: NetworkPolicy {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &networkpolicy).await?;
+    crate::handlers::finalizers::handle_delete_with_finalizers(
+        &*state.storage,
+        &key,
+        &networkpolicy,
+    )
+    .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -193,7 +210,11 @@ pub async fn list(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut network_policies, &params)?;
 
-    let list = List::new("NetworkPolicyList", "networking.k8s.io/v1", network_policies);
+    let list = List::new(
+        "NetworkPolicyList",
+        "networking.k8s.io/v1",
+        network_policies,
+    );
     Ok(Json(list))
 }
 
@@ -222,7 +243,11 @@ pub async fn list_all_networkpolicies(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut network_policies, &params)?;
 
-    let list = List::new("NetworkPolicyList", "networking.k8s.io/v1", network_policies);
+    let list = List::new(
+        "NetworkPolicyList",
+        "networking.k8s.io/v1",
+        network_policies,
+    );
     Ok(Json(list))
 }
 
@@ -234,7 +259,10 @@ pub async fn deletecollection_networkpolicies(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection networkpolicies in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection networkpolicies in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "networkpolicies")
@@ -280,6 +308,9 @@ pub async fn deletecollection_networkpolicies(
         }
     }
 
-    info!("DeleteCollection completed: {} networkpolicies deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} networkpolicies deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

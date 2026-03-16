@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use rusternetes_common::{
     cloud_provider::{CloudProvider, LoadBalancerPort, LoadBalancerService as CloudLBService},
     resources::{
-        Service, ServiceType, Node,
-        service::{LoadBalancerStatus, ServiceStatus, LoadBalancerIngress},
+        service::{LoadBalancerIngress, LoadBalancerStatus, ServiceStatus},
+        Node, Service, ServiceType,
     },
 };
 use rusternetes_storage::{etcd::EtcdStorage, Storage};
@@ -70,13 +70,15 @@ impl<S: Storage> LoadBalancerController<S> {
         };
 
         // Get all services
-        let services: Vec<Service> = self.storage
+        let services: Vec<Service> = self
+            .storage
             .list("/registry/services/")
             .await
             .context("Failed to list services")?;
 
         // Get all nodes for IP addresses
-        let nodes: Vec<Node> = self.storage
+        let nodes: Vec<Node> = self
+            .storage
             .list("/registry/nodes/")
             .await
             .context("Failed to list nodes")?;
@@ -84,7 +86,8 @@ impl<S: Storage> LoadBalancerController<S> {
         let node_addresses: Vec<String> = nodes
             .iter()
             .filter_map(|node| {
-                node.status.as_ref()
+                node.status
+                    .as_ref()
                     .and_then(|s| s.addresses.as_ref())
                     .and_then(|addrs| addrs.iter().find(|a| a.address_type == "InternalIP"))
                     .map(|addr| addr.address.clone())
@@ -96,18 +99,30 @@ impl<S: Storage> LoadBalancerController<S> {
             .iter()
             .filter(|s| {
                 matches!(
-                    s.spec.service_type.as_ref().unwrap_or(&ServiceType::ClusterIP),
+                    s.spec
+                        .service_type
+                        .as_ref()
+                        .unwrap_or(&ServiceType::ClusterIP),
                     ServiceType::LoadBalancer
                 )
             })
             .collect();
 
-        info!("Found {} LoadBalancer services to reconcile", lb_services.len());
+        info!(
+            "Found {} LoadBalancer services to reconcile",
+            lb_services.len()
+        );
 
         for service in lb_services {
-            if let Err(e) = self.reconcile_service(service, cloud_provider.as_ref(), &node_addresses).await {
+            if let Err(e) = self
+                .reconcile_service(service, cloud_provider.as_ref(), &node_addresses)
+                .await
+            {
                 let namespace = service.metadata.namespace.as_deref().unwrap_or("unknown");
-                error!("Failed to reconcile service {}/{}: {}", namespace, service.metadata.name, e);
+                error!(
+                    "Failed to reconcile service {}/{}: {}",
+                    namespace, service.metadata.name, e
+                );
             }
         }
 
@@ -121,7 +136,10 @@ impl<S: Storage> LoadBalancerController<S> {
         cloud_provider: &dyn CloudProvider,
         node_addresses: &[String],
     ) -> Result<()> {
-        let namespace = service.metadata.namespace.as_ref()
+        let namespace = service
+            .metadata
+            .namespace
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Service has no namespace"))?;
         let name = &service.metadata.name;
 
@@ -131,7 +149,10 @@ impl<S: Storage> LoadBalancerController<S> {
         let has_node_ports = service.spec.ports.iter().all(|p| p.node_port.is_some());
 
         let updated_service = if !has_node_ports {
-            info!("Allocating NodePorts for LoadBalancer service {}/{}", namespace, name);
+            info!(
+                "Allocating NodePorts for LoadBalancer service {}/{}",
+                namespace, name
+            );
             self.allocate_node_ports(service).await?
         } else {
             service.clone()
@@ -142,15 +163,24 @@ impl<S: Storage> LoadBalancerController<S> {
             namespace: namespace.clone(),
             name: name.clone(),
             cluster_name: self.cluster_name.clone(),
-            ports: updated_service.spec.ports.iter().map(|p| LoadBalancerPort {
-                name: p.name.clone(),
-                protocol: p.protocol.clone().unwrap_or_else(|| "TCP".to_string()),
-                port: p.port,
-                node_port: p.node_port.unwrap(),
-            }).collect(),
+            ports: updated_service
+                .spec
+                .ports
+                .iter()
+                .map(|p| LoadBalancerPort {
+                    name: p.name.clone(),
+                    protocol: p.protocol.clone().unwrap_or_else(|| "TCP".to_string()),
+                    port: p.port,
+                    node_port: p.node_port.unwrap(),
+                })
+                .collect(),
             node_addresses: node_addresses.to_vec(),
             session_affinity: updated_service.spec.session_affinity.clone(),
-            annotations: updated_service.metadata.annotations.clone().unwrap_or_default(),
+            annotations: updated_service
+                .metadata
+                .annotations
+                .clone()
+                .unwrap_or_default(),
         };
 
         // Ensure load balancer exists
@@ -160,9 +190,13 @@ impl<S: Storage> LoadBalancerController<S> {
             .context("Failed to ensure load balancer")?;
 
         // Update service status with load balancer information
-        self.update_service_status(namespace, name, lb_status).await?;
+        self.update_service_status(namespace, name, lb_status)
+            .await?;
 
-        info!("Successfully reconciled LoadBalancer service {}/{}", namespace, name);
+        info!(
+            "Successfully reconciled LoadBalancer service {}/{}",
+            namespace, name
+        );
 
         Ok(())
     }
@@ -177,19 +211,22 @@ impl<S: Storage> LoadBalancerController<S> {
         let key = rusternetes_storage::build_key("services", Some(namespace), name);
 
         // Get current service
-        let mut service: Service = self.storage
+        let mut service: Service = self
+            .storage
             .get(&key)
             .await
             .context("Failed to get service")?;
 
         // Convert cloud provider status to service status
         let service_lb_status = LoadBalancerStatus {
-            ingress: lb_status.ingress.iter().map(|ing| {
-                LoadBalancerIngress {
+            ingress: lb_status
+                .ingress
+                .iter()
+                .map(|ing| LoadBalancerIngress {
                     ip: ing.ip.clone(),
                     hostname: ing.hostname.clone(),
-                }
-            }).collect(),
+                })
+                .collect(),
         };
 
         // Update status
@@ -198,7 +235,9 @@ impl<S: Storage> LoadBalancerController<S> {
         });
 
         // Save updated service
-        self.storage.update(&key, &service).await
+        self.storage
+            .update(&key, &service)
+            .await
             .context("Failed to update service status")?;
 
         debug!("Updated status for service {}/{}", namespace, name);
@@ -208,17 +247,16 @@ impl<S: Storage> LoadBalancerController<S> {
 
     /// Delete load balancer for a service (called when service is deleted)
     #[allow(dead_code)]
-    pub async fn cleanup_service(
-        &self,
-        namespace: &str,
-        name: &str,
-    ) -> Result<()> {
+    pub async fn cleanup_service(&self, namespace: &str, name: &str) -> Result<()> {
         let cloud_provider = match &self.cloud_provider {
             Some(p) => p,
             None => return Ok(()), // No cloud provider, nothing to clean up
         };
 
-        info!("Cleaning up LoadBalancer for service {}/{}", namespace, name);
+        info!(
+            "Cleaning up LoadBalancer for service {}/{}",
+            namespace, name
+        );
 
         cloud_provider
             .delete_load_balancer(namespace, name)
@@ -234,7 +272,10 @@ impl<S: Storage> LoadBalancerController<S> {
         const NODE_PORT_MIN: u16 = 30000;
         const NODE_PORT_MAX: u16 = 32767;
 
-        let namespace = service.metadata.namespace.as_ref()
+        let namespace = service
+            .metadata
+            .namespace
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Service has no namespace"))?;
         let name = &service.metadata.name;
 
@@ -247,11 +288,8 @@ impl<S: Storage> LoadBalancerController<S> {
         for port in &mut updated_service.spec.ports {
             if port.node_port.is_none() {
                 // Find next available port
-                let node_port = Self::find_available_port(
-                    NODE_PORT_MIN,
-                    NODE_PORT_MAX,
-                    &allocated_ports,
-                )?;
+                let node_port =
+                    Self::find_available_port(NODE_PORT_MIN, NODE_PORT_MAX, &allocated_ports)?;
 
                 info!(
                     "Allocated NodePort {} for service {}/{} port {}",
@@ -267,7 +305,9 @@ impl<S: Storage> LoadBalancerController<S> {
 
         // Update the service in storage
         let key = rusternetes_storage::build_key("services", Some(namespace), name);
-        self.storage.update(&key, &updated_service).await
+        self.storage
+            .update(&key, &updated_service)
+            .await
             .context("Failed to update service with NodePorts")?;
 
         Ok(updated_service)
@@ -275,7 +315,8 @@ impl<S: Storage> LoadBalancerController<S> {
 
     /// Get all currently allocated NodePorts across all services
     async fn get_allocated_node_ports(&self) -> Result<HashSet<u16>> {
-        let services: Vec<Service> = self.storage
+        let services: Vec<Service> = self
+            .storage
             .list("/registry/services/")
             .await
             .context("Failed to list services")?;
@@ -296,11 +337,7 @@ impl<S: Storage> LoadBalancerController<S> {
     }
 
     /// Find an available port in the given range
-    fn find_available_port(
-        min: u16,
-        max: u16,
-        allocated: &HashSet<u16>,
-    ) -> Result<u16> {
+    fn find_available_port(min: u16, max: u16, allocated: &HashSet<u16>) -> Result<u16> {
         // Simple linear search for available port
         // In production, this could be optimized with a more sophisticated allocator
         for port in min..=max {
@@ -327,12 +364,7 @@ mod tests {
     fn test_controller_creation() {
         // Test that we can create a controller without cloud provider
         let storage = Arc::new(MemoryStorage::new());
-        let controller = LoadBalancerController::new(
-            storage,
-            None,
-            "test-cluster".to_string(),
-            30,
-        );
+        let controller = LoadBalancerController::new(storage, None, "test-cluster".to_string(), 30);
 
         assert_eq!(controller.cluster_name, "test-cluster");
         assert!(controller.cloud_provider.is_none());

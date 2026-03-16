@@ -10,7 +10,6 @@
 /// - EndpointsController: Manages endpoint discovery based on selectors
 /// - LoadBalancerController: Provisions external load balancers
 /// - EndpointSliceController: Maintains endpoint slices for scalability
-
 use anyhow::Result;
 use rusternetes_common::resources::Service;
 use rusternetes_common::resources::ServiceType;
@@ -104,7 +103,11 @@ impl<S: Storage> ServiceController<S> {
             if let Err(e) = self.reconcile_service(&service).await {
                 error!(
                     "Failed to reconcile service {}/{}: {}",
-                    service.metadata.namespace.as_ref().unwrap_or(&"default".to_string()),
+                    service
+                        .metadata
+                        .namespace
+                        .as_ref()
+                        .unwrap_or(&"default".to_string()),
                     &service.metadata.name,
                     e
                 );
@@ -116,13 +119,19 @@ impl<S: Storage> ServiceController<S> {
 
     /// Reconcile a single service
     async fn reconcile_service(&self, service: &Service) -> Result<()> {
-        let namespace = service.metadata.namespace.as_ref()
+        let namespace = service
+            .metadata
+            .namespace
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Service has no namespace"))?;
         let service_name = &service.metadata.name;
 
         debug!("Reconciling service {}/{}", namespace, service_name);
 
-        let service_type = service.spec.service_type.as_ref()
+        let service_type = service
+            .spec
+            .service_type
+            .as_ref()
             .unwrap_or(&ServiceType::ClusterIP);
 
         let mut updated_service = service.clone();
@@ -130,21 +139,37 @@ impl<S: Storage> ServiceController<S> {
 
         // Handle ClusterIP allocation
         if service_type != &ServiceType::ExternalName {
-            if service.spec.cluster_ip.is_none() || service.spec.cluster_ip.as_ref().map(|s| s.is_empty()).unwrap_or(false) {
+            if service.spec.cluster_ip.is_none()
+                || service
+                    .spec
+                    .cluster_ip
+                    .as_ref()
+                    .map(|s| s.is_empty())
+                    .unwrap_or(false)
+            {
                 // Allocate a new ClusterIP
                 let cluster_ip = self.allocate_cluster_ip().await?;
-                info!("Allocated ClusterIP {} for service {}/{}", cluster_ip, namespace, service_name);
+                info!(
+                    "Allocated ClusterIP {} for service {}/{}",
+                    cluster_ip, namespace, service_name
+                );
                 updated_service.spec.cluster_ip = Some(cluster_ip.clone());
                 updated_service.spec.cluster_ips = Some(vec![cluster_ip]);
                 needs_update = true;
             } else if service.spec.cluster_ip.as_ref() == Some(&"None".to_string()) {
                 // Headless service - don't allocate IP
-                debug!("Service {}/{} is headless, skipping ClusterIP allocation", namespace, service_name);
+                debug!(
+                    "Service {}/{} is headless, skipping ClusterIP allocation",
+                    namespace, service_name
+                );
             }
         }
 
         // Handle NodePort allocation for NodePort and LoadBalancer services
-        if matches!(service_type, ServiceType::NodePort | ServiceType::LoadBalancer) {
+        if matches!(
+            service_type,
+            ServiceType::NodePort | ServiceType::LoadBalancer
+        ) {
             for (i, port) in updated_service.spec.ports.iter_mut().enumerate() {
                 if port.node_port.is_none() {
                     // Allocate a new NodePort
@@ -161,7 +186,9 @@ impl<S: Storage> ServiceController<S> {
 
         // Handle service type downgrades (e.g., LoadBalancer -> ClusterIP)
         // If service was previously NodePort/LoadBalancer but now is ClusterIP, release NodePorts
-        if service_type == &ServiceType::ClusterIP && service.spec.ports.iter().any(|p| p.node_port.is_some()) {
+        if service_type == &ServiceType::ClusterIP
+            && service.spec.ports.iter().any(|p| p.node_port.is_some())
+        {
             warn!(
                 "Service {}/{} changed from NodePort/LoadBalancer to ClusterIP, releasing NodePorts",
                 namespace, service_name
@@ -170,7 +197,10 @@ impl<S: Storage> ServiceController<S> {
             for port in &mut updated_service.spec.ports {
                 if let Some(node_port) = port.node_port.take() {
                     ports_lock.remove(&node_port);
-                    info!("Released NodePort {} for service {}/{}", node_port, namespace, service_name);
+                    info!(
+                        "Released NodePort {} for service {}/{}",
+                        node_port, namespace, service_name
+                    );
                     needs_update = true;
                 }
             }
@@ -180,7 +210,10 @@ impl<S: Storage> ServiceController<S> {
         if needs_update {
             let service_key = build_key("services", Some(namespace), service_name);
             self.storage.update(&service_key, &updated_service).await?;
-            info!("Updated service {}/{} with allocated resources", namespace, service_name);
+            info!(
+                "Updated service {}/{} with allocated resources",
+                namespace, service_name
+            );
         }
 
         Ok(())
@@ -193,12 +226,17 @@ impl<S: Storage> ServiceController<S> {
         // Parse service CIDR
         let cidr_parts: Vec<&str> = self.service_cidr.split('/').collect();
         if cidr_parts.len() != 2 {
-            return Err(anyhow::anyhow!("Invalid service CIDR: {}", self.service_cidr));
+            return Err(anyhow::anyhow!(
+                "Invalid service CIDR: {}",
+                self.service_cidr
+            ));
         }
 
-        let base_ip: Ipv4Addr = cidr_parts[0].parse()
+        let base_ip: Ipv4Addr = cidr_parts[0]
+            .parse()
             .map_err(|e| anyhow::anyhow!("Invalid service CIDR IP: {}", e))?;
-        let prefix_len: u8 = cidr_parts[1].parse()
+        let prefix_len: u8 = cidr_parts[1]
+            .parse()
             .map_err(|e| anyhow::anyhow!("Invalid service CIDR prefix length: {}", e))?;
 
         // Calculate the number of available IPs in the CIDR range
@@ -217,7 +255,10 @@ impl<S: Storage> ServiceController<S> {
             }
         }
 
-        Err(anyhow::anyhow!("No available ClusterIPs in service CIDR {}", self.service_cidr))
+        Err(anyhow::anyhow!(
+            "No available ClusterIPs in service CIDR {}",
+            self.service_cidr
+        ))
     }
 
     /// Allocate a NodePort from the available range
@@ -231,12 +272,19 @@ impl<S: Storage> ServiceController<S> {
             }
         }
 
-        Err(anyhow::anyhow!("No available NodePorts in range {}-{}", NODE_PORT_MIN, NODE_PORT_MAX))
+        Err(anyhow::anyhow!(
+            "No available NodePorts in range {}-{}",
+            NODE_PORT_MIN,
+            NODE_PORT_MAX
+        ))
     }
 
     /// Handle service deletion - release allocated resources
     pub async fn handle_service_deletion(&self, namespace: &str, service_name: &str) -> Result<()> {
-        info!("Handling deletion of service {}/{}", namespace, service_name);
+        info!(
+            "Handling deletion of service {}/{}",
+            namespace, service_name
+        );
 
         let service_key = build_key("services", Some(namespace), service_name);
 
@@ -250,7 +298,10 @@ impl<S: Storage> ServiceController<S> {
                     if cluster_ip != "None" {
                         let mut ips = self.allocated_ips.lock().await;
                         ips.remove(cluster_ip);
-                        info!("Released ClusterIP {} for service {}/{}", cluster_ip, namespace, service_name);
+                        info!(
+                            "Released ClusterIP {} for service {}/{}",
+                            cluster_ip, namespace, service_name
+                        );
                     }
                 }
 
@@ -269,7 +320,10 @@ impl<S: Storage> ServiceController<S> {
                 for port in &service.spec.ports {
                     if let Some(node_port) = port.node_port {
                         ports.remove(&node_port);
-                        info!("Released NodePort {} for service {}/{}", node_port, namespace, service_name);
+                        info!(
+                            "Released NodePort {} for service {}/{}",
+                            node_port, namespace, service_name
+                        );
                     }
                 }
 

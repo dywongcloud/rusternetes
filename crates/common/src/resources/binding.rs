@@ -15,7 +15,11 @@ pub struct Binding {
 }
 
 impl Binding {
-    pub fn new(name: impl Into<String>, namespace: impl Into<String>, target: ObjectReference) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        namespace: impl Into<String>,
+        target: ObjectReference,
+    ) -> Self {
         Self {
             type_meta: TypeMeta {
                 kind: "Binding".to_string(),
@@ -89,8 +93,7 @@ mod tests {
 
     #[test]
     fn test_binding_creation() {
-        let target = ObjectReference::new("node-1")
-            .with_kind("Node");
+        let target = ObjectReference::new("node-1").with_kind("Node");
 
         let binding = Binding::new("test-pod", "default", target.clone());
 

@@ -1,5 +1,5 @@
-use rusternetes_common::resources::{Pod, PodSpec, Container, ResourceQuota, ResourceQuotaSpec};
-use rusternetes_common::types::{ObjectMeta, TypeMeta, ResourceRequirements};
+use rusternetes_common::resources::{Container, Pod, PodSpec, ResourceQuota, ResourceQuotaSpec};
+use rusternetes_common::types::{ObjectMeta, ResourceRequirements, TypeMeta};
 use rusternetes_controller_manager::controllers::resource_quota::ResourceQuotaController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -51,6 +51,7 @@ fn create_test_pod(name: &str, cpu_request: &str, memory_request: &str) -> Pod {
             node_selector: None,
             service_account_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,

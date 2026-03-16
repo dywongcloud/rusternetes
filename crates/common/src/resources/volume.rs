@@ -1,5 +1,5 @@
-use crate::types::{ObjectMeta, TypeMeta};
 use crate::resources::service_account::ObjectReference;
+use crate::types::{ObjectMeta, TypeMeta};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

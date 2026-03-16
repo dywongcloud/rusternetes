@@ -3,7 +3,9 @@
 //! Tests all CRUD operations, edge cases, and error handling for csinodes.
 //! CSINode holds information about all CSI drivers installed on a node.
 
-use rusternetes_common::resources::csi::{CSINode, CSINodeDriver, CSINodeSpec, VolumeNodeResources};
+use rusternetes_common::resources::csi::{
+    CSINode, CSINodeDriver, CSINodeSpec, VolumeNodeResources,
+};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -20,9 +22,7 @@ fn create_test_csinode(name: &str) -> CSINode {
             name: name.to_string(),
             ..Default::default()
         },
-        spec: CSINodeSpec {
-            drivers: vec![],
-        },
+        spec: CSINodeSpec { drivers: vec![] },
     }
 }
 
@@ -152,9 +152,7 @@ async fn test_csinode_with_multiple_drivers() {
         CSINodeDriver {
             name: "ebs.csi.aws.com".to_string(),
             node_id: "i-abc123".to_string(),
-            topology_keys: Some(vec![
-                "topology.ebs.csi.aws.com/zone".to_string(),
-            ]),
+            topology_keys: Some(vec!["topology.ebs.csi.aws.com/zone".to_string()]),
             allocatable: None,
         },
         CSINodeDriver {
@@ -223,9 +221,7 @@ async fn test_csinode_with_allocatable() {
         name: "ebs.csi.aws.com".to_string(),
         node_id: "node-123".to_string(),
         topology_keys: None,
-        allocatable: Some(VolumeNodeResources {
-            count: Some(39),
-        }),
+        allocatable: Some(VolumeNodeResources { count: Some(39) }),
     }];
 
     let key = build_key("csinodes", None, "test-allocatable");
@@ -324,7 +320,10 @@ async fn test_csinode_with_labels() {
 
     let mut labels = HashMap::new();
     labels.insert("node-role.kubernetes.io/worker".to_string(), "".to_string());
-    labels.insert("topology.kubernetes.io/zone".to_string(), "us-west-1a".to_string());
+    labels.insert(
+        "topology.kubernetes.io/zone".to_string(),
+        "us-west-1a".to_string(),
+    );
 
     let mut node = create_test_csinode("test-labels");
     node.metadata.labels = Some(labels.clone());
@@ -436,12 +435,8 @@ async fn test_csinode_all_fields() {
         CSINodeDriver {
             name: "ebs.csi.aws.com".to_string(),
             node_id: "i-0123456789abcdef0".to_string(),
-            topology_keys: Some(vec![
-                "topology.ebs.csi.aws.com/zone".to_string(),
-            ]),
-            allocatable: Some(VolumeNodeResources {
-                count: Some(39),
-            }),
+            topology_keys: Some(vec!["topology.ebs.csi.aws.com/zone".to_string()]),
+            allocatable: Some(VolumeNodeResources { count: Some(39) }),
         },
         CSINodeDriver {
             name: "efs.csi.aws.com".to_string(),
@@ -492,12 +487,8 @@ async fn test_csinode_driver_update_scenario() {
 
     // Update driver info (node_id changed)
     node.spec.drivers[0].node_id = "new-node-id".to_string();
-    node.spec.drivers[0].topology_keys = Some(vec![
-        "topology.ebs.csi.aws.com/zone".to_string(),
-    ]);
-    node.spec.drivers[0].allocatable = Some(VolumeNodeResources {
-        count: Some(39),
-    });
+    node.spec.drivers[0].topology_keys = Some(vec!["topology.ebs.csi.aws.com/zone".to_string()]);
+    node.spec.drivers[0].allocatable = Some(VolumeNodeResources { count: Some(39) });
 
     let updated: CSINode = storage.update(&key, &node).await.unwrap();
     assert_eq!(updated.spec.drivers[0].node_id, "new-node-id");
@@ -517,9 +508,7 @@ async fn test_csinode_max_allocatable() {
         name: "test-driver".to_string(),
         node_id: "node-123".to_string(),
         topology_keys: None,
-        allocatable: Some(VolumeNodeResources {
-            count: Some(256),
-        }),
+        allocatable: Some(VolumeNodeResources { count: Some(256) }),
     }];
 
     let key = build_key("csinodes", None, "test-max-allocatable");
@@ -542,9 +531,7 @@ async fn test_csinode_zero_allocatable() {
         name: "test-driver".to_string(),
         node_id: "node-123".to_string(),
         topology_keys: None,
-        allocatable: Some(VolumeNodeResources {
-            count: Some(0),
-        }),
+        allocatable: Some(VolumeNodeResources { count: Some(0) }),
     }];
 
     let key = build_key("csinodes", None, "test-zero-allocatable");
@@ -566,9 +553,7 @@ async fn test_csinode_single_topology_key() {
     node.spec.drivers = vec![CSINodeDriver {
         name: "ebs.csi.aws.com".to_string(),
         node_id: "i-abc123".to_string(),
-        topology_keys: Some(vec![
-            "topology.ebs.csi.aws.com/zone".to_string(),
-        ]),
+        topology_keys: Some(vec!["topology.ebs.csi.aws.com/zone".to_string()]),
         allocatable: None,
     }];
 

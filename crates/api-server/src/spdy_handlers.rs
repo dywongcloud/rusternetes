@@ -106,9 +106,8 @@ pub async fn handle_spdy_exec(
                                 Ok(0) => break, // EOF
                                 Ok(n) => {
                                     let data = buffer[..n].to_vec();
-                                    if let Err(e) = spdy_clone
-                                        .write_channel(SpdyChannel::Stdout, data)
-                                        .await
+                                    if let Err(e) =
+                                        spdy_clone.write_channel(SpdyChannel::Stdout, data).await
                                     {
                                         error!("Failed to send stdout: {}", e);
                                         break;
@@ -135,9 +134,8 @@ pub async fn handle_spdy_exec(
                                 Ok(0) => break, // EOF
                                 Ok(n) => {
                                     let data = buffer[..n].to_vec();
-                                    if let Err(e) = spdy_clone
-                                        .write_channel(SpdyChannel::Stderr, data)
-                                        .await
+                                    if let Err(e) =
+                                        spdy_clone.write_channel(SpdyChannel::Stderr, data).await
                                     {
                                         error!("Failed to send stderr: {}", e);
                                         break;
@@ -168,7 +166,9 @@ pub async fn handle_spdy_exec(
         }
         Err(e) => {
             error!("Failed to spawn exec command: {}", e);
-            let _ = spdy.write_error(&format!("Failed to execute command: {}", e)).await;
+            let _ = spdy
+                .write_error(&format!("Failed to execute command: {}", e))
+                .await;
             let _ = spdy.close().await;
         }
     }
@@ -328,12 +328,11 @@ pub async fn handle_spdy_attach(
 }
 
 /// Handle SPDY port-forward connection
-pub async fn handle_spdy_portforward(
-    spdy: SpdyConnection,
-    pod: Pod,
-    ports: Vec<u16>,
-) {
-    debug!("SPDY port-forward: pod={}, ports={:?}", pod.metadata.name, ports);
+pub async fn handle_spdy_portforward(spdy: SpdyConnection, pod: Pod, ports: Vec<u16>) {
+    debug!(
+        "SPDY port-forward: pod={}, ports={:?}",
+        pod.metadata.name, ports
+    );
 
     info!(
         "Port-forward for pod {} on ports {:?} - establishing TCP proxies",
@@ -411,11 +410,7 @@ pub async fn handle_spdy_portforward(
 }
 
 /// Set up TCP proxy for a single port
-async fn setup_port_forward(
-    spdy: Arc<SpdyConnection>,
-    pod_ip: &str,
-    port: u16,
-) -> Result<()> {
+async fn setup_port_forward(spdy: Arc<SpdyConnection>, pod_ip: &str, port: u16) -> Result<()> {
     use tokio::net::TcpStream;
 
     info!("Setting up port-forward to {}:{}", pod_ip, port);
@@ -456,7 +451,10 @@ async fn setup_port_forward(
         match tcp_read.read(&mut buffer).await {
             Ok(0) => break, // EOF
             Ok(n) => {
-                if let Err(e) = spdy.write_channel(SpdyChannel::Stdout, buffer[..n].to_vec()).await {
+                if let Err(e) = spdy
+                    .write_channel(SpdyChannel::Stdout, buffer[..n].to_vec())
+                    .await
+                {
                     error!("Failed to write to SPDY connection: {}", e);
                     break;
                 }

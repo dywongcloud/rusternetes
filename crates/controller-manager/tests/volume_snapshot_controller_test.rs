@@ -14,15 +14,15 @@ async fn setup_test() -> Arc<MemoryStorage> {
 
     // Clean up test data
 
-
-
-
-
-
     storage
 }
 
-async fn create_test_pvc(storage: &MemoryStorage, name: &str, namespace: &str, pv_name: &str) -> PersistentVolumeClaim {
+async fn create_test_pvc(
+    storage: &MemoryStorage,
+    name: &str,
+    namespace: &str,
+    pv_name: &str,
+) -> PersistentVolumeClaim {
     let mut requests = HashMap::new();
     requests.insert("storage".to_string(), "5Gi".to_string());
 
@@ -50,8 +50,8 @@ async fn create_test_pvc(storage: &MemoryStorage, name: &str, namespace: &str, p
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Bound,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
             capacity: Some({
@@ -236,7 +236,10 @@ async fn test_snapshot_deletion_with_delete_policy() {
     let content_name = "snapcontent-default-test-snapshot-delete";
     let content_key = build_key("volumesnapshotcontents", None, content_name);
     let content: Result<VolumeSnapshotContent, _> = storage.get(&content_key).await;
-    assert!(content.is_ok(), "VolumeSnapshotContent should exist before deletion");
+    assert!(
+        content.is_ok(),
+        "VolumeSnapshotContent should exist before deletion"
+    );
 
     // Delete the VolumeSnapshot
     storage.delete(&vs_key).await.unwrap();
@@ -247,7 +250,10 @@ async fn test_snapshot_deletion_with_delete_policy() {
 
     // Verify VolumeSnapshotContent was also deleted (Delete policy)
     let content_after: Result<VolumeSnapshotContent, _> = storage.get(&content_key).await;
-    assert!(content_after.is_err(), "VolumeSnapshotContent should be deleted with Delete policy");
+    assert!(
+        content_after.is_err(),
+        "VolumeSnapshotContent should be deleted with Delete policy"
+    );
 }
 
 #[tokio::test]
@@ -307,7 +313,10 @@ async fn test_snapshot_deletion_with_retain_policy() {
     let content_name = "snapcontent-default-test-snapshot-retain";
     let content_key = build_key("volumesnapshotcontents", None, content_name);
     let content: Result<VolumeSnapshotContent, _> = storage.get(&content_key).await;
-    assert!(content.is_ok(), "VolumeSnapshotContent should exist before deletion");
+    assert!(
+        content.is_ok(),
+        "VolumeSnapshotContent should exist before deletion"
+    );
 
     // Delete the VolumeSnapshot
     storage.delete(&vs_key).await.unwrap();
@@ -318,7 +327,10 @@ async fn test_snapshot_deletion_with_retain_policy() {
 
     // Verify VolumeSnapshotContent still exists (Retain policy)
     let content_after: Result<VolumeSnapshotContent, _> = storage.get(&content_key).await;
-    assert!(content_after.is_ok(), "VolumeSnapshotContent should be retained with Retain policy");
+    assert!(
+        content_after.is_ok(),
+        "VolumeSnapshotContent should be retained with Retain policy"
+    );
 }
 
 #[tokio::test]
@@ -368,8 +380,8 @@ async fn test_snapshot_without_bound_pvc_fails() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending, // Pending, not Bound
             access_modes: None,
             capacity: None,
@@ -414,7 +426,10 @@ async fn test_snapshot_without_bound_pvc_fails() {
     let content_name = "snapcontent-default-snapshot-unbound";
     let content_key = build_key("volumesnapshotcontents", None, content_name);
     let content: Result<VolumeSnapshotContent, _> = storage.get(&content_key).await;
-    assert!(content.is_err(), "VolumeSnapshotContent should not be created for unbound PVC");
+    assert!(
+        content.is_err(),
+        "VolumeSnapshotContent should not be created for unbound PVC"
+    );
 }
 
 #[tokio::test]
@@ -459,5 +474,8 @@ async fn test_snapshot_with_invalid_class_fails() {
     let content_name = "snapcontent-default-snapshot-invalid-class";
     let content_key = build_key("volumesnapshotcontents", None, content_name);
     let content: Result<VolumeSnapshotContent, _> = storage.get(&content_key).await;
-    assert!(content.is_err(), "VolumeSnapshotContent should not be created with invalid class");
+    assert!(
+        content.is_err(),
+        "VolumeSnapshotContent should not be created with invalid class"
+    );
 }

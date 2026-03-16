@@ -2,7 +2,6 @@
 ///
 /// This module provides a generic implementation of PATCH operations
 /// that can be used across all Kubernetes resource types.
-
 use crate::{
     middleware::AuthContext,
     patch::{apply_patch, PatchType},
@@ -19,9 +18,9 @@ use rusternetes_common::{
     server_side_apply::{server_side_apply, ApplyParams, ApplyResult},
     Result,
 };
-use std::collections::HashMap;
 use rusternetes_storage::{build_key, Storage};
 use serde::{de::DeserializeOwned, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
@@ -72,23 +71,30 @@ where
 
     // Check if this is a server-side apply request (has fieldManager parameter)
     if let Some(field_manager) = params.get("fieldManager") {
-        info!("Server-side apply for {} {}/{} by manager {}", resource_type, namespace, name, field_manager);
+        info!(
+            "Server-side apply for {} {}/{} by manager {}",
+            resource_type, namespace, name, field_manager
+        );
 
         // Get current resource (if exists)
         let key = build_key(resource_type, Some(&namespace), &name);
         let current_json = match state.storage.get::<T>(&key).await {
-            Ok(current) => Some(serde_json::to_value(&current)
-                .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?),
+            Ok(current) => Some(
+                serde_json::to_value(&current)
+                    .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?,
+            ),
             Err(rusternetes_common::Error::NotFound(_)) => None,
             Err(e) => return Err(e),
         };
 
         // Parse desired resource
-        let desired_json: serde_json::Value = serde_json::from_slice(&body)
-            .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e)))?;
+        let desired_json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e))
+        })?;
 
         // Apply with server-side apply semantics
-        let force = params.get("force")
+        let force = params
+            .get("force")
             .and_then(|v| v.parse::<bool>().ok())
             .unwrap_or(false);
 
@@ -104,8 +110,9 @@ where
         match result {
             ApplyResult::Success(applied_json) => {
                 // Convert to resource type
-                let applied_resource: T = serde_json::from_value(applied_json)
-                    .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e)))?;
+                let applied_resource: T = serde_json::from_value(applied_json).map_err(|e| {
+                    rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e))
+                })?;
 
                 // Save to storage (create or update)
                 let saved = if current_json.is_some() {
@@ -156,9 +163,8 @@ where
         .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
 
     // Parse patch document
-    let patch_json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
-        rusternetes_common::Error::InvalidResource(format!("Invalid patch: {}", e))
-    })?;
+    let patch_json: serde_json::Value = serde_json::from_slice(&body)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch: {}", e)))?;
 
     // Apply patch
     let patched_json = apply_patch(&current_json, &patch_json, patch_type)
@@ -223,23 +229,30 @@ where
 
     // Check if this is a server-side apply request (has fieldManager parameter)
     if let Some(field_manager) = params.get("fieldManager") {
-        info!("Server-side apply for {} {} by manager {}", resource_type, name, field_manager);
+        info!(
+            "Server-side apply for {} {} by manager {}",
+            resource_type, name, field_manager
+        );
 
         // Get current resource (if exists)
         let key = build_key(resource_type, None, &name);
         let current_json = match state.storage.get::<T>(&key).await {
-            Ok(current) => Some(serde_json::to_value(&current)
-                .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?),
+            Ok(current) => Some(
+                serde_json::to_value(&current)
+                    .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?,
+            ),
             Err(rusternetes_common::Error::NotFound(_)) => None,
             Err(e) => return Err(e),
         };
 
         // Parse desired resource
-        let desired_json: serde_json::Value = serde_json::from_slice(&body)
-            .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e)))?;
+        let desired_json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e))
+        })?;
 
         // Apply with server-side apply semantics
-        let force = params.get("force")
+        let force = params
+            .get("force")
             .and_then(|v| v.parse::<bool>().ok())
             .unwrap_or(false);
 
@@ -255,8 +268,9 @@ where
         match result {
             ApplyResult::Success(applied_json) => {
                 // Convert to resource type
-                let applied_resource: T = serde_json::from_value(applied_json)
-                    .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e)))?;
+                let applied_resource: T = serde_json::from_value(applied_json).map_err(|e| {
+                    rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e))
+                })?;
 
                 // Save to storage (create or update)
                 let saved = if current_json.is_some() {
@@ -307,9 +321,8 @@ where
         .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
 
     // Parse patch document
-    let patch_json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
-        rusternetes_common::Error::InvalidResource(format!("Invalid patch: {}", e))
-    })?;
+    let patch_json: serde_json::Value = serde_json::from_slice(&body)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch: {}", e)))?;
 
     // Apply patch
     let patched_json = apply_patch(&current_json, &patch_json, patch_type)

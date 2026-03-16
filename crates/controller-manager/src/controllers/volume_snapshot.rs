@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
-use rusternetes_common::resources::{
-    PersistentVolumeClaim, VolumeSnapshot, VolumeSnapshotClass, VolumeSnapshotContent,
-    VolumeSnapshotContentSpec, VolumeSnapshotContentStatus,
-    VolumeSnapshotStatus, DeletionPolicy,
-};
-use rusternetes_common::resources::volume::VolumeSnapshotContentSource;
 use rusternetes_common::resources::service_account::ObjectReference;
+use rusternetes_common::resources::volume::VolumeSnapshotContentSource;
+use rusternetes_common::resources::{
+    DeletionPolicy, PersistentVolumeClaim, VolumeSnapshot, VolumeSnapshotClass,
+    VolumeSnapshotContent, VolumeSnapshotContentSpec, VolumeSnapshotContentStatus,
+    VolumeSnapshotStatus,
+};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
@@ -35,14 +35,14 @@ impl<S: Storage> VolumeSnapshotController<S> {
 
     pub async fn reconcile_all(&self) -> Result<()> {
         // Get all VolumeSnapshots
-        let snapshots: Vec<VolumeSnapshot> = self
-            .storage
-            .list("/registry/volumesnapshots/")
-            .await?;
+        let snapshots: Vec<VolumeSnapshot> =
+            self.storage.list("/registry/volumesnapshots/").await?;
 
         for snapshot in snapshots {
             // Only process snapshots that don't have a bound content yet
-            if snapshot.status.as_ref()
+            if snapshot
+                .status
+                .as_ref()
                 .and_then(|s| s.bound_volume_snapshot_content_name.as_ref())
                 .is_none()
             {
@@ -67,18 +67,21 @@ impl<S: Storage> VolumeSnapshotController<S> {
         let vs_name = &vs.metadata.name;
         let namespace = vs.metadata.namespace.as_deref().unwrap_or("default");
 
-        info!(
-            "Processing VolumeSnapshot {}/{}",
-            namespace, vs_name
-        );
+        info!("Processing VolumeSnapshot {}/{}", namespace, vs_name);
 
         // Get the VolumeSnapshotClass
         let vsc_name = &vs.spec.volume_snapshot_class_name;
         let vsc_key = build_key("volumesnapshotclasses", None, vsc_name);
-        let vsc: VolumeSnapshotClass = self.storage.get(&vsc_key).await
+        let vsc: VolumeSnapshotClass = self
+            .storage
+            .get(&vsc_key)
+            .await
             .with_context(|| format!("VolumeSnapshotClass {} not found", vsc_name))?;
 
-        info!("Found VolumeSnapshotClass {} with driver {}", vsc_name, vsc.driver);
+        info!(
+            "Found VolumeSnapshotClass {} with driver {}",
+            vsc_name, vsc.driver
+        );
 
         // Check if driver is supported
         if !self.is_driver_supported(&vsc.driver) {
@@ -90,15 +93,25 @@ impl<S: Storage> VolumeSnapshotController<S> {
         }
 
         // Get the source PVC
-        let pvc_name = vs.spec.source.persistent_volume_claim_name.as_ref()
+        let pvc_name = vs
+            .spec
+            .source
+            .persistent_volume_claim_name
+            .as_ref()
             .context("VolumeSnapshot source must specify persistentVolumeClaimName")?;
 
         let pvc_key = build_key("persistentvolumeclaims", Some(namespace), pvc_name);
-        let pvc: PersistentVolumeClaim = self.storage.get(&pvc_key).await
+        let pvc: PersistentVolumeClaim = self
+            .storage
+            .get(&pvc_key)
+            .await
             .with_context(|| format!("PVC {}/{} not found", namespace, pvc_name))?;
 
         // Ensure PVC is bound
-        let pv_name = pvc.spec.volume_name.as_ref()
+        let pv_name = pvc
+            .spec
+            .volume_name
+            .as_ref()
             .context("PVC must be bound to a PV before taking a snapshot")?;
 
         info!(
@@ -111,7 +124,11 @@ impl<S: Storage> VolumeSnapshotController<S> {
 
         // Check if content already exists
         let content_key = build_key("volumesnapshotcontents", None, &content_name);
-        if let Ok(_existing_content) = self.storage.get::<VolumeSnapshotContent>(&content_key).await {
+        if let Ok(_existing_content) = self
+            .storage
+            .get::<VolumeSnapshotContent>(&content_key)
+            .await
+        {
             info!("VolumeSnapshotContent {} already exists", content_name);
             // Update VolumeSnapshot status if needed
             self.update_snapshot_status(vs, &content_name, true).await?;
@@ -122,7 +139,9 @@ impl<S: Storage> VolumeSnapshotController<S> {
         let content = self.create_snapshot_content(&vsc, vs, &content_name, pv_name)?;
 
         // Store the content
-        self.storage.create(&content_key, &content).await
+        self.storage
+            .create(&content_key, &content)
+            .await
             .with_context(|| format!("Failed to create VolumeSnapshotContent {}", content_name))?;
 
         info!(
@@ -152,7 +171,12 @@ impl<S: Storage> VolumeSnapshotController<S> {
         volume_handle: &str,
     ) -> Result<VolumeSnapshotContent> {
         let namespace = vs.metadata.namespace.as_deref().unwrap_or("default");
-        let snapshot_handle = format!("snapshot-{}-{}-{}", namespace, vs.metadata.name, uuid::Uuid::new_v4());
+        let snapshot_handle = format!(
+            "snapshot-{}-{}-{}",
+            namespace,
+            vs.metadata.name,
+            uuid::Uuid::new_v4()
+        );
 
         let content = VolumeSnapshotContent {
             type_meta: TypeMeta {
@@ -187,7 +211,7 @@ impl<S: Storage> VolumeSnapshotController<S> {
                 snapshot_handle: Some(snapshot_handle.clone()),
                 creation_time: Some(chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)),
                 ready_to_use: Some(true), // Simplified - in real impl, this would be async
-                restore_size: None, // Would be populated by actual snapshotter
+                restore_size: None,       // Would be populated by actual snapshotter
                 error: None,
             }),
         };
@@ -245,7 +269,8 @@ impl<S: Storage> VolumeSnapshotController<S> {
                             namespace, name, content.metadata.name
                         );
 
-                        let content_key = build_key("volumesnapshotcontents", None, &content.metadata.name);
+                        let content_key =
+                            build_key("volumesnapshotcontents", None, &content.metadata.name);
                         self.storage.delete(&content_key).await?;
 
                         info!("Deleted VolumeSnapshotContent {}", content.metadata.name);

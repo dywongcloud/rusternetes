@@ -17,7 +17,11 @@ use super::NodeSelector;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceClaim {
-    #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "apiVersion",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub api_version: String,
 
     #[serde(rename = "kind", default, skip_serializing_if = "String::is_empty")]
@@ -68,7 +72,11 @@ pub struct DeviceRequest {
     pub exactly: Option<ExactDeviceRequest>,
 
     /// FirstAvailable contains subrequests, of which exactly one will be selected
-    #[serde(rename = "firstAvailable", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "firstAvailable",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub first_available: Vec<DeviceSubRequest>,
 }
 
@@ -84,7 +92,11 @@ pub struct ExactDeviceRequest {
     pub selectors: Vec<DeviceSelector>,
 
     /// AllocationMode defines how devices are allocated
-    #[serde(rename = "allocationMode", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "allocationMode",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub allocation_mode: Option<DeviceAllocationMode>,
 
     /// Count is used only when the mode is "ExactCount"
@@ -92,7 +104,11 @@ pub struct ExactDeviceRequest {
     pub count: Option<i64>,
 
     /// AdminAccess indicates administrative access to the device(s)
-    #[serde(rename = "adminAccess", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "adminAccess",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub admin_access: Option<bool>,
 
     /// Tolerations for device taints
@@ -176,7 +192,11 @@ pub struct DeviceConstraint {
     pub requests: Vec<String>,
 
     /// MatchAttribute specifies device attribute constraints
-    #[serde(rename = "matchAttribute", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "matchAttribute",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub match_attribute: Option<FullyQualifiedName>,
 }
 
@@ -215,7 +235,11 @@ pub struct ResourceClaimStatus {
     pub reserved_for: Vec<ResourceClaimConsumerReference>,
 
     /// DeallocationRequested indicates that a ResourceClaim is to be deallocated
-    #[serde(rename = "deallocationRequested", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "deallocationRequested",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub deallocation_requested: Option<bool>,
 }
 
@@ -226,7 +250,11 @@ pub struct AllocationResult {
     pub devices: DeviceAllocationResult,
 
     /// NodeSelector defines where the allocated resources are available
-    #[serde(rename = "nodeSelector", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "nodeSelector",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub node_selector: Option<NodeSelector>,
 }
 
@@ -306,7 +334,11 @@ pub struct DeviceCondition {
 
     pub status: String,
 
-    #[serde(rename = "lastTransitionTime", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "lastTransitionTime",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub last_transition_time: Option<DateTime<Utc>>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -336,7 +368,11 @@ pub struct ResourceClaimConsumerReference {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceClaimTemplate {
-    #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "apiVersion",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub api_version: String,
 
     #[serde(rename = "kind", default, skip_serializing_if = "String::is_empty")]
@@ -366,7 +402,11 @@ pub struct ResourceClaimTemplateSpec {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceClass {
-    #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "apiVersion",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub api_version: String,
 
     #[serde(rename = "kind", default, skip_serializing_if = "String::is_empty")]
@@ -390,7 +430,11 @@ pub struct DeviceClassSpec {
     pub config: Vec<DeviceClassConfiguration>,
 
     /// SuitableNodes defines which nodes have devices that might get allocated for claims
-    #[serde(rename = "suitableNodes", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "suitableNodes",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub suitable_nodes: Option<NodeSelector>,
 }
 
@@ -408,7 +452,11 @@ pub struct DeviceClassConfiguration {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceSlice {
-    #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "apiVersion",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub api_version: String,
 
     #[serde(rename = "kind", default, skip_serializing_if = "String::is_empty")]
@@ -434,7 +482,11 @@ pub struct ResourceSliceSpec {
     pub node_name: Option<String>,
 
     /// NodeSelector defines which nodes have access to the resources
-    #[serde(rename = "nodeSelector", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "nodeSelector",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub node_selector: Option<NodeSelector>,
 
     /// AllNodes indicates that all nodes have access to resources in the pool
@@ -446,11 +498,19 @@ pub struct ResourceSliceSpec {
     pub devices: Vec<Device>,
 
     /// PerDeviceNodeSelection defines whether node access is per-device
-    #[serde(rename = "perDeviceNodeSelection", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "perDeviceNodeSelection",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub per_device_node_selection: Option<bool>,
 
     /// SharedCounters defines counter sets available to devices
-    #[serde(rename = "sharedCounters", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "sharedCounters",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub shared_counters: Vec<CounterSet>,
 }
 
@@ -483,7 +543,11 @@ pub struct Device {
     pub capacity: Option<BTreeMap<String, DeviceCapacity>>,
 
     /// ConsumesCounters defines references to sharedCounters
-    #[serde(rename = "consumesCounters", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "consumesCounters",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub consumes_counters: Vec<DeviceCounterConsumption>,
 
     /// NodeName identifies the node where the device is available
@@ -491,7 +555,11 @@ pub struct Device {
     pub node_name: Option<String>,
 
     /// NodeSelector defines the nodes where the device is available
-    #[serde(rename = "nodeSelector", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "nodeSelector",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub node_selector: Option<NodeSelector>,
 
     /// AllNodes indicates that all nodes have access to the device
@@ -503,19 +571,35 @@ pub struct Device {
     pub taints: Vec<DeviceTaint>,
 
     /// BindsToNode indicates if allocation must be limited to the chosen node
-    #[serde(rename = "bindsToNode", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "bindsToNode",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub binds_to_node: Option<bool>,
 
     /// BindingConditions defines conditions for proceeding with binding
-    #[serde(rename = "bindingConditions", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "bindingConditions",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub binding_conditions: Vec<String>,
 
     /// BindingFailureConditions defines conditions for binding failure
-    #[serde(rename = "bindingFailureConditions", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "bindingFailureConditions",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub binding_failure_conditions: Vec<String>,
 
     /// AllowMultipleAllocations marks whether device can be allocated multiple times
-    #[serde(rename = "allowMultipleAllocations", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "allowMultipleAllocations",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub allow_multiple_allocations: Option<bool>,
 }
 
@@ -542,7 +626,11 @@ pub struct DeviceCapacity {
     pub value: String, // resource.Quantity as string
 
     /// RequestPolicy defines how capacity must be consumed
-    #[serde(rename = "requestPolicy", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "requestPolicy",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub request_policy: Option<CapacityRequestPolicy>,
 }
 
@@ -558,7 +646,11 @@ pub struct CapacityRequestPolicy {
     pub valid_values: Vec<String>,
 
     /// ValidRange defines an acceptable quantity value range
-    #[serde(rename = "validRange", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "validRange",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub valid_range: Option<CapacityRequestPolicyRange>,
 }
 
@@ -653,13 +745,25 @@ pub struct ObjectMeta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uid: Option<String>,
 
-    #[serde(rename = "resourceVersion", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "resourceVersion",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub resource_version: Option<String>,
 
-    #[serde(rename = "creationTimestamp", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "creationTimestamp",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub creation_timestamp: Option<DateTime<Utc>>,
 
-    #[serde(rename = "deletionTimestamp", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "deletionTimestamp",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub deletion_timestamp: Option<DateTime<Utc>>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -671,7 +775,11 @@ pub struct ObjectMeta {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub finalizers: Vec<String>,
 
-    #[serde(rename = "ownerReferences", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "ownerReferences",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub owner_references: Vec<OwnerReference>,
 }
 
@@ -685,7 +793,11 @@ pub struct OwnerReference {
     pub uid: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller: Option<bool>,
-    #[serde(rename = "blockOwnerDeletion", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "blockOwnerDeletion",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub block_owner_deletion: Option<bool>,
 }
 
@@ -693,7 +805,11 @@ pub struct OwnerReference {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceClaimList {
-    #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "apiVersion",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub api_version: String,
 
     #[serde(rename = "kind", default, skip_serializing_if = "String::is_empty")]
@@ -708,7 +824,11 @@ pub struct ResourceClaimList {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceClaimTemplateList {
-    #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "apiVersion",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub api_version: String,
 
     #[serde(rename = "kind", default, skip_serializing_if = "String::is_empty")]
@@ -723,7 +843,11 @@ pub struct ResourceClaimTemplateList {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceClassList {
-    #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "apiVersion",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub api_version: String,
 
     #[serde(rename = "kind", default, skip_serializing_if = "String::is_empty")]
@@ -738,7 +862,11 @@ pub struct DeviceClassList {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceSliceList {
-    #[serde(rename = "apiVersion", default, skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "apiVersion",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub api_version: String,
 
     #[serde(rename = "kind", default, skip_serializing_if = "String::is_empty")]
@@ -753,13 +881,21 @@ pub struct ResourceSliceList {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ListMeta {
-    #[serde(rename = "resourceVersion", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "resourceVersion",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub resource_version: Option<String>,
 
     #[serde(rename = "continue", default, skip_serializing_if = "Option::is_none")]
     pub continue_token: Option<String>,
 
-    #[serde(rename = "remainingItemCount", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "remainingItemCount",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub remaining_item_count: Option<i64>,
 }
 

@@ -6,8 +6,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::ComponentStatus,
-    List,
-    Result,
+    List, Result,
 };
 use std::sync::Arc;
 use tracing::info;
@@ -54,8 +53,8 @@ pub async fn list(
     info!("Listing componentstatuses");
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "componentstatuses")
-        .with_api_group("");
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "list", "componentstatuses").with_api_group("");
 
     if let Decision::Deny(reason) = _state.authorizer.authorize(&attrs).await? {
         return Err(rusternetes_common::Error::Forbidden(reason));

@@ -1,4 +1,4 @@
-use crate::eviction::{EvictionManager, EvictionSignal, get_node_stats, get_pod_stats};
+use crate::eviction::{get_node_stats, get_pod_stats, EvictionManager, EvictionSignal};
 use crate::runtime::ContainerRuntime;
 use anyhow::Result;
 use rusternetes_common::{
@@ -6,7 +6,11 @@ use rusternetes_common::{
     types::Phase,
 };
 use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
-use std::{collections::HashMap, sync::{Arc, Mutex}, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tracing::{debug, error, info, warn};
 
 pub struct Kubelet {
@@ -28,9 +32,15 @@ impl Kubelet {
         network: String,
         kubernetes_service_host: String,
     ) -> Result<Self> {
-        let runtime = ContainerRuntime::new(volume_dir, cluster_dns, cluster_domain, network, kubernetes_service_host)
-            .await?
-            .with_storage(storage.clone());
+        let runtime = ContainerRuntime::new(
+            volume_dir,
+            cluster_dns,
+            cluster_domain,
+            network,
+            kubernetes_service_host,
+        )
+        .await?
+        .with_storage(storage.clone());
 
         Ok(Self {
             node_name,
@@ -113,7 +123,8 @@ impl Kubelet {
         let key = build_key("nodes", None, &self.node_name);
 
         // Debug: log what we're trying to store
-        let node_json = serde_json::to_string_pretty(&node).unwrap_or_else(|_| "failed to serialize".to_string());
+        let node_json = serde_json::to_string_pretty(&node)
+            .unwrap_or_else(|_| "failed to serialize".to_string());
         info!("Registering node with spec: {}", node_json);
 
         // Try to create, if it exists, update it
@@ -231,12 +242,18 @@ impl Kubelet {
 
         // Get list of running pod names from the container runtime
         let running_pods = self.runtime.list_running_pods().await?;
-        debug!("Found {} running pods in container runtime", running_pods.len());
+        debug!(
+            "Found {} running pods in container runtime",
+            running_pods.len()
+        );
 
         // Check for orphaned pods (running in container runtime but not in etcd)
         for running_pod_name in running_pods {
             if !existing_pod_names.contains(&running_pod_name) {
-                info!("Found orphaned pod {} - not in etcd, stopping containers", running_pod_name);
+                info!(
+                    "Found orphaned pod {} - not in etcd, stopping containers",
+                    running_pod_name
+                );
                 if let Err(e) = self.runtime.stop_pod(&running_pod_name).await {
                     warn!("Failed to stop orphaned pod {}: {}", running_pod_name, e);
                 }
@@ -268,7 +285,8 @@ impl Kubelet {
                 info!("Starting pod: {}/{}", namespace, pod_name);
 
                 // Update status to indicate we're starting
-                self.update_pod_status(pod, Phase::Pending, Some("ContainerCreating"), None).await?;
+                self.update_pod_status(pod, Phase::Pending, Some("ContainerCreating"), None)
+                    .await?;
 
                 // Start the pod
                 match self.runtime.start_pod(pod).await {
@@ -276,7 +294,8 @@ impl Kubelet {
                         info!("Pod {}/{} started successfully", namespace, pod_name);
 
                         // Get container statuses
-                        let container_statuses = self.runtime.get_container_statuses(pod).await.ok();
+                        let container_statuses =
+                            self.runtime.get_container_statuses(pod).await.ok();
 
                         // Get pod IP
                         let pod_ip = self.runtime.get_pod_ip(pod_name).await.ok().flatten();
@@ -294,18 +313,31 @@ impl Kubelet {
                             ephemeral_container_statuses: None,
                         });
 
-                        let key = build_key("pods", new_pod.metadata.namespace.as_deref(), &new_pod.metadata.name);
+                        let key = build_key(
+                            "pods",
+                            new_pod.metadata.namespace.as_deref(),
+                            &new_pod.metadata.name,
+                        );
                         self.storage.update(&key, &new_pod).await?;
                     }
                     Err(e) => {
                         error!("Failed to start pod {}/{}: {}", namespace, pod_name, e);
-                        self.update_pod_status(pod, Phase::Failed, Some("FailedToStart"), Some(&e.to_string())).await?;
+                        self.update_pod_status(
+                            pod,
+                            Phase::Failed,
+                            Some("FailedToStart"),
+                            Some(&e.to_string()),
+                        )
+                        .await?;
                     }
                 }
             }
             // If pod is Pending but containers are already running, update to Running
             Phase::Pending if is_running => {
-                info!("Pod {}/{} containers are running, updating status to Running", namespace, pod_name);
+                info!(
+                    "Pod {}/{} containers are running, updating status to Running",
+                    namespace, pod_name
+                );
 
                 // Get container statuses
                 let container_statuses = self.runtime.get_container_statuses(pod).await.ok();
@@ -326,7 +358,11 @@ impl Kubelet {
                     ephemeral_container_statuses: None,
                 });
 
-                let key = build_key("pods", new_pod.metadata.namespace.as_deref(), &new_pod.metadata.name);
+                let key = build_key(
+                    "pods",
+                    new_pod.metadata.namespace.as_deref(),
+                    &new_pod.metadata.name,
+                );
                 self.storage.update(&key, &new_pod).await?;
             }
             Phase::Running if is_running => {
@@ -335,35 +371,62 @@ impl Kubelet {
                 // Check liveness probes
                 if let Ok(needs_restart) = self.runtime.check_liveness(pod).await {
                     if needs_restart {
-                        let restart_policy = pod.spec.as_ref().and_then(|s| s.restart_policy.as_deref()).unwrap_or("Always");
+                        let restart_policy = pod
+                            .spec
+                            .as_ref()
+                            .and_then(|s| s.restart_policy.as_deref())
+                            .unwrap_or("Always");
 
                         match restart_policy {
                             "Always" | "OnFailure" => {
-                                warn!("Restarting pod {}/{} due to failed liveness probe", namespace, pod_name);
+                                warn!(
+                                    "Restarting pod {}/{} due to failed liveness probe",
+                                    namespace, pod_name
+                                );
 
                                 // Stop and restart the pod
                                 if let Err(e) = self.runtime.stop_pod(pod_name).await {
                                     error!("Failed to stop pod for restart: {}", e);
                                 } else {
                                     // Update status
-                                    self.update_pod_status(pod, Phase::Pending, Some("Restarting"), Some("Liveness probe failed")).await?;
+                                    self.update_pod_status(
+                                        pod,
+                                        Phase::Pending,
+                                        Some("Restarting"),
+                                        Some("Liveness probe failed"),
+                                    )
+                                    .await?;
 
                                     // Start again
                                     if let Err(e) = self.runtime.start_pod(pod).await {
                                         error!("Failed to restart pod: {}", e);
-                                        self.update_pod_status(pod, Phase::Failed, Some("FailedToRestart"), Some(&e.to_string())).await?;
+                                        self.update_pod_status(
+                                            pod,
+                                            Phase::Failed,
+                                            Some("FailedToRestart"),
+                                            Some(&e.to_string()),
+                                        )
+                                        .await?;
                                     }
                                 }
                             }
                             "Never" => {
                                 warn!("Liveness probe failed but restart policy is Never for pod {}/{}", namespace, pod_name);
-                                self.update_pod_status(pod, Phase::Failed, Some("LivenessProbeFailedterm"), Some("Restart policy is Never")).await?;
+                                self.update_pod_status(
+                                    pod,
+                                    Phase::Failed,
+                                    Some("LivenessProbeFailedterm"),
+                                    Some("Restart policy is Never"),
+                                )
+                                .await?;
                             }
                             _ => {}
                         }
                     } else {
                         // Update container statuses with readiness info
-                        if let Ok(container_statuses) = self.runtime.get_container_statuses(pod).await {
+                        if let Ok(container_statuses) =
+                            self.runtime.get_container_statuses(pod).await
+                        {
                             let all_ready = container_statuses.iter().all(|s| s.ready);
 
                             // Get pod IP (important for pods started by docker-compose)
@@ -383,7 +446,11 @@ impl Kubelet {
                                 }
                             }
 
-                            let key = build_key("pods", new_pod.metadata.namespace.as_deref(), &new_pod.metadata.name);
+                            let key = build_key(
+                                "pods",
+                                new_pod.metadata.namespace.as_deref(),
+                                &new_pod.metadata.name,
+                            );
 
                             if let Err(e) = self.storage.update(&key, &new_pod).await {
                                 debug!("Failed to update pod status: {}", e);
@@ -429,14 +496,19 @@ impl Kubelet {
             ephemeral_container_statuses: None,
         });
 
-        let key = build_key("pods", new_pod.metadata.namespace.as_deref(), &new_pod.metadata.name);
+        let key = build_key(
+            "pods",
+            new_pod.metadata.namespace.as_deref(),
+            &new_pod.metadata.name,
+        );
         self.storage.update(&key, &new_pod).await?;
 
         Ok(())
     }
 
     async fn update_pod_status_error(&self, pod: &Pod, error: &str) -> Result<()> {
-        self.update_pod_status(pod, Phase::Failed, Some("Error"), Some(error)).await
+        self.update_pod_status(pod, Phase::Failed, Some("Error"), Some(error))
+            .await
     }
 
     /// Handle pod eviction when node resources are exhausted
@@ -471,15 +543,15 @@ impl Kubelet {
         // For each active signal, select pods for eviction
         for signal in signals {
             let eviction_manager = self.eviction_manager.lock().unwrap();
-            let pods_to_evict = eviction_manager.select_pods_for_eviction(
-                &node_pods,
-                &pod_stats,
-                signal,
-            );
+            let pods_to_evict =
+                eviction_manager.select_pods_for_eviction(&node_pods, &pod_stats, signal);
             drop(eviction_manager); // Release lock
 
             for pod_key in pods_to_evict {
-                warn!("Evicting pod {} due to resource pressure ({:?})", pod_key, signal);
+                warn!(
+                    "Evicting pod {} due to resource pressure ({:?})",
+                    pod_key, signal
+                );
 
                 // Parse namespace and name from key
                 let parts: Vec<&str> = pod_key.split('/').collect();
@@ -501,13 +573,17 @@ impl Kubelet {
                     }
 
                     // Update pod status to reflect eviction
-                    if let Err(e) = self.update_pod_status(
-                        pod,
-                        Phase::Failed,
-                        Some("Evicted"),
-                        Some(&format!("Pod evicted due to resource pressure: {:?}", signal)),
-                    )
-                    .await
+                    if let Err(e) = self
+                        .update_pod_status(
+                            pod,
+                            Phase::Failed,
+                            Some("Evicted"),
+                            Some(&format!(
+                                "Pod evicted due to resource pressure: {:?}",
+                                signal
+                            )),
+                        )
+                        .await
                     {
                         error!("Failed to update evicted pod status: {}", e);
                     }

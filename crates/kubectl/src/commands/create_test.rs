@@ -156,14 +156,22 @@ volumeBindingMode: Immediate
 allowVolumeExpansion: true
 "#;
 
+        use rusternetes_common::resources::volume::{
+            PersistentVolumeReclaimPolicy, VolumeBindingMode,
+        };
         use rusternetes_common::resources::StorageClass;
-        use rusternetes_common::resources::volume::{PersistentVolumeReclaimPolicy, VolumeBindingMode};
         let sc: StorageClass = serde_yaml::from_str(yaml).unwrap();
 
         assert_eq!(sc.metadata.name, "fast-storage");
         assert_eq!(sc.provisioner, "rusternetes.io/local");
-        assert!(matches!(sc.reclaim_policy, Some(PersistentVolumeReclaimPolicy::Delete)));
-        assert!(matches!(sc.volume_binding_mode, Some(VolumeBindingMode::Immediate)));
+        assert!(matches!(
+            sc.reclaim_policy,
+            Some(PersistentVolumeReclaimPolicy::Delete)
+        ));
+        assert!(matches!(
+            sc.volume_binding_mode,
+            Some(VolumeBindingMode::Immediate)
+        ));
         assert_eq!(sc.allow_volume_expansion, Some(true));
 
         // Check parameters
@@ -335,7 +343,12 @@ metadata:
             let extracted_api = value.get("apiVersion").and_then(|k| k.as_str());
 
             assert_eq!(extracted_kind, Some(kind), "Kind should match for {}", kind);
-            assert_eq!(extracted_api, Some(api_version), "API version should match for {}", kind);
+            assert_eq!(
+                extracted_api,
+                Some(api_version),
+                "API version should match for {}",
+                kind
+            );
         }
     }
 

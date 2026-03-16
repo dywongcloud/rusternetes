@@ -18,10 +18,7 @@ impl KubeProxy {
         let iptables = IptablesManager::new();
         iptables.initialize()?;
 
-        Ok(Self {
-            storage,
-            iptables,
-        })
+        Ok(Self { storage, iptables })
     }
 
     /// Sync all services and their endpoints
@@ -32,13 +29,15 @@ impl KubeProxy {
         self.iptables.flush_rules()?;
 
         // Get all services
-        let services: Vec<Service> = self.storage
+        let services: Vec<Service> = self
+            .storage
             .list("/registry/services/")
             .await
             .context("Failed to list services")?;
 
         // Get all endpoints
-        let all_endpoints: Vec<Endpoints> = self.storage
+        let all_endpoints: Vec<Endpoints> = self
+            .storage
             .list("/registry/endpoints/")
             .await
             .context("Failed to list endpoints")?;
@@ -72,14 +71,20 @@ impl KubeProxy {
         service: &Service,
         endpoints_map: &HashMap<String, Endpoints>,
     ) -> Result<()> {
-        let namespace = service.metadata.namespace.as_ref()
+        let namespace = service
+            .metadata
+            .namespace
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Service has no namespace"))?;
         let name = &service.metadata.name;
 
         debug!("Syncing service {}/{}", namespace, name);
 
         // Get service type
-        let service_type = service.spec.service_type.as_ref()
+        let service_type = service
+            .spec
+            .service_type
+            .as_ref()
             .cloned()
             .unwrap_or(ServiceType::ClusterIP);
 
@@ -91,8 +96,14 @@ impl KubeProxy {
 
         // Get ClusterIP (required for ClusterIP/NodePort/LoadBalancer services)
         let cluster_ip = service.spec.cluster_ip.as_ref();
-        debug!("Service {}/{} - clusterIP field value: {:?}", namespace, name, cluster_ip);
-        debug!("Service {}/{} - full spec: {:?}", namespace, name, service.spec);
+        debug!(
+            "Service {}/{} - clusterIP field value: {:?}",
+            namespace, name, cluster_ip
+        );
+        debug!(
+            "Service {}/{} - full spec: {:?}",
+            namespace, name, service.spec
+        );
         if cluster_ip.is_none() && service_type != ServiceType::ExternalName {
             warn!("Service {}/{} has no ClusterIP, skipping", namespace, name);
             return Ok(());
@@ -131,13 +142,13 @@ impl KubeProxy {
             }
 
             // Add NodePort rules (for NodePort and LoadBalancer)
-            if matches!(service_type, ServiceType::NodePort | ServiceType::LoadBalancer) {
+            if matches!(
+                service_type,
+                ServiceType::NodePort | ServiceType::LoadBalancer
+            ) {
                 if let Some(node_port) = service_port.node_port {
-                    self.iptables.add_nodeport_rules(
-                        node_port,
-                        &endpoints_with_port,
-                        protocol,
-                    )?;
+                    self.iptables
+                        .add_nodeport_rules(node_port, &endpoints_with_port, protocol)?;
                 }
             }
         }

@@ -2,8 +2,13 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for persistent volume claims
 
-use rusternetes_common::resources::{PersistentVolumeClaim, PersistentVolumeClaimSpec, PersistentVolumeClaimStatus, PersistentVolumeAccessMode};
-use rusternetes_common::resources::volume::{PersistentVolumeClaimPhase, PersistentVolumeMode, ResourceRequirements, LabelSelector};
+use rusternetes_common::resources::volume::{
+    LabelSelector, PersistentVolumeClaimPhase, PersistentVolumeMode, ResourceRequirements,
+};
+use rusternetes_common::resources::{
+    PersistentVolumeAccessMode, PersistentVolumeClaim, PersistentVolumeClaimSpec,
+    PersistentVolumeClaimStatus,
+};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -68,7 +73,13 @@ async fn test_pvc_create_and_get() {
     assert_eq!(created.metadata.namespace, Some("default".to_string()));
     assert!(!created.metadata.uid.is_empty());
     assert_eq!(
-        created.spec.resources.requests.as_ref().unwrap().get("storage"),
+        created
+            .spec
+            .resources
+            .requests
+            .as_ref()
+            .unwrap()
+            .get("storage"),
         Some(&"10Gi".to_string())
     );
 
@@ -100,14 +111,26 @@ async fn test_pvc_update() {
 
     let updated: PersistentVolumeClaim = storage.update(&key, &pvc).await.unwrap();
     assert_eq!(
-        updated.spec.resources.requests.as_ref().unwrap().get("storage"),
+        updated
+            .spec
+            .resources
+            .requests
+            .as_ref()
+            .unwrap()
+            .get("storage"),
         Some(&"20Gi".to_string())
     );
 
     // Verify update
     let retrieved: PersistentVolumeClaim = storage.get(&key).await.unwrap();
     assert_eq!(
-        retrieved.spec.resources.requests.as_ref().unwrap().get("storage"),
+        retrieved
+            .spec
+            .resources
+            .requests
+            .as_ref()
+            .unwrap()
+            .get("storage"),
         Some(&"20Gi".to_string())
     );
 
@@ -226,7 +249,10 @@ async fn test_pvc_with_storage_class() {
 
     // Create with storage class
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
-    assert_eq!(created.spec.storage_class_name, Some("fast-ssd".to_string()));
+    assert_eq!(
+        created.spec.storage_class_name,
+        Some("fast-ssd".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -241,7 +267,10 @@ async fn test_pvc_volume_mode_filesystem() {
 
     // Create with Filesystem mode
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
-    assert_eq!(created.spec.volume_mode, Some(PersistentVolumeMode::Filesystem));
+    assert_eq!(
+        created.spec.volume_mode,
+        Some(PersistentVolumeMode::Filesystem)
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -273,7 +302,10 @@ async fn test_pvc_status_pending() {
 
     // Create with Pending status
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
-    assert_eq!(created.status.as_ref().unwrap().phase, PersistentVolumeClaimPhase::Pending);
+    assert_eq!(
+        created.status.as_ref().unwrap().phase,
+        PersistentVolumeClaimPhase::Pending
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -297,7 +329,10 @@ async fn test_pvc_status_bound() {
 
     // Create with Bound status
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
-    assert_eq!(created.status.as_ref().unwrap().phase, PersistentVolumeClaimPhase::Bound);
+    assert_eq!(
+        created.status.as_ref().unwrap().phase,
+        PersistentVolumeClaimPhase::Bound
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -310,7 +345,11 @@ async fn test_pvc_with_volume_name() {
     let mut pvc = create_test_pvc("test-volume-name", "default", "10Gi");
     pvc.spec.volume_name = Some("pv-12345".to_string());
 
-    let key = build_key("persistentvolumeclaims", Some("default"), "test-volume-name");
+    let key = build_key(
+        "persistentvolumeclaims",
+        Some("default"),
+        "test-volume-name",
+    );
 
     // Create with specific volume name
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
@@ -338,7 +377,13 @@ async fn test_pvc_with_selector() {
     // Create with selector
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
     assert!(created.spec.selector.is_some());
-    assert!(created.spec.selector.as_ref().unwrap().match_labels.is_some());
+    assert!(created
+        .spec
+        .selector
+        .as_ref()
+        .unwrap()
+        .match_labels
+        .is_some());
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -446,18 +491,29 @@ async fn test_pvc_with_annotations() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut annotations = HashMap::new();
-    annotations.insert("volume.beta.kubernetes.io/storage-provisioner".to_string(), "kubernetes.io/aws-ebs".to_string());
+    annotations.insert(
+        "volume.beta.kubernetes.io/storage-provisioner".to_string(),
+        "kubernetes.io/aws-ebs".to_string(),
+    );
 
     let mut pvc = create_test_pvc("test-annotations", "default", "10Gi");
     pvc.metadata.annotations = Some(annotations);
 
-    let key = build_key("persistentvolumeclaims", Some("default"), "test-annotations");
+    let key = build_key(
+        "persistentvolumeclaims",
+        Some("default"),
+        "test-annotations",
+    );
 
     // Create with annotations
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
     assert!(created.metadata.annotations.is_some());
     assert_eq!(
-        created.metadata.annotations.unwrap().get("volume.beta.kubernetes.io/storage-provisioner"),
+        created
+            .metadata
+            .annotations
+            .unwrap()
+            .get("volume.beta.kubernetes.io/storage-provisioner"),
         Some(&"kubernetes.io/aws-ebs".to_string())
     );
 
@@ -487,7 +543,13 @@ async fn test_pvc_with_resource_limits() {
     let created: PersistentVolumeClaim = storage.create(&key, &pvc).await.unwrap();
     assert!(created.spec.resources.limits.is_some());
     assert_eq!(
-        created.spec.resources.limits.as_ref().unwrap().get("storage"),
+        created
+            .spec
+            .resources
+            .limits
+            .as_ref()
+            .unwrap()
+            .get("storage"),
         Some(&"20Gi".to_string())
     );
 

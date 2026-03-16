@@ -3,8 +3,8 @@
 // This module provides JSON Schema validation for custom resources based on
 // OpenAPI v3 schemas defined in CustomResourceDefinitions.
 
-use crate::resources::crd::JSONSchemaProps;
 use crate::error::Error;
+use crate::resources::crd::JSONSchemaProps;
 use serde_json::Value;
 
 /// Validator validates JSON values against JSONSchemaProps
@@ -230,11 +230,7 @@ impl SchemaValidator {
         Ok(())
     }
 
-    fn validate_array(
-        schema: &JSONSchemaProps,
-        arr: &[Value],
-        path: &str,
-    ) -> Result<(), Error> {
+    fn validate_array(schema: &JSONSchemaProps, arr: &[Value], path: &str) -> Result<(), Error> {
         // Validate min/max items
         if let Some(min) = schema.min_items {
             if (arr.len() as i64) < min {
@@ -324,11 +320,7 @@ impl SchemaValidator {
         Ok(())
     }
 
-    fn validate_string(
-        schema: &JSONSchemaProps,
-        s: &str,
-        path: &str,
-    ) -> Result<(), Error> {
+    fn validate_string(schema: &JSONSchemaProps, s: &str, path: &str) -> Result<(), Error> {
         // Validate min/max length
         if let Some(min) = schema.min_length {
             if (s.len() as i64) < min {
@@ -350,9 +342,8 @@ impl SchemaValidator {
 
         // Validate pattern
         if let Some(ref pattern) = schema.pattern {
-            let re = regex::Regex::new(pattern).map_err(|e| {
-                Error::InvalidResource(format!("Invalid regex pattern: {}", e))
-            })?;
+            let re = regex::Regex::new(pattern)
+                .map_err(|e| Error::InvalidResource(format!("Invalid regex pattern: {}", e)))?;
 
             if !re.is_match(s) {
                 return Err(Error::InvalidResource(format!(
@@ -559,12 +550,12 @@ mod tests {
     fn test_validate_array_items() {
         let schema = JSONSchemaProps {
             type_: Some("array".to_string()),
-            items: Some(Box::new(crate::resources::crd::JSONSchemaPropsOrArray::Schema(
-                JSONSchemaProps {
+            items: Some(Box::new(
+                crate::resources::crd::JSONSchemaPropsOrArray::Schema(JSONSchemaProps {
                     type_: Some("string".to_string()),
                     ..Default::default()
-                },
-            ))),
+                }),
+            )),
             ..Default::default()
         };
 

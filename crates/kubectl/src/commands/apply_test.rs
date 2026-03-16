@@ -130,20 +130,43 @@ spec:
         use rusternetes_common::resources::Pod;
         let pod: Pod = serde_yaml::from_str(yaml).unwrap();
 
-        let namespace = pod.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
+        let namespace = pod
+            .metadata
+            .namespace
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
         assert_eq!(namespace, "default");
     }
 
     #[test]
     fn test_all_supported_resource_kinds() {
         let kinds = vec![
-            "Pod", "Service", "Deployment", "StatefulSet", "DaemonSet",
-            "Node", "Namespace", "Job", "CronJob",
-            "PersistentVolume", "PersistentVolumeClaim", "StorageClass",
-            "VolumeSnapshot", "VolumeSnapshotClass",
-            "Endpoints", "ConfigMap", "Secret", "Ingress",
-            "ServiceAccount", "Role", "RoleBinding", "ClusterRole", "ClusterRoleBinding",
-            "ResourceQuota", "LimitRange", "PriorityClass",
+            "Pod",
+            "Service",
+            "Deployment",
+            "StatefulSet",
+            "DaemonSet",
+            "Node",
+            "Namespace",
+            "Job",
+            "CronJob",
+            "PersistentVolume",
+            "PersistentVolumeClaim",
+            "StorageClass",
+            "VolumeSnapshot",
+            "VolumeSnapshotClass",
+            "Endpoints",
+            "ConfigMap",
+            "Secret",
+            "Ingress",
+            "ServiceAccount",
+            "Role",
+            "RoleBinding",
+            "ClusterRole",
+            "ClusterRoleBinding",
+            "ResourceQuota",
+            "LimitRange",
+            "PriorityClass",
             "CustomResourceDefinition",
         ];
 

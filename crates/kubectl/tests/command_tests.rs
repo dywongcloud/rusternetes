@@ -13,8 +13,11 @@ mod rollout_tests {
         let subcommands = vec!["status", "history", "undo", "restart", "pause", "resume"];
 
         for cmd in subcommands {
-            assert!(["status", "history", "undo", "restart", "pause", "resume"].contains(&cmd),
-                "Rollout subcommand '{}' should be valid", cmd);
+            assert!(
+                ["status", "history", "undo", "restart", "pause", "resume"].contains(&cmd),
+                "Rollout subcommand '{}' should be valid",
+                cmd
+            );
         }
     }
 
@@ -67,7 +70,7 @@ mod diff_tests {
     fn test_yaml_normalization() {
         // Test that YAML is normalized before diffing
         let yaml1 = "key: value\n";
-        let yaml2 = "key:  value\n";  // Extra space
+        let yaml2 = "key:  value\n"; // Extra space
 
         // In practice, we'd parse and re-serialize to normalize
         let normalized1 = yaml1.trim();
@@ -84,21 +87,34 @@ mod cp_tests {
     #[test]
     fn test_parse_pod_path_format() {
         // Test parsing of "pod:path" format
-        fn parse_copy_spec(source: &str, dest: &str) -> Result<(bool, String, String, String), String> {
+        fn parse_copy_spec(
+            source: &str,
+            dest: &str,
+        ) -> Result<(bool, String, String, String), String> {
             if source.contains(':') && !dest.contains(':') {
                 // Copy from pod to local
                 let parts: Vec<&str> = source.splitn(2, ':').collect();
                 if parts.len() != 2 {
                     return Err(format!("Invalid source: {}", source));
                 }
-                Ok((false, parts[0].to_string(), parts[1].to_string(), dest.to_string()))
+                Ok((
+                    false,
+                    parts[0].to_string(),
+                    parts[1].to_string(),
+                    dest.to_string(),
+                ))
             } else if dest.contains(':') && !source.contains(':') {
                 // Copy from local to pod
                 let parts: Vec<&str> = dest.splitn(2, ':').collect();
                 if parts.len() != 2 {
                     return Err(format!("Invalid dest: {}", dest));
                 }
-                Ok((true, parts[0].to_string(), parts[1].to_string(), source.to_string()))
+                Ok((
+                    true,
+                    parts[0].to_string(),
+                    parts[1].to_string(),
+                    source.to_string(),
+                ))
             } else {
                 Err("One must be pod:path format".to_string())
             }
@@ -224,7 +240,10 @@ mod config_tests {
 
         // String values
         config.insert("current-context".to_string(), "production".to_string());
-        assert_eq!(config.get("current-context"), Some(&"production".to_string()));
+        assert_eq!(
+            config.get("current-context"),
+            Some(&"production".to_string())
+        );
 
         // Empty string for unset
         config.insert("namespace".to_string(), String::new());
@@ -238,11 +257,11 @@ mod logs_tests {
     fn test_duration_parsing() {
         fn parse_duration(s: &str) -> Result<i64, String> {
             let (num_str, unit) = if s.ends_with("ms") {
-                (&s[..s.len()-2], "ms")
+                (&s[..s.len() - 2], "ms")
             } else {
                 let last = s.chars().last().ok_or("Empty duration")?;
                 if last.is_alphabetic() {
-                    (&s[..s.len()-1], &s[s.len()-1..])
+                    (&s[..s.len() - 1], &s[s.len() - 1..])
                 } else {
                     (s, "s")
                 }
@@ -304,9 +323,18 @@ mod logs_tests {
         }
 
         assert_eq!(build_logs_query(false, None, None, false), "");
-        assert_eq!(build_logs_query(true, None, None, false), "?timestamps=true");
-        assert_eq!(build_logs_query(true, Some(100), None, false), "?timestamps=true&tailLines=100");
-        assert_eq!(build_logs_query(false, None, Some(300), true), "?sinceSeconds=300&previous=true");
+        assert_eq!(
+            build_logs_query(true, None, None, false),
+            "?timestamps=true"
+        );
+        assert_eq!(
+            build_logs_query(true, Some(100), None, false),
+            "?timestamps=true&tailLines=100"
+        );
+        assert_eq!(
+            build_logs_query(false, None, Some(300), true),
+            "?sinceSeconds=300&previous=true"
+        );
     }
 }
 
@@ -319,7 +347,10 @@ mod delete_tests {
             Ok(match kind {
                 "Pod" => format!("/api/v1/namespaces/{}/pods/{}", namespace, name),
                 "Service" => format!("/api/v1/namespaces/{}/services/{}", namespace, name),
-                "Deployment" => format!("/apis/apps/v1/namespaces/{}/deployments/{}", namespace, name),
+                "Deployment" => format!(
+                    "/apis/apps/v1/namespaces/{}/deployments/{}",
+                    namespace, name
+                ),
                 "Namespace" => format!("/api/v1/namespaces/{}", name),
                 "Node" => format!("/api/v1/nodes/{}", name),
                 _ => return Err(format!("Unsupported kind: {}", kind)),
@@ -349,7 +380,9 @@ mod delete_tests {
         fn encode_selector(s: &str) -> String {
             s.chars()
                 .map(|c| match c {
-                    'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' | '=' | ',' | '!' => c.to_string(),
+                    'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' | '=' | ',' | '!' => {
+                        c.to_string()
+                    }
                     ' ' => "+".to_string(),
                     _ => format!("%{:02X}", c as u8),
                 })
@@ -357,7 +390,10 @@ mod delete_tests {
         }
 
         assert_eq!(encode_selector("app=nginx"), "app=nginx");
-        assert_eq!(encode_selector("app=nginx,tier=frontend"), "app=nginx,tier=frontend");
+        assert_eq!(
+            encode_selector("app=nginx,tier=frontend"),
+            "app=nginx,tier=frontend"
+        );
         assert_eq!(encode_selector("env!=prod"), "env!=prod");
         assert_eq!(encode_selector("app in (web,api)"), "app+in+%28web,api%29");
     }
@@ -370,7 +406,10 @@ mod get_tests {
         fn validate_output_format(format: &str) -> Result<(), String> {
             match format {
                 "json" | "yaml" | "wide" | "name" => Ok(()),
-                _ => Err(format!("Unknown format: {}. Supported: json, yaml, wide, name", format)),
+                _ => Err(format!(
+                    "Unknown format: {}. Supported: json, yaml, wide, name",
+                    format
+                )),
             }
         }
 
@@ -408,10 +447,7 @@ mod get_tests {
 
     #[test]
     fn test_selector_query_building() {
-        fn build_query(
-            label_selector: Option<&str>,
-            field_selector: Option<&str>,
-        ) -> String {
+        fn build_query(label_selector: Option<&str>, field_selector: Option<&str>) -> String {
             let mut params = Vec::new();
 
             if let Some(ls) = label_selector {
@@ -429,7 +465,10 @@ mod get_tests {
         }
 
         assert_eq!(build_query(None, None), "");
-        assert_eq!(build_query(Some("app=nginx"), None), "?labelSelector=app=nginx");
+        assert_eq!(
+            build_query(Some("app=nginx"), None),
+            "?labelSelector=app=nginx"
+        );
         assert_eq!(
             build_query(Some("app=nginx"), Some("metadata.name=foo")),
             "?labelSelector=app=nginx&fieldSelector=metadata.name=foo"

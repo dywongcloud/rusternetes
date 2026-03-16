@@ -144,7 +144,10 @@ mod tests {
         ];
 
         let mut params = HashMap::new();
-        params.insert("fieldSelector".to_string(), "status.phase=Running".to_string());
+        params.insert(
+            "fieldSelector".to_string(),
+            "status.phase=Running".to_string(),
+        );
 
         apply_field_selector(&mut resources, &params).unwrap();
 
@@ -220,7 +223,10 @@ mod tests {
         ];
 
         let mut params = HashMap::new();
-        params.insert("fieldSelector".to_string(), "status.phase=Running".to_string());
+        params.insert(
+            "fieldSelector".to_string(),
+            "status.phase=Running".to_string(),
+        );
         params.insert("labelSelector".to_string(), "app=nginx".to_string());
 
         apply_selectors(&mut resources, &params).unwrap();

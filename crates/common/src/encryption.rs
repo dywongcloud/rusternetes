@@ -115,7 +115,10 @@ impl AesGcmProvider {
         }
 
         let cipher = Aes256Gcm::new(key.into());
-        info!("AES-GCM encryption provider initialized with key '{}'", key_name);
+        info!(
+            "AES-GCM encryption provider initialized with key '{}'",
+            key_name
+        );
 
         Ok(Self { cipher, key_name })
     }
@@ -152,7 +155,11 @@ impl EncryptionProvider for AesGcmProvider {
         let mut result = nonce_bytes.to_vec();
         result.extend_from_slice(&ciphertext);
 
-        debug!("Encrypted {} bytes with key '{}'", plaintext.len(), self.key_name);
+        debug!(
+            "Encrypted {} bytes with key '{}'",
+            plaintext.len(),
+            self.key_name
+        );
         Ok(result)
     }
 
@@ -170,7 +177,11 @@ impl EncryptionProvider for AesGcmProvider {
             .decrypt(nonce, &ciphertext[12..])
             .map_err(|e| anyhow!("Decryption failed: {}", e))?;
 
-        debug!("Decrypted {} bytes with key '{}'", plaintext.len(), self.key_name);
+        debug!(
+            "Decrypted {} bytes with key '{}'",
+            plaintext.len(),
+            self.key_name
+        );
         Ok(plaintext)
     }
 

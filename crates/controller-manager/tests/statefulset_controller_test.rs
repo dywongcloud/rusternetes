@@ -3,7 +3,7 @@
 
 use rusternetes_common::resources::pod::*;
 use rusternetes_common::resources::*;
-use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta, LabelSelector};
+use rusternetes_common::types::{LabelSelector, ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::statefulset::StatefulSetController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -71,6 +71,7 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
                     priority: None,
                     priority_class_name: None,
                     hostname: None,
+                    subdomain: None,
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
@@ -119,7 +120,11 @@ async fn test_statefulset_creates_ordered_pods() {
 
     // Verify each pod has the stateful identity label
     for pod in &pods {
-        let labels = pod.metadata.labels.as_ref().expect("Pod should have labels");
+        let labels = pod
+            .metadata
+            .labels
+            .as_ref()
+            .expect("Pod should have labels");
         assert!(labels.contains_key("statefulset.kubernetes.io/pod-name"));
     }
 }

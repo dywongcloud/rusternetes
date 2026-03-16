@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::VolumeAttributesClass,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -184,7 +183,12 @@ pub async fn delete_volumeattributesclass(
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_cluster!(patch_volumeattributesclass, VolumeAttributesClass, "volumeattributesclasses", "storage.k8s.io");
+crate::patch_handler_cluster!(
+    patch_volumeattributesclass,
+    VolumeAttributesClass,
+    "volumeattributesclasses",
+    "storage.k8s.io"
+);
 
 #[cfg(test)]
 mod tests {
@@ -223,11 +227,15 @@ pub async fn deletecollection_volumeattributesclasses(
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection volumeattributesclasses with params: {:?}", params);
+    info!(
+        "DeleteCollection volumeattributesclasses with params: {:?}",
+        params
+    );
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "volumeattributesclasses")
-        .with_api_group("storage.k8s.io");
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "deletecollection", "volumeattributesclasses")
+            .with_api_group("storage.k8s.io");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -268,6 +276,9 @@ pub async fn deletecollection_volumeattributesclasses(
         }
     }
 
-    info!("DeleteCollection completed: {} volumeattributesclasses deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} volumeattributesclasses deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

@@ -43,9 +43,7 @@ impl EndpointSlice {
     }
 
     /// Create an EndpointSlice from Endpoints resource
-    pub fn from_endpoints(
-        endpoints: &crate::resources::Endpoints,
-    ) -> Vec<Self> {
+    pub fn from_endpoints(endpoints: &crate::resources::Endpoints) -> Vec<Self> {
         let mut slices = Vec::new();
 
         for subset in &endpoints.subsets {
@@ -60,10 +58,14 @@ impl EndpointSlice {
             }
 
             // Add label to link back to the service
-            slice.metadata.labels.get_or_insert_with(Default::default).insert(
-                "kubernetes.io/service-name".to_string(),
-                endpoints.metadata.name.clone(),
-            );
+            slice
+                .metadata
+                .labels
+                .get_or_insert_with(Default::default)
+                .insert(
+                    "kubernetes.io/service-name".to_string(),
+                    endpoints.metadata.name.clone(),
+                );
 
             // Convert ports
             if let Some(endpoint_ports) = &subset.ports {
@@ -143,10 +145,14 @@ impl EndpointSlice {
             if let Some(ns) = &endpoints.metadata.namespace {
                 slice.metadata.namespace = Some(ns.clone());
             }
-            slice.metadata.labels.get_or_insert_with(Default::default).insert(
-                "kubernetes.io/service-name".to_string(),
-                endpoints.metadata.name.clone(),
-            );
+            slice
+                .metadata
+                .labels
+                .get_or_insert_with(Default::default)
+                .insert(
+                    "kubernetes.io/service-name".to_string(),
+                    endpoints.metadata.name.clone(),
+                );
             slices.push(slice);
         }
 

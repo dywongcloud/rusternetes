@@ -142,6 +142,7 @@ async fn test_endpoints_match_service_selector() {
                 priority: None,
                 priority_class_name: None,
                 hostname: None,
+                subdomain: None,
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,

@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::CertificateSigningRequest,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -176,7 +175,11 @@ pub async fn list_certificate_signing_requests(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;
 
-    let list = List::new("CertificateSigningRequestList", "certificates.k8s.io/v1", items);
+    let list = List::new(
+        "CertificateSigningRequestList",
+        "certificates.k8s.io/v1",
+        items,
+    );
     Ok(Json(list))
 }
 
@@ -211,9 +214,10 @@ pub async fn update_certificate_signing_request_status(
 ) -> Result<Json<CertificateSigningRequest>> {
     info!("Updating CertificateSigningRequest status: {}", name);
 
-    let attrs = RequestAttributes::new(auth_ctx.user, "update", "certificatesigningrequests/status")
-        .with_api_group("certificates.k8s.io")
-        .with_name(&name);
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "update", "certificatesigningrequests/status")
+            .with_api_group("certificates.k8s.io")
+            .with_name(&name);
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -243,18 +247,30 @@ pub async fn approve_certificate_signing_request(
     update_certificate_signing_request_status(state, auth_ctx, name, csr).await
 }
 
-crate::patch_handler_cluster!(patch_certificate_signing_request, CertificateSigningRequest, "certificatesigningrequests", "certificates.k8s.io");
+crate::patch_handler_cluster!(
+    patch_certificate_signing_request,
+    CertificateSigningRequest,
+    "certificatesigningrequests",
+    "certificates.k8s.io"
+);
 
 pub async fn deletecollection_certificatesigningrequests(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection certificatesigningrequests with params: {:?}", params);
+    info!(
+        "DeleteCollection certificatesigningrequests with params: {:?}",
+        params
+    );
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "certificatesigningrequests")
-        .with_api_group("certificates.k8s.io");
+    let attrs = RequestAttributes::new(
+        auth_ctx.user,
+        "deletecollection",
+        "certificatesigningrequests",
+    )
+    .with_api_group("certificates.k8s.io");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -272,7 +288,10 @@ pub async fn deletecollection_certificatesigningrequests(
 
     // Get all certificatesigningrequests
     let prefix = build_prefix("certificatesigningrequests", None);
-    let mut items = state.storage.list::<CertificateSigningRequest>(&prefix).await?;
+    let mut items = state
+        .storage
+        .list::<CertificateSigningRequest>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;
@@ -295,6 +314,9 @@ pub async fn deletecollection_certificatesigningrequests(
         }
     }
 
-    info!("DeleteCollection completed: {} certificatesigningrequests deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} certificatesigningrequests deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

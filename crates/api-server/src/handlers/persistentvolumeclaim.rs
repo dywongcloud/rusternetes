@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::PersistentVolumeClaim,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -22,7 +21,10 @@ pub async fn create_pvc(
     Query(params): Query<HashMap<String, String>>,
     Json(mut pvc): Json<PersistentVolumeClaim>,
 ) -> Result<(StatusCode, Json<PersistentVolumeClaim>)> {
-    info!("Creating PersistentVolumeClaim: {}/{}", namespace, pvc.metadata.name);
+    info!(
+        "Creating PersistentVolumeClaim: {}/{}",
+        namespace, pvc.metadata.name
+    );
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -44,7 +46,9 @@ pub async fn create_pvc(
     if let Err(e) = crate::admission::set_default_storage_class(&state.storage, &mut pvc).await {
         tracing::warn!(
             "Error applying DefaultStorageClass admission for PVC {}/{}: {}",
-            namespace, pvc.metadata.name, e
+            namespace,
+            pvc.metadata.name,
+            e
         );
         // Continue anyway - don't fail PVC creation if default storage class can't be set
     }
@@ -52,11 +56,18 @@ pub async fn create_pvc(
     pvc.metadata.ensure_uid();
     pvc.metadata.ensure_creation_timestamp();
 
-    let key = build_key("persistentvolumeclaims", Some(&namespace), &pvc.metadata.name);
+    let key = build_key(
+        "persistentvolumeclaims",
+        Some(&namespace),
+        &pvc.metadata.name,
+    );
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: PersistentVolumeClaim {}/{} validated successfully (not created)", namespace, pvc.metadata.name);
+        info!(
+            "Dry-run: PersistentVolumeClaim {}/{} validated successfully (not created)",
+            namespace, pvc.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(pvc)));
     }
 
@@ -128,8 +139,8 @@ pub async fn list_all_pvcs(
     info!("Listing all persistentvolumeclaims");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "persistentvolumeclaims")
-        .with_api_group("");
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "list", "persistentvolumeclaims").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -179,7 +190,10 @@ pub async fn update_pvc(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: PersistentVolumeClaim {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: PersistentVolumeClaim {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(pvc));
     }
 
@@ -218,7 +232,10 @@ pub async fn delete_pvc(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: PersistentVolumeClaim {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: PersistentVolumeClaim {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -228,7 +245,12 @@ pub async fn delete_pvc(
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_namespaced!(patch_pvc, PersistentVolumeClaim, "persistentvolumeclaims", "");
+crate::patch_handler_namespaced!(
+    patch_pvc,
+    PersistentVolumeClaim,
+    "persistentvolumeclaims",
+    ""
+);
 
 pub async fn deletecollection_persistentvolumeclaims(
     State(state): State<Arc<ApiServerState>>,
@@ -236,7 +258,10 @@ pub async fn deletecollection_persistentvolumeclaims(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection persistentvolumeclaims in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection persistentvolumeclaims in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "persistentvolumeclaims")
@@ -267,7 +292,11 @@ pub async fn deletecollection_persistentvolumeclaims(
     // Delete each matching resource
     let mut deleted_count = 0;
     for item in items {
-        let key = build_key("persistentvolumeclaims", Some(&namespace), &item.metadata.name);
+        let key = build_key(
+            "persistentvolumeclaims",
+            Some(&namespace),
+            &item.metadata.name,
+        );
 
         // Handle deletion with finalizers
         let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -282,6 +311,9 @@ pub async fn deletecollection_persistentvolumeclaims(
         }
     }
 
-    info!("DeleteCollection completed: {} persistentvolumeclaims deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} persistentvolumeclaims deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

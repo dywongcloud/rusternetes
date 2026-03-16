@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::LimitRange,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -22,7 +21,10 @@ pub async fn create(
     Query(params): Query<HashMap<String, String>>,
     Json(mut limit_range): Json<LimitRange>,
 ) -> Result<(StatusCode, Json<LimitRange>)> {
-    info!("Creating LimitRange: {} in namespace: {}", limit_range.metadata.name, namespace);
+    info!(
+        "Creating LimitRange: {} in namespace: {}",
+        limit_range.metadata.name, namespace
+    );
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -49,7 +51,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: LimitRange {}/{} validated successfully (not created)", namespace, limit_range.metadata.name);
+        info!(
+            "Dry-run: LimitRange {}/{} validated successfully (not created)",
+            namespace, limit_range.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(limit_range)));
     }
 
@@ -116,7 +121,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: LimitRange {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: LimitRange {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(limit_range));
     }
 
@@ -159,7 +167,10 @@ pub async fn delete(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: LimitRange {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: LimitRange {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -179,9 +190,7 @@ pub async fn delete(
     } else {
         info!(
             "LimitRange {}/{} marked for deletion (has finalizers: {:?})",
-            namespace,
-            name,
-            limit_range.metadata.finalizers
+            namespace, name, limit_range.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -225,8 +234,7 @@ pub async fn list_all(
     info!("Listing all LimitRanges");
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "limitranges")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "limitranges").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -254,7 +262,10 @@ pub async fn deletecollection_limitranges(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection limitranges in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection limitranges in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "limitranges")
@@ -300,6 +311,9 @@ pub async fn deletecollection_limitranges(
         }
     }
 
-    info!("DeleteCollection completed: {} limitranges deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} limitranges deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

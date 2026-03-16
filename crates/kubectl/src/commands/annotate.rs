@@ -21,7 +21,10 @@ pub async fn execute(
         } else if let Some((key, value)) = annotation.split_once('=') {
             annotation_map.insert(key.to_string(), Value::String(value.to_string()));
         } else {
-            anyhow::bail!("Invalid annotation format: {}. Expected key=value or key-", annotation);
+            anyhow::bail!(
+                "Invalid annotation format: {}. Expected key=value or key-",
+                annotation
+            );
         }
     }
 
@@ -42,7 +45,10 @@ pub async fn execute(
     let path = if resource_name == "nodes" {
         format!("/{}/{}/{}", api_path, resource_name, name)
     } else {
-        format!("/{}/namespaces/{}/{}/{}", api_path, namespace, resource_name, name)
+        format!(
+            "/{}/namespaces/{}/{}/{}",
+            api_path, namespace, resource_name, name
+        )
     };
 
     let patch_body = json!({

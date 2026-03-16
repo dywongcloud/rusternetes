@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::PodDisruptionBudget,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -50,7 +49,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: PodDisruptionBudget {}/{} validated successfully (not created)", namespace, pdb.metadata.name);
+        info!(
+            "Dry-run: PodDisruptionBudget {}/{} validated successfully (not created)",
+            namespace, pdb.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(pdb)));
     }
 
@@ -117,16 +119,17 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: PodDisruptionBudget {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: PodDisruptionBudget {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(pdb));
     }
 
     // Try to update first, if not found then create (upsert behavior)
     let result = match state.storage.update(&key, &pdb).await {
         Ok(updated) => updated,
-        Err(rusternetes_common::Error::NotFound(_)) => {
-            state.storage.create(&key, &pdb).await?
-        }
+        Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &pdb).await?,
         Err(e) => return Err(e),
     };
 
@@ -161,7 +164,10 @@ pub async fn delete(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: PodDisruptionBudget {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: PodDisruptionBudget {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -169,21 +175,16 @@ pub async fn delete(
     let pdb: PodDisruptionBudget = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
-        &state.storage,
-        &key,
-        &pdb,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &pdb)
+            .await?;
 
     if deleted_immediately {
         Ok(StatusCode::NO_CONTENT)
     } else {
         info!(
             "PodDisruptionBudget {}/{} marked for deletion (has finalizers: {:?})",
-            namespace,
-            name,
-            pdb.metadata.finalizers
+            namespace, name, pdb.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -280,7 +281,10 @@ pub async fn update_status(
     Path((namespace, name)): Path<(String, String)>,
     Json(pdb): Json<PodDisruptionBudget>,
 ) -> Result<Json<PodDisruptionBudget>> {
-    info!("Updating poddisruptionbudget status: {}/{}", namespace, name);
+    info!(
+        "Updating poddisruptionbudget status: {}/{}",
+        namespace, name
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "poddisruptionbudgets/status")
@@ -314,7 +318,7 @@ crate::patch_handler_namespaced!(patch, PodDisruptionBudget, "poddisruptionbudge
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_common::resources::{PodDisruptionBudgetSpec, IntOrString};
+    use rusternetes_common::resources::{IntOrString, PodDisruptionBudgetSpec};
     use rusternetes_common::types::LabelSelector;
     use std::collections::HashMap;
 
@@ -325,9 +329,7 @@ mod tests {
             min_available: Some(IntOrString::Int(2)),
             max_unavailable: None,
             selector: LabelSelector {
-                match_labels: Some(HashMap::from([
-                    ("app".to_string(), "web".to_string()),
-                ])),
+                match_labels: Some(HashMap::from([("app".to_string(), "web".to_string())])),
                 match_expressions: None,
             },
             unhealthy_pod_eviction_policy: None,
@@ -345,7 +347,10 @@ pub async fn deletecollection_poddisruptionbudgets(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection poddisruptionbudgets in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection poddisruptionbudgets in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "poddisruptionbudgets")
@@ -376,7 +381,11 @@ pub async fn deletecollection_poddisruptionbudgets(
     // Delete each matching resource
     let mut deleted_count = 0;
     for item in items {
-        let key = build_key("poddisruptionbudgets", Some(&namespace), &item.metadata.name);
+        let key = build_key(
+            "poddisruptionbudgets",
+            Some(&namespace),
+            &item.metadata.name,
+        );
 
         // Handle deletion with finalizers
         let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -391,6 +400,9 @@ pub async fn deletecollection_poddisruptionbudgets(
         }
     }
 
-    info!("DeleteCollection completed: {} poddisruptionbudgets deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} poddisruptionbudgets deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

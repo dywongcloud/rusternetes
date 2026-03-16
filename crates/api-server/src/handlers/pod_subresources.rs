@@ -6,12 +6,12 @@
 //! - /attach - Attach to running containers (SPDY and WebSocket)
 //! - /portforward - Forward ports to pods (SPDY and WebSocket)
 
-use crate::{middleware::AuthContext, state::ApiServerState, streaming, spdy, spdy_handlers};
+use crate::{middleware::AuthContext, spdy, spdy_handlers, state::ApiServerState, streaming};
 use axum::{
     body::Body,
-    extract::{Path, Query, Request, State, ws::WebSocketUpgrade},
+    extract::{ws::WebSocketUpgrade, Path, Query, Request, State},
     http::StatusCode,
-    response::{Response, IntoResponse},
+    response::{IntoResponse, Response},
     Extension,
 };
 use rusternetes_common::{
@@ -135,11 +135,7 @@ pub async fn get_logs(
     let container_exists = pod
         .spec
         .as_ref()
-        .and_then(|spec| {
-            spec.containers
-                .iter()
-                .find(|c| c.name == container_name)
-        })
+        .and_then(|spec| spec.containers.iter().find(|c| c.name == container_name))
         .is_some();
 
     if !container_exists {
@@ -188,7 +184,10 @@ async fn get_container_logs(
         stdout: true,
         stderr: true,
         timestamps: query.timestamps,
-        tail: query.tail_lines.map(|t| t.to_string()).unwrap_or_else(|| "all".to_string()),
+        tail: query
+            .tail_lines
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| "all".to_string()),
         ..Default::default()
     };
 
@@ -256,7 +255,10 @@ fn generate_pod_logs(
         .unwrap_or_else(|| Utc::now());
 
     let mut log_lines = vec![
-        format!("Container {} starting in pod {}", container_name, pod.metadata.name),
+        format!(
+            "Container {} starting in pod {}",
+            container_name, pod.metadata.name
+        ),
         format!("Pod phase: {}", phase),
         format!("Environment initialized"),
         format!("Starting application process"),
@@ -359,11 +361,15 @@ pub async fn exec(
 
     // Check if this is a SPDY upgrade request (kubectl uses SPDY)
     if spdy::is_spdy_request(&req) {
-        info!("Upgrading exec to SPDY for pod {}/{} (kubectl compatibility)", namespace, name);
+        info!(
+            "Upgrading exec to SPDY for pod {}/{} (kubectl compatibility)",
+            namespace, name
+        );
 
         // Create SPDY upgrade response
-        let response = spdy::create_spdy_upgrade_response()
-            .map_err(|e| Error::Internal(format!("Failed to create SPDY upgrade response: {}", e)))?;
+        let response = spdy::create_spdy_upgrade_response().map_err(|e| {
+            Error::Internal(format!("Failed to create SPDY upgrade response: {}", e))
+        })?;
 
         // Spawn task to handle SPDY connection after upgrade
         tokio::spawn(async move {
@@ -378,7 +384,8 @@ pub async fn exec(
                         query.stdout,
                         query.stderr,
                         query.tty,
-                    ).await;
+                    )
+                    .await;
                 }
                 Err(e) => {
                     tracing::error!("Failed to upgrade to SPDY: {}", e);
@@ -392,18 +399,20 @@ pub async fn exec(
     // Handle WebSocket upgrade if requested
     if let Some(ws) = ws {
         info!("Upgrading exec to WebSocket for pod {}/{}", namespace, name);
-        Ok(ws.on_upgrade(move |socket| {
-            streaming::handle_exec_websocket(
-                socket,
-                pod,
-                container_name,
-                query.command,
-                query.stdin,
-                query.stdout,
-                query.stderr,
-                query.tty,
-            )
-        }).into_response())
+        Ok(ws
+            .on_upgrade(move |socket| {
+                streaming::handle_exec_websocket(
+                    socket,
+                    pod,
+                    container_name,
+                    query.command,
+                    query.stdin,
+                    query.stdout,
+                    query.stderr,
+                    query.tty,
+                )
+            })
+            .into_response())
     } else {
         // No upgrade requested - return error
         Ok(Response::builder()
@@ -475,11 +484,15 @@ pub async fn attach(
 
     // Check if this is a SPDY upgrade request (kubectl uses SPDY)
     if spdy::is_spdy_request(&req) {
-        info!("Upgrading attach to SPDY for pod {}/{} (kubectl compatibility)", namespace, name);
+        info!(
+            "Upgrading attach to SPDY for pod {}/{} (kubectl compatibility)",
+            namespace, name
+        );
 
         // Create SPDY upgrade response
-        let response = spdy::create_spdy_upgrade_response()
-            .map_err(|e| Error::Internal(format!("Failed to create SPDY upgrade response: {}", e)))?;
+        let response = spdy::create_spdy_upgrade_response().map_err(|e| {
+            Error::Internal(format!("Failed to create SPDY upgrade response: {}", e))
+        })?;
 
         // Spawn task to handle SPDY connection after upgrade
         tokio::spawn(async move {
@@ -493,7 +506,8 @@ pub async fn attach(
                         query.stdout,
                         query.stderr,
                         query.tty,
-                    ).await;
+                    )
+                    .await;
                 }
                 Err(e) => {
                     tracing::error!("Failed to upgrade to SPDY: {}", e);
@@ -506,18 +520,23 @@ pub async fn attach(
 
     // Handle WebSocket upgrade if requested
     if let Some(ws) = ws {
-        info!("Upgrading attach to WebSocket for pod {}/{}", namespace, name);
-        Ok(ws.on_upgrade(move |socket| {
-            streaming::handle_attach_websocket(
-                socket,
-                pod,
-                container_name,
-                query.stdin,
-                query.stdout,
-                query.stderr,
-                query.tty,
-            )
-        }).into_response())
+        info!(
+            "Upgrading attach to WebSocket for pod {}/{}",
+            namespace, name
+        );
+        Ok(ws
+            .on_upgrade(move |socket| {
+                streaming::handle_attach_websocket(
+                    socket,
+                    pod,
+                    container_name,
+                    query.stdin,
+                    query.stdout,
+                    query.stderr,
+                    query.tty,
+                )
+            })
+            .into_response())
     } else {
         // No upgrade requested - return error
         Ok(Response::builder()
@@ -579,22 +598,21 @@ pub async fn portforward(
 
     // Check if this is a SPDY upgrade request (kubectl uses SPDY)
     if spdy::is_spdy_request(&req) {
-        info!("Upgrading port-forward to SPDY for pod {}/{}, ports: {:?} (kubectl compatibility)",
-            namespace, name, ports);
+        info!(
+            "Upgrading port-forward to SPDY for pod {}/{}, ports: {:?} (kubectl compatibility)",
+            namespace, name, ports
+        );
 
         // Create SPDY upgrade response
-        let response = spdy::create_spdy_upgrade_response()
-            .map_err(|e| Error::Internal(format!("Failed to create SPDY upgrade response: {}", e)))?;
+        let response = spdy::create_spdy_upgrade_response().map_err(|e| {
+            Error::Internal(format!("Failed to create SPDY upgrade response: {}", e))
+        })?;
 
         // Spawn task to handle SPDY connection after upgrade
         tokio::spawn(async move {
             match spdy::upgrade_to_spdy(req).await {
                 Ok(spdy_conn) => {
-                    spdy_handlers::handle_spdy_portforward(
-                        spdy_conn,
-                        pod,
-                        ports,
-                    ).await;
+                    spdy_handlers::handle_spdy_portforward(spdy_conn, pod, ports).await;
                 }
                 Err(e) => {
                     tracing::error!("Failed to upgrade to SPDY: {}", e);
@@ -611,9 +629,9 @@ pub async fn portforward(
             "Upgrading port-forward to WebSocket for pod {}/{}, ports: {:?}",
             namespace, name, ports
         );
-        Ok(ws.on_upgrade(move |socket| {
-            streaming::handle_portforward_websocket(socket, pod, ports)
-        }).into_response())
+        Ok(ws
+            .on_upgrade(move |socket| streaming::handle_portforward_websocket(socket, pod, ports))
+            .into_response())
     } else {
         // No upgrade requested - return error
         Ok(Response::builder()
@@ -664,10 +682,7 @@ pub async fn create_binding(
 
     // Update pod's spec.nodeName to bind it to the node
     let pod_key = rusternetes_storage::build_key("pods", Some(&namespace), &name);
-    let mut pod: rusternetes_common::resources::Pod = state
-        .storage
-        .get(&pod_key)
-        .await?;
+    let mut pod: rusternetes_common::resources::Pod = state.storage.get(&pod_key).await?;
 
     // Set the nodeName in spec
     if let Some(ref mut spec) = pod.spec {
@@ -729,18 +744,12 @@ pub async fn create_eviction(
 
     // Check if pod exists
     let pod_key = rusternetes_storage::build_key("pods", Some(&namespace), &name);
-    let pod: rusternetes_common::resources::Pod = state
-        .storage
-        .get(&pod_key)
-        .await?;
+    let pod: rusternetes_common::resources::Pod = state.storage.get(&pod_key).await?;
 
     // Check PodDisruptionBudget constraints
     let pdb_prefix = rusternetes_storage::build_prefix("poddisruptionbudgets", Some(&namespace));
-    let pdbs: Vec<rusternetes_common::resources::PodDisruptionBudget> = state
-        .storage
-        .list(&pdb_prefix)
-        .await
-        .unwrap_or_default();
+    let pdbs: Vec<rusternetes_common::resources::PodDisruptionBudget> =
+        state.storage.list(&pdb_prefix).await.unwrap_or_default();
 
     // Get pod labels for matching
     let pod_labels = pod.metadata.labels.clone().unwrap_or_default();
@@ -752,9 +761,9 @@ pub async fn create_eviction(
 
         // Check if all match_labels are present in pod labels
         let matches = if let Some(ref match_labels) = selector.match_labels {
-            match_labels.iter().all(|(k, v)| {
-                pod_labels.get(k).map(|pv| pv == v).unwrap_or(false)
-            })
+            match_labels
+                .iter()
+                .all(|(k, v)| pod_labels.get(k).map(|pv| pv == v).unwrap_or(false))
         } else if selector.match_expressions.is_some() {
             // TODO: Implement match_expressions support for more complex selectors
             // For now, treat match_expressions as non-matching

@@ -4,7 +4,6 @@
 /// 1. Token generation and validation
 /// 2. RBAC permission checking
 /// 3. HTTP status codes (401 Unauthorized, 403 Forbidden)
-
 use rusternetes_common::{
     auth::{ServiceAccountClaims, TokenManager, UserInfo},
     authz::{AlwaysAllowAuthorizer, Authorizer, Decision, RequestAttributes},
@@ -33,7 +32,10 @@ fn test_token_generation_and_validation() {
         .validate_token(&token)
         .expect("Failed to validate token");
 
-    assert_eq!(validated_claims.sub, "system:serviceaccount:default:test-sa");
+    assert_eq!(
+        validated_claims.sub,
+        "system:serviceaccount:default:test-sa"
+    );
     assert_eq!(validated_claims.namespace, "default");
     assert_eq!(validated_claims.uid, "test-uid");
 }
@@ -76,10 +78,17 @@ fn test_userinfo_from_claims() {
 
     let user_info = UserInfo::from_service_account_claims(&claims);
 
-    assert_eq!(user_info.username, "system:serviceaccount:production:my-app");
+    assert_eq!(
+        user_info.username,
+        "system:serviceaccount:production:my-app"
+    );
     assert_eq!(user_info.uid, "app-uid");
-    assert!(user_info.groups.contains(&"system:serviceaccounts".to_string()));
-    assert!(user_info.groups.contains(&"system:serviceaccounts:production".to_string()));
+    assert!(user_info
+        .groups
+        .contains(&"system:serviceaccounts".to_string()));
+    assert!(user_info
+        .groups
+        .contains(&"system:serviceaccounts:production".to_string()));
 }
 
 #[test]
@@ -101,7 +110,10 @@ async fn test_always_allow_authorizer() {
         .with_api_group("");
 
     // Should always allow
-    let decision = authorizer.authorize(&attrs).await.expect("Authorization check failed");
+    let decision = authorizer
+        .authorize(&attrs)
+        .await
+        .expect("Authorization check failed");
 
     assert_eq!(decision, Decision::Allow);
 }
@@ -153,18 +165,10 @@ fn test_rbac_wildcard_permissions() {
     assert!(rule.verbs.contains(&"*".to_string()));
 
     // Wildcard should match any API group
-    assert!(rule
-        .api_groups
-        .as_ref()
-        .unwrap()
-        .contains(&"*".to_string()));
+    assert!(rule.api_groups.as_ref().unwrap().contains(&"*".to_string()));
 
     // Wildcard should match any resource
-    assert!(rule
-        .resources
-        .as_ref()
-        .unwrap()
-        .contains(&"*".to_string()));
+    assert!(rule.resources.as_ref().unwrap().contains(&"*".to_string()));
 }
 
 #[test]
@@ -215,7 +219,9 @@ fn test_different_token_secrets() {
         24,
     );
 
-    let token = manager1.generate_token(claims).expect("Failed to generate token");
+    let token = manager1
+        .generate_token(claims)
+        .expect("Failed to generate token");
 
     // Token from manager1 should not validate with manager2 (different secret)
     assert!(manager2.validate_token(&token).is_err());

@@ -48,8 +48,7 @@ impl ContinuationToken {
         let json = String::from_utf8(bytes)
             .map_err(|e| format!("Invalid continue token encoding: {}", e))?;
 
-        serde_json::from_str(&json)
-            .map_err(|e| format!("Invalid continue token format: {}", e))
+        serde_json::from_str(&json).map_err(|e| format!("Invalid continue token format: {}", e))
     }
 }
 
@@ -132,7 +131,8 @@ pub fn paginate<T>(
             filters: HashMap::new(),
         };
 
-        let token = next_token.encode()
+        let token = next_token
+            .encode()
             .map_err(|e| format!("Failed to encode continue token: {}", e))?;
 
         (Some(token), Some((total - end) as i64))
@@ -213,7 +213,9 @@ mod tests {
             start: 4,
             resource_version: "v1".to_string(),
             filters: HashMap::new(),
-        }.encode().unwrap();
+        }
+        .encode()
+        .unwrap();
 
         let params = PaginationParams {
             limit: Some(2),
@@ -249,7 +251,9 @@ mod tests {
             start: 2,
             resource_version: "v1".to_string(),
             filters: HashMap::new(),
-        }.encode().unwrap();
+        }
+        .encode()
+        .unwrap();
 
         let params = PaginationParams {
             limit: Some(2),

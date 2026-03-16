@@ -57,9 +57,7 @@ pub async fn update_status(
     // Extract current and new status
     let current_metadata = current_resource
         .get("metadata")
-        .ok_or_else(|| {
-            rusternetes_common::Error::InvalidResource("Missing metadata".to_string())
-        })?
+        .ok_or_else(|| rusternetes_common::Error::InvalidResource("Missing metadata".to_string()))?
         .clone();
 
     let current_spec = current_resource.get("spec").cloned();
@@ -141,9 +139,7 @@ pub async fn update_cluster_status(
     // Extract current and new status
     let current_metadata = current_resource
         .get("metadata")
-        .ok_or_else(|| {
-            rusternetes_common::Error::InvalidResource("Missing metadata".to_string())
-        })?
+        .ok_or_else(|| rusternetes_common::Error::InvalidResource("Missing metadata".to_string()))?
         .clone();
 
     let current_spec = current_resource.get("spec").cloned();
@@ -197,7 +193,10 @@ pub async fn get_status(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((resource_type, namespace, name)): Path<(String, String, String)>,
 ) -> Result<Json<Value>> {
-    info!("Getting status for {}/{}/{}", resource_type, namespace, name);
+    info!(
+        "Getting status for {}/{}/{}",
+        resource_type, namespace, name
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", &resource_type)

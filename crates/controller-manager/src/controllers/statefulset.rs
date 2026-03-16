@@ -28,17 +28,13 @@ impl<S: Storage> StatefulSetController<S> {
     }
 
     pub async fn reconcile_all(&self) -> Result<()> {
-        let statefulsets: Vec<StatefulSet> = self
-            .storage
-            .list("/registry/statefulsets/")
-            .await?;
+        let statefulsets: Vec<StatefulSet> = self.storage.list("/registry/statefulsets/").await?;
 
         for mut statefulset in statefulsets {
             if let Err(e) = self.reconcile(&mut statefulset).await {
                 error!(
                     "Failed to reconcile StatefulSet {}: {}",
-                    statefulset.metadata.name,
-                    e
+                    statefulset.metadata.name, e
                 );
             }
         }
@@ -179,7 +175,9 @@ impl<S: Storage> StatefulSetController<S> {
 
         // Create pod from template
         let template = &statefulset.spec.template;
-        let mut labels = template.metadata.as_ref()
+        let mut labels = template
+            .metadata
+            .as_ref()
             .and_then(|m| m.labels.clone())
             .unwrap_or_default();
         labels.insert("app".to_string(), statefulset_name.clone());
@@ -213,7 +211,7 @@ impl<S: Storage> StatefulSetController<S> {
                 host_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
-            ephemeral_container_statuses: None,
+                ephemeral_container_statuses: None,
             }),
         };
 

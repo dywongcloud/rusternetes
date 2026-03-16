@@ -2,7 +2,6 @@
 ///
 /// This module implements the Table output format that kubectl uses to display
 /// resources in a human-readable table format.
-
 use rusternetes_common::types::ObjectMeta;
 use serde::{Deserialize, Serialize};
 
@@ -93,7 +92,14 @@ impl Table {
     }
 
     /// Add a column definition
-    pub fn add_column(mut self, name: &str, column_type: &str, format: &str, description: &str, priority: i32) -> Self {
+    pub fn add_column(
+        mut self,
+        name: &str,
+        column_type: &str,
+        format: &str,
+        description: &str,
+        priority: i32,
+    ) -> Self {
         self.column_definitions.push(ColumnDefinition {
             name: name.to_string(),
             column_type: column_type.to_string(),
@@ -105,13 +111,22 @@ impl Table {
     }
 
     /// Add a row of data
-    pub fn add_row(mut self, cells: Vec<serde_json::Value>, object: Option<serde_json::Value>) -> Self {
+    pub fn add_row(
+        mut self,
+        cells: Vec<serde_json::Value>,
+        object: Option<serde_json::Value>,
+    ) -> Self {
         self.rows.push(TableRow { cells, object });
         self
     }
 
     /// Set metadata
-    pub fn with_metadata(mut self, resource_version: Option<String>, continue_token: Option<String>, remaining: Option<i64>) -> Self {
+    pub fn with_metadata(
+        mut self,
+        resource_version: Option<String>,
+        continue_token: Option<String>,
+        remaining: Option<i64>,
+    ) -> Self {
         self.metadata.resource_version = resource_version;
         self.metadata.continue_token = continue_token;
         self.metadata.remaining_item_count = remaining;
@@ -131,10 +146,34 @@ where
     T: Serialize + HasPodInfo,
 {
     let mut table = Table::new()
-        .add_column("NAME", "string", "name", "Name must be unique within a namespace", 0)
-        .add_column("READY", "string", "", "The aggregate readiness state of this pod for accepting traffic", 0)
-        .add_column("STATUS", "string", "", "The aggregate state of the containers in this pod", 0)
-        .add_column("RESTARTS", "integer", "", "The number of times the containers in this pod have been restarted", 0)
+        .add_column(
+            "NAME",
+            "string",
+            "name",
+            "Name must be unique within a namespace",
+            0,
+        )
+        .add_column(
+            "READY",
+            "string",
+            "",
+            "The aggregate readiness state of this pod for accepting traffic",
+            0,
+        )
+        .add_column(
+            "STATUS",
+            "string",
+            "",
+            "The aggregate state of the containers in this pod",
+            0,
+        )
+        .add_column(
+            "RESTARTS",
+            "integer",
+            "",
+            "The number of times the containers in this pod have been restarted",
+            0,
+        )
         .add_column("AGE", "string", "", "Age of the pod", 0);
 
     for pod in pods {
@@ -154,13 +193,32 @@ where
 }
 
 /// Helper function to create a table for generic resources with just NAME and AGE
-pub fn generic_table<T>(resources: Vec<T>, resource_version: Option<String>, resource_kind: &str) -> Table
+pub fn generic_table<T>(
+    resources: Vec<T>,
+    resource_version: Option<String>,
+    resource_kind: &str,
+) -> Table
 where
     T: Serialize + HasMetadata,
 {
     let mut table = Table::new()
-        .add_column("NAME", "string", "name", &format!("Name must be unique within a namespace for {}", resource_kind), 0)
-        .add_column("AGE", "string", "", &format!("Age of the {}", resource_kind), 0);
+        .add_column(
+            "NAME",
+            "string",
+            "name",
+            &format!(
+                "Name must be unique within a namespace for {}",
+                resource_kind
+            ),
+            0,
+        )
+        .add_column(
+            "AGE",
+            "string",
+            "",
+            &format!("Age of the {}", resource_kind),
+            0,
+        );
 
     for resource in resources {
         let metadata = resource.metadata();
@@ -264,7 +322,8 @@ impl HasPodInfo for rusternetes_common::resources::Pod {
                 Some(Phase::Active) => "Active",
                 Some(Phase::Terminating) => "Terminating",
                 None => "Pending",
-            }.to_string();
+            }
+            .to_string();
 
             // Count ready containers
             let container_statuses = pod_status.container_statuses.as_ref();

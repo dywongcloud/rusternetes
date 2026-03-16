@@ -117,8 +117,7 @@ impl<S: Storage> TTLController<S> {
         if let Some(status) = &job.status {
             if let Some(conditions) = &status.conditions {
                 return conditions.iter().any(|c| {
-                    matches!(c.condition_type.as_str(), "Complete" | "Failed")
-                        && c.status == "True"
+                    matches!(c.condition_type.as_str(), "Complete" | "Failed") && c.status == "True"
                 });
             }
         }
@@ -212,7 +211,9 @@ pub struct JobSpecWithTTL {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rusternetes_common::resources::workloads::{JobCondition, JobSpec, JobStatus, PodTemplateSpec};
+    use rusternetes_common::resources::workloads::{
+        JobCondition, JobSpec, JobStatus, PodTemplateSpec,
+    };
     use rusternetes_common::types::ObjectMeta;
     use std::collections::HashMap;
 
@@ -244,6 +245,7 @@ mod tests {
                         node_selector: None,
                         service_account_name: None,
                         hostname: None,
+                        subdomain: None,
                         host_network: None,
                         host_pid: None,
                         host_ipc: None,
@@ -283,7 +285,8 @@ mod tests {
     #[tokio::test]
     async fn test_ttl_controller_identifies_finished_job() {
         let storage = Arc::new(rusternetes_storage::memory::MemoryStorage::new());
-        let controller = TTLController::<rusternetes_storage::memory::MemoryStorage>::new(storage.clone());
+        let controller =
+            TTLController::<rusternetes_storage::memory::MemoryStorage>::new(storage.clone());
 
         let job = create_test_job("test-job", "default", 60);
         assert!(controller.is_job_finished(&job));
@@ -292,7 +295,8 @@ mod tests {
     #[tokio::test]
     async fn test_ttl_controller_gets_finish_time() {
         let storage = Arc::new(rusternetes_storage::memory::MemoryStorage::new());
-        let controller = TTLController::<rusternetes_storage::memory::MemoryStorage>::new(storage.clone());
+        let controller =
+            TTLController::<rusternetes_storage::memory::MemoryStorage>::new(storage.clone());
 
         let job = create_test_job("test-job", "default", 60);
         let finish_time = controller.get_job_finish_time(&job);
@@ -302,7 +306,8 @@ mod tests {
     #[tokio::test]
     async fn test_ttl_seconds_parsing() {
         let storage = Arc::new(rusternetes_storage::memory::MemoryStorage::new());
-        let controller = TTLController::<rusternetes_storage::memory::MemoryStorage>::new(storage.clone());
+        let controller =
+            TTLController::<rusternetes_storage::memory::MemoryStorage>::new(storage.clone());
 
         let job = create_test_job("test-job", "default", 100);
         let ttl = controller.get_ttl_seconds_after_finished(&job);
@@ -312,7 +317,8 @@ mod tests {
     #[tokio::test]
     async fn test_should_cleanup_expired_job() {
         let storage = Arc::new(rusternetes_storage::memory::MemoryStorage::new());
-        let controller = TTLController::<rusternetes_storage::memory::MemoryStorage>::new(storage.clone());
+        let controller =
+            TTLController::<rusternetes_storage::memory::MemoryStorage>::new(storage.clone());
 
         // Create a job that finished 120 seconds ago with 60 second TTL
         let job = create_test_job("test-job", "default", 60);
@@ -326,7 +332,8 @@ mod tests {
     #[tokio::test]
     async fn test_should_not_cleanup_recent_job() {
         let storage = Arc::new(rusternetes_storage::memory::MemoryStorage::new());
-        let controller = TTLController::<rusternetes_storage::memory::MemoryStorage>::new(storage.clone());
+        let controller =
+            TTLController::<rusternetes_storage::memory::MemoryStorage>::new(storage.clone());
 
         // Create a job that just finished with 3600 second TTL
         let mut job = create_test_job("test-job", "default", 3600);

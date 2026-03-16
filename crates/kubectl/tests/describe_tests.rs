@@ -8,15 +8,18 @@ mod tests {
     #[test]
     fn test_describe_pod_formatting() {
         // Test pod field extraction for describe output
-        fn extract_pod_fields(name: &str, namespace: &str, labels: &HashMap<String, String>) -> Vec<String> {
+        fn extract_pod_fields(
+            name: &str,
+            namespace: &str,
+            labels: &HashMap<String, String>,
+        ) -> Vec<String> {
             let mut fields = Vec::new();
             fields.push(format!("Name: {}", name));
             fields.push(format!("Namespace: {}", namespace));
 
             if !labels.is_empty() {
-                let labels_str: Vec<String> = labels.iter()
-                    .map(|(k, v)| format!("{}={}", k, v))
-                    .collect();
+                let labels_str: Vec<String> =
+                    labels.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
                 fields.push(format!("Labels: {}", labels_str.join(",")));
             }
 
@@ -73,7 +76,10 @@ mod tests {
     fn test_describe_conditions_formatting() {
         // Test conditions formatting
         fn format_condition(condition_type: &str, status: &str, reason: &str) -> String {
-            format!("Type: {}, Status: {}, Reason: {}", condition_type, status, reason)
+            format!(
+                "Type: {}, Status: {}, Reason: {}",
+                condition_type, status, reason
+            )
         }
 
         assert_eq!(
@@ -113,7 +119,12 @@ mod tests {
     #[test]
     fn test_describe_resource_requirements() {
         // Test resource requirements formatting
-        fn format_resources(cpu_request: &str, mem_request: &str, cpu_limit: &str, mem_limit: &str) -> Vec<String> {
+        fn format_resources(
+            cpu_request: &str,
+            mem_request: &str,
+            cpu_limit: &str,
+            mem_limit: &str,
+        ) -> Vec<String> {
             vec![
                 format!("Requests: cpu: {}, memory: {}", cpu_request, mem_request),
                 format!("Limits: cpu: {}, memory: {}", cpu_limit, mem_limit),
@@ -129,17 +140,14 @@ mod tests {
     fn test_describe_service_endpoints() {
         // Test service endpoints formatting
         fn format_endpoints(endpoints: &[(&str, u16)]) -> String {
-            let formatted: Vec<String> = endpoints.iter()
+            let formatted: Vec<String> = endpoints
+                .iter()
                 .map(|(ip, port)| format!("{}:{}", ip, port))
                 .collect();
             formatted.join(", ")
         }
 
-        let endpoints = vec![
-            ("10.244.0.5", 80),
-            ("10.244.0.6", 80),
-            ("10.244.0.7", 80),
-        ];
+        let endpoints = vec![("10.244.0.5", 80), ("10.244.0.6", 80), ("10.244.0.7", 80)];
 
         let result = format_endpoints(&endpoints);
         assert_eq!(result, "10.244.0.5:80, 10.244.0.6:80, 10.244.0.7:80");
@@ -167,10 +175,13 @@ mod tests {
     #[test]
     fn test_describe_tolerations() {
         // Test tolerations formatting
-        fn format_toleration(key: &str, operator: &str, effect: &str, toleration_seconds: Option<i64>) -> String {
-            let mut parts = vec![
-                format!("{}={}", key, operator),
-            ];
+        fn format_toleration(
+            key: &str,
+            operator: &str,
+            effect: &str,
+            toleration_seconds: Option<i64>,
+        ) -> String {
+            let mut parts = vec![format!("{}={}", key, operator)];
 
             if !effect.is_empty() {
                 parts.push(format!("effect={}", effect));
@@ -184,20 +195,26 @@ mod tests {
         }
 
         assert_eq!(
-            format_toleration("node.kubernetes.io/not-ready", "Exists", "NoExecute", Some(300)),
+            format_toleration(
+                "node.kubernetes.io/not-ready",
+                "Exists",
+                "NoExecute",
+                Some(300)
+            ),
             "node.kubernetes.io/not-ready=Exists effect=NoExecute for 300s"
         );
 
-        assert_eq!(
-            format_toleration("key1", "Equal", "", None),
-            "key1=Equal"
-        );
+        assert_eq!(format_toleration("key1", "Equal", "", None), "key1=Equal");
     }
 
     #[test]
     fn test_describe_qos_class() {
         // Test QoS class determination
-        fn determine_qos(has_requests: bool, has_limits: bool, requests_equal_limits: bool) -> &'static str {
+        fn determine_qos(
+            has_requests: bool,
+            has_limits: bool,
+            requests_equal_limits: bool,
+        ) -> &'static str {
             if !has_requests && !has_limits {
                 "BestEffort"
             } else if has_requests && has_limits && requests_equal_limits {
@@ -258,7 +275,13 @@ mod tests {
     #[test]
     fn test_describe_probe_formatting() {
         // Test probe (liveness/readiness) formatting
-        fn format_probe(probe_type: &str, handler: &str, delay: i32, timeout: i32, period: i32) -> String {
+        fn format_probe(
+            probe_type: &str,
+            handler: &str,
+            delay: i32,
+            timeout: i32,
+            period: i32,
+        ) -> String {
             format!(
                 "{}: {} delay={}s timeout={}s period={}s",
                 probe_type, handler, delay, timeout, period
@@ -280,13 +303,16 @@ mod tests {
     fn test_describe_annotations_filtering() {
         // Test that internal annotations can be filtered out
         fn should_show_annotation(key: &str) -> bool {
-            !key.starts_with("kubectl.kubernetes.io/") &&
-            !key.starts_with("kubernetes.io/created-by")
+            !key.starts_with("kubectl.kubernetes.io/")
+                && !key.starts_with("kubernetes.io/created-by")
         }
 
         assert_eq!(should_show_annotation("description"), true);
         assert_eq!(should_show_annotation("owner"), true);
-        assert_eq!(should_show_annotation("kubectl.kubernetes.io/last-applied-configuration"), false);
+        assert_eq!(
+            should_show_annotation("kubectl.kubernetes.io/last-applied-configuration"),
+            false
+        );
         assert_eq!(should_show_annotation("kubernetes.io/created-by"), false);
     }
 

@@ -13,11 +13,7 @@ pub async fn execute(
     stdin: bool,
 ) -> Result<()> {
     // Build the exec URL path
-    let mut url_path = format!(
-        "/api/v1/namespaces/{}/pods/{}/exec",
-        namespace,
-        pod_name
-    );
+    let mut url_path = format!("/api/v1/namespaces/{}/pods/{}/exec", namespace, pod_name);
 
     // Add query parameters
     let mut query_params = vec![];

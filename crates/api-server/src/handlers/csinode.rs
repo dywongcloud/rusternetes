@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::CSINode,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -80,8 +79,8 @@ pub async fn list_csinodes(
 ) -> Result<Json<List<CSINode>>> {
     info!("Listing all CSINodes");
 
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "csinodes")
-        .with_api_group("storage.k8s.io");
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "list", "csinodes").with_api_group("storage.k8s.io");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -190,7 +189,7 @@ crate::patch_handler_cluster!(patch_csinode, CSINode, "csinodes", "storage.k8s.i
 mod tests {
     use super::*;
     use rusternetes_common::{
-        resources::{CSINodeSpec, CSINodeDriver},
+        resources::{CSINodeDriver, CSINodeSpec},
         types::{ObjectMeta, TypeMeta},
     };
 
@@ -271,6 +270,9 @@ pub async fn deletecollection_csinodes(
         }
     }
 
-    info!("DeleteCollection completed: {} csinodes deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} csinodes deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

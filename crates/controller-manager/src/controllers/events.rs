@@ -20,7 +20,10 @@ impl<S: Storage> EventsController<S> {
 
     /// Start the controller loop
     pub async fn run(self: Arc<Self>) {
-        println!("Starting Events controller (sync interval: {:?})", self.sync_interval);
+        println!(
+            "Starting Events controller (sync interval: {:?})",
+            self.sync_interval
+        );
         loop {
             if let Err(e) = self.reconcile_all().await {
                 eprintln!("Error in events controller reconciliation: {}", e);
@@ -38,8 +41,7 @@ impl<S: Storage> EventsController<S> {
             if let Err(e) = self.reconcile_pod_events(&pod).await {
                 eprintln!(
                     "Error reconciling events for pod {}: {}",
-                    &pod.metadata.name,
-                    e
+                    &pod.metadata.name, e
                 );
             }
         }
@@ -80,10 +82,15 @@ impl<S: Storage> EventsController<S> {
                                 namespace,
                                 &pod_ref,
                                 "Scheduled",
-                                &format!("Successfully assigned {} to {}", pod_name, spec.node_name.as_deref().unwrap_or("node")),
+                                &format!(
+                                    "Successfully assigned {} to {}",
+                                    pod_name,
+                                    spec.node_name.as_deref().unwrap_or("node")
+                                ),
                                 EventType::Normal,
                                 Some("scheduler".to_string()),
-                            ).await?;
+                            )
+                            .await?;
                         }
                     }
                 }
@@ -95,21 +102,27 @@ impl<S: Storage> EventsController<S> {
                         &format!("Started pod {}", pod_name),
                         EventType::Normal,
                         Some("kubelet".to_string()),
-                    ).await?;
+                    )
+                    .await?;
 
                     // Create events for container statuses
                     if let Some(container_statuses) = &status.container_statuses {
                         for container_status in container_statuses {
                             // Check for running containers
-                            if matches!(&container_status.state, Some(state) if matches!(state, rusternetes_common::resources::ContainerState::Running { .. })) {
+                            if matches!(&container_status.state, Some(state) if matches!(state, rusternetes_common::resources::ContainerState::Running { .. }))
+                            {
                                 self.create_event_if_new(
                                     namespace,
                                     &pod_ref,
                                     "Pulled",
-                                    &format!("Container image \\\"{}\\\" already present on machine", container_status.image.as_deref().unwrap_or("unknown")),
+                                    &format!(
+                                        "Container image \\\"{}\\\" already present on machine",
+                                        container_status.image.as_deref().unwrap_or("unknown")
+                                    ),
                                     EventType::Normal,
                                     Some("kubelet".to_string()),
-                                ).await?;
+                                )
+                                .await?;
 
                                 self.create_event_if_new(
                                     namespace,
@@ -118,7 +131,8 @@ impl<S: Storage> EventsController<S> {
                                     &format!("Created container {}", container_status.name),
                                     EventType::Normal,
                                     Some("kubelet".to_string()),
-                                ).await?;
+                                )
+                                .await?;
 
                                 self.create_event_if_new(
                                     namespace,
@@ -127,7 +141,8 @@ impl<S: Storage> EventsController<S> {
                                     &format!("Started container {}", container_status.name),
                                     EventType::Normal,
                                     Some("kubelet".to_string()),
-                                ).await?;
+                                )
+                                .await?;
                             }
 
                             // Check for restarts
@@ -136,10 +151,14 @@ impl<S: Storage> EventsController<S> {
                                     namespace,
                                     &pod_ref,
                                     "BackOff",
-                                    &format!("Back-off restarting failed container {} in pod {}", container_status.name, pod_name),
+                                    &format!(
+                                        "Back-off restarting failed container {} in pod {}",
+                                        container_status.name, pod_name
+                                    ),
                                     EventType::Warning,
                                     Some("kubelet".to_string()),
-                                ).await?;
+                                )
+                                .await?;
                             }
                         }
                     }
@@ -152,7 +171,8 @@ impl<S: Storage> EventsController<S> {
                         &format!("Pod {} completed successfully", pod_name),
                         EventType::Normal,
                         Some("kubelet".to_string()),
-                    ).await?;
+                    )
+                    .await?;
                 }
                 Some(Phase::Failed) => {
                     let reason = status.reason.as_deref().unwrap_or("Unknown");
@@ -164,7 +184,8 @@ impl<S: Storage> EventsController<S> {
                         &format!("Pod {} failed: {} - {}", pod_name, reason, message),
                         EventType::Warning,
                         Some("kubelet".to_string()),
-                    ).await?;
+                    )
+                    .await?;
                 }
                 Some(Phase::Unknown) => {}
                 Some(Phase::Active) => {
@@ -227,10 +248,7 @@ impl<S: Storage> EventsController<S> {
         // Store event
         self.storage.create(&key, &event).await?;
 
-        println!(
-            "Created event: {} - {} - {}",
-            namespace, reason, message
-        );
+        println!("Created event: {} - {} - {}", namespace, reason, message);
 
         Ok(())
     }
@@ -259,19 +277,18 @@ impl<S: Storage> EventsController<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_common::resources::{PodSpec, PodStatus, Container};
+    use rusternetes_common::resources::{Container, PodSpec, PodStatus};
     use rusternetes_common::types::ObjectMeta;
 
     fn create_test_pod(name: &str, namespace: &str, phase: &str, node_name: Option<String>) -> Pod {
-        use rusternetes_common::types::{TypeMeta, Phase};
+        use rusternetes_common::types::{Phase, TypeMeta};
 
         Pod {
             type_meta: TypeMeta {
                 kind: "Pod".to_string(),
                 api_version: "v1".to_string(),
             },
-            metadata: ObjectMeta::new(name)
-                .with_namespace(namespace),
+            metadata: ObjectMeta::new(name).with_namespace(namespace),
             spec: Some(PodSpec {
                 init_containers: None,
                 containers: vec![Container {
@@ -289,8 +306,8 @@ mod tests {
                     command: None,
                     args: None,
                     security_context: None,
-                restart_policy: None,
-            }],
+                    restart_policy: None,
+                }],
                 restart_policy: None,
                 node_selector: None,
                 node_name,
@@ -301,6 +318,7 @@ mod tests {
                 priority: None,
                 priority_class_name: None,
                 hostname: None,
+                subdomain: None,
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,
@@ -325,7 +343,7 @@ mod tests {
                 host_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
-            ephemeral_container_statuses: None,
+                ephemeral_container_statuses: None,
             }),
         }
     }

@@ -1,8 +1,6 @@
-use rusternetes_common::{
-    resources::{
-        Node, NodeSelector, NodeSelectorRequirement, NodeSelectorTerm, Pod,
-        Taint, Toleration, TopologySpreadConstraint,
-    },
+use rusternetes_common::resources::{
+    Node, NodeSelector, NodeSelectorRequirement, NodeSelectorTerm, Pod, Taint, Toleration,
+    TopologySpreadConstraint,
 };
 use std::collections::HashMap;
 use tracing::debug;
@@ -129,11 +127,7 @@ pub fn check_node_affinity(node: &Node, pod: &Pod) -> (bool, i32) {
 
 /// Check pod affinity requirements
 /// Returns (passes_hard_requirements, score)
-pub fn check_pod_affinity(
-    node: &Node,
-    pod: &Pod,
-    all_pods: &[Pod],
-) -> (bool, i32) {
+pub fn check_pod_affinity(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, i32) {
     let affinity = match &pod.spec.as_ref().unwrap().affinity {
         Some(a) => a,
         None => return (true, 0), // No affinity requirements
@@ -178,11 +172,7 @@ pub fn check_pod_affinity(
 
 /// Check pod anti-affinity requirements
 /// Returns (passes_hard_requirements, score_penalty)
-pub fn check_pod_anti_affinity(
-    node: &Node,
-    pod: &Pod,
-    all_pods: &[Pod],
-) -> (bool, i32) {
+pub fn check_pod_anti_affinity(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, i32) {
     let affinity = match &pod.spec.as_ref().unwrap().affinity {
         Some(a) => a,
         None => return (true, 0), // No anti-affinity requirements
@@ -194,7 +184,9 @@ pub fn check_pod_anti_affinity(
     };
 
     // Check required pod anti-affinity (hard requirement)
-    if let Some(ref required) = pod_anti_affinity.required_during_scheduling_ignored_during_execution {
+    if let Some(ref required) =
+        pod_anti_affinity.required_during_scheduling_ignored_during_execution
+    {
         for term in required {
             // For anti-affinity, we check if matching pods exist
             // If they do, we CANNOT schedule on this node
@@ -210,7 +202,9 @@ pub fn check_pod_anti_affinity(
 
     // Calculate score penalty from preferred pod anti-affinity (soft requirement)
     let mut penalty = 0;
-    if let Some(ref preferred) = pod_anti_affinity.preferred_during_scheduling_ignored_during_execution {
+    if let Some(ref preferred) =
+        pod_anti_affinity.preferred_during_scheduling_ignored_during_execution
+    {
         for weighted_term in preferred {
             if matches_pod_affinity_term(
                 node,
@@ -282,8 +276,12 @@ fn matches_node_selector_requirement(
     let values = requirement.values.as_deref().unwrap_or(&[]);
 
     match requirement.operator.as_str() {
-        "In" => value.map(|v| values.contains(&v.to_string())).unwrap_or(false),
-        "NotIn" => !value.map(|v| values.contains(&v.to_string())).unwrap_or(false),
+        "In" => value
+            .map(|v| values.contains(&v.to_string()))
+            .unwrap_or(false),
+        "NotIn" => !value
+            .map(|v| values.contains(&v.to_string()))
+            .unwrap_or(false),
         "Exists" => value.is_some(),
         "DoesNotExist" => value.is_none(),
         "Gt" => {
@@ -351,12 +349,12 @@ fn match_selector(
             let values = expr.values.as_deref().unwrap_or(&[]);
 
             let matches = match expr.operator.as_str() {
-                "In" => {
-                    label_value.map(|v| values.contains(&v.as_str().to_string())).unwrap_or(false)
-                }
-                "NotIn" => {
-                    !label_value.map(|v| values.contains(&v.as_str().to_string())).unwrap_or(false)
-                }
+                "In" => label_value
+                    .map(|v| values.contains(&v.as_str().to_string()))
+                    .unwrap_or(false),
+                "NotIn" => !label_value
+                    .map(|v| values.contains(&v.as_str().to_string()))
+                    .unwrap_or(false),
                 "Exists" => label_value.is_some(),
                 "DoesNotExist" => label_value.is_none(),
                 _ => false,
@@ -510,14 +508,9 @@ fn parse_resource_quantity(quantity: &str, resource_type: &str) -> i64 {
     }
 }
 
-
 /// Check if preemption should occur and return pods to evict
 /// Returns (should_preempt, pods_to_evict)
-pub fn check_preemption(
-    node: &Node,
-    pod: &Pod,
-    all_pods: &[Pod],
-) -> (bool, Vec<String>) {
+pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<String>) {
     // Get the priority of the incoming pod
     let incoming_priority = pod.spec.as_ref().and_then(|s| s.priority).unwrap_or(0);
 
@@ -661,7 +654,8 @@ pub fn check_topology_spread_constraints(
     let mut total_penalty = 0;
 
     for constraint in constraints {
-        let (passes, penalty) = check_single_topology_constraint(node, pod, constraint, all_pods, all_nodes);
+        let (passes, penalty) =
+            check_single_topology_constraint(node, pod, constraint, all_pods, all_nodes);
 
         if !passes {
             return (false, 0); // Hard constraint failed
@@ -750,7 +744,10 @@ fn check_single_topology_constraint(
     }
 
     // Calculate skew if we place this pod on the candidate node
-    let current_count = domain_counts.get(&node_topology_value).copied().unwrap_or(0);
+    let current_count = domain_counts
+        .get(&node_topology_value)
+        .copied()
+        .unwrap_or(0);
     let new_count = current_count + 1;
 
     // Find min and max counts

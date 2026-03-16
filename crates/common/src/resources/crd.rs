@@ -488,12 +488,8 @@ mod tests {
 
     #[test]
     fn test_crd_creation() {
-        let crd = CustomResourceDefinition::new(
-            "crontab",
-            "stable.example.com",
-            "CronTab",
-            "crontabs",
-        );
+        let crd =
+            CustomResourceDefinition::new("crontab", "stable.example.com", "CronTab", "crontabs");
 
         assert_eq!(crd.spec.group, "stable.example.com");
         assert_eq!(crd.spec.names.kind, "CronTab");
@@ -503,12 +499,8 @@ mod tests {
 
     #[test]
     fn test_crd_with_version() {
-        let mut crd = CustomResourceDefinition::new(
-            "crontab",
-            "stable.example.com",
-            "CronTab",
-            "crontabs",
-        );
+        let mut crd =
+            CustomResourceDefinition::new("crontab", "stable.example.com", "CronTab", "crontabs");
 
         crd.spec.versions.push(CustomResourceDefinitionVersion {
             name: "v1".to_string(),
@@ -530,22 +522,29 @@ mod tests {
     fn test_json_schema_simple() {
         let schema = JSONSchemaProps {
             type_: Some("object".to_string()),
-            properties: Some(HashMap::from([
-                ("spec".to_string(), JSONSchemaProps {
+            properties: Some(HashMap::from([(
+                "spec".to_string(),
+                JSONSchemaProps {
                     type_: Some("object".to_string()),
                     properties: Some(HashMap::from([
-                        ("cronSpec".to_string(), JSONSchemaProps {
-                            type_: Some("string".to_string()),
-                            ..Default::default()
-                        }),
-                        ("image".to_string(), JSONSchemaProps {
-                            type_: Some("string".to_string()),
-                            ..Default::default()
-                        }),
+                        (
+                            "cronSpec".to_string(),
+                            JSONSchemaProps {
+                                type_: Some("string".to_string()),
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "image".to_string(),
+                            JSONSchemaProps {
+                                type_: Some("string".to_string()),
+                                ..Default::default()
+                            },
+                        ),
                     ])),
                     ..Default::default()
-                }),
-            ])),
+                },
+            )])),
             ..Default::default()
         };
 

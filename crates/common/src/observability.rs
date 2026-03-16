@@ -35,18 +35,16 @@ impl ApiServerMetrics {
                 "API request duration in seconds",
             )
             .namespace("rusternetes")
-            .buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]),
+            .buckets(vec![
+                0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0,
+            ]),
             &["method", "path"],
         )?;
 
-        let requests_active = Gauge::new(
-            "api_requests_active",
-            "Number of active API requests",
-        )?;
+        let requests_active = Gauge::new("api_requests_active", "Number of active API requests")?;
 
         let errors_total = CounterVec::new(
-            Opts::new("api_errors_total", "Total number of API errors")
-                .namespace("rusternetes"),
+            Opts::new("api_errors_total", "Total number of API errors").namespace("rusternetes"),
             &["type"],
         )?;
 
@@ -189,14 +187,12 @@ impl KubeletMetrics {
         )?;
 
         let node_capacity = GaugeVec::new(
-            Opts::new("node_capacity", "Node capacity")
-                .namespace("rusternetes"),
+            Opts::new("node_capacity", "Node capacity").namespace("rusternetes"),
             &["resource"],
         )?;
 
         let node_allocatable = GaugeVec::new(
-            Opts::new("node_allocatable", "Node allocatable resources")
-                .namespace("rusternetes"),
+            Opts::new("node_allocatable", "Node allocatable resources").namespace("rusternetes"),
             &["resource"],
         )?;
 
@@ -236,8 +232,11 @@ pub struct StorageMetrics {
 impl StorageMetrics {
     pub fn new(registry: &Registry) -> Result<Self, prometheus::Error> {
         let operations_total = CounterVec::new(
-            Opts::new("storage_operations_total", "Total number of storage operations")
-                .namespace("rusternetes"),
+            Opts::new(
+                "storage_operations_total",
+                "Total number of storage operations",
+            )
+            .namespace("rusternetes"),
             &["operation", "resource_type"],
         )?;
 
@@ -258,8 +257,7 @@ impl StorageMetrics {
         )?;
 
         let objects_count = GaugeVec::new(
-            Opts::new("storage_objects_count", "Number of stored objects")
-                .namespace("rusternetes"),
+            Opts::new("storage_objects_count", "Number of stored objects").namespace("rusternetes"),
             &["resource_type", "namespace"],
         )?;
 
@@ -347,9 +345,15 @@ mod tests {
         let registry = Registry::new();
         let metrics = ApiServerMetrics::new(&registry).unwrap();
 
-        metrics.requests_total.with_label_values(&["GET", "/api/v1/pods", "200"]).inc();
+        metrics
+            .requests_total
+            .with_label_values(&["GET", "/api/v1/pods", "200"])
+            .inc();
         assert_eq!(
-            metrics.requests_total.with_label_values(&["GET", "/api/v1/pods", "200"]).get(),
+            metrics
+                .requests_total
+                .with_label_values(&["GET", "/api/v1/pods", "200"])
+                .get(),
             1.0
         );
     }
@@ -359,9 +363,15 @@ mod tests {
         let registry = Registry::new();
         let metrics = SchedulerMetrics::new(&registry).unwrap();
 
-        metrics.scheduling_attempts_total.with_label_values(&["success"]).inc();
+        metrics
+            .scheduling_attempts_total
+            .with_label_values(&["success"])
+            .inc();
         assert_eq!(
-            metrics.scheduling_attempts_total.with_label_values(&["success"]).get(),
+            metrics
+                .scheduling_attempts_total
+                .with_label_values(&["success"])
+                .get(),
             1.0
         );
     }

@@ -9,8 +9,8 @@
 use crate::resources::pod::Pod;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Result of an admission decision
 #[derive(Debug, Clone, PartialEq)]
@@ -25,7 +25,10 @@ pub enum AdmissionResponse {
 
 impl AdmissionResponse {
     pub fn is_allowed(&self) -> bool {
-        matches!(self, AdmissionResponse::Allow | AdmissionResponse::AllowWithPatch(_))
+        matches!(
+            self,
+            AdmissionResponse::Allow | AdmissionResponse::AllowWithPatch(_)
+        )
     }
 
     pub fn deny_reason(&self) -> Option<&str> {
@@ -133,8 +136,7 @@ impl AdmissionChain {
     }
 
     pub fn with_built_in_controllers(self) -> Self {
-        self
-            .with_controller(Arc::new(NamespaceLifecycleController))
+        self.with_controller(Arc::new(NamespaceLifecycleController))
             .with_controller(Arc::new(ResourceQuotaController))
             .with_controller(Arc::new(LimitRangerController))
             .with_controller(Arc::new(PodSecurityStandardsController))
@@ -154,11 +156,7 @@ impl AdmissionChain {
 
             match response {
                 AdmissionResponse::Deny(reason) => {
-                    return AdmissionResponse::Deny(format!(
-                        "{}: {}",
-                        controller.name(),
-                        reason
-                    ));
+                    return AdmissionResponse::Deny(format!("{}: {}", controller.name(), reason));
                 }
                 AdmissionResponse::AllowWithPatch(mut patches) => {
                     all_patches.append(&mut patches);
@@ -405,7 +403,11 @@ fn check_pod_security(pod: &Pod, level: &PodSecurityLevel) -> Result<(), Vec<Str
 
                         // Must drop ALL capabilities
                         if let Some(caps) = &security_context.capabilities {
-                            if caps.drop.as_ref().map_or(true, |d| !d.contains(&"ALL".to_string())) {
+                            if caps
+                                .drop
+                                .as_ref()
+                                .map_or(true, |d| !d.contains(&"ALL".to_string()))
+                            {
                                 violations.push(format!(
                                     "Container '{}' must drop ALL capabilities",
                                     container.name

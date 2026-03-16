@@ -7,7 +7,6 @@
 /// - Uses a magic number prefix (0x6b 0x38 0x73 = "k8s") to identify protobuf messages
 /// - Wraps objects with metadata (apiVersion, kind, etc.) using the Unknown wrapper
 /// - Supports both "protobuf" (with type wrapper) and "raw-protobuf" (without wrapper)
-
 use prost::Message;
 use serde::{Deserialize, Serialize};
 
@@ -79,8 +78,8 @@ pub fn encode_protobuf<T: Serialize>(
 ) -> Result<Vec<u8>, String> {
     // Serialize the object to JSON
     // In a full implementation, this would use generated protobuf schemas
-    let json_bytes = serde_json::to_vec(obj)
-        .map_err(|e| format!("Failed to serialize to JSON: {}", e))?;
+    let json_bytes =
+        serde_json::to_vec(obj).map_err(|e| format!("Failed to serialize to JSON: {}", e))?;
 
     // Create Unknown wrapper with type metadata
     let unknown = Unknown {
@@ -95,7 +94,8 @@ pub fn encode_protobuf<T: Serialize>(
     let mut buf = Vec::with_capacity(PROTOBUF_MAGIC.len() + unknown.encoded_len());
     buf.extend_from_slice(PROTOBUF_MAGIC);
 
-    unknown.encode(&mut buf)
+    unknown
+        .encode(&mut buf)
         .map_err(|e| format!("Failed to encode protobuf: {}", e))?;
 
     Ok(buf)
@@ -107,9 +107,7 @@ pub fn encode_protobuf<T: Serialize>(
 /// 1. Verifies the magic number prefix
 /// 2. Decodes the Unknown wrapper
 /// 3. Deserializes the object from the raw bytes (JSON in our case)
-pub fn decode_protobuf<T: for<'de> Deserialize<'de>>(
-    data: &[u8],
-) -> Result<(T, TypeMeta), String> {
+pub fn decode_protobuf<T: for<'de> Deserialize<'de>>(data: &[u8]) -> Result<(T, TypeMeta), String> {
     // Verify magic number
     if data.len() < PROTOBUF_MAGIC.len() {
         return Err("Data too short to contain magic number".to_string());
@@ -176,15 +174,14 @@ mod tests {
         };
 
         // Encode
-        let encoded = encode_protobuf(&obj, "v1", "TestObject")
-            .expect("Failed to encode");
+        let encoded = encode_protobuf(&obj, "v1", "TestObject").expect("Failed to encode");
 
         // Verify magic number
         assert_eq!(&encoded[0..4], PROTOBUF_MAGIC);
 
         // Decode
-        let (decoded, type_meta): (TestObject, TypeMeta) = decode_protobuf(&encoded)
-            .expect("Failed to decode");
+        let (decoded, type_meta): (TestObject, TypeMeta) =
+            decode_protobuf(&encoded).expect("Failed to decode");
 
         assert_eq!(decoded, obj);
         assert_eq!(type_meta.api_version, "v1");
@@ -198,8 +195,7 @@ mod tests {
             value: 42,
         };
 
-        let encoded = encode_protobuf(&obj, "v1", "TestObject")
-            .expect("Failed to encode");
+        let encoded = encode_protobuf(&obj, "v1", "TestObject").expect("Failed to encode");
 
         assert!(is_protobuf(&encoded));
         assert!(!is_protobuf(b"not protobuf"));
@@ -213,11 +209,9 @@ mod tests {
             value: 42,
         };
 
-        let encoded = encode_protobuf(&obj, "apps/v1", "Deployment")
-            .expect("Failed to encode");
+        let encoded = encode_protobuf(&obj, "apps/v1", "Deployment").expect("Failed to encode");
 
-        let type_meta = extract_type_meta(&encoded)
-            .expect("Failed to extract type meta");
+        let type_meta = extract_type_meta(&encoded).expect("Failed to extract type meta");
 
         assert_eq!(type_meta.api_version, "apps/v1");
         assert_eq!(type_meta.kind, "Deployment");

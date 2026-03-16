@@ -1,9 +1,9 @@
 use rusternetes_common::resources::{
-    Deployment, DeploymentSpec, VerticalPodAutoscaler, VerticalPodAutoscalerSpec,
-    CrossVersionObjectReference, PodTemplateSpec, Container, Pod, PodSpec, PodStatus,
-    PodUpdatePolicy, PodResourcePolicy, ContainerResourcePolicy,
+    Container, ContainerResourcePolicy, CrossVersionObjectReference, Deployment, DeploymentSpec,
+    Pod, PodResourcePolicy, PodSpec, PodStatus, PodTemplateSpec, PodUpdatePolicy,
+    VerticalPodAutoscaler, VerticalPodAutoscalerSpec,
 };
-use rusternetes_common::types::{LabelSelector, ObjectMeta, TypeMeta, Phase};
+use rusternetes_common::types::{LabelSelector, ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::vpa::VerticalPodAutoscalerController;
 use rusternetes_storage::{build_key, MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -70,6 +70,7 @@ fn create_test_deployment_with_pods(
                     service_account_name: None,
                     automount_service_account_token: None,
                     hostname: None,
+                    subdomain: None,
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
@@ -164,13 +165,19 @@ async fn test_vpa_generates_recommendations() {
     let (deployment, pods) = create_test_deployment_with_pods(&storage, "web-app", "default", 3);
 
     storage
-        .create(&build_key("deployments", Some("default"), "web-app"), &deployment)
+        .create(
+            &build_key("deployments", Some("default"), "web-app"),
+            &deployment,
+        )
         .await
         .unwrap();
 
     for (i, pod) in pods.iter().enumerate() {
         storage
-            .create(&build_key("pods", Some("default"), &format!("web-app-pod-{}", i)), pod)
+            .create(
+                &build_key("pods", Some("default"), &format!("web-app-pod-{}", i)),
+                pod,
+            )
             .await
             .unwrap();
     }
@@ -178,7 +185,10 @@ async fn test_vpa_generates_recommendations() {
     // Create VPA in "Off" mode (recommendations only)
     let vpa = create_test_vpa("web-vpa", "default", "web-app", "Deployment", Some("Off"));
     storage
-        .create(&build_key("verticalpodautoscalers", Some("default"), "web-vpa"), &vpa)
+        .create(
+            &build_key("verticalpodautoscalers", Some("default"), "web-vpa"),
+            &vpa,
+        )
         .await
         .unwrap();
 
@@ -189,24 +199,43 @@ async fn test_vpa_generates_recommendations() {
 
     // Verify VPA status has recommendations
     let updated_vpa: VerticalPodAutoscaler = storage
-        .get(&build_key("verticalpodautoscalers", Some("default"), "web-vpa"))
+        .get(&build_key(
+            "verticalpodautoscalers",
+            Some("default"),
+            "web-vpa",
+        ))
         .await
         .unwrap();
 
     assert!(updated_vpa.status.is_some(), "VPA should have status");
     let status = updated_vpa.status.unwrap();
-    assert!(status.recommendation.is_some(), "VPA should have recommendations");
+    assert!(
+        status.recommendation.is_some(),
+        "VPA should have recommendations"
+    );
 
     let recommendation = status.recommendation.unwrap();
-    assert!(recommendation.container_recommendations.is_some(), "Should have container recommendations");
+    assert!(
+        recommendation.container_recommendations.is_some(),
+        "Should have container recommendations"
+    );
 
     let containers = recommendation.container_recommendations.unwrap();
-    assert!(!containers.is_empty(), "Should have at least one container recommendation");
+    assert!(
+        !containers.is_empty(),
+        "Should have at least one container recommendation"
+    );
 
     let first_container = &containers[0];
     assert_eq!(first_container.container_name, "app");
-    assert!(first_container.target.contains_key("cpu"), "Should have CPU recommendation");
-    assert!(first_container.target.contains_key("memory"), "Should have memory recommendation");
+    assert!(
+        first_container.target.contains_key("cpu"),
+        "Should have CPU recommendation"
+    );
+    assert!(
+        first_container.target.contains_key("memory"),
+        "Should have memory recommendation"
+    );
 }
 
 #[tokio::test]
@@ -218,13 +247,19 @@ async fn test_vpa_respects_update_mode_off() {
     let (deployment, pods) = create_test_deployment_with_pods(&storage, "app", "default", 2);
 
     storage
-        .create(&build_key("deployments", Some("default"), "app"), &deployment)
+        .create(
+            &build_key("deployments", Some("default"), "app"),
+            &deployment,
+        )
         .await
         .unwrap();
 
     for (i, pod) in pods.iter().enumerate() {
         storage
-            .create(&build_key("pods", Some("default"), &format!("app-pod-{}", i)), pod)
+            .create(
+                &build_key("pods", Some("default"), &format!("app-pod-{}", i)),
+                pod,
+            )
             .await
             .unwrap();
     }
@@ -232,7 +267,10 @@ async fn test_vpa_respects_update_mode_off() {
     // Create VPA in "Off" mode
     let vpa = create_test_vpa("app-vpa", "default", "app", "Deployment", Some("Off"));
     storage
-        .create(&build_key("verticalpodautoscalers", Some("default"), "app-vpa"), &vpa)
+        .create(
+            &build_key("verticalpodautoscalers", Some("default"), "app-vpa"),
+            &vpa,
+        )
         .await
         .unwrap();
 
@@ -243,7 +281,11 @@ async fn test_vpa_respects_update_mode_off() {
 
     // Verify pods are NOT evicted (Off mode doesn't apply changes)
     let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-    assert_eq!(pods_after.len(), 2, "Pods should not be evicted in Off mode");
+    assert_eq!(
+        pods_after.len(),
+        2,
+        "Pods should not be evicted in Off mode"
+    );
 }
 
 #[tokio::test]
@@ -252,15 +294,27 @@ async fn test_vpa_with_missing_target() {
     let controller = VerticalPodAutoscalerController::new(storage.clone());
 
     // Create VPA but don't create the target deployment
-    let vpa = create_test_vpa("orphan-vpa", "default", "nonexistent", "Deployment", Some("Off"));
+    let vpa = create_test_vpa(
+        "orphan-vpa",
+        "default",
+        "nonexistent",
+        "Deployment",
+        Some("Off"),
+    );
     storage
-        .create(&build_key("verticalpodautoscalers", Some("default"), "orphan-vpa"), &vpa)
+        .create(
+            &build_key("verticalpodautoscalers", Some("default"), "orphan-vpa"),
+            &vpa,
+        )
         .await
         .unwrap();
 
     // Run controller - should not crash
     let result = controller.reconcile_all().await;
-    assert!(result.is_ok(), "Controller should handle missing target gracefully");
+    assert!(
+        result.is_ok(),
+        "Controller should handle missing target gracefully"
+    );
 }
 
 #[tokio::test]
@@ -269,22 +323,39 @@ async fn test_vpa_resource_policy_constraints() {
     let controller = VerticalPodAutoscalerController::new(storage.clone());
 
     // Create deployment with pods
-    let (deployment, pods) = create_test_deployment_with_pods(&storage, "constrained-app", "default", 2);
+    let (deployment, pods) =
+        create_test_deployment_with_pods(&storage, "constrained-app", "default", 2);
 
     storage
-        .create(&build_key("deployments", Some("default"), "constrained-app"), &deployment)
+        .create(
+            &build_key("deployments", Some("default"), "constrained-app"),
+            &deployment,
+        )
         .await
         .unwrap();
 
     for (i, pod) in pods.iter().enumerate() {
         storage
-            .create(&build_key("pods", Some("default"), &format!("constrained-app-pod-{}", i)), pod)
+            .create(
+                &build_key(
+                    "pods",
+                    Some("default"),
+                    &format!("constrained-app-pod-{}", i),
+                ),
+                pod,
+            )
             .await
             .unwrap();
     }
 
     // Create VPA with resource policy constraints
-    let mut vpa = create_test_vpa("constrained-vpa", "default", "constrained-app", "Deployment", Some("Off"));
+    let mut vpa = create_test_vpa(
+        "constrained-vpa",
+        "default",
+        "constrained-app",
+        "Deployment",
+        Some("Off"),
+    );
     vpa.spec.resource_policy = Some(PodResourcePolicy {
         container_policies: Some(vec![ContainerResourcePolicy {
             container_name: Some("app".to_string()),
@@ -306,7 +377,10 @@ async fn test_vpa_resource_policy_constraints() {
     });
 
     storage
-        .create(&build_key("verticalpodautoscalers", Some("default"), "constrained-vpa"), &vpa)
+        .create(
+            &build_key("verticalpodautoscalers", Some("default"), "constrained-vpa"),
+            &vpa,
+        )
         .await
         .unwrap();
 
@@ -317,7 +391,11 @@ async fn test_vpa_resource_policy_constraints() {
 
     // Verify recommendations respect constraints
     let updated_vpa: VerticalPodAutoscaler = storage
-        .get(&build_key("verticalpodautoscalers", Some("default"), "constrained-vpa"))
+        .get(&build_key(
+            "verticalpodautoscalers",
+            Some("default"),
+            "constrained-vpa",
+        ))
         .await
         .unwrap();
 
@@ -325,7 +403,10 @@ async fn test_vpa_resource_policy_constraints() {
         if let Some(recommendation) = status.recommendation {
             if let Some(containers) = recommendation.container_recommendations {
                 let app_rec = containers.iter().find(|c| c.container_name == "app");
-                assert!(app_rec.is_some(), "Should have recommendation for app container");
+                assert!(
+                    app_rec.is_some(),
+                    "Should have recommendation for app container"
+                );
 
                 // Note: Actual constraint enforcement would be tested by checking
                 // that recommended values fall within min/max bounds
@@ -354,13 +435,19 @@ async fn test_vpa_multiple_vpas_different_namespaces() {
 
     for (i, pod) in pods1.iter().enumerate() {
         storage
-            .create(&build_key("pods", Some("ns1"), &format!("app-pod-{}", i)), pod)
+            .create(
+                &build_key("pods", Some("ns1"), &format!("app-pod-{}", i)),
+                pod,
+            )
             .await
             .unwrap();
     }
     for (i, pod) in pods2.iter().enumerate() {
         storage
-            .create(&build_key("pods", Some("ns2"), &format!("app-pod-{}", i)), pod)
+            .create(
+                &build_key("pods", Some("ns2"), &format!("app-pod-{}", i)),
+                pod,
+            )
             .await
             .unwrap();
     }
@@ -370,11 +457,17 @@ async fn test_vpa_multiple_vpas_different_namespaces() {
     let vpa2 = create_test_vpa("app-vpa", "ns2", "app", "Deployment", Some("Off"));
 
     storage
-        .create(&build_key("verticalpodautoscalers", Some("ns1"), "app-vpa"), &vpa1)
+        .create(
+            &build_key("verticalpodautoscalers", Some("ns1"), "app-vpa"),
+            &vpa1,
+        )
         .await
         .unwrap();
     storage
-        .create(&build_key("verticalpodautoscalers", Some("ns2"), "app-vpa"), &vpa2)
+        .create(
+            &build_key("verticalpodautoscalers", Some("ns2"), "app-vpa"),
+            &vpa2,
+        )
         .await
         .unwrap();
 
@@ -406,14 +499,26 @@ async fn test_vpa_with_no_pods() {
     let (deployment, _) = create_test_deployment_with_pods(&storage, "no-pods-app", "default", 0);
 
     storage
-        .create(&build_key("deployments", Some("default"), "no-pods-app"), &deployment)
+        .create(
+            &build_key("deployments", Some("default"), "no-pods-app"),
+            &deployment,
+        )
         .await
         .unwrap();
 
     // Create VPA
-    let vpa = create_test_vpa("no-pods-vpa", "default", "no-pods-app", "Deployment", Some("Off"));
+    let vpa = create_test_vpa(
+        "no-pods-vpa",
+        "default",
+        "no-pods-app",
+        "Deployment",
+        Some("Off"),
+    );
     storage
-        .create(&build_key("verticalpodautoscalers", Some("default"), "no-pods-vpa"), &vpa)
+        .create(
+            &build_key("verticalpodautoscalers", Some("default"), "no-pods-vpa"),
+            &vpa,
+        )
         .await
         .unwrap();
 
@@ -423,7 +528,11 @@ async fn test_vpa_with_no_pods() {
 
     // Verify VPA status - should not have recommendations
     let updated_vpa: VerticalPodAutoscaler = storage
-        .get(&build_key("verticalpodautoscalers", Some("default"), "no-pods-vpa"))
+        .get(&build_key(
+            "verticalpodautoscalers",
+            Some("default"),
+            "no-pods-vpa",
+        ))
         .await
         .unwrap();
 
@@ -431,8 +540,10 @@ async fn test_vpa_with_no_pods() {
     if let Some(status) = updated_vpa.status {
         if let Some(recommendation) = status.recommendation {
             if let Some(containers) = recommendation.container_recommendations {
-                assert!(containers.is_empty() || containers.len() == 0,
-                    "Should have no recommendations without pods or very few");
+                assert!(
+                    containers.is_empty() || containers.len() == 0,
+                    "Should have no recommendations without pods or very few"
+                );
             }
         }
     }

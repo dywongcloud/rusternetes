@@ -5,10 +5,10 @@
 //! from monopolizing resources.
 
 use rusternetes_common::resources::{FlowSchema, PriorityLevelConfiguration};
-use rusternetes_storage::{Storage, build_key};
+use rusternetes_storage::{build_key, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{Semaphore, RwLock};
+use tokio::sync::{RwLock, Semaphore};
 use tracing::{debug, warn};
 
 /// Flow Control Engine that manages request prioritization and fairness
@@ -36,15 +36,21 @@ impl<S: Storage> FlowControlEngine<S> {
 
         // Load all FlowSchemas
         let flow_schema_prefix = build_key("flowschemas", None, "");
-        let schemas: Vec<FlowSchema> = self.storage.list(&flow_schema_prefix).await
-            .unwrap_or_else(|e| {
-                warn!("Failed to load FlowSchemas: {}", e);
-                Vec::new()
-            });
+        let schemas: Vec<FlowSchema> =
+            self.storage
+                .list(&flow_schema_prefix)
+                .await
+                .unwrap_or_else(|e| {
+                    warn!("Failed to load FlowSchemas: {}", e);
+                    Vec::new()
+                });
 
         // Load all PriorityLevelConfigurations
         let priority_level_prefix = build_key("prioritylevelconfigurations", None, "");
-        let priority_levels: Vec<PriorityLevelConfiguration> = self.storage.list(&priority_level_prefix).await
+        let priority_levels: Vec<PriorityLevelConfiguration> = self
+            .storage
+            .list(&priority_level_prefix)
+            .await
             .unwrap_or_else(|e| {
                 warn!("Failed to load PriorityLevelConfigurations: {}", e);
                 Vec::new()
@@ -55,8 +61,14 @@ impl<S: Storage> FlowControlEngine<S> {
         for pl in priority_levels {
             if let Some(limited) = &pl.spec.limited {
                 let concurrency = limited.nominal_concurrency_shares.unwrap_or(30) as usize;
-                pl_map.insert(pl.metadata.name.clone(), Arc::new(Semaphore::new(concurrency)));
-                debug!("Configured priority level '{}' with {} concurrency shares", pl.metadata.name, concurrency);
+                pl_map.insert(
+                    pl.metadata.name.clone(),
+                    Arc::new(Semaphore::new(concurrency)),
+                );
+                debug!(
+                    "Configured priority level '{}' with {} concurrency shares",
+                    pl.metadata.name, concurrency
+                );
             }
         }
 
@@ -69,7 +81,12 @@ impl<S: Storage> FlowControlEngine<S> {
     }
 
     /// Match a request to a FlowSchema
-    pub async fn match_flow_schema(&self, _user: &str, _verb: &str, _resource: &str) -> Option<String> {
+    pub async fn match_flow_schema(
+        &self,
+        _user: &str,
+        _verb: &str,
+        _resource: &str,
+    ) -> Option<String> {
         // Simple matching logic - in production this would check rules, subjects, etc.
         // For now, return the "exempt" priority level which has no limits
         Some("exempt".to_string())
@@ -77,24 +94,38 @@ impl<S: Storage> FlowControlEngine<S> {
 
     /// Execute a request with flow control
     /// Returns a permit that must be held while the request is processed
-    pub async fn execute(&self, priority_level_name: &str) -> Result<FlowControlPermit, FlowControlError> {
+    pub async fn execute(
+        &self,
+        priority_level_name: &str,
+    ) -> Result<FlowControlPermit, FlowControlError> {
         let pl_map = self.priority_levels.read().await;
 
         if let Some(semaphore) = pl_map.get(priority_level_name) {
             // Try to acquire a permit from the semaphore
             match semaphore.clone().try_acquire_owned() {
                 Ok(permit) => {
-                    debug!("Acquired flow control permit for priority level '{}'", priority_level_name);
-                    Ok(FlowControlPermit { _permit: Some(permit) })
+                    debug!(
+                        "Acquired flow control permit for priority level '{}'",
+                        priority_level_name
+                    );
+                    Ok(FlowControlPermit {
+                        _permit: Some(permit),
+                    })
                 }
                 Err(_) => {
-                    debug!("Flow control: no permits available for priority level '{}'", priority_level_name);
+                    debug!(
+                        "Flow control: no permits available for priority level '{}'",
+                        priority_level_name
+                    );
                     Err(FlowControlError::TooManyRequests)
                 }
             }
         } else {
             // Priority level not found or is exempt - allow without limits
-            debug!("Priority level '{}' not found or exempt - allowing without limits", priority_level_name);
+            debug!(
+                "Priority level '{}' not found or exempt - allowing without limits",
+                priority_level_name
+            );
             Ok(FlowControlPermit { _permit: None })
         }
     }

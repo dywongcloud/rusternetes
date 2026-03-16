@@ -72,9 +72,7 @@ mod tests {
             window: Some("60s".to_string()),
             value: "100".to_string(),
             selector: Some(MetricSelector {
-                match_labels: Some(BTreeMap::from([
-                    ("app".to_string(), "nginx".to_string()),
-                ])),
+                match_labels: Some(BTreeMap::from([("app".to_string(), "nginx".to_string())])),
             }),
         };
 
@@ -136,6 +134,9 @@ mod tests {
         assert_eq!(metric_value.api_version, "custom.metrics.k8s.io/v1beta2");
         assert_eq!(metric_value.kind, "MetricValue");
         assert_eq!(metric_value.described_object.name, "test-pod");
-        assert_eq!(metric_value.described_object.namespace, Some("default".to_string()));
+        assert_eq!(
+            metric_value.described_object.namespace,
+            Some("default".to_string())
+        );
     }
 }

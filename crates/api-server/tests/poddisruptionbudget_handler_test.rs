@@ -200,7 +200,11 @@ async fn test_pdb_with_max_unavailable() {
         status: None,
     };
 
-    let key = build_key("poddisruptionbudgets", Some("default"), "test-max-unavailable");
+    let key = build_key(
+        "poddisruptionbudgets",
+        Some("default"),
+        "test-max-unavailable",
+    );
 
     // Create with max_unavailable
     let created: PodDisruptionBudget = storage.create(&key, &pdb).await.unwrap();
@@ -531,7 +535,11 @@ async fn test_pdb_empty_selector() {
         status: None,
     };
 
-    let key = build_key("poddisruptionbudgets", Some("default"), "test-empty-selector");
+    let key = build_key(
+        "poddisruptionbudgets",
+        Some("default"),
+        "test-empty-selector",
+    );
 
     // Create with empty selector
     let created: PodDisruptionBudget = storage.create(&key, &pdb).await.unwrap();
@@ -613,15 +621,9 @@ async fn test_pdb_multiple_namespaces() {
     let created2: PodDisruptionBudget = storage.create(&key2, &pdb2).await.unwrap();
 
     assert_eq!(created1.metadata.name, "test-pdb");
-    assert_eq!(
-        created1.metadata.namespace,
-        Some("namespace-1".to_string())
-    );
+    assert_eq!(created1.metadata.namespace, Some("namespace-1".to_string()));
     assert_eq!(created2.metadata.name, "test-pdb");
-    assert_eq!(
-        created2.metadata.namespace,
-        Some("namespace-2".to_string())
-    );
+    assert_eq!(created2.metadata.namespace, Some("namespace-2".to_string()));
     assert_ne!(created1.metadata.uid, created2.metadata.uid);
 
     // Clean up

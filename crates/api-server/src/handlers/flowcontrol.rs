@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::{FlowSchema, PriorityLevelConfiguration},
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -178,11 +177,20 @@ pub async fn list_priority_level_configurations(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;
 
-    let list = List::new("PriorityLevelConfigurationList", "flowcontrol.apiserver.k8s.io/v1", items);
+    let list = List::new(
+        "PriorityLevelConfigurationList",
+        "flowcontrol.apiserver.k8s.io/v1",
+        items,
+    );
     Ok(Json(list))
 }
 
-crate::patch_handler_cluster!(patch_priority_level_configuration, PriorityLevelConfiguration, "prioritylevelconfigurations", "flowcontrol.apiserver.k8s.io");
+crate::patch_handler_cluster!(
+    patch_priority_level_configuration,
+    PriorityLevelConfiguration,
+    "prioritylevelconfigurations",
+    "flowcontrol.apiserver.k8s.io"
+);
 
 // FlowSchema handlers
 
@@ -351,18 +359,30 @@ pub async fn list_flow_schemas(
     Ok(Json(list))
 }
 
-crate::patch_handler_cluster!(patch_flow_schema, FlowSchema, "flowschemas", "flowcontrol.apiserver.k8s.io");
+crate::patch_handler_cluster!(
+    patch_flow_schema,
+    FlowSchema,
+    "flowschemas",
+    "flowcontrol.apiserver.k8s.io"
+);
 
 pub async fn deletecollection_prioritylevelconfigurations(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection prioritylevelconfigurations with params: {:?}", params);
+    info!(
+        "DeleteCollection prioritylevelconfigurations with params: {:?}",
+        params
+    );
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "prioritylevelconfigurations")
-        .with_api_group("flowcontrol.apiserver.k8s.io");
+    let attrs = RequestAttributes::new(
+        auth_ctx.user,
+        "deletecollection",
+        "prioritylevelconfigurations",
+    )
+    .with_api_group("flowcontrol.apiserver.k8s.io");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -380,7 +400,10 @@ pub async fn deletecollection_prioritylevelconfigurations(
 
     // Get all prioritylevelconfigurations
     let prefix = build_prefix("prioritylevelconfigurations", None);
-    let mut items = state.storage.list::<PriorityLevelConfiguration>(&prefix).await?;
+    let mut items = state
+        .storage
+        .list::<PriorityLevelConfiguration>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;
@@ -403,6 +426,9 @@ pub async fn deletecollection_prioritylevelconfigurations(
         }
     }
 
-    info!("DeleteCollection completed: {} prioritylevelconfigurations deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} prioritylevelconfigurations deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

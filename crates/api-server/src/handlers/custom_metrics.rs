@@ -3,16 +3,18 @@ use axum::{
     extract::{Path, Query, State},
     Extension, Json,
 };
+use chrono::Utc;
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
-    resources::custom_metrics::{MetricValue, MetricValueList, ObjectReference, MetricSelector, ListMetadata},
+    resources::custom_metrics::{
+        ListMetadata, MetricSelector, MetricValue, MetricValueList, ObjectReference,
+    },
     Result,
 };
+use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
-use serde::Deserialize;
 use tracing::{info, warn};
-use chrono::Utc;
 
 #[derive(Debug, Deserialize)]
 pub struct MetricQuery {
@@ -24,7 +26,12 @@ pub struct MetricQuery {
 pub async fn get_custom_metric(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Path((namespace, resource_type, resource_name, metric_name)): Path<(String, String, String, String)>,
+    Path((namespace, resource_type, resource_name, metric_name)): Path<(
+        String,
+        String,
+        String,
+        String,
+    )>,
 ) -> Result<Json<MetricValue>> {
     info!(
         "Getting custom metric {} for {}/{}/{}",
@@ -44,16 +51,22 @@ pub async fn get_custom_metric(
 
     // Query Prometheus for metric value (or use mock data if Prometheus not configured)
     let value = if let Some(ref prometheus_client) = state.prometheus_client {
-        match prometheus_client.query_object_metric(
-            &metric_name,
-            &namespace,
-            &resource_type,
-            &resource_name,
-            None, // No additional labels
-        ).await {
+        match prometheus_client
+            .query_object_metric(
+                &metric_name,
+                &namespace,
+                &resource_type,
+                &resource_name,
+                None, // No additional labels
+            )
+            .await
+        {
             Ok(v) => v,
             Err(e) => {
-                warn!("Failed to query Prometheus for metric {}: {}. Using fallback value.", metric_name, e);
+                warn!(
+                    "Failed to query Prometheus for metric {}: {}. Using fallback value.",
+                    metric_name, e
+                );
                 "0".to_string()
             }
         }
@@ -118,29 +131,30 @@ pub async fn list_custom_metrics(
             .collect();
 
         // Convert BTreeMap to HashMap for PrometheusClient
-        let label_hashmap: HashMap<String, String> = labels.iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let label_hashmap: HashMap<String, String> =
+            labels.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        (Some(MetricSelector {
-            match_labels: Some(labels),
-        }), Some(label_hashmap))
+        (
+            Some(MetricSelector {
+                match_labels: Some(labels),
+            }),
+            Some(label_hashmap),
+        )
     } else {
         (None, None)
     };
 
     // Query Prometheus for metric values (or use mock data if Prometheus not configured)
     let items = if let Some(ref prometheus_client) = state.prometheus_client {
-        match prometheus_client.query_list_metric(
-            &metric_name,
-            &namespace,
-            &resource_type,
-            label_map.as_ref(),
-        ).await {
+        match prometheus_client
+            .query_list_metric(&metric_name, &namespace, &resource_type, label_map.as_ref())
+            .await
+        {
             Ok(metric_map) => {
                 // Convert HashMap<String, String> to Vec<MetricValue>
-                let values: Vec<MetricValue> = metric_map.into_iter().map(|(resource_name, value)| {
-                    MetricValue {
+                let values: Vec<MetricValue> = metric_map
+                    .into_iter()
+                    .map(|(resource_name, value)| MetricValue {
                         api_version: "custom.metrics.k8s.io/v1beta2".to_string(),
                         kind: "MetricValue".to_string(),
                         described_object: ObjectReference {
@@ -154,12 +168,15 @@ pub async fn list_custom_metrics(
                         window: Some("60s".to_string()),
                         value,
                         selector: selector.clone(),
-                    }
-                }).collect();
+                    })
+                    .collect();
                 values
             }
             Err(e) => {
-                warn!("Failed to query Prometheus for list metric {}: {}. Using fallback values.", metric_name, e);
+                warn!(
+                    "Failed to query Prometheus for list metric {}: {}. Using fallback values.",
+                    metric_name, e
+                );
                 // Return empty list on error
                 vec![]
             }
@@ -235,13 +252,16 @@ pub async fn get_namespace_metric(
 
     // Query Prometheus for namespace metric (or use mock data if Prometheus not configured)
     let value = if let Some(ref prometheus_client) = state.prometheus_client {
-        match prometheus_client.query_namespace_metric(
-            &metric_name,
-            &namespace,
-        ).await {
+        match prometheus_client
+            .query_namespace_metric(&metric_name, &namespace)
+            .await
+        {
             Ok(v) => v,
             Err(e) => {
-                warn!("Failed to query Prometheus for namespace metric {}: {}. Using fallback value.", metric_name, e);
+                warn!(
+                    "Failed to query Prometheus for namespace metric {}: {}. Using fallback value.",
+                    metric_name, e
+                );
                 "0".to_string()
             }
         }
@@ -292,15 +312,21 @@ pub async fn get_cluster_metric(
 
     // Query Prometheus for cluster-scoped metric (or use mock data if Prometheus not configured)
     let value = if let Some(ref prometheus_client) = state.prometheus_client {
-        match prometheus_client.query_cluster_metric(
-            &metric_name,
-            &resource_type,
-            &resource_name,
-            None, // No additional labels
-        ).await {
+        match prometheus_client
+            .query_cluster_metric(
+                &metric_name,
+                &resource_type,
+                &resource_name,
+                None, // No additional labels
+            )
+            .await
+        {
             Ok(v) => v,
             Err(e) => {
-                warn!("Failed to query Prometheus for cluster metric {}: {}. Using fallback value.", metric_name, e);
+                warn!(
+                    "Failed to query Prometheus for cluster metric {}: {}. Using fallback value.",
+                    metric_name, e
+                );
                 "0".to_string()
             }
         }
@@ -342,16 +368,16 @@ fn capitalize(s: &str) -> String {
 }
 
 #[cfg(test)]
-#[cfg(feature = "integration-tests")]  // Disable tests that require full setup
+#[cfg(feature = "integration-tests")] // Disable tests that require full setup
 mod tests {
     use super::*;
     use crate::state::ApiServerState;
+    use rusternetes_common::auth::UserInfo;
     use rusternetes_common::authz::AlwaysAllowAuthorizer;
     use rusternetes_common::storage::MemoryStorage;
-    use rusternetes_common::auth::UserInfo;
 
     async fn create_test_state() -> Arc<ApiServerState> {
-        use rusternetes_common::auth::{TokenManager, BootstrapTokenManager};
+        use rusternetes_common::auth::{BootstrapTokenManager, TokenManager};
         use rusternetes_common::observability::MetricsRegistry;
         use rusternetes_storage::memory::MemoryStorage;
 

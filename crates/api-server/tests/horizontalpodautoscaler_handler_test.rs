@@ -125,7 +125,11 @@ async fn test_hpa_list_in_namespace() {
     // Create multiple HPAs
     for i in 1..=3 {
         let hpa = create_test_hpa(&format!("hpa-{}", i), namespace);
-        let key = build_key("horizontalpodautoscalers", Some(namespace), &format!("hpa-{}", i));
+        let key = build_key(
+            "horizontalpodautoscalers",
+            Some(namespace),
+            &format!("hpa-{}", i),
+        );
         storage.create(&key, &hpa).await.unwrap();
     }
 
@@ -137,7 +141,11 @@ async fn test_hpa_list_in_namespace() {
 
     // Cleanup
     for i in 1..=3 {
-        let key = build_key("horizontalpodautoscalers", Some(namespace), &format!("hpa-{}", i));
+        let key = build_key(
+            "horizontalpodautoscalers",
+            Some(namespace),
+            &format!("hpa-{}", i),
+        );
         storage.delete(&key).await.unwrap();
     }
 }
@@ -223,9 +231,21 @@ async fn test_hpa_with_memory_metric() {
     let key = build_key("horizontalpodautoscalers", Some(namespace), "memory-hpa");
     let created: HorizontalPodAutoscaler = storage.create(&key, &hpa).await.unwrap();
 
-    assert_eq!(created.spec.metrics.as_ref().unwrap()[0].resource.as_ref().unwrap().name, "memory");
     assert_eq!(
-        created.spec.metrics.as_ref().unwrap()[0].resource.as_ref().unwrap().target.average_utilization,
+        created.spec.metrics.as_ref().unwrap()[0]
+            .resource
+            .as_ref()
+            .unwrap()
+            .name,
+        "memory"
+    );
+    assert_eq!(
+        created.spec.metrics.as_ref().unwrap()[0]
+            .resource
+            .as_ref()
+            .unwrap()
+            .target
+            .average_utilization,
         Some(70)
     );
 
@@ -295,12 +315,30 @@ async fn test_hpa_with_multiple_metrics() {
         status: None,
     };
 
-    let key = build_key("horizontalpodautoscalers", Some(namespace), "multi-metric-hpa");
+    let key = build_key(
+        "horizontalpodautoscalers",
+        Some(namespace),
+        "multi-metric-hpa",
+    );
     let created: HorizontalPodAutoscaler = storage.create(&key, &hpa).await.unwrap();
 
     assert_eq!(created.spec.metrics.as_ref().unwrap().len(), 2);
-    assert_eq!(created.spec.metrics.as_ref().unwrap()[0].resource.as_ref().unwrap().name, "cpu");
-    assert_eq!(created.spec.metrics.as_ref().unwrap()[1].resource.as_ref().unwrap().name, "memory");
+    assert_eq!(
+        created.spec.metrics.as_ref().unwrap()[0]
+            .resource
+            .as_ref()
+            .unwrap()
+            .name,
+        "cpu"
+    );
+    assert_eq!(
+        created.spec.metrics.as_ref().unwrap()[1]
+            .resource
+            .as_ref()
+            .unwrap()
+            .name,
+        "memory"
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -350,7 +388,11 @@ async fn test_hpa_targeting_statefulset() {
         status: None,
     };
 
-    let key = build_key("horizontalpodautoscalers", Some(namespace), "statefulset-hpa");
+    let key = build_key(
+        "horizontalpodautoscalers",
+        Some(namespace),
+        "statefulset-hpa",
+    );
     let created: HorizontalPodAutoscaler = storage.create(&key, &hpa).await.unwrap();
 
     assert_eq!(created.spec.scale_target_ref.kind, "StatefulSet");
@@ -459,7 +501,10 @@ async fn test_hpa_with_labels() {
     let created: HorizontalPodAutoscaler = storage.create(&key, &hpa).await.unwrap();
 
     assert!(created.metadata.labels.is_some());
-    assert_eq!(created.metadata.labels.as_ref().unwrap().get("app"), Some(&"myapp".to_string()));
+    assert_eq!(
+        created.metadata.labels.as_ref().unwrap().get("app"),
+        Some(&"myapp".to_string())
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -484,7 +529,12 @@ async fn test_hpa_with_annotations() {
 
     assert!(created.metadata.annotations.is_some());
     assert_eq!(
-        created.metadata.annotations.as_ref().unwrap().get("description"),
+        created
+            .metadata
+            .annotations
+            .as_ref()
+            .unwrap()
+            .get("description"),
         Some(&"Test HPA".to_string())
     );
 
@@ -505,7 +555,10 @@ async fn test_hpa_with_finalizers() {
     let created: HorizontalPodAutoscaler = storage.create(&key, &hpa).await.unwrap();
 
     assert!(created.metadata.finalizers.is_some());
-    assert_eq!(created.metadata.finalizers.as_ref().unwrap()[0], "test.finalizer.io/cleanup");
+    assert_eq!(
+        created.metadata.finalizers.as_ref().unwrap()[0],
+        "test.finalizer.io/cleanup"
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -528,7 +581,10 @@ async fn test_hpa_metadata_immutability() {
     let updated: HorizontalPodAutoscaler = storage.update(&key, &created).await.unwrap();
 
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.metadata.creation_timestamp, original_creation_timestamp);
+    assert_eq!(
+        updated.metadata.creation_timestamp,
+        original_creation_timestamp
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -542,7 +598,11 @@ async fn test_hpa_list_all_namespaces() {
     for i in 1..=3 {
         let namespace = format!("ns-{}", i);
         let hpa = create_test_hpa(&format!("hpa-{}", i), &namespace);
-        let key = build_key("horizontalpodautoscalers", Some(&namespace), &format!("hpa-{}", i));
+        let key = build_key(
+            "horizontalpodautoscalers",
+            Some(&namespace),
+            &format!("hpa-{}", i),
+        );
         storage.create(&key, &hpa).await.unwrap();
     }
 
@@ -555,7 +615,11 @@ async fn test_hpa_list_all_namespaces() {
     // Cleanup
     for i in 1..=3 {
         let namespace = format!("ns-{}", i);
-        let key = build_key("horizontalpodautoscalers", Some(&namespace), &format!("hpa-{}", i));
+        let key = build_key(
+            "horizontalpodautoscalers",
+            Some(&namespace),
+            &format!("hpa-{}", i),
+        );
         storage.delete(&key).await.unwrap();
     }
 }
@@ -615,7 +679,11 @@ async fn test_hpa_targeting_replicaset() {
         status: None,
     };
 
-    let key = build_key("horizontalpodautoscalers", Some(namespace), "replicaset-hpa");
+    let key = build_key(
+        "horizontalpodautoscalers",
+        Some(namespace),
+        "replicaset-hpa",
+    );
     let created: HorizontalPodAutoscaler = storage.create(&key, &hpa).await.unwrap();
 
     assert_eq!(created.spec.scale_target_ref.kind, "ReplicaSet");
@@ -669,7 +737,11 @@ async fn test_hpa_with_high_replica_count() {
         status: None,
     };
 
-    let key = build_key("horizontalpodautoscalers", Some(namespace), "high-replicas-hpa");
+    let key = build_key(
+        "horizontalpodautoscalers",
+        Some(namespace),
+        "high-replicas-hpa",
+    );
     let created: HorizontalPodAutoscaler = storage.create(&key, &hpa).await.unwrap();
 
     assert_eq!(created.spec.min_replicas, Some(10));

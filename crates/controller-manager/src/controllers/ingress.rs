@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rusternetes_common::resources::{
+    ingress::{HTTPIngressPath, IngressBackend, IngressRule, IngressSpec, IngressTLS},
     Ingress, Service,
-    ingress::{IngressTLS, IngressSpec, IngressBackend, IngressRule, HTTPIngressPath},
 };
 use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
@@ -31,8 +31,7 @@ impl<S: Storage> IngressController<S> {
         debug!("Starting Ingress reconciliation");
 
         // List all Ingress resources across all namespaces
-        let ingresses: Vec<Ingress> =
-            self.storage.list("/registry/ingresses/").await?;
+        let ingresses: Vec<Ingress> = self.storage.list("/registry/ingresses/").await?;
 
         info!("Found {} ingress resources to reconcile", ingresses.len());
 
@@ -40,7 +39,11 @@ impl<S: Storage> IngressController<S> {
             if let Err(e) = self.reconcile_ingress(&ingress).await {
                 error!(
                     "Failed to reconcile ingress {}/{}: {}",
-                    ingress.metadata.namespace.as_ref().unwrap_or(&"default".to_string()),
+                    ingress
+                        .metadata
+                        .namespace
+                        .as_ref()
+                        .unwrap_or(&"default".to_string()),
                     &ingress.metadata.name,
                     e
                 );
@@ -52,7 +55,10 @@ impl<S: Storage> IngressController<S> {
 
     /// Reconcile a single Ingress resource
     async fn reconcile_ingress(&self, ingress: &Ingress) -> Result<()> {
-        let namespace = ingress.metadata.namespace.as_ref()
+        let namespace = ingress
+            .metadata
+            .namespace
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Ingress has no namespace"))?;
         let ingress_name = &ingress.metadata.name;
 
@@ -83,11 +89,7 @@ impl<S: Storage> IngressController<S> {
     }
 
     /// Validate Ingress spec
-    async fn validate_ingress_spec(
-        &self,
-        spec: &IngressSpec,
-        namespace: &str,
-    ) -> Result<()> {
+    async fn validate_ingress_spec(&self, spec: &IngressSpec, namespace: &str) -> Result<()> {
         // Validate IngressClass if specified
         if let Some(class_name) = &spec.ingress_class_name {
             debug!("Validating IngressClass: {}", class_name);
@@ -118,11 +120,7 @@ impl<S: Storage> IngressController<S> {
     }
 
     /// Validate an ingress backend
-    async fn validate_backend(
-        &self,
-        backend: &IngressBackend,
-        namespace: &str,
-    ) -> Result<()> {
+    async fn validate_backend(&self, backend: &IngressBackend, namespace: &str) -> Result<()> {
         // Check service backend
         if let Some(service_backend) = &backend.service {
             let service_name = &service_backend.name;
@@ -161,11 +159,7 @@ impl<S: Storage> IngressController<S> {
     }
 
     /// Validate TLS configuration
-    async fn validate_tls_config(
-        &self,
-        _tls: &IngressTLS,
-        _namespace: &str,
-    ) -> Result<()> {
+    async fn validate_tls_config(&self, _tls: &IngressTLS, _namespace: &str) -> Result<()> {
         // In production, would:
         // 1. Verify secret exists
         // 2. Validate certificate format
@@ -176,11 +170,7 @@ impl<S: Storage> IngressController<S> {
     }
 
     /// Validate ingress rule
-    async fn validate_ingress_rule(
-        &self,
-        rule: &IngressRule,
-        namespace: &str,
-    ) -> Result<()> {
+    async fn validate_ingress_rule(&self, rule: &IngressRule, namespace: &str) -> Result<()> {
         // Validate HTTP rules
         if let Some(http) = &rule.http {
             for path in &http.paths {
@@ -192,14 +182,10 @@ impl<S: Storage> IngressController<S> {
     }
 
     /// Validate HTTP path
-    async fn validate_http_path(
-        &self,
-        path: &HTTPIngressPath,
-        namespace: &str,
-    ) -> Result<()> {
+    async fn validate_http_path(&self, path: &HTTPIngressPath, namespace: &str) -> Result<()> {
         // Validate path type
         match path.path_type.as_str() {
-            "Exact" | "Prefix" | "ImplementationSpecific" => {},
+            "Exact" | "Prefix" | "ImplementationSpecific" => {}
             _ => {
                 return Err(anyhow::anyhow!(
                     "Invalid path type '{}', must be Exact, Prefix, or ImplementationSpecific",
@@ -226,11 +212,7 @@ impl<S: Storage> IngressController<S> {
     /// - Simulate load balancer IP allocation
     /// - Update Ingress status to indicate readiness
     /// - Delegate actual traffic routing to external ingress controllers
-    async fn update_ingress_status(
-        &self,
-        ingress: &Ingress,
-        namespace: &str,
-    ) -> Result<()> {
+    async fn update_ingress_status(&self, ingress: &Ingress, namespace: &str) -> Result<()> {
         let ingress_name = &ingress.metadata.name;
 
         // Check if status already has load balancer info
@@ -260,17 +242,21 @@ impl<S: Storage> IngressController<S> {
         let mut updated_ingress = ingress.clone();
 
         // Create load balancer ingress status
-        let lb_ingress_status = vec![rusternetes_common::resources::ingress::IngressLoadBalancerIngress {
-            ip: Some(lb_ip.clone()),
-            hostname: None,
-            ports: None,
-        }];
+        let lb_ingress_status = vec![
+            rusternetes_common::resources::ingress::IngressLoadBalancerIngress {
+                ip: Some(lb_ip.clone()),
+                hostname: None,
+                ports: None,
+            },
+        ];
 
         // Update status
         updated_ingress.status = Some(rusternetes_common::resources::ingress::IngressStatus {
-            load_balancer: Some(rusternetes_common::resources::ingress::IngressLoadBalancerStatus {
-                ingress: Some(lb_ingress_status),
-            }),
+            load_balancer: Some(
+                rusternetes_common::resources::ingress::IngressLoadBalancerStatus {
+                    ingress: Some(lb_ingress_status),
+                },
+            ),
         });
 
         // Update in storage
@@ -381,7 +367,10 @@ mod tests {
             backend,
         };
 
-        assert!(controller.validate_http_path(&path, "default").await.is_ok());
+        assert!(controller
+            .validate_http_path(&path, "default")
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -406,7 +395,10 @@ mod tests {
             backend,
         };
 
-        assert!(controller.validate_http_path(&path, "default").await.is_err());
+        assert!(controller
+            .validate_http_path(&path, "default")
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -425,7 +417,10 @@ mod tests {
             resource: None,
         };
 
-        assert!(controller.validate_backend(&backend, "default").await.is_ok());
+        assert!(controller
+            .validate_backend(&backend, "default")
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -444,7 +439,10 @@ mod tests {
             resource: None,
         };
 
-        assert!(controller.validate_backend(&backend, "default").await.is_ok());
+        assert!(controller
+            .validate_backend(&backend, "default")
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -463,7 +461,10 @@ mod tests {
             resource: None,
         };
 
-        assert!(controller.validate_backend(&backend, "default").await.is_err());
+        assert!(controller
+            .validate_backend(&backend, "default")
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -490,12 +491,13 @@ mod tests {
 
         let rule = IngressRule {
             host: Some("example.com".to_string()),
-            http: Some(HTTPIngressRuleValue {
-                paths: vec![path],
-            }),
+            http: Some(HTTPIngressRuleValue { paths: vec![path] }),
         };
 
-        assert!(controller.validate_ingress_rule(&rule, "default").await.is_ok());
+        assert!(controller
+            .validate_ingress_rule(&rule, "default")
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -522,9 +524,7 @@ mod tests {
 
         let rule = IngressRule {
             host: Some("example.com".to_string()),
-            http: Some(HTTPIngressRuleValue {
-                paths: vec![path],
-            }),
+            http: Some(HTTPIngressRuleValue { paths: vec![path] }),
         };
 
         let spec = IngressSpec {

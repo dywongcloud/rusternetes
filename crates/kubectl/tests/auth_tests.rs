@@ -122,8 +122,14 @@ mod can_i_tests {
             }
         }
 
-        assert_eq!(get_namespace_query(true, Some("default")), Some("*".to_string()));
-        assert_eq!(get_namespace_query(false, Some("default")), Some("default".to_string()));
+        assert_eq!(
+            get_namespace_query(true, Some("default")),
+            Some("*".to_string())
+        );
+        assert_eq!(
+            get_namespace_query(false, Some("default")),
+            Some("default".to_string())
+        );
         assert_eq!(get_namespace_query(false, None), None);
     }
 }
@@ -133,10 +139,7 @@ mod whoami_tests {
     #[test]
     fn test_format_user_info() {
         fn format_user_info(username: &str, uid: &str, groups: &[&str]) -> Vec<String> {
-            let mut info = vec![
-                format!("Username: {}", username),
-                format!("UID: {}", uid),
-            ];
+            let mut info = vec![format!("Username: {}", username), format!("UID: {}", uid)];
 
             if !groups.is_empty() {
                 info.push(format!("Groups: {}", groups.join(", ")));
@@ -145,7 +148,11 @@ mod whoami_tests {
             info
         }
 
-        let info = format_user_info("admin", "admin-uid", &["system:masters", "system:authenticated"]);
+        let info = format_user_info(
+            "admin",
+            "admin-uid",
+            &["system:masters", "system:authenticated"],
+        );
         assert_eq!(info[0], "Username: admin");
         assert_eq!(info[1], "UID: admin-uid");
         assert!(info[2].contains("system:masters"));
@@ -158,7 +165,10 @@ mod whoami_tests {
         }
 
         assert_eq!(extract_username("CN=admin"), Some("admin"));
-        assert_eq!(extract_username("CN=system:node:node1"), Some("system:node:node1"));
+        assert_eq!(
+            extract_username("CN=system:node:node1"),
+            Some("system:node:node1")
+        );
         assert_eq!(extract_username("invalid"), None);
     }
 
@@ -211,10 +221,7 @@ mod token_tests {
             format!("Bearer {}", token)
         }
 
-        assert_eq!(
-            format_bearer_token("abc123"),
-            "Bearer abc123"
-        );
+        assert_eq!(format_bearer_token("abc123"), "Bearer abc123");
     }
 
     #[test]
@@ -256,7 +263,10 @@ mod serviceaccount_tests {
     #[test]
     fn test_serviceaccount_token_path() {
         fn get_token_path(sa_name: &str) -> String {
-            format!("/var/run/secrets/kubernetes.io/serviceaccount/{}/token", sa_name)
+            format!(
+                "/var/run/secrets/kubernetes.io/serviceaccount/{}/token",
+                sa_name
+            )
         }
 
         assert_eq!(
@@ -283,9 +293,9 @@ mod reconcile_tests {
     #[test]
     fn test_rbac_resource_types() {
         fn is_rbac_resource(resource: &str) -> bool {
-            matches!(resource,
-                "clusterroles" | "clusterrolebindings" |
-                "roles" | "rolebindings"
+            matches!(
+                resource,
+                "clusterroles" | "clusterrolebindings" | "roles" | "rolebindings"
             )
         }
 
@@ -323,7 +333,8 @@ mod impersonate_tests {
     #[test]
     fn test_impersonate_groups_header() {
         fn get_impersonate_groups_headers(groups: &[&str]) -> Vec<(String, String)> {
-            groups.iter()
+            groups
+                .iter()
                 .map(|g| ("Impersonate-Group".to_string(), g.to_string()))
                 .collect()
         }
@@ -380,11 +391,13 @@ mod certificate_tests {
     #[test]
     fn test_ca_cert_validation() {
         fn is_valid_ca_cert(cert: &str) -> bool {
-            cert.starts_with("-----BEGIN CERTIFICATE-----") &&
-            cert.ends_with("-----END CERTIFICATE-----")
+            cert.starts_with("-----BEGIN CERTIFICATE-----")
+                && cert.ends_with("-----END CERTIFICATE-----")
         }
 
-        assert!(is_valid_ca_cert("-----BEGIN CERTIFICATE-----\ndata\n-----END CERTIFICATE-----"));
+        assert!(is_valid_ca_cert(
+            "-----BEGIN CERTIFICATE-----\ndata\n-----END CERTIFICATE-----"
+        ));
         assert!(!is_valid_ca_cert("invalid cert"));
     }
 }
@@ -393,10 +406,7 @@ mod certificate_tests {
 mod permission_tests {
     #[test]
     fn test_resource_rule_matching() {
-        fn matches_resource_rule(
-            requested_resource: &str,
-            rule_resources: &[&str],
-        ) -> bool {
+        fn matches_resource_rule(requested_resource: &str, rule_resources: &[&str]) -> bool {
             rule_resources.contains(&requested_resource) || rule_resources.contains(&"*")
         }
 
@@ -418,14 +428,11 @@ mod permission_tests {
 
     #[test]
     fn test_namespace_matching() {
-        fn matches_namespace(
-            requested_ns: Option<&str>,
-            rule_ns: Option<&str>,
-        ) -> bool {
+        fn matches_namespace(requested_ns: Option<&str>, rule_ns: Option<&str>) -> bool {
             match (requested_ns, rule_ns) {
                 (Some(req), Some(rule)) => req == rule,
-                (None, None) => true, // Cluster-scoped
-                (Some(_), None) => true, // ClusterRole applies to all namespaces
+                (None, None) => true,     // Cluster-scoped
+                (Some(_), None) => true,  // ClusterRole applies to all namespaces
                 (None, Some(_)) => false, // Can't access cluster-scoped with namespace role
             }
         }

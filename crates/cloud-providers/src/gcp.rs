@@ -4,7 +4,7 @@
 use async_trait::async_trait;
 use rusternetes_common::{
     cloud_provider::{CloudProvider, LoadBalancerService, LoadBalancerStatus},
-    Result, Error,
+    Error, Result,
 };
 use tracing::{info, warn};
 
@@ -16,7 +16,10 @@ pub struct GcpProvider {
 
 impl GcpProvider {
     pub async fn new(cluster_name: String, project_id: String, region: String) -> Result<Self> {
-        info!("Initializing GCP provider for project {} in region {}", project_id, region);
+        info!(
+            "Initializing GCP provider for project {} in region {}",
+            project_id, region
+        );
 
         Ok(Self {
             _project_id: project_id,
@@ -42,7 +45,7 @@ impl CloudProvider for GcpProvider {
         // 5. Return external IP
 
         Err(Error::Internal(
-            "GCP LoadBalancer provider not yet implemented".to_string()
+            "GCP LoadBalancer provider not yet implemented".to_string(),
         ))
     }
 
@@ -51,8 +54,10 @@ impl CloudProvider for GcpProvider {
         service_namespace: &str,
         service_name: &str,
     ) -> Result<()> {
-        warn!("GCP LoadBalancer deletion not yet implemented for {}/{}",
-            service_namespace, service_name);
+        warn!(
+            "GCP LoadBalancer deletion not yet implemented for {}/{}",
+            service_namespace, service_name
+        );
 
         // TODO: Implement deletion of forwarding rule, backend service, health check
 
@@ -64,8 +69,10 @@ impl CloudProvider for GcpProvider {
         service_namespace: &str,
         service_name: &str,
     ) -> Result<Option<LoadBalancerStatus>> {
-        warn!("GCP LoadBalancer status query not yet implemented for {}/{}",
-            service_namespace, service_name);
+        warn!(
+            "GCP LoadBalancer status query not yet implemented for {}/{}",
+            service_namespace, service_name
+        );
 
         Ok(None)
     }

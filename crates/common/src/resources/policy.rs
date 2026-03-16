@@ -1,4 +1,4 @@
-use crate::types::{ObjectMeta, TypeMeta, LabelSelector};
+use crate::types::{LabelSelector, ObjectMeta, TypeMeta};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -18,7 +18,11 @@ pub struct ResourceQuota {
 }
 
 impl ResourceQuota {
-    pub fn new(name: impl Into<String>, namespace: impl Into<String>, spec: ResourceQuotaSpec) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        namespace: impl Into<String>,
+        spec: ResourceQuotaSpec,
+    ) -> Self {
         Self {
             type_meta: TypeMeta {
                 kind: "ResourceQuota".to_string(),
@@ -97,7 +101,11 @@ pub struct LimitRange {
 }
 
 impl LimitRange {
-    pub fn new(name: impl Into<String>, namespace: impl Into<String>, spec: LimitRangeSpec) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        namespace: impl Into<String>,
+        spec: LimitRangeSpec,
+    ) -> Self {
         Self {
             type_meta: TypeMeta {
                 kind: "LimitRange".to_string(),
@@ -223,7 +231,11 @@ pub struct PodDisruptionBudget {
 }
 
 impl PodDisruptionBudget {
-    pub fn new(name: impl Into<String>, namespace: impl Into<String>, spec: PodDisruptionBudgetSpec) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        namespace: impl Into<String>,
+        spec: PodDisruptionBudgetSpec,
+    ) -> Self {
         Self {
             type_meta: TypeMeta {
                 kind: "PodDisruptionBudget".to_string(),
@@ -380,13 +392,15 @@ mod tests {
         assert_eq!(pc.value, 1000);
         assert_eq!(pc.type_meta.api_version, "scheduling.k8s.io/v1");
         assert_eq!(pc.description.as_ref().unwrap(), "High priority workloads");
-        assert_eq!(pc.preemption_policy.as_ref().unwrap(), "PreemptLowerPriority");
+        assert_eq!(
+            pc.preemption_policy.as_ref().unwrap(),
+            "PreemptLowerPriority"
+        );
     }
 
     #[test]
     fn test_priority_class_global_default() {
-        let pc = PriorityClass::new("default-priority", 0)
-            .with_global_default(true);
+        let pc = PriorityClass::new("default-priority", 0).with_global_default(true);
 
         assert_eq!(pc.global_default, Some(true));
     }
@@ -465,9 +479,7 @@ mod tests {
             min_available: Some(IntOrString::Int(2)),
             max_unavailable: None,
             selector: LabelSelector {
-                match_labels: Some(HashMap::from([
-                    ("app".to_string(), "web".to_string()),
-                ])),
+                match_labels: Some(HashMap::from([("app".to_string(), "web".to_string())])),
                 match_expressions: None,
             },
             unhealthy_pod_eviction_policy: None,

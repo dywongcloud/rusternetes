@@ -2,7 +2,10 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for storage classes
 
-use rusternetes_common::resources::{StorageClass, volume::{PersistentVolumeReclaimPolicy, VolumeBindingMode}};
+use rusternetes_common::resources::{
+    volume::{PersistentVolumeReclaimPolicy, VolumeBindingMode},
+    StorageClass,
+};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -11,7 +14,10 @@ use std::sync::Arc;
 /// Helper function to create a test storage class
 fn create_test_storageclass(name: &str, provisioner: &str) -> StorageClass {
     StorageClass {
-        type_meta: TypeMeta { api_version: "storage.k8s.io/v1".to_string(), kind: "StorageClass".to_string() },
+        type_meta: TypeMeta {
+            api_version: "storage.k8s.io/v1".to_string(),
+            kind: "StorageClass".to_string(),
+        },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: None, // StorageClasses are cluster-scoped
@@ -38,7 +44,10 @@ async fn test_storageclass_create_and_get() {
     assert_eq!(created.metadata.name, "test-sc");
     assert!(!created.metadata.uid.is_empty());
     assert_eq!(created.provisioner, "kubernetes.io/aws-ebs");
-    assert_eq!(created.reclaim_policy, Some(PersistentVolumeReclaimPolicy::Delete));
+    assert_eq!(
+        created.reclaim_policy,
+        Some(PersistentVolumeReclaimPolicy::Delete)
+    );
 
     // Get
     let retrieved: StorageClass = storage.get(&key).await.unwrap();
@@ -112,7 +121,10 @@ async fn test_storageclass_list() {
     let storage_classes: Vec<StorageClass> = storage.list(&prefix).await.unwrap();
 
     assert!(storage_classes.len() >= 3);
-    let names: Vec<String> = storage_classes.iter().map(|sc| sc.metadata.name.clone()).collect();
+    let names: Vec<String> = storage_classes
+        .iter()
+        .map(|sc| sc.metadata.name.clone())
+        .collect();
     assert!(names.contains(&"sc-1".to_string()));
     assert!(names.contains(&"sc-2".to_string()));
     assert!(names.contains(&"sc-3".to_string()));
@@ -134,7 +146,10 @@ async fn test_storageclass_reclaim_policy_retain() {
 
     // Create with Retain policy
     let created: StorageClass = storage.create(&key, &sc).await.unwrap();
-    assert_eq!(created.reclaim_policy, Some(PersistentVolumeReclaimPolicy::Retain));
+    assert_eq!(
+        created.reclaim_policy,
+        Some(PersistentVolumeReclaimPolicy::Retain)
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -149,7 +164,10 @@ async fn test_storageclass_reclaim_policy_delete() {
 
     // Create with Delete policy (default)
     let created: StorageClass = storage.create(&key, &sc).await.unwrap();
-    assert_eq!(created.reclaim_policy, Some(PersistentVolumeReclaimPolicy::Delete));
+    assert_eq!(
+        created.reclaim_policy,
+        Some(PersistentVolumeReclaimPolicy::Delete)
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -164,7 +182,10 @@ async fn test_storageclass_volume_binding_mode_immediate() {
 
     // Create with Immediate binding mode
     let created: StorageClass = storage.create(&key, &sc).await.unwrap();
-    assert_eq!(created.volume_binding_mode, Some(VolumeBindingMode::Immediate));
+    assert_eq!(
+        created.volume_binding_mode,
+        Some(VolumeBindingMode::Immediate)
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -181,7 +202,10 @@ async fn test_storageclass_volume_binding_mode_wait_for_first_consumer() {
 
     // Create with WaitForFirstConsumer binding mode
     let created: StorageClass = storage.create(&key, &sc).await.unwrap();
-    assert_eq!(created.volume_binding_mode, Some(VolumeBindingMode::WaitForFirstConsumer));
+    assert_eq!(
+        created.volume_binding_mode,
+        Some(VolumeBindingMode::WaitForFirstConsumer)
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -392,7 +416,10 @@ async fn test_storageclass_with_annotations() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut annotations = HashMap::new();
-    annotations.insert("storageclass.kubernetes.io/is-default-class".to_string(), "true".to_string());
+    annotations.insert(
+        "storageclass.kubernetes.io/is-default-class".to_string(),
+        "true".to_string(),
+    );
 
     let mut sc = create_test_storageclass("test-annotations", "kubernetes.io/aws-ebs");
     sc.metadata.annotations = Some(annotations);
@@ -403,7 +430,11 @@ async fn test_storageclass_with_annotations() {
     let created: StorageClass = storage.create(&key, &sc).await.unwrap();
     assert!(created.metadata.annotations.is_some());
     assert_eq!(
-        created.metadata.annotations.unwrap().get("storageclass.kubernetes.io/is-default-class"),
+        created
+            .metadata
+            .annotations
+            .unwrap()
+            .get("storageclass.kubernetes.io/is-default-class"),
         Some(&"true".to_string())
     );
 

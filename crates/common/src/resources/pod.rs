@@ -78,6 +78,9 @@ pub struct PodSpec {
     pub hostname: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub subdomain: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub host_network: Option<bool>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -312,7 +315,7 @@ pub struct Capabilities {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SeccompProfile {
-    pub r#type: String,  // RuntimeDefault, Unconfined, Localhost
+    pub r#type: String, // RuntimeDefault, Unconfined, Localhost
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub localhost_profile: Option<String>,
@@ -338,12 +341,44 @@ pub struct ContainerPort {
 // - EnvVarSource: only one of (config_map_key_ref, secret_key_ref, field_ref, resource_field_ref) should be set
 // - ClaimSource: only one of (resource_claim_name, resource_claim_template_name) should be set
 // Using skip_if_empty would incorrectly skip serialization when only one field is set.
-skip_if_empty!(skip_empty_security_context, SecurityContext, privileged, run_as_user, run_as_non_root, allow_privilege_escalation, capabilities, seccomp_profile);
+skip_if_empty!(
+    skip_empty_security_context,
+    SecurityContext,
+    privileged,
+    run_as_user,
+    run_as_non_root,
+    allow_privilege_escalation,
+    capabilities,
+    seccomp_profile
+);
 skip_if_empty!(skip_empty_capabilities, Capabilities, add, drop);
-skip_if_empty!(skip_empty_empty_dir_volume_source, EmptyDirVolumeSource, medium);
-skip_if_empty!(skip_empty_config_map_volume_source, ConfigMapVolumeSource, name, items, default_mode, optional);
-skip_if_empty!(skip_empty_secret_volume_source, SecretVolumeSource, secret_name, items, default_mode, optional);
-skip_if_empty!(skip_empty_downward_api_volume_source, DownwardAPIVolumeSource, items, default_mode);
+skip_if_empty!(
+    skip_empty_empty_dir_volume_source,
+    EmptyDirVolumeSource,
+    medium
+);
+skip_if_empty!(
+    skip_empty_config_map_volume_source,
+    ConfigMapVolumeSource,
+    name,
+    items,
+    default_mode,
+    optional
+);
+skip_if_empty!(
+    skip_empty_secret_volume_source,
+    SecretVolumeSource,
+    secret_name,
+    items,
+    default_mode,
+    optional
+);
+skip_if_empty!(
+    skip_empty_downward_api_volume_source,
+    DownwardAPIVolumeSource,
+    items,
+    default_mode
+);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -632,9 +667,16 @@ pub struct ContainerStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ContainerState {
-    Waiting { reason: Option<String> },
-    Running { started_at: Option<String> },
-    Terminated { exit_code: i32, reason: Option<String> },
+    Waiting {
+        reason: Option<String>,
+    },
+    Running {
+        started_at: Option<String>,
+    },
+    Terminated {
+        exit_code: i32,
+        reason: Option<String>,
+    },
 }
 
 /// Affinity is a group of affinity scheduling rules
@@ -930,11 +972,24 @@ mod tests {
         let volumes = spec.volumes.as_ref().unwrap();
         assert_eq!(volumes.len(), 1);
         assert_eq!(volumes[0].name, "test-volume");
-        assert!(volumes[0].persistent_volume_claim.is_some(), "persistent_volume_claim should be Some");
-        assert_eq!(volumes[0].persistent_volume_claim.as_ref().unwrap().claim_name, "test-pvc");
+        assert!(
+            volumes[0].persistent_volume_claim.is_some(),
+            "persistent_volume_claim should be Some"
+        );
+        assert_eq!(
+            volumes[0]
+                .persistent_volume_claim
+                .as_ref()
+                .unwrap()
+                .claim_name,
+            "test-pvc"
+        );
 
         // Check volume mounts
-        assert!(spec.containers[0].volume_mounts.is_some(), "volume_mounts should be Some");
+        assert!(
+            spec.containers[0].volume_mounts.is_some(),
+            "volume_mounts should be Some"
+        );
         let mounts = spec.containers[0].volume_mounts.as_ref().unwrap();
         assert_eq!(mounts.len(), 1);
         assert_eq!(mounts[0].name, "test-volume");
@@ -944,7 +999,8 @@ mod tests {
         let serialized = serde_json::to_string_pretty(&pod).expect("Failed to serialize Pod");
 
         // Verify round-trip
-        let pod2: Pod = serde_json::from_str(&serialized).expect("Failed to deserialize serialized Pod");
+        let pod2: Pod =
+            serde_json::from_str(&serialized).expect("Failed to deserialize serialized Pod");
         let spec2 = pod2.spec.as_ref().unwrap();
         assert!(spec2.volumes.is_some());
         assert_eq!(spec2.volumes.as_ref().unwrap()[0].name, "test-volume");
@@ -957,7 +1013,11 @@ mod tests {
                 Container {
                     name: "init-myservice".to_string(),
                     image: "busybox:1.28".to_string(),
-                    command: Some(vec!["sh".to_string(), "-c".to_string(), "echo initializing".to_string()]),
+                    command: Some(vec![
+                        "sh".to_string(),
+                        "-c".to_string(),
+                        "echo initializing".to_string(),
+                    ]),
                     args: None,
                     working_dir: None,
                     ports: None,
@@ -974,7 +1034,11 @@ mod tests {
                 Container {
                     name: "init-mydb".to_string(),
                     image: "busybox:1.28".to_string(),
-                    command: Some(vec!["sh".to_string(), "-c".to_string(), "echo waiting for db".to_string()]),
+                    command: Some(vec![
+                        "sh".to_string(),
+                        "-c".to_string(),
+                        "echo waiting for db".to_string(),
+                    ]),
                     args: None,
                     working_dir: None,
                     ports: None,
@@ -1018,6 +1082,7 @@ mod tests {
             node_selector: None,
             service_account_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -1104,7 +1169,16 @@ mod tests {
         let serialized = serde_json::to_string(&pod).unwrap();
         let pod2: Pod = serde_json::from_str(&serialized).unwrap();
         assert!(pod2.spec.as_ref().unwrap().init_containers.is_some());
-        assert_eq!(pod2.spec.as_ref().unwrap().init_containers.as_ref().unwrap().len(), 2);
+        assert_eq!(
+            pod2.spec
+                .as_ref()
+                .unwrap()
+                .init_containers
+                .as_ref()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -1180,7 +1254,10 @@ mod tests {
 
         let value_from = env_var.value_from.as_ref().unwrap();
         assert!(value_from.field_ref.is_some());
-        assert_eq!(value_from.field_ref.as_ref().unwrap().field_path, "spec.nodeName");
+        assert_eq!(
+            value_from.field_ref.as_ref().unwrap().field_path,
+            "spec.nodeName"
+        );
 
         // Test serialization - should preserve the fieldRef
         let serialized = serde_json::to_string(&env_var).expect("Failed to serialize EnvVar");
@@ -1192,7 +1269,8 @@ mod tests {
         assert!(serialized.contains("spec.nodeName"));
 
         // Test round-trip
-        let env_var2: EnvVar = serde_json::from_str(&serialized).expect("Failed to deserialize serialized EnvVar");
+        let env_var2: EnvVar =
+            serde_json::from_str(&serialized).expect("Failed to deserialize serialized EnvVar");
         assert!(env_var2.value_from.is_some());
         assert!(env_var2.value_from.as_ref().unwrap().field_ref.is_some());
     }
@@ -1205,15 +1283,27 @@ mod tests {
 
         // Convert to Value and back (simulating webhook flow)
         let value = serde_json::to_value(&env_var).expect("Failed to convert to Value");
-        println!("As Value: {}", serde_json::to_string_pretty(&value).unwrap());
+        println!(
+            "As Value: {}",
+            serde_json::to_string_pretty(&value).unwrap()
+        );
 
         let env_var2: EnvVar = serde_json::from_value(value).expect("Failed to convert from Value");
 
         // Verify fieldRef is still there after round-trip through Value
-        assert!(env_var2.value_from.is_some(), "valueFrom should be Some after Value round-trip");
+        assert!(
+            env_var2.value_from.is_some(),
+            "valueFrom should be Some after Value round-trip"
+        );
         let value_from = env_var2.value_from.as_ref().unwrap();
-        assert!(value_from.field_ref.is_some(), "fieldRef should be Some after Value round-trip");
-        assert_eq!(value_from.field_ref.as_ref().unwrap().field_path, "spec.nodeName");
+        assert!(
+            value_from.field_ref.is_some(),
+            "fieldRef should be Some after Value round-trip"
+        );
+        assert_eq!(
+            value_from.field_ref.as_ref().unwrap().field_path,
+            "spec.nodeName"
+        );
     }
 
     #[test]
@@ -1225,21 +1315,19 @@ mod tests {
             containers: vec![Container {
                 name: "test".to_string(),
                 image: "busybox".to_string(),
-                env: Some(vec![
-                    EnvVar {
-                        name: "NODE_NAME".to_string(),
-                        value: None,
-                        value_from: Some(EnvVarSource {
-                            field_ref: Some(ObjectFieldSelector {
-                                field_path: "spec.nodeName".to_string(),
-                                api_version: None,
-                            }),
-                            config_map_key_ref: None,
-                            secret_key_ref: None,
-                            resource_field_ref: None,
+                env: Some(vec![EnvVar {
+                    name: "NODE_NAME".to_string(),
+                    value: None,
+                    value_from: Some(EnvVarSource {
+                        field_ref: Some(ObjectFieldSelector {
+                            field_path: "spec.nodeName".to_string(),
+                            api_version: None,
                         }),
-                    },
-                ]),
+                        config_map_key_ref: None,
+                        secret_key_ref: None,
+                        resource_field_ref: None,
+                    }),
+                }]),
                 command: None,
                 args: None,
                 working_dir: None,
@@ -1261,6 +1349,7 @@ mod tests {
             node_selector: None,
             service_account_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -1288,10 +1377,19 @@ mod tests {
         let env_var = &deserialized.containers[0].env.as_ref().unwrap()[0];
         assert_eq!(env_var.name, "NODE_NAME");
         assert!(env_var.value_from.is_some(), "value_from should be Some");
-        assert!(env_var.value_from.as_ref().unwrap().field_ref.is_some(),
-                "field_ref should be Some");
+        assert!(
+            env_var.value_from.as_ref().unwrap().field_ref.is_some(),
+            "field_ref should be Some"
+        );
         assert_eq!(
-            env_var.value_from.as_ref().unwrap().field_ref.as_ref().unwrap().field_path,
+            env_var
+                .value_from
+                .as_ref()
+                .unwrap()
+                .field_ref
+                .as_ref()
+                .unwrap()
+                .field_path,
             "spec.nodeName"
         );
     }
@@ -1309,16 +1407,25 @@ mod tests {
         println!("Serialized ClaimSource: {}", json);
 
         // Should NOT be an empty object
-        assert!(!json.contains("{}"), "ClaimSource should not serialize as empty object");
+        assert!(
+            !json.contains("{}"),
+            "ClaimSource should not serialize as empty object"
+        );
 
         // Should contain the resource_claim_name field
-        assert!(json.contains("resourceClaimName"), "Should contain resourceClaimName field");
+        assert!(
+            json.contains("resourceClaimName"),
+            "Should contain resourceClaimName field"
+        );
         assert!(json.contains("my-claim"), "Should contain the claim name");
 
         // Test round-trip
-        let deserialized: ClaimSource = serde_json::from_str(&json)
-            .expect("Failed to deserialize ClaimSource");
-        assert_eq!(deserialized.resource_claim_name, Some("my-claim".to_string()));
+        let deserialized: ClaimSource =
+            serde_json::from_str(&json).expect("Failed to deserialize ClaimSource");
+        assert_eq!(
+            deserialized.resource_claim_name,
+            Some("my-claim".to_string())
+        );
         assert_eq!(deserialized.resource_claim_template_name, None);
 
         // Test with resource_claim_template_name set instead
@@ -1330,15 +1437,27 @@ mod tests {
         let json2 = serde_json::to_string(&claim_source2).expect("Failed to serialize ClaimSource");
         println!("Serialized ClaimSource (template): {}", json2);
 
-        assert!(!json2.contains("{}"), "ClaimSource should not serialize as empty object");
-        assert!(json2.contains("resourceClaimTemplateName"), "Should contain resourceClaimTemplateName field");
-        assert!(json2.contains("my-template"), "Should contain the template name");
+        assert!(
+            !json2.contains("{}"),
+            "ClaimSource should not serialize as empty object"
+        );
+        assert!(
+            json2.contains("resourceClaimTemplateName"),
+            "Should contain resourceClaimTemplateName field"
+        );
+        assert!(
+            json2.contains("my-template"),
+            "Should contain the template name"
+        );
 
         // Test round-trip for template
-        let deserialized2: ClaimSource = serde_json::from_str(&json2)
-            .expect("Failed to deserialize ClaimSource with template");
+        let deserialized2: ClaimSource =
+            serde_json::from_str(&json2).expect("Failed to deserialize ClaimSource with template");
         assert_eq!(deserialized2.resource_claim_name, None);
-        assert_eq!(deserialized2.resource_claim_template_name, Some("my-template".to_string()));
+        assert_eq!(
+            deserialized2.resource_claim_template_name,
+            Some("my-template".to_string())
+        );
     }
 
     #[test]
@@ -1352,23 +1471,32 @@ mod tests {
             }),
         };
 
-        let json = serde_json::to_string(&resource_claim)
-            .expect("Failed to serialize PodResourceClaim");
+        let json =
+            serde_json::to_string(&resource_claim).expect("Failed to serialize PodResourceClaim");
         println!("Serialized PodResourceClaim: {}", json);
 
         // Verify source is present and not empty
         assert!(json.contains("source"), "Should contain source field");
-        assert!(json.contains("resourceClaimName"), "Should contain resourceClaimName in source");
-        assert!(json.contains("my-resource-claim"), "Should contain the claim name");
+        assert!(
+            json.contains("resourceClaimName"),
+            "Should contain resourceClaimName in source"
+        );
+        assert!(
+            json.contains("my-resource-claim"),
+            "Should contain the claim name"
+        );
 
         // Test round-trip
-        let deserialized: PodResourceClaim = serde_json::from_str(&json)
-            .expect("Failed to deserialize PodResourceClaim");
+        let deserialized: PodResourceClaim =
+            serde_json::from_str(&json).expect("Failed to deserialize PodResourceClaim");
         assert_eq!(deserialized.name, "test-claim");
         assert!(deserialized.source.is_some(), "source should be Some");
 
         let source = deserialized.source.unwrap();
-        assert_eq!(source.resource_claim_name, Some("my-resource-claim".to_string()));
+        assert_eq!(
+            source.resource_claim_name,
+            Some("my-resource-claim".to_string())
+        );
         assert_eq!(source.resource_claim_template_name, None);
     }
 }

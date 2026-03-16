@@ -6,7 +6,6 @@
 /// - `/api/v1/nodes/{name}/proxy/{path}` - Proxy to node
 /// - `/api/v1/namespaces/{ns}/services/{name}/proxy/{path}` - Proxy to service
 /// - `/api/v1/namespaces/{ns}/pods/{name}/proxy/{path}` - Proxy to pod
-
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     body::Body,
@@ -66,10 +65,7 @@ pub async fn proxy_node(
         })
         .map(|a| a.address.clone())
         .ok_or_else(|| {
-            rusternetes_common::Error::NotFound(format!(
-                "No address found for node {}",
-                node_name
-            ))
+            rusternetes_common::Error::NotFound(format!("No address found for node {}", node_name))
         })?;
 
     // Build target URL (kubelet typically runs on port 10250)
@@ -115,22 +111,14 @@ pub async fn proxy_service(
     let service: rusternetes_common::resources::Service = state.storage.get(&service_key).await?;
 
     // Get ClusterIP and first port
-    let cluster_ip = service
-        .spec
-        .cluster_ip
-        .ok_or_else(|| {
-            rusternetes_common::Error::InvalidResource(format!(
-                "Service {}/{} has no ClusterIP",
-                namespace, service_name
-            ))
-        })?;
+    let cluster_ip = service.spec.cluster_ip.ok_or_else(|| {
+        rusternetes_common::Error::InvalidResource(format!(
+            "Service {}/{} has no ClusterIP",
+            namespace, service_name
+        ))
+    })?;
 
-    let port = service
-        .spec
-        .ports
-        .first()
-        .map(|p| p.port)
-        .unwrap_or(80);
+    let port = service.spec.ports.first().map(|p| p.port).unwrap_or(80);
 
     // Build target URL
     let target_url = format!("http://{}:{}/{}", cluster_ip, port, path);
@@ -212,10 +200,7 @@ async fn proxy_request(
 ) -> Result<Response> {
     // Build query string from params
     let query_string = if !params.is_empty() {
-        let pairs: Vec<String> = params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect();
+        let pairs: Vec<String> = params.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
         format!("?{}", pairs.join("&"))
     } else {
         String::new()
@@ -234,11 +219,9 @@ async fn proxy_request(
         })?;
 
     // Convert axum body to bytes
-    let body_bytes = axum::body::to_bytes(body, usize::MAX)
-        .await
-        .map_err(|e| {
-            rusternetes_common::Error::Internal(format!("Failed to read request body: {}", e))
-        })?;
+    let body_bytes = axum::body::to_bytes(body, usize::MAX).await.map_err(|e| {
+        rusternetes_common::Error::Internal(format!("Failed to read request body: {}", e))
+    })?;
 
     // Build the request
     let mut request = client
@@ -266,10 +249,8 @@ async fn proxy_request(
 
     // Convert response to axum response
     let status = response.status();
-    let mut axum_response = Response::builder().status(
-        StatusCode::from_u16(status.as_u16())
-            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-    );
+    let mut axum_response = Response::builder()
+        .status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR));
 
     // Copy response headers
     for (name, value) in response.headers().iter() {

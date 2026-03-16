@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::RuntimeClass,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -45,7 +44,10 @@ pub async fn create_runtimeclass(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: RuntimeClass {} validated successfully (not created)", runtime_class.metadata.name);
+        info!(
+            "Dry-run: RuntimeClass {} validated successfully (not created)",
+            runtime_class.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(runtime_class)));
     }
 
@@ -109,7 +111,10 @@ pub async fn update_runtimeclass(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: RuntimeClass {} validated successfully (not updated)", name);
+        info!(
+            "Dry-run: RuntimeClass {} validated successfully (not updated)",
+            name
+        );
         return Ok(Json(runtime_class));
     }
 
@@ -152,7 +157,10 @@ pub async fn delete_runtimeclass(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: RuntimeClass {} validated successfully (not deleted)", name);
+        info!(
+            "Dry-run: RuntimeClass {} validated successfully (not deleted)",
+            name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -172,8 +180,7 @@ pub async fn delete_runtimeclass(
     } else {
         info!(
             "RuntimeClass {} marked for deletion (has finalizers: {:?})",
-            name,
-            runtime_class.metadata.finalizers
+            name, runtime_class.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -204,7 +211,12 @@ pub async fn list_runtimeclasses(
 }
 
 // Use the macro to create a PATCH handler for cluster-scoped RuntimeClass
-crate::patch_handler_cluster!(patch_runtimeclass, RuntimeClass, "runtimeclasses", "node.k8s.io");
+crate::patch_handler_cluster!(
+    patch_runtimeclass,
+    RuntimeClass,
+    "runtimeclasses",
+    "node.k8s.io"
+);
 
 pub async fn deletecollection_runtimeclasses(
     State(state): State<Arc<ApiServerState>>,
@@ -256,6 +268,9 @@ pub async fn deletecollection_runtimeclasses(
         }
     }
 
-    info!("DeleteCollection completed: {} runtimeclasses deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} runtimeclasses deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

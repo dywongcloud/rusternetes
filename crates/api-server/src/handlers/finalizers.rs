@@ -78,10 +78,7 @@ where
 
     if !has_finalizers {
         // No finalizers - delete immediately
-        debug!(
-            "Resource {} has no finalizers, deleting immediately",
-            key
-        );
+        debug!("Resource {} has no finalizers, deleting immediately", key);
         storage.delete(key).await?;
         return Ok(false);
     }
@@ -91,8 +88,7 @@ where
         // Already marked for deletion, just return success
         debug!(
             "Resource {} already marked for deletion at {:?}, waiting for finalizers to be removed",
-            key,
-            metadata.deletion_timestamp
+            key, metadata.deletion_timestamp
         );
         info!(
             "Resource {} has {} finalizers remaining: {:?}",
@@ -110,8 +106,7 @@ where
 
     info!(
         "Resource {} has finalizers, marking for deletion: {:?}",
-        key,
-        metadata.finalizers
+        key, metadata.finalizers
     );
 
     storage.update(key, &updated_resource).await?;
@@ -715,6 +710,7 @@ mod tests {
             node_selector: None,
             service_account_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -743,7 +739,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(deleted, false, "Resource without finalizers should be deleted immediately");
+        assert_eq!(
+            deleted, false,
+            "Resource without finalizers should be deleted immediately"
+        );
 
         // Verify it's gone
         let result = storage.get::<Pod>(key).await;
@@ -769,6 +768,7 @@ mod tests {
             node_selector: None,
             service_account_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -798,7 +798,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(marked, true, "Resource with finalizers should be marked for deletion");
+        assert_eq!(
+            marked, true,
+            "Resource with finalizers should be marked for deletion"
+        );
 
         // Verify it still exists but has deletionTimestamp
         let updated_pod: Pod = storage.get(key).await.unwrap();
@@ -817,7 +820,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(marked_again, true, "Resource should still be marked for deletion");
+        assert_eq!(
+            marked_again, true,
+            "Resource should still be marked for deletion"
+        );
 
         // Clean up
         storage.delete(key).await.unwrap();
@@ -842,6 +848,7 @@ mod tests {
             node_selector: None,
             service_account_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -882,7 +889,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(deleted, false, "Resource without finalizers should be deleted");
+        assert_eq!(
+            deleted, false,
+            "Resource without finalizers should be deleted"
+        );
 
         // Verify it's gone
         let result = storage.get::<Pod>(key).await;

@@ -26,11 +26,7 @@ struct ServerVersion {
 }
 
 /// Display kubectl and Kubernetes version information
-pub async fn execute(
-    client: &ApiClient,
-    client_only: bool,
-    output: Option<&str>,
-) -> Result<()> {
+pub async fn execute(client: &ApiClient, client_only: bool, output: Option<&str>) -> Result<()> {
     let client_version = json!({
         "major": "1",
         "minor": "35",
@@ -64,15 +60,12 @@ pub async fn execute(
         }
     } else {
         // Get server version
-        let server_version: ServerVersion = client
-            .get("/version")
-            .await
-            .map_err(|e| match e {
-                crate::client::GetError::NotFound => {
-                    anyhow::anyhow!("Server version endpoint not found")
-                }
-                crate::client::GetError::Other(e) => e,
-            })?;
+        let server_version: ServerVersion = client.get("/version").await.map_err(|e| match e {
+            crate::client::GetError::NotFound => {
+                anyhow::anyhow!("Server version endpoint not found")
+            }
+            crate::client::GetError::Other(e) => e,
+        })?;
 
         match output {
             Some("json") => {

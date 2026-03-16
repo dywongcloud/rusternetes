@@ -50,27 +50,34 @@ pub async fn execute(
             match client.get::<serde_json::Value>(&path).await {
                 Ok(response) => {
                     if let Some(items) = response.get("items").and_then(|i| i.as_array()) {
-                        println!("{:<20} {:<15} {:<15}", "NAME", "CPU(cores)", "MEMORY(bytes)");
+                        println!(
+                            "{:<20} {:<15} {:<15}",
+                            "NAME", "CPU(cores)", "MEMORY(bytes)"
+                        );
                         for item in items {
-                            if let Ok(metrics) = serde_json::from_value::<NodeMetrics>(item.clone()) {
-                                println!("{:<20} {:<15} {:<15}",
-                                    metrics.metadata.name,
-                                    metrics.usage.cpu,
-                                    metrics.usage.memory
+                            if let Ok(metrics) = serde_json::from_value::<NodeMetrics>(item.clone())
+                            {
+                                println!(
+                                    "{:<20} {:<15} {:<15}",
+                                    metrics.metadata.name, metrics.usage.cpu, metrics.usage.memory
                                 );
                             }
                         }
                     } else if let Ok(metrics) = serde_json::from_value::<NodeMetrics>(response) {
-                        println!("{:<20} {:<15} {:<15}", "NAME", "CPU(cores)", "MEMORY(bytes)");
-                        println!("{:<20} {:<15} {:<15}",
-                            metrics.metadata.name,
-                            metrics.usage.cpu,
-                            metrics.usage.memory
+                        println!(
+                            "{:<20} {:<15} {:<15}",
+                            "NAME", "CPU(cores)", "MEMORY(bytes)"
+                        );
+                        println!(
+                            "{:<20} {:<15} {:<15}",
+                            metrics.metadata.name, metrics.usage.cpu, metrics.usage.memory
                         );
                     }
                 }
                 Err(_) => {
-                    println!("Error: Metrics API not available. Metrics Server might not be installed.");
+                    println!(
+                        "Error: Metrics API not available. Metrics Server might not be installed."
+                    );
                     println!("Install metrics-server: kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml");
                 }
             }
@@ -89,8 +96,11 @@ pub async fn execute(
             };
 
             let path = if let Some(n) = name {
-                format!("/apis/metrics.k8s.io/v1beta1/namespaces/{}/pods/{}",
-                    ns.unwrap_or("default"), n)
+                format!(
+                    "/apis/metrics.k8s.io/v1beta1/namespaces/{}/pods/{}",
+                    ns.unwrap_or("default"),
+                    n
+                )
             } else if let Some(namespace) = ns {
                 format!("/apis/metrics.k8s.io/v1beta1/namespaces/{}/pods", namespace)
             } else {
@@ -101,16 +111,21 @@ pub async fn execute(
                 Ok(response) => {
                     if let Some(items) = response.get("items").and_then(|i| i.as_array()) {
                         if containers {
-                            println!("{:<30} {:<20} {:<15} {:<15}", "POD", "CONTAINER", "CPU(cores)", "MEMORY(bytes)");
+                            println!(
+                                "{:<30} {:<20} {:<15} {:<15}",
+                                "POD", "CONTAINER", "CPU(cores)", "MEMORY(bytes)"
+                            );
                         } else {
                             println!("{:<30} {:<15} {:<15}", "POD", "CPU(cores)", "MEMORY(bytes)");
                         }
 
                         for item in items {
-                            if let Ok(metrics) = serde_json::from_value::<PodMetrics>(item.clone()) {
+                            if let Ok(metrics) = serde_json::from_value::<PodMetrics>(item.clone())
+                            {
                                 if containers {
                                     for container in &metrics.containers {
-                                        println!("{:<30} {:<20} {:<15} {:<15}",
+                                        println!(
+                                            "{:<30} {:<20} {:<15} {:<15}",
                                             metrics.metadata.name,
                                             container.name,
                                             container.usage.cpu,
@@ -118,23 +133,32 @@ pub async fn execute(
                                         );
                                     }
                                 } else {
-                                    let total_cpu: String = metrics.containers.first()
-                                        .map(|c| c.usage.cpu.clone()).unwrap_or_default();
-                                    let total_mem: String = metrics.containers.first()
-                                        .map(|c| c.usage.memory.clone()).unwrap_or_default();
-                                    println!("{:<30} {:<15} {:<15}",
-                                        metrics.metadata.name,
-                                        total_cpu,
-                                        total_mem
+                                    let total_cpu: String = metrics
+                                        .containers
+                                        .first()
+                                        .map(|c| c.usage.cpu.clone())
+                                        .unwrap_or_default();
+                                    let total_mem: String = metrics
+                                        .containers
+                                        .first()
+                                        .map(|c| c.usage.memory.clone())
+                                        .unwrap_or_default();
+                                    println!(
+                                        "{:<30} {:<15} {:<15}",
+                                        metrics.metadata.name, total_cpu, total_mem
                                     );
                                 }
                             }
                         }
                     } else if let Ok(metrics) = serde_json::from_value::<PodMetrics>(response) {
                         if containers {
-                            println!("{:<30} {:<20} {:<15} {:<15}", "POD", "CONTAINER", "CPU(cores)", "MEMORY(bytes)");
+                            println!(
+                                "{:<30} {:<20} {:<15} {:<15}",
+                                "POD", "CONTAINER", "CPU(cores)", "MEMORY(bytes)"
+                            );
                             for container in &metrics.containers {
-                                println!("{:<30} {:<20} {:<15} {:<15}",
+                                println!(
+                                    "{:<30} {:<20} {:<15} {:<15}",
                                     metrics.metadata.name,
                                     container.name,
                                     container.usage.cpu,
@@ -143,20 +167,27 @@ pub async fn execute(
                             }
                         } else {
                             println!("{:<30} {:<15} {:<15}", "POD", "CPU(cores)", "MEMORY(bytes)");
-                            let total_cpu: String = metrics.containers.first()
-                                .map(|c| c.usage.cpu.clone()).unwrap_or_default();
-                            let total_mem: String = metrics.containers.first()
-                                .map(|c| c.usage.memory.clone()).unwrap_or_default();
-                            println!("{:<30} {:<15} {:<15}",
-                                metrics.metadata.name,
-                                total_cpu,
-                                total_mem
+                            let total_cpu: String = metrics
+                                .containers
+                                .first()
+                                .map(|c| c.usage.cpu.clone())
+                                .unwrap_or_default();
+                            let total_mem: String = metrics
+                                .containers
+                                .first()
+                                .map(|c| c.usage.memory.clone())
+                                .unwrap_or_default();
+                            println!(
+                                "{:<30} {:<15} {:<15}",
+                                metrics.metadata.name, total_cpu, total_mem
                             );
                         }
                     }
                 }
                 Err(_) => {
-                    println!("Error: Metrics API not available. Metrics Server might not be installed.");
+                    println!(
+                        "Error: Metrics API not available. Metrics Server might not be installed."
+                    );
                     println!("Install metrics-server: kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml");
                 }
             }

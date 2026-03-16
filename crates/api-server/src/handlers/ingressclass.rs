@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::IngressClass,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -196,7 +195,12 @@ pub async fn list_ingressclasses(
 }
 
 // Use the macro to create a PATCH handler for cluster-scoped IngressClass
-crate::patch_handler_cluster!(patch_ingressclass, IngressClass, "ingressclasses", "networking.k8s.io");
+crate::patch_handler_cluster!(
+    patch_ingressclass,
+    IngressClass,
+    "ingressclasses",
+    "networking.k8s.io"
+);
 
 pub async fn deletecollection_ingressclasses(
     State(state): State<Arc<ApiServerState>>,
@@ -248,6 +252,9 @@ pub async fn deletecollection_ingressclasses(
         }
     }
 
-    info!("DeleteCollection completed: {} ingressclasses deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} ingressclasses deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

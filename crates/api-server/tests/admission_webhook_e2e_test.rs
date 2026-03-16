@@ -120,7 +120,10 @@ async fn start_mock_validating_deny_server(reason: String) -> (String, oneshot::
 }
 
 /// Start a mock mutating webhook server that adds a label
-async fn start_mock_mutating_server(label_key: String, label_value: String) -> (String, oneshot::Sender<()>) {
+async fn start_mock_mutating_server(
+    label_key: String,
+    label_value: String,
+) -> (String, oneshot::Sender<()>) {
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
     let route = warp::post()
@@ -138,7 +141,8 @@ async fn start_mock_mutating_server(label_key: String, label_value: String) -> (
                 // Encode patch as base64
                 use base64::Engine;
                 let patch_json = serde_json::to_string(&patch).unwrap();
-                let patch_base64 = base64::engine::general_purpose::STANDARD.encode(patch_json.as_bytes());
+                let patch_base64 =
+                    base64::engine::general_purpose::STANDARD.encode(patch_json.as_bytes());
 
                 AdmissionReviewResponse {
                     uid: request.uid,
@@ -237,7 +241,10 @@ async fn test_webhook_client_calls_validating_allow() {
         options: None,
     };
 
-    let response = client.call_validating_webhook(&webhook, &request).await.unwrap();
+    let response = client
+        .call_validating_webhook(&webhook, &request)
+        .await
+        .unwrap();
     assert!(response.allowed, "Webhook should allow the request");
     assert_eq!(response.uid, "test-uid-123");
 }
@@ -296,7 +303,10 @@ async fn test_webhook_client_calls_validating_deny() {
         options: None,
     };
 
-    let response = client.call_validating_webhook(&webhook, &request).await.unwrap();
+    let response = client
+        .call_validating_webhook(&webhook, &request)
+        .await
+        .unwrap();
     assert!(!response.allowed, "Webhook should deny the request");
     assert_eq!(response.uid, "test-uid-456");
     assert!(response.status.is_some());
@@ -306,7 +316,8 @@ async fn test_webhook_client_calls_validating_deny() {
 
 #[tokio::test]
 async fn test_webhook_client_calls_mutating() {
-    let (url, _shutdown) = start_mock_mutating_server("app".to_string(), "mutated".to_string()).await;
+    let (url, _shutdown) =
+        start_mock_mutating_server("app".to_string(), "mutated".to_string()).await;
 
     let client = AdmissionWebhookClient::new();
     let webhook = MutatingWebhook {
@@ -358,7 +369,10 @@ async fn test_webhook_client_calls_mutating() {
         options: None,
     };
 
-    let response = client.call_mutating_webhook(&webhook, &request).await.unwrap();
+    let response = client
+        .call_mutating_webhook(&webhook, &request)
+        .await
+        .unwrap();
     assert!(response.allowed, "Webhook should allow the request");
     assert!(response.patch.is_some(), "Webhook should return a patch");
     assert_eq!(response.patch_type, Some("JSONPatch".to_string()));
@@ -417,8 +431,14 @@ async fn test_webhook_client_failure_policy_ignore() {
     };
 
     // Should not fail despite webhook being unreachable (FailurePolicy::Ignore)
-    let response = client.call_validating_webhook(&webhook, &request).await.unwrap();
-    assert!(response.allowed, "Request should be allowed when FailurePolicy is Ignore");
+    let response = client
+        .call_validating_webhook(&webhook, &request)
+        .await
+        .unwrap();
+    assert!(
+        response.allowed,
+        "Request should be allowed when FailurePolicy is Ignore"
+    );
 }
 
 // ===== Webhook Manager Integration Tests =====
@@ -463,7 +483,11 @@ async fn test_webhook_manager_runs_validating_webhooks() {
         }]),
     };
 
-    let key = build_key("validatingwebhookconfigurations", None, "test-webhook-config");
+    let key = build_key(
+        "validatingwebhookconfigurations",
+        None,
+        "test-webhook-config",
+    );
     storage.create(&key, &config).await.unwrap();
 
     // Run webhooks
@@ -512,7 +536,8 @@ async fn test_webhook_manager_runs_mutating_webhooks() {
     let manager = AdmissionWebhookManager::new(storage.clone());
 
     // Start mock webhook server
-    let (url, _shutdown) = start_mock_mutating_server("injected".to_string(), "true".to_string()).await;
+    let (url, _shutdown) =
+        start_mock_mutating_server("injected".to_string(), "true".to_string()).await;
 
     // Create webhook configuration
     let config = MutatingWebhookConfiguration {
@@ -547,7 +572,11 @@ async fn test_webhook_manager_runs_mutating_webhooks() {
         }]),
     };
 
-    let key = build_key("mutatingwebhookconfigurations", None, "test-mutating-config");
+    let key = build_key(
+        "mutatingwebhookconfigurations",
+        None,
+        "test-mutating-config",
+    );
     storage.create(&key, &config).await.unwrap();
 
     // Run webhooks
@@ -601,7 +630,8 @@ async fn test_webhook_manager_denial_stops_request() {
     let manager = AdmissionWebhookManager::new(storage.clone());
 
     // Start mock webhook server that denies
-    let (url, _shutdown) = start_mock_validating_deny_server("Resource not allowed".to_string()).await;
+    let (url, _shutdown) =
+        start_mock_validating_deny_server("Resource not allowed".to_string()).await;
 
     // Create webhook configuration
     let config = ValidatingWebhookConfiguration {
@@ -635,7 +665,11 @@ async fn test_webhook_manager_denial_stops_request() {
         }]),
     };
 
-    let key = build_key("validatingwebhookconfigurations", None, "deny-webhook-config");
+    let key = build_key(
+        "validatingwebhookconfigurations",
+        None,
+        "deny-webhook-config",
+    );
     storage.create(&key, &config).await.unwrap();
 
     // Run webhooks

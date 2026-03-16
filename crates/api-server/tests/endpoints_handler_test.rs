@@ -2,7 +2,7 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for Endpoints
 
-use rusternetes_common::resources::{Endpoints, EndpointSubset, EndpointAddress, EndpointPort};
+use rusternetes_common::resources::{EndpointAddress, EndpointPort, EndpointSubset, Endpoints};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -219,8 +219,14 @@ async fn test_endpoints_with_multiple_subsets() {
     let created: Endpoints = storage.create(&key, &endpoints).await.unwrap();
 
     assert_eq!(created.subsets.len(), 2);
-    assert_eq!(created.subsets[0].ports.as_ref().unwrap()[0].name, Some("http".to_string()));
-    assert_eq!(created.subsets[1].ports.as_ref().unwrap()[0].name, Some("https".to_string()));
+    assert_eq!(
+        created.subsets[0].ports.as_ref().unwrap()[0].name,
+        Some("http".to_string())
+    );
+    assert_eq!(
+        created.subsets[1].ports.as_ref().unwrap()[0].name,
+        Some("https".to_string())
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -268,7 +274,14 @@ async fn test_endpoints_with_not_ready_addresses() {
 
     assert!(created.subsets[0].addresses.is_some());
     assert!(created.subsets[0].not_ready_addresses.is_some());
-    assert_eq!(created.subsets[0].not_ready_addresses.as_ref().unwrap().len(), 1);
+    assert_eq!(
+        created.subsets[0]
+            .not_ready_addresses
+            .as_ref()
+            .unwrap()
+            .len(),
+        1
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -374,8 +387,14 @@ async fn test_endpoints_with_labels() {
     let created: Endpoints = storage.create(&key, &endpoints).await.unwrap();
 
     assert!(created.metadata.labels.is_some());
-    assert_eq!(created.metadata.labels.as_ref().unwrap().get("app"), Some(&"nginx".to_string()));
-    assert_eq!(created.metadata.labels.as_ref().unwrap().get("tier"), Some(&"frontend".to_string()));
+    assert_eq!(
+        created.metadata.labels.as_ref().unwrap().get("app"),
+        Some(&"nginx".to_string())
+    );
+    assert_eq!(
+        created.metadata.labels.as_ref().unwrap().get("tier"),
+        Some(&"frontend".to_string())
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -400,7 +419,12 @@ async fn test_endpoints_with_annotations() {
 
     assert!(created.metadata.annotations.is_some());
     assert_eq!(
-        created.metadata.annotations.as_ref().unwrap().get("description"),
+        created
+            .metadata
+            .annotations
+            .as_ref()
+            .unwrap()
+            .get("description"),
         Some(&"Test endpoints".to_string())
     );
 
@@ -421,7 +445,10 @@ async fn test_endpoints_with_finalizers() {
     let created: Endpoints = storage.create(&key, &endpoints).await.unwrap();
 
     assert!(created.metadata.finalizers.is_some());
-    assert_eq!(created.metadata.finalizers.as_ref().unwrap()[0], "test.finalizer.io/cleanup");
+    assert_eq!(
+        created.metadata.finalizers.as_ref().unwrap()[0],
+        "test.finalizer.io/cleanup"
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -444,7 +471,10 @@ async fn test_endpoints_metadata_immutability() {
     let updated: Endpoints = storage.update(&key, &created).await.unwrap();
 
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.metadata.creation_timestamp, original_creation_timestamp);
+    assert_eq!(
+        updated.metadata.creation_timestamp,
+        original_creation_timestamp
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();

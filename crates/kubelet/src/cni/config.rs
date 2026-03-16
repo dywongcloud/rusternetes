@@ -184,17 +184,15 @@ impl CniConfigManager {
             // Only process .conflist and .conf files
             if let Some(ext) = path.extension() {
                 match ext.to_str() {
-                    Some("conflist") => {
-                        match NetworkConfigList::from_file(&path) {
-                            Ok(config) => {
-                                config.validate()?;
-                                configs.push(config);
-                            }
-                            Err(e) => {
-                                tracing::warn!("Failed to load config from {:?}: {}", path, e);
-                            }
+                    Some("conflist") => match NetworkConfigList::from_file(&path) {
+                        Ok(config) => {
+                            config.validate()?;
+                            configs.push(config);
                         }
-                    }
+                        Err(e) => {
+                            tracing::warn!("Failed to load config from {:?}: {}", path, e);
+                        }
+                    },
                     Some("conf") => {
                         // Convert single config to config list
                         match NetworkConfig::from_file(&path) {
@@ -233,29 +231,24 @@ impl CniConfigManager {
     pub fn get_config(&self, name: &str) -> Result<NetworkConfigList, CniError> {
         let configs = self.load_configs()?;
 
-        configs
-            .into_iter()
-            .find(|c| c.name == name)
-            .ok_or_else(|| {
-                CniError::new(
-                    ErrorCode::InvalidNetworkConfig,
-                    format!("Network configuration '{}' not found", name),
-                )
-            })
+        configs.into_iter().find(|c| c.name == name).ok_or_else(|| {
+            CniError::new(
+                ErrorCode::InvalidNetworkConfig,
+                format!("Network configuration '{}' not found", name),
+            )
+        })
     }
 
     /// Get the default network configuration (first in alphabetical order)
     pub fn get_default_config(&self) -> Result<NetworkConfigList, CniError> {
         let mut configs = self.load_configs()?;
 
-        configs
-            .pop()
-            .ok_or_else(|| {
-                CniError::new(
-                    ErrorCode::InvalidNetworkConfig,
-                    "No network configurations found".to_string(),
-                )
-            })
+        configs.pop().ok_or_else(|| {
+            CniError::new(
+                ErrorCode::InvalidNetworkConfig,
+                "No network configurations found".to_string(),
+            )
+        })
     }
 }
 

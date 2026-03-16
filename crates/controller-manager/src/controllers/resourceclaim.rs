@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rusternetes_common::resources::{
-    ResourceClaim, ResourceClaimStatus, AllocationResult, DeviceAllocationResult,
-    DeviceRequestAllocationResult, ResourceSlice, DeviceClass,
+    AllocationResult, DeviceAllocationResult, DeviceClass, DeviceRequestAllocationResult,
+    ResourceClaim, ResourceClaimStatus, ResourceSlice,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
@@ -37,17 +37,22 @@ impl<S: Storage> ResourceClaimController<S> {
 
     pub async fn reconcile_all(&self) -> Result<()> {
         // Get all ResourceClaims across all namespaces
-        let claims: Vec<ResourceClaim> = self
-            .storage
-            .list("/registry/resourceclaims/")
-            .await?;
+        let claims: Vec<ResourceClaim> = self.storage.list("/registry/resourceclaims/").await?;
 
         for mut claim in claims {
             if let Err(e) = self.reconcile_claim(&mut claim).await {
                 error!(
                     "Failed to reconcile ResourceClaim {}/{}: {}",
-                    claim.metadata.as_ref().and_then(|m| m.namespace.as_ref()).unwrap_or(&"".to_string()),
-                    claim.metadata.as_ref().and_then(|m| m.name.as_ref()).unwrap_or(&"".to_string()),
+                    claim
+                        .metadata
+                        .as_ref()
+                        .and_then(|m| m.namespace.as_ref())
+                        .unwrap_or(&"".to_string()),
+                    claim
+                        .metadata
+                        .as_ref()
+                        .and_then(|m| m.name.as_ref())
+                        .unwrap_or(&"".to_string()),
                     e
                 );
             }
@@ -57,21 +62,35 @@ impl<S: Storage> ResourceClaimController<S> {
     }
 
     async fn reconcile_claim(&self, claim: &mut ResourceClaim) -> Result<()> {
-        let metadata = claim.metadata.as_ref()
+        let metadata = claim
+            .metadata
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("ResourceClaim missing metadata"))?;
 
-        let name = metadata.name.as_ref()
+        let name = metadata
+            .name
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("ResourceClaim missing name"))?;
 
-        let namespace = metadata.namespace.as_ref()
+        let namespace = metadata
+            .namespace
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("ResourceClaim missing namespace"))?;
 
         // Skip if already allocated
-        if claim.status.as_ref().and_then(|s| s.allocation.as_ref()).is_some() {
+        if claim
+            .status
+            .as_ref()
+            .and_then(|s| s.allocation.as_ref())
+            .is_some()
+        {
             return Ok(());
         }
 
-        info!("Allocating devices for ResourceClaim {}/{}", namespace, name);
+        info!(
+            "Allocating devices for ResourceClaim {}/{}",
+            namespace, name
+        );
 
         // Process device requests
         let mut allocation_results = Vec::new();
@@ -95,14 +114,20 @@ impl<S: Storage> ResourceClaimController<S> {
                 info!("Found DeviceClass: {}", device_class_name);
 
                 // Find suitable devices from ResourceSlices
-                let devices = self.find_suitable_devices(&device_class, exact.count).await?;
+                let devices = self
+                    .find_suitable_devices(&device_class, exact.count)
+                    .await?;
 
                 if devices.is_empty() {
                     warn!("No suitable devices found for request {}", request.name);
                     continue;
                 }
 
-                info!("Found {} suitable device(s) for request {}", devices.len(), request.name);
+                info!(
+                    "Found {} suitable device(s) for request {}",
+                    devices.len(),
+                    request.name
+                );
 
                 // Allocate the first suitable device(s)
                 for device in devices {
@@ -117,7 +142,10 @@ impl<S: Storage> ResourceClaimController<S> {
         }
 
         if allocation_results.is_empty() {
-            warn!("No devices could be allocated for ResourceClaim {}/{}", namespace, name);
+            warn!(
+                "No devices could be allocated for ResourceClaim {}/{}",
+                namespace, name
+            );
             return Ok(());
         }
 
@@ -141,7 +169,10 @@ impl<S: Storage> ResourceClaimController<S> {
         let key = build_key("resourceclaims", Some(namespace), name);
         self.storage.update(&key, claim).await?;
 
-        info!("Successfully allocated devices for ResourceClaim {}/{}", namespace, name);
+        info!(
+            "Successfully allocated devices for ResourceClaim {}/{}",
+            namespace, name
+        );
         Ok(())
     }
 
@@ -160,12 +191,12 @@ impl<S: Storage> ResourceClaimController<S> {
         let required_count = count.unwrap_or(1) as usize;
 
         // Get all ResourceSlices
-        let slices: Vec<ResourceSlice> = self
-            .storage
-            .list("/registry/resourceslices/")
-            .await?;
+        let slices: Vec<ResourceSlice> = self.storage.list("/registry/resourceslices/").await?;
 
-        info!("Checking {} ResourceSlice(s) for suitable devices", slices.len());
+        info!(
+            "Checking {} ResourceSlice(s) for suitable devices",
+            slices.len()
+        );
 
         for slice in slices {
             let driver = slice.spec.driver.clone();
@@ -229,11 +260,11 @@ struct AllocatedDevice {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_storage::memory::MemoryStorage;
     use rusternetes_common::resources::{
-        DeviceClassSpec, ResourceClaimSpec, DeviceClaim, DeviceRequest,
-        ExactDeviceRequest, DeviceAllocationMode, ResourceSliceSpec, ResourcePool, Device,
+        Device, DeviceAllocationMode, DeviceClaim, DeviceClassSpec, DeviceRequest,
+        ExactDeviceRequest, ResourceClaimSpec, ResourcePool, ResourceSliceSpec,
     };
+    use rusternetes_storage::memory::MemoryStorage;
 
     #[tokio::test]
     async fn test_device_matching_no_selectors() {
@@ -309,7 +340,10 @@ mod tests {
             spec: DeviceClassSpec::default(),
         };
 
-        let devices = controller.find_suitable_devices(&device_class, Some(1)).await.unwrap();
+        let devices = controller
+            .find_suitable_devices(&device_class, Some(1))
+            .await
+            .unwrap();
         assert_eq!(devices.len(), 0);
     }
 }

@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::CSIDriver,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -271,6 +270,9 @@ pub async fn deletecollection_csidrivers(
         }
     }
 
-    info!("DeleteCollection completed: {} csidrivers deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} csidrivers deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

@@ -21,11 +21,7 @@ pub struct ControllerRevision {
 }
 
 impl ControllerRevision {
-    pub fn new(
-        name: impl Into<String>,
-        namespace: impl Into<String>,
-        revision: i64,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, namespace: impl Into<String>, revision: i64) -> Self {
         Self {
             type_meta: TypeMeta {
                 kind: "ControllerRevision".to_string(),
@@ -63,8 +59,7 @@ mod tests {
             }
         });
 
-        let cr = ControllerRevision::new("nginx-revision-1", "default", 1)
-            .with_data(revision_data);
+        let cr = ControllerRevision::new("nginx-revision-1", "default", 1).with_data(revision_data);
 
         assert_eq!(cr.metadata.name, "nginx-revision-1");
         assert_eq!(cr.metadata.namespace, Some("default".to_string()));

@@ -70,7 +70,8 @@ mod metrics_formatting_tests {
     fn test_parse_cpu_string() {
         fn parse_cpu(cpu: &str) -> Result<u64, String> {
             if let Some(millicores) = cpu.strip_suffix('m') {
-                millicores.parse::<u64>()
+                millicores
+                    .parse::<u64>()
                     .map_err(|_| "Invalid CPU value".to_string())
             } else if let Ok(cores) = cpu.parse::<f64>() {
                 Ok((cores * 1000.0) as u64)
@@ -90,13 +91,16 @@ mod metrics_formatting_tests {
     fn test_parse_memory_string() {
         fn parse_memory(mem: &str) -> Result<u64, String> {
             if let Some(ki) = mem.strip_suffix("Ki") {
-                ki.parse::<u64>().map(|v| v * 1024)
+                ki.parse::<u64>()
+                    .map(|v| v * 1024)
                     .map_err(|_| "Invalid memory value".to_string())
             } else if let Some(mi) = mem.strip_suffix("Mi") {
-                mi.parse::<u64>().map(|v| v * 1024 * 1024)
+                mi.parse::<u64>()
+                    .map(|v| v * 1024 * 1024)
                     .map_err(|_| "Invalid memory value".to_string())
             } else if let Some(gi) = mem.strip_suffix("Gi") {
-                gi.parse::<u64>().map(|v| v * 1024 * 1024 * 1024)
+                gi.parse::<u64>()
+                    .map(|v| v * 1024 * 1024 * 1024)
                     .map_err(|_| "Invalid memory value".to_string())
             } else {
                 mem.parse::<u64>()
@@ -136,8 +140,17 @@ mod node_metrics_tests {
 
     #[test]
     fn test_node_metrics_table_row() {
-        fn format_node_row(name: &str, cpu: &str, cpu_pct: &str, mem: &str, mem_pct: &str) -> String {
-            format!("{:<20} {:<10} {:<8} {:<12} {}", name, cpu, cpu_pct, mem, mem_pct)
+        fn format_node_row(
+            name: &str,
+            cpu: &str,
+            cpu_pct: &str,
+            mem: &str,
+            mem_pct: &str,
+        ) -> String {
+            format!(
+                "{:<20} {:<10} {:<8} {:<12} {}",
+                name, cpu, cpu_pct, mem, mem_pct
+            )
         }
 
         let row = format_node_row("node-1", "2000m", "50%", "4Gi", "50%");
@@ -155,11 +168,7 @@ mod node_metrics_tests {
             (total_used, total_capacity)
         }
 
-        let nodes = vec![
-            (1000, 2000),
-            (1500, 4000),
-            (2000, 4000),
-        ];
+        let nodes = vec![(1000, 2000), (1500, 4000), (2000, 4000)];
 
         let (used, capacity) = sum_cpu_usage(&nodes);
         assert_eq!(used, 4500);
@@ -177,10 +186,7 @@ mod pod_metrics_tests {
             (total_cpu, total_mem)
         }
 
-        let containers = vec![
-            (100, 256 * 1024 * 1024),
-            (200, 512 * 1024 * 1024),
-        ];
+        let containers = vec![(100, 256 * 1024 * 1024), (200, 512 * 1024 * 1024)];
 
         let (cpu, mem) = calculate_pod_usage(&containers);
         assert_eq!(cpu, 300);
@@ -206,9 +212,7 @@ mod pod_metrics_tests {
             pods: &'a [(&str, &str)],
             namespace: &str,
         ) -> Vec<&'a (&'a str, &'a str)> {
-            pods.iter()
-                .filter(|(_, ns)| *ns == namespace)
-                .collect()
+            pods.iter().filter(|(_, ns)| *ns == namespace).collect()
         }
 
         let pods = vec![
@@ -227,11 +231,7 @@ mod pod_metrics_tests {
             pods.sort_by(|a, b| b.1.cmp(&a.1));
         }
 
-        let mut pods = vec![
-            ("pod-1", 100),
-            ("pod-3", 500),
-            ("pod-2", 300),
-        ];
+        let mut pods = vec![("pod-1", 100), ("pod-3", 500), ("pod-2", 300)];
 
         sort_by_cpu(&mut pods);
         assert_eq!(pods[0].0, "pod-3");
@@ -262,12 +262,7 @@ mod pod_metrics_tests {
 mod container_metrics_tests {
     #[test]
     fn test_container_metrics_table_row() {
-        fn format_container_row(
-            pod: &str,
-            container: &str,
-            cpu: &str,
-            memory: &str,
-        ) -> String {
+        fn format_container_row(pod: &str, container: &str, cpu: &str, memory: &str) -> String {
             format!("{}/{:<20} {:<10} {}", pod, container, cpu, memory)
         }
 
@@ -280,7 +275,8 @@ mod container_metrics_tests {
     #[test]
     fn test_extract_container_metrics() {
         fn extract_metrics(containers: &[(&str, u64, u64)]) -> Vec<(String, u64, u64)> {
-            containers.iter()
+            containers
+                .iter()
                 .map(|(name, cpu, mem)| (name.to_string(), *cpu, *mem))
                 .collect()
         }
@@ -302,7 +298,8 @@ mod selector_tests {
     #[test]
     fn test_label_selector_for_top() {
         fn build_label_selector(labels: &[(&str, &str)]) -> String {
-            labels.iter()
+            labels
+                .iter()
                 .map(|(k, v)| format!("{}={}", k, v))
                 .collect::<Vec<_>>()
                 .join(",")
@@ -330,7 +327,10 @@ mod output_format_tests {
     #[test]
     fn test_table_header_for_nodes() {
         fn get_node_header() -> String {
-            format!("{:<20} {:<10} {:<8} {:<12} {}", "NAME", "CPU(cores)", "CPU%", "MEMORY(bytes)", "MEMORY%")
+            format!(
+                "{:<20} {:<10} {:<8} {:<12} {}",
+                "NAME", "CPU(cores)", "CPU%", "MEMORY(bytes)", "MEMORY%"
+            )
         }
 
         let header = get_node_header();
@@ -342,7 +342,10 @@ mod output_format_tests {
     #[test]
     fn test_table_header_for_pods() {
         fn get_pod_header() -> String {
-            format!("{:<30} {:<20} {:<10} {}", "NAME", "NAMESPACE", "CPU(cores)", "MEMORY(bytes)")
+            format!(
+                "{:<30} {:<20} {:<10} {}",
+                "NAME", "NAMESPACE", "CPU(cores)", "MEMORY(bytes)"
+            )
         }
 
         let header = get_pod_header();
@@ -358,7 +361,13 @@ mod output_format_tests {
             format!("No metrics available for {}", resource_type)
         }
 
-        assert_eq!(format_no_metrics_message("nodes"), "No metrics available for nodes");
-        assert_eq!(format_no_metrics_message("pods"), "No metrics available for pods");
+        assert_eq!(
+            format_no_metrics_message("nodes"),
+            "No metrics available for nodes"
+        );
+        assert_eq!(
+            format_no_metrics_message("pods"),
+            "No metrics available for pods"
+        );
     }
 }

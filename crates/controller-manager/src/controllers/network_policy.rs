@@ -29,8 +29,7 @@ impl NetworkPolicyController {
         debug!("Starting NetworkPolicy reconciliation");
 
         // List all NetworkPolicies across all namespaces
-        let policies: Vec<NetworkPolicy> =
-            self.storage.list("/registry/networkpolicies/").await?;
+        let policies: Vec<NetworkPolicy> = self.storage.list("/registry/networkpolicies/").await?;
 
         info!("Found {} network policies to reconcile", policies.len());
 
@@ -38,7 +37,11 @@ impl NetworkPolicyController {
             if let Err(e) = self.reconcile_policy(&policy).await {
                 error!(
                     "Failed to reconcile network policy {}/{}: {}",
-                    policy.metadata.namespace.as_ref().unwrap_or(&"default".to_string()),
+                    policy
+                        .metadata
+                        .namespace
+                        .as_ref()
+                        .unwrap_or(&"default".to_string()),
                     &policy.metadata.name,
                     e
                 );
@@ -50,7 +53,10 @@ impl NetworkPolicyController {
 
     /// Reconcile a single NetworkPolicy
     async fn reconcile_policy(&self, policy: &NetworkPolicy) -> Result<()> {
-        let namespace = policy.metadata.namespace.as_ref()
+        let namespace = policy
+            .metadata
+            .namespace
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("NetworkPolicy has no namespace"))?;
         let policy_name = &policy.metadata.name;
 
@@ -256,7 +262,10 @@ impl NetworkPolicyController {
 
     /// Find all pods affected by this NetworkPolicy
     async fn find_affected_pods(&self, policy: &NetworkPolicy) -> Result<Vec<Pod>> {
-        let namespace = policy.metadata.namespace.as_ref()
+        let namespace = policy
+            .metadata
+            .namespace
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("NetworkPolicy has no namespace"))?;
 
         // List all pods in the same namespace
@@ -341,10 +350,11 @@ impl NetworkPolicyController {
 mod tests {
     use super::*;
     use rusternetes_common::resources::{
-        NetworkPolicyIngressRule, NetworkPolicyPeer, NetworkPolicyPort,
-        NetworkPolicySpec,
+        NetworkPolicyIngressRule, NetworkPolicyPeer, NetworkPolicyPort, NetworkPolicySpec,
     };
-    use rusternetes_common::types::{LabelSelector, LabelSelectorRequirement, ObjectMeta, TypeMeta};
+    use rusternetes_common::types::{
+        LabelSelector, LabelSelectorRequirement, ObjectMeta, TypeMeta,
+    };
 
     #[tokio::test]
     async fn test_validate_policy_valid() {
@@ -447,7 +457,9 @@ mod tests {
             end_port: None,
         };
 
-        assert!(controller.validate_network_policy_port(&port, 0, 0).is_err());
+        assert!(controller
+            .validate_network_policy_port(&port, 0, 0)
+            .is_err());
     }
 
     #[tokio::test]

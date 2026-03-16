@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::ResourceQuota,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -22,7 +21,10 @@ pub async fn create(
     Query(params): Query<HashMap<String, String>>,
     Json(mut quota): Json<ResourceQuota>,
 ) -> Result<(StatusCode, Json<ResourceQuota>)> {
-    info!("Creating ResourceQuota: {} in namespace: {}", quota.metadata.name, namespace);
+    info!(
+        "Creating ResourceQuota: {} in namespace: {}",
+        quota.metadata.name, namespace
+    );
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -49,7 +51,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: ResourceQuota {}/{} validated successfully (not created)", namespace, quota.metadata.name);
+        info!(
+            "Dry-run: ResourceQuota {}/{} validated successfully (not created)",
+            namespace, quota.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(quota)));
     }
 
@@ -63,7 +68,10 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<ResourceQuota>> {
-    info!("Getting ResourceQuota: {} in namespace: {}", name, namespace);
+    info!(
+        "Getting ResourceQuota: {} in namespace: {}",
+        name, namespace
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "resourcequotas")
@@ -91,7 +99,10 @@ pub async fn update(
     Query(params): Query<HashMap<String, String>>,
     Json(mut quota): Json<ResourceQuota>,
 ) -> Result<Json<ResourceQuota>> {
-    info!("Updating ResourceQuota: {} in namespace: {}", name, namespace);
+    info!(
+        "Updating ResourceQuota: {} in namespace: {}",
+        name, namespace
+    );
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -116,15 +127,16 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: ResourceQuota {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: ResourceQuota {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(quota));
     }
 
     let result = match state.storage.update(&key, &quota).await {
         Ok(updated) => updated,
-        Err(rusternetes_common::Error::NotFound(_)) => {
-            state.storage.create(&key, &quota).await?
-        }
+        Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &quota).await?,
         Err(e) => return Err(e),
     };
 
@@ -137,7 +149,10 @@ pub async fn delete(
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("Deleting ResourceQuota: {} in namespace: {}", name, namespace);
+    info!(
+        "Deleting ResourceQuota: {} in namespace: {}",
+        name, namespace
+    );
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -159,7 +174,10 @@ pub async fn delete(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: ResourceQuota {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: ResourceQuota {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -167,21 +185,16 @@ pub async fn delete(
     let quota: ResourceQuota = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
-        &state.storage,
-        &key,
-        &quota,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &quota)
+            .await?;
 
     if deleted_immediately {
         Ok(StatusCode::NO_CONTENT)
     } else {
         info!(
             "ResourceQuota {}/{} marked for deletion (has finalizers: {:?})",
-            namespace,
-            name,
-            quota.metadata.finalizers
+            namespace, name, quota.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -225,8 +238,7 @@ pub async fn list_all(
     info!("Listing all ResourceQuotas");
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "resourcequotas")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "resourcequotas").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -254,7 +266,10 @@ pub async fn deletecollection_resourcequotas(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection resourcequotas in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection resourcequotas in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "resourcequotas")
@@ -300,6 +315,9 @@ pub async fn deletecollection_resourcequotas(
         }
     }
 
-    info!("DeleteCollection completed: {} resourcequotas deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} resourcequotas deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

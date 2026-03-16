@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::CSIStorageCapacity,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -22,7 +21,10 @@ pub async fn create_csistoragecapacity(
     Query(params): Query<HashMap<String, String>>,
     Json(mut csc): Json<CSIStorageCapacity>,
 ) -> Result<(StatusCode, Json<CSIStorageCapacity>)> {
-    info!("Creating CSIStorageCapacity: {} in namespace: {}", csc.metadata.name, namespace);
+    info!(
+        "Creating CSIStorageCapacity: {} in namespace: {}",
+        csc.metadata.name, namespace
+    );
 
     // Check authorization (namespaced)
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "csistoragecapacities")
@@ -57,7 +59,10 @@ pub async fn get_csistoragecapacity(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<CSIStorageCapacity>> {
-    info!("Getting CSIStorageCapacity: {} in namespace: {}", name, namespace);
+    info!(
+        "Getting CSIStorageCapacity: {} in namespace: {}",
+        name, namespace
+    );
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "csistoragecapacities")
         .with_api_group("storage.k8s.io")
@@ -140,7 +145,10 @@ pub async fn update_csistoragecapacity(
     Query(params): Query<HashMap<String, String>>,
     Json(mut csc): Json<CSIStorageCapacity>,
 ) -> Result<Json<CSIStorageCapacity>> {
-    info!("Updating CSIStorageCapacity: {} in namespace: {}", name, namespace);
+    info!(
+        "Updating CSIStorageCapacity: {} in namespace: {}",
+        name, namespace
+    );
 
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "csistoragecapacities")
         .with_api_group("storage.k8s.io")
@@ -175,7 +183,10 @@ pub async fn delete_csistoragecapacity(
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("Deleting CSIStorageCapacity: {} in namespace: {}", name, namespace);
+    info!(
+        "Deleting CSIStorageCapacity: {} in namespace: {}",
+        name, namespace
+    );
 
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "csistoragecapacities")
         .with_api_group("storage.k8s.io")
@@ -220,7 +231,12 @@ pub async fn delete_csistoragecapacity(
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_namespaced!(patch_csistoragecapacity, CSIStorageCapacity, "csistoragecapacities", "storage.k8s.io");
+crate::patch_handler_namespaced!(
+    patch_csistoragecapacity,
+    CSIStorageCapacity,
+    "csistoragecapacities",
+    "storage.k8s.io"
+);
 
 #[cfg(test)]
 mod tests {
@@ -257,7 +273,10 @@ pub async fn deletecollection_csistoragecapacities(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection csistoragecapacities in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection csistoragecapacities in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "csistoragecapacities")
@@ -288,7 +307,11 @@ pub async fn deletecollection_csistoragecapacities(
     // Delete each matching resource
     let mut deleted_count = 0;
     for item in items {
-        let key = build_key("csistoragecapacities", Some(&namespace), &item.metadata.name);
+        let key = build_key(
+            "csistoragecapacities",
+            Some(&namespace),
+            &item.metadata.name,
+        );
 
         // Handle deletion with finalizers
         let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -303,6 +326,9 @@ pub async fn deletecollection_csistoragecapacities(
         }
     }
 
-    info!("DeleteCollection completed: {} csistoragecapacities deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} csistoragecapacities deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

@@ -11,7 +11,10 @@ use std::sync::Arc;
 // Helper function to create test LimitRange
 fn create_test_limitrange(name: &str, namespace: &str) -> LimitRange {
     LimitRange {
-        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "LimitRange".to_string() },
+        type_meta: TypeMeta {
+            api_version: "v1".to_string(),
+            kind: "LimitRange".to_string(),
+        },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
@@ -180,7 +183,10 @@ async fn test_limitrange_with_defaults() {
 
     let namespace = "test-limitrange-defaults";
     let limitrange = LimitRange {
-        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "LimitRange".to_string() },
+        type_meta: TypeMeta {
+            api_version: "v1".to_string(),
+            kind: "LimitRange".to_string(),
+        },
         metadata: ObjectMeta {
             name: "defaults-limitrange".to_string(),
             namespace: Some(namespace.to_string()),
@@ -213,7 +219,10 @@ async fn test_limitrange_with_defaults() {
 
     assert!(created.spec.limits[0].default.is_some());
     assert!(created.spec.limits[0].default_request.is_some());
-    assert_eq!(created.spec.limits[0].default.as_ref().unwrap().get("cpu"), Some(&"500m".to_string()));
+    assert_eq!(
+        created.spec.limits[0].default.as_ref().unwrap().get("cpu"),
+        Some(&"500m".to_string())
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -225,7 +234,10 @@ async fn test_limitrange_with_ratio() {
 
     let namespace = "test-limitrange-ratio";
     let limitrange = LimitRange {
-        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "LimitRange".to_string() },
+        type_meta: TypeMeta {
+            api_version: "v1".to_string(),
+            kind: "LimitRange".to_string(),
+        },
         metadata: ObjectMeta {
             name: "ratio-limitrange".to_string(),
             namespace: Some(namespace.to_string()),
@@ -253,7 +265,11 @@ async fn test_limitrange_with_ratio() {
 
     assert!(created.spec.limits[0].max_limit_request_ratio.is_some());
     assert_eq!(
-        created.spec.limits[0].max_limit_request_ratio.as_ref().unwrap().get("cpu"),
+        created.spec.limits[0]
+            .max_limit_request_ratio
+            .as_ref()
+            .unwrap()
+            .get("cpu"),
         Some(&"10".to_string())
     );
 
@@ -267,7 +283,10 @@ async fn test_limitrange_pod_type() {
 
     let namespace = "test-limitrange-pod";
     let limitrange = LimitRange {
-        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "LimitRange".to_string() },
+        type_meta: TypeMeta {
+            api_version: "v1".to_string(),
+            kind: "LimitRange".to_string(),
+        },
         metadata: ObjectMeta {
             name: "pod-limitrange".to_string(),
             namespace: Some(namespace.to_string()),
@@ -310,7 +329,10 @@ async fn test_limitrange_pvc_type() {
 
     let namespace = "test-limitrange-pvc";
     let limitrange = LimitRange {
-        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "LimitRange".to_string() },
+        type_meta: TypeMeta {
+            api_version: "v1".to_string(),
+            kind: "LimitRange".to_string(),
+        },
         metadata: ObjectMeta {
             name: "pvc-limitrange".to_string(),
             namespace: Some(namespace.to_string()),
@@ -355,7 +377,10 @@ async fn test_limitrange_with_multiple_types() {
 
     let namespace = "test-limitrange-multi-type";
     let limitrange = LimitRange {
-        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "LimitRange".to_string() },
+        type_meta: TypeMeta {
+            api_version: "v1".to_string(),
+            kind: "LimitRange".to_string(),
+        },
         metadata: ObjectMeta {
             name: "multi-type-limitrange".to_string(),
             namespace: Some(namespace.to_string()),
@@ -433,7 +458,10 @@ async fn test_limitrange_with_labels() {
     let created: LimitRange = storage.create(&key, &limitrange).await.unwrap();
 
     assert!(created.metadata.labels.is_some());
-    assert_eq!(created.metadata.labels.as_ref().unwrap().get("env"), Some(&"production".to_string()));
+    assert_eq!(
+        created.metadata.labels.as_ref().unwrap().get("env"),
+        Some(&"production".to_string())
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -448,7 +476,10 @@ async fn test_limitrange_with_annotations() {
 
     limitrange.metadata.annotations = Some({
         let mut annotations = HashMap::new();
-        annotations.insert("description".to_string(), "Default resource limits".to_string());
+        annotations.insert(
+            "description".to_string(),
+            "Default resource limits".to_string(),
+        );
         annotations.insert("managed-by".to_string(), "platform-team".to_string());
         annotations
     });
@@ -458,7 +489,12 @@ async fn test_limitrange_with_annotations() {
 
     assert!(created.metadata.annotations.is_some());
     assert_eq!(
-        created.metadata.annotations.as_ref().unwrap().get("description"),
+        created
+            .metadata
+            .annotations
+            .as_ref()
+            .unwrap()
+            .get("description"),
         Some(&"Default resource limits".to_string())
     );
 
@@ -479,7 +515,10 @@ async fn test_limitrange_with_finalizers() {
     let created: LimitRange = storage.create(&key, &limitrange).await.unwrap();
 
     assert!(created.metadata.finalizers.is_some());
-    assert_eq!(created.metadata.finalizers.as_ref().unwrap()[0], "test.finalizer.io/cleanup");
+    assert_eq!(
+        created.metadata.finalizers.as_ref().unwrap()[0],
+        "test.finalizer.io/cleanup"
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -502,7 +541,10 @@ async fn test_limitrange_metadata_immutability() {
     let updated: LimitRange = storage.update(&key, &created).await.unwrap();
 
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.metadata.creation_timestamp, original_creation_timestamp);
+    assert_eq!(
+        updated.metadata.creation_timestamp,
+        original_creation_timestamp
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -516,7 +558,11 @@ async fn test_limitrange_list_all_namespaces() {
     for i in 1..=3 {
         let namespace = format!("ns-{}", i);
         let limitrange = create_test_limitrange(&format!("limitrange-{}", i), &namespace);
-        let key = build_key("limitranges", Some(&namespace), &format!("limitrange-{}", i));
+        let key = build_key(
+            "limitranges",
+            Some(&namespace),
+            &format!("limitrange-{}", i),
+        );
         storage.create(&key, &limitrange).await.unwrap();
     }
 
@@ -529,7 +575,11 @@ async fn test_limitrange_list_all_namespaces() {
     // Cleanup
     for i in 1..=3 {
         let namespace = format!("ns-{}", i);
-        let key = build_key("limitranges", Some(&namespace), &format!("limitrange-{}", i));
+        let key = build_key(
+            "limitranges",
+            Some(&namespace),
+            &format!("limitrange-{}", i),
+        );
         storage.delete(&key).await.unwrap();
     }
 }

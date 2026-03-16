@@ -1,3 +1,4 @@
+use axum::body::to_bytes;
 use axum::{
     body::Body,
     extract::Request,
@@ -8,8 +9,7 @@ use axum::{
 };
 use rusternetes_common::auth::{BootstrapTokenManager, TokenManager, UserInfo};
 use std::sync::Arc;
-use tracing::{debug, warn, error};
-use axum::body::to_bytes;
+use tracing::{debug, error, warn};
 
 /// Extension type to carry UserInfo through the request
 #[derive(Clone, Debug)]
@@ -18,11 +18,12 @@ pub struct AuthContext {
 }
 
 /// Middleware that adds a default admin AuthContext when skip_auth is enabled
-pub async fn skip_auth_middleware(
-    mut request: Request,
-    next: Next,
-) -> Result<Response, Response> {
-    debug!("skip_auth_middleware called for: {} {}", request.method(), request.uri());
+pub async fn skip_auth_middleware(mut request: Request, next: Next) -> Result<Response, Response> {
+    debug!(
+        "skip_auth_middleware called for: {} {}",
+        request.method(),
+        request.uri()
+    );
 
     // Create an admin user context
     let admin_user = UserInfo {
@@ -33,7 +34,9 @@ pub async fn skip_auth_middleware(
     };
 
     // Insert AuthContext into request extensions
-    request.extensions_mut().insert(AuthContext { user: admin_user });
+    request
+        .extensions_mut()
+        .insert(AuthContext { user: admin_user });
 
     debug!("AuthContext inserted into request extensions");
 
@@ -60,13 +63,19 @@ pub async fn auth_middleware(
         // Try to validate as a service account token first
         if let Ok(claims) = token_manager.validate_token(token) {
             let user_info = UserInfo::from_service_account_claims(&claims);
-            debug!("Authenticated user (service account): {}", user_info.username);
+            debug!(
+                "Authenticated user (service account): {}",
+                user_info.username
+            );
             user_info
         }
         // Try to validate as a bootstrap token
         else if let Ok(bootstrap_token) = bootstrap_token_manager.validate_token(token) {
             let user_info = UserInfo::from_bootstrap_token(&bootstrap_token);
-            debug!("Authenticated user (bootstrap token): {}", user_info.username);
+            debug!(
+                "Authenticated user (bootstrap token): {}",
+                user_info.username
+            );
             user_info
         }
         // Invalid token
@@ -94,23 +103,30 @@ pub async fn log_request_body_middleware(
     let (parts, body) = request.into_parts();
 
     // Only log POST/PUT/PATCH requests
-    if parts.method == axum::http::Method::POST ||
-       parts.method == axum::http::Method::PUT ||
-       parts.method == axum::http::Method::PATCH {
-
+    if parts.method == axum::http::Method::POST
+        || parts.method == axum::http::Method::PUT
+        || parts.method == axum::http::Method::PATCH
+    {
         // Read the body
         let bytes = match to_bytes(body, usize::MAX).await {
             Ok(b) => b,
             Err(e) => {
                 error!("Failed to read request body: {}", e);
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to read request body").into_response());
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to read request body",
+                )
+                    .into_response());
             }
         };
 
         // Log the body if it's not too large
         if bytes.len() < 10000 {
             if let Ok(body_str) = String::from_utf8(bytes.to_vec()) {
-                debug!("Request body for {} {}: {}", parts.method, parts.uri, body_str);
+                debug!(
+                    "Request body for {} {}: {}",
+                    parts.method, parts.uri, body_str
+                );
             }
         }
 

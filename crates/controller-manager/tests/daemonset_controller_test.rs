@@ -3,7 +3,7 @@
 
 use rusternetes_common::resources::pod::*;
 use rusternetes_common::resources::*;
-use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta, LabelSelector};
+use rusternetes_common::types::{LabelSelector, ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::daemonset::DaemonSetController;
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -45,7 +45,11 @@ fn create_test_node(name: &str, labels: Option<HashMap<String, String>>) -> Node
     }
 }
 
-fn create_test_daemonset(name: &str, namespace: &str, node_selector: Option<HashMap<String, String>>) -> DaemonSet {
+fn create_test_daemonset(
+    name: &str,
+    namespace: &str,
+    node_selector: Option<HashMap<String, String>>,
+) -> DaemonSet {
     let mut labels = HashMap::new();
     labels.insert("app".to_string(), name.to_string());
 
@@ -100,6 +104,7 @@ fn create_test_daemonset(name: &str, namespace: &str, node_selector: Option<Hash
                     priority: None,
                     priority_class_name: None,
                     hostname: None,
+                    subdomain: None,
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
@@ -146,7 +151,11 @@ async fn test_daemonset_creates_pod_per_node() {
         .iter()
         .filter_map(|p| p.spec.as_ref()?.node_name.as_ref())
         .collect();
-    assert_eq!(node_names.len(), 3, "Each pod should be on a different node");
+    assert_eq!(
+        node_names.len(),
+        3,
+        "Each pod should be on a different node"
+    );
 }
 
 #[tokio::test]
@@ -164,16 +173,31 @@ async fn test_daemonset_respects_node_selector() {
     let node2 = create_test_node("node-2", Some(hdd_labels));
     let node3 = create_test_node("node-3", Some(ssd_labels));
 
-    storage.create(&build_key("nodes", None, &node1.metadata.name), &node1).await.unwrap();
-    storage.create(&build_key("nodes", None, &node2.metadata.name), &node2).await.unwrap();
-    storage.create(&build_key("nodes", None, &node3.metadata.name), &node3).await.unwrap();
+    storage
+        .create(&build_key("nodes", None, &node1.metadata.name), &node1)
+        .await
+        .unwrap();
+    storage
+        .create(&build_key("nodes", None, &node2.metadata.name), &node2)
+        .await
+        .unwrap();
+    storage
+        .create(&build_key("nodes", None, &node3.metadata.name), &node3)
+        .await
+        .unwrap();
 
     // Create DaemonSet with node selector for SSD nodes only
     let mut node_selector = HashMap::new();
     node_selector.insert("disktype".to_string(), "ssd".to_string());
 
     let ds = create_test_daemonset("ssd-ds", "default", Some(node_selector));
-    storage.create(&build_key("daemonsets", Some("default"), &ds.metadata.name), &ds).await.unwrap();
+    storage
+        .create(
+            &build_key("daemonsets", Some("default"), &ds.metadata.name),
+            &ds,
+        )
+        .await
+        .unwrap();
 
     // Run controller
     let controller = DaemonSetController::new(storage.clone());
@@ -201,12 +225,21 @@ async fn test_daemonset_adds_pods_when_nodes_added() {
     // Create 2 nodes initially
     for i in 1..=2 {
         let node = create_test_node(&format!("node-{}", i), None);
-        storage.create(&build_key("nodes", None, &node.metadata.name), &node).await.unwrap();
+        storage
+            .create(&build_key("nodes", None, &node.metadata.name), &node)
+            .await
+            .unwrap();
     }
 
     // Create DaemonSet
     let ds = create_test_daemonset("test-ds", "default", None);
-    storage.create(&build_key("daemonsets", Some("default"), &ds.metadata.name), &ds).await.unwrap();
+    storage
+        .create(
+            &build_key("daemonsets", Some("default"), &ds.metadata.name),
+            &ds,
+        )
+        .await
+        .unwrap();
 
     // Run controller - should create 2 pods
     let controller = DaemonSetController::new(storage.clone());
@@ -217,7 +250,10 @@ async fn test_daemonset_adds_pods_when_nodes_added() {
 
     // Add a third node
     let node3 = create_test_node("node-3", None);
-    storage.create(&build_key("nodes", None, &node3.metadata.name), &node3).await.unwrap();
+    storage
+        .create(&build_key("nodes", None, &node3.metadata.name), &node3)
+        .await
+        .unwrap();
 
     // Run controller again - should create pod on new node
     controller.reconcile_all().await.unwrap();
@@ -233,12 +269,21 @@ async fn test_daemonset_removes_pods_when_nodes_removed() {
     // Create 3 nodes
     for i in 1..=3 {
         let node = create_test_node(&format!("node-{}", i), None);
-        storage.create(&build_key("nodes", None, &node.metadata.name), &node).await.unwrap();
+        storage
+            .create(&build_key("nodes", None, &node.metadata.name), &node)
+            .await
+            .unwrap();
     }
 
     // Create DaemonSet
     let ds = create_test_daemonset("test-ds", "default", None);
-    storage.create(&build_key("daemonsets", Some("default"), &ds.metadata.name), &ds).await.unwrap();
+    storage
+        .create(
+            &build_key("daemonsets", Some("default"), &ds.metadata.name),
+            &ds,
+        )
+        .await
+        .unwrap();
 
     // Run controller - should create 3 pods
     let controller = DaemonSetController::new(storage.clone());
@@ -248,7 +293,10 @@ async fn test_daemonset_removes_pods_when_nodes_removed() {
     assert_eq!(pods.len(), 3);
 
     // Remove node-2
-    storage.delete(&build_key("nodes", None, "node-2")).await.unwrap();
+    storage
+        .delete(&build_key("nodes", None, "node-2"))
+        .await
+        .unwrap();
 
     // Run controller again - should remove pod from deleted node
     controller.reconcile_all().await.unwrap();
@@ -274,7 +322,10 @@ async fn test_daemonset_updates_status() {
     // Create 3 nodes
     for i in 1..=3 {
         let node = create_test_node(&format!("node-{}", i), None);
-        storage.create(&build_key("nodes", None, &node.metadata.name), &node).await.unwrap();
+        storage
+            .create(&build_key("nodes", None, &node.metadata.name), &node)
+            .await
+            .unwrap();
     }
 
     // Create DaemonSet
@@ -301,15 +352,30 @@ async fn test_daemonset_multiple_namespaces() {
     // Create nodes
     for i in 1..=2 {
         let node = create_test_node(&format!("node-{}", i), None);
-        storage.create(&build_key("nodes", None, &node.metadata.name), &node).await.unwrap();
+        storage
+            .create(&build_key("nodes", None, &node.metadata.name), &node)
+            .await
+            .unwrap();
     }
 
     // Create DaemonSets in different namespaces
     let ds1 = create_test_daemonset("test-ds", "namespace-1", None);
     let ds2 = create_test_daemonset("test-ds", "namespace-2", None);
 
-    storage.create(&build_key("daemonsets", Some("namespace-1"), &ds1.metadata.name), &ds1).await.unwrap();
-    storage.create(&build_key("daemonsets", Some("namespace-2"), &ds2.metadata.name), &ds2).await.unwrap();
+    storage
+        .create(
+            &build_key("daemonsets", Some("namespace-1"), &ds1.metadata.name),
+            &ds1,
+        )
+        .await
+        .unwrap();
+    storage
+        .create(
+            &build_key("daemonsets", Some("namespace-2"), &ds2.metadata.name),
+            &ds2,
+        )
+        .await
+        .unwrap();
 
     // Run controller
     let controller = DaemonSetController::new(storage.clone());
@@ -329,7 +395,13 @@ async fn test_daemonset_no_nodes_no_pods() {
 
     // Create DaemonSet but NO nodes
     let ds = create_test_daemonset("test-ds", "default", None);
-    storage.create(&build_key("daemonsets", Some("default"), &ds.metadata.name), &ds).await.unwrap();
+    storage
+        .create(
+            &build_key("daemonsets", Some("default"), &ds.metadata.name),
+            &ds,
+        )
+        .await
+        .unwrap();
 
     // Run controller
     let controller = DaemonSetController::new(storage.clone());
@@ -346,11 +418,20 @@ async fn test_daemonset_pod_naming_convention() {
 
     // Create a node with dots in the name
     let node = create_test_node("node.example.com", None);
-    storage.create(&build_key("nodes", None, &node.metadata.name), &node).await.unwrap();
+    storage
+        .create(&build_key("nodes", None, &node.metadata.name), &node)
+        .await
+        .unwrap();
 
     // Create DaemonSet
     let ds = create_test_daemonset("test-ds", "default", None);
-    storage.create(&build_key("daemonsets", Some("default"), &ds.metadata.name), &ds).await.unwrap();
+    storage
+        .create(
+            &build_key("daemonsets", Some("default"), &ds.metadata.name),
+            &ds,
+        )
+        .await
+        .unwrap();
 
     // Run controller
     let controller = DaemonSetController::new(storage.clone());
@@ -362,5 +443,8 @@ async fn test_daemonset_pod_naming_convention() {
 
     let pod = &pods[0];
     assert_eq!(pod.metadata.name, "test-ds-node-example-com");
-    assert!(!pod.metadata.name.contains('.'), "Pod name should not contain dots");
+    assert!(
+        !pod.metadata.name.contains('.'),
+        "Pod name should not contain dots"
+    );
 }

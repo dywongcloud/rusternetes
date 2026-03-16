@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::VolumeSnapshotContent,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -96,7 +95,11 @@ pub async fn list_volumesnapshotcontents(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut vscs, &params)?;
 
-    let list = List::new("VolumeSnapshotContentList", "snapshot.storage.k8s.io/v1", vscs);
+    let list = List::new(
+        "VolumeSnapshotContentList",
+        "snapshot.storage.k8s.io/v1",
+        vscs,
+    );
     Ok(Json(list))
 }
 
@@ -184,14 +187,22 @@ pub async fn delete_volumesnapshotcontent(
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_cluster!(patch_volumesnapshotcontent, VolumeSnapshotContent, "volumesnapshotcontents", "snapshot.storage.k8s.io");
+crate::patch_handler_cluster!(
+    patch_volumesnapshotcontent,
+    VolumeSnapshotContent,
+    "volumesnapshotcontents",
+    "snapshot.storage.k8s.io"
+);
 
 pub async fn deletecollection_volumesnapshotcontents(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection volumesnapshotcontents with params: {:?}", params);
+    info!(
+        "DeleteCollection volumesnapshotcontents with params: {:?}",
+        params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "volumesnapshotcontents")
@@ -236,6 +247,9 @@ pub async fn deletecollection_volumesnapshotcontents(
         }
     }
 
-    info!("DeleteCollection completed: {} volumesnapshotcontents deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} volumesnapshotcontents deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

@@ -25,10 +25,7 @@ pub struct TlsConfig {
 
 impl TlsConfig {
     /// Generate a self-signed certificate for development/testing
-    pub fn generate_self_signed(
-        common_name: &str,
-        subject_alt_names: Vec<String>,
-    ) -> Result<Self> {
+    pub fn generate_self_signed(common_name: &str, subject_alt_names: Vec<String>) -> Result<Self> {
         ensure_crypto_provider();
         let mut params = CertificateParams::default();
 
@@ -50,9 +47,13 @@ impl TlsConfig {
         // Add subject alternative names (SANs)
         for san in subject_alt_names {
             if san.parse::<std::net::IpAddr>().is_ok() {
-                params.subject_alt_names.push(SanType::IpAddress(san.parse()?));
+                params
+                    .subject_alt_names
+                    .push(SanType::IpAddress(san.parse()?));
             } else {
-                params.subject_alt_names.push(SanType::DnsName(Ia5String::from_str(&san)?));
+                params
+                    .subject_alt_names
+                    .push(SanType::DnsName(Ia5String::from_str(&san)?));
             }
         }
 
@@ -79,15 +80,10 @@ impl TlsConfig {
     }
 
     /// Load certificate and key from PEM files
-    pub fn from_pem_files(
-        cert_path: &str,
-        key_path: &str,
-    ) -> Result<Self> {
+    pub fn from_pem_files(cert_path: &str, key_path: &str) -> Result<Self> {
         ensure_crypto_provider();
-        let cert_pem = std::fs::read(cert_path)
-            .context("Failed to read certificate file")?;
-        let key_pem = std::fs::read(key_path)
-            .context("Failed to read key file")?;
+        let cert_pem = std::fs::read(cert_path).context("Failed to read certificate file")?;
+        let key_pem = std::fs::read(key_path).context("Failed to read key file")?;
 
         let cert_der = rustls_pemfile::certs(&mut cert_pem.as_slice())
             .collect::<std::result::Result<Vec<_>, _>>()
@@ -121,8 +117,8 @@ impl TlsConfig {
         client_ca_cert_path: &str,
     ) -> Result<Arc<rustls::ServerConfig>> {
         // Load client CA certificate
-        let client_ca_pem = std::fs::read(client_ca_cert_path)
-            .context("Failed to read client CA certificate")?;
+        let client_ca_pem =
+            std::fs::read(client_ca_cert_path).context("Failed to read client CA certificate")?;
         let client_ca_certs = rustls_pemfile::certs(&mut client_ca_pem.as_slice())
             .collect::<std::result::Result<Vec<_>, _>>()
             .context("Failed to parse client CA certificate")?;
@@ -130,10 +126,10 @@ impl TlsConfig {
         let mut client_auth_roots = rustls::RootCertStore::empty();
         client_auth_roots.add_parsable_certificates(client_ca_certs);
 
-        let client_cert_verifier = rustls::server::WebPkiClientVerifier::builder(
-            Arc::new(client_auth_roots)
-        ).build()
-        .context("Failed to build client cert verifier")?;
+        let client_cert_verifier =
+            rustls::server::WebPkiClientVerifier::builder(Arc::new(client_auth_roots))
+                .build()
+                .context("Failed to build client cert verifier")?;
 
         let config = rustls::ServerConfig::builder()
             .with_client_cert_verifier(client_cert_verifier)
@@ -154,8 +150,7 @@ pub struct TlsClientConfig {
 impl TlsClientConfig {
     /// Create client config with CA certificate (server verification only)
     pub fn new(ca_cert_path: &str) -> Result<Self> {
-        let ca_pem = std::fs::read(ca_cert_path)
-            .context("Failed to read CA certificate")?;
+        let ca_pem = std::fs::read(ca_cert_path).context("Failed to read CA certificate")?;
         let ca_cert = rustls_pemfile::certs(&mut ca_pem.as_slice())
             .collect::<std::result::Result<Vec<_>, _>>()
             .context("Failed to parse CA certificate")?;
@@ -173,20 +168,18 @@ impl TlsClientConfig {
         client_cert_path: &str,
         client_key_path: &str,
     ) -> Result<Self> {
-        let ca_pem = std::fs::read(ca_cert_path)
-            .context("Failed to read CA certificate")?;
+        let ca_pem = std::fs::read(ca_cert_path).context("Failed to read CA certificate")?;
         let ca_cert = rustls_pemfile::certs(&mut ca_pem.as_slice())
             .collect::<std::result::Result<Vec<_>, _>>()
             .context("Failed to parse CA certificate")?;
 
-        let client_cert_pem = std::fs::read(client_cert_path)
-            .context("Failed to read client certificate")?;
+        let client_cert_pem =
+            std::fs::read(client_cert_path).context("Failed to read client certificate")?;
         let client_cert = rustls_pemfile::certs(&mut client_cert_pem.as_slice())
             .collect::<std::result::Result<Vec<_>, _>>()
             .context("Failed to parse client certificate")?;
 
-        let client_key_pem = std::fs::read(client_key_path)
-            .context("Failed to read client key")?;
+        let client_key_pem = std::fs::read(client_key_path).context("Failed to read client key")?;
         let client_key = rustls_pemfile::private_key(&mut client_key_pem.as_slice())
             .context("Failed to read client private key")?
             .ok_or_else(|| anyhow::anyhow!("Failed to parse client private key"))?;
@@ -203,11 +196,11 @@ impl TlsClientConfig {
         let mut root_cert_store = rustls::RootCertStore::empty();
         root_cert_store.add_parsable_certificates(self.ca_cert);
 
-        let config = rustls::ClientConfig::builder()
-            .with_root_certificates(root_cert_store);
+        let config = rustls::ClientConfig::builder().with_root_certificates(root_cert_store);
 
         let config = if let (Some(cert), Some(key)) = (self.client_cert, self.client_key) {
-            config.with_client_auth_cert(cert, key)
+            config
+                .with_client_auth_cert(cert, key)
                 .context("Failed to create client config with client auth")?
         } else {
             config.with_no_client_auth()
@@ -226,12 +219,14 @@ mod tests {
         let tls_config = TlsConfig::generate_self_signed(
             "localhost",
             vec!["localhost".to_string(), "127.0.0.1".to_string()],
-        ).expect("Failed to generate self-signed certificate");
+        )
+        .expect("Failed to generate self-signed certificate");
 
         assert!(!tls_config.cert.is_empty());
 
         // Should be able to create server config
-        let _server_config = tls_config.into_server_config()
+        let _server_config = tls_config
+            .into_server_config()
             .expect("Failed to create server config");
     }
 
@@ -245,7 +240,8 @@ mod tests {
                 "127.0.0.1".to_string(),
                 "::1".to_string(),
             ],
-        ).expect("Failed to generate certificate");
+        )
+        .expect("Failed to generate certificate");
 
         assert!(!tls_config.cert.is_empty());
     }

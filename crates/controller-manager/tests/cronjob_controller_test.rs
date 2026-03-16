@@ -1,9 +1,9 @@
 // CronJob Controller Integration Tests
 // Tests the CronJob controller's ability to create jobs on schedule
 
+use rusternetes_common::resources::pod::*;
 use rusternetes_common::resources::workloads::*;
 use rusternetes_common::resources::PodTemplateSpec;
-use rusternetes_common::resources::pod::*;
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::cronjob::CronJobController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
@@ -79,6 +79,7 @@ fn create_test_cronjob(name: &str, namespace: &str, schedule: &str) -> CronJob {
                             priority: None,
                             priority_class_name: None,
                             hostname: None,
+                            subdomain: None,
                             host_network: None,
                             host_pid: None,
                             host_ipc: None,
@@ -118,11 +119,27 @@ async fn test_cronjob_job_template() {
     assert_eq!(cronjob.spec.job_template.spec.completions, Some(1));
     assert_eq!(cronjob.spec.job_template.spec.parallelism, Some(1));
     assert_eq!(cronjob.spec.job_template.spec.backoff_limit, Some(3));
-    assert_eq!(cronjob.spec.job_template.spec.template.spec.restart_policy, Some("Never".to_string()));
+    assert_eq!(
+        cronjob.spec.job_template.spec.template.spec.restart_policy,
+        Some("Never".to_string())
+    );
 
     // Verify containers are configured
-    assert_eq!(cronjob.spec.job_template.spec.template.spec.containers.len(), 1);
-    assert_eq!(cronjob.spec.job_template.spec.template.spec.containers[0].name, "task");
+    assert_eq!(
+        cronjob
+            .spec
+            .job_template
+            .spec
+            .template
+            .spec
+            .containers
+            .len(),
+        1
+    );
+    assert_eq!(
+        cronjob.spec.job_template.spec.template.spec.containers[0].name,
+        "task"
+    );
 }
 
 #[tokio::test]
@@ -140,7 +157,10 @@ async fn test_cronjob_suspend() {
     controller.reconcile_all().await.unwrap();
 
     // Verify no jobs were created
-    let jobs: Vec<Job> = storage.list("/registry/jobs/default/").await.unwrap_or_default();
+    let jobs: Vec<Job> = storage
+        .list("/registry/jobs/default/")
+        .await
+        .unwrap_or_default();
     assert_eq!(jobs.len(), 0, "Should not create jobs when suspended");
 }
 
@@ -209,5 +229,8 @@ async fn test_cronjob_schedule_parsing() {
     // Run controller - should not panic on any schedule format
     let controller = CronJobController::new(storage.clone());
     let result = controller.reconcile_all().await;
-    assert!(result.is_ok(), "Controller should handle all schedule formats");
+    assert!(
+        result.is_ok(),
+        "Controller should handle all schedule formats"
+    );
 }

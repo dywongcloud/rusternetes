@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use crate::Result;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// CloudProvider defines the interface for cloud provider integrations
@@ -12,11 +12,8 @@ pub trait CloudProvider: Send + Sync {
     ) -> Result<LoadBalancerStatus>;
 
     /// Delete a load balancer for the given service
-    async fn delete_load_balancer(
-        &self,
-        service_namespace: &str,
-        service_name: &str,
-    ) -> Result<()>;
+    async fn delete_load_balancer(&self, service_namespace: &str, service_name: &str)
+        -> Result<()>;
 
     /// Get the status of a load balancer
     async fn get_load_balancer_status(
@@ -108,14 +105,38 @@ mod tests {
 
     #[test]
     fn test_cloud_provider_type_from_str() {
-        assert_eq!(CloudProviderType::from_str("aws"), Some(CloudProviderType::AWS));
-        assert_eq!(CloudProviderType::from_str("AWS"), Some(CloudProviderType::AWS));
-        assert_eq!(CloudProviderType::from_str("gcp"), Some(CloudProviderType::GCP));
-        assert_eq!(CloudProviderType::from_str("google"), Some(CloudProviderType::GCP));
-        assert_eq!(CloudProviderType::from_str("azure"), Some(CloudProviderType::Azure));
-        assert_eq!(CloudProviderType::from_str("AZURE"), Some(CloudProviderType::Azure));
-        assert_eq!(CloudProviderType::from_str("none"), Some(CloudProviderType::None));
-        assert_eq!(CloudProviderType::from_str(""), Some(CloudProviderType::None));
+        assert_eq!(
+            CloudProviderType::from_str("aws"),
+            Some(CloudProviderType::AWS)
+        );
+        assert_eq!(
+            CloudProviderType::from_str("AWS"),
+            Some(CloudProviderType::AWS)
+        );
+        assert_eq!(
+            CloudProviderType::from_str("gcp"),
+            Some(CloudProviderType::GCP)
+        );
+        assert_eq!(
+            CloudProviderType::from_str("google"),
+            Some(CloudProviderType::GCP)
+        );
+        assert_eq!(
+            CloudProviderType::from_str("azure"),
+            Some(CloudProviderType::Azure)
+        );
+        assert_eq!(
+            CloudProviderType::from_str("AZURE"),
+            Some(CloudProviderType::Azure)
+        );
+        assert_eq!(
+            CloudProviderType::from_str("none"),
+            Some(CloudProviderType::None)
+        );
+        assert_eq!(
+            CloudProviderType::from_str(""),
+            Some(CloudProviderType::None)
+        );
         assert_eq!(CloudProviderType::from_str("invalid"), None);
     }
 
@@ -152,14 +173,12 @@ mod tests {
             namespace: "default".to_string(),
             name: "test-service".to_string(),
             cluster_name: "test-cluster".to_string(),
-            ports: vec![
-                LoadBalancerPort {
-                    name: Some("http".to_string()),
-                    protocol: "TCP".to_string(),
-                    port: 80,
-                    node_port: 30080,
-                },
-            ],
+            ports: vec![LoadBalancerPort {
+                name: Some("http".to_string()),
+                protocol: "TCP".to_string(),
+                port: 80,
+                node_port: 30080,
+            }],
             node_addresses: vec!["192.168.1.10".to_string(), "192.168.1.11".to_string()],
             session_affinity: Some("ClientIP".to_string()),
             annotations,
@@ -169,18 +188,19 @@ mod tests {
         assert_eq!(service.name, "test-service");
         assert_eq!(service.ports.len(), 1);
         assert_eq!(service.node_addresses.len(), 2);
-        assert_eq!(service.annotations.get("test-key"), Some(&"test-value".to_string()));
+        assert_eq!(
+            service.annotations.get("test-key"),
+            Some(&"test-value".to_string())
+        );
     }
 
     #[test]
     fn test_loadbalancer_status_with_ip() {
         let status = LoadBalancerStatus {
-            ingress: vec![
-                LoadBalancerIngress {
-                    ip: Some("203.0.113.1".to_string()),
-                    hostname: None,
-                },
-            ],
+            ingress: vec![LoadBalancerIngress {
+                ip: Some("203.0.113.1".to_string()),
+                hostname: None,
+            }],
         };
 
         assert_eq!(status.ingress.len(), 1);
@@ -191,17 +211,19 @@ mod tests {
     #[test]
     fn test_loadbalancer_status_with_hostname() {
         let status = LoadBalancerStatus {
-            ingress: vec![
-                LoadBalancerIngress {
-                    ip: None,
-                    hostname: Some("lb-abc123.us-west-2.elb.amazonaws.com".to_string()),
-                },
-            ],
+            ingress: vec![LoadBalancerIngress {
+                ip: None,
+                hostname: Some("lb-abc123.us-west-2.elb.amazonaws.com".to_string()),
+            }],
         };
 
         assert_eq!(status.ingress.len(), 1);
         assert_eq!(status.ingress[0].ip, None);
-        assert!(status.ingress[0].hostname.as_ref().unwrap().contains("elb.amazonaws.com"));
+        assert!(status.ingress[0]
+            .hostname
+            .as_ref()
+            .unwrap()
+            .contains("elb.amazonaws.com"));
     }
 
     #[test]

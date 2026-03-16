@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
-use rusternetes_common::resources::{
-    PersistentVolume, PersistentVolumeClaim, PersistentVolumeStatus, StorageClass,
-    VolumeSnapshot, VolumeSnapshotContent,
-};
 use rusternetes_common::resources::volume::{
-    HostPathType, HostPathVolumeSource, PersistentVolumePhase,
-    PersistentVolumeReclaimPolicy, PersistentVolumeSource,
+    HostPathType, HostPathVolumeSource, PersistentVolumePhase, PersistentVolumeReclaimPolicy,
+    PersistentVolumeSource,
+};
+use rusternetes_common::resources::{
+    PersistentVolume, PersistentVolumeClaim, PersistentVolumeStatus, StorageClass, VolumeSnapshot,
+    VolumeSnapshotContent,
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, Storage};
@@ -63,7 +63,10 @@ impl<S: Storage> DynamicProvisionerController<S> {
         let pvc_name = &pvc.metadata.name;
         let namespace = pvc.metadata.namespace.as_deref().unwrap_or("default");
 
-        let storage_class_name = pvc.spec.storage_class_name.as_ref()
+        let storage_class_name = pvc
+            .spec
+            .storage_class_name
+            .as_ref()
             .context("PVC has no storage class name")?;
 
         info!(
@@ -73,10 +76,16 @@ impl<S: Storage> DynamicProvisionerController<S> {
 
         // Get the StorageClass
         let sc_key = build_key("storageclasses", None, storage_class_name);
-        let storage_class: StorageClass = self.storage.get(&sc_key).await
+        let storage_class: StorageClass = self
+            .storage
+            .get(&sc_key)
+            .await
             .with_context(|| format!("StorageClass {} not found", storage_class_name))?;
 
-        info!("Found StorageClass {} with provisioner {}", storage_class_name, storage_class.provisioner);
+        info!(
+            "Found StorageClass {} with provisioner {}",
+            storage_class_name, storage_class.provisioner
+        );
 
         // Check if provisioner is supported
         if !self.is_provisioner_supported(&storage_class.provisioner) {
@@ -92,15 +101,22 @@ impl<S: Storage> DynamicProvisionerController<S> {
         let pv_key = build_key("persistentvolumes", None, &pv_name);
 
         if let Ok(_existing_pv) = self.storage.get::<PersistentVolume>(&pv_key).await {
-            info!("PV {} already exists for PVC {}/{}", pv_name, namespace, pvc_name);
+            info!(
+                "PV {} already exists for PVC {}/{}",
+                pv_name, namespace, pvc_name
+            );
             return Ok(());
         }
 
         // Create the PV (with snapshot restore if dataSource is specified)
-        let pv = self.create_pv_for_pvc(&storage_class, pvc, &pv_name).await?;
+        let pv = self
+            .create_pv_for_pvc(&storage_class, pvc, &pv_name)
+            .await?;
 
         // Store the PV
-        self.storage.create(&pv_key, &pv).await
+        self.storage
+            .create(&pv_key, &pv)
+            .await
             .with_context(|| format!("Failed to create PV {}", pv_name))?;
 
         info!(
@@ -127,7 +143,11 @@ impl<S: Storage> DynamicProvisionerController<S> {
         let namespace = pvc.metadata.namespace.as_deref().unwrap_or("default");
 
         // Get requested storage capacity
-        let requested_storage = pvc.spec.resources.requests.as_ref()
+        let requested_storage = pvc
+            .spec
+            .resources
+            .requests
+            .as_ref()
             .and_then(|r| r.get("storage"))
             .context("PVC has no storage request")?;
 
@@ -135,7 +155,9 @@ impl<S: Storage> DynamicProvisionerController<S> {
         capacity.insert("storage".to_string(), requested_storage.clone());
 
         // Determine the path for the volume
-        let base_path = storage_class.parameters.as_ref()
+        let base_path = storage_class
+            .parameters
+            .as_ref()
             .and_then(|p| p.get("path"))
             .map(|s| s.as_str())
             .unwrap_or("/tmp/rusternetes/dynamic-pvs");
@@ -144,7 +166,8 @@ impl<S: Storage> DynamicProvisionerController<S> {
 
         // Check if this PVC is being restored from a snapshot
         let snapshot_source_path = if let Some(data_source) = &pvc.spec.data_source {
-            self.handle_snapshot_restore(data_source, namespace, &volume_path).await?
+            self.handle_snapshot_restore(data_source, namespace, &volume_path)
+                .await?
         } else {
             None
         };
@@ -160,7 +183,11 @@ impl<S: Storage> DynamicProvisionerController<S> {
             pv_name,
             volume_path,
             requested_storage,
-            if snapshot_source_path.is_some() { " (restored from snapshot)" } else { "" }
+            if snapshot_source_path.is_some() {
+                " (restored from snapshot)"
+            } else {
+                ""
+            }
         );
 
         // Create PV based on provisioner type
@@ -180,7 +207,9 @@ impl<S: Storage> DynamicProvisionerController<S> {
         };
 
         // Determine reclaim policy (default to Delete for dynamically provisioned volumes)
-        let reclaim_policy = storage_class.reclaim_policy.clone()
+        let reclaim_policy = storage_class
+            .reclaim_policy
+            .clone()
             .unwrap_or(PersistentVolumeReclaimPolicy::Delete);
 
         // Create labels to track the PVC this was created for
@@ -188,7 +217,10 @@ impl<S: Storage> DynamicProvisionerController<S> {
         labels.insert("pvc-name".to_string(), pvc.metadata.name.clone());
         labels.insert("pvc-namespace".to_string(), namespace.to_string());
         labels.insert("provisioner".to_string(), storage_class.provisioner.clone());
-        labels.insert("storage-class".to_string(), storage_class.metadata.name.clone());
+        labels.insert(
+            "storage-class".to_string(),
+            storage_class.metadata.name.clone(),
+        );
 
         let pv = PersistentVolume {
             type_meta: TypeMeta {
@@ -255,32 +287,44 @@ impl<S: Storage> DynamicProvisionerController<S> {
 
         // Get the VolumeSnapshot
         let snapshot_key = build_key("volumesnapshots", Some(namespace), snapshot_name);
-        let snapshot: VolumeSnapshot = self.storage.get(&snapshot_key).await
-            .with_context(|| format!("VolumeSnapshot {}/{} not found", namespace, snapshot_name))?;
+        let snapshot: VolumeSnapshot =
+            self.storage.get(&snapshot_key).await.with_context(|| {
+                format!("VolumeSnapshot {}/{} not found", namespace, snapshot_name)
+            })?;
 
         // Ensure snapshot is ready to use
-        let ready = snapshot.status.as_ref()
+        let ready = snapshot
+            .status
+            .as_ref()
             .and_then(|s| s.ready_to_use)
             .unwrap_or(false);
 
         if !ready {
             return Err(anyhow::anyhow!(
                 "VolumeSnapshot {}/{} is not ready to use",
-                namespace, snapshot_name
+                namespace,
+                snapshot_name
             ));
         }
 
         // Get the bound VolumeSnapshotContent
-        let content_name = snapshot.status.as_ref()
+        let content_name = snapshot
+            .status
+            .as_ref()
             .and_then(|s| s.bound_volume_snapshot_content_name.as_ref())
             .context("VolumeSnapshot has no bound VolumeSnapshotContent")?;
 
         let content_key = build_key("volumesnapshotcontents", None, content_name);
-        let content: VolumeSnapshotContent = self.storage.get(&content_key).await
+        let content: VolumeSnapshotContent = self
+            .storage
+            .get(&content_key)
+            .await
             .with_context(|| format!("VolumeSnapshotContent {} not found", content_name))?;
 
         // Get the snapshot handle (this would be the path to the snapshot data)
-        let snapshot_handle = content.status.as_ref()
+        let snapshot_handle = content
+            .status
+            .as_ref()
             .and_then(|s| s.snapshot_handle.as_ref())
             .context("VolumeSnapshotContent has no snapshot handle")?;
 
@@ -387,14 +431,8 @@ mod tests {
 
         // Verify PV metadata
         assert_eq!(pv.metadata.name, "pvc-default-test-pvc");
-        assert_eq!(
-            pv.spec.storage_class_name,
-            Some("fast".to_string())
-        );
-        assert_eq!(
-            pv.spec.capacity.get("storage"),
-            Some(&"5Gi".to_string())
-        );
+        assert_eq!(pv.spec.storage_class_name, Some("fast".to_string()));
+        assert_eq!(pv.spec.capacity.get("storage"), Some(&"5Gi".to_string()));
         assert_eq!(
             pv.spec.persistent_volume_reclaim_policy,
             Some(PersistentVolumeReclaimPolicy::Delete)
@@ -403,7 +441,10 @@ mod tests {
             pv.spec.access_modes,
             vec![PersistentVolumeAccessMode::ReadWriteOnce]
         );
-        assert_eq!(pv.status.as_ref().unwrap().phase, PersistentVolumePhase::Available);
+        assert_eq!(
+            pv.status.as_ref().unwrap().phase,
+            PersistentVolumePhase::Available
+        );
 
         // Verify hostpath volume source
         match &pv.spec.volume_source {
@@ -418,7 +459,10 @@ mod tests {
         let labels = pv.metadata.labels.as_ref().unwrap();
         assert_eq!(labels.get("pvc-name"), Some(&"test-pvc".to_string()));
         assert_eq!(labels.get("pvc-namespace"), Some(&"default".to_string()));
-        assert_eq!(labels.get("provisioner"), Some(&"rusternetes.io/hostpath".to_string()));
+        assert_eq!(
+            labels.get("provisioner"),
+            Some(&"rusternetes.io/hostpath".to_string())
+        );
         assert_eq!(labels.get("storage-class"), Some(&"fast".to_string()));
 
         // Verify annotations

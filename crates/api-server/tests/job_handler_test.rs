@@ -2,8 +2,8 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for jobs
 
+use rusternetes_common::resources::pod::{Container, PodSpec};
 use rusternetes_common::resources::{Job, JobSpec, JobStatus, LabelSelector, PodTemplateSpec};
-use rusternetes_common::resources::pod::{PodSpec, Container};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -40,7 +40,11 @@ fn create_test_job(name: &str, namespace: &str) -> Job {
                     containers: vec![Container {
                         name: "job-container".to_string(),
                         image: "busybox:latest".to_string(),
-                        command: Some(vec!["sh".to_string(), "-c".to_string(), "echo hello".to_string()]),
+                        command: Some(vec![
+                            "sh".to_string(),
+                            "-c".to_string(),
+                            "echo hello".to_string(),
+                        ]),
                         args: None,
                         env: None,
                         ports: None,
@@ -66,6 +70,7 @@ fn create_test_job(name: &str, namespace: &str) -> Job {
                     host_pid: None,
                     host_ipc: None,
                     hostname: None,
+                    subdomain: None,
                     priority_class_name: None,
                     priority: None,
                     scheduler_name: None,
@@ -407,7 +412,10 @@ async fn test_job_restart_policy_on_failure() {
 
     // Create job with OnFailure restart policy
     let created: Job = storage.create(&key, &job).await.unwrap();
-    assert_eq!(created.spec.template.spec.restart_policy, Some("OnFailure".to_string()));
+    assert_eq!(
+        created.spec.template.spec.restart_policy,
+        Some("OnFailure".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();

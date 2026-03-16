@@ -14,7 +14,11 @@ pub struct NetworkPolicy {
 }
 
 impl NetworkPolicy {
-    pub fn new(name: impl Into<String>, namespace: impl Into<String>, spec: NetworkPolicySpec) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        namespace: impl Into<String>,
+        spec: NetworkPolicySpec,
+    ) -> Self {
         Self {
             type_meta: TypeMeta {
                 kind: "NetworkPolicy".to_string(),

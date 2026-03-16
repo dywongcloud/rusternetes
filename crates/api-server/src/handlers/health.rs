@@ -72,7 +72,9 @@ pub async fn readyz(State(state): State<Arc<ApiServerState>>) -> (StatusCode, Js
 
 /// Detailed health check endpoint
 /// Returns detailed status of all components
-pub async fn healthz_verbose(State(state): State<Arc<ApiServerState>>) -> (StatusCode, Json<HealthStatus>) {
+pub async fn healthz_verbose(
+    State(state): State<Arc<ApiServerState>>,
+) -> (StatusCode, Json<HealthStatus>) {
     let mut checks = Vec::new();
     let mut all_healthy = true;
 
@@ -211,25 +213,31 @@ pub async fn pprof_goroutine() -> Result<String, (StatusCode, String)> {
 /// Returns information about blocking operations
 pub async fn pprof_block() -> Result<String, (StatusCode, String)> {
     Ok("Block profiling in Rust requires custom instrumentation\n\
-        Consider using tokio-console for async task blocking analysis".to_string())
+        Consider using tokio-console for async task blocking analysis"
+        .to_string())
 }
 
 /// Mutex profiling endpoint stub
 /// Returns information about mutex contention
 pub async fn pprof_mutex() -> Result<String, (StatusCode, String)> {
     Ok("Mutex profiling in Rust requires custom instrumentation\n\
-        Consider using parking_lot with contention metrics".to_string())
+        Consider using parking_lot with contention metrics"
+        .to_string())
 }
 
 /// Symbol lookup endpoint
 /// Returns symbol information for profiling
 pub async fn pprof_symbol() -> String {
     "Symbol lookup not implemented\n\
-     Rust binaries contain symbol information in debug builds".to_string()
+     Rust binaries contain symbol information in debug builds"
+        .to_string()
 }
 
 /// Trace endpoint - returns execution trace
 /// This endpoint captures execution traces for analysis
 pub async fn pprof_trace() -> Result<String, (StatusCode, String)> {
-    Ok("Execution tracing in Rust requires tokio-console or tracing subscriber integration".to_string())
+    Ok(
+        "Execution tracing in Rust requires tokio-console or tracing subscriber integration"
+            .to_string(),
+    )
 }

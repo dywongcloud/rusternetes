@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::CronJob,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -22,10 +21,7 @@ pub async fn create(
     Query(params): Query<HashMap<String, String>>,
     Json(mut cronjob): Json<CronJob>,
 ) -> Result<(StatusCode, Json<CronJob>)> {
-    info!(
-        "Creating cronjob: {}/{}",
-        namespace, cronjob.metadata.name
-    );
+    info!("Creating cronjob: {}/{}", namespace, cronjob.metadata.name);
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -108,7 +104,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: CronJob {:}/{:} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: CronJob {:}/{:} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(cronjob));
     }
     let key = build_key("cronjobs", Some(&namespace), &name);
@@ -147,11 +146,15 @@ pub async fn delete_cronjob(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: CronJob {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: CronJob {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &cronjob).await?;
+    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &cronjob)
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -195,8 +198,7 @@ pub async fn list_all_cronjobs(
     info!("Listing all cronjobs");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "cronjobs")
-        .with_api_group("batch");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "cronjobs").with_api_group("batch");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -224,7 +226,10 @@ pub async fn deletecollection_cronjobs(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection cronjobs in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection cronjobs in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "cronjobs")
@@ -270,6 +275,9 @@ pub async fn deletecollection_cronjobs(
         }
     }
 
-    info!("DeleteCollection completed: {} cronjobs deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} cronjobs deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

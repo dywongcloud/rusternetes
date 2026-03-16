@@ -7,9 +7,8 @@ use axum::{
 use rusternetes_common::{
     auth::ServiceAccountClaims,
     authz::{Decision, RequestAttributes},
-    resources::{ServiceAccount, Secret},
-    List,
-    Result,
+    resources::{Secret, ServiceAccount},
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -51,11 +50,18 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: ServiceAccount {}/{} validated successfully (not created)", namespace, service_account.metadata.name);
+        info!(
+            "Dry-run: ServiceAccount {}/{} validated successfully (not created)",
+            namespace, service_account.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(service_account)));
     }
 
-    let key = build_key("serviceaccounts", Some(&namespace), &service_account.metadata.name);
+    let key = build_key(
+        "serviceaccounts",
+        Some(&namespace),
+        &service_account.metadata.name,
+    );
     let created = state.storage.create(&key, &service_account).await?;
     info!("ServiceAccount stored successfully, preparing to create token Secret");
 
@@ -85,18 +91,24 @@ pub async fn create(
         string_data.insert("ca.crt".to_string(), ca_cert.clone());
     }
 
-    let mut secret = Secret::new(&secret_name, &namespace)
-        .with_type("kubernetes.io/service-account-token");
+    let mut secret =
+        Secret::new(&secret_name, &namespace).with_type("kubernetes.io/service-account-token");
 
     // Add labels and annotations
     secret.metadata.labels = Some({
         let mut labels = HashMap::new();
-        labels.insert("kubernetes.io/service-account.name".to_string(), sa_name.clone());
+        labels.insert(
+            "kubernetes.io/service-account.name".to_string(),
+            sa_name.clone(),
+        );
         labels
     });
     secret.metadata.annotations = Some({
         let mut annotations = HashMap::new();
-        annotations.insert("kubernetes.io/service-account.uid".to_string(), sa_uid.clone());
+        annotations.insert(
+            "kubernetes.io/service-account.uid".to_string(),
+            sa_uid.clone(),
+        );
         annotations
     });
     secret.string_data = Some(string_data);
@@ -106,13 +118,22 @@ pub async fn create(
 
     // Store the secret
     let secret_key = build_key("secrets", Some(&namespace), &secret_name);
-    info!("Attempting to create ServiceAccount token secret: {}", secret_name);
+    info!(
+        "Attempting to create ServiceAccount token secret: {}",
+        secret_name
+    );
     match state.storage.create(&secret_key, &secret).await {
         Ok(_) => {
-            info!("Successfully created ServiceAccount token secret: {}", secret_name);
+            info!(
+                "Successfully created ServiceAccount token secret: {}",
+                secret_name
+            );
         }
         Err(e) => {
-            info!("Warning: Failed to create ServiceAccount token secret {}: {}", secret_name, e);
+            info!(
+                "Warning: Failed to create ServiceAccount token secret {}: {}",
+                secret_name, e
+            );
             // Don't fail the ServiceAccount creation if secret creation fails
         }
     }
@@ -176,7 +197,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: ServiceAccount {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: ServiceAccount {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(service_account));
     }
 
@@ -217,7 +241,10 @@ pub async fn delete_service_account(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: ServiceAccount {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: ServiceAccount {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -265,8 +292,7 @@ pub async fn list_all_serviceaccounts(
     info!("Listing all serviceaccounts");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "serviceaccounts")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "serviceaccounts").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -294,7 +320,10 @@ pub async fn deletecollection_serviceaccounts(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection serviceaccounts in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection serviceaccounts in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "serviceaccounts")
@@ -340,6 +369,9 @@ pub async fn deletecollection_serviceaccounts(
         }
     }
 
-    info!("DeleteCollection completed: {} serviceaccounts deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} serviceaccounts deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

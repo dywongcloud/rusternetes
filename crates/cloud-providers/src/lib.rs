@@ -1,10 +1,10 @@
 pub mod aws;
-pub mod gcp;
 pub mod azure;
+pub mod gcp;
 
 use rusternetes_common::{
     cloud_provider::{CloudProvider, CloudProviderType},
-    Result, Error,
+    Error, Result,
 };
 use std::sync::Arc;
 
@@ -26,7 +26,7 @@ pub async fn create_provider(
             #[cfg(not(feature = "aws"))]
             {
                 Err(Error::Internal(
-                    "AWS provider not available. Compile with --features aws".to_string()
+                    "AWS provider not available. Compile with --features aws".to_string(),
                 ))
             }
         }
@@ -34,11 +34,13 @@ pub async fn create_provider(
         CloudProviderType::GCP => {
             #[cfg(feature = "gcp")]
             {
-                let project_id = config.get("project_id")
+                let project_id = config
+                    .get("project_id")
                     .ok_or_else(|| Error::InvalidResource("GCP project_id required".to_string()))?
                     .clone();
 
-                let region = config.get("region")
+                let region = config
+                    .get("region")
                     .ok_or_else(|| Error::InvalidResource("GCP region required".to_string()))?
                     .clone();
 
@@ -49,7 +51,7 @@ pub async fn create_provider(
             #[cfg(not(feature = "gcp"))]
             {
                 Err(Error::Internal(
-                    "GCP provider not available. Compile with --features gcp".to_string()
+                    "GCP provider not available. Compile with --features gcp".to_string(),
                 ))
             }
         }
@@ -57,15 +59,22 @@ pub async fn create_provider(
         CloudProviderType::Azure => {
             #[cfg(feature = "azure")]
             {
-                let subscription_id = config.get("subscription_id")
-                    .ok_or_else(|| Error::InvalidResource("Azure subscription_id required".to_string()))?
+                let subscription_id = config
+                    .get("subscription_id")
+                    .ok_or_else(|| {
+                        Error::InvalidResource("Azure subscription_id required".to_string())
+                    })?
                     .clone();
 
-                let resource_group = config.get("resource_group")
-                    .ok_or_else(|| Error::InvalidResource("Azure resource_group required".to_string()))?
+                let resource_group = config
+                    .get("resource_group")
+                    .ok_or_else(|| {
+                        Error::InvalidResource("Azure resource_group required".to_string())
+                    })?
                     .clone();
 
-                let location = config.get("location")
+                let location = config
+                    .get("location")
                     .ok_or_else(|| Error::InvalidResource("Azure location required".to_string()))?
                     .clone();
 
@@ -73,24 +82,24 @@ pub async fn create_provider(
                     cluster_name,
                     subscription_id,
                     resource_group,
-                    location
-                ).await?;
+                    location,
+                )
+                .await?;
                 Ok(Arc::new(provider))
             }
 
             #[cfg(not(feature = "azure"))]
             {
                 Err(Error::Internal(
-                    "Azure provider not available. Compile with --features azure".to_string()
+                    "Azure provider not available. Compile with --features azure".to_string(),
                 ))
             }
         }
 
-        CloudProviderType::None => {
-            Err(Error::InvalidResource(
-                "Cloud provider is set to 'none'. LoadBalancer services require a cloud provider".to_string()
-            ))
-        }
+        CloudProviderType::None => Err(Error::InvalidResource(
+            "Cloud provider is set to 'none'. LoadBalancer services require a cloud provider"
+                .to_string(),
+        )),
     }
 }
 
@@ -169,7 +178,8 @@ mod tests {
                 CloudProviderType::None,
                 "test-cluster".to_string(),
                 std::collections::HashMap::new(),
-            ).await
+            )
+            .await
         });
 
         assert!(result.is_err());
@@ -187,7 +197,8 @@ mod tests {
                 CloudProviderType::AWS,
                 "test-cluster".to_string(),
                 std::collections::HashMap::new(),
-            ).await
+            )
+            .await
         });
 
         assert!(result.is_err());

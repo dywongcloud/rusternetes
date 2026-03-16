@@ -151,13 +151,11 @@ impl LeaderElector {
                 // Either the key doesn't exist
                 Compare::version(self.config.lock_key.clone(), CompareOp::Equal, 0),
             ])
-            .and_then(vec![
-                TxnOp::put(
-                    self.config.lock_key.clone(),
-                    self.config.identity.clone(),
-                    Some(etcd_client::PutOptions::new().with_lease(lease_id)),
-                ),
-            ])
+            .and_then(vec![TxnOp::put(
+                self.config.lock_key.clone(),
+                self.config.identity.clone(),
+                Some(etcd_client::PutOptions::new().with_lease(lease_id)),
+            )])
             .or_else(vec![TxnOp::get(self.config.lock_key.clone(), None)]);
 
         let txn_resp = client
@@ -381,19 +379,23 @@ mod tests {
             retry_interval: 1,
         };
 
-        let elector1 = Arc::new(LeaderElector::new(endpoints.clone(), config1).await.unwrap());
-        let elector2 = Arc::new(LeaderElector::new(endpoints.clone(), config2).await.unwrap());
+        let elector1 = Arc::new(
+            LeaderElector::new(endpoints.clone(), config1)
+                .await
+                .unwrap(),
+        );
+        let elector2 = Arc::new(
+            LeaderElector::new(endpoints.clone(), config2)
+                .await
+                .unwrap(),
+        );
 
         // Start both electors
         let elector1_clone = elector1.clone();
-        let handle1 = tokio::spawn(async move {
-            elector1_clone.run().await
-        });
+        let handle1 = tokio::spawn(async move { elector1_clone.run().await });
 
         let elector2_clone = elector2.clone();
-        let handle2 = tokio::spawn(async move {
-            elector2_clone.run().await
-        });
+        let handle2 = tokio::spawn(async move { elector2_clone.run().await });
 
         // Wait for leader election
         sleep(Duration::from_secs(3)).await;

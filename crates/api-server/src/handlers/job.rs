@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::Job,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -22,10 +21,7 @@ pub async fn create(
     Query(params): Query<HashMap<String, String>>,
     Json(mut job): Json<Job>,
 ) -> Result<(StatusCode, Json<Job>)> {
-    info!(
-        "Creating job: {}/{}",
-        namespace, job.metadata.name
-    );
+    info!("Creating job: {}/{}", namespace, job.metadata.name);
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -49,7 +45,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Job {}/{} validated successfully (not created)", namespace, job.metadata.name);
+        info!(
+            "Dry-run: Job {}/{} validated successfully (not created)",
+            namespace, job.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(job)));
     }
 
@@ -114,7 +113,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Job {:}/{:} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: Job {:}/{:} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(job));
     }
     let key = build_key("jobs", Some(&namespace), &name);
@@ -153,7 +155,10 @@ pub async fn delete_job(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: Job {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: Job {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -201,8 +206,7 @@ pub async fn list_all_jobs(
     info!("Listing all jobs");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "jobs")
-        .with_api_group("batch");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "jobs").with_api_group("batch");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -230,7 +234,10 @@ pub async fn deletecollection_jobs(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection jobs in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection jobs in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "jobs")

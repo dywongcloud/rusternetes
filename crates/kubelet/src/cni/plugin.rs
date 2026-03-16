@@ -1,13 +1,13 @@
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::io::Write;
 use tracing::{debug, error, info, warn};
 
 use super::config::{NetworkConfigList, PluginConfig};
 use super::result::{CniError, CniResult, ErrorCode};
 use super::{CniCommand, CNI_VERSION};
-use super::{CNI_COMMAND, CNI_CONTAINERID, CNI_NETNS, CNI_IFNAME, CNI_ARGS, CNI_PATH};
+use super::{CNI_ARGS, CNI_COMMAND, CNI_CONTAINERID, CNI_IFNAME, CNI_NETNS, CNI_PATH};
 
 /// CNI Plugin executor
 pub struct CniPlugin {
@@ -104,7 +104,11 @@ impl CniPlugin {
                     "Plugin {} failed with exit code {}: {}",
                     self.plugin_type,
                     output.status.code().unwrap_or(-1),
-                    if !stderr.is_empty() { stderr.as_ref() } else { stdout.as_ref() }
+                    if !stderr.is_empty() {
+                        stderr.as_ref()
+                    } else {
+                        stdout.as_ref()
+                    }
                 ),
             ));
         }
@@ -121,7 +125,8 @@ impl CniPlugin {
             CniError::new(
                 ErrorCode::DecodingFailure,
                 format!("Failed to parse plugin output: {}", e),
-            ).with_details(stdout.to_string())
+            )
+            .with_details(stdout.to_string())
         })?;
 
         debug!("Plugin {} completed successfully", self.plugin_type);

@@ -2,8 +2,14 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for persistent volumes
 
-use rusternetes_common::resources::{PersistentVolume, PersistentVolumeSpec, PersistentVolumeStatus, PersistentVolumeAccessMode};
-use rusternetes_common::resources::volume::{PersistentVolumeSource, HostPathVolumeSource, HostPathType, NFSVolumeSource, PersistentVolumeReclaimPolicy, PersistentVolumeMode, PersistentVolumePhase, VolumeNodeAffinity, NodeSelector, NodeSelectorTerm, NodeSelectorRequirement};
+use rusternetes_common::resources::volume::{
+    HostPathType, HostPathVolumeSource, NFSVolumeSource, NodeSelector, NodeSelectorRequirement,
+    NodeSelectorTerm, PersistentVolumeMode, PersistentVolumePhase, PersistentVolumeReclaimPolicy,
+    PersistentVolumeSource, VolumeNodeAffinity,
+};
+use rusternetes_common::resources::{
+    PersistentVolume, PersistentVolumeAccessMode, PersistentVolumeSpec, PersistentVolumeStatus,
+};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -65,8 +71,14 @@ async fn test_pv_create_and_get() {
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
     assert_eq!(created.metadata.name, "test-pv");
     assert!(!created.metadata.uid.is_empty());
-    assert_eq!(created.spec.capacity.get("storage"), Some(&"10Gi".to_string()));
-    assert_eq!(created.status.as_ref().unwrap().phase, PersistentVolumePhase::Available);
+    assert_eq!(
+        created.spec.capacity.get("storage"),
+        Some(&"10Gi".to_string())
+    );
+    assert_eq!(
+        created.status.as_ref().unwrap().phase,
+        PersistentVolumePhase::Available
+    );
 
     // Get
     let retrieved: PersistentVolume = storage.get(&key).await.unwrap();
@@ -92,11 +104,17 @@ async fn test_pv_update() {
     pv.spec.capacity = new_capacity;
 
     let updated: PersistentVolume = storage.update(&key, &pv).await.unwrap();
-    assert_eq!(updated.spec.capacity.get("storage"), Some(&"20Gi".to_string()));
+    assert_eq!(
+        updated.spec.capacity.get("storage"),
+        Some(&"20Gi".to_string())
+    );
 
     // Verify update
     let retrieved: PersistentVolume = storage.get(&key).await.unwrap();
-    assert_eq!(retrieved.spec.capacity.get("storage"), Some(&"20Gi".to_string()));
+    assert_eq!(
+        retrieved.spec.capacity.get("storage"),
+        Some(&"20Gi".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -162,7 +180,10 @@ async fn test_pv_reclaim_policy_retain() {
 
     // Create with Retain policy
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.spec.persistent_volume_reclaim_policy, Some(PersistentVolumeReclaimPolicy::Retain));
+    assert_eq!(
+        created.spec.persistent_volume_reclaim_policy,
+        Some(PersistentVolumeReclaimPolicy::Retain)
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -179,7 +200,10 @@ async fn test_pv_reclaim_policy_delete() {
 
     // Create with Delete policy
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.spec.persistent_volume_reclaim_policy, Some(PersistentVolumeReclaimPolicy::Delete));
+    assert_eq!(
+        created.spec.persistent_volume_reclaim_policy,
+        Some(PersistentVolumeReclaimPolicy::Delete)
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -196,7 +220,10 @@ async fn test_pv_reclaim_policy_recycle() {
 
     // Create with Recycle policy
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.spec.persistent_volume_reclaim_policy, Some(PersistentVolumeReclaimPolicy::Recycle));
+    assert_eq!(
+        created.spec.persistent_volume_reclaim_policy,
+        Some(PersistentVolumeReclaimPolicy::Recycle)
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -260,7 +287,10 @@ async fn test_pv_status_available() {
 
     // Create with Available status
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.status.as_ref().unwrap().phase, PersistentVolumePhase::Available);
+    assert_eq!(
+        created.status.as_ref().unwrap().phase,
+        PersistentVolumePhase::Available
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -281,7 +311,10 @@ async fn test_pv_status_bound() {
 
     // Create with Bound status
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.status.as_ref().unwrap().phase, PersistentVolumePhase::Bound);
+    assert_eq!(
+        created.status.as_ref().unwrap().phase,
+        PersistentVolumePhase::Bound
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -298,7 +331,10 @@ async fn test_pv_with_storage_class() {
 
     // Create with storage class
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.spec.storage_class_name, Some("fast-ssd".to_string()));
+    assert_eq!(
+        created.spec.storage_class_name,
+        Some("fast-ssd".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -313,7 +349,10 @@ async fn test_pv_volume_mode_filesystem() {
 
     // Create with Filesystem mode
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    assert_eq!(created.spec.volume_mode, Some(PersistentVolumeMode::Filesystem));
+    assert_eq!(
+        created.spec.volume_mode,
+        Some(PersistentVolumeMode::Filesystem)
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -353,7 +392,10 @@ async fn test_pv_metadata_immutability() {
 
     let updated: PersistentVolume = storage.update(&key, &updated_pv).await.unwrap();
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.spec.persistent_volume_reclaim_policy, Some(PersistentVolumeReclaimPolicy::Delete));
+    assert_eq!(
+        updated.spec.persistent_volume_reclaim_policy,
+        Some(PersistentVolumeReclaimPolicy::Delete)
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -438,7 +480,10 @@ async fn test_pv_with_annotations() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut annotations = HashMap::new();
-    annotations.insert("pv.kubernetes.io/provisioned-by".to_string(), "manual".to_string());
+    annotations.insert(
+        "pv.kubernetes.io/provisioned-by".to_string(),
+        "manual".to_string(),
+    );
 
     let mut pv = create_test_pv("test-annotations", "10Gi");
     pv.metadata.annotations = Some(annotations);
@@ -449,7 +494,11 @@ async fn test_pv_with_annotations() {
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
     assert!(created.metadata.annotations.is_some());
     assert_eq!(
-        created.metadata.annotations.unwrap().get("pv.kubernetes.io/provisioned-by"),
+        created
+            .metadata
+            .annotations
+            .unwrap()
+            .get("pv.kubernetes.io/provisioned-by"),
         Some(&"manual".to_string())
     );
 

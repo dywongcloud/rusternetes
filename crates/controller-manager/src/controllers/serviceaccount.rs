@@ -1,12 +1,12 @@
 use anyhow::Result;
+use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use rusternetes_common::resources::{Namespace, Secret, ServiceAccount};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
-use jsonwebtoken::{encode, EncodingKey, Header, Algorithm};
-use serde::{Serialize, Deserialize};
 
 /// JWT Claims for ServiceAccount tokens
 /// Follows Kubernetes ServiceAccount token format
@@ -85,27 +85,30 @@ impl<S: Storage> ServiceAccountController<S> {
     /// Looks for the key at SA_SIGNING_KEY_PATH environment variable
     /// or defaults to ~/.rusternetes/keys/sa-signing-key.pem
     fn load_signing_key() -> Option<EncodingKey> {
-        let key_path = std::env::var("SA_SIGNING_KEY_PATH")
-            .unwrap_or_else(|_| {
-                let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-                format!("{}/.rusternetes/keys/sa-signing-key.pem", home)
-            });
+        let key_path = std::env::var("SA_SIGNING_KEY_PATH").unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+            format!("{}/.rusternetes/keys/sa-signing-key.pem", home)
+        });
 
         match std::fs::read(&key_path) {
-            Ok(key_bytes) => {
-                match EncodingKey::from_rsa_pem(&key_bytes) {
-                    Ok(key) => {
-                        info!("Loaded ServiceAccount signing key from {}", key_path);
-                        Some(key)
-                    }
-                    Err(e) => {
-                        error!("Failed to parse ServiceAccount signing key from {}: {}", key_path, e);
-                        None
-                    }
+            Ok(key_bytes) => match EncodingKey::from_rsa_pem(&key_bytes) {
+                Ok(key) => {
+                    info!("Loaded ServiceAccount signing key from {}", key_path);
+                    Some(key)
                 }
-            }
+                Err(e) => {
+                    error!(
+                        "Failed to parse ServiceAccount signing key from {}: {}",
+                        key_path, e
+                    );
+                    None
+                }
+            },
             Err(e) => {
-                debug!("Failed to read ServiceAccount signing key from {}: {}", key_path, e);
+                debug!(
+                    "Failed to read ServiceAccount signing key from {}: {}",
+                    key_path, e
+                );
                 None
             }
         }
@@ -145,7 +148,10 @@ impl<S: Storage> ServiceAccountController<S> {
         // Check if default ServiceAccount already exists
         match self.storage.get::<ServiceAccount>(&sa_key).await {
             Ok(_) => {
-                debug!("Default ServiceAccount already exists in namespace {}", namespace);
+                debug!(
+                    "Default ServiceAccount already exists in namespace {}",
+                    namespace
+                );
                 return Ok(());
             }
             Err(rusternetes_common::Error::NotFound(_)) => {
@@ -196,11 +202,17 @@ impl<S: Storage> ServiceAccountController<S> {
 
         // Check if token secret already exists
         if self.storage.get::<Secret>(&secret_key).await.is_ok() {
-            debug!("Token secret already exists for ServiceAccount {}/{}", namespace, sa_name);
+            debug!(
+                "Token secret already exists for ServiceAccount {}/{}",
+                namespace, sa_name
+            );
             return Ok(());
         }
 
-        debug!("Creating token secret for ServiceAccount {}/{}", namespace, sa_name);
+        debug!(
+            "Creating token secret for ServiceAccount {}/{}",
+            namespace, sa_name
+        );
 
         // Get the ServiceAccount to retrieve its UID
         let sa_key = build_key("serviceaccounts", Some(namespace), sa_name);
@@ -254,7 +266,10 @@ impl<S: Storage> ServiceAccountController<S> {
 
         self.storage.create(&secret_key, &secret).await?;
 
-        info!("Created token secret {} for ServiceAccount {}/{}", secret_name, namespace, sa_name);
+        info!(
+            "Created token secret {} for ServiceAccount {}/{}",
+            secret_name, namespace, sa_name
+        );
         Ok(())
     }
 
@@ -294,12 +309,21 @@ impl<S: Storage> ServiceAccountController<S> {
             let token = encode(&header, &claims, signing_key)
                 .map_err(|e| anyhow::anyhow!("Failed to encode JWT token: {}", e))?;
 
-            info!("Generated signed JWT token for ServiceAccount {}/{}", namespace, sa_name);
+            info!(
+                "Generated signed JWT token for ServiceAccount {}/{}",
+                namespace, sa_name
+            );
             Ok(token)
         } else {
             // Fallback to simple token format if no signing key
-            warn!("No signing key available - generating unsigned token for ServiceAccount {}/{}", namespace, sa_name);
-            Ok(format!("rusternetes-sa-{}-{}-token-{}", namespace, sa_name, sa_uid))
+            warn!(
+                "No signing key available - generating unsigned token for ServiceAccount {}/{}",
+                namespace, sa_name
+            );
+            Ok(format!(
+                "rusternetes-sa-{}-{}-token-{}",
+                namespace, sa_name, sa_uid
+            ))
         }
     }
 
@@ -332,7 +356,10 @@ impl<S: Storage> ServiceAccountController<S> {
 
     /// Clean up token secrets when a ServiceAccount is deleted
     async fn cleanup_serviceaccount_tokens(&self, namespace: &str, sa_name: &str) -> Result<()> {
-        info!("Cleaning up tokens for ServiceAccount {}/{}", namespace, sa_name);
+        info!(
+            "Cleaning up tokens for ServiceAccount {}/{}",
+            namespace, sa_name
+        );
 
         // List all secrets in the namespace
         let prefix = build_prefix("secrets", Some(namespace));
@@ -343,14 +370,20 @@ impl<S: Storage> ServiceAccountController<S> {
             if let Some(annotations) = &secret.metadata.annotations {
                 if let Some(sa) = annotations.get("kubernetes.io/service-account.name") {
                     if sa == sa_name {
-                        let secret_key = build_key("secrets", Some(namespace), &secret.metadata.name);
+                        let secret_key =
+                            build_key("secrets", Some(namespace), &secret.metadata.name);
                         match self.storage.delete(&secret_key).await {
                             Ok(_) => {
-                                info!("Deleted token secret {} for ServiceAccount {}/{}",
-                                    secret.metadata.name, namespace, sa_name);
+                                info!(
+                                    "Deleted token secret {} for ServiceAccount {}/{}",
+                                    secret.metadata.name, namespace, sa_name
+                                );
                             }
                             Err(e) => {
-                                error!("Failed to delete token secret {}: {}", secret.metadata.name, e);
+                                error!(
+                                    "Failed to delete token secret {}: {}",
+                                    secret.metadata.name, e
+                                );
                             }
                         }
                     }
@@ -378,17 +411,15 @@ mod tests {
 
     #[test]
     fn test_token_generation() {
-        let storage = Arc::new(
-            tokio::runtime::Runtime::new()
+        let storage = Arc::new(tokio::runtime::Runtime::new().unwrap().block_on(async {
+            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
+                .await
                 .unwrap()
-                .block_on(async {
-                    EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                        .await
-                        .unwrap()
-                }),
-        );
+        }));
         let controller = ServiceAccountController::new(storage);
-        let token = controller.generate_token("default", "default", "test-uid-123").unwrap();
+        let token = controller
+            .generate_token("default", "default", "test-uid-123")
+            .unwrap();
         // Without a signing key, should generate a simple token
         assert!(token.contains("default"));
         assert!(token.contains("test-uid-123"));

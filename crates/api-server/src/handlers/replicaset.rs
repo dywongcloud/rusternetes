@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::{ReplicaSet, ReplicaSetStatus},
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -60,7 +59,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: ReplicaSet {}/{} validated successfully (not created)", namespace, replicaset.metadata.name);
+        info!(
+            "Dry-run: ReplicaSet {}/{} validated successfully (not created)",
+            namespace, replicaset.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(replicaset)));
     }
 
@@ -126,7 +128,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: ReplicaSet {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: ReplicaSet {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(replicaset));
     }
 
@@ -173,7 +178,10 @@ pub async fn delete_replicaset(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: ReplicaSet {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: ReplicaSet {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -190,9 +198,7 @@ pub async fn delete_replicaset(
     } else {
         info!(
             "ReplicaSet {}/{} marked for deletion (has finalizers: {:?})",
-            namespace,
-            name,
-            replicaset.metadata.finalizers
+            namespace, name, replicaset.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -237,8 +243,7 @@ pub async fn list_all_replicasets(
     info!("Listing all replicasets");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "replicasets")
-        .with_api_group("apps");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "replicasets").with_api_group("apps");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -266,7 +271,10 @@ pub async fn deletecollection_replicasets(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection replicasets in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection replicasets in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "replicasets")
@@ -312,6 +320,9 @@ pub async fn deletecollection_replicasets(
         }
     }
 
-    info!("DeleteCollection completed: {} replicasets deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} replicasets deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

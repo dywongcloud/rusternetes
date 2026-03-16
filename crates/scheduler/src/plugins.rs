@@ -371,9 +371,7 @@ pub fn get_default_plugins() -> PluginRegistry {
     registry.register_score_plugin(std::sync::Arc::new(NodeAffinityScoringPlugin));
     registry.register_score_plugin(std::sync::Arc::new(PodAffinityScoringPlugin));
     registry.register_score_plugin(std::sync::Arc::new(PodAntiAffinityScoringPlugin));
-    registry.register_score_plugin(std::sync::Arc::new(
-        TopologySpreadConstraintsScoringPlugin,
-    ));
+    registry.register_score_plugin(std::sync::Arc::new(TopologySpreadConstraintsScoringPlugin));
 
     registry
 }

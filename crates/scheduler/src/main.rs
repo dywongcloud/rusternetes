@@ -1,13 +1,13 @@
-mod scheduler;
 mod advanced;
 mod framework;
 mod plugins;
+mod scheduler;
 
 use anyhow::Result;
 use axum::{routing::get, Router};
 use clap::Parser;
+use rusternetes_common::leader_election::{LeaderElectionConfig, LeaderElector};
 use rusternetes_common::observability::MetricsRegistry;
-use rusternetes_common::leader_election::{LeaderElector, LeaderElectionConfig};
 use rusternetes_storage::etcd::EtcdStorage;
 use scheduler::Scheduler;
 use std::sync::Arc;
@@ -88,10 +88,7 @@ async fn main() -> Result<()> {
     info!("Starting metrics server on {}", metrics_addr);
 
     tokio::spawn(async move {
-        let app = Router::new()
-            .route("/metrics", get(|| async move {
-                metrics_clone.gather()
-            }));
+        let app = Router::new().route("/metrics", get(|| async move { metrics_clone.gather() }));
 
         let listener = tokio::net::TcpListener::bind(&metrics_addr).await.unwrap();
         axum::serve(listener, app).await.unwrap();
@@ -99,9 +96,9 @@ async fn main() -> Result<()> {
 
     // Initialize leader election if enabled
     if args.enable_leader_election {
-        let identity = args.leader_election_identity.unwrap_or_else(|| {
-            format!("scheduler-{}", Uuid::new_v4())
-        });
+        let identity = args
+            .leader_election_identity
+            .unwrap_or_else(|| format!("scheduler-{}", Uuid::new_v4()));
 
         let config = LeaderElectionConfig {
             identity: identity.clone(),

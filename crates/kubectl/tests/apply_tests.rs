@@ -247,7 +247,11 @@ spec:
     fn test_apply_server_side_flag() {
         // Test server-side apply flag detection
         fn should_use_server_side(flag: bool) -> &'static str {
-            if flag { "PATCH" } else { "PUT" }
+            if flag {
+                "PATCH"
+            } else {
+                "PUT"
+            }
         }
 
         assert_eq!(should_use_server_side(true), "PATCH");

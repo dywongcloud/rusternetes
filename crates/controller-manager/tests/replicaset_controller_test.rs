@@ -1,5 +1,7 @@
-use rusternetes_common::resources::{ReplicaSet, ReplicaSetSpec, PodTemplateSpec, PodSpec, Container, Pod, PodStatus};
-use rusternetes_common::types::{LabelSelector, ObjectMeta, TypeMeta, Phase};
+use rusternetes_common::resources::{
+    Container, Pod, PodSpec, PodStatus, PodTemplateSpec, ReplicaSet, ReplicaSetSpec,
+};
+use rusternetes_common::types::{LabelSelector, ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::replicaset::ReplicaSetController;
 use rusternetes_storage::{build_key, MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -60,6 +62,7 @@ fn create_test_replicaset(name: &str, namespace: &str, replicas: i32) -> Replica
                     service_account_name: None,
                     automount_service_account_token: None,
                     hostname: None,
+                    subdomain: None,
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
@@ -99,7 +102,11 @@ async fn test_replicaset_creates_pods() {
 
     // Verify pods have correct labels
     for pod in &pods {
-        let labels = pod.metadata.labels.as_ref().expect("Pod should have labels");
+        let labels = pod
+            .metadata
+            .labels
+            .as_ref()
+            .expect("Pod should have labels");
         assert_eq!(labels.get("app"), Some(&"web".to_string()));
     }
 }
@@ -259,6 +266,7 @@ async fn test_replicaset_selector_matching() {
                     service_account_name: None,
                     automount_service_account_token: None,
                     hostname: None,
+                    subdomain: None,
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
@@ -277,7 +285,10 @@ async fn test_replicaset_selector_matching() {
     };
 
     storage
-        .create(&build_key("replicasets", Some("default"), "frontend-rs"), &rs)
+        .create(
+            &build_key("replicasets", Some("default"), "frontend-rs"),
+            &rs,
+        )
         .await
         .unwrap();
 
@@ -310,7 +321,10 @@ async fn test_replicaset_selector_matching() {
     };
 
     storage
-        .create(&build_key("pods", Some("default"), "non-matching-pod"), &non_matching_pod)
+        .create(
+            &build_key("pods", Some("default"), "non-matching-pod"),
+            &non_matching_pod,
+        )
         .await
         .unwrap();
 
@@ -320,7 +334,11 @@ async fn test_replicaset_selector_matching() {
     // Verify 2 pods created (replicaset should ignore the non-matching pod)
     let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
     // Total should be 3: 1 non-matching + 2 from replicaset
-    assert_eq!(pods.len(), 3, "Should have 1 non-matching pod + 2 replicaset pods");
+    assert_eq!(
+        pods.len(),
+        3,
+        "Should have 1 non-matching pod + 2 replicaset pods"
+    );
 
     // Count pods with matching labels
     let matching_pods = pods
@@ -417,8 +435,17 @@ async fn test_replicaset_updates_status() {
     assert!(updated_rs.status.is_some(), "ReplicaSet should have status");
 
     let status = updated_rs.status.unwrap();
-    assert_eq!(status.replicas, 3, "Status should show 3 replicas (matching actual pod count)");
+    assert_eq!(
+        status.replicas, 3,
+        "Status should show 3 replicas (matching actual pod count)"
+    );
     // Pods start in Pending state, so ready and available should be 0
-    assert!(status.ready_replicas >= 0, "Ready replicas should be non-negative");
-    assert!(status.available_replicas >= 0, "Available replicas should be non-negative");
+    assert!(
+        status.ready_replicas >= 0,
+        "Ready replicas should be non-negative"
+    );
+    assert!(
+        status.available_replicas >= 0,
+        "Available replicas should be non-negative"
+    );
 }

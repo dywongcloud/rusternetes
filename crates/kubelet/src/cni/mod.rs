@@ -10,7 +10,7 @@ pub mod runtime;
 
 pub use config::{NetworkConfig, NetworkConfigList, PluginConfig};
 pub use plugin::{CniPlugin, CniPluginManager};
-pub use result::{CniResult, CniError, ErrorCode};
+pub use result::{CniError, CniResult, ErrorCode};
 pub use runtime::{CniRuntime, NetworkAttachment};
 
 /// CNI specification version supported

@@ -12,16 +12,28 @@ pub async fn execute(
 ) -> Result<()> {
     let path = match resource_type {
         "deployment" | "deployments" | "deploy" => {
-            format!("/apis/apps/v1/namespaces/{}/deployments/{}/scale", namespace, name)
+            format!(
+                "/apis/apps/v1/namespaces/{}/deployments/{}/scale",
+                namespace, name
+            )
         }
         "replicaset" | "replicasets" | "rs" => {
-            format!("/apis/apps/v1/namespaces/{}/replicasets/{}/scale", namespace, name)
+            format!(
+                "/apis/apps/v1/namespaces/{}/replicasets/{}/scale",
+                namespace, name
+            )
         }
         "statefulset" | "statefulsets" | "sts" => {
-            format!("/apis/apps/v1/namespaces/{}/statefulsets/{}/scale", namespace, name)
+            format!(
+                "/apis/apps/v1/namespaces/{}/statefulsets/{}/scale",
+                namespace, name
+            )
         }
         "replicationcontroller" | "rc" => {
-            format!("/api/v1/namespaces/{}/replicationcontrollers/{}/scale", namespace, name)
+            format!(
+                "/api/v1/namespaces/{}/replicationcontrollers/{}/scale",
+                namespace, name
+            )
         }
         _ => anyhow::bail!("Resource type {} does not support scaling", resource_type),
     };

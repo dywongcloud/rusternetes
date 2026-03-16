@@ -103,16 +103,12 @@ mod tests {
 
         assert_eq!(ingress_class.metadata.name, "nginx");
         assert_eq!(ingress_class.type_meta.kind, "IngressClass");
-        assert_eq!(
-            ingress_class.type_meta.api_version,
-            "networking.k8s.io/v1"
-        );
+        assert_eq!(ingress_class.type_meta.api_version, "networking.k8s.io/v1");
     }
 
     #[test]
     fn test_ingress_class_with_controller() {
-        let ingress_class = IngressClass::new("nginx")
-            .with_controller("k8s.io/ingress-nginx");
+        let ingress_class = IngressClass::new("nginx").with_controller("k8s.io/ingress-nginx");
 
         assert!(ingress_class.spec.is_some());
         let spec = ingress_class.spec.unwrap();

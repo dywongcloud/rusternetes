@@ -21,6 +21,7 @@ fn empty_pod_spec() -> PodSpec {
         host_ipc: None,
         volumes: None,
         hostname: None,
+        subdomain: None,
         affinity: None,
         scheduler_name: None,
         tolerations: None,
@@ -128,10 +129,7 @@ async fn test_delete_already_marked_logs_correctly() {
         .await
         .unwrap();
 
-    assert_eq!(
-        marked, true,
-        "Already marked resource should return true"
-    );
+    assert_eq!(marked, true, "Already marked resource should return true");
 
     // Verify deletion timestamp didn't change
     let updated_pod: Pod = storage.get(key).await.unwrap();
@@ -213,20 +211,23 @@ async fn test_has_metadata_trait_implementations() {
     use rusternetes_common::types::LabelSelector;
     use std::collections::HashMap;
 
-    let deployment = Deployment::new("test-deployment", DeploymentSpec {
-        replicas: 1,
-        selector: LabelSelector {
-            match_labels: Some(HashMap::new()),
-            match_expressions: None,
+    let deployment = Deployment::new(
+        "test-deployment",
+        DeploymentSpec {
+            replicas: 1,
+            selector: LabelSelector {
+                match_labels: Some(HashMap::new()),
+                match_expressions: None,
+            },
+            template: PodTemplateSpec {
+                metadata: None,
+                spec: empty_pod_spec(),
+            },
+            strategy: None,
+            min_ready_seconds: None,
+            revision_history_limit: None,
         },
-        template: PodTemplateSpec {
-            metadata: None,
-            spec: empty_pod_spec(),
-        },
-        strategy: None,
-        min_ready_seconds: None,
-        revision_history_limit: None,
-    });
+    );
     assert_eq!(deployment.metadata().name, "test-deployment");
 
     let namespace = Namespace::new("test-namespace");

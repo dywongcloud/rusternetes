@@ -132,7 +132,11 @@ async fn test_csr_controller_handles_no_usages() {
     let storage = setup_test().await;
 
     // Create CSR with no usages
-    let csr = create_test_csr("no-usages-csr", "kubernetes.io/kube-apiserver-client", vec![]);
+    let csr = create_test_csr(
+        "no-usages-csr",
+        "kubernetes.io/kube-apiserver-client",
+        vec![],
+    );
 
     let csr_key = build_key("certificatesigningrequests", None, "no-usages-csr");
     storage.create(&csr_key, &csr).await.unwrap();
@@ -147,7 +151,10 @@ async fn test_csr_controller_skips_approved_csr() {
     let storage = setup_test().await;
 
     // Create an already approved CSR
-    let csr = create_csr_with_status("approved-csr", CertificateSigningRequestConditionType::Approved);
+    let csr = create_csr_with_status(
+        "approved-csr",
+        CertificateSigningRequestConditionType::Approved,
+    );
 
     let csr_key = build_key("certificatesigningrequests", None, "approved-csr");
     storage.create(&csr_key, &csr).await.unwrap();
@@ -206,9 +213,25 @@ async fn test_csr_controller_handles_multiple_csrs() {
 
     // Create multiple CSRs with different configurations
     let csrs = vec![
-        ("kubelet-csr", "kubernetes.io/kube-apiserver-client-kubelet", vec![KeyUsage::DigitalSignature, KeyUsage::ClientAuth]),
-        ("server-csr", "kubernetes.io/kubelet-serving", vec![KeyUsage::DigitalSignature, KeyUsage::KeyEncipherment, KeyUsage::ServerAuth]),
-        ("legacy-csr", "kubernetes.io/legacy-unknown", vec![KeyUsage::Any]),
+        (
+            "kubelet-csr",
+            "kubernetes.io/kube-apiserver-client-kubelet",
+            vec![KeyUsage::DigitalSignature, KeyUsage::ClientAuth],
+        ),
+        (
+            "server-csr",
+            "kubernetes.io/kubelet-serving",
+            vec![
+                KeyUsage::DigitalSignature,
+                KeyUsage::KeyEncipherment,
+                KeyUsage::ServerAuth,
+            ],
+        ),
+        (
+            "legacy-csr",
+            "kubernetes.io/legacy-unknown",
+            vec![KeyUsage::Any],
+        ),
     ];
 
     for (name, signer, usages) in csrs {
@@ -222,8 +245,10 @@ async fn test_csr_controller_handles_multiple_csrs() {
     assert!(controller.reconcile_all().await.is_ok());
 
     // Verify all CSRs still exist
-    let all_csrs: Vec<CertificateSigningRequest> =
-        storage.list("/registry/certificatesigningrequests/").await.unwrap();
+    let all_csrs: Vec<CertificateSigningRequest> = storage
+        .list("/registry/certificatesigningrequests/")
+        .await
+        .unwrap();
     assert_eq!(all_csrs.len(), 3);
 }
 
@@ -295,7 +320,11 @@ async fn test_csr_controller_handles_different_signers() {
             signer,
             vec![KeyUsage::DigitalSignature, KeyUsage::ClientAuth],
         );
-        let csr_key = build_key("certificatesigningrequests", None, &format!("signer-csr-{}", i));
+        let csr_key = build_key(
+            "certificatesigningrequests",
+            None,
+            &format!("signer-csr-{}", i),
+        );
         storage.create(&csr_key, &csr).await.unwrap();
     }
 
@@ -304,8 +333,10 @@ async fn test_csr_controller_handles_different_signers() {
     assert!(controller.reconcile_all().await.is_ok());
 
     // Verify all CSRs exist
-    let all_csrs: Vec<CertificateSigningRequest> =
-        storage.list("/registry/certificatesigningrequests/").await.unwrap();
+    let all_csrs: Vec<CertificateSigningRequest> = storage
+        .list("/registry/certificatesigningrequests/")
+        .await
+        .unwrap();
     assert_eq!(all_csrs.len(), 5);
 }
 
@@ -335,17 +366,37 @@ async fn test_csr_controller_handles_expiration_seconds() {
     );
     no_expiry.spec.expiration_seconds = None;
 
-    storage.create(&build_key("certificatesigningrequests", None, "short-expiry-csr"), &short_expiry).await.unwrap();
-    storage.create(&build_key("certificatesigningrequests", None, "long-expiry-csr"), &long_expiry).await.unwrap();
-    storage.create(&build_key("certificatesigningrequests", None, "no-expiry-csr"), &no_expiry).await.unwrap();
+    storage
+        .create(
+            &build_key("certificatesigningrequests", None, "short-expiry-csr"),
+            &short_expiry,
+        )
+        .await
+        .unwrap();
+    storage
+        .create(
+            &build_key("certificatesigningrequests", None, "long-expiry-csr"),
+            &long_expiry,
+        )
+        .await
+        .unwrap();
+    storage
+        .create(
+            &build_key("certificatesigningrequests", None, "no-expiry-csr"),
+            &no_expiry,
+        )
+        .await
+        .unwrap();
 
     // Run controller
     let controller = CertificateSigningRequestController::new(storage.clone());
     assert!(controller.reconcile_all().await.is_ok());
 
     // Verify all CSRs exist
-    let all_csrs: Vec<CertificateSigningRequest> =
-        storage.list("/registry/certificatesigningrequests/").await.unwrap();
+    let all_csrs: Vec<CertificateSigningRequest> = storage
+        .list("/registry/certificatesigningrequests/")
+        .await
+        .unwrap();
     assert_eq!(all_csrs.len(), 3);
 }
 
@@ -372,7 +423,10 @@ async fn test_csr_controller_handles_user_info() {
 
     // Verify CSR exists with user info
     let stored_csr: CertificateSigningRequest = storage.get(&csr_key).await.unwrap();
-    assert_eq!(stored_csr.spec.username, Some("alice@example.com".to_string()));
+    assert_eq!(
+        stored_csr.spec.username,
+        Some("alice@example.com".to_string())
+    );
     assert_eq!(stored_csr.spec.groups.as_ref().unwrap().len(), 2);
 }
 
@@ -385,7 +439,9 @@ async fn test_csr_controller_no_csrs() {
     assert!(controller.reconcile_all().await.is_ok());
 
     // Verify no CSRs exist
-    let all_csrs: Vec<CertificateSigningRequest> =
-        storage.list("/registry/certificatesigningrequests/").await.unwrap();
+    let all_csrs: Vec<CertificateSigningRequest> = storage
+        .list("/registry/certificatesigningrequests/")
+        .await
+        .unwrap();
     assert_eq!(all_csrs.len(), 0);
 }

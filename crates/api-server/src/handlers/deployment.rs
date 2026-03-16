@@ -1,15 +1,14 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
-    http::{StatusCode, HeaderMap},
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::Deployment,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -51,7 +50,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Deployment {}/{} validated successfully (not created)", namespace, deployment.metadata.name);
+        info!(
+            "Dry-run: Deployment {}/{} validated successfully (not created)",
+            namespace, deployment.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(deployment)));
     }
 
@@ -118,7 +120,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Deployment {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: Deployment {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(deployment));
     }
 
@@ -165,7 +170,10 @@ pub async fn delete_deployment(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: Deployment {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: Deployment {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -186,9 +194,7 @@ pub async fn delete_deployment(
         // Deployment has finalizers and was marked for deletion
         info!(
             "Deployment {}/{} marked for deletion (has finalizers: {:?})",
-            namespace,
-            name,
-            deployment.metadata.finalizers
+            namespace, name, deployment.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -249,8 +255,7 @@ pub async fn list_all_deployments(
     info!("Listing all deployments");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "deployments")
-        .with_api_group("apps");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "deployments").with_api_group("apps");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -292,7 +297,10 @@ pub async fn deletecollection_deployments(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection deployments in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection deployments in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "deployments")
@@ -338,6 +346,9 @@ pub async fn deletecollection_deployments(
         }
     }
 
-    info!("DeleteCollection completed: {} deployments deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} deployments deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

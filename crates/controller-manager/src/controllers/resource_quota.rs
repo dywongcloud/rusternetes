@@ -24,13 +24,20 @@ impl<S: Storage> ResourceQuotaController<S> {
         debug!("Starting resource quota reconciliation");
 
         // List all resource quotas across all namespaces
-        let quotas: Vec<ResourceQuota> = self.storage.list(&build_prefix("resourcequotas", None)).await?;
+        let quotas: Vec<ResourceQuota> = self
+            .storage
+            .list(&build_prefix("resourcequotas", None))
+            .await?;
 
         for quota in quotas {
             if let Err(e) = self.reconcile_quota(&quota).await {
                 error!(
                     "Failed to reconcile quota {}/{}: {}",
-                    quota.metadata.namespace.as_ref().unwrap_or(&"default".to_string()),
+                    quota
+                        .metadata
+                        .namespace
+                        .as_ref()
+                        .unwrap_or(&"default".to_string()),
                     &quota.metadata.name,
                     e
                 );
@@ -42,7 +49,10 @@ impl<S: Storage> ResourceQuotaController<S> {
 
     /// Reconcile a single resource quota
     async fn reconcile_quota(&self, quota: &ResourceQuota) -> Result<()> {
-        let namespace = quota.metadata.namespace.as_ref()
+        let namespace = quota
+            .metadata
+            .namespace
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("ResourceQuota has no namespace"))?;
         let quota_name = &quota.metadata.name;
 
@@ -62,11 +72,7 @@ impl<S: Storage> ResourceQuotaController<S> {
         let key = build_key("resourcequotas", Some(namespace), quota_name);
         self.storage.update(&key, &updated_quota).await?;
 
-        info!(
-            "Updated quota {}/{} status",
-            namespace,
-            quota_name
-        );
+        info!("Updated quota {}/{} status", namespace, quota_name);
 
         Ok(())
     }
@@ -122,16 +128,25 @@ impl<S: Storage> ResourceQuotaController<S> {
 
         // Convert to Kubernetes resource format
         if total_cpu_requests > 0 {
-            usage.insert("requests.cpu".to_string(), format!("{}m", total_cpu_requests));
+            usage.insert(
+                "requests.cpu".to_string(),
+                format!("{}m", total_cpu_requests),
+            );
         }
         if total_memory_requests > 0 {
-            usage.insert("requests.memory".to_string(), self.bytes_to_memory_string(total_memory_requests));
+            usage.insert(
+                "requests.memory".to_string(),
+                self.bytes_to_memory_string(total_memory_requests),
+            );
         }
         if total_cpu_limits > 0 {
             usage.insert("limits.cpu".to_string(), format!("{}m", total_cpu_limits));
         }
         if total_memory_limits > 0 {
-            usage.insert("limits.memory".to_string(), self.bytes_to_memory_string(total_memory_limits));
+            usage.insert(
+                "limits.memory".to_string(),
+                self.bytes_to_memory_string(total_memory_limits),
+            );
         }
 
         Ok(usage)
@@ -194,7 +209,6 @@ impl<S: Storage> ResourceQuotaController<S> {
             format!("{}", bytes)
         }
     }
-
 }
 
 #[cfg(test)]
@@ -219,7 +233,10 @@ mod tests {
         let controller = ResourceQuotaController::new(storage);
 
         assert_eq!(controller.parse_memory_to_bytes("1Gi").unwrap(), 1073741824);
-        assert_eq!(controller.parse_memory_to_bytes("512Mi").unwrap(), 536870912);
+        assert_eq!(
+            controller.parse_memory_to_bytes("512Mi").unwrap(),
+            536870912
+        );
         assert_eq!(controller.parse_memory_to_bytes("1024Ki").unwrap(), 1048576);
         assert_eq!(controller.parse_memory_to_bytes("1000").unwrap(), 1000);
     }

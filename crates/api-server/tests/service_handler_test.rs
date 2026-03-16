@@ -2,7 +2,7 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for services
 
-use rusternetes_common::resources::{Service, ServiceSpec, ServiceType, ServicePort};
+use rusternetes_common::resources::{Service, ServicePort, ServiceSpec, ServiceType};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -69,19 +69,13 @@ async fn test_service_create_and_get() {
     let created: Service = storage.create(&key, &service).await.unwrap();
     assert_eq!(created.metadata.name, "test-svc");
     assert_eq!(created.metadata.namespace, Some("default".to_string()));
-    assert_eq!(
-        created.spec.service_type,
-        Some(ServiceType::ClusterIP)
-    );
+    assert_eq!(created.spec.service_type, Some(ServiceType::ClusterIP));
     assert!(!created.metadata.uid.is_empty());
 
     // Get
     let retrieved: Service = storage.get(&key).await.unwrap();
     assert_eq!(retrieved.metadata.name, "test-svc");
-    assert_eq!(
-        retrieved.spec.service_type,
-        Some(ServiceType::ClusterIP)
-    );
+    assert_eq!(retrieved.spec.service_type, Some(ServiceType::ClusterIP));
 
     // Clean up
     storage.delete(&key).await.unwrap();

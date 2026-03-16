@@ -37,7 +37,11 @@ pub async fn execute(client: &ApiClient, dump: bool) -> Result<()> {
                 if let Some(items) = nodes.get("items").and_then(|i| i.as_array()) {
                     println!("Nodes ({}):", items.len());
                     for node in items {
-                        if let Some(name) = node.get("metadata").and_then(|m| m.get("name")).and_then(|n| n.as_str()) {
+                        if let Some(name) = node
+                            .get("metadata")
+                            .and_then(|m| m.get("name"))
+                            .and_then(|n| n.as_str())
+                        {
                             println!("  - {}", name);
                             if let Some(status) = node.get("status") {
                                 if let Some(node_info) = status.get("nodeInfo") {
@@ -63,7 +67,11 @@ pub async fn execute(client: &ApiClient, dump: bool) -> Result<()> {
                 if let Some(items) = namespaces.get("items").and_then(|i| i.as_array()) {
                     println!("Namespaces ({}):", items.len());
                     for ns in items {
-                        if let Some(name) = ns.get("metadata").and_then(|m| m.get("name")).and_then(|n| n.as_str()) {
+                        if let Some(name) = ns
+                            .get("metadata")
+                            .and_then(|m| m.get("name"))
+                            .and_then(|n| n.as_str())
+                        {
                             println!("  - {}", name);
                         }
                     }
@@ -77,7 +85,9 @@ pub async fn execute(client: &ApiClient, dump: bool) -> Result<()> {
         }
     } else {
         // Basic mode
-        println!("To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.");
+        println!(
+            "To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'."
+        );
     }
 
     Ok(())

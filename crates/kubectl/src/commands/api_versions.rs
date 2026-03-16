@@ -29,13 +29,10 @@ pub async fn execute(client: &ApiClient) -> Result<()> {
     versions.push("v1".to_string());
 
     // Get API groups
-    let api_groups: ApiGroupList = client
-        .get("/apis")
-        .await
-        .map_err(|e| match e {
-            crate::client::GetError::NotFound => anyhow::anyhow!("API groups not found"),
-            crate::client::GetError::Other(e) => e,
-        })?;
+    let api_groups: ApiGroupList = client.get("/apis").await.map_err(|e| match e {
+        crate::client::GetError::NotFound => anyhow::anyhow!("API groups not found"),
+        crate::client::GetError::Other(e) => e,
+    })?;
 
     for group in api_groups.groups {
         for version in group.versions {

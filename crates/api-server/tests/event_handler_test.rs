@@ -5,7 +5,7 @@
 use rusternetes_common::resources::{Event, EventSource, EventType, ObjectReference};
 use rusternetes_common::types::ObjectMeta;
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 // Helper function to create test Event
@@ -244,7 +244,10 @@ async fn test_event_different_involved_objects() {
 
     let key3 = build_key("events", Some(namespace), "deployment-event");
     let created3: Event = storage.create(&key3, &deployment_event).await.unwrap();
-    assert_eq!(created3.involved_object.kind, Some("Deployment".to_string()));
+    assert_eq!(
+        created3.involved_object.kind,
+        Some("Deployment".to_string())
+    );
 
     // Cleanup
     storage.delete(&key1).await.unwrap();
@@ -291,7 +294,10 @@ async fn test_event_source_components() {
 
     let key3 = build_key("events", Some(namespace), "controller-event");
     let created3: Event = storage.create(&key3, &controller_event).await.unwrap();
-    assert_eq!(created3.source.component, "replicaset-controller".to_string());
+    assert_eq!(
+        created3.source.component,
+        "replicaset-controller".to_string()
+    );
 
     // Cleanup
     storage.delete(&key1).await.unwrap();
@@ -383,7 +389,10 @@ async fn test_event_with_related_object() {
     let created: Event = storage.create(&key, &event).await.unwrap();
 
     assert!(created.related.is_some());
-    assert_eq!(created.related.as_ref().unwrap().kind, Some("ReplicaSet".to_string()));
+    assert_eq!(
+        created.related.as_ref().unwrap().kind,
+        Some("ReplicaSet".to_string())
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -404,7 +413,10 @@ async fn test_event_with_field_path() {
     let key = build_key("events", Some(namespace), "field-path-event");
     let created: Event = storage.create(&key, &event).await.unwrap();
 
-    assert_eq!(created.involved_object.field_path, Some("spec.containers{nginx}".to_string()));
+    assert_eq!(
+        created.involved_object.field_path,
+        Some("spec.containers{nginx}".to_string())
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -428,7 +440,10 @@ async fn test_event_with_labels() {
     let created: Event = storage.create(&key, &event).await.unwrap();
 
     assert!(created.metadata.labels.is_some());
-    assert_eq!(created.metadata.labels.as_ref().unwrap().get("app"), Some(&"test-app".to_string()));
+    assert_eq!(
+        created.metadata.labels.as_ref().unwrap().get("app"),
+        Some(&"test-app".to_string())
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -443,7 +458,10 @@ async fn test_event_with_annotations() {
 
     event.metadata.annotations = Some({
         let mut annotations = HashMap::new();
-        annotations.insert("description".to_string(), "Test event for monitoring".to_string());
+        annotations.insert(
+            "description".to_string(),
+            "Test event for monitoring".to_string(),
+        );
         annotations.insert("alert-level".to_string(), "info".to_string());
         annotations
     });
@@ -453,7 +471,12 @@ async fn test_event_with_annotations() {
 
     assert!(created.metadata.annotations.is_some());
     assert_eq!(
-        created.metadata.annotations.as_ref().unwrap().get("description"),
+        created
+            .metadata
+            .annotations
+            .as_ref()
+            .unwrap()
+            .get("description"),
         Some(&"Test event for monitoring".to_string())
     );
 
@@ -478,7 +501,10 @@ async fn test_event_metadata_immutability() {
     let updated: Event = storage.update(&key, &created).await.unwrap();
 
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.metadata.creation_timestamp, original_creation_timestamp);
+    assert_eq!(
+        updated.metadata.creation_timestamp,
+        original_creation_timestamp
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();

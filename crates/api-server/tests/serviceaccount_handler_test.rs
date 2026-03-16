@@ -340,7 +340,10 @@ async fn test_sa_with_annotations() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut annotations = HashMap::new();
-    annotations.insert("description".to_string(), "Test service account".to_string());
+    annotations.insert(
+        "description".to_string(),
+        "Test service account".to_string(),
+    );
     annotations.insert("owner".to_string(), "platform-team".to_string());
 
     let mut sa = create_test_sa("test-annotations", "default");

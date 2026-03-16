@@ -2,7 +2,7 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for nodes
 
-use rusternetes_common::resources::{Node, NodeSpec, NodeStatus, NodeCondition, NodeAddress};
+use rusternetes_common::resources::{Node, NodeAddress, NodeCondition, NodeSpec, NodeStatus};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -40,16 +40,14 @@ fn create_test_node(name: &str) -> Node {
         status: Some(NodeStatus {
             capacity: None,
             allocatable: None,
-            conditions: Some(vec![
-                NodeCondition {
-                    condition_type: "Ready".to_string(),
-                    status: "True".to_string(),
-                    last_heartbeat_time: Some(chrono::Utc::now()),
-                    last_transition_time: Some(chrono::Utc::now()),
-                    reason: Some("KubeletReady".to_string()),
-                    message: Some("kubelet is posting ready status".to_string()),
-                },
-            ]),
+            conditions: Some(vec![NodeCondition {
+                condition_type: "Ready".to_string(),
+                status: "True".to_string(),
+                last_heartbeat_time: Some(chrono::Utc::now()),
+                last_transition_time: Some(chrono::Utc::now()),
+                reason: Some("KubeletReady".to_string()),
+                message: Some("kubelet is posting ready status".to_string()),
+            }]),
             addresses: Some(vec![
                 NodeAddress {
                     address_type: "InternalIP".to_string(),
@@ -75,7 +73,10 @@ async fn test_node_create_and_get() {
     // Create
     let created: Node = storage.create(&key, &node).await.unwrap();
     assert_eq!(created.metadata.name, "test-node");
-    assert_eq!(created.spec.as_ref().unwrap().pod_cidr, Some("10.244.0.0/24".to_string()));
+    assert_eq!(
+        created.spec.as_ref().unwrap().pod_cidr,
+        Some("10.244.0.0/24".to_string())
+    );
 
     // Get
     let retrieved: Node = storage.get(&key).await.unwrap();
@@ -183,7 +184,13 @@ async fn test_node_ready_condition() {
 
     // Create with Ready condition
     let created: Node = storage.create(&key, &node).await.unwrap();
-    let conditions = created.status.as_ref().unwrap().conditions.as_ref().unwrap();
+    let conditions = created
+        .status
+        .as_ref()
+        .unwrap()
+        .conditions
+        .as_ref()
+        .unwrap();
     assert_eq!(conditions.len(), 1);
     assert_eq!(conditions[0].condition_type, "Ready");
     assert_eq!(conditions[0].status, "True");
@@ -239,7 +246,10 @@ async fn test_node_with_pod_cidr() {
 
     // Create with CIDR
     let created: Node = storage.create(&key, &node).await.unwrap();
-    assert_eq!(created.spec.as_ref().unwrap().pod_cidr, Some("10.100.0.0/24".to_string()));
+    assert_eq!(
+        created.spec.as_ref().unwrap().pod_cidr,
+        Some("10.100.0.0/24".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -286,7 +296,10 @@ async fn test_node_with_labels() {
     assert!(created.metadata.labels.is_some());
     let created_labels = created.metadata.labels.unwrap();
     assert!(created_labels.contains_key("node-role.kubernetes.io/master"));
-    assert_eq!(created_labels.get("kubernetes.io/arch"), Some(&"amd64".to_string()));
+    assert_eq!(
+        created_labels.get("kubernetes.io/arch"),
+        Some(&"amd64".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -358,7 +371,11 @@ async fn test_node_with_annotations() {
     let created: Node = storage.create(&key, &node).await.unwrap();
     assert!(created.metadata.annotations.is_some());
     assert_eq!(
-        created.metadata.annotations.unwrap().get("node.alpha.kubernetes.io/ttl"),
+        created
+            .metadata
+            .annotations
+            .unwrap()
+            .get("node.alpha.kubernetes.io/ttl"),
         Some(&"0".to_string())
     );
 
@@ -371,7 +388,8 @@ async fn test_node_with_provider_id() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut node = create_test_node("test-provider");
-    node.spec.as_mut().unwrap().provider_id = Some("aws:///us-east-1a/i-1234567890abcdef0".to_string());
+    node.spec.as_mut().unwrap().provider_id =
+        Some("aws:///us-east-1a/i-1234567890abcdef0".to_string());
 
     let key = build_key("nodes", None, "test-provider");
 

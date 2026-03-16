@@ -15,9 +15,25 @@ pub async fn execute(
     let (is_upload, pod_name, pod_path, local_path) = parse_copy_spec(source, destination)?;
 
     if is_upload {
-        copy_to_pod(client, namespace, &pod_name, &pod_path, &local_path, container).await
+        copy_to_pod(
+            client,
+            namespace,
+            &pod_name,
+            &pod_path,
+            &local_path,
+            container,
+        )
+        .await
     } else {
-        copy_from_pod(client, namespace, &pod_name, &pod_path, &local_path, container).await
+        copy_from_pod(
+            client,
+            namespace,
+            &pod_name,
+            &pod_path,
+            &local_path,
+            container,
+        )
+        .await
     }
 }
 
@@ -29,14 +45,24 @@ fn parse_copy_spec(source: &str, dest: &str) -> Result<(bool, String, String, St
         if parts.len() != 2 {
             anyhow::bail!("Invalid source format: {}", source);
         }
-        Ok((false, parts[0].to_string(), parts[1].to_string(), dest.to_string()))
+        Ok((
+            false,
+            parts[0].to_string(),
+            parts[1].to_string(),
+            dest.to_string(),
+        ))
     } else if dest.contains(':') && !source.contains(':') {
         // Copy from local to pod
         let parts: Vec<&str> = dest.splitn(2, ':').collect();
         if parts.len() != 2 {
             anyhow::bail!("Invalid destination format: {}", dest);
         }
-        Ok((true, parts[0].to_string(), parts[1].to_string(), source.to_string()))
+        Ok((
+            true,
+            parts[0].to_string(),
+            parts[1].to_string(),
+            source.to_string(),
+        ))
     } else {
         anyhow::bail!("One of source or destination must be in pod:path format");
     }
@@ -51,8 +77,8 @@ async fn copy_to_pod(
     container: Option<&str>,
 ) -> Result<()> {
     // Check if local path exists
-    let local_metadata = fs::metadata(local_path)
-        .context(format!("Local path not found: {}", local_path))?;
+    let local_metadata =
+        fs::metadata(local_path).context(format!("Local path not found: {}", local_path))?;
 
     // Create tar archive of local file/directory
     let tar_data = if local_metadata.is_dir() {
@@ -71,7 +97,15 @@ async fn copy_to_pod(
     ];
 
     // Execute tar extraction via exec API
-    exec_with_stdin(client, namespace, pod_name, container, &extract_cmd, &tar_data).await?;
+    exec_with_stdin(
+        client,
+        namespace,
+        pod_name,
+        container,
+        &extract_cmd,
+        &tar_data,
+    )
+    .await?;
 
     println!("Copied {} to {}:{}", local_path, pod_name, pod_path);
     Ok(())
@@ -110,8 +144,7 @@ fn create_tar_from_file(path: &str) -> Result<Vec<u8>> {
     {
         let mut tar = tar::Builder::new(&mut output);
         let file_path = Path::new(path);
-        let file_name = file_path.file_name()
-            .context("Invalid file name")?;
+        let file_name = file_path.file_name().context("Invalid file name")?;
         tar.append_path_with_name(path, file_name)?;
         tar.finish()?;
     }
@@ -164,14 +197,17 @@ async fn exec_with_stdin(
     let url = url::Url::parse(&ws_url)?;
 
     // Connect WebSocket
-    let (ws_stream, _) = connect_async(url).await
+    let (ws_stream, _) = connect_async(url)
+        .await
         .context("Failed to connect to exec WebSocket")?;
 
     let (mut write, mut read) = ws_stream.split();
 
     // Send stdin data
     let stdin_msg = StreamMessage::new(StreamChannel::Stdin, stdin_data.to_vec());
-    write.send(Message::Binary(stdin_msg.encode())).await
+    write
+        .send(Message::Binary(stdin_msg.encode()))
+        .await
         .context("Failed to send stdin data")?;
 
     // Close stdin to signal end of input
@@ -243,7 +279,8 @@ async fn exec_capture_output(
     let url = url::Url::parse(&ws_url)?;
 
     // Connect WebSocket
-    let (ws_stream, _) = connect_async(url).await
+    let (ws_stream, _) = connect_async(url)
+        .await
         .context("Failed to connect to exec WebSocket")?;
 
     let (_, mut read) = ws_stream.split();

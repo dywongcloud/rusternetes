@@ -33,11 +33,7 @@ impl<S: Storage> JobController<S> {
 
         for mut job in jobs {
             if let Err(e) = self.reconcile(&mut job).await {
-                error!(
-                    "Failed to reconcile Job {}: {}",
-                    job.metadata.name,
-                    e
-                );
+                error!("Failed to reconcile Job {}: {}", job.metadata.name, e);
             }
         }
 
@@ -125,15 +121,15 @@ impl<S: Storage> JobController<S> {
                     last_probe_time: Some(chrono::Utc::now()),
                     last_transition_time: Some(chrono::Utc::now()),
                     reason: Some("BackoffLimitExceeded".to_string()),
-                    message: Some(format!("Job has reached backoff limit of {}", backoff_limit)),
+                    message: Some(format!(
+                        "Job has reached backoff limit of {}",
+                        backoff_limit
+                    )),
                 }]),
             });
         } else {
             // Calculate how many new pods to create
-            let pods_needed = std::cmp::min(
-                parallelism - active,
-                completions - succeeded - active,
-            );
+            let pods_needed = std::cmp::min(parallelism - active, completions - succeeded - active);
 
             if pods_needed > 0 {
                 for i in 0..pods_needed {
@@ -197,18 +193,21 @@ impl<S: Storage> JobController<S> {
 
     async fn create_pod(&self, job: &Job, namespace: &str, _index: i32) -> Result<()> {
         let job_name = &job.metadata.name;
-        let pod_name = format!("{}-{}", job_name, uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
+        let pod_name = format!(
+            "{}-{}",
+            job_name,
+            uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
+        );
 
         // Create pod from template
         let template = &job.spec.template;
-        let mut labels = template.metadata.as_ref()
+        let mut labels = template
+            .metadata
+            .as_ref()
             .and_then(|m| m.labels.clone())
             .unwrap_or_default();
         labels.insert("job-name".to_string(), job_name.clone());
-        labels.insert(
-            "controller-uid".to_string(),
-            job.metadata.uid.clone(),
-        );
+        labels.insert("controller-uid".to_string(), job.metadata.uid.clone());
 
         let mut spec = template.spec.clone();
         // Jobs should not restart on failure - let the Job controller handle retries
@@ -223,7 +222,9 @@ impl<S: Storage> JobController<S> {
                 name: pod_name.clone(),
                 namespace: Some(namespace.to_string()),
                 labels: Some(labels),
-                annotations: template.metadata.as_ref()
+                annotations: template
+                    .metadata
+                    .as_ref()
                     .and_then(|m| m.annotations.clone()),
                 uid: uuid::Uuid::new_v4().to_string(),
                 creation_timestamp: Some(chrono::Utc::now()),
@@ -242,7 +243,7 @@ impl<S: Storage> JobController<S> {
                 host_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
-            ephemeral_container_statuses: None,
+                ephemeral_container_statuses: None,
             }),
         };
 
@@ -263,8 +264,8 @@ mod tests {
         let succeeded = 5;
 
         let pods_needed = std::cmp::min(
-            parallelism - active,       // 1 (can run 1 more in parallel)
-            completions - succeeded - active,  // 3 (need 3 more to complete)
+            parallelism - active,             // 1 (can run 1 more in parallel)
+            completions - succeeded - active, // 3 (need 3 more to complete)
         );
 
         assert_eq!(pods_needed, 1);

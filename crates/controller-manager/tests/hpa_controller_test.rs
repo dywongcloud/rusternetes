@@ -1,9 +1,8 @@
-use rusternetes_common::resources::{
-    Deployment, DeploymentSpec, HorizontalPodAutoscaler, HorizontalPodAutoscalerSpec,
-    CrossVersionObjectReference, MetricSpec, ResourceMetricSource, MetricTarget,
-    PodTemplateSpec, Container,
-};
 use rusternetes_common::resources::pod::PodSpec;
+use rusternetes_common::resources::{
+    Container, CrossVersionObjectReference, Deployment, DeploymentSpec, HorizontalPodAutoscaler,
+    HorizontalPodAutoscalerSpec, MetricSpec, MetricTarget, PodTemplateSpec, ResourceMetricSource,
+};
 use rusternetes_common::types::{LabelSelector, ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::hpa::HorizontalPodAutoscalerController;
 use rusternetes_storage::{build_key, MemoryStorage, Storage};
@@ -66,6 +65,7 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                     service_account_name: None,
                     automount_service_account_token: None,
                     hostname: None,
+                    subdomain: None,
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
@@ -136,7 +136,15 @@ async fn test_hpa_scales_deployment_up_when_cpu_high() {
 
     // Create HPA targeting the deployment
     // target CPU = 80%, current CPU will be ~85% (from mock), so should scale up
-    let hpa = create_test_hpa("web-hpa", "default", "web-app", "Deployment", Some(2), 10, 80);
+    let hpa = create_test_hpa(
+        "web-hpa",
+        "default",
+        "web-app",
+        "Deployment",
+        Some(2),
+        10,
+        80,
+    );
     let hpa_key = build_key("horizontalpodautoscalers", Some("default"), "web-hpa");
     storage.create(&hpa_key, &hpa).await.unwrap();
 
@@ -155,10 +163,19 @@ async fn test_hpa_scales_deployment_up_when_cpu_high() {
 
     // Verify HPA status was updated
     let updated_hpa: HorizontalPodAutoscaler = storage.get(&hpa_key).await.unwrap();
-    assert!(updated_hpa.status.is_some(), "HPA status should be populated");
+    assert!(
+        updated_hpa.status.is_some(),
+        "HPA status should be populated"
+    );
     let status = updated_hpa.status.unwrap();
-    assert!(status.current_replicas > 0, "Current replicas should be > 0");
-    assert!(status.desired_replicas > 0, "Desired replicas should be > 0");
+    assert!(
+        status.current_replicas > 0,
+        "Current replicas should be > 0"
+    );
+    assert!(
+        status.desired_replicas > 0,
+        "Desired replicas should be > 0"
+    );
 }
 
 #[tokio::test]
@@ -172,7 +189,15 @@ async fn test_hpa_respects_min_replicas() {
     storage.create(&deploy_key, &deployment).await.unwrap();
 
     // Create HPA with min_replicas = 3
-    let hpa = create_test_hpa("small-hpa", "default", "small-app", "Deployment", Some(3), 10, 80);
+    let hpa = create_test_hpa(
+        "small-hpa",
+        "default",
+        "small-app",
+        "Deployment",
+        Some(3),
+        10,
+        80,
+    );
     let hpa_key = build_key("horizontalpodautoscalers", Some("default"), "small-hpa");
     storage.create(&hpa_key, &hpa).await.unwrap();
 
@@ -200,7 +225,15 @@ async fn test_hpa_respects_max_replicas() {
 
     // Create HPA with max_replicas = 5
     // Even though current is 20, HPA should cap it at 5
-    let hpa = create_test_hpa("large-hpa", "default", "large-app", "Deployment", Some(1), 5, 80);
+    let hpa = create_test_hpa(
+        "large-hpa",
+        "default",
+        "large-app",
+        "Deployment",
+        Some(1),
+        5,
+        80,
+    );
     let hpa_key = build_key("horizontalpodautoscalers", Some("default"), "large-hpa");
     storage.create(&hpa_key, &hpa).await.unwrap();
 
@@ -222,7 +255,15 @@ async fn test_hpa_handles_missing_target() {
     let controller = HorizontalPodAutoscalerController::new(storage.clone());
 
     // Create HPA but don't create the target deployment
-    let hpa = create_test_hpa("orphan-hpa", "default", "nonexistent", "Deployment", Some(2), 10, 80);
+    let hpa = create_test_hpa(
+        "orphan-hpa",
+        "default",
+        "nonexistent",
+        "Deployment",
+        Some(2),
+        10,
+        80,
+    );
     let hpa_key = build_key("horizontalpodautoscalers", Some("default"), "orphan-hpa");
     storage.create(&hpa_key, &hpa).await.unwrap();
 
@@ -231,12 +272,17 @@ async fn test_hpa_handles_missing_target() {
 
     // Verify HPA status shows error
     let updated_hpa: HorizontalPodAutoscaler = storage.get(&hpa_key).await.unwrap();
-    assert!(updated_hpa.status.is_some(), "HPA status should be populated");
+    assert!(
+        updated_hpa.status.is_some(),
+        "HPA status should be populated"
+    );
     let status = updated_hpa.status.unwrap();
 
     // Check conditions for error
     if let Some(conditions) = status.conditions {
-        let able_to_scale = conditions.iter().find(|c| c.condition_type == "AbleToScale");
+        let able_to_scale = conditions
+            .iter()
+            .find(|c| c.condition_type == "AbleToScale");
         assert!(able_to_scale.is_some(), "Should have AbleToScale condition");
         assert_eq!(
             able_to_scale.unwrap().status,
@@ -259,7 +305,15 @@ async fn test_hpa_updates_status_conditions() {
     storage.create(&deploy_key, &deployment).await.unwrap();
 
     // Create HPA
-    let hpa = create_test_hpa("status-hpa", "default", "status-app", "Deployment", Some(2), 10, 80);
+    let hpa = create_test_hpa(
+        "status-hpa",
+        "default",
+        "status-app",
+        "Deployment",
+        Some(2),
+        10,
+        80,
+    );
     let hpa_key = build_key("horizontalpodautoscalers", Some("default"), "status-hpa");
     storage.create(&hpa_key, &hpa).await.unwrap();
 
@@ -268,7 +322,10 @@ async fn test_hpa_updates_status_conditions() {
 
     // Verify HPA status has expected conditions
     let updated_hpa: HorizontalPodAutoscaler = storage.get(&hpa_key).await.unwrap();
-    assert!(updated_hpa.status.is_some(), "HPA status should be populated");
+    assert!(
+        updated_hpa.status.is_some(),
+        "HPA status should be populated"
+    );
 
     let status = updated_hpa.status.unwrap();
     assert!(status.conditions.is_some(), "HPA should have conditions");
@@ -279,11 +336,15 @@ async fn test_hpa_updates_status_conditions() {
         "Should have AbleToScale condition"
     );
     assert!(
-        conditions.iter().any(|c| c.condition_type == "ScalingActive"),
+        conditions
+            .iter()
+            .any(|c| c.condition_type == "ScalingActive"),
         "Should have ScalingActive condition"
     );
     assert!(
-        conditions.iter().any(|c| c.condition_type == "ScalingLimited"),
+        conditions
+            .iter()
+            .any(|c| c.condition_type == "ScalingLimited"),
         "Should have ScalingLimited condition"
     );
 }
@@ -317,7 +378,11 @@ async fn test_hpa_with_no_metrics_maintains_current() {
     hpa.metadata.ensure_uid();
     hpa.metadata.ensure_creation_timestamp();
 
-    let hpa_key = build_key("horizontalpodautoscalers", Some("default"), "no-metrics-hpa");
+    let hpa_key = build_key(
+        "horizontalpodautoscalers",
+        Some("default"),
+        "no-metrics-hpa",
+    );
     storage.create(&hpa_key, &hpa).await.unwrap();
 
     // Reconcile
@@ -355,11 +420,17 @@ async fn test_hpa_multiple_hpas_in_different_namespaces() {
     let hpa2 = create_test_hpa("app-hpa", "ns2", "app", "Deployment", Some(3), 10, 80);
 
     storage
-        .create(&build_key("horizontalpodautoscalers", Some("ns1"), "app-hpa"), &hpa1)
+        .create(
+            &build_key("horizontalpodautoscalers", Some("ns1"), "app-hpa"),
+            &hpa1,
+        )
         .await
         .unwrap();
     storage
-        .create(&build_key("horizontalpodautoscalers", Some("ns2"), "app-hpa"), &hpa2)
+        .create(
+            &build_key("horizontalpodautoscalers", Some("ns2"), "app-hpa"),
+            &hpa2,
+        )
         .await
         .unwrap();
 
@@ -368,16 +439,30 @@ async fn test_hpa_multiple_hpas_in_different_namespaces() {
 
     // Verify both HPAs were reconciled and updated
     let updated_hpa1: HorizontalPodAutoscaler = storage
-        .get(&build_key("horizontalpodautoscalers", Some("ns1"), "app-hpa"))
+        .get(&build_key(
+            "horizontalpodautoscalers",
+            Some("ns1"),
+            "app-hpa",
+        ))
         .await
         .unwrap();
     let updated_hpa2: HorizontalPodAutoscaler = storage
-        .get(&build_key("horizontalpodautoscalers", Some("ns2"), "app-hpa"))
+        .get(&build_key(
+            "horizontalpodautoscalers",
+            Some("ns2"),
+            "app-hpa",
+        ))
         .await
         .unwrap();
 
-    assert!(updated_hpa1.status.is_some(), "HPA in ns1 should have status");
-    assert!(updated_hpa2.status.is_some(), "HPA in ns2 should have status");
+    assert!(
+        updated_hpa1.status.is_some(),
+        "HPA in ns1 should have status"
+    );
+    assert!(
+        updated_hpa2.status.is_some(),
+        "HPA in ns2 should have status"
+    );
 
     // Verify namespaces are isolated
     assert_eq!(updated_hpa1.metadata.namespace.as_deref().unwrap(), "ns1");
@@ -395,7 +480,15 @@ async fn test_hpa_scaling_limited_condition_at_max() {
     storage.create(&deploy_key, &deployment).await.unwrap();
 
     // Create HPA with max = 10
-    let hpa = create_test_hpa("max-hpa", "default", "max-app", "Deployment", Some(1), 10, 80);
+    let hpa = create_test_hpa(
+        "max-hpa",
+        "default",
+        "max-app",
+        "Deployment",
+        Some(1),
+        10,
+        80,
+    );
     let hpa_key = build_key("horizontalpodautoscalers", Some("default"), "max-hpa");
     storage.create(&hpa_key, &hpa).await.unwrap();
 
@@ -431,12 +524,23 @@ async fn test_hpa_current_metrics_populated() {
     // Create deployment
     let deployment = create_test_deployment("metrics-app", "default", 3);
     storage
-        .create(&build_key("deployments", Some("default"), "metrics-app"), &deployment)
+        .create(
+            &build_key("deployments", Some("default"), "metrics-app"),
+            &deployment,
+        )
         .await
         .unwrap();
 
     // Create HPA
-    let hpa = create_test_hpa("metrics-hpa", "default", "metrics-app", "Deployment", Some(2), 10, 80);
+    let hpa = create_test_hpa(
+        "metrics-hpa",
+        "default",
+        "metrics-app",
+        "Deployment",
+        Some(2),
+        10,
+        80,
+    );
     let hpa_key = build_key("horizontalpodautoscalers", Some("default"), "metrics-hpa");
     storage.create(&hpa_key, &hpa).await.unwrap();
 
@@ -447,13 +551,22 @@ async fn test_hpa_current_metrics_populated() {
     let updated_hpa: HorizontalPodAutoscaler = storage.get(&hpa_key).await.unwrap();
     let status = updated_hpa.status.unwrap();
 
-    assert!(status.current_metrics.is_some(), "Current metrics should be populated");
+    assert!(
+        status.current_metrics.is_some(),
+        "Current metrics should be populated"
+    );
     let current_metrics = status.current_metrics.unwrap();
-    assert!(!current_metrics.is_empty(), "Should have at least one current metric");
+    assert!(
+        !current_metrics.is_empty(),
+        "Should have at least one current metric"
+    );
 
     let metric = &current_metrics[0];
     assert_eq!(metric.metric_type, "Resource");
-    assert!(metric.resource.is_some(), "Resource metric should be present");
+    assert!(
+        metric.resource.is_some(),
+        "Resource metric should be present"
+    );
 
     let resource_metric = metric.resource.as_ref().unwrap();
     assert_eq!(resource_metric.name, "cpu");

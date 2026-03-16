@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::DeviceClass,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -21,7 +20,13 @@ pub async fn create_deviceclass(
     Query(params): Query<HashMap<String, String>>,
     Json(mut dc): Json<DeviceClass>,
 ) -> Result<(StatusCode, Json<DeviceClass>)> {
-    info!("Creating DeviceClass: {}", dc.metadata.as_ref().map(|m| m.name.as_ref().map(|n| n.as_str()).unwrap_or("")).unwrap_or(""));
+    info!(
+        "Creating DeviceClass: {}",
+        dc.metadata
+            .as_ref()
+            .map(|m| m.name.as_ref().map(|n| n.as_str()).unwrap_or(""))
+            .unwrap_or("")
+    );
 
     // Check authorization (cluster-scoped)
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "deviceclasses")
@@ -45,8 +50,9 @@ pub async fn create_deviceclass(
         metadata.creation_timestamp = Some(chrono::Utc::now());
     }
 
-    let name = metadata.name.as_ref()
-        .ok_or_else(|| rusternetes_common::Error::InvalidResource("metadata.name is required".to_string()))?;
+    let name = metadata.name.as_ref().ok_or_else(|| {
+        rusternetes_common::Error::InvalidResource("metadata.name is required".to_string())
+    })?;
 
     // Check for dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -185,7 +191,12 @@ pub async fn delete_deviceclass(
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_cluster!(patch_deviceclass, DeviceClass, "deviceclasses", "resource.k8s.io");
+crate::patch_handler_cluster!(
+    patch_deviceclass,
+    DeviceClass,
+    "deviceclasses",
+    "resource.k8s.io"
+);
 
 pub async fn deletecollection_deviceclasses(
     State(state): State<Arc<ApiServerState>>,
@@ -235,6 +246,9 @@ pub async fn deletecollection_deviceclasses(
         }
     }
 
-    info!("DeleteCollection completed: {} deviceclasses deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} deviceclasses deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::ControllerRevision,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -61,7 +60,10 @@ pub async fn get_controllerrevision(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<ControllerRevision>> {
-    info!("Getting controllerrevision: {} in namespace: {}", name, namespace);
+    info!(
+        "Getting controllerrevision: {} in namespace: {}",
+        name, namespace
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "controllerrevisions")
@@ -89,7 +91,10 @@ pub async fn update_controllerrevision(
     Query(params): Query<HashMap<String, String>>,
     Json(mut cr): Json<ControllerRevision>,
 ) -> Result<Json<ControllerRevision>> {
-    info!("Updating controllerrevision: {} in namespace: {}", name, namespace);
+    info!(
+        "Updating controllerrevision: {} in namespace: {}",
+        name, namespace
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "controllerrevisions")
@@ -119,9 +124,7 @@ pub async fn update_controllerrevision(
     // Try to update first, if not found then create (upsert behavior)
     let result = match state.storage.update(&key, &cr).await {
         Ok(updated) => updated,
-        Err(rusternetes_common::Error::NotFound(_)) => {
-            state.storage.create(&key, &cr).await?
-        }
+        Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &cr).await?,
         Err(e) => return Err(e),
     };
 
@@ -134,7 +137,10 @@ pub async fn delete_controllerrevision(
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("Deleting controllerrevision: {} in namespace: {}", name, namespace);
+    info!(
+        "Deleting controllerrevision: {} in namespace: {}",
+        name, namespace
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "controllerrevisions")
@@ -162,12 +168,9 @@ pub async fn delete_controllerrevision(
     let cr: ControllerRevision = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
-        &state.storage,
-        &key,
-        &cr,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &cr)
+            .await?;
 
     if deleted_immediately {
         Ok(StatusCode::NO_CONTENT)
@@ -214,8 +217,8 @@ pub async fn list_all_controllerrevisions(
     info!("Listing all controllerrevisions");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "controllerrevisions")
-        .with_api_group("apps");
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "list", "controllerrevisions").with_api_group("apps");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -232,7 +235,12 @@ pub async fn list_all_controllerrevisions(
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_namespaced!(patch_controllerrevision, ControllerRevision, "controllerrevisions", "apps");
+crate::patch_handler_namespaced!(
+    patch_controllerrevision,
+    ControllerRevision,
+    "controllerrevisions",
+    "apps"
+);
 
 pub async fn deletecollection_controllerrevisions(
     State(state): State<Arc<ApiServerState>>,
@@ -240,7 +248,10 @@ pub async fn deletecollection_controllerrevisions(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection controllerrevisions in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection controllerrevisions in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "controllerrevisions")
@@ -286,6 +297,9 @@ pub async fn deletecollection_controllerrevisions(
         }
     }
 
-    info!("DeleteCollection completed: {} controllerrevisions deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} controllerrevisions deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

@@ -1,7 +1,7 @@
 use crate::client::{ApiClient, GetError};
 use anyhow::Result;
-use rusternetes_common::resources::{Pod, Service, Deployment, Node, Namespace};
 use chrono::Utc;
+use rusternetes_common::resources::{Deployment, Namespace, Node, Pod, Service};
 
 pub async fn execute_enhanced(
     client: &ApiClient,
@@ -79,7 +79,10 @@ pub async fn execute(
         }
         "deployment" | "deployments" | "deploy" => {
             let deployment: Deployment = client
-                .get(&format!("/apis/apps/v1/namespaces/{}/deployments/{}", ns, name))
+                .get(&format!(
+                    "/apis/apps/v1/namespaces/{}/deployments/{}",
+                    ns, name
+                ))
                 .await
                 .map_err(map_get_error)?;
             describe_deployment(&deployment);
@@ -106,20 +109,31 @@ pub async fn execute(
 
 fn describe_pod(pod: &Pod) {
     println!("Name:         {}", pod.metadata.name);
-    println!("Namespace:    {}", pod.metadata.namespace.as_deref().unwrap_or("default"));
+    println!(
+        "Namespace:    {}",
+        pod.metadata.namespace.as_deref().unwrap_or("default")
+    );
 
     if let Some(labels) = &pod.metadata.labels {
-        println!("Labels:       {}", labels.iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join("\n              "));
+        println!(
+            "Labels:       {}",
+            labels
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join("\n              ")
+        );
     }
 
     if let Some(annotations) = &pod.metadata.annotations {
-        println!("Annotations:  {}", annotations.iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join("\n              "));
+        println!(
+            "Annotations:  {}",
+            annotations
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join("\n              ")
+        );
     }
 
     if let Some(status) = &pod.status {
@@ -140,10 +154,18 @@ fn describe_pod(pod: &Pod) {
             println!("    Image:      {}", container.image);
             if let Some(ports) = &container.ports {
                 if !ports.is_empty() {
-                    println!("    Ports:      {}", ports.iter()
-                        .map(|p| format!("{}/{}", p.container_port, p.protocol.as_deref().unwrap_or("TCP")))
-                        .collect::<Vec<_>>()
-                        .join(", "));
+                    println!(
+                        "    Ports:      {}",
+                        ports
+                            .iter()
+                            .map(|p| format!(
+                                "{}/{}",
+                                p.container_port,
+                                p.protocol.as_deref().unwrap_or("TCP")
+                            ))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
                 }
             }
             if let Some(resources) = &container.resources {
@@ -171,13 +193,20 @@ fn describe_pod(pod: &Pod) {
 
 fn describe_service(service: &Service) {
     println!("Name:         {}", service.metadata.name);
-    println!("Namespace:    {}", service.metadata.namespace.as_deref().unwrap_or("default"));
+    println!(
+        "Namespace:    {}",
+        service.metadata.namespace.as_deref().unwrap_or("default")
+    );
 
     if let Some(labels) = &service.metadata.labels {
-        println!("Labels:       {}", labels.iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join("\n              "));
+        println!(
+            "Labels:       {}",
+            labels
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join("\n              ")
+        );
     }
 
     if let Some(service_type) = &service.spec.service_type {
@@ -190,16 +219,33 @@ fn describe_service(service: &Service) {
         println!("IP:           {}", cluster_ip);
     }
 
-    println!("Ports:        {}", service.spec.ports.iter()
-        .map(|p| format!("{}/{} -> {}", p.port, p.protocol.as_deref().unwrap_or("TCP"), p.target_port.map(|tp| tp.to_string()).unwrap_or_else(|| "default".to_string())))
-        .collect::<Vec<_>>()
-        .join("\n              "));
+    println!(
+        "Ports:        {}",
+        service
+            .spec
+            .ports
+            .iter()
+            .map(|p| format!(
+                "{}/{} -> {}",
+                p.port,
+                p.protocol.as_deref().unwrap_or("TCP"),
+                p.target_port
+                    .map(|tp| tp.to_string())
+                    .unwrap_or_else(|| "default".to_string())
+            ))
+            .collect::<Vec<_>>()
+            .join("\n              ")
+    );
 
     if let Some(selector) = &service.spec.selector {
-        println!("Selector:     {}", selector.iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join(","));
+        println!(
+            "Selector:     {}",
+            selector
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
     }
 
     if let Some(ts) = service.metadata.creation_timestamp {
@@ -210,13 +256,24 @@ fn describe_service(service: &Service) {
 
 fn describe_deployment(deployment: &Deployment) {
     println!("Name:         {}", deployment.metadata.name);
-    println!("Namespace:    {}", deployment.metadata.namespace.as_deref().unwrap_or("default"));
+    println!(
+        "Namespace:    {}",
+        deployment
+            .metadata
+            .namespace
+            .as_deref()
+            .unwrap_or("default")
+    );
 
     if let Some(labels) = &deployment.metadata.labels {
-        println!("Labels:       {}", labels.iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join("\n              "));
+        println!(
+            "Labels:       {}",
+            labels
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join("\n              ")
+        );
     }
 
     println!("Replicas:     {} desired", deployment.spec.replicas);
@@ -233,7 +290,10 @@ fn describe_deployment(deployment: &Deployment) {
         }
     }
 
-    println!("Selector:     match_labels={:?}", deployment.spec.selector.match_labels);
+    println!(
+        "Selector:     match_labels={:?}",
+        deployment.spec.selector.match_labels
+    );
 
     if let Some(ts) = deployment.metadata.creation_timestamp {
         let age = format_duration(Utc::now().signed_duration_since(ts));
@@ -245,10 +305,14 @@ fn describe_node(node: &Node) {
     println!("Name:         {}", node.metadata.name);
 
     if let Some(labels) = &node.metadata.labels {
-        println!("Labels:       {}", labels.iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join("\n              "));
+        println!(
+            "Labels:       {}",
+            labels
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join("\n              ")
+        );
     }
 
     if let Some(status) = &node.status {
@@ -291,10 +355,14 @@ fn describe_namespace(namespace: &Namespace) {
     println!("Name:         {}", namespace.metadata.name);
 
     if let Some(labels) = &namespace.metadata.labels {
-        println!("Labels:       {}", labels.iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join("\n              "));
+        println!(
+            "Labels:       {}",
+            labels
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join("\n              ")
+        );
     }
 
     if let Some(status) = &namespace.status {

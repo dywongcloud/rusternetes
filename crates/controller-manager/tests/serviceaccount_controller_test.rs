@@ -1,6 +1,9 @@
 //! Integration tests for ServiceAccountController
 
-use rusternetes_common::resources::{namespace::{NamespaceSpec, NamespaceStatus}, Namespace, Secret, ServiceAccount};
+use rusternetes_common::resources::{
+    namespace::{NamespaceSpec, NamespaceStatus},
+    Namespace, Secret, ServiceAccount,
+};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::serviceaccount::ServiceAccountController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
@@ -52,10 +55,7 @@ async fn test_serviceaccount_creates_default_in_namespace() {
     let sa_key = build_key("serviceaccounts", Some("test-sa-namespace"), "default");
     let sa: ServiceAccount = storage.get(&sa_key).await.unwrap();
     assert_eq!(sa.metadata.name, "default");
-    assert_eq!(
-        sa.metadata.namespace.as_ref().unwrap(),
-        "test-sa-namespace"
-    );
+    assert_eq!(sa.metadata.namespace.as_ref().unwrap(), "test-sa-namespace");
 
     // Verify token secret was created
     let secret_key = build_key("secrets", Some("test-sa-namespace"), "default-token");

@@ -80,8 +80,14 @@ async fn test_quota_update() {
     quota.spec.hard = Some(new_hard.clone());
 
     let updated: ResourceQuota = storage.update(&key, &quota).await.unwrap();
-    assert_eq!(updated.spec.hard.as_ref().unwrap().get("pods"), Some(&"20".to_string()));
-    assert_eq!(updated.spec.hard.as_ref().unwrap().get("requests.cpu"), Some(&"8".to_string()));
+    assert_eq!(
+        updated.spec.hard.as_ref().unwrap().get("pods"),
+        Some(&"20".to_string())
+    );
+    assert_eq!(
+        updated.spec.hard.as_ref().unwrap().get("requests.cpu"),
+        Some(&"8".to_string())
+    );
 
     // Verify update
     let retrieved: ResourceQuota = storage.get(&key).await.unwrap();
@@ -243,7 +249,10 @@ async fn test_quota_metadata_immutability() {
 
     let updated: ResourceQuota = storage.update(&key, &updated_quota).await.unwrap();
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.spec.hard.as_ref().unwrap().get("pods"), Some(&"50".to_string()));
+    assert_eq!(
+        updated.spec.hard.as_ref().unwrap().get("pods"),
+        Some(&"50".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -320,7 +329,10 @@ async fn test_quota_compute_resources() {
     let created: ResourceQuota = storage.create(&key, &quota).await.unwrap();
     let created_hard = created.spec.hard.as_ref().unwrap();
     assert_eq!(created_hard.get("requests.cpu"), Some(&"10".to_string()));
-    assert_eq!(created_hard.get("requests.memory"), Some(&"20Gi".to_string()));
+    assert_eq!(
+        created_hard.get("requests.memory"),
+        Some(&"20Gi".to_string())
+    );
     assert_eq!(created_hard.get("limits.cpu"), Some(&"20".to_string()));
     assert_eq!(created_hard.get("limits.memory"), Some(&"40Gi".to_string()));
 
@@ -360,7 +372,10 @@ async fn test_quota_object_count() {
     assert_eq!(created_hard.get("count/pods"), Some(&"10".to_string()));
     assert_eq!(created_hard.get("count/services"), Some(&"5".to_string()));
     assert_eq!(created_hard.get("count/secrets"), Some(&"20".to_string()));
-    assert_eq!(created_hard.get("count/configmaps"), Some(&"15".to_string()));
+    assert_eq!(
+        created_hard.get("count/configmaps"),
+        Some(&"15".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -393,8 +408,14 @@ async fn test_quota_storage_resources() {
     // Create
     let created: ResourceQuota = storage.create(&key, &quota).await.unwrap();
     let created_hard = created.spec.hard.as_ref().unwrap();
-    assert_eq!(created_hard.get("requests.storage"), Some(&"100Gi".to_string()));
-    assert_eq!(created_hard.get("persistentvolumeclaims"), Some(&"10".to_string()));
+    assert_eq!(
+        created_hard.get("requests.storage"),
+        Some(&"100Gi".to_string())
+    );
+    assert_eq!(
+        created_hard.get("persistentvolumeclaims"),
+        Some(&"10".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -417,7 +438,10 @@ async fn test_quota_with_labels() {
     let created: ResourceQuota = storage.create(&key, &quota).await.unwrap();
     assert!(created.metadata.labels.is_some());
     let created_labels = created.metadata.labels.unwrap();
-    assert_eq!(created_labels.get("environment"), Some(&"production".to_string()));
+    assert_eq!(
+        created_labels.get("environment"),
+        Some(&"production".to_string())
+    );
     assert_eq!(created_labels.get("team"), Some(&"backend".to_string()));
 
     // Clean up

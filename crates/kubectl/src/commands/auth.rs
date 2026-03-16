@@ -56,7 +56,12 @@ pub async fn execute(
             let ns = if all_namespaces {
                 None
             } else {
-                Some(namespace.as_deref().unwrap_or(default_namespace).to_string())
+                Some(
+                    namespace
+                        .as_deref()
+                        .unwrap_or(default_namespace)
+                        .to_string(),
+                )
             };
 
             let review = SelfSubjectAccessReview {
@@ -73,7 +78,10 @@ pub async fn execute(
             };
 
             let response: SelfSubjectAccessReviewResponse = client
-                .post("/apis/authorization.k8s.io/v1/selfsubjectaccessreviews", &review)
+                .post(
+                    "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
+                    &review,
+                )
                 .await
                 .context("Failed to check authorization")?;
 

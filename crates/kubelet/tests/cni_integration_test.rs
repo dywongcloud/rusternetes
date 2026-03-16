@@ -10,12 +10,11 @@ fn setup_cni_environment() -> (TempDir, TempDir, PathBuf) {
     let cni_config_dir = TempDir::new().expect("Failed to create temp CNI config dir");
 
     // Copy mock CNI plugin to bin directory
-    let mock_plugin_source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/mock-cni-plugin.sh");
+    let mock_plugin_source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock-cni-plugin.sh");
     let mock_plugin_dest = cni_bin_dir.path().join("mock-cni-plugin");
 
-    fs::copy(&mock_plugin_source, &mock_plugin_dest)
-        .expect("Failed to copy mock CNI plugin");
+    fs::copy(&mock_plugin_source, &mock_plugin_dest).expect("Failed to copy mock CNI plugin");
 
     // Make plugin executable
     #[cfg(unix)]
@@ -26,12 +25,11 @@ fn setup_cni_environment() -> (TempDir, TempDir, PathBuf) {
     }
 
     // Copy test network configuration
-    let test_config_source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/test-network.conf");
+    let test_config_source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test-network.conf");
     let test_config_dest = cni_config_dir.path().join("10-test-network.conf");
 
-    fs::copy(&test_config_source, &test_config_dest)
-        .expect("Failed to copy test network config");
+    fs::copy(&test_config_source, &test_config_dest).expect("Failed to copy test network config");
 
     (cni_bin_dir, cni_config_dir, mock_plugin_dest)
 }
@@ -78,7 +76,11 @@ fn test_cni_plugin_execution_add() {
     );
 
     // The result should succeed
-    assert!(result.is_ok(), "Network setup should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Network setup should succeed: {:?}",
+        result.err()
+    );
 
     let cni_result = result.unwrap();
 
@@ -107,23 +109,17 @@ fn test_cni_plugin_execution_del() {
     let netns_path = temp_netns.path().to_str().unwrap();
 
     // First, setup the network
-    let setup_result = cni_runtime.setup_network(
-        "test-pod-456",
-        netns_path,
-        "eth0",
-        None,
-    );
+    let setup_result = cni_runtime.setup_network("test-pod-456", netns_path, "eth0", None);
     assert!(setup_result.is_ok(), "Network setup should succeed");
 
     // Now teardown the network
-    let teardown_result = cni_runtime.teardown_network(
-        "test-pod-456",
-        netns_path,
-        "eth0",
-        None,
-    );
+    let teardown_result = cni_runtime.teardown_network("test-pod-456", netns_path, "eth0", None);
 
-    assert!(teardown_result.is_ok(), "Network teardown should succeed: {:?}", teardown_result.err());
+    assert!(
+        teardown_result.is_ok(),
+        "Network teardown should succeed: {:?}",
+        teardown_result.err()
+    );
 }
 
 #[test]
@@ -174,26 +170,21 @@ fn test_cni_multiple_attachments() {
     let temp_netns2 = TempDir::new().expect("Failed to create temp dir for netns2");
 
     // Setup network for first pod
-    let result1 = cni_runtime.setup_network(
-        "pod-1",
-        temp_netns1.path().to_str().unwrap(),
-        "eth0",
-        None,
-    );
+    let result1 =
+        cni_runtime.setup_network("pod-1", temp_netns1.path().to_str().unwrap(), "eth0", None);
     assert!(result1.is_ok());
 
     // Setup network for second pod
-    let result2 = cni_runtime.setup_network(
-        "pod-2",
-        temp_netns2.path().to_str().unwrap(),
-        "eth0",
-        None,
-    );
+    let result2 =
+        cni_runtime.setup_network("pod-2", temp_netns2.path().to_str().unwrap(), "eth0", None);
     assert!(result2.is_ok());
 
     // Get stats to verify we have 2 attachments
     let stats = cni_runtime.get_stats();
-    assert_eq!(stats.total_attachments, 2, "Should have 2 network attachments");
+    assert_eq!(
+        stats.total_attachments, 2,
+        "Should have 2 network attachments"
+    );
 }
 
 #[test]
@@ -285,8 +276,7 @@ fn test_cni_plugin_chaining() {
         .join("tests/fixtures/test-network-chain.conflist");
     let conflist_dest = cni_config_dir.path().join("20-test-chain.conflist");
 
-    fs::copy(&conflist_source, &conflist_dest)
-        .expect("Failed to copy conflist");
+    fs::copy(&conflist_source, &conflist_dest).expect("Failed to copy conflist");
 
     let cni_runtime = CniRuntime::new(
         vec![cni_bin_dir.path().to_path_buf()],
@@ -296,12 +286,8 @@ fn test_cni_plugin_chaining() {
     .with_default_network("test-network-chain".to_string());
 
     // Setup network - should execute plugin chain
-    let result = cni_runtime.setup_network(
-        "chain-test-pod",
-        "/var/run/netns/chain-test",
-        "eth0",
-        None,
-    );
+    let result =
+        cni_runtime.setup_network("chain-test-pod", "/var/run/netns/chain-test", "eth0", None);
 
     // With plugin chaining, this might succeed or fail depending on implementation
     // For now, just verify it doesn't panic

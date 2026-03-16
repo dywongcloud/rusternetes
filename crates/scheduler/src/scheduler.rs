@@ -23,7 +23,11 @@ impl Scheduler {
         Self::new_with_name(storage, interval_secs, "default-scheduler".to_string())
     }
 
-    pub fn new_with_name(storage: Arc<EtcdStorage>, interval_secs: u64, scheduler_name: String) -> Self {
+    pub fn new_with_name(
+        storage: Arc<EtcdStorage>,
+        interval_secs: u64,
+        scheduler_name: String,
+    ) -> Self {
         Self {
             storage,
             interval: Duration::from_secs(interval_secs),
@@ -32,7 +36,10 @@ impl Scheduler {
     }
 
     pub async fn run(&self) -> rusternetes_common::Result<()> {
-        info!("Scheduler '{}' started, running every {:?}", self.scheduler_name, self.interval);
+        info!(
+            "Scheduler '{}' started, running every {:?}",
+            self.scheduler_name, self.interval
+        );
 
         let mut interval = tokio::time::interval(self.interval);
 
@@ -71,7 +78,9 @@ impl Scheduler {
 
                 // Check if pod is assigned to this scheduler
                 // If schedulerName is not specified, defaults to "default-scheduler"
-                let pod_scheduler_name = p.spec.as_ref()
+                let pod_scheduler_name = p
+                    .spec
+                    .as_ref()
                     .and_then(|s| s.scheduler_name.as_deref())
                     .unwrap_or("default-scheduler");
 
@@ -101,7 +110,10 @@ impl Scheduler {
 
         // Simple round-robin scheduling
         for pod in pending_pods {
-            if let Some(node) = self.select_node(&pod, &nodes, &all_pods, &priority_classes).await {
+            if let Some(node) = self
+                .select_node(&pod, &nodes, &all_pods, &priority_classes)
+                .await
+            {
                 if let Err(e) = self.bind_pod_to_node(pod, &node.metadata.name).await {
                     error!("Failed to bind pod to node: {}", e);
                 }
@@ -128,7 +140,10 @@ impl Scheduler {
                         error!("Failed to bind preempting pod to node: {}", e);
                     }
                 } else {
-                    warn!("No suitable node found for pod {} (even with preemption)", pod.metadata.name);
+                    warn!(
+                        "No suitable node found for pod {} (even with preemption)",
+                        pod.metadata.name
+                    );
                 }
             }
         }
@@ -136,7 +151,13 @@ impl Scheduler {
         Ok(())
     }
 
-    async fn select_node(&self, pod: &Pod, nodes: &[Node], all_pods: &[Pod], priority_classes: &HashMap<String, PriorityClass>) -> Option<Node> {
+    async fn select_node(
+        &self,
+        pod: &Pod,
+        nodes: &[Node],
+        all_pods: &[Pod],
+        priority_classes: &HashMap<String, PriorityClass>,
+    ) -> Option<Node> {
         // Advanced scheduling algorithm:
         // 1. Filter out unschedulable nodes
         // 2. Check taints and tolerations
@@ -175,15 +196,16 @@ impl Scheduler {
         }
 
         // Phase 3: Check node selectors (basic label matching)
-        let selector_matched_nodes: Vec<&Node> = if let Some(node_selector) = pod.spec.as_ref().and_then(|s| s.node_selector.as_ref()) {
-            tolerated_nodes
-                .iter()
-                .filter(|node| self.matches_node_selector(node, node_selector))
-                .copied()
-                .collect()
-        } else {
-            tolerated_nodes
-        };
+        let selector_matched_nodes: Vec<&Node> =
+            if let Some(node_selector) = pod.spec.as_ref().and_then(|s| s.node_selector.as_ref()) {
+                tolerated_nodes
+                    .iter()
+                    .filter(|node| self.matches_node_selector(node, node_selector))
+                    .copied()
+                    .collect()
+            } else {
+                tolerated_nodes
+            };
 
         if selector_matched_nodes.is_empty() {
             debug!("No nodes match node selector");
@@ -233,7 +255,8 @@ impl Scheduler {
             }
 
             // Check topology spread constraints (hard requirements and penalty scoring)
-            let (topology_ok, topology_penalty) = check_topology_spread_constraints(node, pod, all_pods, nodes);
+            let (topology_ok, topology_penalty) =
+                check_topology_spread_constraints(node, pod, all_pods, nodes);
             if !topology_ok {
                 continue; // Skip nodes that violate hard topology spread constraints
             }
@@ -313,7 +336,10 @@ impl Scheduler {
     ) -> rusternetes_common::Result<()> {
         info!(
             "Binding pod {}/{} to node {}",
-            pod.metadata.namespace.as_ref().unwrap_or(&"default".to_string()),
+            pod.metadata
+                .namespace
+                .as_ref()
+                .unwrap_or(&"default".to_string()),
             pod.metadata.name,
             node_name
         );
@@ -394,7 +420,9 @@ impl Scheduler {
     }
 
     /// Load all PriorityClasses from storage into a HashMap for fast lookup
-    async fn load_priority_classes(&self) -> rusternetes_common::Result<HashMap<String, PriorityClass>> {
+    async fn load_priority_classes(
+        &self,
+    ) -> rusternetes_common::Result<HashMap<String, PriorityClass>> {
         let prefix = build_prefix("priorityclasses", None);
         let priority_classes: Vec<PriorityClass> = self.storage.list(&prefix).await?;
 
@@ -504,7 +532,11 @@ impl Scheduler {
     /// If pod.spec.priority is set, use it directly
     /// Otherwise, look up the PriorityClass specified by pod.spec.priorityClassName
     /// If neither is set, return 0 (default priority)
-    fn get_pod_priority_sync(&self, pod: &Pod, priority_classes: &HashMap<String, PriorityClass>) -> i32 {
+    fn get_pod_priority_sync(
+        &self,
+        pod: &Pod,
+        priority_classes: &HashMap<String, PriorityClass>,
+    ) -> i32 {
         let spec = match pod.spec.as_ref() {
             Some(s) => s,
             None => return 0,
@@ -541,7 +573,7 @@ impl Scheduler {
     /// Check if node has available devices for DRA ResourceClaims
     /// Returns true if all required devices are available on the node, or if no resource claims are specified
     async fn check_dra_device_availability(&self, node: &Node, pod: &Pod) -> bool {
-        use rusternetes_common::resources::{ResourceClaim, DeviceClass, ResourceSlice};
+        use rusternetes_common::resources::{DeviceClass, ResourceClaim, ResourceSlice};
 
         // Extract resourceClaims from pod.spec
         let spec = match &pod.spec {
@@ -587,11 +619,8 @@ impl Scheduler {
             };
 
             // Get the ResourceClaim from storage
-            let claim_key = rusternetes_storage::build_key(
-                "resourceclaims",
-                Some(pod_namespace),
-                claim_name,
-            );
+            let claim_key =
+                rusternetes_storage::build_key("resourceclaims", Some(pod_namespace), claim_name);
 
             let claim: ResourceClaim = match self.storage.get(&claim_key).await {
                 Ok(c) => c,

@@ -164,7 +164,10 @@ impl EvictionManager {
         // Check hard threshold first
         if let Some(ref hard) = threshold.hard {
             if self.compare_threshold(&threshold.signal, current_value, hard, stats) {
-                info!("Hard eviction threshold exceeded for {:?}", threshold.signal);
+                info!(
+                    "Hard eviction threshold exceeded for {:?}",
+                    threshold.signal
+                );
                 return true;
             }
         }
@@ -256,7 +259,11 @@ impl EvictionManager {
         let mut eviction_candidates: Vec<(&Pod, &PodStats)> = pods
             .iter()
             .filter_map(|pod| {
-                let key = format!("{}/{}", pod.metadata.namespace.as_deref().unwrap_or("default"), pod.metadata.name);
+                let key = format!(
+                    "{}/{}",
+                    pod.metadata.namespace.as_deref().unwrap_or("default"),
+                    pod.metadata.name
+                );
                 pod_stats.get(&key).map(|stats| (pod, stats))
             })
             .collect();
@@ -384,7 +391,9 @@ impl EvictionManager {
         message: Option<&str>,
         now: chrono::DateTime<chrono::Utc>,
     ) {
-        if let Some(condition) = conditions.iter_mut().find(|c| c.condition_type == condition_type)
+        if let Some(condition) = conditions
+            .iter_mut()
+            .find(|c| c.condition_type == condition_type)
         {
             // Update existing condition
             let status_changed = condition.status != status;
@@ -476,7 +485,10 @@ fn parse_memory_value(value: &str) -> Option<u64> {
     } else if let Some(stripped) = value.strip_suffix("Gi") {
         stripped.parse::<u64>().ok().map(|v| v * 1024 * 1024 * 1024)
     } else if let Some(stripped) = value.strip_suffix("Ti") {
-        stripped.parse::<u64>().ok().map(|v| v * 1024 * 1024 * 1024 * 1024)
+        stripped
+            .parse::<u64>()
+            .ok()
+            .map(|v| v * 1024 * 1024 * 1024 * 1024)
     } else {
         value.parse::<u64>().ok()
     }
@@ -541,7 +553,12 @@ fn get_pid_stats() -> (u64, u64) {
         .map(|entries| {
             entries
                 .filter_map(|e| e.ok())
-                .filter(|e| e.file_name().to_str().and_then(|s| s.parse::<u32>().ok()).is_some())
+                .filter(|e| {
+                    e.file_name()
+                        .to_str()
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .is_some()
+                })
                 .count() as u64
         })
         .unwrap_or(100);
@@ -580,9 +597,7 @@ pub fn get_pod_stats(pods: &[Pod]) -> HashMap<String, PodStats> {
         }
     };
 
-    rt.block_on(async {
-        get_pod_stats_async(pods).await
-    })
+    rt.block_on(async { get_pod_stats_async(pods).await })
 }
 
 /// Async implementation of pod stats gathering
@@ -625,7 +640,10 @@ async fn get_pod_stats_async(pods: &[Pod]) -> HashMap<String, PodStats> {
                         total_disk_bytes += disk;
                     }
                     Err(e) => {
-                        debug!("Failed to get stats for container {}: {}", container_name, e);
+                        debug!(
+                            "Failed to get stats for container {}: {}",
+                            container_name, e
+                        );
                     }
                 }
             }
@@ -673,9 +691,10 @@ async fn get_container_stats(
     }
 
     // Get the first matching container
-    let container_id = &containers[0].id.as_ref().ok_or_else(|| {
-        anyhow::anyhow!("Container has no ID")
-    })?;
+    let container_id = &containers[0]
+        .id
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Container has no ID"))?;
 
     // Get container stats (one-shot, not streaming)
     let stats_options = bollard::container::StatsOptions {
@@ -757,6 +776,7 @@ mod tests {
                 priority: None,
                 priority_class_name: None,
                 hostname: None,
+                subdomain: None,
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,

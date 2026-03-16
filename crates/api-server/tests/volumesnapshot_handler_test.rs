@@ -249,7 +249,9 @@ async fn test_volumesnapshot_with_finalizers() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut vs = create_test_volumesnapshot("test-finalizers", "default", "test-pvc");
-    vs.metadata.finalizers = Some(vec!["snapshot.storage.kubernetes.io/volumesnapshot-bound-protection".to_string()]);
+    vs.metadata.finalizers = Some(vec![
+        "snapshot.storage.kubernetes.io/volumesnapshot-bound-protection".to_string(),
+    ]);
 
     let key = build_key("volumesnapshots", Some("default"), "test-finalizers");
 
@@ -257,14 +259,18 @@ async fn test_volumesnapshot_with_finalizers() {
     let created: VolumeSnapshot = storage.create(&key, &vs).await.unwrap();
     assert_eq!(
         created.metadata.finalizers,
-        Some(vec!["snapshot.storage.kubernetes.io/volumesnapshot-bound-protection".to_string()])
+        Some(vec![
+            "snapshot.storage.kubernetes.io/volumesnapshot-bound-protection".to_string()
+        ])
     );
 
     // Verify finalizer is present
     let retrieved: VolumeSnapshot = storage.get(&key).await.unwrap();
     assert_eq!(
         retrieved.metadata.finalizers,
-        Some(vec!["snapshot.storage.kubernetes.io/volumesnapshot-bound-protection".to_string()])
+        Some(vec![
+            "snapshot.storage.kubernetes.io/volumesnapshot-bound-protection".to_string()
+        ])
     );
 
     // Clean up - remove finalizer first
@@ -457,10 +463,7 @@ async fn test_volumesnapshot_class_name() {
 
     // Create with custom snapshot class
     let created: VolumeSnapshot = storage.create(&key, &vs).await.unwrap();
-    assert_eq!(
-        created.spec.volume_snapshot_class_name,
-        "custom-snapclass"
-    );
+    assert_eq!(created.spec.volume_snapshot_class_name, "custom-snapclass");
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -515,15 +518,9 @@ async fn test_volumesnapshot_multiple_namespaces() {
     let created2: VolumeSnapshot = storage.create(&key2, &vs2).await.unwrap();
 
     assert_eq!(created1.metadata.name, "test-snapshot");
-    assert_eq!(
-        created1.metadata.namespace,
-        Some("namespace-1".to_string())
-    );
+    assert_eq!(created1.metadata.namespace, Some("namespace-1".to_string()));
     assert_eq!(created2.metadata.name, "test-snapshot");
-    assert_eq!(
-        created2.metadata.namespace,
-        Some("namespace-2".to_string())
-    );
+    assert_eq!(created2.metadata.namespace, Some("namespace-2".to_string()));
     assert_ne!(created1.metadata.uid, created2.metadata.uid);
 
     // Clean up

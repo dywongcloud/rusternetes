@@ -12,7 +12,7 @@ use futures::StreamExt;
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     types::ObjectMeta,
-    Result, Error,
+    Error, Result,
 };
 use rusternetes_storage::{build_prefix, Storage, WatchEvent};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -80,8 +80,13 @@ pub async fn watch_namespaced<T>(
 where
     T: Serialize + DeserializeOwned + Send + Sync + 'static + Clone + HasMetadata,
 {
-    info!("Starting watch for {} in namespace {} (timeout: {:?}s, bookmarks: {})",
-        resource_type, namespace, params.timeout_seconds, params.allow_watch_bookmarks.unwrap_or(false));
+    info!(
+        "Starting watch for {} in namespace {} (timeout: {:?}s, bookmarks: {})",
+        resource_type,
+        namespace,
+        params.timeout_seconds,
+        params.allow_watch_bookmarks.unwrap_or(false)
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user.clone(), "watch", resource_type)
@@ -104,7 +109,8 @@ where
     let watch_stream = state.storage.watch(&prefix).await?;
 
     // Create channel for sending events to client
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
+    let (tx, rx) =
+        tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
 
     // Extract parameters
     // TODO: Fix bookmark implementation - currently disabled as CoreDNS can't decode them
@@ -313,8 +319,12 @@ pub async fn watch_cluster_scoped<T>(
 where
     T: Serialize + DeserializeOwned + Send + Sync + 'static + Clone + HasMetadata,
 {
-    info!("Starting watch for cluster-scoped {} (timeout: {:?}s, bookmarks: {})",
-        resource_type, params.timeout_seconds, params.allow_watch_bookmarks.unwrap_or(false));
+    info!(
+        "Starting watch for cluster-scoped {} (timeout: {:?}s, bookmarks: {})",
+        resource_type,
+        params.timeout_seconds,
+        params.allow_watch_bookmarks.unwrap_or(false)
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user.clone(), "watch", resource_type)
@@ -336,7 +346,8 @@ where
     let watch_stream = state.storage.watch(&prefix).await?;
 
     // Create channel for sending events to client
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
+    let (tx, rx) =
+        tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
 
     // Extract parameters
     // TODO: Fix bookmark implementation - currently disabled as CoreDNS can't decode them
@@ -597,12 +608,7 @@ pub async fn watch_pods(
     Query(params): Query<WatchParams>,
 ) -> Result<impl IntoResponse> {
     watch_namespaced::<rusternetes_common::resources::Pod>(
-        state,
-        auth_ctx,
-        namespace,
-        "pods",
-        "",
-        params,
+        state, auth_ctx, namespace, "pods", "", params,
     )
     .await
 }
@@ -615,12 +621,7 @@ pub async fn watch_services(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::Service>(
-        state,
-        auth_ctx,
-        namespace,
-        "services",
-        "",
-        params,
+        state, auth_ctx, namespace, "services", "", params,
     )
     .await
 }
@@ -669,12 +670,7 @@ pub async fn watch_secrets(
     Query(params): Query<WatchParams>,
 ) -> Result<impl IntoResponse> {
     watch_namespaced::<rusternetes_common::resources::Secret>(
-        state,
-        auth_ctx,
-        namespace,
-        "secrets",
-        "",
-        params,
+        state, auth_ctx, namespace, "secrets", "", params,
     )
     .await
 }
@@ -686,11 +682,7 @@ pub async fn watch_nodes(
     Query(params): Query<WatchParams>,
 ) -> Result<impl IntoResponse> {
     watch_cluster_scoped::<rusternetes_common::resources::Node>(
-        state,
-        auth_ctx,
-        "nodes",
-        "",
-        params,
+        state, auth_ctx, "nodes", "", params,
     )
     .await
 }
@@ -809,12 +801,7 @@ pub async fn watch_jobs(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::Job>(
-        state,
-        auth_ctx,
-        namespace,
-        "jobs",
-        "batch",
-        params,
+        state, auth_ctx, namespace, "jobs", "batch", params,
     )
     .await
 }
@@ -827,12 +814,7 @@ pub async fn watch_cronjobs(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::CronJob>(
-        state,
-        auth_ctx,
-        namespace,
-        "cronjobs",
-        "batch",
-        params,
+        state, auth_ctx, namespace, "cronjobs", "batch", params,
     )
     .await
 }
@@ -845,12 +827,7 @@ pub async fn watch_events(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::Event>(
-        state,
-        auth_ctx,
-        namespace,
-        "events",
-        "",
-        params,
+        state, auth_ctx, namespace, "events", "", params,
     )
     .await
 }

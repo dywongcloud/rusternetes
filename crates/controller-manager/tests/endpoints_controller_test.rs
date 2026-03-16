@@ -1,7 +1,7 @@
 use rusternetes_common::resources::{
-    Service, ServiceSpec, ServicePort, Pod, PodSpec, PodStatus, Container, ContainerStatus,
+    Container, ContainerStatus, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec,
 };
-use rusternetes_common::types::{ObjectMeta, TypeMeta, Phase};
+use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::endpoints::EndpointsController;
 use rusternetes_storage::{build_key, MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -89,6 +89,7 @@ fn create_test_pod(
             service_account_name: None,
             automount_service_account_token: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -102,7 +103,11 @@ fn create_test_pod(
             resource_claims: None,
         }),
         status: Some(PodStatus {
-            phase: if ready { Some(Phase::Running) } else { Some(Phase::Pending) },
+            phase: if ready {
+                Some(Phase::Running)
+            } else {
+                Some(Phase::Pending)
+            },
             message: None,
             reason: None,
             host_ip: Some("192.168.1.10".to_string()),
@@ -135,13 +140,28 @@ async fn test_endpoints_created_for_service_with_matching_pods() {
     selector.insert("app".to_string(), "web".to_string());
     let service = create_test_service("web-service", "default", selector.clone());
     storage
-        .create(&build_key("services", Some("default"), "web-service"), &service)
+        .create(
+            &build_key("services", Some("default"), "web-service"),
+            &service,
+        )
         .await
         .unwrap();
 
     // Create matching pods
-    let pod1 = create_test_pod("web-pod-1", "default", selector.clone(), Some("10.244.0.1".to_string()), true);
-    let pod2 = create_test_pod("web-pod-2", "default", selector.clone(), Some("10.244.0.2".to_string()), true);
+    let pod1 = create_test_pod(
+        "web-pod-1",
+        "default",
+        selector.clone(),
+        Some("10.244.0.1".to_string()),
+        true,
+    );
+    let pod2 = create_test_pod(
+        "web-pod-2",
+        "default",
+        selector.clone(),
+        Some("10.244.0.2".to_string()),
+        true,
+    );
     storage
         .create(&build_key("pods", Some("default"), "web-pod-1"), &pod1)
         .await
@@ -184,20 +204,38 @@ async fn test_endpoints_separates_ready_and_not_ready_pods() {
     selector.insert("app".to_string(), "db".to_string());
     let service = create_test_service("db-service", "default", selector.clone());
     storage
-        .create(&build_key("services", Some("default"), "db-service"), &service)
+        .create(
+            &build_key("services", Some("default"), "db-service"),
+            &service,
+        )
         .await
         .unwrap();
 
     // Create ready and not-ready pods
-    let ready_pod = create_test_pod("db-pod-1", "default", selector.clone(), Some("10.244.0.10".to_string()), true);
-    let not_ready_pod = create_test_pod("db-pod-2", "default", selector.clone(), Some("10.244.0.11".to_string()), false);
+    let ready_pod = create_test_pod(
+        "db-pod-1",
+        "default",
+        selector.clone(),
+        Some("10.244.0.10".to_string()),
+        true,
+    );
+    let not_ready_pod = create_test_pod(
+        "db-pod-2",
+        "default",
+        selector.clone(),
+        Some("10.244.0.11".to_string()),
+        false,
+    );
 
     storage
         .create(&build_key("pods", Some("default"), "db-pod-1"), &ready_pod)
         .await
         .unwrap();
     storage
-        .create(&build_key("pods", Some("default"), "db-pod-2"), &not_ready_pod)
+        .create(
+            &build_key("pods", Some("default"), "db-pod-2"),
+            &not_ready_pod,
+        )
         .await
         .unwrap();
 
@@ -236,20 +274,35 @@ async fn test_endpoints_skips_pods_without_ip() {
     selector.insert("app".to_string(), "api".to_string());
     let service = create_test_service("api-service", "default", selector.clone());
     storage
-        .create(&build_key("services", Some("default"), "api-service"), &service)
+        .create(
+            &build_key("services", Some("default"), "api-service"),
+            &service,
+        )
         .await
         .unwrap();
 
     // Create pods - one with IP, one without
-    let pod_with_ip = create_test_pod("api-pod-1", "default", selector.clone(), Some("10.244.0.20".to_string()), true);
+    let pod_with_ip = create_test_pod(
+        "api-pod-1",
+        "default",
+        selector.clone(),
+        Some("10.244.0.20".to_string()),
+        true,
+    );
     let pod_without_ip = create_test_pod("api-pod-2", "default", selector.clone(), None, true);
 
     storage
-        .create(&build_key("pods", Some("default"), "api-pod-1"), &pod_with_ip)
+        .create(
+            &build_key("pods", Some("default"), "api-pod-1"),
+            &pod_with_ip,
+        )
         .await
         .unwrap();
     storage
-        .create(&build_key("pods", Some("default"), "api-pod-2"), &pod_without_ip)
+        .create(
+            &build_key("pods", Some("default"), "api-pod-2"),
+            &pod_without_ip,
+        )
         .await
         .unwrap();
 
@@ -281,24 +334,45 @@ async fn test_endpoints_respects_service_selector() {
     selector.insert("tier".to_string(), "web".to_string());
     let service = create_test_service("frontend-service", "default", selector.clone());
     storage
-        .create(&build_key("services", Some("default"), "frontend-service"), &service)
+        .create(
+            &build_key("services", Some("default"), "frontend-service"),
+            &service,
+        )
         .await
         .unwrap();
 
     // Create matching pod
-    let matching_pod = create_test_pod("frontend-pod", "default", selector.clone(), Some("10.244.0.30".to_string()), true);
+    let matching_pod = create_test_pod(
+        "frontend-pod",
+        "default",
+        selector.clone(),
+        Some("10.244.0.30".to_string()),
+        true,
+    );
 
     // Create non-matching pod (missing tier label)
     let mut partial_labels = HashMap::new();
     partial_labels.insert("app".to_string(), "frontend".to_string());
-    let non_matching_pod = create_test_pod("other-pod", "default", partial_labels, Some("10.244.0.31".to_string()), true);
+    let non_matching_pod = create_test_pod(
+        "other-pod",
+        "default",
+        partial_labels,
+        Some("10.244.0.31".to_string()),
+        true,
+    );
 
     storage
-        .create(&build_key("pods", Some("default"), "frontend-pod"), &matching_pod)
+        .create(
+            &build_key("pods", Some("default"), "frontend-pod"),
+            &matching_pod,
+        )
         .await
         .unwrap();
     storage
-        .create(&build_key("pods", Some("default"), "other-pod"), &non_matching_pod)
+        .create(
+            &build_key("pods", Some("default"), "other-pod"),
+            &non_matching_pod,
+        )
         .await
         .unwrap();
 
@@ -315,7 +389,11 @@ async fn test_endpoints_respects_service_selector() {
     let subset = &endpoints.subsets[0];
     assert!(subset.addresses.is_some());
     let addresses = subset.addresses.as_ref().unwrap();
-    assert_eq!(addresses.len(), 1, "Should only include pod matching all selector labels");
+    assert_eq!(
+        addresses.len(),
+        1,
+        "Should only include pod matching all selector labels"
+    );
     assert_eq!(addresses[0].ip, "10.244.0.30");
 }
 
@@ -327,7 +405,10 @@ async fn test_endpoints_skips_service_without_selector() {
     // Create service without selector (headless service)
     let service = create_test_service("headless-service", "default", HashMap::new());
     storage
-        .create(&build_key("services", Some("default"), "headless-service"), &service)
+        .create(
+            &build_key("services", Some("default"), "headless-service"),
+            &service,
+        )
         .await
         .unwrap();
 
@@ -339,7 +420,10 @@ async fn test_endpoints_skips_service_without_selector() {
         .get(&build_key("endpoints", Some("default"), "headless-service"))
         .await;
 
-    assert!(result.is_err(), "Endpoints should not be created for service without selector");
+    assert!(
+        result.is_err(),
+        "Endpoints should not be created for service without selector"
+    );
 }
 
 #[tokio::test]
@@ -352,12 +436,21 @@ async fn test_endpoints_updates_when_pods_change() {
     selector.insert("app".to_string(), "cache".to_string());
     let service = create_test_service("cache-service", "default", selector.clone());
     storage
-        .create(&build_key("services", Some("default"), "cache-service"), &service)
+        .create(
+            &build_key("services", Some("default"), "cache-service"),
+            &service,
+        )
         .await
         .unwrap();
 
     // Create initial pod
-    let pod1 = create_test_pod("cache-pod-1", "default", selector.clone(), Some("10.244.0.40".to_string()), true);
+    let pod1 = create_test_pod(
+        "cache-pod-1",
+        "default",
+        selector.clone(),
+        Some("10.244.0.40".to_string()),
+        true,
+    );
     storage
         .create(&build_key("pods", Some("default"), "cache-pod-1"), &pod1)
         .await
@@ -374,7 +467,13 @@ async fn test_endpoints_updates_when_pods_change() {
     assert_eq!(endpoints.subsets[0].addresses.as_ref().unwrap().len(), 1);
 
     // Add another pod
-    let pod2 = create_test_pod("cache-pod-2", "default", selector.clone(), Some("10.244.0.41".to_string()), true);
+    let pod2 = create_test_pod(
+        "cache-pod-2",
+        "default",
+        selector.clone(),
+        Some("10.244.0.41".to_string()),
+        true,
+    );
     storage
         .create(&build_key("pods", Some("default"), "cache-pod-2"), &pod2)
         .await
@@ -389,7 +488,11 @@ async fn test_endpoints_updates_when_pods_change() {
         .await
         .unwrap();
     assert_eq!(
-        updated_endpoints.subsets[0].addresses.as_ref().unwrap().len(),
+        updated_endpoints.subsets[0]
+            .addresses
+            .as_ref()
+            .unwrap()
+            .len(),
         2,
         "Endpoints should be updated to include new pod"
     );
@@ -408,17 +511,35 @@ async fn test_endpoints_multiple_namespaces() {
     let service_ns2 = create_test_service("worker-service", "ns2", selector.clone());
 
     storage
-        .create(&build_key("services", Some("ns1"), "worker-service"), &service_ns1)
+        .create(
+            &build_key("services", Some("ns1"), "worker-service"),
+            &service_ns1,
+        )
         .await
         .unwrap();
     storage
-        .create(&build_key("services", Some("ns2"), "worker-service"), &service_ns2)
+        .create(
+            &build_key("services", Some("ns2"), "worker-service"),
+            &service_ns2,
+        )
         .await
         .unwrap();
 
     // Create pods in different namespaces
-    let pod_ns1 = create_test_pod("worker-pod-1", "ns1", selector.clone(), Some("10.244.1.1".to_string()), true);
-    let pod_ns2 = create_test_pod("worker-pod-2", "ns2", selector.clone(), Some("10.244.2.1".to_string()), true);
+    let pod_ns1 = create_test_pod(
+        "worker-pod-1",
+        "ns1",
+        selector.clone(),
+        Some("10.244.1.1".to_string()),
+        true,
+    );
+    let pod_ns2 = create_test_pod(
+        "worker-pod-2",
+        "ns2",
+        selector.clone(),
+        Some("10.244.2.1".to_string()),
+        true,
+    );
 
     storage
         .create(&build_key("pods", Some("ns1"), "worker-pod-1"), &pod_ns1)
@@ -438,8 +559,14 @@ async fn test_endpoints_multiple_namespaces() {
         .await
         .unwrap();
     assert_eq!(endpoints_ns1.metadata.namespace.as_deref().unwrap(), "ns1");
-    assert_eq!(endpoints_ns1.subsets[0].addresses.as_ref().unwrap().len(), 1);
-    assert_eq!(endpoints_ns1.subsets[0].addresses.as_ref().unwrap()[0].ip, "10.244.1.1");
+    assert_eq!(
+        endpoints_ns1.subsets[0].addresses.as_ref().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        endpoints_ns1.subsets[0].addresses.as_ref().unwrap()[0].ip,
+        "10.244.1.1"
+    );
 
     // Verify endpoints in ns2
     let endpoints_ns2: rusternetes_common::resources::Endpoints = storage
@@ -447,8 +574,14 @@ async fn test_endpoints_multiple_namespaces() {
         .await
         .unwrap();
     assert_eq!(endpoints_ns2.metadata.namespace.as_deref().unwrap(), "ns2");
-    assert_eq!(endpoints_ns2.subsets[0].addresses.as_ref().unwrap().len(), 1);
-    assert_eq!(endpoints_ns2.subsets[0].addresses.as_ref().unwrap()[0].ip, "10.244.2.1");
+    assert_eq!(
+        endpoints_ns2.subsets[0].addresses.as_ref().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        endpoints_ns2.subsets[0].addresses.as_ref().unwrap()[0].ip,
+        "10.244.2.1"
+    );
 }
 
 #[tokio::test]
@@ -461,12 +594,21 @@ async fn test_endpoints_includes_target_ref() {
     selector.insert("app".to_string(), "metrics".to_string());
     let service = create_test_service("metrics-service", "default", selector.clone());
     storage
-        .create(&build_key("services", Some("default"), "metrics-service"), &service)
+        .create(
+            &build_key("services", Some("default"), "metrics-service"),
+            &service,
+        )
         .await
         .unwrap();
 
     // Create pod
-    let pod = create_test_pod("metrics-pod", "default", selector.clone(), Some("10.244.0.50".to_string()), true);
+    let pod = create_test_pod(
+        "metrics-pod",
+        "default",
+        selector.clone(),
+        Some("10.244.0.50".to_string()),
+        true,
+    );
     let pod_uid = pod.metadata.uid.clone();
     storage
         .create(&build_key("pods", Some("default"), "metrics-pod"), &pod)
@@ -484,7 +626,10 @@ async fn test_endpoints_includes_target_ref() {
 
     let subset = &endpoints.subsets[0];
     let address = &subset.addresses.as_ref().unwrap()[0];
-    assert!(address.target_ref.is_some(), "Endpoint address should have target_ref");
+    assert!(
+        address.target_ref.is_some(),
+        "Endpoint address should have target_ref"
+    );
 
     let target_ref = address.target_ref.as_ref().unwrap();
     assert_eq!(target_ref.kind, Some("Pod".to_string()));
@@ -521,12 +666,21 @@ async fn test_endpoints_includes_port_mapping() {
     ];
 
     storage
-        .create(&build_key("services", Some("default"), "multi-port-service"), &service)
+        .create(
+            &build_key("services", Some("default"), "multi-port-service"),
+            &service,
+        )
         .await
         .unwrap();
 
     // Create pod
-    let pod = create_test_pod("multi-port-pod", "default", selector.clone(), Some("10.244.0.60".to_string()), true);
+    let pod = create_test_pod(
+        "multi-port-pod",
+        "default",
+        selector.clone(),
+        Some("10.244.0.60".to_string()),
+        true,
+    );
     storage
         .create(&build_key("pods", Some("default"), "multi-port-pod"), &pod)
         .await
@@ -537,7 +691,11 @@ async fn test_endpoints_includes_port_mapping() {
 
     // Verify endpoints include port mappings
     let endpoints: rusternetes_common::resources::Endpoints = storage
-        .get(&build_key("endpoints", Some("default"), "multi-port-service"))
+        .get(&build_key(
+            "endpoints",
+            Some("default"),
+            "multi-port-service",
+        ))
         .await
         .unwrap();
 
@@ -548,12 +706,18 @@ async fn test_endpoints_includes_port_mapping() {
     assert_eq!(ports.len(), 2, "Should have 2 ports");
 
     // Verify HTTP port
-    let http_port = ports.iter().find(|p| p.name == Some("http".to_string())).unwrap();
+    let http_port = ports
+        .iter()
+        .find(|p| p.name == Some("http".to_string()))
+        .unwrap();
     assert_eq!(http_port.port, 8080);
     assert_eq!(http_port.protocol, Some("TCP".to_string()));
 
     // Verify HTTPS port
-    let https_port = ports.iter().find(|p| p.name == Some("https".to_string())).unwrap();
+    let https_port = ports
+        .iter()
+        .find(|p| p.name == Some("https".to_string()))
+        .unwrap();
     assert_eq!(https_port.port, 8443);
     assert_eq!(https_port.protocol, Some("TCP".to_string()));
 }

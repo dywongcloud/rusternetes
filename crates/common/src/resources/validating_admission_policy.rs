@@ -389,10 +389,7 @@ mod tests {
     fn test_validating_admission_policy_creation() {
         let policy = ValidatingAdmissionPolicy::new("test-policy");
         assert_eq!(policy.metadata.name, "test-policy");
-        assert_eq!(
-            policy.api_version,
-            "admissionregistration.k8s.io/v1"
-        );
+        assert_eq!(policy.api_version, "admissionregistration.k8s.io/v1");
         assert_eq!(policy.kind, "ValidatingAdmissionPolicy");
     }
 
@@ -400,10 +397,7 @@ mod tests {
     fn test_validating_admission_policy_binding_creation() {
         let binding = ValidatingAdmissionPolicyBinding::new("test-binding");
         assert_eq!(binding.metadata.name, "test-binding");
-        assert_eq!(
-            binding.api_version,
-            "admissionregistration.k8s.io/v1"
-        );
+        assert_eq!(binding.api_version, "admissionregistration.k8s.io/v1");
         assert_eq!(binding.kind, "ValidatingAdmissionPolicyBinding");
     }
 

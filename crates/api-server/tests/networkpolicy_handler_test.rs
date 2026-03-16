@@ -4,8 +4,8 @@
 //! NetworkPolicy describes what network traffic is allowed for a set of Pods.
 
 use rusternetes_common::resources::{
-    IPBlock, NetworkPolicy, NetworkPolicyEgressRule, NetworkPolicyIngressRule,
-    NetworkPolicyPeer, NetworkPolicyPort, NetworkPolicySpec,
+    IPBlock, NetworkPolicy, NetworkPolicyEgressRule, NetworkPolicyIngressRule, NetworkPolicyPeer,
+    NetworkPolicyPort, NetworkPolicySpec,
 };
 use rusternetes_common::types::{LabelSelector, ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
@@ -57,7 +57,10 @@ async fn test_networkpolicy_create_and_get() {
     // Get
     let retrieved: NetworkPolicy = storage.get(&key).await.unwrap();
     assert_eq!(retrieved.metadata.name, "test-np");
-    assert_eq!(retrieved.spec.policy_types, Some(vec!["Ingress".to_string()]));
+    assert_eq!(
+        retrieved.spec.policy_types,
+        Some(vec!["Ingress".to_string()])
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -574,15 +577,9 @@ async fn test_networkpolicy_multiple_namespaces() {
     let created2: NetworkPolicy = storage.create(&key2, &np2).await.unwrap();
 
     assert_eq!(created1.metadata.name, "test-np");
-    assert_eq!(
-        created1.metadata.namespace,
-        Some("namespace-1".to_string())
-    );
+    assert_eq!(created1.metadata.namespace, Some("namespace-1".to_string()));
     assert_eq!(created2.metadata.name, "test-np");
-    assert_eq!(
-        created2.metadata.namespace,
-        Some("namespace-2".to_string())
-    );
+    assert_eq!(created2.metadata.namespace, Some("namespace-2".to_string()));
     assert_ne!(created1.metadata.uid, created2.metadata.uid);
 
     // Clean up

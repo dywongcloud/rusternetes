@@ -35,7 +35,10 @@ impl AwsProvider {
     /// Create a new AWS provider
     pub async fn new(cluster_name: String, region: Option<String>) -> Result<Self> {
         let config = if let Some(r) = region {
-            aws_config::from_env().region(aws_config::Region::new(r)).load().await
+            aws_config::from_env()
+                .region(aws_config::Region::new(r))
+                .load()
+                .await
         } else {
             aws_config::load_from_env().await
         };
@@ -63,8 +66,7 @@ impl AwsProvider {
         // For now, return placeholder values
         // In production, this should query EC2 instance metadata service
         // or use environment variables
-        let vpc_id = std::env::var("AWS_VPC_ID")
-            .unwrap_or_else(|_| "vpc-placeholder".to_string());
+        let vpc_id = std::env::var("AWS_VPC_ID").unwrap_or_else(|_| "vpc-placeholder".to_string());
 
         let subnet_ids_str = std::env::var("AWS_SUBNET_IDS")
             .unwrap_or_else(|_| "subnet-placeholder-1,subnet-placeholder-2".to_string());
@@ -80,47 +82,58 @@ impl AwsProvider {
     /// Generate load balancer name from service
     fn lb_name(&self, service: &LoadBalancerService) -> String {
         // AWS LB names max 32 chars, must be alphanumeric and hyphens
-        let name = format!("{}-{}-{}",
-            self.cluster_name,
-            service.namespace,
-            service.name
+        let name = format!(
+            "{}-{}-{}",
+            self.cluster_name, service.namespace, service.name
         );
 
         // Truncate and sanitize
         name.chars()
             .take(32)
-            .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '-'
+                }
+            })
             .collect()
     }
 
     /// Generate target group name
     fn tg_name(&self, service: &LoadBalancerService, port: u16) -> String {
-        let name = format!("{}-{}-{}-{}",
-            self.cluster_name,
-            service.namespace,
-            service.name,
-            port
+        let name = format!(
+            "{}-{}-{}-{}",
+            self.cluster_name, service.namespace, service.name, port
         );
 
         name.chars()
             .take(32)
-            .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '-'
+                }
+            })
             .collect()
     }
 
     /// Find existing load balancer by tags
-    async fn find_load_balancer(&self, service: &LoadBalancerService) -> Result<Option<LoadBalancer>> {
+    async fn find_load_balancer(
+        &self,
+        service: &LoadBalancerService,
+    ) -> Result<Option<LoadBalancer>> {
         let lb_name = self.lb_name(service);
 
-        match self.elb_client
+        match self
+            .elb_client
             .describe_load_balancers()
             .names(&lb_name)
             .send()
             .await
         {
-            Ok(output) => {
-                Ok(output.load_balancers().first().cloned())
-            }
+            Ok(output) => Ok(output.load_balancers().first().cloned()),
             Err(e) => {
                 debug!("Load balancer {} not found: {}", lb_name, e);
                 Ok(None)
@@ -137,7 +150,8 @@ impl AwsProvider {
         let tg_name = self.tg_name(service, port);
 
         // Try to find existing target group
-        match self.elb_client
+        match self
+            .elb_client
             .describe_target_groups()
             .names(&tg_name)
             .send()
@@ -156,7 +170,8 @@ impl AwsProvider {
 
         // Create new target group
         info!("Creating target group: {}", tg_name);
-        let create_output = self.elb_client
+        let create_output = self
+            .elb_client
             .create_target_group()
             .name(&tg_name)
             .protocol(aws_sdk_elasticloadbalancingv2::types::ProtocolEnum::Tcp)
@@ -166,18 +181,27 @@ impl AwsProvider {
             .ip_address_type(TargetGroupIpAddressTypeEnum::Ipv4)
             .send()
             .await
-            .map_err(|e| rusternetes_common::Error::Internal(format!("Failed to create target group: {}", e)))?;
+            .map_err(|e| {
+                rusternetes_common::Error::Internal(format!("Failed to create target group: {}", e))
+            })?;
 
-        let tg = create_output.target_groups()
+        let tg = create_output
+            .target_groups()
             .first()
-            .ok_or_else(|| rusternetes_common::Error::Internal("No target group returned".to_string()))?
+            .ok_or_else(|| {
+                rusternetes_common::Error::Internal("No target group returned".to_string())
+            })?
             .clone();
 
         // Register targets (node IPs)
         if !service.node_addresses.is_empty() {
-            info!("Registering {} targets to target group", service.node_addresses.len());
+            info!(
+                "Registering {} targets to target group",
+                service.node_addresses.len()
+            );
 
-            let targets: Vec<_> = service.node_addresses
+            let targets: Vec<_> = service
+                .node_addresses
                 .iter()
                 .map(|ip| {
                     aws_sdk_elasticloadbalancingv2::types::TargetDescription::builder()
@@ -193,30 +217,37 @@ impl AwsProvider {
                 .set_targets(Some(targets))
                 .send()
                 .await
-                .map_err(|e| rusternetes_common::Error::Internal(format!("Failed to register targets: {}", e)))?;
+                .map_err(|e| {
+                    rusternetes_common::Error::Internal(format!(
+                        "Failed to register targets: {}",
+                        e
+                    ))
+                })?;
         }
 
         Ok(tg)
     }
 
     /// Create Network Load Balancer
-    async fn create_load_balancer(
-        &self,
-        service: &LoadBalancerService,
-    ) -> Result<LoadBalancer> {
+    async fn create_load_balancer(&self, service: &LoadBalancerService) -> Result<LoadBalancer> {
         let lb_name = self.lb_name(service);
 
         info!("Creating NLB: {}", lb_name);
 
         // Determine if internal or internet-facing
-        let scheme = if service.annotations.get("service.beta.kubernetes.io/aws-load-balancer-internal") == Some(&"true".to_string()) {
+        let scheme = if service
+            .annotations
+            .get("service.beta.kubernetes.io/aws-load-balancer-internal")
+            == Some(&"true".to_string())
+        {
             LoadBalancerSchemeEnum::Internal
         } else {
             LoadBalancerSchemeEnum::InternetFacing
         };
 
         // Create load balancer
-        let create_output = self.elb_client
+        let create_output = self
+            .elb_client
             .create_load_balancer()
             .name(&lb_name)
             .r#type(LoadBalancerTypeEnum::Network)
@@ -225,16 +256,26 @@ impl AwsProvider {
             .set_subnets(Some(self.subnet_ids.clone()))
             .send()
             .await
-            .map_err(|e| rusternetes_common::Error::Internal(format!("Failed to create load balancer: {}", e)))?;
+            .map_err(|e| {
+                rusternetes_common::Error::Internal(format!(
+                    "Failed to create load balancer: {}",
+                    e
+                ))
+            })?;
 
-        let lb = create_output.load_balancers()
+        let lb = create_output
+            .load_balancers()
             .first()
-            .ok_or_else(|| rusternetes_common::Error::Internal("No load balancer returned".to_string()))?
+            .ok_or_else(|| {
+                rusternetes_common::Error::Internal("No load balancer returned".to_string())
+            })?
             .clone();
 
         // Tag the load balancer
         if let Some(lb_arn) = lb.load_balancer_arn() {
-            let tags: Vec<_> = self.tags.iter()
+            let tags: Vec<_> = self
+                .tags
+                .iter()
                 .map(|(k, v)| {
                     aws_sdk_elasticloadbalancingv2::types::Tag::builder()
                         .key(k)
@@ -243,7 +284,8 @@ impl AwsProvider {
                 })
                 .collect();
 
-            let _ = self.elb_client
+            let _ = self
+                .elb_client
                 .add_tags()
                 .resource_arns(lb_arn)
                 .set_tags(Some(tags))
@@ -255,11 +297,7 @@ impl AwsProvider {
     }
 
     /// Create listeners for the load balancer
-    async fn ensure_listeners(
-        &self,
-        lb_arn: &str,
-        service: &LoadBalancerService,
-    ) -> Result<()> {
+    async fn ensure_listeners(&self, lb_arn: &str, service: &LoadBalancerService) -> Result<()> {
         for lb_port in &service.ports {
             // Create target group
             let tg = self.ensure_target_group(service, lb_port.node_port).await?;
@@ -268,14 +306,21 @@ impl AwsProvider {
             })?;
 
             // Check if listener already exists
-            let existing_listeners = self.elb_client
+            let existing_listeners = self
+                .elb_client
                 .describe_listeners()
                 .load_balancer_arn(lb_arn)
                 .send()
                 .await
-                .map_err(|e| rusternetes_common::Error::Internal(format!("Failed to describe listeners: {}", e)))?;
+                .map_err(|e| {
+                    rusternetes_common::Error::Internal(format!(
+                        "Failed to describe listeners: {}",
+                        e
+                    ))
+                })?;
 
-            let listener_exists = existing_listeners.listeners()
+            let listener_exists = existing_listeners
+                .listeners()
                 .iter()
                 .any(|l| l.port() == Some(lb_port.port as i32));
 
@@ -287,7 +332,7 @@ impl AwsProvider {
                     .target_groups(
                         aws_sdk_elasticloadbalancingv2::types::TargetGroupTuple::builder()
                             .target_group_arn(tg_arn)
-                            .build()
+                            .build(),
                     )
                     .build();
 
@@ -304,7 +349,12 @@ impl AwsProvider {
                     .default_actions(action)
                     .send()
                     .await
-                    .map_err(|e| rusternetes_common::Error::Internal(format!("Failed to create listener: {}", e)))?;
+                    .map_err(|e| {
+                        rusternetes_common::Error::Internal(format!(
+                            "Failed to create listener: {}",
+                            e
+                        ))
+                    })?;
             }
         }
 
@@ -319,7 +369,10 @@ impl CloudProvider for AwsProvider {
         &self,
         service: &LoadBalancerService,
     ) -> Result<LoadBalancerStatus> {
-        info!("Ensuring AWS NLB for service {}/{}", service.namespace, service.name);
+        info!(
+            "Ensuring AWS NLB for service {}/{}",
+            service.namespace, service.name
+        );
 
         // Find or create load balancer
         let lb = match self.find_load_balancer(service).await? {
@@ -389,7 +442,12 @@ impl CloudProvider for AwsProvider {
             .load_balancer_arn(lb_arn)
             .send()
             .await
-            .map_err(|e| rusternetes_common::Error::Internal(format!("Failed to delete load balancer: {}", e)))?;
+            .map_err(|e| {
+                rusternetes_common::Error::Internal(format!(
+                    "Failed to delete load balancer: {}",
+                    e
+                ))
+            })?;
 
         info!("Successfully deleted load balancer {}", lb_name);
 
@@ -437,9 +495,12 @@ pub struct AwsProvider;
 
 #[cfg(not(feature = "aws"))]
 impl AwsProvider {
-    pub async fn new(_cluster_name: String, _region: Option<String>) -> rusternetes_common::Result<Self> {
+    pub async fn new(
+        _cluster_name: String,
+        _region: Option<String>,
+    ) -> rusternetes_common::Result<Self> {
         Err(rusternetes_common::Error::Internal(
-            "AWS provider not compiled. Enable 'aws' feature".to_string()
+            "AWS provider not compiled. Enable 'aws' feature".to_string(),
         ))
     }
 }
@@ -534,7 +595,9 @@ mod tests {
 
     #[test]
     fn test_is_driver_supported() {
-        assert!(AwsProvider::is_driver_supported("rusternetes.io/hostpath-snapshotter"));
+        assert!(AwsProvider::is_driver_supported(
+            "rusternetes.io/hostpath-snapshotter"
+        ));
         assert!(AwsProvider::is_driver_supported("hostpath-snapshotter"));
         assert!(!AwsProvider::is_driver_supported("kubernetes.io/aws-ebs"));
         assert!(!AwsProvider::is_driver_supported("unknown-driver"));

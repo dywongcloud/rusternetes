@@ -1,7 +1,10 @@
 //! Integration tests for NamespaceController
 
 use chrono::Utc;
-use rusternetes_common::resources::{namespace::{NamespaceSpec, NamespaceStatus}, Namespace};
+use rusternetes_common::resources::{
+    namespace::{NamespaceSpec, NamespaceStatus},
+    Namespace,
+};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::namespace::NamespaceController;
 use rusternetes_storage::{build_key, etcd::EtcdStorage, Storage};
@@ -46,7 +49,9 @@ async fn test_namespace_active_not_deleted() {
             annotations: None,
         },
         spec: Some(NamespaceSpec { finalizers: None }),
-        status: Some(NamespaceStatus { phase: rusternetes_common::types::Phase::Active }),
+        status: Some(NamespaceStatus {
+            phase: rusternetes_common::types::Phase::Active,
+        }),
     };
 
     let key = build_key("namespaces", None, "test-namespace");
@@ -161,7 +166,9 @@ async fn test_namespace_deletion_removes_finalizers() {
 
     if let Ok(ns) = result {
         // Finalizers should be removed or empty
-        assert!(ns.metadata.finalizers.is_none() || ns.metadata.finalizers.as_ref().unwrap().is_empty());
+        assert!(
+            ns.metadata.finalizers.is_none() || ns.metadata.finalizers.as_ref().unwrap().is_empty()
+        );
     }
 
     // Clean up

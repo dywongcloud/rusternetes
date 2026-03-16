@@ -3,7 +3,7 @@
 //! Tests all CRUD operations, edge cases, and error handling for deployments
 
 use rusternetes_common::resources::{
-    Deployment, DeploymentSpec, PodTemplateSpec, Container, PodSpec,
+    Container, Deployment, DeploymentSpec, PodSpec, PodTemplateSpec,
 };
 use rusternetes_common::types::{LabelSelector, ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
@@ -82,6 +82,7 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                     service_account_name: None,
                     automount_service_account_token: None,
                     hostname: None,
+                    subdomain: None,
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
@@ -187,7 +188,10 @@ async fn test_deployment_list() {
     let deployments: Vec<Deployment> = storage.list(&prefix).await.unwrap();
 
     assert!(deployments.len() >= 3);
-    let names: Vec<String> = deployments.iter().map(|d| d.metadata.name.clone()).collect();
+    let names: Vec<String> = deployments
+        .iter()
+        .map(|d| d.metadata.name.clone())
+        .collect();
     assert!(names.contains(&"deploy-1".to_string()));
     assert!(names.contains(&"deploy-2".to_string()));
     assert!(names.contains(&"deploy-3".to_string()));

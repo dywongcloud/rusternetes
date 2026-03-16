@@ -6,7 +6,6 @@
 /// 3. StorageClass CRUD operations
 /// 4. RBAC authorization for volume resources
 /// 5. Serialization/deserialization of volume types
-
 use rusternetes_common::{
     auth::UserInfo,
     authz::RequestAttributes,
@@ -44,7 +43,8 @@ fn test_persistentvolume_creation() {
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None,        },
+            claim_ref: None,
+        },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
@@ -96,8 +96,8 @@ fn test_persistentvolumeclaim_creation() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -169,8 +169,7 @@ fn test_pv_authorization_cluster_scoped() {
     };
 
     // PersistentVolume is cluster-scoped (no namespace)
-    let attrs = RequestAttributes::new(user, "create", "persistentvolumes")
-        .with_api_group(""); // Core API group
+    let attrs = RequestAttributes::new(user, "create", "persistentvolumes").with_api_group(""); // Core API group
 
     assert_eq!(attrs.resource, "persistentvolumes");
     assert_eq!(attrs.namespace, None); // Cluster-scoped
@@ -206,8 +205,8 @@ fn test_storageclass_authorization_cluster_scoped() {
     };
 
     // StorageClass is cluster-scoped with storage.k8s.io API group
-    let attrs = RequestAttributes::new(user, "create", "storageclasses")
-        .with_api_group("storage.k8s.io");
+    let attrs =
+        RequestAttributes::new(user, "create", "storageclasses").with_api_group("storage.k8s.io");
 
     assert_eq!(attrs.resource, "storageclasses");
     assert_eq!(attrs.namespace, None); // Cluster-scoped
@@ -337,7 +336,8 @@ fn test_pv_with_multiple_access_modes() {
             mount_options: Some(vec!["ro".to_string(), "noexec".to_string()]),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None,        },
+            claim_ref: None,
+        },
         status: None,
     };
 
@@ -380,10 +380,7 @@ fn test_pvc_with_resource_limits_and_requests() {
     assert!(pvc.spec.resources.limits.is_some());
     assert!(pvc.spec.resources.requests.is_some());
     assert_eq!(pvc.spec.volume_name, Some("specific-pv".to_string()));
-    assert_eq!(
-        pvc.spec.volume_mode,
-        Some(PersistentVolumeMode::Block)
-    );
+    assert_eq!(pvc.spec.volume_mode, Some(PersistentVolumeMode::Block));
 }
 
 #[test]

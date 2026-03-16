@@ -82,7 +82,10 @@ async fn test_configmap_update() {
 
     let updated: ConfigMap = storage.update(&key, &configmap).await.unwrap();
     let data = updated.data.unwrap();
-    assert_eq!(data.get("new-config.yaml"), Some(&"updated: true".to_string()));
+    assert_eq!(
+        data.get("new-config.yaml"),
+        Some(&"updated: true".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -128,7 +131,10 @@ async fn test_configmap_list() {
     let configmaps: Vec<ConfigMap> = storage.list(&prefix).await.unwrap();
 
     assert!(configmaps.len() >= 3);
-    let names: Vec<String> = configmaps.iter().map(|cm| cm.metadata.name.clone()).collect();
+    let names: Vec<String> = configmaps
+        .iter()
+        .map(|cm| cm.metadata.name.clone())
+        .collect();
     assert!(names.contains(&"cm-1".to_string()));
     assert!(names.contains(&"cm-2".to_string()));
     assert!(names.contains(&"cm-3".to_string()));
@@ -181,7 +187,10 @@ async fn test_configmap_with_binary_data() {
     let created: ConfigMap = storage.create(&key, &configmap).await.unwrap();
     assert!(created.binary_data.is_some());
     let binary_data = created.binary_data.unwrap();
-    assert_eq!(binary_data.get("logo.png"), Some(&vec![0x89, 0x50, 0x4E, 0x47]));
+    assert_eq!(
+        binary_data.get("logo.png"),
+        Some(&vec![0x89, 0x50, 0x4E, 0x47])
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -341,7 +350,10 @@ async fn test_configmap_multiple_entries() {
     assert_eq!(created_data.get("db.host"), Some(&"localhost".to_string()));
     assert_eq!(created_data.get("db.port"), Some(&"5432".to_string()));
     assert_eq!(created_data.get("db.name"), Some(&"mydb".to_string()));
-    assert_eq!(created_data.get("api.url"), Some(&"http://api.example.com".to_string()));
+    assert_eq!(
+        created_data.get("api.url"),
+        Some(&"http://api.example.com".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -369,7 +381,10 @@ async fn test_configmap_special_characters_in_keys() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut data = HashMap::new();
-    data.insert("my-key.with_dots-and-dashes".to_string(), "value1".to_string());
+    data.insert(
+        "my-key.with_dots-and-dashes".to_string(),
+        "value1".to_string(),
+    );
     data.insert("KEY_WITH_UNDERSCORES".to_string(), "value2".to_string());
 
     let mut configmap = create_test_configmap("test-special-chars", "default");

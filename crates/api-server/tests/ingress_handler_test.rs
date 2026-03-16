@@ -3,8 +3,8 @@
 //! Tests all CRUD operations, edge cases, and error handling for Ingresses
 
 use rusternetes_common::resources::{
-    HTTPIngressPath, HTTPIngressRuleValue, Ingress, IngressBackend, IngressRule, IngressServiceBackend,
-    IngressSpec, IngressTLS, ServiceBackendPort,
+    HTTPIngressPath, HTTPIngressRuleValue, Ingress, IngressBackend, IngressRule,
+    IngressServiceBackend, IngressSpec, IngressTLS, ServiceBackendPort,
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
@@ -110,7 +110,10 @@ async fn test_ingress_update() {
     }
 
     let updated: Ingress = storage.update(&key, &ingress).await.unwrap();
-    assert_eq!(updated.spec.as_ref().unwrap().rules.as_ref().unwrap().len(), 2);
+    assert_eq!(
+        updated.spec.as_ref().unwrap().rules.as_ref().unwrap().len(),
+        2
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -246,7 +249,17 @@ async fn test_ingress_with_default_backend() {
 
     assert!(created.spec.as_ref().unwrap().default_backend.is_some());
     assert_eq!(
-        created.spec.as_ref().unwrap().default_backend.as_ref().unwrap().service.as_ref().unwrap().name,
+        created
+            .spec
+            .as_ref()
+            .unwrap()
+            .default_backend
+            .as_ref()
+            .unwrap()
+            .service
+            .as_ref()
+            .unwrap()
+            .name,
         "default-service"
     );
 
@@ -472,7 +485,10 @@ async fn test_ingress_with_labels() {
     let created: Ingress = storage.create(&key, &ingress).await.unwrap();
 
     assert!(created.metadata.labels.is_some());
-    assert_eq!(created.metadata.labels.as_ref().unwrap().get("app"), Some(&"myapp".to_string()));
+    assert_eq!(
+        created.metadata.labels.as_ref().unwrap().get("app"),
+        Some(&"myapp".to_string())
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -487,8 +503,14 @@ async fn test_ingress_with_annotations() {
 
     ingress.metadata.annotations = Some({
         let mut annotations = HashMap::new();
-        annotations.insert("nginx.ingress.kubernetes.io/rewrite-target".to_string(), "/".to_string());
-        annotations.insert("cert-manager.io/cluster-issuer".to_string(), "letsencrypt".to_string());
+        annotations.insert(
+            "nginx.ingress.kubernetes.io/rewrite-target".to_string(),
+            "/".to_string(),
+        );
+        annotations.insert(
+            "cert-manager.io/cluster-issuer".to_string(),
+            "letsencrypt".to_string(),
+        );
         annotations
     });
 
@@ -497,7 +519,12 @@ async fn test_ingress_with_annotations() {
 
     assert!(created.metadata.annotations.is_some());
     assert_eq!(
-        created.metadata.annotations.as_ref().unwrap().get("nginx.ingress.kubernetes.io/rewrite-target"),
+        created
+            .metadata
+            .annotations
+            .as_ref()
+            .unwrap()
+            .get("nginx.ingress.kubernetes.io/rewrite-target"),
         Some(&"/".to_string())
     );
 
@@ -518,7 +545,10 @@ async fn test_ingress_with_finalizers() {
     let created: Ingress = storage.create(&key, &ingress).await.unwrap();
 
     assert!(created.metadata.finalizers.is_some());
-    assert_eq!(created.metadata.finalizers.as_ref().unwrap()[0], "test.finalizer.io/cleanup");
+    assert_eq!(
+        created.metadata.finalizers.as_ref().unwrap()[0],
+        "test.finalizer.io/cleanup"
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -541,7 +571,10 @@ async fn test_ingress_metadata_immutability() {
     let updated: Ingress = storage.update(&key, &created).await.unwrap();
 
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.metadata.creation_timestamp, original_creation_timestamp);
+    assert_eq!(
+        updated.metadata.creation_timestamp,
+        original_creation_timestamp
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();

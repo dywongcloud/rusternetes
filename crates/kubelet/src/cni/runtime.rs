@@ -44,10 +44,7 @@ pub struct CniRuntime {
 
 impl CniRuntime {
     /// Create a new CNI runtime
-    pub fn new(
-        plugin_paths: Vec<PathBuf>,
-        config_dir: PathBuf,
-    ) -> Result<Self, CniError> {
+    pub fn new(plugin_paths: Vec<PathBuf>, config_dir: PathBuf) -> Result<Self, CniError> {
         let mut plugin_manager = CniPluginManager::new(plugin_paths);
         plugin_manager.discover_plugins()?;
 
@@ -273,7 +270,10 @@ impl CniRuntime {
     }
 
     /// Get network configuration by name or use default
-    fn get_network_config(&self, network_name: Option<&str>) -> Result<NetworkConfigList, CniError> {
+    fn get_network_config(
+        &self,
+        network_name: Option<&str>,
+    ) -> Result<NetworkConfigList, CniError> {
         if let Some(name) = network_name {
             self.config_manager.get_config(name)
         } else if let Some(default) = &self.default_network {

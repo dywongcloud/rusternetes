@@ -22,7 +22,9 @@ impl ClusterIPAllocator {
 
     /// Create allocator with custom CIDR
     pub fn with_cidr(base_ip: String, prefix_len: u8) -> Self {
-        let base = base_ip.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::new(10, 96, 0, 0));
+        let base = base_ip
+            .parse::<Ipv4Addr>()
+            .unwrap_or(Ipv4Addr::new(10, 96, 0, 0));
 
         // Calculate pool size based on prefix length
         // For /12, that's 32-12 = 20 bits = 2^20 = 1,048,576 IPs

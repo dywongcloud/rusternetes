@@ -132,9 +132,7 @@ pub async fn apply_limit_range<S: Storage>(
                                 // Merge with existing limits
                                 let limits = resources.limits.as_mut().unwrap();
                                 for (key, value) in default_limits {
-                                    limits
-                                        .entry(key.clone())
-                                        .or_insert_with(|| value.clone());
+                                    limits.entry(key.clone()).or_insert_with(|| value.clone());
                                 }
                             }
                         }
@@ -147,9 +145,7 @@ pub async fn apply_limit_range<S: Storage>(
                                 // Merge with existing requests
                                 let requests = resources.requests.as_mut().unwrap();
                                 for (key, value) in default_requests {
-                                    requests
-                                        .entry(key.clone())
-                                        .or_insert_with(|| value.clone());
+                                    requests.entry(key.clone()).or_insert_with(|| value.clone());
                                 }
                             }
                         }
@@ -222,7 +218,10 @@ async fn calculate_namespace_usage<S: Storage>(
     }
 
     if total_cpu_requests > 0 {
-        usage.insert("requests.cpu".to_string(), format!("{}m", total_cpu_requests));
+        usage.insert(
+            "requests.cpu".to_string(),
+            format!("{}m", total_cpu_requests),
+        );
     }
     if total_memory_requests > 0 {
         usage.insert(
@@ -465,7 +464,8 @@ pub async fn set_default_storage_class<S: Storage>(
     // Look for the default storage class (marked with annotation)
     for sc in storage_classes {
         if let Some(annotations) = &sc.metadata.annotations {
-            if annotations.get("storageclass.kubernetes.io/is-default-class") == Some(&"true".to_string())
+            if annotations.get("storageclass.kubernetes.io/is-default-class")
+                == Some(&"true".to_string())
                 || annotations.get("storageclass.beta.kubernetes.io/is-default-class")
                     == Some(&"true".to_string())
             {

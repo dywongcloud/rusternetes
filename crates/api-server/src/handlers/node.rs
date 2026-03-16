@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::Node,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -27,8 +26,7 @@ pub async fn create(
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "create", "nodes")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "create", "nodes").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -45,7 +43,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Node {} validated successfully (not created)", node.metadata.name);
+        info!(
+            "Dry-run: Node {} validated successfully (not created)",
+            node.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(node)));
     }
 
@@ -109,7 +110,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Node {} validated successfully (not updated)", name);
+        info!(
+            "Dry-run: Node {} validated successfully (not updated)",
+            name
+        );
         return Ok(Json(node));
     }
 
@@ -145,7 +149,10 @@ pub async fn delete_node(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: Node {} validated successfully (not deleted)", name);
+        info!(
+            "Dry-run: Node {} validated successfully (not deleted)",
+            name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -153,20 +160,16 @@ pub async fn delete_node(
     let node: Node = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
-        &state.storage,
-        &key,
-        &node,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &node)
+            .await?;
 
     if deleted_immediately {
         Ok(StatusCode::NO_CONTENT)
     } else {
         info!(
             "Node {} marked for deletion (has finalizers: {:?})",
-            name,
-            node.metadata.finalizers
+            name, node.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -180,8 +183,7 @@ pub async fn list(
     info!("Listing nodes");
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "nodes")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "nodes").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -211,8 +213,8 @@ pub async fn deletecollection_nodes(
     info!("DeleteCollection nodes with params: {:?}", params);
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "nodes")
-        .with_api_group("");
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "deletecollection", "nodes").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -253,6 +255,9 @@ pub async fn deletecollection_nodes(
         }
     }
 
-    info!("DeleteCollection completed: {} nodes deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} nodes deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

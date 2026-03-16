@@ -1,7 +1,9 @@
 //! Integration tests for proxy handlers (node, service, pod)
 
 use axum::http::StatusCode;
-use rusternetes_common::resources::{Node, NodeStatus, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec, ServiceType};
+use rusternetes_common::resources::{
+    Node, NodeStatus, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec, ServiceType,
+};
 use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
 use rusternetes_storage::{etcd::EtcdStorage, Storage};
 use std::sync::Arc;
@@ -156,6 +158,7 @@ async fn test_proxy_pod_missing_ip() {
             host_ipc: None,
             volumes: None,
             hostname: None,
+            subdomain: None,
             affinity: None,
             scheduler_name: None,
             tolerations: None,

@@ -127,7 +127,11 @@ impl NamespaceController {
         // Remove finalizers from the namespace
         if let Some(finalizers) = &namespace.metadata.finalizers {
             if !finalizers.is_empty() {
-                info!("Removing {} finalizers from namespace {}", finalizers.len(), name);
+                info!(
+                    "Removing {} finalizers from namespace {}",
+                    finalizers.len(),
+                    name
+                );
                 self.remove_namespace_finalizers(name).await?;
             }
         }
@@ -141,7 +145,8 @@ impl NamespaceController {
         let prefix = build_prefix(resource_type, Some(namespace));
 
         // List all resources
-        let resources: Vec<serde_json::Value> = self.storage.list(&prefix).await.unwrap_or_default();
+        let resources: Vec<serde_json::Value> =
+            self.storage.list(&prefix).await.unwrap_or_default();
 
         if resources.is_empty() {
             return Ok(());
@@ -165,7 +170,10 @@ impl NamespaceController {
                             // Already deleted, that's fine
                         }
                         Err(e) => {
-                            warn!("Failed to delete {}/{}/{}: {}", resource_type, namespace, name, e);
+                            warn!(
+                                "Failed to delete {}/{}/{}: {}",
+                                resource_type, namespace, name, e
+                            );
                         }
                     }
                 }
@@ -183,7 +191,8 @@ impl NamespaceController {
 
         for resource_type in resource_types {
             let prefix = build_prefix(resource_type, Some(namespace));
-            let resources: Vec<serde_json::Value> = self.storage.list(&prefix).await.unwrap_or_default();
+            let resources: Vec<serde_json::Value> =
+                self.storage.list(&prefix).await.unwrap_or_default();
             total += resources.len();
         }
 
@@ -225,13 +234,7 @@ mod tests {
     #[test]
     fn test_namespace_resource_types() {
         // Ensure we have the major resource types covered
-        let resource_types = vec![
-            "pods",
-            "services",
-            "configmaps",
-            "secrets",
-            "deployments",
-        ];
+        let resource_types = vec!["pods", "services", "configmaps", "secrets", "deployments"];
         assert!(resource_types.contains(&"pods"));
         assert!(resource_types.contains(&"services"));
     }

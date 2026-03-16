@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::Ingress,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -22,10 +21,7 @@ pub async fn create(
     Query(params): Query<HashMap<String, String>>,
     Json(mut ingress): Json<Ingress>,
 ) -> Result<(StatusCode, Json<Ingress>)> {
-    info!(
-        "Creating ingress: {}/{}",
-        namespace, ingress.metadata.name
-    );
+    info!("Creating ingress: {}/{}", namespace, ingress.metadata.name);
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -50,7 +46,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Ingress {}/{} validated successfully (not created)", namespace, ingress.metadata.name);
+        info!(
+            "Dry-run: Ingress {}/{} validated successfully (not created)",
+            namespace, ingress.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(ingress)));
     }
 
@@ -117,16 +116,17 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Ingress {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: Ingress {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(ingress));
     }
 
     // Try to update first, if not found then create (upsert behavior)
     let result = match state.storage.update(&key, &ingress).await {
         Ok(updated) => updated,
-        Err(rusternetes_common::Error::NotFound(_)) => {
-            state.storage.create(&key, &ingress).await?
-        }
+        Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &ingress).await?,
         Err(e) => return Err(e),
     };
 
@@ -164,11 +164,15 @@ pub async fn delete_ingress(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: Ingress {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: Ingress {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &ingress).await?;
+    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &ingress)
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -241,7 +245,10 @@ pub async fn deletecollection_ingresses(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection ingresses in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection ingresses in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "ingresses")
@@ -287,6 +294,9 @@ pub async fn deletecollection_ingresses(
         }
     }
 
-    info!("DeleteCollection completed: {} ingresses deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} ingresses deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

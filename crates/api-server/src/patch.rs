@@ -154,10 +154,7 @@ fn apply_json_patch(original: &Value, patch: &Value) -> Result<Value, PatchError
 }
 
 /// Apply a single JSON Patch operation
-fn apply_json_patch_operation(
-    value: &Value,
-    op: &JsonPatchOperation,
-) -> Result<Value, PatchError> {
+fn apply_json_patch_operation(value: &Value, op: &JsonPatchOperation) -> Result<Value, PatchError> {
     match op.op {
         JsonPatchOp::Add => add_operation(value, &op.path, op.value.as_ref().unwrap()),
         JsonPatchOp::Remove => remove_operation(value, &op.path),
@@ -387,17 +384,19 @@ fn apply_strategic_merge_patch(original: &Value, patch: &Value) -> Result<Value,
                 if patch_value.is_null() {
                     // Null deletes the key
                     result_obj.remove(key);
-                } else if patch_value.is_array() && result_obj.get(key).map_or(false, |v| v.is_array()) {
+                } else if patch_value.is_array()
+                    && result_obj.get(key).map_or(false, |v| v.is_array())
+                {
                     // Check for $deleteFromPrimitiveList directive
-                    let delete_list: Option<Vec<Value>> = if let Some(obj) = patch_value.as_array() {
+                    let delete_list: Option<Vec<Value>> = if let Some(obj) = patch_value.as_array()
+                    {
                         // Look for $deleteFromPrimitiveList in array elements
-                        obj.iter()
-                            .find_map(|item| {
-                                item.as_object()
-                                    .and_then(|o| o.get("$deleteFromPrimitiveList"))
-                                    .and_then(|v| v.as_array())
-                                    .map(|arr| arr.clone())
-                            })
+                        obj.iter().find_map(|item| {
+                            item.as_object()
+                                .and_then(|o| o.get("$deleteFromPrimitiveList"))
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.clone())
+                        })
                     } else {
                         None
                     };
@@ -415,7 +414,9 @@ fn apply_strategic_merge_patch(original: &Value, patch: &Value) -> Result<Value,
                         )?;
                         result_obj.insert(key.clone(), Value::Array(merged_array));
                     }
-                } else if patch_value.is_object() && result_obj.get(key).map_or(false, |v| v.is_object()) {
+                } else if patch_value.is_object()
+                    && result_obj.get(key).map_or(false, |v| v.is_object())
+                {
                     // Recursively merge objects
                     let merged = apply_strategic_merge_patch(&result_obj[key], patch_value)?;
                     result_obj.insert(key.clone(), merged);
@@ -436,9 +437,9 @@ fn apply_strategic_merge_patch(original: &Value, patch: &Value) -> Result<Value,
 /// Otherwise, replace the array.
 fn strategic_merge_arrays(original: &[Value], patch: &[Value]) -> Result<Vec<Value>, PatchError> {
     // Check if this is a named array (items have 'name' field)
-    let is_named_array = patch.iter().all(|v| {
-        v.is_object() && v.as_object().unwrap().contains_key("name")
-    });
+    let is_named_array = patch
+        .iter()
+        .all(|v| v.is_object() && v.as_object().unwrap().contains_key("name"));
 
     if is_named_array {
         // Merge by name
@@ -501,13 +502,13 @@ fn get_value(value: &Value, path: &str) -> Result<Value, PatchError> {
 
     for part in parts {
         if let Some(obj) = current.as_object() {
-            current = obj.get(&part).ok_or_else(|| {
-                PatchError::OperationFailed(format!("Path not found: {}", path))
-            })?;
+            current = obj
+                .get(&part)
+                .ok_or_else(|| PatchError::OperationFailed(format!("Path not found: {}", path)))?;
         } else if let Some(arr) = current.as_array() {
-            let index: usize = part.parse().map_err(|_| {
-                PatchError::InvalidPatch(format!("Invalid array index: {}", part))
-            })?;
+            let index: usize = part
+                .parse()
+                .map_err(|_| PatchError::InvalidPatch(format!("Invalid array index: {}", part)))?;
             current = arr.get(index).ok_or_else(|| {
                 PatchError::OperationFailed(format!("Array index out of bounds: {}", index))
             })?;
@@ -539,9 +540,9 @@ fn get_mut_value<'a>(value: &'a mut Value, path: &str) -> Result<&'a mut Value, 
                 .entry(part.clone())
                 .or_insert(json!({}));
         } else if current.is_array() {
-            let index: usize = part.parse().map_err(|_| {
-                PatchError::InvalidPatch(format!("Invalid array index: {}", part))
-            })?;
+            let index: usize = part
+                .parse()
+                .map_err(|_| PatchError::InvalidPatch(format!("Invalid array index: {}", part)))?;
             current = current
                 .as_array_mut()
                 .unwrap()
@@ -723,11 +724,9 @@ mod tests {
             {"name": "container3", "image": "postgres:12"}
         ]);
 
-        let result = strategic_merge_arrays(
-            original.as_array().unwrap(),
-            patch.as_array().unwrap(),
-        )
-        .unwrap();
+        let result =
+            strategic_merge_arrays(original.as_array().unwrap(), patch.as_array().unwrap())
+                .unwrap();
 
         assert_eq!(result.len(), 3);
         assert_eq!(result[0]["image"], "nginx:1.1"); // Updated

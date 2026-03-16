@@ -3,7 +3,10 @@
 // This module provides CEL expression evaluation for ValidatingAdmissionPolicy
 
 use anyhow::{anyhow, Result};
-use cel_interpreter::{Context, Program, Value, objects::{Key, Map}};
+use cel_interpreter::{
+    objects::{Key, Map},
+    Context, Program, Value,
+};
 use serde_json;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -50,13 +53,17 @@ impl CELEvaluator {
         }
 
         // Execute the program
-        let result = program.execute(&cel_context)
+        let result = program
+            .execute(&cel_context)
             .map_err(|e| anyhow!("Failed to execute CEL expression '{}': {}", expression, e))?;
 
         // Convert result to boolean
         match result {
             Value::Bool(b) => Ok(b),
-            _ => Err(anyhow!("CEL expression did not return a boolean: {:?}", result)),
+            _ => Err(anyhow!(
+                "CEL expression did not return a boolean: {:?}",
+                result
+            )),
         }
     }
 
@@ -81,7 +88,8 @@ impl CELEvaluator {
         }
 
         // Execute the program
-        let result = program.execute(&cel_context)
+        let result = program
+            .execute(&cel_context)
             .map_err(|e| anyhow!("Failed to execute CEL expression '{}': {}", expression, e))?;
 
         // Convert result to string
@@ -234,9 +242,14 @@ mod tests {
     fn test_cel_evaluator_string() {
         let mut evaluator = CELEvaluator::new();
         let mut context = CELContext::new();
-        context.add_variable("name".to_string(), Value::String(Arc::new("test".to_string())));
+        context.add_variable(
+            "name".to_string(),
+            Value::String(Arc::new("test".to_string())),
+        );
 
-        let result = evaluator.evaluate_string("'Hello, ' + name", &context).unwrap();
+        let result = evaluator
+            .evaluate_string("'Hello, ' + name", &context)
+            .unwrap();
         assert_eq!(result, "Hello, test");
     }
 
@@ -255,7 +268,10 @@ mod tests {
                 let name_key = Key::String(Arc::new("name".to_string()));
                 let count_key = Key::String(Arc::new("count".to_string()));
                 let active_key = Key::String(Arc::new("active".to_string()));
-                assert_eq!(map.get(&name_key), Some(&Value::String(Arc::new("test".to_string()))));
+                assert_eq!(
+                    map.get(&name_key),
+                    Some(&Value::String(Arc::new("test".to_string())))
+                );
                 assert_eq!(map.get(&count_key), Some(&Value::Int(42)));
                 assert_eq!(map.get(&active_key), Some(&Value::Bool(true)));
             }
@@ -288,11 +304,15 @@ mod tests {
         let context = CELContext::for_admission(&object, None, None).unwrap();
 
         // This should fail because replicas > 5
-        let result = evaluator.evaluate("object.spec.replicas <= 5", &context).unwrap();
+        let result = evaluator
+            .evaluate("object.spec.replicas <= 5", &context)
+            .unwrap();
         assert!(!result);
 
         // This should pass
-        let result = evaluator.evaluate("object.spec.replicas <= 100", &context).unwrap();
+        let result = evaluator
+            .evaluate("object.spec.replicas <= 100", &context)
+            .unwrap();
         assert!(result);
     }
 

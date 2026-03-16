@@ -44,29 +44,44 @@ async fn custom_resource_fallback(
     // Parse the path components
     let (group, version, plural, namespace, name, subresource) = match parts.as_slice() {
         // Namespaced: /apis/{group}/{version}/namespaces/{namespace}/{plural}
-        [group, version, "namespaces", namespace, plural] if method == Method::GET || method == Method::POST => {
+        [group, version, "namespaces", namespace, plural]
+            if method == Method::GET || method == Method::POST =>
+        {
             (*group, *version, *plural, Some(*namespace), None, None)
         }
         // Namespaced resource: /apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}
-        [group, version, "namespaces", namespace, plural, name] => {
-            (*group, *version, *plural, Some(*namespace), Some(*name), None)
-        }
+        [group, version, "namespaces", namespace, plural, name] => (
+            *group,
+            *version,
+            *plural,
+            Some(*namespace),
+            Some(*name),
+            None,
+        ),
         // Namespaced subresource: /apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}/{subresource}
-        [group, version, "namespaces", namespace, plural, name, subresource] => {
-            (*group, *version, *plural, Some(*namespace), Some(*name), Some(*subresource))
-        }
+        [group, version, "namespaces", namespace, plural, name, subresource] => (
+            *group,
+            *version,
+            *plural,
+            Some(*namespace),
+            Some(*name),
+            Some(*subresource),
+        ),
         // Cluster-scoped: /apis/{group}/{version}/{plural}
         [group, version, plural] if method == Method::GET || method == Method::POST => {
             (*group, *version, *plural, None, None, None)
         }
         // Cluster-scoped resource: /apis/{group}/{version}/{plural}/{name}
-        [group, version, plural, name] => {
-            (*group, *version, *plural, None, Some(*name), None)
-        }
+        [group, version, plural, name] => (*group, *version, *plural, None, Some(*name), None),
         // Cluster-scoped subresource: /apis/{group}/{version}/{plural}/{name}/{subresource}
-        [group, version, plural, name, subresource] => {
-            (*group, *version, *plural, None, Some(*name), Some(*subresource))
-        }
+        [group, version, plural, name, subresource] => (
+            *group,
+            *version,
+            *plural,
+            None,
+            Some(*name),
+            Some(*subresource),
+        ),
         _ => {
             return Err(StatusCode::NOT_FOUND);
         }
@@ -91,13 +106,15 @@ async fn custom_resource_fallback(
     let response = match (method.clone(), name, subresource) {
         // POST to list endpoint = create
         (Method::POST, None, None) => {
-            let body = axum::body::to_bytes(req.into_body(), usize::MAX).await
+            let body = axum::body::to_bytes(req.into_body(), usize::MAX)
+                .await
                 .map_err(|_| StatusCode::BAD_REQUEST)?;
-            let cr: rusternetes_common::resources::CustomResource = serde_json::from_slice(&body)
-                .map_err(|_| StatusCode::BAD_REQUEST)?;
+            let cr: rusternetes_common::resources::CustomResource =
+                serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
 
             // Parse query parameters from URI
-            let query_params: std::collections::HashMap<String, String> = uri.query()
+            let query_params: std::collections::HashMap<String, String> = uri
+                .query()
                 .map(|q| {
                     url::form_urlencoded::parse(q.as_bytes())
                         .into_owned()
@@ -108,10 +125,17 @@ async fn custom_resource_fallback(
             match handlers::custom_resource::create_custom_resource(
                 State(state.clone()),
                 Extension(auth_ctx.clone()),
-                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()))),
+                axum::extract::Path((
+                    group.to_string(),
+                    version.to_string(),
+                    plural.to_string(),
+                    namespace.map(|s| s.to_string()),
+                )),
                 axum::extract::Query(query_params),
                 Json(cr),
-            ).await {
+            )
+            .await
+            {
                 Ok((status, json)) => (status, json).into_response(),
                 Err(e) => {
                     warn!("Error creating custom resource: {}", e);
@@ -124,8 +148,15 @@ async fn custom_resource_fallback(
             match handlers::custom_resource::list_custom_resources(
                 State(state.clone()),
                 Extension(auth_ctx.clone()),
-                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()))),
-            ).await {
+                axum::extract::Path((
+                    group.to_string(),
+                    version.to_string(),
+                    plural.to_string(),
+                    namespace.map(|s| s.to_string()),
+                )),
+            )
+            .await
+            {
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error listing custom resources: {}", e);
@@ -138,8 +169,16 @@ async fn custom_resource_fallback(
             match handlers::custom_resource::get_custom_resource(
                 State(state.clone()),
                 Extension(auth_ctx.clone()),
-                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
-            ).await {
+                axum::extract::Path((
+                    group.to_string(),
+                    version.to_string(),
+                    plural.to_string(),
+                    namespace.map(|s| s.to_string()),
+                    name.to_string(),
+                )),
+            )
+            .await
+            {
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error getting custom resource: {}", e);
@@ -149,13 +188,15 @@ async fn custom_resource_fallback(
         }
         // PUT with name = update
         (Method::PUT, Some(name), None) => {
-            let body = axum::body::to_bytes(req.into_body(), usize::MAX).await
+            let body = axum::body::to_bytes(req.into_body(), usize::MAX)
+                .await
                 .map_err(|_| StatusCode::BAD_REQUEST)?;
-            let cr: rusternetes_common::resources::CustomResource = serde_json::from_slice(&body)
-                .map_err(|_| StatusCode::BAD_REQUEST)?;
+            let cr: rusternetes_common::resources::CustomResource =
+                serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
 
             // Parse query parameters from URI
-            let query_params: std::collections::HashMap<String, String> = uri.query()
+            let query_params: std::collections::HashMap<String, String> = uri
+                .query()
                 .map(|q| {
                     url::form_urlencoded::parse(q.as_bytes())
                         .into_owned()
@@ -166,10 +207,18 @@ async fn custom_resource_fallback(
             match handlers::custom_resource::update_custom_resource(
                 State(state.clone()),
                 Extension(auth_ctx.clone()),
-                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+                axum::extract::Path((
+                    group.to_string(),
+                    version.to_string(),
+                    plural.to_string(),
+                    namespace.map(|s| s.to_string()),
+                    name.to_string(),
+                )),
                 axum::extract::Query(query_params),
                 Json(cr),
-            ).await {
+            )
+            .await
+            {
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error updating custom resource: {}", e);
@@ -180,7 +229,8 @@ async fn custom_resource_fallback(
         // DELETE with name = delete
         (Method::DELETE, Some(name), None) => {
             // Parse query parameters from URI
-            let query_params: std::collections::HashMap<String, String> = uri.query()
+            let query_params: std::collections::HashMap<String, String> = uri
+                .query()
                 .map(|q| {
                     url::form_urlencoded::parse(q.as_bytes())
                         .into_owned()
@@ -191,9 +241,17 @@ async fn custom_resource_fallback(
             match handlers::custom_resource::delete_custom_resource(
                 State(state.clone()),
                 Extension(auth_ctx.clone()),
-                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+                axum::extract::Path((
+                    group.to_string(),
+                    version.to_string(),
+                    plural.to_string(),
+                    namespace.map(|s| s.to_string()),
+                    name.to_string(),
+                )),
                 axum::extract::Query(query_params),
-            ).await {
+            )
+            .await
+            {
                 Ok(status) => status.into_response(),
                 Err(e) => {
                     warn!("Error deleting custom resource: {}", e);
@@ -210,9 +268,17 @@ async fn custom_resource_fallback(
             match handlers::custom_resource::patch_custom_resource(
                 State(state.clone()),
                 Extension(auth_ctx.clone()),
-                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+                axum::extract::Path((
+                    group.to_string(),
+                    version.to_string(),
+                    plural.to_string(),
+                    namespace.map(|s| s.to_string()),
+                    name.to_string(),
+                )),
                 reconstructed_req,
-            ).await {
+            )
+            .await
+            {
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error patching custom resource: {}", e);
@@ -225,8 +291,16 @@ async fn custom_resource_fallback(
             match handlers::custom_resource::get_custom_resource_status(
                 State(state.clone()),
                 Extension(auth_ctx.clone()),
-                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
-            ).await {
+                axum::extract::Path((
+                    group.to_string(),
+                    version.to_string(),
+                    plural.to_string(),
+                    namespace.map(|s| s.to_string()),
+                    name.to_string(),
+                )),
+            )
+            .await
+            {
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error getting custom resource status: {}", e);
@@ -235,17 +309,26 @@ async fn custom_resource_fallback(
             }
         }
         (Method::PUT, Some(name), Some("status")) => {
-            let body = axum::body::to_bytes(req.into_body(), usize::MAX).await
+            let body = axum::body::to_bytes(req.into_body(), usize::MAX)
+                .await
                 .map_err(|_| StatusCode::BAD_REQUEST)?;
-            let status: serde_json::Value = serde_json::from_slice(&body)
-                .map_err(|_| StatusCode::BAD_REQUEST)?;
+            let status: serde_json::Value =
+                serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
 
             match handlers::custom_resource::update_custom_resource_status(
                 State(state.clone()),
                 Extension(auth_ctx.clone()),
-                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+                axum::extract::Path((
+                    group.to_string(),
+                    version.to_string(),
+                    plural.to_string(),
+                    namespace.map(|s| s.to_string()),
+                    name.to_string(),
+                )),
                 Json(status),
-            ).await {
+            )
+            .await
+            {
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error updating custom resource status: {}", e);
@@ -261,9 +344,17 @@ async fn custom_resource_fallback(
             match handlers::custom_resource::patch_custom_resource_status(
                 State(state.clone()),
                 Extension(auth_ctx.clone()),
-                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+                axum::extract::Path((
+                    group.to_string(),
+                    version.to_string(),
+                    plural.to_string(),
+                    namespace.map(|s| s.to_string()),
+                    name.to_string(),
+                )),
                 reconstructed_req,
-            ).await {
+            )
+            .await
+            {
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error patching custom resource status: {}", e);
@@ -276,8 +367,16 @@ async fn custom_resource_fallback(
             match handlers::custom_resource::get_custom_resource_scale(
                 State(state.clone()),
                 Extension(auth_ctx.clone()),
-                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
-            ).await {
+                axum::extract::Path((
+                    group.to_string(),
+                    version.to_string(),
+                    plural.to_string(),
+                    namespace.map(|s| s.to_string()),
+                    name.to_string(),
+                )),
+            )
+            .await
+            {
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error getting custom resource scale: {}", e);
@@ -286,17 +385,26 @@ async fn custom_resource_fallback(
             }
         }
         (Method::PUT, Some(name), Some("scale")) => {
-            let body = axum::body::to_bytes(req.into_body(), usize::MAX).await
+            let body = axum::body::to_bytes(req.into_body(), usize::MAX)
+                .await
                 .map_err(|_| StatusCode::BAD_REQUEST)?;
-            let scale: handlers::custom_resource::Scale = serde_json::from_slice(&body)
-                .map_err(|_| StatusCode::BAD_REQUEST)?;
+            let scale: handlers::custom_resource::Scale =
+                serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
 
             match handlers::custom_resource::update_custom_resource_scale(
                 State(state.clone()),
                 Extension(auth_ctx.clone()),
-                axum::extract::Path((group.to_string(), version.to_string(), plural.to_string(), namespace.map(|s| s.to_string()), name.to_string())),
+                axum::extract::Path((
+                    group.to_string(),
+                    version.to_string(),
+                    plural.to_string(),
+                    namespace.map(|s| s.to_string()),
+                    name.to_string(),
+                )),
                 Json(scale),
-            ).await {
+            )
+            .await
+            {
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error updating custom resource scale: {}", e);
@@ -325,27 +433,90 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route("/api", get(handlers::discovery::get_core_api))
         .route("/api/v1", get(handlers::discovery::get_core_resources))
         .route("/apis", get(handlers::discovery::get_api_groups))
-        .route("/apis/apps/v1", get(handlers::discovery::get_apps_v1_resources))
-        .route("/apis/batch/v1", get(handlers::discovery::get_batch_v1_resources))
-        .route("/apis/networking.k8s.io/v1", get(handlers::discovery::get_networking_v1_resources))
-        .route("/apis/rbac.authorization.k8s.io/v1", get(handlers::discovery::get_rbac_v1_resources))
-        .route("/apis/storage.k8s.io/v1", get(handlers::discovery::get_storage_v1_resources))
-        .route("/apis/scheduling.k8s.io/v1", get(handlers::discovery::get_scheduling_v1_resources))
-        .route("/apis/apiextensions.k8s.io/v1", get(handlers::discovery::get_apiextensions_v1_resources))
-        .route("/apis/admissionregistration.k8s.io/v1", get(handlers::discovery::get_admissionregistration_v1_resources))
-        .route("/apis/coordination.k8s.io/v1", get(handlers::discovery::get_coordination_v1_resources))
-        .route("/apis/flowcontrol.apiserver.k8s.io/v1", get(handlers::discovery::get_flowcontrol_v1_resources))
-        .route("/apis/certificates.k8s.io/v1", get(handlers::discovery::get_certificates_v1_resources))
-        .route("/apis/snapshot.storage.k8s.io/v1", get(handlers::discovery::get_snapshot_v1_resources))
-        .route("/apis/discovery.k8s.io/v1", get(handlers::discovery::get_discovery_v1_resources))
-        .route("/apis/autoscaling/v2", get(handlers::discovery::get_autoscaling_v2_resources))
-        .route("/apis/policy/v1", get(handlers::discovery::get_policy_v1_resources))
-        .route("/apis/node.k8s.io/v1", get(handlers::discovery::get_node_v1_resources))
-        .route("/apis/authentication.k8s.io/v1", get(handlers::discovery::get_authentication_v1_resources))
-        .route("/apis/authorization.k8s.io/v1", get(handlers::discovery::get_authorization_v1_resources))
-        .route("/apis/metrics.k8s.io/v1beta1", get(handlers::discovery::get_metrics_v1beta1_resources))
-        .route("/apis/custom.metrics.k8s.io/v1beta2", get(handlers::discovery::get_custom_metrics_v1beta2_resources))
-        .route("/apis/resource.k8s.io/v1", get(handlers::discovery::get_resource_v1_resources))
+        .route(
+            "/apis/apps/v1",
+            get(handlers::discovery::get_apps_v1_resources),
+        )
+        .route(
+            "/apis/batch/v1",
+            get(handlers::discovery::get_batch_v1_resources),
+        )
+        .route(
+            "/apis/networking.k8s.io/v1",
+            get(handlers::discovery::get_networking_v1_resources),
+        )
+        .route(
+            "/apis/rbac.authorization.k8s.io/v1",
+            get(handlers::discovery::get_rbac_v1_resources),
+        )
+        .route(
+            "/apis/storage.k8s.io/v1",
+            get(handlers::discovery::get_storage_v1_resources),
+        )
+        .route(
+            "/apis/scheduling.k8s.io/v1",
+            get(handlers::discovery::get_scheduling_v1_resources),
+        )
+        .route(
+            "/apis/apiextensions.k8s.io/v1",
+            get(handlers::discovery::get_apiextensions_v1_resources),
+        )
+        .route(
+            "/apis/admissionregistration.k8s.io/v1",
+            get(handlers::discovery::get_admissionregistration_v1_resources),
+        )
+        .route(
+            "/apis/coordination.k8s.io/v1",
+            get(handlers::discovery::get_coordination_v1_resources),
+        )
+        .route(
+            "/apis/flowcontrol.apiserver.k8s.io/v1",
+            get(handlers::discovery::get_flowcontrol_v1_resources),
+        )
+        .route(
+            "/apis/certificates.k8s.io/v1",
+            get(handlers::discovery::get_certificates_v1_resources),
+        )
+        .route(
+            "/apis/snapshot.storage.k8s.io/v1",
+            get(handlers::discovery::get_snapshot_v1_resources),
+        )
+        .route(
+            "/apis/discovery.k8s.io/v1",
+            get(handlers::discovery::get_discovery_v1_resources),
+        )
+        .route(
+            "/apis/autoscaling/v2",
+            get(handlers::discovery::get_autoscaling_v2_resources),
+        )
+        .route(
+            "/apis/policy/v1",
+            get(handlers::discovery::get_policy_v1_resources),
+        )
+        .route(
+            "/apis/node.k8s.io/v1",
+            get(handlers::discovery::get_node_v1_resources),
+        )
+        .route(
+            "/apis/authentication.k8s.io/v1",
+            get(handlers::discovery::get_authentication_v1_resources),
+        )
+        .route(
+            "/apis/authorization.k8s.io/v1",
+            get(handlers::discovery::get_authorization_v1_resources),
+        )
+        .route(
+            "/apis/metrics.k8s.io/v1beta1",
+            get(handlers::discovery::get_metrics_v1beta1_resources),
+        )
+        .route(
+            "/apis/custom.metrics.k8s.io/v1beta2",
+            get(handlers::discovery::get_custom_metrics_v1beta2_resources),
+        )
+        .route(
+            "/apis/resource.k8s.io/v1",
+            get(handlers::discovery::get_resource_v1_resources),
+        )
         .route("/version", get(handlers::discovery::get_version));
 
     // Routes that require authentication (unless skip_auth is enabled)
@@ -1581,12 +1752,16 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
     if skip_auth {
         // In skip-auth mode, inject a default admin user context
         protected_routes = protected_routes
-            .layer(axum_middleware::from_fn(middleware::log_request_body_middleware))
+            .layer(axum_middleware::from_fn(
+                middleware::log_request_body_middleware,
+            ))
             .layer(axum_middleware::from_fn(middleware::skip_auth_middleware));
     } else {
         // In normal mode, apply full authentication
         protected_routes = protected_routes
-            .layer(axum_middleware::from_fn(middleware::log_request_body_middleware))
+            .layer(axum_middleware::from_fn(
+                middleware::log_request_body_middleware,
+            ))
             .layer(axum_middleware::from_fn(middleware::auth_middleware))
             .layer(Extension(state.token_manager.clone()));
     }

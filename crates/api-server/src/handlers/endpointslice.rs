@@ -1,4 +1,4 @@
-use crate::{middleware::AuthContext, state::ApiServerState, handlers::watch::WatchParams};
+use crate::{handlers::watch::WatchParams, middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -8,8 +8,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::EndpointSlice,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -24,7 +23,10 @@ pub async fn create_endpointslice(
     Query(params): Query<HashMap<String, String>>,
     Json(mut endpointslice): Json<EndpointSlice>,
 ) -> Result<(StatusCode, Json<EndpointSlice>)> {
-    info!("Creating endpointslice: {}/{}", namespace, endpointslice.metadata.name);
+    info!(
+        "Creating endpointslice: {}/{}",
+        namespace, endpointslice.metadata.name
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "endpointslices")
@@ -49,7 +51,11 @@ pub async fn create_endpointslice(
         return Ok((StatusCode::OK, Json(endpointslice)));
     }
 
-    let key = build_key("endpointslices", Some(&namespace), &endpointslice.metadata.name);
+    let key = build_key(
+        "endpointslices",
+        Some(&namespace),
+        &endpointslice.metadata.name,
+    );
     let created = state.storage.create(&key, &endpointslice).await?;
 
     Ok((StatusCode::CREATED, Json(created)))
@@ -245,17 +251,30 @@ pub async fn delete_endpointslice(
 
     // Check for dry-run
     if crate::handlers::dryrun::is_dry_run(&params) {
-        info!("Dry-run: EndpointSlice {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: EndpointSlice {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &endpointslice).await?;
+    crate::handlers::finalizers::handle_delete_with_finalizers(
+        &*state.storage,
+        &key,
+        &endpointslice,
+    )
+    .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_namespaced!(patch_endpointslice, EndpointSlice, "endpointslices", "discovery.k8s.io");
+crate::patch_handler_namespaced!(
+    patch_endpointslice,
+    EndpointSlice,
+    "endpointslices",
+    "discovery.k8s.io"
+);
 
 pub async fn deletecollection_endpointslices(
     State(state): State<Arc<ApiServerState>>,
@@ -263,7 +282,10 @@ pub async fn deletecollection_endpointslices(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection endpointslices in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection endpointslices in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "endpointslices")
@@ -309,6 +331,9 @@ pub async fn deletecollection_endpointslices(
         }
     }
 
-    info!("DeleteCollection completed: {} endpointslices deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} endpointslices deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

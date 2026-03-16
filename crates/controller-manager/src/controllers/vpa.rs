@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusternetes_common::resources::{
-    Pod, VerticalPodAutoscaler, VerticalPodAutoscalerStatus, Deployment, ReplicaSet, StatefulSet,
-    RecommendedContainerResources, RecommendedPodResources,
+    Deployment, Pod, RecommendedContainerResources, RecommendedPodResources, ReplicaSet,
+    StatefulSet, VerticalPodAutoscaler, VerticalPodAutoscalerStatus,
 };
 use rusternetes_storage::Storage;
 use std::collections::HashMap;
@@ -66,7 +66,10 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
         for vpa in vpas {
             if let Err(e) = self.reconcile_vpa(&vpa).await {
                 let namespace = vpa.metadata.namespace.as_deref().unwrap_or("default");
-                error!("Failed to reconcile VPA {}/{}: {}", namespace, vpa.metadata.name, e);
+                error!(
+                    "Failed to reconcile VPA {}/{}: {}",
+                    namespace, vpa.metadata.name, e
+                );
             }
         }
 
@@ -87,7 +90,12 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
             return Ok(());
         }
 
-        info!("VPA {}/{} found {} target pods", namespace, name, target_pods.len());
+        info!(
+            "VPA {}/{} found {} target pods",
+            namespace,
+            name,
+            target_pods.len()
+        );
 
         // Collect resource usage from pods
         self.collect_resource_usage(&target_pods).await?;
@@ -96,12 +104,19 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
         let recommendations = self.generate_recommendations(vpa, &target_pods).await?;
 
         if recommendations.is_empty() {
-            debug!("Not enough data to generate recommendations for VPA {}/{}", namespace, name);
+            debug!(
+                "Not enough data to generate recommendations for VPA {}/{}",
+                namespace, name
+            );
             return Ok(());
         }
 
-        info!("Generated {} container recommendations for VPA {}/{}",
-            recommendations.len(), namespace, name);
+        info!(
+            "Generated {} container recommendations for VPA {}/{}",
+            recommendations.len(),
+            namespace,
+            name
+        );
 
         // Update VPA status with recommendations
         self.update_vpa_status(vpa, recommendations).await?;
@@ -120,22 +135,52 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
         // Get the target resource (Deployment, ReplicaSet, StatefulSet)
         let selector_labels = match target_ref.kind.as_str() {
             "Deployment" => {
-                let key = rusternetes_storage::build_key("deployments", Some(namespace), &target_ref.name);
+                let key = rusternetes_storage::build_key(
+                    "deployments",
+                    Some(namespace),
+                    &target_ref.name,
+                );
                 let deployment: Deployment = self.storage.get(&key).await?;
-                deployment.spec.selector.match_labels.clone().unwrap_or_default()
+                deployment
+                    .spec
+                    .selector
+                    .match_labels
+                    .clone()
+                    .unwrap_or_default()
             }
             "ReplicaSet" => {
-                let key = rusternetes_storage::build_key("replicasets", Some(namespace), &target_ref.name);
+                let key = rusternetes_storage::build_key(
+                    "replicasets",
+                    Some(namespace),
+                    &target_ref.name,
+                );
                 let replicaset: ReplicaSet = self.storage.get(&key).await?;
-                replicaset.spec.selector.match_labels.clone().unwrap_or_default()
+                replicaset
+                    .spec
+                    .selector
+                    .match_labels
+                    .clone()
+                    .unwrap_or_default()
             }
             "StatefulSet" => {
-                let key = rusternetes_storage::build_key("statefulsets", Some(namespace), &target_ref.name);
+                let key = rusternetes_storage::build_key(
+                    "statefulsets",
+                    Some(namespace),
+                    &target_ref.name,
+                );
                 let statefulset: StatefulSet = self.storage.get(&key).await?;
-                statefulset.spec.selector.match_labels.clone().unwrap_or_default()
+                statefulset
+                    .spec
+                    .selector
+                    .match_labels
+                    .clone()
+                    .unwrap_or_default()
             }
             _ => {
-                return Err(anyhow::anyhow!("Unsupported target kind: {}", target_ref.kind));
+                return Err(anyhow::anyhow!(
+                    "Unsupported target kind: {}",
+                    target_ref.kind
+                ));
             }
         };
 
@@ -147,9 +192,9 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
             .into_iter()
             .filter(|pod| {
                 if let Some(pod_labels) = &pod.metadata.labels {
-                    selector_labels.iter().all(|(k, v)| {
-                        pod_labels.get(k).map(|pv| pv == v).unwrap_or(false)
-                    })
+                    selector_labels
+                        .iter()
+                        .all(|(k, v)| pod_labels.get(k).map(|pv| pv == v).unwrap_or(false))
                 } else {
                     false
                 }
@@ -178,9 +223,8 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
                     // For now, we'll simulate reasonable usage based on requests/limits
                     let (cpu_usage, memory_usage) = self.simulate_container_usage(container);
 
-                    let container_history = history
-                        .entry(pod_key.clone())
-                        .or_insert_with(HashMap::new);
+                    let container_history =
+                        history.entry(pod_key.clone()).or_insert_with(HashMap::new);
 
                     let samples = container_history
                         .entry(container.name.clone())
@@ -204,19 +248,26 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
     }
 
     /// Simulate container resource usage (in production, query from metrics-server)
-    fn simulate_container_usage(&self, container: &rusternetes_common::resources::Container) -> (i64, i64) {
+    fn simulate_container_usage(
+        &self,
+        container: &rusternetes_common::resources::Container,
+    ) -> (i64, i64) {
         use rand::Rng;
         let mut rng = rand::thread_rng();
 
         // Get CPU request (default to 100m if not specified)
-        let cpu_request = container.resources.as_ref()
+        let cpu_request = container
+            .resources
+            .as_ref()
             .and_then(|r| r.requests.as_ref())
             .and_then(|req| req.get("cpu"))
             .and_then(|cpu| parse_cpu_string(cpu))
             .unwrap_or(100);
 
         // Get memory request (default to 128Mi if not specified)
-        let memory_request = container.resources.as_ref()
+        let memory_request = container
+            .resources
+            .as_ref()
             .and_then(|r| r.requests.as_ref())
             .and_then(|req| req.get("memory"))
             .and_then(|mem| parse_memory_string(mem))
@@ -268,7 +319,11 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
 
             // Need sufficient samples to make recommendations
             if all_cpu_samples.len() < 10 {
-                debug!("Not enough samples for container {} (have {})", container_name, all_cpu_samples.len());
+                debug!(
+                    "Not enough samples for container {} (have {})",
+                    container_name,
+                    all_cpu_samples.len()
+                );
                 continue;
             }
 
@@ -296,8 +351,14 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
             let (final_target_cpu, final_upper_cpu, final_lower_cpu) =
                 self.apply_cpu_constraints(vpa, container_name, target_cpu, upper_cpu, lower_cpu);
 
-            let (final_target_memory, final_upper_memory, final_lower_memory) =
-                self.apply_memory_constraints(vpa, container_name, target_memory, upper_memory, lower_memory);
+            let (final_target_memory, final_upper_memory, final_lower_memory) = self
+                .apply_memory_constraints(
+                    vpa,
+                    container_name,
+                    target_memory,
+                    upper_memory,
+                    lower_memory,
+                );
 
             let recommendation = RecommendedContainerResources {
                 container_name: container_name.clone(),
@@ -358,13 +419,17 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
                 for cp in container_policies {
                     if cp.container_name.as_deref() == Some(container_name) {
                         if let Some(min_allowed) = &cp.min_allowed {
-                            if let Some(min_cpu) = min_allowed.get("cpu").and_then(|s| parse_cpu_string(s)) {
+                            if let Some(min_cpu) =
+                                min_allowed.get("cpu").and_then(|s| parse_cpu_string(s))
+                            {
                                 final_target = final_target.max(min_cpu);
                                 final_lower = final_lower.max(min_cpu);
                             }
                         }
                         if let Some(max_allowed) = &cp.max_allowed {
-                            if let Some(max_cpu) = max_allowed.get("cpu").and_then(|s| parse_cpu_string(s)) {
+                            if let Some(max_cpu) =
+                                max_allowed.get("cpu").and_then(|s| parse_cpu_string(s))
+                            {
                                 final_target = final_target.min(max_cpu);
                                 final_upper = final_upper.min(max_cpu);
                             }
@@ -395,13 +460,19 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
                 for cp in container_policies {
                     if cp.container_name.as_deref() == Some(container_name) {
                         if let Some(min_allowed) = &cp.min_allowed {
-                            if let Some(min_mem) = min_allowed.get("memory").and_then(|s| parse_memory_string(s)) {
+                            if let Some(min_mem) = min_allowed
+                                .get("memory")
+                                .and_then(|s| parse_memory_string(s))
+                            {
                                 final_target = final_target.max(min_mem);
                                 final_lower = final_lower.max(min_mem);
                             }
                         }
                         if let Some(max_allowed) = &cp.max_allowed {
-                            if let Some(max_mem) = max_allowed.get("memory").and_then(|s| parse_memory_string(s)) {
+                            if let Some(max_mem) = max_allowed
+                                .get("memory")
+                                .and_then(|s| parse_memory_string(s))
+                            {
                                 final_target = final_target.min(max_mem);
                                 final_upper = final_upper.min(max_mem);
                             }
@@ -434,21 +505,30 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
         let key = rusternetes_storage::build_key("verticalpodautoscalers", Some(namespace), name);
         self.storage.update(&key, &updated_vpa).await?;
 
-        info!("Updated VPA {}/{} status with recommendations", namespace, name);
+        info!(
+            "Updated VPA {}/{} status with recommendations",
+            namespace, name
+        );
 
         Ok(())
     }
 
     /// Apply recommendations based on update policy
     async fn apply_recommendations(&self, vpa: &VerticalPodAutoscaler, pods: &[Pod]) -> Result<()> {
-        let update_mode = vpa.spec.update_policy.as_ref()
+        let update_mode = vpa
+            .spec
+            .update_policy
+            .as_ref()
             .and_then(|p| p.update_mode.as_deref())
             .unwrap_or("Off");
 
         match update_mode {
             "Off" => {
                 // Only generate recommendations, don't apply
-                debug!("VPA {} is in Off mode, not applying recommendations", vpa.metadata.name);
+                debug!(
+                    "VPA {} is in Off mode, not applying recommendations",
+                    vpa.metadata.name
+                );
             }
             "Initial" => {
                 // Apply only to newly created pods (handled by admission webhook)
@@ -456,8 +536,11 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
             }
             "Recreate" => {
                 // Evict pods to trigger recreation with new resources
-                info!("VPA {} is in Recreate mode, would evict {} pods for recreation",
-                    vpa.metadata.name, pods.len());
+                info!(
+                    "VPA {} is in Recreate mode, would evict {} pods for recreation",
+                    vpa.metadata.name,
+                    pods.len()
+                );
 
                 // In a real implementation, this would:
                 // 1. Check if recommendations differ significantly from current resources
@@ -471,7 +554,10 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
             }
             "Auto" => {
                 // In-place updates (future Kubernetes feature)
-                warn!("VPA {} is in Auto mode, but in-place updates are not yet supported", vpa.metadata.name);
+                warn!(
+                    "VPA {} is in Auto mode, but in-place updates are not yet supported",
+                    vpa.metadata.name
+                );
             }
             _ => {
                 warn!("Unknown VPA update mode: {}", update_mode);
@@ -577,7 +663,7 @@ mod tests {
         assert_eq!(format_memory(128 * 1024 * 1024), "128Mi");
         assert_eq!(format_memory(1024 * 1024 * 1024), "1Gi");
         assert_eq!(format_memory(512 * 1024), "512Ki");
-        assert_eq!(format_memory(1024), "1Ki");  // 1024 bytes = 1 KiB
+        assert_eq!(format_memory(1024), "1Ki"); // 1024 bytes = 1 KiB
     }
 
     #[test]

@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::ReplicationController,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -42,7 +41,11 @@ pub async fn create_replicationcontroller(
     rc.metadata.ensure_uid();
     rc.metadata.ensure_creation_timestamp();
 
-    let key = build_key("replicationcontrollers", Some(&namespace), &rc.metadata.name);
+    let key = build_key(
+        "replicationcontrollers",
+        Some(&namespace),
+        &rc.metadata.name,
+    );
     let created = state.storage.create(&key, &rc).await?;
 
     Ok((StatusCode::CREATED, Json(created)))
@@ -53,7 +56,10 @@ pub async fn get_replicationcontroller(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<ReplicationController>> {
-    info!("Getting replicationcontroller: {} in namespace: {}", name, namespace);
+    info!(
+        "Getting replicationcontroller: {} in namespace: {}",
+        name, namespace
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "replicationcontrollers")
@@ -80,7 +86,10 @@ pub async fn update_replicationcontroller(
     Path((namespace, name)): Path<(String, String)>,
     Json(mut rc): Json<ReplicationController>,
 ) -> Result<Json<ReplicationController>> {
-    info!("Updating replicationcontroller: {} in namespace: {}", name, namespace);
+    info!(
+        "Updating replicationcontroller: {} in namespace: {}",
+        name, namespace
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "replicationcontrollers")
@@ -103,9 +112,7 @@ pub async fn update_replicationcontroller(
     // Try to update first, if not found then create (upsert behavior)
     let result = match state.storage.update(&key, &rc).await {
         Ok(updated) => updated,
-        Err(rusternetes_common::Error::NotFound(_)) => {
-            state.storage.create(&key, &rc).await?
-        }
+        Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &rc).await?,
         Err(e) => return Err(e),
     };
 
@@ -118,7 +125,10 @@ pub async fn delete_replicationcontroller(
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("Deleting replicationcontroller: {} in namespace: {}", name, namespace);
+    info!(
+        "Deleting replicationcontroller: {} in namespace: {}",
+        name, namespace
+    );
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -142,7 +152,10 @@ pub async fn delete_replicationcontroller(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: ReplicationController {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: ReplicationController {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -185,8 +198,8 @@ pub async fn list_all_replicationcontrollers(
     info!("Listing all replicationcontrollers");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "replicationcontrollers")
-        .with_api_group("");
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "list", "replicationcontrollers").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -203,7 +216,12 @@ pub async fn list_all_replicationcontrollers(
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_namespaced!(patch_replicationcontroller, ReplicationController, "replicationcontrollers", "");
+crate::patch_handler_namespaced!(
+    patch_replicationcontroller,
+    ReplicationController,
+    "replicationcontrollers",
+    ""
+);
 
 pub async fn deletecollection_replicationcontrollers(
     State(state): State<Arc<ApiServerState>>,
@@ -211,7 +229,10 @@ pub async fn deletecollection_replicationcontrollers(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection replicationcontrollers in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection replicationcontrollers in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "replicationcontrollers")
@@ -242,7 +263,11 @@ pub async fn deletecollection_replicationcontrollers(
     // Delete each matching resource
     let mut deleted_count = 0;
     for item in items {
-        let key = build_key("replicationcontrollers", Some(&namespace), &item.metadata.name);
+        let key = build_key(
+            "replicationcontrollers",
+            Some(&namespace),
+            &item.metadata.name,
+        );
 
         // Handle deletion with finalizers
         let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -257,6 +282,9 @@ pub async fn deletecollection_replicationcontrollers(
         }
     }
 
-    info!("DeleteCollection completed: {} replicationcontrollers deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} replicationcontrollers deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

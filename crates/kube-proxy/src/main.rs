@@ -46,7 +46,10 @@ async fn main() -> Result<()> {
 
     tracing_subscriber::fmt().with_max_level(level).init();
 
-    info!("Starting Rusternetes Kube-proxy for node: {}", args.node_name);
+    info!(
+        "Starting Rusternetes Kube-proxy for node: {}",
+        args.node_name
+    );
 
     // Check for iptables availability
     if let Err(e) = check_iptables() {

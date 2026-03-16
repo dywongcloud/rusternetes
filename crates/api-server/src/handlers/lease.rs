@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::Lease,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -22,10 +21,7 @@ pub async fn create(
     Query(params): Query<HashMap<String, String>>,
     Json(mut lease): Json<Lease>,
 ) -> Result<(StatusCode, Json<Lease>)> {
-    info!(
-        "Creating lease: {}/{}",
-        namespace, lease.metadata.name
-    );
+    info!("Creating lease: {}/{}", namespace, lease.metadata.name);
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -49,7 +45,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Lease {}/{} validated successfully (not created)", namespace, lease.metadata.name);
+        info!(
+            "Dry-run: Lease {}/{} validated successfully (not created)",
+            namespace, lease.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(lease)));
     }
 
@@ -114,15 +113,16 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Lease {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: Lease {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(lease));
     }
 
     let result = match state.storage.update(&key, &lease).await {
         Ok(updated) => updated,
-        Err(rusternetes_common::Error::NotFound(_)) => {
-            state.storage.create(&key, &lease).await?
-        }
+        Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &lease).await?,
         Err(e) => return Err(e),
     };
 
@@ -156,7 +156,10 @@ pub async fn delete_lease(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: Lease {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: Lease {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -164,21 +167,16 @@ pub async fn delete_lease(
     let lease: Lease = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
-        &state.storage,
-        &key,
-        &lease,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &lease)
+            .await?;
 
     if deleted_immediately {
         Ok(StatusCode::NO_CONTENT)
     } else {
         info!(
             "Lease {}/{} marked for deletion (has finalizers: {:?})",
-            namespace,
-            name,
-            lease.metadata.finalizers
+            namespace, name, lease.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -250,7 +248,10 @@ pub async fn deletecollection_leases(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection leases in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection leases in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "leases")
@@ -296,6 +297,9 @@ pub async fn deletecollection_leases(
         }
     }
 
-    info!("DeleteCollection completed: {} leases deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} leases deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

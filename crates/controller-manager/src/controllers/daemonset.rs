@@ -1,6 +1,6 @@
 use anyhow::Result;
-use rusternetes_common::resources::{DaemonSet, DaemonSetStatus, Node, Pod, PodStatus};
 use rusternetes_common::resources::pod::{SecretVolumeSource, Volume, VolumeMount};
+use rusternetes_common::resources::{DaemonSet, DaemonSetStatus, Node, Pod, PodStatus};
 use rusternetes_common::types::Phase;
 use rusternetes_storage::Storage;
 use std::sync::Arc;
@@ -29,17 +29,13 @@ impl<S: Storage> DaemonSetController<S> {
     }
 
     pub async fn reconcile_all(&self) -> Result<()> {
-        let daemonsets: Vec<DaemonSet> = self
-            .storage
-            .list("/registry/daemonsets/")
-            .await?;
+        let daemonsets: Vec<DaemonSet> = self.storage.list("/registry/daemonsets/").await?;
 
         for mut daemonset in daemonsets {
             if let Err(e) = self.reconcile(&mut daemonset).await {
                 error!(
                     "Failed to reconcile DaemonSet {}: {}",
-                    daemonset.metadata.name,
-                    e
+                    daemonset.metadata.name, e
                 );
             }
         }
@@ -182,7 +178,10 @@ impl<S: Storage> DaemonSetController<S> {
             Some(selector) => {
                 // All selector labels must match node labels
                 selector.iter().all(|(k, v)| {
-                    node_labels.get(k).map(|node_v| node_v == v).unwrap_or(false)
+                    node_labels
+                        .get(k)
+                        .map(|node_v| node_v == v)
+                        .unwrap_or(false)
                 })
             }
             None => true, // No selector means all nodes match
@@ -200,14 +199,13 @@ impl<S: Storage> DaemonSetController<S> {
 
         // Create pod from template
         let template = &daemonset.spec.template;
-        let mut labels = template.metadata.as_ref()
+        let mut labels = template
+            .metadata
+            .as_ref()
             .and_then(|m| m.labels.clone())
             .unwrap_or_default();
         labels.insert("app".to_string(), daemonset_name.clone());
-        labels.insert(
-            "controller-uid".to_string(),
-            daemonset.metadata.uid.clone(),
-        );
+        labels.insert("controller-uid".to_string(), daemonset.metadata.uid.clone());
 
         let mut spec = template.spec.clone();
 
@@ -219,12 +217,20 @@ impl<S: Storage> DaemonSetController<S> {
         for container in &spec.containers {
             if let Some(env) = &container.env {
                 for env_var in env {
-                    if env_var.name.contains("NODE_NAME") || env_var.name.contains("SONOBUOY_NS") || env_var.name.contains("SONOBUOY_PLUGIN_POD") {
-                        info!("  Container '{}': {} - value={:?}, value_from.field_ref={:?}",
+                    if env_var.name.contains("NODE_NAME")
+                        || env_var.name.contains("SONOBUOY_NS")
+                        || env_var.name.contains("SONOBUOY_PLUGIN_POD")
+                    {
+                        info!(
+                            "  Container '{}': {} - value={:?}, value_from.field_ref={:?}",
                             container.name,
                             env_var.name,
                             env_var.value,
-                            env_var.value_from.as_ref().and_then(|vf| vf.field_ref.as_ref()));
+                            env_var
+                                .value_from
+                                .as_ref()
+                                .and_then(|vf| vf.field_ref.as_ref())
+                        );
                     }
                 }
             }
@@ -238,12 +244,20 @@ impl<S: Storage> DaemonSetController<S> {
         for container in &spec.containers {
             if let Some(env) = &container.env {
                 for env_var in env {
-                    if env_var.name.contains("NODE_NAME") || env_var.name.contains("SONOBUOY_NS") || env_var.name.contains("SONOBUOY_PLUGIN_POD") {
-                        info!("  Container '{}': {} - value={:?}, value_from.field_ref={:?}",
+                    if env_var.name.contains("NODE_NAME")
+                        || env_var.name.contains("SONOBUOY_NS")
+                        || env_var.name.contains("SONOBUOY_PLUGIN_POD")
+                    {
+                        info!(
+                            "  Container '{}': {} - value={:?}, value_from.field_ref={:?}",
                             container.name,
                             env_var.name,
                             env_var.value,
-                            env_var.value_from.as_ref().and_then(|vf| vf.field_ref.as_ref()));
+                            env_var
+                                .value_from
+                                .as_ref()
+                                .and_then(|vf| vf.field_ref.as_ref())
+                        );
                     }
                 }
             }
@@ -290,10 +304,7 @@ impl<S: Storage> DaemonSetController<S> {
         namespace: &str,
     ) {
         // Get service account name, default to "default"
-        let sa_name = spec
-            .service_account_name
-            .as_deref()
-            .unwrap_or("default");
+        let sa_name = spec.service_account_name.as_deref().unwrap_or("default");
 
         // The service account token secret name follows the pattern: {sa-name}-token
         let token_secret_name = format!("{}-token", sa_name);
@@ -452,9 +463,9 @@ mod tests {
                         creation_timestamp: None,
                         deletion_timestamp: None,
                         resource_version: None,
-                deletion_grace_period_seconds: None,
-                finalizers: None,
-                owner_references: None,
+                        deletion_grace_period_seconds: None,
+                        finalizers: None,
+                        owner_references: None,
                     }),
                     spec: PodSpec {
                         init_containers: None,
@@ -469,6 +480,7 @@ mod tests {
                         priority: None,
                         priority_class_name: None,
                         hostname: None,
+                        subdomain: None,
                         host_network: None,
                         host_pid: None,
                         host_ipc: None,

@@ -97,10 +97,7 @@ impl<S: Storage> DeploymentController<S> {
             if active.spec.replicas != deployment.spec.replicas {
                 info!(
                     "Updating ReplicaSet {}/{} replicas from {} to {}",
-                    namespace,
-                    active.metadata.name,
-                    active.spec.replicas,
-                    deployment.spec.replicas
+                    namespace, active.metadata.name, active.spec.replicas, deployment.spec.replicas
                 );
                 self.update_replicaset_replicas(active, deployment.spec.replicas)
                     .await?;
@@ -157,8 +154,7 @@ impl<S: Storage> DeploymentController<S> {
     fn replicaset_matches_template(&self, rs: &ReplicaSet, deployment: &Deployment) -> bool {
         // Simple comparison: check if containers match
         // In a full implementation, we'd hash the entire pod template
-        if rs.spec.template.spec.containers.len()
-            != deployment.spec.template.spec.containers.len()
+        if rs.spec.template.spec.containers.len() != deployment.spec.template.spec.containers.len()
         {
             return false;
         }
@@ -181,10 +177,7 @@ impl<S: Storage> DeploymentController<S> {
         true
     }
 
-    async fn create_replicaset(
-        &self,
-        deployment: &Deployment,
-    ) -> rusternetes_common::Result<()> {
+    async fn create_replicaset(&self, deployment: &Deployment) -> rusternetes_common::Result<()> {
         let namespace = deployment
             .metadata
             .namespace
@@ -192,11 +185,20 @@ impl<S: Storage> DeploymentController<S> {
             .unwrap_or("default");
 
         // Generate ReplicaSet name with hash suffix (simplified - just use UUID)
-        let rs_name = format!("{}-{}", deployment.metadata.name, uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
+        let rs_name = format!(
+            "{}-{}",
+            deployment.metadata.name,
+            uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
+        );
 
         let mut metadata = ObjectMeta::new(&rs_name);
         metadata.namespace = Some(namespace.to_string());
-        metadata.labels = deployment.spec.template.metadata.as_ref().and_then(|m| m.labels.clone());
+        metadata.labels = deployment
+            .spec
+            .template
+            .metadata
+            .as_ref()
+            .and_then(|m| m.labels.clone());
 
         // Set owner reference to the deployment
         metadata.owner_references = Some(vec![rusternetes_common::types::OwnerReference {

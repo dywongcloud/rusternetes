@@ -1,5 +1,5 @@
 use rusternetes_common::{
-    resources::{ReplicaSet, ReplicaSetStatus, Pod, PodStatus},
+    resources::{Pod, PodStatus, ReplicaSet, ReplicaSetStatus},
     types::{ObjectMeta, Phase},
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
@@ -104,7 +104,12 @@ impl<S: Storage> ReplicaSetController<S> {
 
         info!(
             "ReplicaSet {}/{}: current={}, ready={}, available={}, desired={}",
-            namespace, replicaset.metadata.name, current_replicas, ready_count, available_count, desired_replicas
+            namespace,
+            replicaset.metadata.name,
+            current_replicas,
+            ready_count,
+            available_count,
+            desired_replicas
         );
 
         // Reconcile pod count
@@ -152,7 +157,13 @@ impl<S: Storage> ReplicaSetController<S> {
         let final_current_replicas = replicaset_pods_after.len() as i32;
 
         // Update status with accurate counts
-        self.update_status(replicaset, final_current_replicas, final_ready_count, final_available_count).await?;
+        self.update_status(
+            replicaset,
+            final_current_replicas,
+            final_ready_count,
+            final_available_count,
+        )
+        .await?;
 
         Ok(())
     }
@@ -222,7 +233,7 @@ impl<S: Storage> ReplicaSetController<S> {
             ready_replicas,
             available_replicas,
             fully_labeled_replicas: Some(replicas), // All pods matching selector are fully labeled
-            observed_generation: None, // TODO: Track generation properly
+            observed_generation: None,              // TODO: Track generation properly
             conditions: None, // TODO: Add conditions for ReplicaSetReplicaFailure, etc.
         };
 
@@ -240,10 +251,7 @@ impl<S: Storage> ReplicaSetController<S> {
         Ok(())
     }
 
-    async fn create_pod(
-        &self,
-        replicaset: &ReplicaSet,
-    ) -> rusternetes_common::Result<()> {
+    async fn create_pod(&self, replicaset: &ReplicaSet) -> rusternetes_common::Result<()> {
         let namespace = replicaset
             .metadata
             .namespace
@@ -254,7 +262,12 @@ impl<S: Storage> ReplicaSetController<S> {
 
         let mut metadata = ObjectMeta::new(&pod_name);
         metadata.namespace = Some(namespace.to_string());
-        metadata.labels = replicaset.spec.template.metadata.as_ref().and_then(|m| m.labels.clone());
+        metadata.labels = replicaset
+            .spec
+            .template
+            .metadata
+            .as_ref()
+            .and_then(|m| m.labels.clone());
 
         // Set owner reference so pods are garbage collected when ReplicaSet is deleted
         metadata.owner_references = Some(vec![rusternetes_common::types::OwnerReference {
@@ -281,7 +294,7 @@ impl<S: Storage> ReplicaSetController<S> {
                 pod_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
-            ephemeral_container_statuses: None,
+                ephemeral_container_statuses: None,
             }),
         };
 

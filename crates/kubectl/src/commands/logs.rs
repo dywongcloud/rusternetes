@@ -24,7 +24,8 @@ pub async fn execute_enhanced(
         since_time,
         since,
         previous,
-    ).await
+    )
+    .await
 }
 
 pub async fn execute(
@@ -35,7 +36,10 @@ pub async fn execute(
     follow: bool,
     tail: Option<i64>,
 ) -> Result<()> {
-    execute_full(client, pod_name, namespace, container, follow, tail, false, None, None, false).await
+    execute_full(
+        client, pod_name, namespace, container, follow, tail, false, None, None, false,
+    )
+    .await
 }
 
 pub async fn execute_full(
@@ -102,17 +106,21 @@ fn parse_duration_to_seconds(duration: &str) -> Result<i64> {
     }
 
     let (value_str, unit) = if duration.ends_with("ms") {
-        (&duration[..duration.len()-2], "ms")
+        (&duration[..duration.len() - 2], "ms")
     } else {
         let last_char = duration.chars().last().unwrap();
         if last_char.is_alphabetic() {
-            (&duration[..duration.len()-1], &duration[duration.len()-1..])
+            (
+                &duration[..duration.len() - 1],
+                &duration[duration.len() - 1..],
+            )
         } else {
             (duration, "s") // Default to seconds
         }
     };
 
-    let value: i64 = value_str.parse()
+    let value: i64 = value_str
+        .parse()
         .map_err(|_| anyhow::anyhow!("Invalid duration value: {}", value_str))?;
 
     let seconds = match unit {
@@ -121,7 +129,10 @@ fn parse_duration_to_seconds(duration: &str) -> Result<i64> {
         "h" => value * 3600,
         "d" => value * 86400,
         "ms" => value / 1000, // Convert milliseconds to seconds
-        _ => anyhow::bail!("Unknown duration unit: {}. Supported units: s, m, h, d", unit),
+        _ => anyhow::bail!(
+            "Unknown duration unit: {}. Supported units: s, m, h, d",
+            unit
+        ),
     };
 
     Ok(seconds)

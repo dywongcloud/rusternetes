@@ -1,4 +1,4 @@
-use crate::{middleware::AuthContext, state::ApiServerState, handlers::watch};
+use crate::{handlers::watch, middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -8,9 +8,8 @@ use axum::{
 use rusternetes_common::{
     auth::ServiceAccountClaims,
     authz::{Decision, RequestAttributes},
-    resources::{Namespace, ServiceAccount, Secret},
-    List,
-    Result,
+    resources::{Namespace, Secret, ServiceAccount},
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use serde::Deserialize;
@@ -32,8 +31,7 @@ pub async fn create(
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "create", "namespaces")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "create", "namespaces").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -50,7 +48,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Namespace {} validated successfully (not created)", namespace.metadata.name);
+        info!(
+            "Dry-run: Namespace {} validated successfully (not created)",
+            namespace.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(namespace)));
     }
 
@@ -62,10 +63,17 @@ pub async fn create(
 
     match create_default_service_account(&state, &ns_name).await {
         Ok(_) => {
-            info!("Successfully created default ServiceAccount for namespace: {}", ns_name);
+            info!(
+                "Successfully created default ServiceAccount for namespace: {}",
+                ns_name
+            );
         }
         Err(e) => {
-            tracing::warn!("Failed to create default ServiceAccount for namespace {}: {}", ns_name, e);
+            tracing::warn!(
+                "Failed to create default ServiceAccount for namespace {}: {}",
+                ns_name,
+                e
+            );
             // Don't fail namespace creation if default SA creation fails
         }
     }
@@ -128,7 +136,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Namespace {} validated successfully (not updated)", name);
+        info!(
+            "Dry-run: Namespace {} validated successfully (not updated)",
+            name
+        );
         return Ok(Json(namespace));
     }
 
@@ -174,7 +185,10 @@ pub async fn delete_ns(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: Namespace {} validated successfully (not deleted)", name);
+        info!(
+            "Dry-run: Namespace {} validated successfully (not deleted)",
+            name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -201,8 +215,7 @@ pub async fn delete_ns(
         // The namespace controller will handle cleanup and finalizer removal
         info!(
             "Namespace {} marked for deletion (has finalizers: {:?})",
-            name,
-            namespace.metadata.finalizers
+            name, namespace.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -214,8 +227,8 @@ async fn cascade_delete_namespace_resources(
     storage: &rusternetes_storage::etcd::EtcdStorage,
     namespace: &str,
 ) -> Result<()> {
-    use tracing::warn;
     use serde_json::Value;
+    use tracing::warn;
 
     // List of resource types that are namespace-scoped and should be deleted
     // Order matters: delete child resources before parent resources
@@ -266,24 +279,36 @@ async fn cascade_delete_namespace_resources(
                                     total_deleted += 1;
                                 }
                                 Err(e) => {
-                                    warn!("Failed to delete {} {}/{}: {}", resource_type, namespace, name, e);
+                                    warn!(
+                                        "Failed to delete {} {}/{}: {}",
+                                        resource_type, namespace, name, e
+                                    );
                                 }
                             }
                         }
                     }
                 }
                 if count > 0 {
-                    info!("Deleted {} {} resources in namespace {}", count, resource_type, namespace);
+                    info!(
+                        "Deleted {} {} resources in namespace {}",
+                        count, resource_type, namespace
+                    );
                 }
             }
             Err(e) => {
                 // Log warning but continue - resource type might not exist or have no resources
-                warn!("Failed to list {} in namespace {}: {}", resource_type, namespace, e);
+                warn!(
+                    "Failed to list {} in namespace {}: {}",
+                    resource_type, namespace, e
+                );
             }
         }
     }
 
-    info!("Cascade deletion completed for namespace {}: {} resources deleted", namespace, total_deleted);
+    info!(
+        "Cascade deletion completed for namespace {}: {} resources deleted",
+        namespace, total_deleted
+    );
     Ok(())
 }
 
@@ -293,16 +318,24 @@ pub async fn list(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         info!("Watching namespaces");
         // Parse WatchParams from the query parameters
         let watch_params = watch::WatchParams {
             resource_version: params.get("resourceVersion").map(|s| s.clone()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return watch::watch_cluster_scoped::<Namespace>(
             state,
@@ -317,8 +350,7 @@ pub async fn list(
     info!("Listing namespaces");
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "namespaces")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "namespaces").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -372,13 +404,16 @@ async fn create_default_service_account(
     string_data.insert("token".to_string(), token);
     string_data.insert("namespace".to_string(), namespace.to_string());
 
-    let mut secret = Secret::new(&secret_name, namespace)
-        .with_type("kubernetes.io/service-account-token");
+    let mut secret =
+        Secret::new(&secret_name, namespace).with_type("kubernetes.io/service-account-token");
 
     // Add labels and annotations
     secret.metadata.labels = Some({
         let mut labels = HashMap::new();
-        labels.insert("kubernetes.io/service-account.name".to_string(), sa_name.to_string());
+        labels.insert(
+            "kubernetes.io/service-account.name".to_string(),
+            sa_name.to_string(),
+        );
         labels
     });
     secret.metadata.annotations = Some({
@@ -395,7 +430,10 @@ async fn create_default_service_account(
     let secret_key = build_key("secrets", Some(namespace), &secret_name);
     state.storage.create(&secret_key, &secret).await?;
 
-    info!("Created default ServiceAccount and token secret in namespace: {}", namespace);
+    info!(
+        "Created default ServiceAccount and token secret in namespace: {}",
+        namespace
+    );
     Ok(())
 }
 
@@ -410,8 +448,8 @@ pub async fn deletecollection_namespaces(
     info!("DeleteCollection namespaces with params: {:?}", params);
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "namespaces")
-        .with_api_group("");
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "deletecollection", "namespaces").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -452,6 +490,9 @@ pub async fn deletecollection_namespaces(
         }
     }
 
-    info!("DeleteCollection completed: {} namespaces deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} namespaces deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

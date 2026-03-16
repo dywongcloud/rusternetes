@@ -38,8 +38,8 @@ impl PrometheusClient {
     /// * `prometheus_url` - URL of the Prometheus server (e.g., "http://localhost:9090")
     pub fn new(prometheus_url: impl Into<String>) -> Result<Self> {
         let url = prometheus_url.into();
-        let client = Client::try_from(url.as_str())
-            .context("Failed to create Prometheus client")?;
+        let client =
+            Client::try_from(url.as_str()).context("Failed to create Prometheus client")?;
 
         Ok(Self {
             client,
@@ -67,18 +67,10 @@ impl PrometheusClient {
         labels: Option<&HashMap<String, String>>,
     ) -> Result<String> {
         // Build PromQL query
-        let query = self.build_object_query(
-            metric_name,
-            namespace,
-            resource_type,
-            resource_name,
-            labels,
-        );
+        let query =
+            self.build_object_query(metric_name, namespace, resource_type, resource_name, labels);
 
-        debug!(
-            "Querying Prometheus for object metric: {}",
-            query
-        );
+        debug!("Querying Prometheus for object metric: {}", query);
 
         // Check cache first
         if let Some(cached_value) = self.get_cached(&query).await {
@@ -90,7 +82,8 @@ impl PrometheusClient {
         let value = self.execute_instant_query(&query).await?;
 
         // Cache the result
-        self.cache_value(&query, &value, Duration::from_secs(60)).await;
+        self.cache_value(&query, &value, Duration::from_secs(60))
+            .await;
 
         Ok(value)
     }
@@ -111,7 +104,11 @@ impl PrometheusClient {
         debug!("Querying Prometheus for list metric: {}", query);
 
         // Execute query
-        let response = self.client.query(&query).get().await
+        let response = self
+            .client
+            .query(&query)
+            .get()
+            .await
             .context("Failed to execute Prometheus query")?;
 
         // Parse results
@@ -141,10 +138,7 @@ impl PrometheusClient {
         namespace: &str,
     ) -> Result<String> {
         // Build PromQL query for namespace-level metric
-        let query = format!(
-            "sum({}{{namespace=\"{}\"}})",
-            metric_name, namespace
-        );
+        let query = format!("sum({}{{namespace=\"{}\"}})", metric_name, namespace);
 
         debug!("Querying Prometheus for namespace metric: {}", query);
 
@@ -157,7 +151,8 @@ impl PrometheusClient {
         let value = self.execute_instant_query(&query).await?;
 
         // Cache result
-        self.cache_value(&query, &value, Duration::from_secs(60)).await;
+        self.cache_value(&query, &value, Duration::from_secs(60))
+            .await;
 
         Ok(value)
     }
@@ -188,7 +183,7 @@ impl PrometheusClient {
         let query = if label_selectors.is_empty() {
             metric_name.to_string()
         } else {
-            format!("{}{{{}}}",  metric_name, label_selectors.join(","))
+            format!("{}{{{}}}", metric_name, label_selectors.join(","))
         };
 
         debug!("Querying Prometheus for cluster metric: {}", query);
@@ -202,7 +197,8 @@ impl PrometheusClient {
         let value = self.execute_instant_query(&query).await?;
 
         // Cache result
-        self.cache_value(&query, &value, Duration::from_secs(60)).await;
+        self.cache_value(&query, &value, Duration::from_secs(60))
+            .await;
 
         Ok(value)
     }
@@ -216,9 +212,7 @@ impl PrometheusClient {
         resource_name: &str,
         labels: Option<&HashMap<String, String>>,
     ) -> String {
-        let mut label_selectors = vec![
-            format!("namespace=\"{}\"", namespace),
-        ];
+        let mut label_selectors = vec![format!("namespace=\"{}\"", namespace)];
 
         // Add resource name label based on resource type
         if let Some(name_label) = self.extract_resource_name_label(resource_type) {
@@ -232,7 +226,7 @@ impl PrometheusClient {
             }
         }
 
-        format!("{}{{{}}}",  metric_name, label_selectors.join(","))
+        format!("{}{{{}}}", metric_name, label_selectors.join(","))
     }
 
     /// Build PromQL query for listing objects
@@ -243,9 +237,7 @@ impl PrometheusClient {
         resource_type: &str,
         labels: Option<&HashMap<String, String>>,
     ) -> String {
-        let mut label_selectors = vec![
-            format!("namespace=\"{}\"", namespace),
-        ];
+        let mut label_selectors = vec![format!("namespace=\"{}\"", namespace)];
 
         // Add resource type label if applicable
         if resource_type != "namespaces" {
@@ -263,7 +255,7 @@ impl PrometheusClient {
             }
         }
 
-        format!("{}{{{}}}",  metric_name, label_selectors.join(","))
+        format!("{}{{{}}}", metric_name, label_selectors.join(","))
     }
 
     /// Extract the Prometheus label name used for resource names
@@ -300,7 +292,11 @@ impl PrometheusClient {
 
     /// Execute an instant query and return the first value
     async fn execute_instant_query(&self, query: &str) -> Result<String> {
-        let response = self.client.query(query).get().await
+        let response = self
+            .client
+            .query(query)
+            .get()
+            .await
             .context("Failed to execute Prometheus instant query")?;
 
         // Extract the first value from the response
@@ -363,23 +359,30 @@ mod tests {
     fn test_extract_resource_name_label() {
         let client = PrometheusClient::new("http://localhost:9090").unwrap();
 
-        assert_eq!(client.extract_resource_name_label("pods"), Some("pod".to_string()));
-        assert_eq!(client.extract_resource_name_label("services"), Some("service".to_string()));
-        assert_eq!(client.extract_resource_name_label("deployments"), Some("deployment".to_string()));
-        assert_eq!(client.extract_resource_name_label("nodes"), Some("node".to_string()));
+        assert_eq!(
+            client.extract_resource_name_label("pods"),
+            Some("pod".to_string())
+        );
+        assert_eq!(
+            client.extract_resource_name_label("services"),
+            Some("service".to_string())
+        );
+        assert_eq!(
+            client.extract_resource_name_label("deployments"),
+            Some("deployment".to_string())
+        );
+        assert_eq!(
+            client.extract_resource_name_label("nodes"),
+            Some("node".to_string())
+        );
     }
 
     #[test]
     fn test_build_object_query() {
         let client = PrometheusClient::new("http://localhost:9090").unwrap();
 
-        let query = client.build_object_query(
-            "http_requests_total",
-            "default",
-            "pods",
-            "nginx-pod",
-            None,
-        );
+        let query =
+            client.build_object_query("http_requests_total", "default", "pods", "nginx-pod", None);
 
         assert!(query.contains("namespace=\"default\""));
         assert!(query.contains("pod=\"nginx-pod\""));
@@ -412,12 +415,7 @@ mod tests {
     fn test_build_list_query() {
         let client = PrometheusClient::new("http://localhost:9090").unwrap();
 
-        let query = client.build_list_query(
-            "memory_usage_bytes",
-            "default",
-            "pods",
-            None,
-        );
+        let query = client.build_list_query("memory_usage_bytes", "default", "pods", None);
 
         assert!(query.contains("namespace=\"default\""));
         assert!(query.contains("memory_usage_bytes"));
@@ -431,7 +429,9 @@ mod tests {
         let value = "42.5";
 
         // Cache the value
-        client.cache_value(query, value, Duration::from_secs(60)).await;
+        client
+            .cache_value(query, value, Duration::from_secs(60))
+            .await;
 
         // Should retrieve from cache
         let cached = client.get_cached(query).await;
@@ -446,7 +446,9 @@ mod tests {
         let value = "42.5";
 
         // Cache with very short TTL
-        client.cache_value(query, value, Duration::from_millis(10)).await;
+        client
+            .cache_value(query, value, Duration::from_millis(10))
+            .await;
 
         // Wait for expiration
         tokio::time::sleep(Duration::from_millis(20)).await;

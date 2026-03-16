@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::StatefulSet,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -48,7 +47,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: StatefulSet {}/{} validated successfully (not created)", namespace, statefulset.metadata.name);
+        info!(
+            "Dry-run: StatefulSet {}/{} validated successfully (not created)",
+            namespace, statefulset.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(statefulset)));
     }
 
@@ -114,7 +116,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: StatefulSet {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: StatefulSet {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(statefulset));
     }
 
@@ -163,11 +168,15 @@ pub async fn delete_statefulset(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: StatefulSet {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: StatefulSet {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &statefulset).await?;
+    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &statefulset)
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -211,8 +220,8 @@ pub async fn list_all_statefulsets(
     info!("Listing all statefulsets");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "statefulsets")
-        .with_api_group("apps");
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "list", "statefulsets").with_api_group("apps");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -240,7 +249,10 @@ pub async fn deletecollection_statefulsets(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection statefulsets in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection statefulsets in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "statefulsets")
@@ -286,6 +298,9 @@ pub async fn deletecollection_statefulsets(
         }
     }
 
-    info!("DeleteCollection completed: {} statefulsets deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} statefulsets deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

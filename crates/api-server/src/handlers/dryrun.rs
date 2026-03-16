@@ -9,10 +9,7 @@ use std::collections::HashMap;
 ///
 /// Returns true if the dryRun query parameter is set to "All"
 pub fn is_dry_run(params: &HashMap<String, String>) -> bool {
-    params
-        .get("dryRun")
-        .map(|v| v == "All")
-        .unwrap_or(false)
+    params.get("dryRun").map(|v| v == "All").unwrap_or(false)
 }
 
 #[cfg(test)]

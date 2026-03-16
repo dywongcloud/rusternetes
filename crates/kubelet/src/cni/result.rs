@@ -250,7 +250,8 @@ mod tests {
         let error = CniError::new(
             ErrorCode::InvalidNetworkConfig,
             "Invalid configuration".to_string(),
-        ).with_details("Missing required field 'name'".to_string());
+        )
+        .with_details("Missing required field 'name'".to_string());
 
         let json = serde_json::to_string(&error).unwrap();
         assert!(json.contains("Invalid configuration"));

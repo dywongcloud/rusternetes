@@ -215,7 +215,10 @@ fn test_ipaddress_with_labels() {
     assert!(deserialized.metadata.labels.is_some());
     let labels = deserialized.metadata.labels.unwrap();
     assert_eq!(labels.get("ip-family"), Some(&"ipv4".to_string()));
-    assert_eq!(labels.get("managed-by"), Some(&"service-controller".to_string()));
+    assert_eq!(
+        labels.get("managed-by"),
+        Some(&"service-controller".to_string())
+    );
 }
 
 #[test]
@@ -225,7 +228,10 @@ fn test_ipaddress_with_annotations() {
 
     // Add annotations
     let mut annotations = std::collections::HashMap::new();
-    annotations.insert("allocation-timestamp".to_string(), "2024-01-01T00:00:00Z".to_string());
+    annotations.insert(
+        "allocation-timestamp".to_string(),
+        "2024-01-01T00:00:00Z".to_string(),
+    );
     annotations.insert("ip-pool".to_string(), "default-pool".to_string());
     ip.metadata.annotations = Some(annotations);
 
@@ -234,7 +240,10 @@ fn test_ipaddress_with_annotations() {
 
     assert!(deserialized.metadata.annotations.is_some());
     let annotations = deserialized.metadata.annotations.unwrap();
-    assert_eq!(annotations.get("allocation-timestamp"), Some(&"2024-01-01T00:00:00Z".to_string()));
+    assert_eq!(
+        annotations.get("allocation-timestamp"),
+        Some(&"2024-01-01T00:00:00Z".to_string())
+    );
 }
 
 #[test]
@@ -250,7 +259,10 @@ fn test_ipaddress_metadata_fields() {
     let deserialized: IPAddress = serde_json::from_str(&json).unwrap();
 
     assert_eq!(deserialized.metadata.uid, "ip-uid-123");
-    assert_eq!(deserialized.metadata.resource_version, Some("42".to_string()));
+    assert_eq!(
+        deserialized.metadata.resource_version,
+        Some("42".to_string())
+    );
     // creation_timestamp is auto-generated, so just verify it exists
     assert!(deserialized.metadata.creation_timestamp.is_some());
 }
@@ -306,7 +318,7 @@ fn test_ipaddress_various_parent_types() {
     let parent_types = vec![
         ("services", Some("default")),
         ("pods", Some("kube-system")),
-        ("nodes", None), // cluster-scoped
+        ("nodes", None),      // cluster-scoped
         ("namespaces", None), // cluster-scoped
     ];
 

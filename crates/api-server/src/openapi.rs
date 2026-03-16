@@ -5,9 +5,9 @@
 
 use indexmap::IndexMap;
 use openapiv3::{
-    Info, OpenAPI, PathItem, Paths, ReferenceOr, Response, Responses, Server, Tag, Operation,
-    Parameter, ParameterSchemaOrContent, ParameterData, RequestBody, MediaType, Schema, SchemaKind,
-    Type, StringType, ObjectType, SchemaData, ArrayType, IntegerType, BooleanType,
+    ArrayType, BooleanType, Info, IntegerType, MediaType, ObjectType, OpenAPI, Operation,
+    Parameter, ParameterData, ParameterSchemaOrContent, PathItem, Paths, ReferenceOr, RequestBody,
+    Response, Responses, Schema, SchemaData, SchemaKind, Server, StringType, Tag, Type,
 };
 
 /// Generate the OpenAPI v3 specification for the Kubernetes API
@@ -16,21 +16,21 @@ pub fn generate_openapi_spec() -> OpenAPI {
         openapi: "3.0.0".to_string(),
         info: Info {
             title: "Rusternetes Kubernetes API".to_string(),
-            description: Some("OpenAPI specification for Rusternetes Kubernetes API server".to_string()),
+            description: Some(
+                "OpenAPI specification for Rusternetes Kubernetes API server".to_string(),
+            ),
             terms_of_service: None,
             contact: None,
             license: None,
             version: "v1.35.0".to_string(),
             extensions: IndexMap::new(),
         },
-        servers: vec![
-            Server {
-                url: "/".to_string(),
-                description: Some("Rusternetes API Server".to_string()),
-                variables: Some(IndexMap::new()),
-                extensions: IndexMap::new(),
-            }
-        ],
+        servers: vec![Server {
+            url: "/".to_string(),
+            description: Some("Rusternetes API Server".to_string()),
+            variables: Some(IndexMap::new()),
+            extensions: IndexMap::new(),
+        }],
         paths: generate_paths(),
         components: Some(generate_components()),
         security: None,
@@ -252,7 +252,14 @@ fn add_cluster_resource(
     tag: &str,
     has_status: bool,
 ) {
-    add_namespaced_resource(paths, collection_path, item_path, resource_name, tag, has_status);
+    add_namespaced_resource(
+        paths,
+        collection_path,
+        item_path,
+        resource_name,
+        tag,
+        has_status,
+    );
 }
 
 /// Create a path item for collection operations
@@ -394,7 +401,10 @@ fn create_status_path_item(resource_name: &str, tag: &str) -> PathItem {
         get: Some(Operation {
             tags: vec![tag.to_string()],
             summary: Some(format!("read status of the specified {}", resource_name)),
-            description: Some(format!("Read status of the specified {} object", resource_name)),
+            description: Some(format!(
+                "Read status of the specified {} object",
+                resource_name
+            )),
             operation_id: Some(format!("read{}Status", resource_name)),
             parameters: vec![namespace_param(), name_param()],
             request_body: None,
@@ -409,7 +419,10 @@ fn create_status_path_item(resource_name: &str, tag: &str) -> PathItem {
         put: Some(Operation {
             tags: vec![tag.to_string()],
             summary: Some(format!("replace status of the specified {}", resource_name)),
-            description: Some(format!("Replace status of the specified {} object", resource_name)),
+            description: Some(format!(
+                "Replace status of the specified {} object",
+                resource_name
+            )),
             operation_id: Some(format!("replace{}Status", resource_name)),
             parameters: vec![namespace_param(), name_param()],
             request_body: Some(ReferenceOr::Item(RequestBody {
@@ -429,7 +442,10 @@ fn create_status_path_item(resource_name: &str, tag: &str) -> PathItem {
         patch: Some(Operation {
             tags: vec![tag.to_string()],
             summary: Some(format!("patch status of the specified {}", resource_name)),
-            description: Some(format!("Patch status of the specified {} object", resource_name)),
+            description: Some(format!(
+                "Patch status of the specified {} object",
+                resource_name
+            )),
             operation_id: Some(format!("patch{}Status", resource_name)),
             parameters: vec![namespace_param(), name_param()],
             request_body: Some(ReferenceOr::Item(RequestBody {
@@ -456,7 +472,9 @@ fn namespace_param() -> ReferenceOr<Parameter> {
     ReferenceOr::Item(Parameter::Path {
         parameter_data: ParameterData {
             name: "namespace".to_string(),
-            description: Some("object name and auth scope, such as for teams and projects".to_string()),
+            description: Some(
+                "object name and auth scope, such as for teams and projects".to_string(),
+            ),
             required: true,
             deprecated: None,
             format: ParameterSchemaOrContent::Schema(ReferenceOr::Item(Schema {
@@ -496,7 +514,9 @@ fn label_selector_param() -> ReferenceOr<Parameter> {
     ReferenceOr::Item(Parameter::Query {
         parameter_data: ParameterData {
             name: "labelSelector".to_string(),
-            description: Some("A selector to restrict the list of returned objects by their labels".to_string()),
+            description: Some(
+                "A selector to restrict the list of returned objects by their labels".to_string(),
+            ),
             required: false,
             deprecated: None,
             format: ParameterSchemaOrContent::Schema(ReferenceOr::Item(Schema {
@@ -518,7 +538,9 @@ fn field_selector_param() -> ReferenceOr<Parameter> {
     ReferenceOr::Item(Parameter::Query {
         parameter_data: ParameterData {
             name: "fieldSelector".to_string(),
-            description: Some("A selector to restrict the list of returned objects by their fields".to_string()),
+            description: Some(
+                "A selector to restrict the list of returned objects by their fields".to_string(),
+            ),
             required: false,
             deprecated: None,
             format: ParameterSchemaOrContent::Schema(ReferenceOr::Item(Schema {
@@ -584,7 +606,9 @@ fn limit_param() -> ReferenceOr<Parameter> {
     ReferenceOr::Item(Parameter::Query {
         parameter_data: ParameterData {
             name: "limit".to_string(),
-            description: Some("limit is a maximum number of responses to return for a list call".to_string()),
+            description: Some(
+                "limit is a maximum number of responses to return for a list call".to_string(),
+            ),
             required: false,
             deprecated: None,
             format: ParameterSchemaOrContent::Schema(ReferenceOr::Item(Schema {
@@ -847,23 +871,34 @@ fn add_object_meta_schema(schemas: &mut IndexMap<String, ReferenceOr<Schema>>) {
         "ObjectMeta".to_string(),
         ReferenceOr::Item(Schema {
             schema_data: SchemaData {
-                description: Some("ObjectMeta is metadata that all persisted resources must have".to_string()),
+                description: Some(
+                    "ObjectMeta is metadata that all persisted resources must have".to_string(),
+                ),
                 ..Default::default()
             },
             schema_kind: SchemaKind::Type(Type::Object(ObjectType {
                 properties: IndexMap::from([
-                    ("name".to_string(), ReferenceOr::boxed_item(Schema {
-                        schema_data: SchemaData::default(),
-                        schema_kind: SchemaKind::Type(Type::String(StringType::default())),
-                    })),
-                    ("namespace".to_string(), ReferenceOr::boxed_item(Schema {
-                        schema_data: SchemaData::default(),
-                        schema_kind: SchemaKind::Type(Type::String(StringType::default())),
-                    })),
-                    ("uid".to_string(), ReferenceOr::boxed_item(Schema {
-                        schema_data: SchemaData::default(),
-                        schema_kind: SchemaKind::Type(Type::String(StringType::default())),
-                    })),
+                    (
+                        "name".to_string(),
+                        ReferenceOr::boxed_item(Schema {
+                            schema_data: SchemaData::default(),
+                            schema_kind: SchemaKind::Type(Type::String(StringType::default())),
+                        }),
+                    ),
+                    (
+                        "namespace".to_string(),
+                        ReferenceOr::boxed_item(Schema {
+                            schema_data: SchemaData::default(),
+                            schema_kind: SchemaKind::Type(Type::String(StringType::default())),
+                        }),
+                    ),
+                    (
+                        "uid".to_string(),
+                        ReferenceOr::boxed_item(Schema {
+                            schema_data: SchemaData::default(),
+                            schema_kind: SchemaKind::Type(Type::String(StringType::default())),
+                        }),
+                    ),
                 ]),
                 required: vec!["name".to_string()],
                 additional_properties: None,
@@ -880,7 +915,9 @@ fn add_basic_resource_schemas(schemas: &mut IndexMap<String, ReferenceOr<Schema>
         "Pod".to_string(),
         ReferenceOr::Item(Schema {
             schema_data: SchemaData {
-                description: Some("Pod is a collection of containers that can run on a host".to_string()),
+                description: Some(
+                    "Pod is a collection of containers that can run on a host".to_string(),
+                ),
                 ..Default::default()
             },
             schema_kind: SchemaKind::Type(Type::Object(ObjectType::default())),
@@ -914,14 +951,23 @@ mod tests {
     #[test]
     fn test_spec_has_core_paths() {
         let spec = generate_openapi_spec();
-        assert!(spec.paths.paths.contains_key("/api/v1/namespaces/{namespace}/pods"));
-        assert!(spec.paths.paths.contains_key("/api/v1/namespaces/{namespace}/pods/{name}"));
+        assert!(spec
+            .paths
+            .paths
+            .contains_key("/api/v1/namespaces/{namespace}/pods"));
+        assert!(spec
+            .paths
+            .paths
+            .contains_key("/api/v1/namespaces/{namespace}/pods/{name}"));
     }
 
     #[test]
     fn test_spec_has_apps_paths() {
         let spec = generate_openapi_spec();
-        assert!(spec.paths.paths.contains_key("/apis/apps/v1/namespaces/{namespace}/deployments"));
+        assert!(spec
+            .paths
+            .paths
+            .contains_key("/apis/apps/v1/namespaces/{namespace}/deployments"));
     }
 
     #[test]

@@ -44,14 +44,14 @@ async fn delete_resource(client: &ApiClient, value: &serde_yaml::Value) -> Resul
         .and_then(|n| n.as_str())
         .context("Missing 'name' in metadata")?;
 
-    let namespace = metadata
-        .get("namespace")
-        .and_then(|n| n.as_str());
+    let namespace = metadata.get("namespace").and_then(|n| n.as_str());
 
     // Construct API path based on resource kind
     let api_path = get_delete_api_path(kind, namespace, name)?;
 
-    client.delete(&api_path).await
+    client
+        .delete(&api_path)
+        .await
         .context(format!("Failed to delete {} {}", kind, name))?;
 
     println!("{}/{} deleted", kind.to_lowercase(), name);
@@ -72,31 +72,53 @@ fn get_delete_api_path(kind: &str, namespace: Option<&str>, name: &str) -> Resul
         "ConfigMap" => format!("/api/v1/namespaces/{}/configmaps/{}", ns, name),
         "Secret" => format!("/api/v1/namespaces/{}/secrets/{}", ns, name),
         "ServiceAccount" => format!("/api/v1/namespaces/{}/serviceaccounts/{}", ns, name),
-        "Ingress" => format!("/apis/networking.k8s.io/v1/namespaces/{}/ingresses/{}", ns, name),
-        "PersistentVolumeClaim" => format!("/api/v1/namespaces/{}/persistentvolumeclaims/{}", ns, name),
+        "Ingress" => format!(
+            "/apis/networking.k8s.io/v1/namespaces/{}/ingresses/{}",
+            ns, name
+        ),
+        "PersistentVolumeClaim" => {
+            format!("/api/v1/namespaces/{}/persistentvolumeclaims/{}", ns, name)
+        }
         "PersistentVolume" => format!("/api/v1/persistentvolumes/{}", name),
         "StorageClass" => format!("/apis/storage.k8s.io/v1/storageclasses/{}", name),
         "Namespace" => format!("/api/v1/namespaces/{}", name),
         "Node" => format!("/api/v1/nodes/{}", name),
-        "Role" => format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles/{}", ns, name),
-        "RoleBinding" => format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}", ns, name),
+        "Role" => format!(
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles/{}",
+            ns, name
+        ),
+        "RoleBinding" => format!(
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}",
+            ns, name
+        ),
         "ClusterRole" => format!("/apis/rbac.authorization.k8s.io/v1/clusterroles/{}", name),
-        "ClusterRoleBinding" => format!("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}", name),
+        "ClusterRoleBinding" => format!(
+            "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}",
+            name
+        ),
         _ => anyhow::bail!("Unsupported resource kind for deletion: {}", kind),
     })
 }
 
-pub async fn execute_with_selector(client: &ApiClient, resource_type: &str, selector: &str, namespace: &str) -> Result<()> {
+pub async fn execute_with_selector(
+    client: &ApiClient,
+    resource_type: &str,
+    selector: &str,
+    namespace: &str,
+) -> Result<()> {
     // Build the list API path with label selector
     let api_path = get_list_api_path(resource_type, namespace)?;
     let selector_query = format!("?labelSelector={}", urlencoding::encode(selector));
     let full_path = format!("{}{}", api_path, selector_query);
 
     // Fetch resources matching the selector
-    let response: serde_json::Value = client.get(&full_path).await
+    let response: serde_json::Value = client
+        .get(&full_path)
+        .await
         .context("Failed to list resources with selector")?;
 
-    let items = response.get("items")
+    let items = response
+        .get("items")
         .and_then(|i| i.as_array())
         .context("No items in response")?;
 
@@ -105,12 +127,17 @@ pub async fn execute_with_selector(client: &ApiClient, resource_type: &str, sele
         return Ok(());
     }
 
-    println!("Found {} resource(s) matching selector {}", items.len(), selector);
+    println!(
+        "Found {} resource(s) matching selector {}",
+        items.len(),
+        selector
+    );
 
     // Delete each resource
     let mut deleted_count = 0;
     for item in items {
-        let name = item.get("metadata")
+        let name = item
+            .get("metadata")
             .and_then(|m| m.get("name"))
             .and_then(|n| n.as_str())
             .context("Missing resource name")?;
@@ -127,15 +154,28 @@ fn get_list_api_path(resource_type: &str, namespace: &str) -> Result<String> {
     Ok(match resource_type {
         "pod" | "pods" => format!("/api/v1/namespaces/{}/pods", namespace),
         "service" | "services" | "svc" => format!("/api/v1/namespaces/{}/services", namespace),
-        "deployment" | "deployments" | "deploy" => format!("/apis/apps/v1/namespaces/{}/deployments", namespace),
-        "statefulset" | "statefulsets" | "sts" => format!("/apis/apps/v1/namespaces/{}/statefulsets", namespace),
-        "daemonset" | "daemonsets" | "ds" => format!("/apis/apps/v1/namespaces/{}/daemonsets", namespace),
-        "replicaset" | "replicasets" | "rs" => format!("/apis/apps/v1/namespaces/{}/replicasets", namespace),
+        "deployment" | "deployments" | "deploy" => {
+            format!("/apis/apps/v1/namespaces/{}/deployments", namespace)
+        }
+        "statefulset" | "statefulsets" | "sts" => {
+            format!("/apis/apps/v1/namespaces/{}/statefulsets", namespace)
+        }
+        "daemonset" | "daemonsets" | "ds" => {
+            format!("/apis/apps/v1/namespaces/{}/daemonsets", namespace)
+        }
+        "replicaset" | "replicasets" | "rs" => {
+            format!("/apis/apps/v1/namespaces/{}/replicasets", namespace)
+        }
         "job" | "jobs" => format!("/apis/batch/v1/namespaces/{}/jobs", namespace),
-        "cronjob" | "cronjobs" | "cj" => format!("/apis/batch/v1/namespaces/{}/cronjobs", namespace),
+        "cronjob" | "cronjobs" | "cj" => {
+            format!("/apis/batch/v1/namespaces/{}/cronjobs", namespace)
+        }
         "configmap" | "configmaps" | "cm" => format!("/api/v1/namespaces/{}/configmaps", namespace),
         "secret" | "secrets" => format!("/api/v1/namespaces/{}/secrets", namespace),
-        _ => anyhow::bail!("Unsupported resource type for selector deletion: {}", resource_type),
+        _ => anyhow::bail!(
+            "Unsupported resource type for selector deletion: {}",
+            resource_type
+        ),
     })
 }
 
@@ -143,7 +183,9 @@ mod urlencoding {
     pub fn encode(s: &str) -> String {
         s.chars()
             .map(|c| match c {
-                'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' | '=' | ',' | '!' => c.to_string(),
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' | '=' | ',' | '!' => {
+                    c.to_string()
+                }
                 ' ' => "+".to_string(),
                 _ => format!("%{:02X}", c as u8),
             })
@@ -211,25 +253,37 @@ pub async fn execute(
         }
         "clusterrole" | "clusterroles" => {
             client
-                .delete(&format!("/apis/rbac.authorization.k8s.io/v1/clusterroles/{}", name))
+                .delete(&format!(
+                    "/apis/rbac.authorization.k8s.io/v1/clusterroles/{}",
+                    name
+                ))
                 .await?;
             println!("ClusterRole '{}' deleted", name);
         }
         "clusterrolebinding" | "clusterrolebindings" => {
             client
-                .delete(&format!("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}", name))
+                .delete(&format!(
+                    "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}",
+                    name
+                ))
                 .await?;
             println!("ClusterRoleBinding '{}' deleted", name);
         }
         "role" | "roles" => {
             client
-                .delete(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles/{}", ns, name))
+                .delete(&format!(
+                    "/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles/{}",
+                    ns, name
+                ))
                 .await?;
             println!("Role '{}' deleted", name);
         }
         "rolebinding" | "rolebindings" => {
             client
-                .delete(&format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}", ns, name))
+                .delete(&format!(
+                    "/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}",
+                    ns, name
+                ))
                 .await?;
             println!("RoleBinding '{}' deleted", name);
         }

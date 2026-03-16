@@ -1,5 +1,5 @@
 use rusternetes_common::resources::{
-    Endpoints, EndpointSubset, EndpointAddress, EndpointPort, EndpointReference, EndpointSlice,
+    EndpointAddress, EndpointPort, EndpointReference, EndpointSlice, EndpointSubset, Endpoints,
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::endpointslice::EndpointSliceController;
@@ -71,7 +71,10 @@ async fn test_endpointslice_created_from_endpoints() {
     );
 
     storage
-        .create(&build_key("endpoints", Some("default"), "web-service"), &endpoints)
+        .create(
+            &build_key("endpoints", Some("default"), "web-service"),
+            &endpoints,
+        )
         .await
         .unwrap();
 
@@ -105,7 +108,10 @@ async fn test_endpointslice_has_owner_reference() {
     let endpoints_uid = endpoints.metadata.uid.clone();
 
     storage
-        .create(&build_key("endpoints", Some("default"), "api-service"), &endpoints)
+        .create(
+            &build_key("endpoints", Some("default"), "api-service"),
+            &endpoints,
+        )
         .await
         .unwrap();
 
@@ -118,7 +124,10 @@ async fn test_endpointslice_has_owner_reference() {
         .await
         .unwrap();
 
-    assert!(slice.metadata.owner_references.is_some(), "Should have owner references");
+    assert!(
+        slice.metadata.owner_references.is_some(),
+        "Should have owner references"
+    );
     let owner_refs = slice.metadata.owner_references.unwrap();
     assert_eq!(owner_refs.len(), 1);
 
@@ -144,7 +153,10 @@ async fn test_endpointslice_has_service_label() {
     );
 
     storage
-        .create(&build_key("endpoints", Some("default"), "db-service"), &endpoints)
+        .create(
+            &build_key("endpoints", Some("default"), "db-service"),
+            &endpoints,
+        )
         .await
         .unwrap();
 
@@ -184,7 +196,10 @@ async fn test_endpointslice_includes_port_mapping() {
     );
 
     storage
-        .create(&build_key("endpoints", Some("default"), "multi-port-service"), &endpoints)
+        .create(
+            &build_key("endpoints", Some("default"), "multi-port-service"),
+            &endpoints,
+        )
         .await
         .unwrap();
 
@@ -193,21 +208,37 @@ async fn test_endpointslice_includes_port_mapping() {
 
     // Verify EndpointSlice includes all ports
     let slice: EndpointSlice = storage
-        .get(&build_key("endpointslices", Some("default"), "multi-port-service"))
+        .get(&build_key(
+            "endpointslices",
+            Some("default"),
+            "multi-port-service",
+        ))
         .await
         .unwrap();
 
     assert_eq!(slice.ports.len(), 3, "Should have 3 ports");
 
     // Verify specific ports
-    let http_port = slice.ports.iter().find(|p| p.name == Some("http".to_string())).unwrap();
+    let http_port = slice
+        .ports
+        .iter()
+        .find(|p| p.name == Some("http".to_string()))
+        .unwrap();
     assert_eq!(http_port.port, Some(8080));
     assert_eq!(http_port.protocol, Some("TCP".to_string()));
 
-    let https_port = slice.ports.iter().find(|p| p.name == Some("https".to_string())).unwrap();
+    let https_port = slice
+        .ports
+        .iter()
+        .find(|p| p.name == Some("https".to_string()))
+        .unwrap();
     assert_eq!(https_port.port, Some(8443));
 
-    let metrics_port = slice.ports.iter().find(|p| p.name == Some("metrics".to_string())).unwrap();
+    let metrics_port = slice
+        .ports
+        .iter()
+        .find(|p| p.name == Some("metrics".to_string()))
+        .unwrap();
     assert_eq!(metrics_port.port, Some(9090));
 }
 
@@ -225,7 +256,10 @@ async fn test_endpointslice_includes_endpoint_conditions() {
     );
 
     storage
-        .create(&build_key("endpoints", Some("default"), "cache-service"), &endpoints)
+        .create(
+            &build_key("endpoints", Some("default"), "cache-service"),
+            &endpoints,
+        )
         .await
         .unwrap();
 
@@ -234,18 +268,37 @@ async fn test_endpointslice_includes_endpoint_conditions() {
 
     // Verify EndpointSlice endpoint conditions
     let slice: EndpointSlice = storage
-        .get(&build_key("endpointslices", Some("default"), "cache-service"))
+        .get(&build_key(
+            "endpointslices",
+            Some("default"),
+            "cache-service",
+        ))
         .await
         .unwrap();
 
     assert_eq!(slice.endpoints.len(), 2);
 
     for endpoint in &slice.endpoints {
-        assert!(endpoint.conditions.is_some(), "Endpoint should have conditions");
+        assert!(
+            endpoint.conditions.is_some(),
+            "Endpoint should have conditions"
+        );
         let conditions = endpoint.conditions.as_ref().unwrap();
-        assert_eq!(conditions.ready, Some(true), "Ready endpoints should be marked as ready");
-        assert_eq!(conditions.serving, Some(true), "Ready endpoints should be serving");
-        assert_eq!(conditions.terminating, Some(false), "Ready endpoints should not be terminating");
+        assert_eq!(
+            conditions.ready,
+            Some(true),
+            "Ready endpoints should be marked as ready"
+        );
+        assert_eq!(
+            conditions.serving,
+            Some(true),
+            "Ready endpoints should be serving"
+        );
+        assert_eq!(
+            conditions.terminating,
+            Some(false),
+            "Ready endpoints should not be terminating"
+        );
     }
 }
 
@@ -263,7 +316,10 @@ async fn test_endpointslice_includes_target_ref() {
     );
 
     storage
-        .create(&build_key("endpoints", Some("default"), "worker-service"), &endpoints)
+        .create(
+            &build_key("endpoints", Some("default"), "worker-service"),
+            &endpoints,
+        )
         .await
         .unwrap();
 
@@ -272,14 +328,21 @@ async fn test_endpointslice_includes_target_ref() {
 
     // Verify EndpointSlice includes target references
     let slice: EndpointSlice = storage
-        .get(&build_key("endpointslices", Some("default"), "worker-service"))
+        .get(&build_key(
+            "endpointslices",
+            Some("default"),
+            "worker-service",
+        ))
         .await
         .unwrap();
 
     assert_eq!(slice.endpoints.len(), 1);
     let endpoint = &slice.endpoints[0];
 
-    assert!(endpoint.target_ref.is_some(), "Endpoint should have target_ref");
+    assert!(
+        endpoint.target_ref.is_some(),
+        "Endpoint should have target_ref"
+    );
     let target_ref = endpoint.target_ref.as_ref().unwrap();
     assert_eq!(target_ref.kind, Some("Pod".to_string()));
     assert_eq!(target_ref.namespace, Some("default".to_string()));
@@ -307,7 +370,11 @@ async fn test_endpointslice_updates_when_endpoints_change() {
 
     // Verify initial EndpointSlice
     let slice: EndpointSlice = storage
-        .get(&build_key("endpointslices", Some("default"), "elastic-service"))
+        .get(&build_key(
+            "endpointslices",
+            Some("default"),
+            "elastic-service",
+        ))
         .await
         .unwrap();
     assert_eq!(slice.endpoints.len(), 1);
@@ -330,7 +397,11 @@ async fn test_endpointslice_updates_when_endpoints_change() {
 
     // Verify updated EndpointSlice
     let updated_slice: EndpointSlice = storage
-        .get(&build_key("endpointslices", Some("default"), "elastic-service"))
+        .get(&build_key(
+            "endpointslices",
+            Some("default"),
+            "elastic-service",
+        ))
         .await
         .unwrap();
     assert_eq!(
@@ -360,11 +431,17 @@ async fn test_endpointslice_multiple_namespaces() {
     );
 
     storage
-        .create(&build_key("endpoints", Some("ns1"), "app-service"), &endpoints_ns1)
+        .create(
+            &build_key("endpoints", Some("ns1"), "app-service"),
+            &endpoints_ns1,
+        )
         .await
         .unwrap();
     storage
-        .create(&build_key("endpoints", Some("ns2"), "app-service"), &endpoints_ns2)
+        .create(
+            &build_key("endpoints", Some("ns2"), "app-service"),
+            &endpoints_ns2,
+        )
         .await
         .unwrap();
 
@@ -404,7 +481,10 @@ async fn test_endpointslice_cleanup_orphans() {
     );
 
     storage
-        .create(&build_key("endpoints", Some("default"), "cleanup-service"), &endpoints)
+        .create(
+            &build_key("endpoints", Some("default"), "cleanup-service"),
+            &endpoints,
+        )
         .await
         .unwrap();
 
@@ -413,7 +493,11 @@ async fn test_endpointslice_cleanup_orphans() {
 
     // Verify EndpointSlice exists
     let slice_result: Result<EndpointSlice, _> = storage
-        .get(&build_key("endpointslices", Some("default"), "cleanup-service"))
+        .get(&build_key(
+            "endpointslices",
+            Some("default"),
+            "cleanup-service",
+        ))
         .await;
     assert!(slice_result.is_ok(), "EndpointSlice should exist");
 
@@ -428,9 +512,16 @@ async fn test_endpointslice_cleanup_orphans() {
 
     // Verify EndpointSlice was deleted
     let slice_result: Result<EndpointSlice, _> = storage
-        .get(&build_key("endpointslices", Some("default"), "cleanup-service"))
+        .get(&build_key(
+            "endpointslices",
+            Some("default"),
+            "cleanup-service",
+        ))
         .await;
-    assert!(slice_result.is_err(), "Orphaned EndpointSlice should be deleted");
+    assert!(
+        slice_result.is_err(),
+        "Orphaned EndpointSlice should be deleted"
+    );
 }
 
 #[tokio::test]
@@ -447,7 +538,10 @@ async fn test_endpointslice_empty_endpoints() {
     );
 
     storage
-        .create(&build_key("endpoints", Some("default"), "empty-service"), &endpoints)
+        .create(
+            &build_key("endpoints", Some("default"), "empty-service"),
+            &endpoints,
+        )
         .await
         .unwrap();
 
@@ -456,11 +550,22 @@ async fn test_endpointslice_empty_endpoints() {
 
     // Verify EndpointSlice was created
     let slice: EndpointSlice = storage
-        .get(&build_key("endpointslices", Some("default"), "empty-service"))
+        .get(&build_key(
+            "endpointslices",
+            Some("default"),
+            "empty-service",
+        ))
         .await
         .unwrap();
 
-    assert_eq!(slice.endpoints.len(), 0, "EndpointSlice should have no endpoints");
+    assert_eq!(
+        slice.endpoints.len(),
+        0,
+        "EndpointSlice should have no endpoints"
+    );
     // When there are no addresses, ports may also be empty depending on implementation
-    assert!(slice.ports.len() >= 0, "EndpointSlice ports can be empty or populated");
+    assert!(
+        slice.ports.len() >= 0,
+        "EndpointSlice ports can be empty or populated"
+    );
 }

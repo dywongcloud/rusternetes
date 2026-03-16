@@ -1,8 +1,8 @@
 use crate::client::ApiClient;
 use anyhow::{Context, Result};
 use rusternetes_common::resources::{
-    Deployment, Namespace, Node, Pod, Service, StorageClass,
-    VolumeSnapshot, VolumeSnapshotClass, Endpoints, ResourceQuota, LimitRange, PriorityClass,
+    Deployment, Endpoints, LimitRange, Namespace, Node, Pod, PriorityClass, ResourceQuota, Service,
+    StorageClass, VolumeSnapshot, VolumeSnapshotClass,
 };
 use serde::Deserialize;
 use std::fs;
@@ -81,7 +81,11 @@ async fn create_resource(client: &ApiClient, value: &serde_yaml::Value) -> Resul
         }
         "Deployment" => {
             let deployment: Deployment = serde_yaml::from_str(&yaml_str)?;
-            let namespace = deployment.metadata.namespace.as_deref().unwrap_or("default");
+            let namespace = deployment
+                .metadata
+                .namespace
+                .as_deref()
+                .unwrap_or("default");
             let _result: Deployment = client
                 .post(
                     &format!("/apis/apps/v1/namespaces/{}/deployments", namespace),
@@ -112,7 +116,10 @@ async fn create_resource(client: &ApiClient, value: &serde_yaml::Value) -> Resul
             let namespace = vs.metadata.namespace.as_deref().unwrap_or("default");
             let _result: VolumeSnapshot = client
                 .post(
-                    &format!("/apis/snapshot.storage.k8s.io/v1/namespaces/{}/volumesnapshots", namespace),
+                    &format!(
+                        "/apis/snapshot.storage.k8s.io/v1/namespaces/{}/volumesnapshots",
+                        namespace
+                    ),
                     &vs,
                 )
                 .await?;
@@ -121,7 +128,10 @@ async fn create_resource(client: &ApiClient, value: &serde_yaml::Value) -> Resul
         "VolumeSnapshotClass" => {
             let vsc: VolumeSnapshotClass = serde_yaml::from_str(&yaml_str)?;
             let _result: VolumeSnapshotClass = client
-                .post("/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses", &vsc)
+                .post(
+                    "/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses",
+                    &vsc,
+                )
                 .await?;
             println!("VolumeSnapshotClass '{}' created", vsc.metadata.name);
         }
@@ -129,10 +139,7 @@ async fn create_resource(client: &ApiClient, value: &serde_yaml::Value) -> Resul
             let ep: Endpoints = serde_yaml::from_str(&yaml_str)?;
             let namespace = ep.metadata.namespace.as_deref().unwrap_or("default");
             let _result: Endpoints = client
-                .post(
-                    &format!("/api/v1/namespaces/{}/endpoints", namespace),
-                    &ep,
-                )
+                .post(&format!("/api/v1/namespaces/{}/endpoints", namespace), &ep)
                 .await?;
             println!("Endpoints '{}' created", ep.metadata.name);
         }

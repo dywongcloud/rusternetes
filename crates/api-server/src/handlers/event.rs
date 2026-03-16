@@ -56,8 +56,7 @@ pub async fn list_all(
     info!("Listing all events across all namespaces");
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "events")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "events").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -147,7 +146,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Event {}/{} validated successfully (not created)", namespace, event.metadata.name);
+        info!(
+            "Dry-run: Event {}/{} validated successfully (not created)",
+            namespace, event.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(event)));
     }
 
@@ -190,7 +192,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Event {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: Event {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(event));
     }
 
@@ -228,7 +233,10 @@ pub async fn delete(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: Event {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: Event {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -236,21 +244,16 @@ pub async fn delete(
     let event: Event = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
-        &state.storage,
-        &key,
-        &event,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &event)
+            .await?;
 
     if deleted_immediately {
         Ok(StatusCode::NO_CONTENT)
     } else {
         info!(
             "Event {}/{} marked for deletion (has finalizers: {:?})",
-            namespace,
-            name,
-            event.metadata.finalizers
+            namespace, name, event.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -259,8 +262,8 @@ pub async fn delete(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_common::resources::ObjectReference;
     use rusternetes_common::resources::EventType;
+    use rusternetes_common::resources::ObjectReference;
 
     #[test]
     fn test_event_creation() {
@@ -299,7 +302,10 @@ pub async fn deletecollection_events(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection events in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection events in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "events")
@@ -345,6 +351,9 @@ pub async fn deletecollection_events(
         }
     }
 
-    info!("DeleteCollection completed: {} events deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} events deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

@@ -2,8 +2,8 @@
 // Tests the Job controller's ability to manage batch workloads
 
 use rusternetes_common::resources::pod::*;
-use rusternetes_common::resources::*;
 use rusternetes_common::resources::workloads::*;
+use rusternetes_common::resources::*;
 use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::job::JobController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
@@ -48,7 +48,11 @@ fn create_test_job(name: &str, namespace: &str, completions: i32, parallelism: i
                         name: "task".to_string(),
                         image: "busybox:latest".to_string(),
                         image_pull_policy: Some("IfNotPresent".to_string()),
-                        command: Some(vec!["sh".to_string(), "-c".to_string(), "echo Hello".to_string()]),
+                        command: Some(vec![
+                            "sh".to_string(),
+                            "-c".to_string(),
+                            "echo Hello".to_string(),
+                        ]),
                         ports: None,
                         env: None,
                         volume_mounts: None,
@@ -72,6 +76,7 @@ fn create_test_job(name: &str, namespace: &str, completions: i32, parallelism: i
                     priority: None,
                     priority_class_name: None,
                     hostname: None,
+                    subdomain: None,
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
@@ -103,17 +108,28 @@ async fn test_job_creates_pods() {
 
     // Verify 2 pods created (parallelism limit)
     let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-    assert_eq!(pods.len(), 2, "Should create 2 pods initially (parallelism limit)");
+    assert_eq!(
+        pods.len(),
+        2,
+        "Should create 2 pods initially (parallelism limit)"
+    );
 
     // Verify pods have correct labels
     for pod in &pods {
-        let labels = pod.metadata.labels.as_ref().expect("Pod should have labels");
+        let labels = pod
+            .metadata
+            .labels
+            .as_ref()
+            .expect("Pod should have labels");
         assert_eq!(labels.get("job-name"), Some(&"task".to_string()));
     }
 
     // Verify restart policy is Never
     for pod in &pods {
-        assert_eq!(pod.spec.as_ref().unwrap().restart_policy, Some("Never".to_string()));
+        assert_eq!(
+            pod.spec.as_ref().unwrap().restart_policy,
+            Some("Never".to_string())
+        );
     }
 }
 
@@ -176,7 +192,9 @@ async fn test_job_completion_detection() {
     assert_eq!(status.succeeded, Some(2));
 
     if let Some(conditions) = status.conditions {
-        assert!(conditions.iter().any(|c| c.condition_type == "Complete" && c.status == "True"));
+        assert!(conditions
+            .iter()
+            .any(|c| c.condition_type == "Complete" && c.status == "True"));
     }
 }
 
@@ -215,7 +233,11 @@ async fn test_job_creates_more_pods_as_they_complete() {
     // Second reconcile - should create one more pod (1 succeeded, 1 active, need 2 active)
     controller.reconcile_all().await.unwrap();
     let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-    assert_eq!(pods_after.len(), 3, "Should create another pod to maintain parallelism");
+    assert_eq!(
+        pods_after.len(),
+        3,
+        "Should create another pod to maintain parallelism"
+    );
 }
 
 #[tokio::test]
@@ -274,7 +296,9 @@ async fn test_job_backoff_limit() {
     let status = updated_job.status.unwrap();
 
     if let Some(conditions) = status.conditions {
-        assert!(conditions.iter().any(|c| c.condition_type == "Failed" && c.status == "True"));
+        assert!(conditions
+            .iter()
+            .any(|c| c.condition_type == "Failed" && c.status == "True"));
     }
 }
 

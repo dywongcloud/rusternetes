@@ -19,7 +19,10 @@ fn create_test_secret(name: &str, namespace: &str, secret_type: &str) -> Secret 
     labels.insert("app".to_string(), name.to_string());
 
     Secret {
-        type_meta: TypeMeta { api_version: "v1".to_string(), kind: "Secret".to_string() },
+        type_meta: TypeMeta {
+            api_version: "v1".to_string(),
+            kind: "Secret".to_string(),
+        },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
@@ -74,7 +77,10 @@ async fn test_secret_update() {
 
     let updated: Secret = storage.update(&key, &secret).await.unwrap();
     let data = updated.data.unwrap();
-    assert_eq!(data.get("api-key"), Some(&"bmV3LWtleQ==".as_bytes().to_vec()));
+    assert_eq!(
+        data.get("api-key"),
+        Some(&"bmV3LWtleQ==".as_bytes().to_vec())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -162,8 +168,14 @@ async fn test_secret_tls_type() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut data = HashMap::new();
-    data.insert("tls.crt".to_string(), "Y2VydGlmaWNhdGU=".as_bytes().to_vec());
-    data.insert("tls.key".to_string(), "cHJpdmF0ZS1rZXk=".as_bytes().to_vec());
+    data.insert(
+        "tls.crt".to_string(),
+        "Y2VydGlmaWNhdGU=".as_bytes().to_vec(),
+    );
+    data.insert(
+        "tls.key".to_string(),
+        "cHJpdmF0ZS1rZXk=".as_bytes().to_vec(),
+    );
 
     let mut secret = create_test_secret("test-tls", "default", "kubernetes.io/tls");
     secret.data = Some(data);
@@ -187,7 +199,10 @@ async fn test_secret_dockerconfigjson_type() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut data = HashMap::new();
-    data.insert(".dockerconfigjson".to_string(), "eyJhdXRocyI6e319".as_bytes().to_vec());
+    data.insert(
+        ".dockerconfigjson".to_string(),
+        "eyJhdXRocyI6e319".as_bytes().to_vec(),
+    );
 
     let mut secret = create_test_secret("test-docker", "default", "kubernetes.io/dockerconfigjson");
     secret.data = Some(data);
@@ -196,7 +211,10 @@ async fn test_secret_dockerconfigjson_type() {
 
     // Create docker config secret
     let created: Secret = storage.create(&key, &secret).await.unwrap();
-    assert_eq!(created.secret_type, Some("kubernetes.io/dockerconfigjson".to_string()));
+    assert_eq!(
+        created.secret_type,
+        Some("kubernetes.io/dockerconfigjson".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -209,19 +227,29 @@ async fn test_secret_service_account_token_type() {
     let mut data = HashMap::new();
     data.insert("token".to_string(), "dG9rZW4=".as_bytes().to_vec());
 
-    let mut secret = create_test_secret("test-sa-token", "default", "kubernetes.io/service-account-token");
+    let mut secret = create_test_secret(
+        "test-sa-token",
+        "default",
+        "kubernetes.io/service-account-token",
+    );
     secret.data = Some(data);
 
     // Add annotations for service account
     let mut annotations = HashMap::new();
-    annotations.insert("kubernetes.io/service-account.name".to_string(), "default".to_string());
+    annotations.insert(
+        "kubernetes.io/service-account.name".to_string(),
+        "default".to_string(),
+    );
     secret.metadata.annotations = Some(annotations);
 
     let key = build_key("secrets", Some("default"), "test-sa-token");
 
     // Create service account token secret
     let created: Secret = storage.create(&key, &secret).await.unwrap();
-    assert_eq!(created.secret_type, Some("kubernetes.io/service-account-token".to_string()));
+    assert_eq!(
+        created.secret_type,
+        Some("kubernetes.io/service-account-token".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -293,8 +321,14 @@ async fn test_secret_string_data_normalization() {
     let data = created.data.unwrap();
     // Data should contain the raw bytes ("admin"), not base64-encoded bytes
     // (serialization encodes to base64, deserialization decodes back to raw bytes)
-    assert_eq!(data.get("plain-username"), Some(&"admin".as_bytes().to_vec()));
-    assert_eq!(data.get("plain-password"), Some(&"secret123".as_bytes().to_vec()));
+    assert_eq!(
+        data.get("plain-username"),
+        Some(&"admin".as_bytes().to_vec())
+    );
+    assert_eq!(
+        data.get("plain-password"),
+        Some(&"secret123".as_bytes().to_vec())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -372,7 +406,10 @@ async fn test_secret_multiple_keys() {
     data.insert("db-host".to_string(), "bG9jYWxob3N0".as_bytes().to_vec());
     data.insert("db-port".to_string(), "NTQzMg==".as_bytes().to_vec());
     data.insert("db-user".to_string(), "YWRtaW4=".as_bytes().to_vec());
-    data.insert("db-password".to_string(), "cGFzc3dvcmQ=".as_bytes().to_vec());
+    data.insert(
+        "db-password".to_string(),
+        "cGFzc3dvcmQ=".as_bytes().to_vec(),
+    );
 
     let mut secret = create_test_secret("test-multi-keys", "default", "Opaque");
     secret.data = Some(data);
@@ -415,7 +452,10 @@ async fn test_secret_with_annotations() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut annotations = HashMap::new();
-    annotations.insert("description".to_string(), "Database credentials".to_string());
+    annotations.insert(
+        "description".to_string(),
+        "Database credentials".to_string(),
+    );
 
     let mut secret = create_test_secret("test-annotations", "default", "Opaque");
     secret.metadata.annotations = Some(annotations);

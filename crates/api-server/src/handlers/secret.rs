@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::Secret,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -53,7 +52,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Secret {}/{} validated successfully (not created)", namespace, secret.metadata.name);
+        info!(
+            "Dry-run: Secret {}/{} validated successfully (not created)",
+            namespace, secret.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(secret)));
     }
 
@@ -123,16 +125,17 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Secret {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: Secret {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(secret));
     }
 
     // Try to update first, if not found then create (upsert behavior)
     let result = match state.storage.update(&key, &secret).await {
         Ok(updated) => updated,
-        Err(rusternetes_common::Error::NotFound(_)) => {
-            state.storage.create(&key, &secret).await?
-        }
+        Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &secret).await?,
         Err(e) => return Err(e),
     };
 
@@ -170,11 +173,15 @@ pub async fn delete_secret(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: Secret {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: Secret {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &secret).await?;
+    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &secret)
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -218,8 +225,7 @@ pub async fn list_all_secrets(
     info!("Listing all secrets");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "secrets")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "secrets").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -247,7 +253,10 @@ pub async fn deletecollection_secrets(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection secrets in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection secrets in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "secrets")
@@ -293,6 +302,9 @@ pub async fn deletecollection_secrets(
         }
     }
 
-    info!("DeleteCollection completed: {} secrets deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} secrets deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

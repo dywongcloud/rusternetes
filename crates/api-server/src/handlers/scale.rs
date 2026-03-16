@@ -134,7 +134,10 @@ pub async fn update_scale(
     // Update the replicas in the spec
     if let Some(spec) = resource_obj.get_mut("spec") {
         if let Some(spec_obj) = spec.as_object_mut() {
-            spec_obj.insert("replicas".to_string(), Value::Number(scale.spec.replicas.into()));
+            spec_obj.insert(
+                "replicas".to_string(),
+                Value::Number(scale.spec.replicas.into()),
+            );
         }
     }
 
@@ -204,10 +207,7 @@ fn extract_scale(
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let replicas_spec = spec
-        .get("replicas")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(1) as i32;
+    let replicas_spec = spec.get("replicas").and_then(|v| v.as_i64()).unwrap_or(1) as i32;
 
     let replicas_status = status
         .and_then(|s| s.get("replicas"))
@@ -215,12 +215,10 @@ fn extract_scale(
         .unwrap_or(0) as i32;
 
     // Extract selector from spec
-    let selector = spec
-        .get("selector")
-        .and_then(|s| {
-            // Try to serialize the selector as a string
-            serde_json::to_string(s).ok()
-        });
+    let selector = spec.get("selector").and_then(|s| {
+        // Try to serialize the selector as a string
+        serde_json::to_string(s).ok()
+    });
 
     Ok(Scale {
         api_version: format!("{}/{}", group, version),
@@ -271,8 +269,7 @@ mod tests {
             }
         });
 
-        let scale =
-            extract_scale(&resource, "default", "test-deployment", "apps", "v1").unwrap();
+        let scale = extract_scale(&resource, "default", "test-deployment", "apps", "v1").unwrap();
 
         assert_eq!(scale.kind, "Scale");
         assert_eq!(scale.api_version, "apps/v1");
@@ -296,8 +293,7 @@ mod tests {
             }
         });
 
-        let scale =
-            extract_scale(&resource, "default", "test-deployment", "apps", "v1").unwrap();
+        let scale = extract_scale(&resource, "default", "test-deployment", "apps", "v1").unwrap();
 
         assert_eq!(scale.spec.replicas, 5);
         assert_eq!(scale.status.replicas, 0); // No status, so 0

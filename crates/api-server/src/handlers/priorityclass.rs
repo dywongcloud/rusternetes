@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::PriorityClass,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -45,7 +44,10 @@ pub async fn create(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: PriorityClass {} validated successfully (not created)", priority_class.metadata.name);
+        info!(
+            "Dry-run: PriorityClass {} validated successfully (not created)",
+            priority_class.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(priority_class)));
     }
 
@@ -109,7 +111,10 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: PriorityClass {} validated successfully (not updated)", name);
+        info!(
+            "Dry-run: PriorityClass {} validated successfully (not updated)",
+            name
+        );
         return Ok(Json(priority_class));
     }
 
@@ -151,7 +156,10 @@ pub async fn delete(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: PriorityClass {} validated successfully (not deleted)", name);
+        info!(
+            "Dry-run: PriorityClass {} validated successfully (not deleted)",
+            name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -171,8 +179,7 @@ pub async fn delete(
     } else {
         info!(
             "PriorityClass {} marked for deletion (has finalizers: {:?})",
-            name,
-            priority_class.metadata.finalizers
+            name, priority_class.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -202,7 +209,11 @@ pub async fn list(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut priority_classes, &params)?;
 
-    let list = List::new("PriorityClassList", "scheduling.k8s.io/v1", priority_classes);
+    let list = List::new(
+        "PriorityClassList",
+        "scheduling.k8s.io/v1",
+        priority_classes,
+    );
     Ok(Json(list))
 }
 
@@ -259,6 +270,9 @@ pub async fn deletecollection_priorityclasses(
         }
     }
 
-    info!("DeleteCollection completed: {} priorityclasses deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} priorityclasses deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

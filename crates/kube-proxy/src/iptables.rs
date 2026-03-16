@@ -34,14 +34,14 @@ impl IptablesManager {
             "nat",
             "PREROUTING",
             &self.services_chain,
-            "kubernetes service portals"
+            "kubernetes service portals",
         )?;
 
         self.ensure_jump_rule(
             "nat",
             "OUTPUT",
             &self.services_chain,
-            "kubernetes service portals"
+            "kubernetes service portals",
         )?;
 
         // Add jump rule for NodePort services
@@ -49,7 +49,7 @@ impl IptablesManager {
             "nat",
             "PREROUTING",
             &self.nodeports_chain,
-            "kubernetes service node ports"
+            "kubernetes service node ports",
         )?;
 
         info!("Iptables chains initialized successfully");
@@ -77,15 +77,35 @@ impl IptablesManager {
     }
 
     /// Ensure a jump rule exists
-    fn ensure_jump_rule(&self, table: &str, from_chain: &str, to_chain: &str, comment: &str) -> Result<()> {
+    fn ensure_jump_rule(
+        &self,
+        table: &str,
+        from_chain: &str,
+        to_chain: &str,
+        comment: &str,
+    ) -> Result<()> {
         // Check if jump rule already exists
         let check = Command::new(IPTABLES_CMD)
-            .args(["-t", table, "-C", from_chain, "-j", to_chain, "-m", "comment", "--comment", comment])
+            .args([
+                "-t",
+                table,
+                "-C",
+                from_chain,
+                "-j",
+                to_chain,
+                "-m",
+                "comment",
+                "--comment",
+                comment,
+            ])
             .output();
 
         match check {
             Ok(output) if output.status.success() => {
-                debug!("Jump rule from {} to {} already exists", from_chain, to_chain);
+                debug!(
+                    "Jump rule from {} to {} already exists",
+                    from_chain, to_chain
+                );
                 return Ok(());
             }
             _ => {}
@@ -93,7 +113,18 @@ impl IptablesManager {
 
         // Add the jump rule
         let output = Command::new(IPTABLES_CMD)
-            .args(["-t", table, "-A", from_chain, "-j", to_chain, "-m", "comment", "--comment", comment])
+            .args([
+                "-t",
+                table,
+                "-A",
+                from_chain,
+                "-j",
+                to_chain,
+                "-m",
+                "comment",
+                "--comment",
+                comment,
+            ])
             .output()
             .context("Failed to add iptables jump rule")?;
 
@@ -135,14 +166,28 @@ impl IptablesManager {
     }
 
     /// Add rules for a ClusterIP service
-    pub fn add_clusterip_rules(&self, service_ip: &str, port: u16, endpoints: &[(String, u16)], protocol: &str) -> Result<()> {
+    pub fn add_clusterip_rules(
+        &self,
+        service_ip: &str,
+        port: u16,
+        endpoints: &[(String, u16)],
+        protocol: &str,
+    ) -> Result<()> {
         if endpoints.is_empty() {
-            debug!("No endpoints for service {}:{}, skipping rules", service_ip, port);
+            debug!(
+                "No endpoints for service {}:{}, skipping rules",
+                service_ip, port
+            );
             return Ok(());
         }
 
-        info!("Adding ClusterIP rules for {}:{} ({}) with {} endpoints",
-              service_ip, port, protocol, endpoints.len());
+        info!(
+            "Adding ClusterIP rules for {}:{} ({}) with {} endpoints",
+            service_ip,
+            port,
+            protocol,
+            endpoints.len()
+        );
 
         let proto = protocol.to_lowercase();
 
@@ -154,11 +199,16 @@ impl IptablesManager {
 
             let port_str = port.to_string();
             let mut args = vec![
-                "-t", "nat",
-                "-A", &self.services_chain,
-                "-d", service_ip,
-                "-p", &proto,
-                "--dport", &port_str,
+                "-t",
+                "nat",
+                "-A",
+                &self.services_chain,
+                "-d",
+                service_ip,
+                "-p",
+                &proto,
+                "--dport",
+                &port_str,
             ];
 
             // Add probability for load balancing (except for the last endpoint)
@@ -167,9 +217,12 @@ impl IptablesManager {
                 let prob = probability;
                 prob_str = format!("{:.10}", prob);
                 args.extend_from_slice(&[
-                    "-m", "statistic",
-                    "--mode", "random",
-                    "--probability", &prob_str,
+                    "-m",
+                    "statistic",
+                    "--mode",
+                    "random",
+                    "--probability",
+                    &prob_str,
                 ]);
             }
 
@@ -177,10 +230,14 @@ impl IptablesManager {
             let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
             let comment = format!("rusternetes service {}:{}", service_ip, port);
             args.extend_from_slice(&[
-                "-j", "DNAT",
-                "--to-destination", &dnat_target,
-                "-m", "comment",
-                "--comment", &comment,
+                "-j",
+                "DNAT",
+                "--to-destination",
+                &dnat_target,
+                "-m",
+                "comment",
+                "--comment",
+                &comment,
             ]);
 
             let output = Command::new(IPTABLES_CMD)
@@ -200,14 +257,23 @@ impl IptablesManager {
     }
 
     /// Add rules for a NodePort service
-    pub fn add_nodeport_rules(&self, node_port: u16, endpoints: &[(String, u16)], protocol: &str) -> Result<()> {
+    pub fn add_nodeport_rules(
+        &self,
+        node_port: u16,
+        endpoints: &[(String, u16)],
+        protocol: &str,
+    ) -> Result<()> {
         if endpoints.is_empty() {
             debug!("No endpoints for NodePort {}, skipping rules", node_port);
             return Ok(());
         }
 
-        info!("Adding NodePort rules for port {} ({}) with {} endpoints",
-              node_port, protocol, endpoints.len());
+        info!(
+            "Adding NodePort rules for port {} ({}) with {} endpoints",
+            node_port,
+            protocol,
+            endpoints.len()
+        );
 
         let proto = protocol.to_lowercase();
 
@@ -219,10 +285,14 @@ impl IptablesManager {
 
             let node_port_str = node_port.to_string();
             let mut args = vec![
-                "-t", "nat",
-                "-A", &self.nodeports_chain,
-                "-p", &proto,
-                "--dport", &node_port_str,
+                "-t",
+                "nat",
+                "-A",
+                &self.nodeports_chain,
+                "-p",
+                &proto,
+                "--dport",
+                &node_port_str,
             ];
 
             // Add probability for load balancing (except for the last endpoint)
@@ -231,9 +301,12 @@ impl IptablesManager {
                 let prob = probability;
                 prob_str = format!("{:.10}", prob);
                 args.extend_from_slice(&[
-                    "-m", "statistic",
-                    "--mode", "random",
-                    "--probability", &prob_str,
+                    "-m",
+                    "statistic",
+                    "--mode",
+                    "random",
+                    "--probability",
+                    &prob_str,
                 ]);
             }
 
@@ -241,10 +314,14 @@ impl IptablesManager {
             let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
             let comment = format!("rusternetes nodeport {}", node_port);
             args.extend_from_slice(&[
-                "-j", "DNAT",
-                "--to-destination", &dnat_target,
-                "-m", "comment",
-                "--comment", &comment,
+                "-j",
+                "DNAT",
+                "--to-destination",
+                &dnat_target,
+                "-m",
+                "comment",
+                "--comment",
+                &comment,
             ]);
 
             let output = Command::new(IPTABLES_CMD)
@@ -254,7 +331,10 @@ impl IptablesManager {
 
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                error!("Failed to add NodePort DNAT rule for {}: {}", endpoint_ip, stderr);
+                error!(
+                    "Failed to add NodePort DNAT rule for {}: {}",
+                    endpoint_ip, stderr
+                );
             } else {
                 debug!("Added NodePort DNAT rule: {} -> {}", node_port, dnat_target);
             }
@@ -293,7 +373,10 @@ impl IptablesManager {
                 debug!("Removed jump rule from {} to {}", from_chain, to_chain);
             }
             _ => {
-                debug!("Jump rule from {} to {} may not exist", from_chain, to_chain);
+                debug!(
+                    "Jump rule from {} to {} may not exist",
+                    from_chain, to_chain
+                );
             }
         }
 

@@ -70,6 +70,7 @@ fn create_test_rc(name: &str, namespace: &str, replicas: i32) -> ReplicationCont
                     host_pid: None,
                     host_ipc: None,
                     hostname: None,
+                    subdomain: None,
                     priority_class_name: None,
                     priority: None,
                     scheduler_name: None,
@@ -349,10 +350,7 @@ async fn test_rc_min_ready_seconds() {
     let key = build_key("replicationcontrollers", Some("default"), "test-min-ready");
 
     let created: ReplicationController = storage.create(&key, &rc).await.unwrap();
-    assert_eq!(
-        created.spec.min_ready_seconds,
-        Some(30)
-    );
+    assert_eq!(created.spec.min_ready_seconds, Some(30));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -458,23 +456,11 @@ async fn test_rc_template_change() {
     storage.create(&key, &rc).await.unwrap();
 
     // Change pod template image
-    rc.spec
-        .template
-        .spec
-        .containers[0]
-        .image = "nginx:1.19".to_string();
+    rc.spec.template.spec.containers[0].image = "nginx:1.19".to_string();
 
     // Update with new template
     let updated: ReplicationController = storage.update(&key, &rc).await.unwrap();
-    assert_eq!(
-        updated
-            .spec
-            .template
-            .spec
-            .containers[0]
-            .image,
-        "nginx:1.19"
-    );
+    assert_eq!(updated.spec.template.spec.containers[0].image, "nginx:1.19");
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -509,10 +495,7 @@ async fn test_rc_selector_immutability() {
     let updated: ReplicationController = storage.update(&key, &updated_rc).await.unwrap();
 
     // Storage allows the change (handler would reject it)
-    assert_ne!(
-        updated.spec.selector,
-        original_selector
-    );
+    assert_ne!(updated.spec.selector, original_selector);
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -525,37 +508,37 @@ async fn test_rc_multiple_containers() {
     let mut rc = create_test_rc("test-multi-container", "default", 2);
 
     // Add a sidecar container
-    rc.spec
-        .template
-        .spec
-        .containers
-        .push(Container {
-            name: "sidecar".to_string(),
-            image: "busybox:latest".to_string(),
-            command: Some(vec!["sh".to_string(), "-c".to_string(), "sleep 3600".to_string()]),
-            args: None,
-            working_dir: None,
-            ports: None,
-            env: None,
-            resources: None,
-            volume_mounts: None,
-            image_pull_policy: None,
-            liveness_probe: None,
-            readiness_probe: None,
-            startup_probe: None,
-            restart_policy: None,
-            security_context: None,
-        });
+    rc.spec.template.spec.containers.push(Container {
+        name: "sidecar".to_string(),
+        image: "busybox:latest".to_string(),
+        command: Some(vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            "sleep 3600".to_string(),
+        ]),
+        args: None,
+        working_dir: None,
+        ports: None,
+        env: None,
+        resources: None,
+        volume_mounts: None,
+        image_pull_policy: None,
+        liveness_probe: None,
+        readiness_probe: None,
+        startup_probe: None,
+        restart_policy: None,
+        security_context: None,
+    });
 
-    let key = build_key("replicationcontrollers", Some("default"), "test-multi-container");
+    let key = build_key(
+        "replicationcontrollers",
+        Some("default"),
+        "test-multi-container",
+    );
 
     // Create with multiple containers
     let created: ReplicationController = storage.create(&key, &rc).await.unwrap();
-    let containers = &created
-        .spec
-        .template
-        .spec
-        .containers;
+    let containers = &created.spec.template.spec.containers;
     assert_eq!(containers.len(), 2);
     assert_eq!(containers[0].name, "nginx");
     assert_eq!(containers[1].name, "sidecar");

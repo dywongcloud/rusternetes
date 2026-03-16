@@ -1,15 +1,11 @@
 use crate::client::{ApiClient, GetError};
 use anyhow::{Context, Result};
-use serde::{Deserialize};
+use serde::Deserialize;
 use std::fs;
 use std::io::{self, Read};
 
 /// Show diff between current and applied configuration
-pub async fn execute(
-    client: &ApiClient,
-    file: &str,
-    namespace: &str,
-) -> Result<()> {
+pub async fn execute(client: &ApiClient, file: &str, namespace: &str) -> Result<()> {
     let contents = if file == "-" {
         let mut buffer = String::new();
         io::stdin()
@@ -121,29 +117,56 @@ fn get_resource_api_path(kind: &str, namespace: &str, name: &str) -> Result<Stri
     Ok(match kind {
         "Pod" => format!("/api/v1/namespaces/{}/pods/{}", namespace, name),
         "Service" => format!("/api/v1/namespaces/{}/services/{}", namespace, name),
-        "Deployment" => format!("/apis/apps/v1/namespaces/{}/deployments/{}", namespace, name),
-        "StatefulSet" => format!("/apis/apps/v1/namespaces/{}/statefulsets/{}", namespace, name),
+        "Deployment" => format!(
+            "/apis/apps/v1/namespaces/{}/deployments/{}",
+            namespace, name
+        ),
+        "StatefulSet" => format!(
+            "/apis/apps/v1/namespaces/{}/statefulsets/{}",
+            namespace, name
+        ),
         "DaemonSet" => format!("/apis/apps/v1/namespaces/{}/daemonsets/{}", namespace, name),
-        "ReplicaSet" => format!("/apis/apps/v1/namespaces/{}/replicasets/{}", namespace, name),
+        "ReplicaSet" => format!(
+            "/apis/apps/v1/namespaces/{}/replicasets/{}",
+            namespace, name
+        ),
         "Job" => format!("/apis/batch/v1/namespaces/{}/jobs/{}", namespace, name),
         "CronJob" => format!("/apis/batch/v1/namespaces/{}/cronjobs/{}", namespace, name),
         "ConfigMap" => format!("/api/v1/namespaces/{}/configmaps/{}", namespace, name),
         "Secret" => format!("/api/v1/namespaces/{}/secrets/{}", namespace, name),
         "ServiceAccount" => format!("/api/v1/namespaces/{}/serviceaccounts/{}", namespace, name),
-        "Ingress" => format!("/apis/networking.k8s.io/v1/namespaces/{}/ingresses/{}", namespace, name),
-        "PersistentVolumeClaim" => format!("/api/v1/namespaces/{}/persistentvolumeclaims/{}", namespace, name),
+        "Ingress" => format!(
+            "/apis/networking.k8s.io/v1/namespaces/{}/ingresses/{}",
+            namespace, name
+        ),
+        "PersistentVolumeClaim" => format!(
+            "/api/v1/namespaces/{}/persistentvolumeclaims/{}",
+            namespace, name
+        ),
         "PersistentVolume" => format!("/api/v1/persistentvolumes/{}", name),
         "StorageClass" => format!("/apis/storage.k8s.io/v1/storageclasses/{}", name),
         "Namespace" => format!("/api/v1/namespaces/{}", name),
         "Node" => format!("/api/v1/nodes/{}", name),
-        "Role" => format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles/{}", namespace, name),
-        "RoleBinding" => format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}", namespace, name),
+        "Role" => format!(
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles/{}",
+            namespace, name
+        ),
+        "RoleBinding" => format!(
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}",
+            namespace, name
+        ),
         "ClusterRole" => format!("/apis/rbac.authorization.k8s.io/v1/clusterroles/{}", name),
-        "ClusterRoleBinding" => format!("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}", name),
+        "ClusterRoleBinding" => format!(
+            "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}",
+            name
+        ),
         "ResourceQuota" => format!("/api/v1/namespaces/{}/resourcequotas/{}", namespace, name),
         "LimitRange" => format!("/api/v1/namespaces/{}/limitranges/{}", namespace, name),
         "PriorityClass" => format!("/apis/scheduling.k8s.io/v1/priorityclasses/{}", name),
-        "CustomResourceDefinition" => format!("/apis/apiextensions.k8s.io/v1/customresourcedefinitions/{}", name),
+        "CustomResourceDefinition" => format!(
+            "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/{}",
+            name
+        ),
         _ => anyhow::bail!("Unsupported resource kind: {}", kind),
     })
 }

@@ -7,12 +7,11 @@
 //! - ResourceSlice (cluster-scoped)
 
 use rusternetes_common::resources::{
-    DeviceClass, DeviceClassSpec, DeviceSelector, CELDeviceSelector, DeviceClassConfiguration,
-    ResourceClaim, ResourceClaimSpec, DeviceClaim, DeviceRequest, ExactDeviceRequest,
-    DeviceAllocationMode,
-    ResourceClaimTemplate, ResourceClaimTemplateSpec,
-    ResourceSlice, ResourceSliceSpec, ResourcePool, Device,
-    ResourceClaimStatus, AllocationResult, DeviceAllocationResult,
+    AllocationResult, CELDeviceSelector, Device, DeviceAllocationMode, DeviceAllocationResult,
+    DeviceClaim, DeviceClass, DeviceClassConfiguration, DeviceClassSpec, DeviceRequest,
+    DeviceSelector, ExactDeviceRequest, ResourceClaim, ResourceClaimSpec, ResourceClaimStatus,
+    ResourceClaimTemplate, ResourceClaimTemplateSpec, ResourcePool, ResourceSlice,
+    ResourceSliceSpec,
 };
 use serde_json;
 
@@ -56,9 +55,18 @@ fn test_resourceclaim_serialization() {
     assert!(json.contains("gpu.example.com"));
 
     // Test deserialization
-    let deserialized: ResourceClaim = serde_json::from_str(&json)
-        .expect("Failed to deserialize ResourceClaim");
-    assert_eq!(deserialized.metadata.as_ref().unwrap().name.as_ref().unwrap(), "test-claim");
+    let deserialized: ResourceClaim =
+        serde_json::from_str(&json).expect("Failed to deserialize ResourceClaim");
+    assert_eq!(
+        deserialized
+            .metadata
+            .as_ref()
+            .unwrap()
+            .name
+            .as_ref()
+            .unwrap(),
+        "test-claim"
+    );
     assert_eq!(deserialized.spec.devices.requests.len(), 1);
     assert_eq!(deserialized.spec.devices.requests[0].name, "gpu-req");
 }
@@ -75,21 +83,19 @@ fn test_resourceclaim_with_allocation_modes() {
         }),
         spec: ResourceClaimSpec {
             devices: DeviceClaim {
-                requests: vec![
-                    DeviceRequest {
-                        name: "exact-count-req".to_string(),
-                        exactly: Some(ExactDeviceRequest {
-                            device_class_name: "accelerator.example.com".to_string(),
-                            selectors: vec![],
-                            allocation_mode: Some(DeviceAllocationMode::ExactCount),
-                            count: Some(4),
-                            admin_access: Some(false),
-                            tolerations: vec![],
-                            capacity: None,
-                        }),
-                        first_available: vec![],
-                    },
-                ],
+                requests: vec![DeviceRequest {
+                    name: "exact-count-req".to_string(),
+                    exactly: Some(ExactDeviceRequest {
+                        device_class_name: "accelerator.example.com".to_string(),
+                        selectors: vec![],
+                        allocation_mode: Some(DeviceAllocationMode::ExactCount),
+                        count: Some(4),
+                        admin_access: Some(false),
+                        tolerations: vec![],
+                        capacity: None,
+                    }),
+                    first_available: vec![],
+                }],
                 constraints: vec![],
                 config: vec![],
             },
@@ -102,9 +108,15 @@ fn test_resourceclaim_with_allocation_modes() {
     assert!(json.contains("accelerator.example.com"));
 
     let deserialized: ResourceClaim = serde_json::from_str(&json).expect("Failed to deserialize");
-    let exact_request = deserialized.spec.devices.requests[0].exactly.as_ref().unwrap();
+    let exact_request = deserialized.spec.devices.requests[0]
+        .exactly
+        .as_ref()
+        .unwrap();
     assert_eq!(exact_request.count.unwrap(), 4);
-    assert_eq!(exact_request.allocation_mode.as_ref().unwrap(), &DeviceAllocationMode::ExactCount);
+    assert_eq!(
+        exact_request.allocation_mode.as_ref().unwrap(),
+        &DeviceAllocationMode::ExactCount
+    );
 }
 
 #[test]
@@ -150,7 +162,10 @@ fn test_resourceclaim_status() {
     assert!(status.allocation.is_some());
     let allocation = status.allocation.unwrap();
     assert_eq!(allocation.devices.results.len(), 1);
-    assert_eq!(allocation.devices.results[0].driver, "gpu-driver.example.com");
+    assert_eq!(
+        allocation.devices.results[0].driver,
+        "gpu-driver.example.com"
+    );
 }
 
 #[test]
@@ -166,10 +181,14 @@ fn test_resourceclaimtemplate_serialization() {
         }),
         spec: ResourceClaimTemplateSpec {
             metadata: Some(rusternetes_common::resources::dra::ObjectMeta {
-                labels: Some(vec![
-                    ("app".to_string(), "ml-workload".to_string()),
-                    ("tier".to_string(), "gpu".to_string()),
-                ].into_iter().collect()),
+                labels: Some(
+                    vec![
+                        ("app".to_string(), "ml-workload".to_string()),
+                        ("tier".to_string(), "gpu".to_string()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
                 ..Default::default()
             }),
             spec: ResourceClaimSpec {
@@ -201,12 +220,31 @@ fn test_resourceclaimtemplate_serialization() {
     assert!(json.contains("ml-workload"));
 
     // Test deserialization
-    let deserialized: ResourceClaimTemplate = serde_json::from_str(&json)
-        .expect("Failed to deserialize ResourceClaimTemplate");
-    assert_eq!(deserialized.metadata.as_ref().unwrap().name.as_ref().unwrap(), "test-template");
-    assert_eq!(deserialized.spec.spec.devices.requests[0].name, "ml-gpu-req");
+    let deserialized: ResourceClaimTemplate =
+        serde_json::from_str(&json).expect("Failed to deserialize ResourceClaimTemplate");
+    assert_eq!(
+        deserialized
+            .metadata
+            .as_ref()
+            .unwrap()
+            .name
+            .as_ref()
+            .unwrap(),
+        "test-template"
+    );
+    assert_eq!(
+        deserialized.spec.spec.devices.requests[0].name,
+        "ml-gpu-req"
+    );
 
-    let labels = deserialized.spec.metadata.as_ref().unwrap().labels.as_ref().unwrap();
+    let labels = deserialized
+        .spec
+        .metadata
+        .as_ref()
+        .unwrap()
+        .labels
+        .as_ref()
+        .unwrap();
     assert_eq!(labels.get("app").unwrap(), "ml-workload");
     assert_eq!(labels.get("tier").unwrap(), "gpu");
 }
@@ -246,14 +284,28 @@ fn test_deviceclass_serialization() {
     assert!(json.contains("A100"));
 
     // Test deserialization
-    let deserialized: DeviceClass = serde_json::from_str(&json)
-        .expect("Failed to deserialize DeviceClass");
-    assert_eq!(deserialized.metadata.as_ref().unwrap().name.as_ref().unwrap(), "nvidia-gpu-a100");
+    let deserialized: DeviceClass =
+        serde_json::from_str(&json).expect("Failed to deserialize DeviceClass");
+    assert_eq!(
+        deserialized
+            .metadata
+            .as_ref()
+            .unwrap()
+            .name
+            .as_ref()
+            .unwrap(),
+        "nvidia-gpu-a100"
+    );
     assert_eq!(deserialized.spec.selectors.len(), 2);
 
     let first_selector = &deserialized.spec.selectors[0];
     assert!(first_selector.cel.is_some());
-    assert!(first_selector.cel.as_ref().unwrap().expression.contains("nvidia.com/gpu"));
+    assert!(first_selector
+        .cel
+        .as_ref()
+        .unwrap()
+        .expression
+        .contains("nvidia.com/gpu"));
 }
 
 #[test]
@@ -266,27 +318,23 @@ fn test_deviceclass_with_suitable_nodes() {
             ..Default::default()
         }),
         spec: DeviceClassSpec {
-            selectors: vec![
-                DeviceSelector {
-                    cel: Some(CELDeviceSelector {
-                        expression: "device.attributes[\"memory\"].int >= 80000000000".to_string(),
-                    }),
-                },
-            ],
+            selectors: vec![DeviceSelector {
+                cel: Some(CELDeviceSelector {
+                    expression: "device.attributes[\"memory\"].int >= 80000000000".to_string(),
+                }),
+            }],
             config: vec![],
             suitable_nodes: Some(rusternetes_common::resources::NodeSelector {
-                node_selector_terms: vec![
-                    rusternetes_common::resources::NodeSelectorTerm {
-                        match_expressions: Some(vec![
-                            rusternetes_common::resources::NodeSelectorRequirement {
-                                key: "gpu".to_string(),
-                                operator: "In".to_string(),
-                                values: Some(vec!["true".to_string()]),
-                            },
-                        ]),
-                        match_fields: None,
-                    },
-                ],
+                node_selector_terms: vec![rusternetes_common::resources::NodeSelectorTerm {
+                    match_expressions: Some(vec![
+                        rusternetes_common::resources::NodeSelectorRequirement {
+                            key: "gpu".to_string(),
+                            operator: "In".to_string(),
+                            values: Some(vec!["true".to_string()]),
+                        },
+                    ]),
+                    match_fields: None,
+                }],
             }),
         },
     };
@@ -321,40 +369,53 @@ fn test_resourceslice_serialization() {
             node_name: Some("node-1".to_string()),
             node_selector: None,
             all_nodes: None,
-            devices: vec![
-                Device {
-                    name: "gpu-0".to_string(),
-                    attributes: Some(vec![
-                        ("model".to_string(), rusternetes_common::resources::dra::DeviceAttribute {
-                            int_value: None,
-                            bool_value: None,
-                            string_value: Some("A100".to_string()),
-                            version_value: None,
-                        }),
-                        ("memory".to_string(), rusternetes_common::resources::dra::DeviceAttribute {
-                            int_value: Some(85899345920), // 80GB in bytes
-                            bool_value: None,
-                            string_value: None,
-                            version_value: None,
-                        }),
-                    ].into_iter().collect()),
-                    capacity: Some(vec![
-                        ("nvidia.com/gpu".to_string(), rusternetes_common::resources::dra::DeviceCapacity {
+            devices: vec![Device {
+                name: "gpu-0".to_string(),
+                attributes: Some(
+                    vec![
+                        (
+                            "model".to_string(),
+                            rusternetes_common::resources::dra::DeviceAttribute {
+                                int_value: None,
+                                bool_value: None,
+                                string_value: Some("A100".to_string()),
+                                version_value: None,
+                            },
+                        ),
+                        (
+                            "memory".to_string(),
+                            rusternetes_common::resources::dra::DeviceAttribute {
+                                int_value: Some(85899345920), // 80GB in bytes
+                                bool_value: None,
+                                string_value: None,
+                                version_value: None,
+                            },
+                        ),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                capacity: Some(
+                    vec![(
+                        "nvidia.com/gpu".to_string(),
+                        rusternetes_common::resources::dra::DeviceCapacity {
                             value: "1".to_string(),
                             request_policy: None,
-                        }),
-                    ].into_iter().collect()),
-                    consumes_counters: vec![],
-                    node_name: None,
-                    node_selector: None,
-                    all_nodes: None,
-                    taints: vec![],
-                    binds_to_node: None,
-                    binding_conditions: vec![],
-                    binding_failure_conditions: vec![],
-                    allow_multiple_allocations: None,
-                },
-            ],
+                        },
+                    )]
+                    .into_iter()
+                    .collect(),
+                ),
+                consumes_counters: vec![],
+                node_name: None,
+                node_selector: None,
+                all_nodes: None,
+                taints: vec![],
+                binds_to_node: None,
+                binding_conditions: vec![],
+                binding_failure_conditions: vec![],
+                allow_multiple_allocations: None,
+            }],
             per_device_node_selection: None,
             shared_counters: vec![],
         },
@@ -368,9 +429,18 @@ fn test_resourceslice_serialization() {
     assert!(json.contains("A100"));
 
     // Test deserialization
-    let deserialized: ResourceSlice = serde_json::from_str(&json)
-        .expect("Failed to deserialize ResourceSlice");
-    assert_eq!(deserialized.metadata.as_ref().unwrap().name.as_ref().unwrap(), "node-1-gpu-resources");
+    let deserialized: ResourceSlice =
+        serde_json::from_str(&json).expect("Failed to deserialize ResourceSlice");
+    assert_eq!(
+        deserialized
+            .metadata
+            .as_ref()
+            .unwrap()
+            .name
+            .as_ref()
+            .unwrap(),
+        "node-1-gpu-resources"
+    );
     assert_eq!(deserialized.spec.driver, "gpu-driver.example.com");
     assert_eq!(deserialized.spec.node_name.as_ref().unwrap(), "node-1");
 
@@ -379,7 +449,15 @@ fn test_resourceslice_serialization() {
 
     let attributes = deserialized.spec.devices[0].attributes.as_ref().unwrap();
     assert!(attributes.contains_key("model"));
-    assert_eq!(attributes.get("model").unwrap().string_value.as_ref().unwrap(), "A100");
+    assert_eq!(
+        attributes
+            .get("model")
+            .unwrap()
+            .string_value
+            .as_ref()
+            .unwrap(),
+        "A100"
+    );
 }
 
 #[test]
@@ -450,17 +528,17 @@ fn test_deviceclass_with_config() {
         }),
         spec: DeviceClassSpec {
             selectors: vec![],
-            config: vec![
-                DeviceClassConfiguration {
-                    opaque: Some(rusternetes_common::resources::dra::OpaqueDeviceConfiguration {
+            config: vec![DeviceClassConfiguration {
+                opaque: Some(
+                    rusternetes_common::resources::dra::OpaqueDeviceConfiguration {
                         driver: "example.com/gpu".to_string(),
                         parameters: serde_json::json!({
                             "mode": "performance",
                             "power_limit": 250
                         }),
-                    }),
-                },
-            ],
+                    },
+                ),
+            }],
             suitable_nodes: None,
         },
     };
@@ -488,21 +566,19 @@ fn test_resourceclaim_all_allocation_mode() {
         }),
         spec: ResourceClaimSpec {
             devices: DeviceClaim {
-                requests: vec![
-                    DeviceRequest {
-                        name: "all-gpus-req".to_string(),
-                        exactly: Some(ExactDeviceRequest {
-                            device_class_name: "gpu-class".to_string(),
-                            selectors: vec![],
-                            allocation_mode: Some(DeviceAllocationMode::All),
-                            count: None, // count is not used with All mode
-                            admin_access: None,
-                            tolerations: vec![],
-                            capacity: None,
-                        }),
-                        first_available: vec![],
-                    },
-                ],
+                requests: vec![DeviceRequest {
+                    name: "all-gpus-req".to_string(),
+                    exactly: Some(ExactDeviceRequest {
+                        device_class_name: "gpu-class".to_string(),
+                        selectors: vec![],
+                        allocation_mode: Some(DeviceAllocationMode::All),
+                        count: None, // count is not used with All mode
+                        admin_access: None,
+                        tolerations: vec![],
+                        capacity: None,
+                    }),
+                    first_available: vec![],
+                }],
                 constraints: vec![],
                 config: vec![],
             },
@@ -515,7 +591,16 @@ fn test_resourceclaim_all_allocation_mode() {
 
     let deserialized: ResourceClaim = serde_json::from_str(&json).expect("Deserialization failed");
     let request = &deserialized.spec.devices.requests[0];
-    assert_eq!(request.exactly.as_ref().unwrap().allocation_mode.as_ref().unwrap(), &DeviceAllocationMode::All);
+    assert_eq!(
+        request
+            .exactly
+            .as_ref()
+            .unwrap()
+            .allocation_mode
+            .as_ref()
+            .unwrap(),
+        &DeviceAllocationMode::All
+    );
 }
 
 #[test]

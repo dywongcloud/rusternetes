@@ -1,11 +1,11 @@
+use crate::admission_webhook::AdmissionWebhookManager;
+use crate::ip_allocator::ClusterIPAllocator;
+use crate::prometheus_client::PrometheusClient;
 use rusternetes_common::auth::TokenManager;
 use rusternetes_common::authz::Authorizer;
 use rusternetes_common::observability::MetricsRegistry;
 use rusternetes_storage::etcd::EtcdStorage;
 use std::sync::Arc;
-use crate::ip_allocator::ClusterIPAllocator;
-use crate::admission_webhook::AdmissionWebhookManager;
-use crate::prometheus_client::PrometheusClient;
 
 /// Shared state for the API server
 pub struct ApiServerState {
@@ -50,7 +50,10 @@ impl ApiServerState {
     }
 
     /// Set the Prometheus client for custom metrics
-    pub fn with_prometheus_client(mut self, prometheus_client: Option<Arc<PrometheusClient>>) -> Self {
+    pub fn with_prometheus_client(
+        mut self,
+        prometheus_client: Option<Arc<PrometheusClient>>,
+    ) -> Self {
         self.prometheus_client = prometheus_client;
         self
     }

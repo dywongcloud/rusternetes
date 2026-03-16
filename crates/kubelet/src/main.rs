@@ -1,11 +1,11 @@
-mod runtime;
-mod kubelet;
+mod cni;
 mod config;
 mod eviction;
-mod cni;
+mod kubelet;
+mod runtime;
 
 use anyhow::Result;
-use axum::{routing::get, Router, Json};
+use axum::{routing::get, Json, Router};
 use clap::Parser;
 use config::{KubeletConfiguration, RuntimeConfig};
 use kubelet::Kubelet;
@@ -129,7 +129,10 @@ async fn main() -> Result<()> {
             use rusternetes_common::resources::Service;
             use rusternetes_storage::Storage;
 
-            match storage.get::<Service>("/registry/services/kube-system/kube-dns").await {
+            match storage
+                .get::<Service>("/registry/services/kube-system/kube-dns")
+                .await
+            {
                 Ok(service) => {
                     if let Some(ref cluster_ip) = service.spec.cluster_ip {
                         info!("Discovered cluster DNS IP: {}", cluster_ip);
@@ -140,7 +143,10 @@ async fn main() -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to discover cluster DNS IP: {}. DNS resolution may not work", e);
+                    warn!(
+                        "Failed to discover cluster DNS IP: {}. DNS resolution may not work",
+                        e
+                    );
                     "".to_string()
                 }
             }
@@ -157,7 +163,12 @@ async fn main() -> Result<()> {
         kind: "KubeletConfiguration".to_string(),
         root_dir: Some(runtime_config.root_dir.to_string_lossy().to_string()),
         volume_dir: Some(runtime_config.volume_dir.to_string_lossy().to_string()),
-        volume_plugin_dir: Some(runtime_config.volume_plugin_dir.to_string_lossy().to_string()),
+        volume_plugin_dir: Some(
+            runtime_config
+                .volume_plugin_dir
+                .to_string_lossy()
+                .to_string(),
+        ),
         sync_frequency: Some(runtime_config.sync_frequency),
         metrics_bind_port: Some(runtime_config.metrics_bind_port),
         log_level: Some(runtime_config.log_level.clone()),
@@ -168,16 +179,18 @@ async fn main() -> Result<()> {
 
     // Start metrics and config server
     let metrics_addr = format!("0.0.0.0:{}", runtime_config.metrics_bind_port);
-    info!("Starting kubelet API server on {} (metrics + configz)", metrics_addr);
+    info!(
+        "Starting kubelet API server on {} (metrics + configz)",
+        metrics_addr
+    );
 
     tokio::spawn(async move {
         let app = Router::new()
-            .route("/metrics", get(|| async move {
-                metrics_clone.gather()
-            }))
-            .route("/configz", get(|| async move {
-                Json(kubelet_config_clone.as_ref().clone())
-            }));
+            .route("/metrics", get(|| async move { metrics_clone.gather() }))
+            .route(
+                "/configz",
+                get(|| async move { Json(kubelet_config_clone.as_ref().clone()) }),
+            );
 
         let listener = tokio::net::TcpListener::bind(&metrics_addr).await.unwrap();
         axum::serve(listener, app).await.unwrap();
@@ -193,7 +206,8 @@ async fn main() -> Result<()> {
         args.cluster_domain,
         args.network,
         runtime_config.kubernetes_service_host.clone(),
-    ).await?;
+    )
+    .await?;
     kubelet.run().await?;
 
     Ok(())

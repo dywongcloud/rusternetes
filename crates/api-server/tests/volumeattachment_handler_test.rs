@@ -13,7 +13,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Helper function to create a test volumeattachment with persistent volume
-fn create_test_volumeattachment(name: &str, attacher: &str, node: &str, pv: &str) -> VolumeAttachment {
+fn create_test_volumeattachment(
+    name: &str,
+    attacher: &str,
+    node: &str,
+    pv: &str,
+) -> VolumeAttachment {
     VolumeAttachment {
         type_meta: TypeMeta {
             api_version: "storage.k8s.io/v1".to_string(),
@@ -162,7 +167,13 @@ async fn test_volumeattachment_with_status() {
     // Create with status
     let created: VolumeAttachment = storage.create(&key, &va).await.unwrap();
     assert_eq!(created.status.as_ref().unwrap().attached, true);
-    let metadata = created.status.as_ref().unwrap().attachment_metadata.as_ref().unwrap();
+    let metadata = created
+        .status
+        .as_ref()
+        .unwrap()
+        .attachment_metadata
+        .as_ref()
+        .unwrap();
     assert_eq!(metadata.get("devicePath"), Some(&"/dev/sdc".to_string()));
 
     // Clean up
@@ -189,7 +200,13 @@ async fn test_volumeattachment_with_attach_error() {
     // Create with attach error
     let created: VolumeAttachment = storage.create(&key, &va).await.unwrap();
     assert_eq!(created.status.as_ref().unwrap().attached, false);
-    let error = created.status.as_ref().unwrap().attach_error.as_ref().unwrap();
+    let error = created
+        .status
+        .as_ref()
+        .unwrap()
+        .attach_error
+        .as_ref()
+        .unwrap();
     assert_eq!(
         error.message,
         Some("Failed to attach volume: volume not found".to_string())
@@ -218,7 +235,13 @@ async fn test_volumeattachment_with_detach_error() {
 
     // Create with detach error
     let created: VolumeAttachment = storage.create(&key, &va).await.unwrap();
-    let error = created.status.as_ref().unwrap().detach_error.as_ref().unwrap();
+    let error = created
+        .status
+        .as_ref()
+        .unwrap()
+        .detach_error
+        .as_ref()
+        .unwrap();
     assert_eq!(
         error.message,
         Some("Failed to detach volume: device busy".to_string())
@@ -233,7 +256,10 @@ async fn test_volumeattachment_with_inline_volume() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut volume_attributes = HashMap::new();
-    volume_attributes.insert("storage.kubernetes.io/csiProvisionerIdentity".to_string(), "test-provisioner".to_string());
+    volume_attributes.insert(
+        "storage.kubernetes.io/csiProvisionerIdentity".to_string(),
+        "test-provisioner".to_string(),
+    );
 
     let va = VolumeAttachment {
         type_meta: TypeMeta {
@@ -375,10 +401,7 @@ async fn test_volumeattachment_with_labels() {
         created_labels.get("environment"),
         Some(&"production".to_string())
     );
-    assert_eq!(
-        created_labels.get("storage-tier"),
-        Some(&"ssd".to_string())
-    );
+    assert_eq!(created_labels.get("storage-tier"), Some(&"ssd".to_string()));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -570,7 +593,10 @@ async fn test_volumeattachment_csi_volume_source_fields() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut volume_attrs = HashMap::new();
-    volume_attrs.insert("storage.kubernetes.io/csiProvisionerIdentity".to_string(), "provisioner-123".to_string());
+    volume_attrs.insert(
+        "storage.kubernetes.io/csiProvisionerIdentity".to_string(),
+        "provisioner-123".to_string(),
+    );
     volume_attrs.insert("capacity".to_string(), "100Gi".to_string());
 
     let va = VolumeAttachment {

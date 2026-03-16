@@ -1,5 +1,4 @@
 /// OpenAPI specification handler
-
 use crate::openapi::generate_openapi_spec;
 use axum::Json;
 

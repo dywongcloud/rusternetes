@@ -38,14 +38,14 @@ impl<S: Storage> CRDController<S> {
             .list("/registry/customresourcedefinitions/")
             .await?;
 
-        info!("Found {} custom resource definitions to reconcile", crds.len());
+        info!(
+            "Found {} custom resource definitions to reconcile",
+            crds.len()
+        );
 
         for crd in crds {
             if let Err(e) = self.reconcile_crd(&crd).await {
-                error!(
-                    "Failed to reconcile CRD {}: {}",
-                    &crd.metadata.name, e
-                );
+                error!("Failed to reconcile CRD {}: {}", &crd.metadata.name, e);
             }
         }
 
@@ -118,11 +118,7 @@ impl<S: Storage> CRDController<S> {
         }
 
         // Validate exactly one version is marked as storage version
-        let storage_versions: Vec<_> = spec
-            .versions
-            .iter()
-            .filter(|v| v.storage)
-            .collect();
+        let storage_versions: Vec<_> = spec.versions.iter().filter(|v| v.storage).collect();
 
         if storage_versions.is_empty() {
             return Err(anyhow!("CRD must have exactly one storage version"));
@@ -140,7 +136,10 @@ impl<S: Storage> CRDController<S> {
             }
 
             if !version_names.insert(&version.name) {
-                return Err(anyhow!("CRD version names must be unique: {}", version.name));
+                return Err(anyhow!(
+                    "CRD version names must be unique: {}",
+                    version.name
+                ));
             }
 
             // At least one version must be served
@@ -321,7 +320,10 @@ mod tests {
 
         let result = controller.validate_crd_spec(&crd);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("at least one version"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("at least one version"));
     }
 
     #[tokio::test]
@@ -334,7 +336,10 @@ mod tests {
 
         let result = controller.validate_crd_spec(&crd);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("one storage version"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("one storage version"));
     }
 
     #[tokio::test]
@@ -356,7 +361,10 @@ mod tests {
 
         let result = controller.validate_crd_spec(&crd);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("only have one storage version"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("only have one storage version"));
     }
 
     #[tokio::test]

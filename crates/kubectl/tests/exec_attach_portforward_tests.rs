@@ -18,7 +18,12 @@ mod exec_tests {
     use super::urlencoding;
     #[test]
     fn test_exec_url_building() {
-        fn build_exec_url(namespace: &str, pod: &str, container: Option<&str>, command: &[&str]) -> String {
+        fn build_exec_url(
+            namespace: &str,
+            pod: &str,
+            container: Option<&str>,
+            command: &[&str],
+        ) -> String {
             let mut url = format!("/api/v1/namespaces/{}/pods/{}/exec?", namespace, pod);
 
             for cmd in command {
@@ -64,17 +69,31 @@ mod exec_tests {
         fn build_query_params(stdin: bool, stdout: bool, stderr: bool, tty: bool) -> String {
             let mut params = Vec::new();
 
-            if stdin { params.push("stdin=true"); }
-            if stdout { params.push("stdout=true"); }
-            if stderr { params.push("stderr=true"); }
-            if tty { params.push("tty=true"); }
+            if stdin {
+                params.push("stdin=true");
+            }
+            if stdout {
+                params.push("stdout=true");
+            }
+            if stderr {
+                params.push("stderr=true");
+            }
+            if tty {
+                params.push("tty=true");
+            }
 
             params.join("&")
         }
 
-        assert_eq!(build_query_params(true, true, true, false), "stdin=true&stdout=true&stderr=true");
+        assert_eq!(
+            build_query_params(true, true, true, false),
+            "stdin=true&stdout=true&stderr=true"
+        );
         assert_eq!(build_query_params(false, true, false, false), "stdout=true");
-        assert_eq!(build_query_params(true, true, true, true), "stdin=true&stdout=true&stderr=true&tty=true");
+        assert_eq!(
+            build_query_params(true, true, true, true),
+            "stdin=true&stdout=true&stderr=true&tty=true"
+        );
     }
 
     #[test]
@@ -89,7 +108,10 @@ mod exec_tests {
 
         assert_eq!(quote_command("ls"), "ls");
         assert_eq!(quote_command("echo hello world"), "'echo hello world'");
-        assert_eq!(quote_command("echo it's working"), "'echo it'\\''s working'");
+        assert_eq!(
+            quote_command("echo it's working"),
+            "'echo it'\\''s working'"
+        );
     }
 
     #[test]
@@ -99,7 +121,10 @@ mod exec_tests {
         }
 
         assert_eq!(split_command("ls -la /app"), vec!["ls", "-la", "/app"]);
-        assert_eq!(split_command("bash -c 'echo hello'"), vec!["bash", "-c", "'echo", "hello'"]);
+        assert_eq!(
+            split_command("bash -c 'echo hello'"),
+            vec!["bash", "-c", "'echo", "hello'"]
+        );
     }
 }
 
@@ -129,8 +154,12 @@ mod attach_tests {
         fn build_attach_params(stdin: bool, tty: bool) -> String {
             let mut params = vec!["stdout=true", "stderr=true"];
 
-            if stdin { params.push("stdin=true"); }
-            if tty { params.push("tty=true"); }
+            if stdin {
+                params.push("stdin=true");
+            }
+            if tty {
+                params.push("tty=true");
+            }
 
             params.join("&")
         }
@@ -172,7 +201,8 @@ mod portforward_tests {
     #[test]
     fn test_portforward_multiple_ports() {
         fn parse_multiple_ports(ports: &[&str]) -> Result<Vec<(u16, u16)>, String> {
-            ports.iter()
+            ports
+                .iter()
                 .map(|p| {
                     if let Some((local, remote)) = p.split_once(':') {
                         let l = local.parse::<u16>().map_err(|_| "Invalid port")?;

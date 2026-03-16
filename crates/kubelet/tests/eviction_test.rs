@@ -6,9 +6,7 @@
 //! - Evicts pods based on QoS class priority
 //! - Evicts pods based on resource usage within QoS class
 
-use rusternetes_common::resources::{
-    Container, Node, NodeCondition, NodeStatus, Pod, PodSpec,
-};
+use rusternetes_common::resources::{Container, Node, NodeCondition, NodeStatus, Pod, PodSpec};
 use rusternetes_common::types::{ObjectMeta, ResourceRequirements, TypeMeta};
 use rusternetes_kubelet::eviction::{
     get_qos_class, EvictionManager, EvictionSignal, EvictionThreshold, EvictionValue, NodeStats,
@@ -87,6 +85,7 @@ fn create_pod_with_qos(name: &str, namespace: &str, qos: QoSClass) -> Pod {
             priority: None,
             priority_class_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -133,7 +132,7 @@ fn test_memory_pressure_detection_hard_threshold() {
 
     // Simulate low memory (50 MiB available, threshold is 100Mi)
     let low_memory_stats = NodeStats {
-        memory_available_bytes: 50 * 1024 * 1024, // 50 MiB
+        memory_available_bytes: 50 * 1024 * 1024,   // 50 MiB
         memory_total_bytes: 8 * 1024 * 1024 * 1024, // 8 GiB
         nodefs_available_bytes: 50 * 1024 * 1024 * 1024,
         nodefs_total_bytes: 100 * 1024 * 1024 * 1024,
@@ -183,8 +182,8 @@ fn test_inode_pressure_detection() {
         memory_total_bytes: 8 * 1024 * 1024 * 1024,
         nodefs_available_bytes: 50 * 1024 * 1024 * 1024,
         nodefs_total_bytes: 100 * 1024 * 1024 * 1024,
-        nodefs_inodes_free: 300_000,       // 300k inodes free
-        nodefs_inodes_total: 10_000_000,   // 10M total (3%)
+        nodefs_inodes_free: 300_000,     // 300k inodes free
+        nodefs_inodes_total: 10_000_000, // 10M total (3%)
         pid_available: 30000,
         pid_total: 32768,
     };
@@ -206,8 +205,8 @@ fn test_no_pressure_with_sufficient_resources() {
         memory_total_bytes: 8 * 1024 * 1024 * 1024,     // 8 GiB total (50%)
         nodefs_available_bytes: 60 * 1024 * 1024 * 1024, // 60 GiB available
         nodefs_total_bytes: 100 * 1024 * 1024 * 1024,   // 100 GiB total (60%)
-        nodefs_inodes_free: 8_000_000,                   // 8M inodes free
-        nodefs_inodes_total: 10_000_000,                 // 10M total (80%)
+        nodefs_inodes_free: 8_000_000,                  // 8M inodes free
+        nodefs_inodes_total: 10_000_000,                // 10M total (80%)
         pid_available: 30000,
         pid_total: 32768,
     };
@@ -263,11 +262,8 @@ fn test_pod_eviction_priority_by_qos() {
         },
     );
 
-    let pods_to_evict = manager.select_pods_for_eviction(
-        &pods,
-        &pod_stats,
-        &EvictionSignal::MemoryAvailable,
-    );
+    let pods_to_evict =
+        manager.select_pods_for_eviction(&pods, &pod_stats, &EvictionSignal::MemoryAvailable);
 
     // BestEffort should be evicted first
     assert!(
@@ -324,11 +320,8 @@ fn test_pod_eviction_by_resource_usage() {
         },
     );
 
-    let pods_to_evict = manager.select_pods_for_eviction(
-        &pods,
-        &pod_stats,
-        &EvictionSignal::MemoryAvailable,
-    );
+    let pods_to_evict =
+        manager.select_pods_for_eviction(&pods, &pod_stats, &EvictionSignal::MemoryAvailable);
 
     // Pod with highest memory usage should be evicted first
     assert!(
@@ -478,8 +471,8 @@ fn test_eviction_threshold_percentage() {
     let stats = NodeStats {
         memory_available_bytes: 2 * 1024 * 1024 * 1024,
         memory_total_bytes: 8 * 1024 * 1024 * 1024,
-        nodefs_available_bytes: 5 * 1024 * 1024 * 1024,  // 5 GiB
-        nodefs_total_bytes: 100 * 1024 * 1024 * 1024,    // 100 GiB (5%)
+        nodefs_available_bytes: 5 * 1024 * 1024 * 1024, // 5 GiB
+        nodefs_total_bytes: 100 * 1024 * 1024 * 1024,   // 100 GiB (5%)
         nodefs_inodes_free: 1_000_000,
         nodefs_inodes_total: 10_000_000,
         pid_available: 30000,
@@ -514,11 +507,8 @@ fn test_eviction_max_pods_evicted_per_iteration() {
         );
     }
 
-    let pods_to_evict = manager.select_pods_for_eviction(
-        &pods,
-        &pod_stats,
-        &EvictionSignal::MemoryAvailable,
-    );
+    let pods_to_evict =
+        manager.select_pods_for_eviction(&pods, &pod_stats, &EvictionSignal::MemoryAvailable);
 
     // Should evict at most 5 pods per iteration
     assert!(

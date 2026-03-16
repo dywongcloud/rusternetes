@@ -27,10 +27,29 @@ pub async fn execute(
 
         if for_delete {
             // Wait for deletion
-            wait_for_deletion(client, resource_type, name, namespace, selector, start, timeout_duration).await?;
+            wait_for_deletion(
+                client,
+                resource_type,
+                name,
+                namespace,
+                selector,
+                start,
+                timeout_duration,
+            )
+            .await?;
         } else if let Some(condition) = for_condition {
             // Wait for specific condition
-            wait_for_condition(client, resource_type, name, namespace, selector, condition, start, timeout_duration).await?;
+            wait_for_condition(
+                client,
+                resource_type,
+                name,
+                namespace,
+                selector,
+                condition,
+                start,
+                timeout_duration,
+            )
+            .await?;
         } else {
             anyhow::bail!("Must specify --for=condition or --for=delete");
         }
@@ -56,7 +75,10 @@ async fn wait_for_deletion(
         }
 
         let path = if let Some(n) = name {
-            format!("/{}/namespaces/{}/{}/{}", api_path, namespace, resource_name, n)
+            format!(
+                "/{}/namespaces/{}/{}/{}",
+                api_path, namespace, resource_name, n
+            )
         } else {
             format!("/{}/namespaces/{}/{}", api_path, namespace, resource_name)
         };
@@ -96,20 +118,27 @@ async fn wait_for_condition(
         }
 
         let path = if let Some(n) = name {
-            format!("/{}/namespaces/{}/{}/{}", api_path, namespace, resource_name, n)
+            format!(
+                "/{}/namespaces/{}/{}/{}",
+                api_path, namespace, resource_name, n
+            )
         } else {
             format!("/{}/namespaces/{}/{}", api_path, namespace, resource_name)
         };
 
-        let resource: Value = client.get(&path).await
-            .map_err(|e| match e {
-                GetError::NotFound => anyhow::anyhow!("Resource not found"),
-                GetError::Other(e) => e,
-            })?;
+        let resource: Value = client.get(&path).await.map_err(|e| match e {
+            GetError::NotFound => anyhow::anyhow!("Resource not found"),
+            GetError::Other(e) => e,
+        })?;
 
         // Check if condition is met
         if check_condition(&resource, condition_type, expected_status)? {
-            println!("{}/{} condition met: {}", resource_type, name.unwrap_or("*"), condition);
+            println!(
+                "{}/{} condition met: {}",
+                resource_type,
+                name.unwrap_or("*"),
+                condition
+            );
             return Ok(());
         }
 
@@ -146,7 +175,11 @@ fn parse_condition(condition: &str) -> (&str, &str) {
 
 fn check_condition(resource: &Value, condition_type: &str, expected_status: &str) -> Result<bool> {
     // Check status.conditions array
-    if let Some(conditions) = resource.get("status").and_then(|s| s.get("conditions")).and_then(|c| c.as_array()) {
+    if let Some(conditions) = resource
+        .get("status")
+        .and_then(|s| s.get("conditions"))
+        .and_then(|c| c.as_array())
+    {
         for cond in conditions {
             if let Some(typ) = cond.get("type").and_then(|t| t.as_str()) {
                 if typ == condition_type {

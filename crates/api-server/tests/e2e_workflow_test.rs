@@ -4,11 +4,11 @@
 use rusternetes_common::resources::pod::*;
 use rusternetes_common::resources::volume::*;
 use rusternetes_common::resources::*;
-use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta, LabelSelector};
+use rusternetes_common::types::{LabelSelector, ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::deployment::DeploymentController;
-use rusternetes_controller_manager::controllers::replicaset::ReplicaSetController;
 use rusternetes_controller_manager::controllers::dynamic_provisioner::DynamicProvisionerController;
 use rusternetes_controller_manager::controllers::pv_binder::PVBinderController;
+use rusternetes_controller_manager::controllers::replicaset::ReplicaSetController;
 use rusternetes_controller_manager::controllers::volume_snapshot::VolumeSnapshotController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -87,6 +87,7 @@ async fn test_complete_pod_lifecycle() {
             priority: None,
             priority_class_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -115,7 +116,10 @@ async fn test_complete_pod_lifecycle() {
     // 3. Verify pod stored in etcd
     let stored_pod: Pod = storage.get(&pod_key).await.unwrap();
     assert_eq!(stored_pod.metadata.name, "test-pod");
-    assert_eq!(stored_pod.status.as_ref().unwrap().phase, Some(Phase::Pending));
+    assert_eq!(
+        stored_pod.status.as_ref().unwrap().phase,
+        Some(Phase::Pending)
+    );
 
     // 4. Simulate scheduler assignment
     let mut updated_pod = stored_pod;
@@ -124,7 +128,10 @@ async fn test_complete_pod_lifecycle() {
 
     // 5. Verify pod has nodeName
     let scheduled_pod: Pod = storage.get(&pod_key).await.unwrap();
-    assert_eq!(scheduled_pod.spec.as_ref().unwrap().node_name, Some("worker-1".to_string()));
+    assert_eq!(
+        scheduled_pod.spec.as_ref().unwrap().node_name,
+        Some("worker-1".to_string())
+    );
 
     // 6. Simulate kubelet updating status
     let mut running_pod = scheduled_pod;
@@ -136,14 +143,20 @@ async fn test_complete_pod_lifecycle() {
         pod_ip: Some("10.244.1.5".to_string()),
         container_statuses: None,
         init_container_statuses: None,
-            ephemeral_container_statuses: None,
+        ephemeral_container_statuses: None,
     });
     storage.update(&pod_key, &running_pod).await.unwrap();
 
     // 7. Verify pod phase is Running
     let final_pod: Pod = storage.get(&pod_key).await.unwrap();
-    assert_eq!(final_pod.status.as_ref().unwrap().phase, Some(Phase::Running));
-    assert_eq!(final_pod.status.as_ref().unwrap().pod_ip, Some("10.244.1.5".to_string()));
+    assert_eq!(
+        final_pod.status.as_ref().unwrap().phase,
+        Some(Phase::Running)
+    );
+    assert_eq!(
+        final_pod.status.as_ref().unwrap().pod_ip,
+        Some("10.244.1.5".to_string())
+    );
 }
 
 #[tokio::test]
@@ -208,6 +221,7 @@ async fn test_deployment_workflow() {
                     priority: None,
                     priority_class_name: None,
                     hostname: None,
+                    subdomain: None,
                     host_network: None,
                     host_pid: None,
                     host_ipc: None,
@@ -294,7 +308,10 @@ async fn test_dynamic_pvc_workflow() {
         provisioner: "rusternetes.io/hostpath".to_string(),
         parameters: Some({
             let mut params = HashMap::new();
-            params.insert("path".to_string(), "/tmp/rusternetes/test-volumes".to_string());
+            params.insert(
+                "path".to_string(),
+                "/tmp/rusternetes/test-volumes".to_string(),
+            );
             params
         }),
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
@@ -334,8 +351,8 @@ async fn test_dynamic_pvc_workflow() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
@@ -365,11 +382,17 @@ async fn test_dynamic_pvc_workflow() {
     // 5. Verify volume bound
     let bound_pvc: PersistentVolumeClaim = storage.get(&pvc_key).await.unwrap();
     assert_eq!(bound_pvc.spec.volume_name, Some(pv_name.to_string()));
-    assert_eq!(bound_pvc.status.as_ref().unwrap().phase, PersistentVolumeClaimPhase::Bound);
+    assert_eq!(
+        bound_pvc.status.as_ref().unwrap().phase,
+        PersistentVolumeClaimPhase::Bound
+    );
 
     let bound_pv: PersistentVolume = storage.get(&pv_key).await.unwrap();
     assert!(bound_pv.spec.claim_ref.is_some());
-    assert_eq!(bound_pv.status.as_ref().unwrap().phase, PersistentVolumePhase::Bound);
+    assert_eq!(
+        bound_pv.status.as_ref().unwrap().phase,
+        PersistentVolumePhase::Bound
+    );
 }
 
 #[tokio::test]
@@ -456,8 +479,8 @@ async fn test_snapshot_workflow() {
             data_source: None,
         },
         status: Some(PersistentVolumeClaimStatus {
-                allocated_resources: None,
-                resize_status: None,
+            allocated_resources: None,
+            resize_status: None,
             phase: PersistentVolumeClaimPhase::Bound,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
             capacity: Some(capacity),
@@ -502,9 +525,20 @@ async fn test_snapshot_workflow() {
     let updated_vs: VolumeSnapshot = storage.get(&vs_key).await.unwrap();
     assert!(updated_vs.status.is_some());
     assert_eq!(updated_vs.status.as_ref().unwrap().ready_to_use, Some(true));
-    assert!(updated_vs.status.as_ref().unwrap().bound_volume_snapshot_content_name.is_some());
+    assert!(updated_vs
+        .status
+        .as_ref()
+        .unwrap()
+        .bound_volume_snapshot_content_name
+        .is_some());
 
-    let content_name = updated_vs.status.as_ref().unwrap().bound_volume_snapshot_content_name.as_ref().unwrap();
+    let content_name = updated_vs
+        .status
+        .as_ref()
+        .unwrap()
+        .bound_volume_snapshot_content_name
+        .as_ref()
+        .unwrap();
     let content_key = build_key("volumesnapshotcontents", None, content_name);
     let content: VolumeSnapshotContent = storage.get(&content_key).await.unwrap();
     assert_eq!(content.spec.deletion_policy, DeletionPolicy::Delete);
@@ -518,5 +552,8 @@ async fn test_snapshot_workflow() {
 
     // Verify content also deleted
     let content_after: Result<VolumeSnapshotContent, _> = storage.get(&content_key).await;
-    assert!(content_after.is_err(), "VolumeSnapshotContent should be deleted");
+    assert!(
+        content_after.is_err(),
+        "VolumeSnapshotContent should be deleted"
+    );
 }

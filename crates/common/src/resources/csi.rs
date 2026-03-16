@@ -1,6 +1,6 @@
-use crate::types::{ObjectMeta, TypeMeta};
 use crate::resources::service_account::ObjectReference;
 use crate::resources::volume::LabelSelector;
+use crate::types::{ObjectMeta, TypeMeta};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -304,9 +304,7 @@ mod tests {
                     name: "test-driver".to_string(),
                     node_id: "node1-id".to_string(),
                     topology_keys: Some(vec!["topology.kubernetes.io/zone".to_string()]),
-                    allocatable: Some(VolumeNodeResources {
-                        count: Some(100),
-                    }),
+                    allocatable: Some(VolumeNodeResources { count: Some(100) }),
                 }],
             },
         };
@@ -384,7 +382,12 @@ mod tests {
         let deserialized: VolumeAttributesClass = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.driver_name, "test-driver");
         assert_eq!(
-            deserialized.parameters.as_ref().unwrap().get("type").unwrap(),
+            deserialized
+                .parameters
+                .as_ref()
+                .unwrap()
+                .get("type")
+                .unwrap(),
             "ssd"
         );
     }

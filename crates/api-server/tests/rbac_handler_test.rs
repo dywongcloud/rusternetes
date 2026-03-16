@@ -288,7 +288,10 @@ async fn test_role_with_multiple_rules() {
 
     assert_eq!(created.rules.len(), 3);
     assert_eq!(created.rules[0].resources.as_ref().unwrap()[0], "pods");
-    assert_eq!(created.rules[1].resources.as_ref().unwrap()[0], "deployments");
+    assert_eq!(
+        created.rules[1].resources.as_ref().unwrap()[0],
+        "deployments"
+    );
     assert_eq!(created.rules[2].verbs[0], "*");
 
     // Cleanup
@@ -520,7 +523,10 @@ async fn test_clusterrole_with_non_resource_urls() {
     let created: ClusterRole = storage.create(&key, &cr).await.unwrap();
 
     assert!(created.rules[0].non_resource_urls.is_some());
-    assert_eq!(created.rules[0].non_resource_urls.as_ref().unwrap().len(), 2);
+    assert_eq!(
+        created.rules[0].non_resource_urls.as_ref().unwrap().len(),
+        2
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -617,14 +623,12 @@ async fn test_clusterrolebinding_update() {
     storage.create(&key, &crb).await.unwrap();
 
     // Update subjects
-    crb.subjects = vec![
-        Subject {
-            kind: "User".to_string(),
-            name: "new-user".to_string(),
-            api_group: Some("rbac.authorization.k8s.io".to_string()),
-            namespace: None,
-        },
-    ];
+    crb.subjects = vec![Subject {
+        kind: "User".to_string(),
+        name: "new-user".to_string(),
+        api_group: Some("rbac.authorization.k8s.io".to_string()),
+        namespace: None,
+    }];
 
     let updated: ClusterRoleBinding = storage.update(&key, &crb).await.unwrap();
     assert_eq!(updated.subjects[0].name, "new-user");
@@ -720,7 +724,10 @@ async fn test_role_with_labels_and_annotations() {
     let created: Role = storage.create(&key, &role).await.unwrap();
 
     assert!(created.metadata.labels.is_some());
-    assert_eq!(created.metadata.labels.as_ref().unwrap().get("app"), Some(&"test".to_string()));
+    assert_eq!(
+        created.metadata.labels.as_ref().unwrap().get("app"),
+        Some(&"test".to_string())
+    );
     assert!(created.metadata.annotations.is_some());
 
     // Cleanup
@@ -776,7 +783,10 @@ async fn test_rbac_resources_with_finalizers() {
     let created: Role = storage.create(&key, &role).await.unwrap();
 
     assert!(created.metadata.finalizers.is_some());
-    assert_eq!(created.metadata.finalizers.as_ref().unwrap()[0], "test.finalizer.io/cleanup");
+    assert_eq!(
+        created.metadata.finalizers.as_ref().unwrap()[0],
+        "test.finalizer.io/cleanup"
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();

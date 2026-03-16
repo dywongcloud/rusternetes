@@ -6,10 +6,7 @@
 #![allow(dead_code)]
 
 use crate::{handlers::custom_resource, state::ApiServerState};
-use axum::{
-    routing::get,
-    Router,
-};
+use axum::{routing::get, Router};
 use rusternetes_common::resources::{CustomResourceDefinition, ResourceScope};
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -29,10 +26,7 @@ impl DynamicRouteManager {
     /// Build routes for a CRD
     /// This creates the router configuration that should be registered when a CRD is created
     pub fn build_crd_routes(&self, crd: &CustomResourceDefinition) -> Router<Arc<ApiServerState>> {
-        info!(
-            "Building dynamic routes for CRD: {}",
-            crd.metadata.name
-        );
+        info!("Building dynamic routes for CRD: {}", crd.metadata.name);
 
         let group = &crd.spec.group;
         let plural = &crd.spec.names.plural;
@@ -60,7 +54,10 @@ impl DynamicRouteManager {
             let routes = match scope {
                 ResourceScope::Namespaced => {
                     // Namespaced resources have both namespaced and cluster-wide list endpoints
-                    let ns_path = format!("/apis/{}/{}/namespaces/:namespace/{}", group, version, plural);
+                    let ns_path = format!(
+                        "/apis/{}/{}/namespaces/:namespace/{}",
+                        group, version, plural
+                    );
                     let ns_name_path = format!(
                         "/apis/{}/{}/namespaces/:namespace/{}/:name",
                         group, version, plural
@@ -108,7 +105,8 @@ impl DynamicRouteManager {
                 if let Some(ref subresources) = version_spec.subresources {
                     // Status subresource
                     if subresources.status.is_some() {
-                        let status_routes = self.create_status_routes(group, version, plural, scope);
+                        let status_routes =
+                            self.create_status_routes(group, version, plural, scope);
                         new_routes = new_routes.merge(status_routes);
                     }
 
@@ -160,12 +158,11 @@ impl DynamicRouteManager {
                     group, version, plural
                 );
 
-                Router::new()
-                    .route(
-                        &status_name_path,
-                        get(custom_resource::get_custom_resource_status)
-                            .put(custom_resource::update_custom_resource_status),
-                    )
+                Router::new().route(
+                    &status_name_path,
+                    get(custom_resource::get_custom_resource_status)
+                        .put(custom_resource::update_custom_resource_status),
+                )
             }
             ResourceScope::Cluster => {
                 let status_name_path =
@@ -241,7 +238,8 @@ mod tests {
                 .expect("Failed to create storage"),
         );
         let token_manager = Arc::new(TokenManager::new(b"test-secret"));
-        let authorizer = Arc::new(AlwaysAllowAuthorizer) as Arc<dyn rusternetes_common::authz::Authorizer>;
+        let authorizer =
+            Arc::new(AlwaysAllowAuthorizer) as Arc<dyn rusternetes_common::authz::Authorizer>;
         let metrics = Arc::new(MetricsRegistry::new());
 
         Arc::new(ApiServerState::new(

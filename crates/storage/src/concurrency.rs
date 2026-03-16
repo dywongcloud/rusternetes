@@ -39,9 +39,9 @@ pub fn mod_revision_to_resource_version(mod_revision: i64) -> String {
 
 /// Parse resourceVersion string to mod_revision
 pub fn resource_version_to_mod_revision(resource_version: &str) -> Result<i64, Error> {
-    resource_version
-        .parse::<i64>()
-        .map_err(|_| Error::InvalidResource(format!("Invalid resourceVersion: {}", resource_version)))
+    resource_version.parse::<i64>().map_err(|_| {
+        Error::InvalidResource(format!("Invalid resourceVersion: {}", resource_version))
+    })
 }
 
 #[cfg(test)]

@@ -228,7 +228,8 @@ impl AuditBackend for WebhookAuditBackend {
         };
 
         // Send to webhook endpoint
-        match self.client
+        match self
+            .client
             .post(&self.url)
             .json(&json)
             .timeout(std::time::Duration::from_secs(10))
@@ -289,7 +290,10 @@ impl AuditBackend for MultiAuditBackend {
             }
         }
         if !errors.is_empty() {
-            return Err(format!("Some backends failed to flush: {}", errors.join("; ")));
+            return Err(format!(
+                "Some backends failed to flush: {}",
+                errors.join("; ")
+            ));
         }
         Ok(())
     }

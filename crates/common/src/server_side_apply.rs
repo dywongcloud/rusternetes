@@ -3,10 +3,10 @@
 // Tracks field ownership across multiple clients and provides conflict detection.
 // Implements the managedFields metadata tracking for field managers.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// Managed fields entry tracking which manager owns which fields
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -115,7 +115,11 @@ pub fn server_side_apply(
     let modified_fields = compute_modified_fields(&current, desired)?;
 
     // Check for conflicts
-    let conflicts = detect_conflicts(&current_managed_fields, &modified_fields, &params.field_manager);
+    let conflicts = detect_conflicts(
+        &current_managed_fields,
+        &modified_fields,
+        &params.field_manager,
+    );
 
     if !conflicts.is_empty() && !params.force {
         return Ok(ApplyResult::Conflicts(conflicts));
@@ -126,7 +130,12 @@ pub fn server_side_apply(
     merge_fields(&mut result, desired, &modified_fields)?;
 
     // Update managed fields
-    update_managed_fields(&mut result, &params.field_manager, Operation::Apply, &modified_fields)?;
+    update_managed_fields(
+        &mut result,
+        &params.field_manager,
+        Operation::Apply,
+        &modified_fields,
+    )?;
 
     Ok(ApplyResult::Success(result))
 }
@@ -278,8 +287,12 @@ fn merge_metadata(
         for (key, value) in source_metadata {
             match key.as_str() {
                 // Preserve system-managed fields
-                "uid" | "resourceVersion" | "generation" | "creationTimestamp" |
-                "deletionTimestamp" | "deletionGracePeriodSeconds" => {
+                "uid"
+                | "resourceVersion"
+                | "generation"
+                | "creationTimestamp"
+                | "deletionTimestamp"
+                | "deletionGracePeriodSeconds" => {
                     // Don't overwrite
                 }
                 "managedFields" => {
@@ -344,7 +357,8 @@ fn update_managed_fields(
 
 /// Extract API version from resource
 fn extract_api_version(resource: &Value) -> Option<String> {
-    resource.get("apiVersion")
+    resource
+        .get("apiVersion")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
 }
@@ -460,7 +474,7 @@ mod tests {
         let result = server_side_apply(Some(&current), &desired, &params).unwrap();
 
         match result {
-            ApplyResult::Success(_) => {},
+            ApplyResult::Success(_) => {}
             ApplyResult::Conflicts(_) => panic!("Unexpected conflicts for same manager"),
         }
     }

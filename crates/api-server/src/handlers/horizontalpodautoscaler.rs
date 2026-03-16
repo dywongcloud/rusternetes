@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::HorizontalPodAutoscaler,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -46,11 +45,18 @@ pub async fn create(
     hpa.metadata.ensure_uid();
     hpa.metadata.ensure_creation_timestamp();
 
-    let key = build_key("horizontalpodautoscalers", Some(&namespace), &hpa.metadata.name);
+    let key = build_key(
+        "horizontalpodautoscalers",
+        Some(&namespace),
+        &hpa.metadata.name,
+    );
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: HorizontalPodAutoscaler {}/{} validated successfully (not created)", namespace, hpa.metadata.name);
+        info!(
+            "Dry-run: HorizontalPodAutoscaler {}/{} validated successfully (not created)",
+            namespace, hpa.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(hpa)));
     }
 
@@ -117,16 +123,17 @@ pub async fn update(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: HorizontalPodAutoscaler {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: HorizontalPodAutoscaler {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(hpa));
     }
 
     // Try to update first, if not found then create (upsert behavior)
     let result = match state.storage.update(&key, &hpa).await {
         Ok(updated) => updated,
-        Err(rusternetes_common::Error::NotFound(_)) => {
-            state.storage.create(&key, &hpa).await?
-        }
+        Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &hpa).await?,
         Err(e) => return Err(e),
     };
 
@@ -161,7 +168,10 @@ pub async fn delete(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: HorizontalPodAutoscaler {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: HorizontalPodAutoscaler {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -169,21 +179,16 @@ pub async fn delete(
     let hpa: HorizontalPodAutoscaler = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
-        &state.storage,
-        &key,
-        &hpa,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &hpa)
+            .await?;
 
     if deleted_immediately {
         Ok(StatusCode::NO_CONTENT)
     } else {
         info!(
             "HorizontalPodAutoscaler {}/{} marked for deletion (has finalizers: {:?})",
-            namespace,
-            name,
-            hpa.metadata.finalizers
+            namespace, name, hpa.metadata.finalizers
         );
         Ok(StatusCode::OK)
     }
@@ -195,7 +200,10 @@ pub async fn list(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<List<HorizontalPodAutoscaler>>> {
-    info!("Listing horizontalpodautoscalers in namespace: {}", namespace);
+    info!(
+        "Listing horizontalpodautoscalers in namespace: {}",
+        namespace
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "horizontalpodautoscalers")
@@ -253,7 +261,10 @@ pub async fn get_status(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<HorizontalPodAutoscaler>> {
-    info!("Getting horizontalpodautoscaler status: {}/{}", namespace, name);
+    info!(
+        "Getting horizontalpodautoscaler status: {}/{}",
+        namespace, name
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "horizontalpodautoscalers/status")
@@ -280,7 +291,10 @@ pub async fn update_status(
     Path((namespace, name)): Path<(String, String)>,
     Json(hpa): Json<HorizontalPodAutoscaler>,
 ) -> Result<Json<HorizontalPodAutoscaler>> {
-    info!("Updating horizontalpodautoscaler status: {}/{}", namespace, name);
+    info!(
+        "Updating horizontalpodautoscaler status: {}/{}",
+        namespace, name
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "horizontalpodautoscalers/status")
@@ -309,14 +323,19 @@ pub async fn update_status(
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_namespaced!(patch, HorizontalPodAutoscaler, "horizontalpodautoscalers", "autoscaling");
+crate::patch_handler_namespaced!(
+    patch,
+    HorizontalPodAutoscaler,
+    "horizontalpodautoscalers",
+    "autoscaling"
+);
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rusternetes_common::resources::{
-        HorizontalPodAutoscalerSpec, CrossVersionObjectReference, MetricSpec,
-        ResourceMetricSource, MetricTarget,
+        CrossVersionObjectReference, HorizontalPodAutoscalerSpec, MetricSpec, MetricTarget,
+        ResourceMetricSource,
     };
 
     #[test]
@@ -361,12 +380,19 @@ pub async fn deletecollection_horizontalpodautoscalers(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection horizontalpodautoscalers in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection horizontalpodautoscalers in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "horizontalpodautoscalers")
-        .with_namespace(&namespace)
-        .with_api_group("autoscaling");
+    let attrs = RequestAttributes::new(
+        auth_ctx.user,
+        "deletecollection",
+        "horizontalpodautoscalers",
+    )
+    .with_namespace(&namespace)
+    .with_api_group("autoscaling");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -384,7 +410,10 @@ pub async fn deletecollection_horizontalpodautoscalers(
 
     // Get all horizontalpodautoscalers in the namespace
     let prefix = build_prefix("horizontalpodautoscalers", Some(&namespace));
-    let mut items = state.storage.list::<HorizontalPodAutoscaler>(&prefix).await?;
+    let mut items = state
+        .storage
+        .list::<HorizontalPodAutoscaler>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;
@@ -392,7 +421,11 @@ pub async fn deletecollection_horizontalpodautoscalers(
     // Delete each matching resource
     let mut deleted_count = 0;
     for item in items {
-        let key = build_key("horizontalpodautoscalers", Some(&namespace), &item.metadata.name);
+        let key = build_key(
+            "horizontalpodautoscalers",
+            Some(&namespace),
+            &item.metadata.name,
+        );
 
         // Handle deletion with finalizers
         let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -407,6 +440,9 @@ pub async fn deletecollection_horizontalpodautoscalers(
         }
     }
 
-    info!("DeleteCollection completed: {} horizontalpodautoscalers deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} horizontalpodautoscalers deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

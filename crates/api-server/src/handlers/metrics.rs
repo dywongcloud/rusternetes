@@ -3,17 +3,18 @@ use axum::{
     extract::{Path, State},
     Extension, Json,
 };
+use chrono::Utc;
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
-    resources::{NodeMetrics, NodeMetricsMetadata, PodMetrics, PodMetricsMetadata, ContainerMetrics},
-    List,
-    Result,
+    resources::{
+        ContainerMetrics, NodeMetrics, NodeMetricsMetadata, PodMetrics, PodMetricsMetadata,
+    },
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tracing::info;
-use chrono::Utc;
 
 /// Get metrics for a specific node
 pub async fn get_node_metrics(
@@ -76,7 +77,8 @@ pub async fn list_node_metrics(
 
     // Get all nodes
     let nodes_prefix = build_prefix("nodes", None);
-    let nodes: Vec<rusternetes_common::resources::Node> = state.storage.as_ref().list(&nodes_prefix).await?;
+    let nodes: Vec<rusternetes_common::resources::Node> =
+        state.storage.as_ref().list(&nodes_prefix).await?;
     let mut metrics_list = Vec::new();
 
     for node in nodes {
@@ -178,7 +180,8 @@ pub async fn list_pod_metrics(
 
     // Get all pods in namespace
     let pods_prefix = build_prefix("pods", Some(&namespace));
-    let pods: Vec<rusternetes_common::resources::Pod> = state.storage.as_ref().list(&pods_prefix).await?;
+    let pods: Vec<rusternetes_common::resources::Pod> =
+        state.storage.as_ref().list(&pods_prefix).await?;
     let mut metrics_list = Vec::new();
 
     for pod in pods {
@@ -234,13 +237,15 @@ pub async fn list_all_pod_metrics(
 
     // Get all namespaces first
     let ns_prefix = build_prefix("namespaces", None);
-    let namespaces: Vec<rusternetes_common::resources::Namespace> = state.storage.as_ref().list(&ns_prefix).await?;
+    let namespaces: Vec<rusternetes_common::resources::Namespace> =
+        state.storage.as_ref().list(&ns_prefix).await?;
     let mut metrics_list = Vec::new();
 
     for ns in namespaces {
         // Get all pods in this namespace
         let pods_prefix = build_prefix("pods", Some(&ns.metadata.name));
-        let pods: Vec<rusternetes_common::resources::Pod> = state.storage.as_ref().list(&pods_prefix).await?;
+        let pods: Vec<rusternetes_common::resources::Pod> =
+            state.storage.as_ref().list(&pods_prefix).await?;
 
         for pod in pods {
             // In a real implementation, this would query the kubelet metrics endpoint
@@ -279,18 +284,18 @@ pub async fn list_all_pod_metrics(
 }
 
 #[cfg(test)]
-#[cfg(feature = "integration-tests")]  // Disable tests that require full setup
+#[cfg(feature = "integration-tests")] // Disable tests that require full setup
 mod tests {
     use super::*;
     use crate::state::ApiServerState;
-    use rusternetes_common::authz::AlwaysAllowAuthorizer;
-    use rusternetes_common::storage::MemoryStorage;
-    use rusternetes_common::resources::{Node, NodeSpec, Namespace, Pod, PodSpec};
-    use rusternetes_common::types::ObjectMeta;
     use rusternetes_common::auth::UserInfo;
+    use rusternetes_common::authz::AlwaysAllowAuthorizer;
+    use rusternetes_common::resources::{Namespace, Node, NodeSpec, Pod, PodSpec};
+    use rusternetes_common::storage::MemoryStorage;
+    use rusternetes_common::types::ObjectMeta;
 
     async fn create_test_state() -> Arc<ApiServerState> {
-        use rusternetes_common::auth::{TokenManager, BootstrapTokenManager};
+        use rusternetes_common::auth::{BootstrapTokenManager, TokenManager};
         use rusternetes_common::observability::MetricsRegistry;
         use rusternetes_storage::memory::MemoryStorage;
 
@@ -315,16 +320,23 @@ mod tests {
             }),
             status: None,
         };
-        storage.create("/registry/nodes/test-node", &node).await.unwrap();
+        storage
+            .create("/registry/nodes/test-node", &node)
+            .await
+            .unwrap();
 
         // Create a test namespace
         let ns = Namespace::new("default");
-        storage.create("/registry/namespaces/default", &ns).await.unwrap();
+        storage
+            .create("/registry/namespaces/default", &ns)
+            .await
+            .unwrap();
 
         // Create a test pod
-        let pod = Pod::new("test-pod", PodSpec {
-            containers: vec![
-                rusternetes_common::resources::Container {
+        let pod = Pod::new(
+            "test-pod",
+            PodSpec {
+                containers: vec![rusternetes_common::resources::Container {
                     name: "nginx".to_string(),
                     image: "nginx:latest".to_string(),
                     command: None,
@@ -340,30 +352,34 @@ mod tests {
                     startup_probe: None,
                     security_context: None,
                     restart_policy: None,
-                },
-            ],
-            init_containers: None,
-            ephemeral_containers: None,
-            volumes: None,
-            restart_policy: Some("Always".to_string()),
-            node_name: None,
-            node_selector: None,
-            service_account_name: None,
-            hostname: None,
-            host_network: None,
-            host_pid: None,
-            host_ipc: None,
-            affinity: None,
-            tolerations: None,
-            priority: None,
-            priority_class_name: None,
-            automount_service_account_token: None,
-            topology_spread_constraints: None,
-            overhead: None,
-            scheduler_name: None,
-            resource_claims: None,
-        });
-        storage.create("/registry/pods/default/test-pod", &pod).await.unwrap();
+                }],
+                init_containers: None,
+                ephemeral_containers: None,
+                volumes: None,
+                restart_policy: Some("Always".to_string()),
+                node_name: None,
+                node_selector: None,
+                service_account_name: None,
+                hostname: None,
+                subdomain: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                affinity: None,
+                tolerations: None,
+                priority: None,
+                priority_class_name: None,
+                automount_service_account_token: None,
+                topology_spread_constraints: None,
+                overhead: None,
+                scheduler_name: None,
+                resource_claims: None,
+            },
+        );
+        storage
+            .create("/registry/pods/default/test-pod", &pod)
+            .await
+            .unwrap();
 
         Arc::new(ApiServerState::new(
             storage,
@@ -414,11 +430,7 @@ mod tests {
             },
         };
 
-        let result = list_node_metrics(
-            State(state),
-            Extension(auth_ctx),
-        )
-        .await;
+        let result = list_node_metrics(State(state), Extension(auth_ctx)).await;
 
         assert!(result.is_ok());
         let list = result.unwrap().0;

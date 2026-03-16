@@ -1,12 +1,12 @@
 // Integration tests for Garbage Collector and Finalizers
 // Tests cascade deletion, orphaning, and owner reference handling
 
+use rusternetes_common::deletion::{process_deletion, DeleteOptions, DeletionResult};
 use rusternetes_common::resources::pod::*;
 use rusternetes_common::types::{ObjectMeta, OwnerReference, Phase, TypeMeta};
-use rusternetes_common::deletion::{DeleteOptions, DeletionResult, process_deletion};
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
-use std::sync::Arc;
 use serde_json::Value;
+use std::sync::Arc;
 
 async fn setup_test() -> Arc<MemoryStorage> {
     let storage = Arc::new(MemoryStorage::new());
@@ -20,11 +20,14 @@ fn create_test_pod(name: &str, namespace: &str, owner_uid: Option<&str>) -> Pod 
     metadata.uid = uuid::Uuid::new_v4().to_string();
 
     if let Some(uid) = owner_uid {
-        metadata.owner_references = Some(vec![
-            OwnerReference::new("apps/v1", "Deployment", "test-deployment", uid)
-                .with_controller(true)
-                .with_block_owner_deletion(true),
-        ]);
+        metadata.owner_references = Some(vec![OwnerReference::new(
+            "apps/v1",
+            "Deployment",
+            "test-deployment",
+            uid,
+        )
+        .with_controller(true)
+        .with_block_owner_deletion(true)]);
     }
 
     Pod {
@@ -62,6 +65,7 @@ fn create_test_pod(name: &str, namespace: &str, owner_uid: Option<&str>) -> Pod 
             priority: None,
             priority_class_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -185,8 +189,13 @@ async fn test_multiple_owner_references() {
     // Add second owner reference
     if let Some(ref mut owner_refs) = pod.metadata.owner_references {
         owner_refs.push(
-            OwnerReference::new("apps/v1", "Deployment", "test-deployment-2", &deployment2_uid)
-                .with_controller(false)
+            OwnerReference::new(
+                "apps/v1",
+                "Deployment",
+                "test-deployment-2",
+                &deployment2_uid,
+            )
+            .with_controller(false),
         );
     }
 
@@ -195,7 +204,10 @@ async fn test_multiple_owner_references() {
 
     // Verify pod has two owner references
     let stored_pod: Pod = storage.get(&pod_key).await.unwrap();
-    assert_eq!(stored_pod.metadata.owner_references.as_ref().unwrap().len(), 2);
+    assert_eq!(
+        stored_pod.metadata.owner_references.as_ref().unwrap().len(),
+        2
+    );
 }
 
 #[tokio::test]
@@ -334,9 +346,9 @@ async fn test_metadata_finalizer_helpers() {
 // Tests for actual GarbageCollector functionality
 mod garbage_collector_integration {
     use super::*;
-    use rusternetes_controller_manager::controllers::garbage_collector::GarbageCollector;
-    use rusternetes_common::resources::namespace::Namespace;
     use chrono::Utc;
+    use rusternetes_common::resources::namespace::Namespace;
+    use rusternetes_controller_manager::controllers::garbage_collector::GarbageCollector;
 
     #[tokio::test]
     async fn test_gc_deletes_orphaned_pods() {
@@ -347,7 +359,11 @@ mod garbage_collector_integration {
         let fake_owner_uid = uuid::Uuid::new_v4().to_string();
 
         for i in 0..3 {
-            let pod = create_test_pod(&format!("orphan-pod-{}", i), "default", Some(&fake_owner_uid));
+            let pod = create_test_pod(
+                &format!("orphan-pod-{}", i),
+                "default",
+                Some(&fake_owner_uid),
+            );
             let pod_key = build_key("pods", Some("default"), &format!("orphan-pod-{}", i));
             storage.create(&pod_key, &pod).await.unwrap();
         }
@@ -428,7 +444,10 @@ mod garbage_collector_integration {
         }
 
         // Verify resources exist
-        let pods_before: Vec<Pod> = storage.list("/registry/pods/test-cascade-ns/").await.unwrap();
+        let pods_before: Vec<Pod> = storage
+            .list("/registry/pods/test-cascade-ns/")
+            .await
+            .unwrap();
         assert_eq!(pods_before.len(), 3);
 
         // Mark namespace for deletion
@@ -440,7 +459,10 @@ mod garbage_collector_integration {
         gc.scan_and_collect().await.unwrap();
 
         // All resources in namespace should be deleted
-        let pods_after: Vec<Pod> = storage.list("/registry/pods/test-cascade-ns/").await.unwrap();
+        let pods_after: Vec<Pod> = storage
+            .list("/registry/pods/test-cascade-ns/")
+            .await
+            .unwrap();
         assert_eq!(pods_after.len(), 0);
 
         // Namespace should be deleted

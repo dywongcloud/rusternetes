@@ -2,8 +2,10 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for replicasets
 
-use rusternetes_common::resources::{ReplicaSet, ReplicaSetSpec, ReplicaSetStatus, PodTemplateSpec, PodSpec, Container};
-use rusternetes_common::types::{ObjectMeta, TypeMeta, LabelSelector};
+use rusternetes_common::resources::{
+    Container, PodSpec, PodTemplateSpec, ReplicaSet, ReplicaSetSpec, ReplicaSetStatus,
+};
+use rusternetes_common::types::{LabelSelector, ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,7 +16,10 @@ fn create_test_replicaset(name: &str, namespace: &str, replicas: i32) -> Replica
     labels.insert("app".to_string(), name.to_string());
 
     ReplicaSet {
-        type_meta: TypeMeta { api_version: "apps/v1".to_string(), kind: "ReplicaSet".to_string() },
+        type_meta: TypeMeta {
+            api_version: "apps/v1".to_string(),
+            kind: "ReplicaSet".to_string(),
+        },
         metadata: ObjectMeta {
             name: name.to_string(),
             namespace: Some(namespace.to_string()),
@@ -65,6 +70,7 @@ fn create_test_replicaset(name: &str, namespace: &str, replicas: i32) -> Replica
                     host_pid: None,
                     host_ipc: None,
                     hostname: None,
+                    subdomain: None,
                     priority_class_name: None,
                     priority: None,
                     scheduler_name: None,
@@ -173,7 +179,10 @@ async fn test_replicaset_list() {
     let replicasets: Vec<ReplicaSet> = storage.list(&prefix).await.unwrap();
 
     assert!(replicasets.len() >= 3);
-    let names: Vec<String> = replicasets.iter().map(|rs| rs.metadata.name.clone()).collect();
+    let names: Vec<String> = replicasets
+        .iter()
+        .map(|rs| rs.metadata.name.clone())
+        .collect();
     assert!(names.contains(&"rs-1".to_string()));
     assert!(names.contains(&"rs-2".to_string()));
     assert!(names.contains(&"rs-3".to_string()));
@@ -373,16 +382,14 @@ async fn test_replicaset_with_owner_reference() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut replicaset = create_test_replicaset("test-owner", "default", 3);
-    replicaset.metadata.owner_references = Some(vec![
-        rusternetes_common::types::OwnerReference {
-            api_version: "apps/v1".to_string(),
-            kind: "Deployment".to_string(),
-            name: "parent-deployment".to_string(),
-            uid: "parent-uid-123".to_string(),
-            controller: Some(true),
-            block_owner_deletion: Some(true),
-        },
-    ]);
+    replicaset.metadata.owner_references = Some(vec![rusternetes_common::types::OwnerReference {
+        api_version: "apps/v1".to_string(),
+        kind: "Deployment".to_string(),
+        name: "parent-deployment".to_string(),
+        uid: "parent-uid-123".to_string(),
+        controller: Some(true),
+        block_owner_deletion: Some(true),
+    }]);
 
     let key = build_key("replicasets", Some("default"), "test-owner");
 
@@ -416,7 +423,10 @@ async fn test_replicaset_observed_generation() {
 
     // Create with observed generation
     let created: ReplicaSet = storage.create(&key, &replicaset).await.unwrap();
-    assert_eq!(created.status.as_ref().unwrap().observed_generation, Some(5));
+    assert_eq!(
+        created.status.as_ref().unwrap().observed_generation,
+        Some(5)
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();

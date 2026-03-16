@@ -54,11 +54,7 @@ impl<S: Storage> NodeController<S> {
             .status
             .as_ref()
             .and_then(|s| s.conditions.as_ref())
-            .and_then(|conditions| {
-                conditions
-                    .iter()
-                    .find(|c| c.condition_type == "Ready")
-            });
+            .and_then(|conditions| conditions.iter().find(|c| c.condition_type == "Ready"));
 
         let needs_update = match current_ready_condition {
             Some(condition) => {
@@ -69,15 +65,15 @@ impl<S: Storage> NodeController<S> {
         };
 
         if needs_update {
-            info!(
-                "Node {} ready status changed to: {}",
-                node_name, is_ready
-            );
+            info!("Node {} ready status changed to: {}", node_name, is_ready);
             self.update_node_status(node, is_ready).await?;
 
             // If node became NotReady, start eviction timer
             if !is_ready {
-                info!("Node {} is NotReady, will evict pods after timeout", node_name);
+                info!(
+                    "Node {} is NotReady, will evict pods after timeout",
+                    node_name
+                );
             }
         }
 
@@ -101,9 +97,7 @@ impl<S: Storage> NodeController<S> {
 
         // Get the Ready condition
         let ready_condition = match &status.conditions {
-            Some(conditions) => conditions
-                .iter()
-                .find(|c| c.condition_type == "Ready"),
+            Some(conditions) => conditions.iter().find(|c| c.condition_type == "Ready"),
             None => return false,
         };
 
@@ -138,9 +132,7 @@ impl<S: Storage> NodeController<S> {
         };
 
         let ready_condition = match &status.conditions {
-            Some(conditions) => conditions
-                .iter()
-                .find(|c| c.condition_type == "Ready"),
+            Some(conditions) => conditions.iter().find(|c| c.condition_type == "Ready"),
             None => return false,
         };
 
@@ -270,7 +262,10 @@ impl<S: Storage> NodeController<S> {
 
             match self.storage.delete(&pod_key).await {
                 Ok(_) => {
-                    info!("Evicted pod {}/{} from node {}", namespace, pod_name, node_name);
+                    info!(
+                        "Evicted pod {}/{} from node {}",
+                        namespace, pod_name, node_name
+                    );
                 }
                 Err(rusternetes_common::Error::NotFound(_)) => {
                     // Pod already deleted
@@ -338,15 +333,11 @@ mod tests {
 
     #[test]
     fn test_node_ready_check() {
-        let storage = Arc::new(
-            tokio::runtime::Runtime::new()
+        let storage = Arc::new(tokio::runtime::Runtime::new().unwrap().block_on(async {
+            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
+                .await
                 .unwrap()
-                .block_on(async {
-                    EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                        .await
-                        .unwrap()
-                }),
-        );
+        }));
         let controller = NodeController::new(storage);
 
         // Node with recent heartbeat

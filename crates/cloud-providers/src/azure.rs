@@ -4,7 +4,7 @@
 use async_trait::async_trait;
 use rusternetes_common::{
     cloud_provider::{CloudProvider, LoadBalancerService, LoadBalancerStatus},
-    Result, Error,
+    Error, Result,
 };
 use tracing::{info, warn};
 
@@ -22,8 +22,10 @@ impl AzureProvider {
         resource_group: String,
         location: String,
     ) -> Result<Self> {
-        info!("Initializing Azure provider for subscription {} in {}",
-            subscription_id, location);
+        info!(
+            "Initializing Azure provider for subscription {} in {}",
+            subscription_id, location
+        );
 
         Ok(Self {
             _subscription_id: subscription_id,
@@ -52,7 +54,7 @@ impl CloudProvider for AzureProvider {
         // 7. Return public IP
 
         Err(Error::Internal(
-            "Azure LoadBalancer provider not yet implemented".to_string()
+            "Azure LoadBalancer provider not yet implemented".to_string(),
         ))
     }
 
@@ -61,8 +63,10 @@ impl CloudProvider for AzureProvider {
         service_namespace: &str,
         service_name: &str,
     ) -> Result<()> {
-        warn!("Azure LoadBalancer deletion not yet implemented for {}/{}",
-            service_namespace, service_name);
+        warn!(
+            "Azure LoadBalancer deletion not yet implemented for {}/{}",
+            service_namespace, service_name
+        );
 
         // TODO: Implement deletion of load balancer, public IP, backend pool
 
@@ -74,8 +78,10 @@ impl CloudProvider for AzureProvider {
         service_namespace: &str,
         service_name: &str,
     ) -> Result<Option<LoadBalancerStatus>> {
-        warn!("Azure LoadBalancer status query not yet implemented for {}/{}",
-            service_namespace, service_name);
+        warn!(
+            "Azure LoadBalancer status query not yet implemented for {}/{}",
+            service_namespace, service_name
+        );
 
         Ok(None)
     }

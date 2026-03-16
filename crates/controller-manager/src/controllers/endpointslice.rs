@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rusternetes_common::resources::{Endpoints, EndpointSlice};
+use rusternetes_common::resources::{EndpointSlice, Endpoints};
 use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -32,7 +32,11 @@ impl<S: Storage> EndpointSliceController<S> {
             if let Err(e) = self.reconcile_endpoints(&endpoints).await {
                 error!(
                     "Failed to reconcile endpointslices for endpoints {}/{}: {}",
-                    endpoints.metadata.namespace.as_ref().unwrap_or(&"default".to_string()),
+                    endpoints
+                        .metadata
+                        .namespace
+                        .as_ref()
+                        .unwrap_or(&"default".to_string()),
                     &endpoints.metadata.name,
                     e
                 );
@@ -44,11 +48,17 @@ impl<S: Storage> EndpointSliceController<S> {
 
     /// Reconcile endpointslices for a single endpoints object
     async fn reconcile_endpoints(&self, endpoints: &Endpoints) -> Result<()> {
-        let namespace = endpoints.metadata.namespace.as_ref()
+        let namespace = endpoints
+            .metadata
+            .namespace
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Endpoints has no namespace"))?;
         let endpoints_name = &endpoints.metadata.name;
 
-        debug!("Reconciling endpointslices for endpoints {}/{}", namespace, endpoints_name);
+        debug!(
+            "Reconciling endpointslices for endpoints {}/{}",
+            namespace, endpoints_name
+        );
 
         // Convert Endpoints to EndpointSlice(s)
         let endpointslices = EndpointSlice::from_endpoints(endpoints);
@@ -69,16 +79,15 @@ impl<S: Storage> EndpointSliceController<S> {
 
             // Set owner reference to the Endpoints object
             // This ensures EndpointSlices are garbage collected when Endpoints are deleted
-            endpointslice.metadata.owner_references = Some(vec![
-                rusternetes_common::types::OwnerReference {
+            endpointslice.metadata.owner_references =
+                Some(vec![rusternetes_common::types::OwnerReference {
                     api_version: "v1".to_string(),
                     kind: "Endpoints".to_string(),
                     name: endpoints_name.clone(),
                     uid: endpoints.metadata.uid.clone(),
                     controller: Some(true),
                     block_owner_deletion: Some(true),
-                },
-            ]);
+                }]);
 
             let slice_key = build_key("endpointslices", Some(namespace), &slice_name);
 
@@ -87,18 +96,16 @@ impl<S: Storage> EndpointSliceController<S> {
                 Ok(_) => {
                     info!(
                         "Updated endpointslice {}/{} from endpoints",
-                        namespace,
-                        slice_name
+                        namespace, slice_name
                     );
-                },
+                }
                 Err(rusternetes_common::Error::NotFound(_)) => {
                     self.storage.create(&slice_key, &endpointslice).await?;
                     info!(
                         "Created endpointslice {}/{} from endpoints",
-                        namespace,
-                        slice_name
+                        namespace, slice_name
                     );
-                },
+                }
                 Err(e) => return Err(e.into()),
             }
         }
@@ -117,7 +124,10 @@ impl<S: Storage> EndpointSliceController<S> {
             let namespace = match &slice.metadata.namespace {
                 Some(ns) => ns,
                 None => {
-                    debug!("EndpointSlice {} has no namespace, skipping", slice.metadata.name);
+                    debug!(
+                        "EndpointSlice {} has no namespace, skipping",
+                        slice.metadata.name
+                    );
                     continue;
                 }
             };
@@ -140,24 +150,25 @@ impl<S: Storage> EndpointSliceController<S> {
                 }
                 Err(rusternetes_common::Error::NotFound(_)) => {
                     // Endpoints don't exist, delete the slice
-                    let slice_key = build_key("endpointslices", Some(namespace), &slice.metadata.name);
+                    let slice_key =
+                        build_key("endpointslices", Some(namespace), &slice.metadata.name);
                     if let Err(e) = self.storage.delete(&slice_key).await {
                         error!(
                             "Failed to delete orphaned endpointslice {}/{}: {}",
-                            namespace,
-                            slice.metadata.name,
-                            e
+                            namespace, slice.metadata.name, e
                         );
                     } else {
                         info!(
                             "Deleted orphaned endpointslice {}/{}",
-                            namespace,
-                            slice.metadata.name
+                            namespace, slice.metadata.name
                         );
                     }
                 }
                 Err(e) => {
-                    error!("Error checking endpoints {}/{}: {}", namespace, service_name, e);
+                    error!(
+                        "Error checking endpoints {}/{}: {}",
+                        namespace, service_name, e
+                    );
                 }
             }
         }

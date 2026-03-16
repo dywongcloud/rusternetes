@@ -81,7 +81,9 @@ pub fn process_deletion(
     let metadata = resource
         .get_mut("metadata")
         .and_then(|v| v.as_object_mut())
-        .ok_or(DeletionError::InvalidResource("Missing metadata".to_string()))?;
+        .ok_or(DeletionError::InvalidResource(
+            "Missing metadata".to_string(),
+        ))?;
 
     // Check preconditions
     if let Some(preconditions) = &options.preconditions {

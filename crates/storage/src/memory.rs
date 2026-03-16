@@ -64,13 +64,21 @@ impl Storage for MemoryStorage {
                 };
 
                 if should_generate_uid {
-                    metadata_obj.insert("uid".to_string(), serde_json::Value::String(uuid::Uuid::new_v4().to_string()));
+                    metadata_obj.insert(
+                        "uid".to_string(),
+                        serde_json::Value::String(uuid::Uuid::new_v4().to_string()),
+                    );
                 }
 
                 // Set creation timestamp if not set
-                if metadata_obj.get("creationTimestamp").is_none() || metadata_obj.get("creationTimestamp") == Some(&serde_json::Value::Null) {
+                if metadata_obj.get("creationTimestamp").is_none()
+                    || metadata_obj.get("creationTimestamp") == Some(&serde_json::Value::Null)
+                {
                     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-                    metadata_obj.insert("creationTimestamp".to_string(), serde_json::Value::String(now));
+                    metadata_obj.insert(
+                        "creationTimestamp".to_string(),
+                        serde_json::Value::String(now),
+                    );
                 }
             }
         }
@@ -86,7 +94,9 @@ impl Storage for MemoryStorage {
         drop(data); // Release lock before sending event
 
         // Emit watch event
-        let _ = self.watch_tx.send(WatchEvent::Added(key.to_string(), serialized.clone()));
+        let _ = self
+            .watch_tx
+            .send(WatchEvent::Added(key.to_string(), serialized.clone()));
 
         Ok(serde_json::from_str(&serialized)?)
     }
@@ -118,7 +128,9 @@ impl Storage for MemoryStorage {
         drop(data); // Release lock before sending event
 
         // Emit watch event
-        let _ = self.watch_tx.send(WatchEvent::Modified(key.to_string(), serialized.clone()));
+        let _ = self
+            .watch_tx
+            .send(WatchEvent::Modified(key.to_string(), serialized.clone()));
 
         Ok(serde_json::from_str(&serialized)?)
     }
@@ -135,19 +147,24 @@ impl Storage for MemoryStorage {
         drop(data); // Release lock before sending event
 
         // Emit watch event
-        let _ = self.watch_tx.send(WatchEvent::Modified(key.to_string(), serialized));
+        let _ = self
+            .watch_tx
+            .send(WatchEvent::Modified(key.to_string(), serialized));
 
         Ok(())
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
         let mut data = self.data.write().unwrap();
-        let previous_value = data.remove(key)
+        let previous_value = data
+            .remove(key)
             .ok_or_else(|| Error::NotFound(key.to_string()))?;
         drop(data); // Release lock before sending event
 
         // Emit watch event with previous value
-        let _ = self.watch_tx.send(WatchEvent::Deleted(key.to_string(), previous_value));
+        let _ = self
+            .watch_tx
+            .send(WatchEvent::Deleted(key.to_string(), previous_value));
 
         Ok(())
     }
@@ -271,9 +288,36 @@ mod tests {
     async fn test_list() {
         let storage = MemoryStorage::new();
 
-        storage.create("/test/ns1/pod1", &TestResource { name: "pod1".to_string(), value: 1 }).await.unwrap();
-        storage.create("/test/ns1/pod2", &TestResource { name: "pod2".to_string(), value: 2 }).await.unwrap();
-        storage.create("/test/ns2/pod3", &TestResource { name: "pod3".to_string(), value: 3 }).await.unwrap();
+        storage
+            .create(
+                "/test/ns1/pod1",
+                &TestResource {
+                    name: "pod1".to_string(),
+                    value: 1,
+                },
+            )
+            .await
+            .unwrap();
+        storage
+            .create(
+                "/test/ns1/pod2",
+                &TestResource {
+                    name: "pod2".to_string(),
+                    value: 2,
+                },
+            )
+            .await
+            .unwrap();
+        storage
+            .create(
+                "/test/ns2/pod3",
+                &TestResource {
+                    name: "pod3".to_string(),
+                    value: 3,
+                },
+            )
+            .await
+            .unwrap();
 
         let ns1_pods: Vec<TestResource> = storage.list("/test/ns1/").await.unwrap();
         assert_eq!(ns1_pods.len(), 2);
@@ -286,8 +330,26 @@ mod tests {
     async fn test_clear() {
         let storage = MemoryStorage::new();
 
-        storage.create("/test/key1", &TestResource { name: "test1".to_string(), value: 1 }).await.unwrap();
-        storage.create("/test/key2", &TestResource { name: "test2".to_string(), value: 2 }).await.unwrap();
+        storage
+            .create(
+                "/test/key1",
+                &TestResource {
+                    name: "test1".to_string(),
+                    value: 1,
+                },
+            )
+            .await
+            .unwrap();
+        storage
+            .create(
+                "/test/key2",
+                &TestResource {
+                    name: "test2".to_string(),
+                    value: 2,
+                },
+            )
+            .await
+            .unwrap();
 
         assert_eq!(storage.len(), 2);
 

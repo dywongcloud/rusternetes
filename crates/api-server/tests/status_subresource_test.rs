@@ -251,7 +251,10 @@ async fn test_concurrent_spec_and_status_updates() {
 
     // Verify both updates are present
     assert_eq!(final_state["spec"]["replicas"], 5);
-    assert_eq!(final_state["spec"]["template"]["spec"]["containers"][0]["image"], "nginx:1.26-alpine");
+    assert_eq!(
+        final_state["spec"]["template"]["spec"]["containers"][0]["image"],
+        "nginx:1.26-alpine"
+    );
     assert_eq!(final_state["status"]["readyReplicas"], 4);
     assert_eq!(final_state["status"]["availableReplicas"], 4);
 }
@@ -305,7 +308,11 @@ async fn test_resource_version_increments() {
         .parse::<i64>()
         .unwrap();
 
-    assert_eq!(new_version, original_version + 1, "ResourceVersion should be incremented");
+    assert_eq!(
+        new_version,
+        original_version + 1,
+        "ResourceVersion should be incremented"
+    );
 }
 
 #[tokio::test]
@@ -316,7 +323,10 @@ async fn test_status_update_missing_resource() {
     let key = build_key("pods", Some("default"), "non-existent");
     let result: Result<Value, _> = storage.get(&key).await;
 
-    assert!(result.is_err(), "Should return error for non-existent resource");
+    assert!(
+        result.is_err(),
+        "Should return error for non-existent resource"
+    );
 }
 
 #[tokio::test]
@@ -366,6 +376,9 @@ async fn test_metadata_preservation_on_status_update() {
     let final_resource: Value = storage.get(&key).await.unwrap();
     assert_eq!(final_resource["metadata"]["labels"]["app"], "test");
     assert_eq!(final_resource["metadata"]["labels"]["version"], "v1");
-    assert_eq!(final_resource["metadata"]["annotations"]["description"], "test pod");
+    assert_eq!(
+        final_resource["metadata"]["annotations"]["description"],
+        "test pod"
+    );
     assert_eq!(final_resource["status"]["phase"], "Running");
 }

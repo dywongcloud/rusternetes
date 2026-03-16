@@ -34,9 +34,9 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         Self {
             storage,
             scan_interval: Duration::from_secs(30), // Run every 30 seconds
-            max_concurrent_deletes: 50, // Limit concurrent operations
-            delete_batch_size: 100, // Process up to 100 deletions per batch
-            max_retries: 3, // Retry failed deletions up to 3 times
+            max_concurrent_deletes: 50,             // Limit concurrent operations
+            delete_batch_size: 100,                 // Process up to 100 deletions per batch
+            max_retries: 3,                         // Retry failed deletions up to 3 times
         }
     }
 
@@ -79,7 +79,10 @@ impl<S: Storage + 'static> GarbageCollector<S> {
 
         // Detect cycles in dependency graph (non-blocking, just warn)
         if let Err(cycle_info) = self.detect_cycles(&dependent_map, &all_resources) {
-            warn!("Detected dependency cycle in resource graph: {}", cycle_info);
+            warn!(
+                "Detected dependency cycle in resource graph: {}",
+                cycle_info
+            );
         }
 
         // Find orphaned resources (resources whose owners no longer exist)
@@ -119,8 +122,14 @@ impl<S: Storage + 'static> GarbageCollector<S> {
             .collect();
 
         for namespace in deleted_namespaces {
-            if let Err(e) = self.cascade_delete_namespace(namespace, &all_resources).await {
-                error!("Failed to cascade delete namespace {}: {}", namespace.metadata.name, e);
+            if let Err(e) = self
+                .cascade_delete_namespace(namespace, &all_resources)
+                .await
+            {
+                error!(
+                    "Failed to cascade delete namespace {}: {}",
+                    namespace.metadata.name, e
+                );
             }
         }
 
@@ -148,7 +157,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         // In a real implementation, this would be more sophisticated
         // For now, we'll scan known resource types
         let resource_types = vec![
-            ("namespaces", false),        // cluster-scoped
+            ("namespaces", false), // cluster-scoped
             ("pods", true),
             ("services", true),
             ("deployments", true),
@@ -161,8 +170,8 @@ impl<S: Storage + 'static> GarbageCollector<S> {
             ("secrets", true),
             ("serviceaccounts", true),
             ("persistentvolumeclaims", true),
-            ("persistentvolumes", false), // cluster-scoped
-            ("clusterroles", false),      // cluster-scoped
+            ("persistentvolumes", false),   // cluster-scoped
+            ("clusterroles", false),        // cluster-scoped
             ("clusterrolebindings", false), // cluster-scoped
         ];
 
@@ -171,13 +180,19 @@ impl<S: Storage + 'static> GarbageCollector<S> {
                 // For namespaced resources, we need to list across all namespaces
                 // This is simplified - in reality we'd list all namespaces first
                 let prefix = format!("/registry/{}/", resource_type);
-                if let Ok(items) = self.list_resources_with_metadata(&prefix, resource_type).await {
+                if let Ok(items) = self
+                    .list_resources_with_metadata(&prefix, resource_type)
+                    .await
+                {
                     resources.extend(items);
                 }
             } else {
                 // For cluster-scoped resources
                 let prefix = format!("/registry/{}/", resource_type);
-                if let Ok(items) = self.list_resources_with_metadata(&prefix, resource_type).await {
+                if let Ok(items) = self
+                    .list_resources_with_metadata(&prefix, resource_type)
+                    .await
+                {
                     resources.extend(items);
                 }
             }
@@ -217,11 +232,9 @@ impl<S: Storage + 'static> GarbageCollector<S> {
 
     /// Extract metadata from a resource
     fn extract_metadata(&self, value: &Value) -> rusternetes_common::Result<ObjectMeta> {
-        let metadata = value
-            .get("metadata")
-            .ok_or_else(|| rusternetes_common::Error::InvalidResource(
-                "Missing metadata".to_string()
-            ))?;
+        let metadata = value.get("metadata").ok_or_else(|| {
+            rusternetes_common::Error::InvalidResource("Missing metadata".to_string())
+        })?;
 
         serde_json::from_value(metadata.clone())
             .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))
@@ -271,9 +284,9 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         for resource in resources {
             if let Some(owner_refs) = &resource.metadata.owner_references {
                 // Check if any owner references point to non-existent owners
-                let has_missing_owner = owner_refs.iter().any(|owner_ref| {
-                    !existing_uids.contains(owner_ref.uid.as_str())
-                });
+                let has_missing_owner = owner_refs
+                    .iter()
+                    .any(|owner_ref| !existing_uids.contains(owner_ref.uid.as_str()));
 
                 if has_missing_owner {
                     orphans.push(resource.clone());
@@ -397,10 +410,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
 
                             // Delete the dependent
                             if let Err(e) = self.storage.delete(&dependent.key).await {
-                                error!(
-                                    "Failed to delete dependent {}: {}",
-                                    dependent.key, e
-                                );
+                                error!("Failed to delete dependent {}: {}", dependent.key, e);
                             }
                         }
                     }
@@ -610,10 +620,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
     }
 
     /// Delete a batch of orphans with retry logic
-    async fn delete_batch_with_retry(
-        &self,
-        orphans: &[ResourceInfo],
-    ) -> Vec<Result<(), String>> {
+    async fn delete_batch_with_retry(&self, orphans: &[ResourceInfo]) -> Vec<Result<(), String>> {
         use futures::future::join_all;
 
         // Limit concurrency
@@ -652,10 +659,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
                                 let backoff_ms = 100 * (1 << attempt);
                                 debug!(
                                     "Failed to delete {} (attempt {}), retrying in {}ms: {}",
-                                    orphan_clone.key,
-                                    attempt,
-                                    backoff_ms,
-                                    e
+                                    orphan_clone.key, attempt, backoff_ms, e
                                 );
                                 sleep(Duration::from_millis(backoff_ms)).await;
                             }
@@ -750,7 +754,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_deletion_propagation_policy() {
-        let gc = GarbageCollector::new(Arc::new(rusternetes_storage::etcd::EtcdStorage::new(vec!["http://localhost:2379".to_string()]).await.unwrap()));
+        let gc = GarbageCollector::new(Arc::new(
+            rusternetes_storage::etcd::EtcdStorage::new(vec!["http://localhost:2379".to_string()])
+                .await
+                .unwrap(),
+        ));
 
         // Test foreground deletion
         let mut metadata = ObjectMeta::new("test");

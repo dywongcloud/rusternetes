@@ -23,18 +23,23 @@ mod tests {
         }
 
         async fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
-            let response = self.responses.get(path)
+            let response = self
+                .responses
+                .get(path)
                 .ok_or_else(|| anyhow::anyhow!("No mock response for path: {}", path))?;
 
             Ok(serde_json::from_value(response.clone())?)
         }
 
         async fn get_list<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<Vec<T>> {
-            let response = self.responses.get(path)
+            let response = self
+                .responses
+                .get(path)
                 .ok_or_else(|| anyhow::anyhow!("No mock response for path: {}", path))?;
 
             // Extract items from the list response
-            let items = response.get("items")
+            let items = response
+                .get("items")
                 .ok_or_else(|| anyhow::anyhow!("Response missing 'items' field"))?;
 
             Ok(serde_json::from_value(items.clone())?)
@@ -72,7 +77,10 @@ mod tests {
         client.set_response("/api/v1/namespaces/default/pods/test-pod", pod_response);
 
         // Test the get operation
-        let pod: Pod = client.get("/api/v1/namespaces/default/pods/test-pod").await.unwrap();
+        let pod: Pod = client
+            .get("/api/v1/namespaces/default/pods/test-pod")
+            .await
+            .unwrap();
 
         assert_eq!(pod.metadata.name, "test-pod");
         assert_eq!(pod.metadata.namespace, Some("default".to_string()));
@@ -126,7 +134,10 @@ mod tests {
 
         client.set_response("/api/v1/namespaces/default/pods", pod_list_response);
 
-        let pods: Vec<Pod> = client.get_list("/api/v1/namespaces/default/pods").await.unwrap();
+        let pods: Vec<Pod> = client
+            .get_list("/api/v1/namespaces/default/pods")
+            .await
+            .unwrap();
 
         assert_eq!(pods.len(), 2);
         assert_eq!(pods[0].metadata.name, "pod-1");
@@ -139,7 +150,9 @@ mod tests {
         fn encode_selector(s: &str) -> String {
             s.chars()
                 .map(|c| match c {
-                    'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' | '=' | ',' | '!' => c.to_string(),
+                    'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' | '=' | ',' | '!' => {
+                        c.to_string()
+                    }
                     ' ' => "+".to_string(),
                     _ => format!("%{:02X}", c as u8),
                 })
@@ -147,7 +160,10 @@ mod tests {
         }
 
         assert_eq!(encode_selector("app=nginx"), "app=nginx");
-        assert_eq!(encode_selector("app=nginx,tier=frontend"), "app=nginx,tier=frontend");
+        assert_eq!(
+            encode_selector("app=nginx,tier=frontend"),
+            "app=nginx,tier=frontend"
+        );
         assert_eq!(encode_selector("app!=backend"), "app!=backend");
     }
 
@@ -163,8 +179,14 @@ mod tests {
             }
         }
 
-        assert_eq!(parse_pod_path("my-pod:/var/log"), Some(("my-pod", "/var/log")));
-        assert_eq!(parse_pod_path("nginx-pod:/etc/nginx/nginx.conf"), Some(("nginx-pod", "/etc/nginx/nginx.conf")));
+        assert_eq!(
+            parse_pod_path("my-pod:/var/log"),
+            Some(("my-pod", "/var/log"))
+        );
+        assert_eq!(
+            parse_pod_path("nginx-pod:/etc/nginx/nginx.conf"),
+            Some(("nginx-pod", "/etc/nginx/nginx.conf"))
+        );
         assert_eq!(parse_pod_path("local-file.txt"), None);
     }
 
@@ -172,11 +194,11 @@ mod tests {
     fn test_duration_to_seconds_conversion() {
         fn parse_duration(s: &str) -> Result<i64> {
             let (num_str, unit) = if s.ends_with("ms") {
-                (&s[..s.len()-2], "ms")
+                (&s[..s.len() - 2], "ms")
             } else {
                 let last = s.chars().last().unwrap();
                 if last.is_alphabetic() {
-                    (&s[..s.len()-1], &s[s.len()-1..])
+                    (&s[..s.len() - 1], &s[s.len() - 1..])
                 } else {
                     (s, "s")
                 }

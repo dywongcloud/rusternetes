@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::{ClusterRole, ClusterRoleBinding, Role, RoleBinding},
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -154,12 +153,9 @@ pub async fn delete_role(
     let role: Role = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
-        &state.storage,
-        &key,
-        &role,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &role)
+            .await?;
 
     if deleted_immediately {
         Ok(StatusCode::NO_CONTENT)
@@ -239,7 +235,10 @@ pub async fn create_rolebinding(
     Query(params): Query<HashMap<String, String>>,
     Json(mut rolebinding): Json<RoleBinding>,
 ) -> Result<(StatusCode, Json<RoleBinding>)> {
-    info!("Creating rolebinding: {}/{}", namespace, rolebinding.metadata.name);
+    info!(
+        "Creating rolebinding: {}/{}",
+        namespace, rolebinding.metadata.name
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "rolebindings")
@@ -414,7 +413,11 @@ pub async fn list_rolebindings(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut rolebindings, &params)?;
 
-    let list = List::new("RoleBindingList", "rbac.authorization.k8s.io/v1", rolebindings);
+    let list = List::new(
+        "RoleBindingList",
+        "rbac.authorization.k8s.io/v1",
+        rolebindings,
+    );
     Ok(Json(list))
 }
 
@@ -443,7 +446,11 @@ pub async fn list_all_rolebindings(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut rolebindings, &params)?;
 
-    let list = List::new("RoleBindingList", "rbac.authorization.k8s.io/v1", rolebindings);
+    let list = List::new(
+        "RoleBindingList",
+        "rbac.authorization.k8s.io/v1",
+        rolebindings,
+    );
     Ok(Json(list))
 }
 
@@ -482,11 +489,18 @@ pub async fn create_clusterrole(
 
     match state.storage.create(&key, &clusterrole).await {
         Ok(created) => {
-            info!("ClusterRole created successfully: {}", clusterrole.metadata.name);
+            info!(
+                "ClusterRole created successfully: {}",
+                clusterrole.metadata.name
+            );
             Ok((StatusCode::CREATED, Json(created)))
         }
         Err(e) => {
-            tracing::warn!("Failed to create ClusterRole {}: {}", clusterrole.metadata.name, e);
+            tracing::warn!(
+                "Failed to create ClusterRole {}: {}",
+                clusterrole.metadata.name,
+                e
+            );
             Err(e)
         }
     }
@@ -628,7 +642,11 @@ pub async fn list_clusterroles(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut clusterroles, &params)?;
 
-    let list = List::new("ClusterRoleList", "rbac.authorization.k8s.io/v1", clusterroles);
+    let list = List::new(
+        "ClusterRoleList",
+        "rbac.authorization.k8s.io/v1",
+        clusterroles,
+    );
     Ok(Json(list))
 }
 
@@ -639,7 +657,10 @@ pub async fn create_clusterrolebinding(
     Query(params): Query<HashMap<String, String>>,
     Json(mut clusterrolebinding): Json<ClusterRoleBinding>,
 ) -> Result<(StatusCode, Json<ClusterRoleBinding>)> {
-    info!("Creating clusterrolebinding: {}", clusterrolebinding.metadata.name);
+    info!(
+        "Creating clusterrolebinding: {}",
+        clusterrolebinding.metadata.name
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "clusterrolebindings")
@@ -663,15 +684,26 @@ pub async fn create_clusterrolebinding(
         return Ok((StatusCode::CREATED, Json(clusterrolebinding)));
     }
 
-    let key = build_key("clusterrolebindings", None, &clusterrolebinding.metadata.name);
+    let key = build_key(
+        "clusterrolebindings",
+        None,
+        &clusterrolebinding.metadata.name,
+    );
 
     match state.storage.create(&key, &clusterrolebinding).await {
         Ok(created) => {
-            info!("ClusterRoleBinding created successfully: {}", clusterrolebinding.metadata.name);
+            info!(
+                "ClusterRoleBinding created successfully: {}",
+                clusterrolebinding.metadata.name
+            );
             Ok((StatusCode::CREATED, Json(created)))
         }
         Err(e) => {
-            tracing::warn!("Failed to create ClusterRoleBinding {}: {}", clusterrolebinding.metadata.name, e);
+            tracing::warn!(
+                "Failed to create ClusterRoleBinding {}: {}",
+                clusterrolebinding.metadata.name,
+                e
+            );
             Err(e)
         }
     }
@@ -813,7 +845,11 @@ pub async fn list_clusterrolebindings(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut clusterrolebindings, &params)?;
 
-    let list = List::new("ClusterRoleBindingList", "rbac.authorization.k8s.io/v1", clusterrolebindings);
+    let list = List::new(
+        "ClusterRoleBindingList",
+        "rbac.authorization.k8s.io/v1",
+        clusterrolebindings,
+    );
     Ok(Json(list))
 }
 
@@ -824,7 +860,10 @@ pub async fn deletecollection_roles(
     Path(namespace): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection roles in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection roles in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "roles")
@@ -870,7 +909,10 @@ pub async fn deletecollection_roles(
         }
     }
 
-    info!("DeleteCollection completed: {} roles deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} roles deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }
 
@@ -880,7 +922,10 @@ pub async fn deletecollection_rolebindings(
     Path(namespace): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection rolebindings in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection rolebindings in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "rolebindings")
@@ -926,7 +971,10 @@ pub async fn deletecollection_rolebindings(
         }
     }
 
-    info!("DeleteCollection completed: {} rolebindings deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} rolebindings deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }
 
@@ -980,7 +1028,10 @@ pub async fn deletecollection_clusterroles(
         }
     }
 
-    info!("DeleteCollection completed: {} clusterroles deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} clusterroles deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }
 
@@ -989,7 +1040,10 @@ pub async fn deletecollection_clusterrolebindings(
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection clusterrolebindings with params: {:?}", params);
+    info!(
+        "DeleteCollection clusterrolebindings with params: {:?}",
+        params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "clusterrolebindings")
@@ -1019,7 +1073,11 @@ pub async fn deletecollection_clusterrolebindings(
     // Delete each matching clusterrolebinding
     let mut deleted_count = 0;
     for clusterrolebinding in clusterrolebindings {
-        let key = build_key("clusterrolebindings", None, &clusterrolebinding.metadata.name);
+        let key = build_key(
+            "clusterrolebindings",
+            None,
+            &clusterrolebinding.metadata.name,
+        );
 
         // Handle deletion with finalizers
         let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -1034,12 +1092,30 @@ pub async fn deletecollection_clusterrolebindings(
         }
     }
 
-    info!("DeleteCollection completed: {} clusterrolebindings deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} clusterrolebindings deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }
 
 // Use macros to create PATCH handlers for RBAC resources
 crate::patch_handler_namespaced!(patch_role, Role, "roles", "rbac.authorization.k8s.io");
-crate::patch_handler_namespaced!(patch_rolebinding, RoleBinding, "rolebindings", "rbac.authorization.k8s.io");
-crate::patch_handler_cluster!(patch_clusterrole, ClusterRole, "clusterroles", "rbac.authorization.k8s.io");
-crate::patch_handler_cluster!(patch_clusterrolebinding, ClusterRoleBinding, "clusterrolebindings", "rbac.authorization.k8s.io");
+crate::patch_handler_namespaced!(
+    patch_rolebinding,
+    RoleBinding,
+    "rolebindings",
+    "rbac.authorization.k8s.io"
+);
+crate::patch_handler_cluster!(
+    patch_clusterrole,
+    ClusterRole,
+    "clusterroles",
+    "rbac.authorization.k8s.io"
+);
+crate::patch_handler_cluster!(
+    patch_clusterrolebinding,
+    ClusterRoleBinding,
+    "clusterrolebindings",
+    "rbac.authorization.k8s.io"
+);

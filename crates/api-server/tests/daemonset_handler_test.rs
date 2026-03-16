@@ -2,10 +2,12 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for daemonsets
 
-use rusternetes_common::resources::workloads::{DaemonSet, DaemonSetSpec, DaemonSetStatus, DaemonSetUpdateStrategy};
+use rusternetes_common::resources::pod::{Container, PodSpec};
+use rusternetes_common::resources::workloads::{
+    DaemonSet, DaemonSetSpec, DaemonSetStatus, DaemonSetUpdateStrategy,
+};
 use rusternetes_common::resources::PodTemplateSpec;
-use rusternetes_common::resources::pod::{PodSpec, Container};
-use rusternetes_common::types::{ObjectMeta, TypeMeta, LabelSelector};
+use rusternetes_common::types::{LabelSelector, ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -68,6 +70,7 @@ fn create_test_daemonset(name: &str, namespace: &str) -> DaemonSet {
                     host_pid: None,
                     host_ipc: None,
                     hostname: None,
+                    subdomain: None,
                     priority_class_name: None,
                     priority: None,
                     scheduler_name: None,
@@ -121,11 +124,22 @@ async fn test_daemonset_update() {
         rolling_update: None,
     });
     let updated: DaemonSet = storage.update(&key, &daemonset).await.unwrap();
-    assert_eq!(updated.spec.update_strategy.as_ref().unwrap().strategy_type, Some("OnDelete".to_string()));
+    assert_eq!(
+        updated.spec.update_strategy.as_ref().unwrap().strategy_type,
+        Some("OnDelete".to_string())
+    );
 
     // Verify update
     let retrieved: DaemonSet = storage.get(&key).await.unwrap();
-    assert_eq!(retrieved.spec.update_strategy.as_ref().unwrap().strategy_type, Some("OnDelete".to_string()));
+    assert_eq!(
+        retrieved
+            .spec
+            .update_strategy
+            .as_ref()
+            .unwrap()
+            .strategy_type,
+        Some("OnDelete".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -171,7 +185,10 @@ async fn test_daemonset_list() {
     let daemonsets: Vec<DaemonSet> = storage.list(&prefix).await.unwrap();
 
     assert!(daemonsets.len() >= 3);
-    let names: Vec<String> = daemonsets.iter().map(|ds| ds.metadata.name.clone()).collect();
+    let names: Vec<String> = daemonsets
+        .iter()
+        .map(|ds| ds.metadata.name.clone())
+        .collect();
     assert!(names.contains(&"ds-1".to_string()));
     assert!(names.contains(&"ds-2".to_string()));
     assert!(names.contains(&"ds-3".to_string()));
@@ -245,7 +262,10 @@ async fn test_daemonset_rolling_update_strategy() {
 
     // Create with RollingUpdate strategy
     let created: DaemonSet = storage.create(&key, &daemonset).await.unwrap();
-    assert_eq!(created.spec.update_strategy.as_ref().unwrap().strategy_type, Some("RollingUpdate".to_string()));
+    assert_eq!(
+        created.spec.update_strategy.as_ref().unwrap().strategy_type,
+        Some("RollingUpdate".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -265,7 +285,10 @@ async fn test_daemonset_on_delete_strategy() {
 
     // Create with OnDelete strategy
     let created: DaemonSet = storage.create(&key, &daemonset).await.unwrap();
-    assert_eq!(created.spec.update_strategy.as_ref().unwrap().strategy_type, Some("OnDelete".to_string()));
+    assert_eq!(
+        created.spec.update_strategy.as_ref().unwrap().strategy_type,
+        Some("OnDelete".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -287,7 +310,10 @@ async fn test_daemonset_with_node_selector() {
     let created: DaemonSet = storage.create(&key, &daemonset).await.unwrap();
     let spec = &created.spec.template.spec;
     assert!(spec.node_selector.is_some());
-    assert_eq!(spec.node_selector.as_ref().unwrap().get("disk"), Some(&"ssd".to_string()));
+    assert_eq!(
+        spec.node_selector.as_ref().unwrap().get("disk"),
+        Some(&"ssd".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -386,7 +412,10 @@ async fn test_daemonset_label_selector() {
     assert!(created.metadata.labels.is_some());
     let created_labels = created.metadata.labels.unwrap();
     assert_eq!(created_labels.get("app"), Some(&"monitoring".to_string()));
-    assert_eq!(created_labels.get("tier"), Some(&"infrastructure".to_string()));
+    assert_eq!(
+        created_labels.get("tier"),
+        Some(&"infrastructure".to_string())
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();

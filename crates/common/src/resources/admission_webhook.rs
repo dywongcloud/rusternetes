@@ -283,10 +283,7 @@ mod tests {
     fn test_validating_webhook_config_creation() {
         let config = ValidatingWebhookConfiguration::new("test-webhook");
         assert_eq!(config.metadata.name, "test-webhook");
-        assert_eq!(
-            config.api_version,
-            "admissionregistration.k8s.io/v1"
-        );
+        assert_eq!(config.api_version, "admissionregistration.k8s.io/v1");
         assert_eq!(config.kind, "ValidatingWebhookConfiguration");
     }
 
@@ -294,10 +291,7 @@ mod tests {
     fn test_mutating_webhook_config_creation() {
         let config = MutatingWebhookConfiguration::new("test-webhook");
         assert_eq!(config.metadata.name, "test-webhook");
-        assert_eq!(
-            config.api_version,
-            "admissionregistration.k8s.io/v1"
-        );
+        assert_eq!(config.api_version, "admissionregistration.k8s.io/v1");
         assert_eq!(config.kind, "MutatingWebhookConfiguration");
     }
 

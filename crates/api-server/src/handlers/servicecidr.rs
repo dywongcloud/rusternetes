@@ -8,8 +8,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::ServiceCIDR,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -190,7 +189,12 @@ pub async fn list_servicecidrs(
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_cluster!(patch_servicecidr, ServiceCIDR, "servicecidrs", "networking.k8s.io");
+crate::patch_handler_cluster!(
+    patch_servicecidr,
+    ServiceCIDR,
+    "servicecidrs",
+    "networking.k8s.io"
+);
 
 pub async fn deletecollection_servicecidrs(
     State(state): State<Arc<ApiServerState>>,
@@ -242,6 +246,9 @@ pub async fn deletecollection_servicecidrs(
         }
     }
 
-    info!("DeleteCollection completed: {} servicecidrs deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} servicecidrs deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

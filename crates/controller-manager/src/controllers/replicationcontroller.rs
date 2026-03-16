@@ -1,5 +1,5 @@
 use rusternetes_common::{
-    resources::{ReplicationController, Pod, PodStatus},
+    resources::{Pod, PodStatus, ReplicationController},
     types::{ObjectMeta, Phase},
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
@@ -55,15 +55,8 @@ impl<S: Storage> ReplicationControllerController<S> {
         Ok(())
     }
 
-    async fn reconcile_rc(
-        &self,
-        rc: &ReplicationController,
-    ) -> rusternetes_common::Result<()> {
-        let namespace = rc
-            .metadata
-            .namespace
-            .as_deref()
-            .unwrap_or("default");
+    async fn reconcile_rc(&self, rc: &ReplicationController) -> rusternetes_common::Result<()> {
+        let namespace = rc.metadata.namespace.as_deref().unwrap_or("default");
 
         debug!(
             "Reconciling replicationcontroller: {}/{}",
@@ -74,7 +67,11 @@ impl<S: Storage> ReplicationControllerController<S> {
         let pods_prefix = build_prefix("pods", Some(namespace));
         info!("Querying pods with prefix: {}", pods_prefix);
         let all_pods: Vec<Pod> = self.storage.list(&pods_prefix).await?;
-        info!("Found {} total pods in namespace {}", all_pods.len(), namespace);
+        info!(
+            "Found {} total pods in namespace {}",
+            all_pods.len(),
+            namespace
+        );
 
         // Filter pods that match this replicationcontroller's selector
         let rc_pods: Vec<Pod> = all_pods
@@ -94,7 +91,11 @@ impl<S: Storage> ReplicationControllerController<S> {
 
         info!(
             "ReplicationController {}/{}: current={}, desired={} (matched {} pods)",
-            namespace, rc.metadata.name, current_replicas, desired_replicas, rc_pods.len()
+            namespace,
+            rc.metadata.name,
+            current_replicas,
+            desired_replicas,
+            rc_pods.len()
         );
 
         if current_replicas < desired_replicas {
@@ -124,7 +125,8 @@ impl<S: Storage> ReplicationControllerController<S> {
         let final_ready_replicas = rc_pods_after.len() as i32; // All matched pods
 
         // Update status with accurate counts
-        self.update_status(rc, final_current_replicas, final_ready_replicas).await?;
+        self.update_status(rc, final_current_replicas, final_ready_replicas)
+            .await?;
 
         Ok(())
     }
@@ -149,17 +151,18 @@ impl<S: Storage> ReplicationControllerController<S> {
         rc: &ReplicationController,
         _index: i32,
     ) -> rusternetes_common::Result<()> {
-        let namespace = rc
-            .metadata
-            .namespace
-            .as_deref()
-            .unwrap_or("default");
+        let namespace = rc.metadata.namespace.as_deref().unwrap_or("default");
 
         let pod_name = format!("{}-{}", rc.metadata.name, uuid::Uuid::new_v4());
 
         let mut metadata = ObjectMeta::new(&pod_name);
         metadata.namespace = Some(namespace.to_string());
-        metadata.labels = rc.spec.template.metadata.as_ref().and_then(|m| m.labels.clone());
+        metadata.labels = rc
+            .spec
+            .template
+            .metadata
+            .as_ref()
+            .and_then(|m| m.labels.clone());
 
         let pod = Pod {
             type_meta: rusternetes_common::types::TypeMeta {
@@ -176,7 +179,7 @@ impl<S: Storage> ReplicationControllerController<S> {
                 pod_ip: None,
                 container_statuses: None,
                 init_container_statuses: None,
-            ephemeral_container_statuses: None,
+                ephemeral_container_statuses: None,
             }),
         };
 

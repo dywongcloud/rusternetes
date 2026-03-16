@@ -23,7 +23,10 @@ fn get_api_server_ip() -> Result<String> {
         if !iface.is_loopback() {
             if let get_if_addrs::IfAddr::V4(addr) = iface.addr {
                 let ip = addr.ip.to_string();
-                info!("Discovered API server IP: {} (interface: {})", ip, iface.name);
+                info!(
+                    "Discovered API server IP: {} (interface: {})",
+                    ip, iface.name
+                );
                 return Ok(ip);
             }
         }
@@ -41,10 +44,12 @@ pub async fn bootstrap_kubernetes_service(
     info!("Bootstrapping kubernetes Service and Endpoints");
 
     // Get the API server's IP address
-    let api_server_ip = get_api_server_ip()
-        .context("Failed to discover API server IP address")?;
+    let api_server_ip = get_api_server_ip().context("Failed to discover API server IP address")?;
 
-    info!("API server IP: {}, Port: {}", api_server_ip, api_server_port);
+    info!(
+        "API server IP: {}, Port: {}",
+        api_server_ip, api_server_port
+    );
 
     // Check if the kubernetes Endpoints already exist
     let endpoints_key = "/registry/endpoints/default/kubernetes";
@@ -59,9 +64,14 @@ pub async fn bootstrap_kubernetes_service(
                 if let Some(addresses) = &mut subset.addresses {
                     if let Some(addr) = addresses.first_mut() {
                         if addr.ip != api_server_ip {
-                            info!("Updating API server IP from {} to {}", addr.ip, api_server_ip);
+                            info!(
+                                "Updating API server IP from {} to {}",
+                                addr.ip, api_server_ip
+                            );
                             addr.ip = api_server_ip;
-                            storage.update(endpoints_key, &endpoints).await
+                            storage
+                                .update(endpoints_key, &endpoints)
+                                .await
                                 .context("Failed to update kubernetes Endpoints")?;
                         } else {
                             info!("API server IP already correct: {}", api_server_ip);
@@ -73,7 +83,7 @@ pub async fn bootstrap_kubernetes_service(
         Err(_) => {
             // Create new Endpoints if they don't exist
             info!("kubernetes Endpoints not found - creating new Endpoints");
-            use rusternetes_common::resources::{EndpointSubset, EndpointAddress, EndpointPort};
+            use rusternetes_common::resources::{EndpointAddress, EndpointPort, EndpointSubset};
             use rusternetes_common::types::{ObjectMeta, TypeMeta};
 
             let mut metadata = ObjectMeta::new("kubernetes");
@@ -102,7 +112,9 @@ pub async fn bootstrap_kubernetes_service(
                 }],
             };
 
-            storage.create(endpoints_key, &endpoints).await
+            storage
+                .create(endpoints_key, &endpoints)
+                .await
                 .context("Failed to create kubernetes Endpoints")?;
             info!("Created kubernetes Endpoints with IP: {}", api_server_ip);
         }

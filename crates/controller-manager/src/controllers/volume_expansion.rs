@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
-use rusternetes_common::resources::{
-    PersistentVolume, PersistentVolumeClaim, PersistentVolumeClaimStatus, StorageClass,
-};
 use rusternetes_common::resources::volume::{
     PersistentVolumeClaimPhase, PersistentVolumeClaimResizeStatus,
+};
+use rusternetes_common::resources::{
+    PersistentVolume, PersistentVolumeClaim, PersistentVolumeClaimStatus, StorageClass,
 };
 use rusternetes_storage::{build_key, Storage};
 use std::collections::HashMap;
@@ -67,17 +67,20 @@ impl<S: Storage> VolumeExpansionController<S> {
             return Ok(());
         }
 
-        info!(
-            "PVC {}/{} needs expansion",
-            namespace, pvc_name
-        );
+        info!("PVC {}/{} needs expansion", namespace, pvc_name);
 
         // Get the storage class
-        let storage_class_name = pvc.spec.storage_class_name.as_ref()
+        let storage_class_name = pvc
+            .spec
+            .storage_class_name
+            .as_ref()
             .context("PVC has no storage class name")?;
 
         let sc_key = build_key("storageclasses", None, storage_class_name);
-        let storage_class: StorageClass = self.storage.get(&sc_key).await
+        let storage_class: StorageClass = self
+            .storage
+            .get(&sc_key)
+            .await
             .with_context(|| format!("StorageClass {} not found", storage_class_name))?;
 
         // Check if volume expansion is allowed
@@ -100,13 +103,16 @@ impl<S: Storage> VolumeExpansionController<S> {
         let status = pvc.status.as_ref().context("PVC has no status")?;
 
         // Get requested storage from spec
-        let requested_storage = pvc.spec.resources.requests.as_ref()
+        let requested_storage = pvc
+            .spec
+            .resources
+            .requests
+            .as_ref()
             .and_then(|r| r.get("storage"))
             .context("PVC has no storage request")?;
 
         // Get current capacity from status
-        let current_capacity = status.capacity.as_ref()
-            .and_then(|c| c.get("storage"));
+        let current_capacity = status.capacity.as_ref().and_then(|c| c.get("storage"));
 
         match current_capacity {
             None => Ok(false), // No capacity yet, not ready for expansion
@@ -126,7 +132,11 @@ impl<S: Storage> VolumeExpansionController<S> {
         let pvc_name = &pvc.metadata.name;
         let namespace = pvc.metadata.namespace.as_deref().unwrap_or("default");
 
-        let requested_storage = pvc.spec.resources.requests.as_ref()
+        let requested_storage = pvc
+            .spec
+            .resources
+            .requests
+            .as_ref()
             .and_then(|r| r.get("storage"))
             .context("PVC has no storage request")?;
 
@@ -136,23 +146,33 @@ impl<S: Storage> VolumeExpansionController<S> {
         );
 
         // Get the bound PV
-        let pv_name = pvc.spec.volume_name.as_ref()
+        let pv_name = pvc
+            .spec
+            .volume_name
+            .as_ref()
             .context("PVC has no volume name")?;
 
         let pv_key = build_key("persistentvolumes", None, pv_name);
-        let mut pv: PersistentVolume = self.storage.get(&pv_key).await
+        let mut pv: PersistentVolume = self
+            .storage
+            .get(&pv_key)
+            .await
             .with_context(|| format!("PV {} not found", pv_name))?;
 
         // Update PVC status to indicate resize is in progress
         let mut updated_pvc = pvc.clone();
-        let mut status = updated_pvc.status.clone().unwrap_or_else(|| PersistentVolumeClaimStatus {
-            phase: PersistentVolumeClaimPhase::Bound,
-            access_modes: None,
-            capacity: None,
-            conditions: None,
-            allocated_resources: None,
-            resize_status: None,
-        });
+        let mut status =
+            updated_pvc
+                .status
+                .clone()
+                .unwrap_or_else(|| PersistentVolumeClaimStatus {
+                    phase: PersistentVolumeClaimPhase::Bound,
+                    access_modes: None,
+                    capacity: None,
+                    conditions: None,
+                    allocated_resources: None,
+                    resize_status: None,
+                });
 
         // Set allocated resources to the new requested size
         let mut allocated = HashMap::new();
@@ -165,14 +185,23 @@ impl<S: Storage> VolumeExpansionController<S> {
         let pvc_key = build_key("persistentvolumeclaims", Some(namespace), pvc_name);
         self.storage.update(&pvc_key, &updated_pvc).await?;
 
-        info!("Updated PVC {}/{} status to ControllerResizeInProgress", namespace, pvc_name);
+        info!(
+            "Updated PVC {}/{} status to ControllerResizeInProgress",
+            namespace, pvc_name
+        );
 
         // Perform the actual expansion on the PV
         // For hostpath volumes, this is immediate
         // For CSI volumes, this would call the CSI driver
-        match self.resize_pv(&mut pv, requested_storage, storage_class).await {
+        match self
+            .resize_pv(&mut pv, requested_storage, storage_class)
+            .await
+        {
             Ok(_) => {
-                info!("Successfully resized PV {} to {}", pv_name, requested_storage);
+                info!(
+                    "Successfully resized PV {} to {}",
+                    pv_name, requested_storage
+                );
 
                 // Update PVC status to indicate resize is complete
                 status.capacity = Some({
@@ -192,7 +221,8 @@ impl<S: Storage> VolumeExpansionController<S> {
                 error!("Failed to resize PV {}: {}", pv_name, e);
 
                 // Update PVC status to indicate resize failed
-                status.resize_status = Some(PersistentVolumeClaimResizeStatus::ControllerResizeFailed);
+                status.resize_status =
+                    Some(PersistentVolumeClaimResizeStatus::ControllerResizeFailed);
                 updated_pvc.status = Some(status);
 
                 self.storage.update(&pvc_key, &updated_pvc).await?;
@@ -214,7 +244,9 @@ impl<S: Storage> VolumeExpansionController<S> {
         info!("Resizing PV {} to {}", pv_name, new_size);
 
         // Update PV capacity
-        pv.spec.capacity.insert("storage".to_string(), new_size.to_string());
+        pv.spec
+            .capacity
+            .insert("storage".to_string(), new_size.to_string());
 
         // In a real implementation, this would:
         // 1. For CSI volumes: Call CSI ControllerExpandVolume
@@ -250,7 +282,10 @@ impl<S: Storage> VolumeExpansionController<S> {
                 num1 > num2
             }
             _ => {
-                warn!("Failed to parse storage values: size1='{}', size2='{}'", size1, size2);
+                warn!(
+                    "Failed to parse storage values: size1='{}', size2='{}'",
+                    size1, size2
+                );
                 false
             }
         }

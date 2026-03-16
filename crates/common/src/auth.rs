@@ -1,10 +1,10 @@
 use crate::error::{Error, Result};
-use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation, Algorithm};
-use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
-use std::collections::HashMap;
 use base64::Engine;
+use chrono::{Duration, Utc};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 
 /// JWT claims for service account tokens
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,10 +115,7 @@ impl BootstrapToken {
             token_id,
             token_secret,
             expiration: None,
-            usages: vec![
-                "signing".to_string(),
-                "authentication".to_string(),
-            ],
+            usages: vec!["signing".to_string(), "authentication".to_string()],
             description: None,
             auth_extra_groups: None,
         }
@@ -134,7 +131,7 @@ impl BootstrapToken {
         let parts: Vec<&str> = token.split('.').collect();
         if parts.len() != 2 {
             return Err(Error::Authentication(
-                "Invalid bootstrap token format".to_string()
+                "Invalid bootstrap token format".to_string(),
             ));
         }
 
@@ -144,7 +141,7 @@ impl BootstrapToken {
         // Validate format
         if token_id.len() != 6 || token_secret.len() != 16 {
             return Err(Error::Authentication(
-                "Bootstrap token must be in format [a-z0-9]{6}.[a-z0-9]{16}".to_string()
+                "Bootstrap token must be in format [a-z0-9]{6}.[a-z0-9]{16}".to_string(),
             ));
         }
 
@@ -281,13 +278,15 @@ impl BootstrapTokenManager {
         if let Some(stored_token) = tokens.get(&token_id) {
             // Check if token is expired
             if stored_token.is_expired() {
-                return Err(Error::Authentication("Bootstrap token has expired".to_string()));
+                return Err(Error::Authentication(
+                    "Bootstrap token has expired".to_string(),
+                ));
             }
 
             // Check if token has authentication usage
             if !stored_token.has_usage("authentication") {
                 return Err(Error::Authentication(
-                    "Bootstrap token does not have authentication usage".to_string()
+                    "Bootstrap token does not have authentication usage".to_string(),
                 ));
             }
 
@@ -295,10 +294,14 @@ impl BootstrapTokenManager {
             if stored_token.token_secret == token_secret {
                 Ok(stored_token.clone())
             } else {
-                Err(Error::Authentication("Invalid bootstrap token secret".to_string()))
+                Err(Error::Authentication(
+                    "Invalid bootstrap token secret".to_string(),
+                ))
             }
         } else {
-            Err(Error::Authentication("Bootstrap token not found".to_string()))
+            Err(Error::Authentication(
+                "Bootstrap token not found".to_string(),
+            ))
         }
     }
 
@@ -394,11 +397,14 @@ impl OIDCTokenValidator {
     pub async fn fetch_discovery_document(&self) -> Result<OIDCDiscoveryDocument> {
         let discovery_url = format!("{}/.well-known/openid-configuration", self.issuer_url);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&discovery_url)
             .send()
             .await
-            .map_err(|e| Error::Authentication(format!("Failed to fetch OIDC discovery document: {}", e)))?;
+            .map_err(|e| {
+                Error::Authentication(format!("Failed to fetch OIDC discovery document: {}", e))
+            })?;
 
         if !response.status().is_success() {
             return Err(Error::Authentication(format!(
@@ -407,10 +413,9 @@ impl OIDCTokenValidator {
             )));
         }
 
-        response
-            .json::<OIDCDiscoveryDocument>()
-            .await
-            .map_err(|e| Error::Authentication(format!("Failed to parse OIDC discovery document: {}", e)))
+        response.json::<OIDCDiscoveryDocument>().await.map_err(|e| {
+            Error::Authentication(format!("Failed to parse OIDC discovery document: {}", e))
+        })
     }
 
     /// Fetch the JWKS from the OIDC provider
@@ -418,7 +423,8 @@ impl OIDCTokenValidator {
         // First fetch the discovery document to get the JWKS URI
         let discovery = self.fetch_discovery_document().await?;
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&discovery.jwks_uri)
             .send()
             .await
@@ -458,7 +464,8 @@ impl OIDCTokenValidator {
         self.refresh_jwks().await?;
 
         let cached_jwks = self.jwks.read().unwrap();
-        cached_jwks.as_ref()
+        cached_jwks
+            .as_ref()
             .ok_or_else(|| Error::Authentication("Failed to fetch JWKS".to_string()))
             .cloned()
     }
@@ -469,23 +476,24 @@ impl OIDCTokenValidator {
         let header = jsonwebtoken::decode_header(token)
             .map_err(|e| Error::Authentication(format!("Failed to decode token header: {}", e)))?;
 
-        let kid = header.kid
+        let kid = header
+            .kid
             .ok_or_else(|| Error::Authentication("Token missing kid (key ID)".to_string()))?;
 
         // Get the JWKS
         let jwks = self.get_jwks().await?;
 
         // Find the key with matching kid
-        let jwk = jwks.keys.iter()
+        let jwk = jwks
+            .keys
+            .iter()
             .find(|k| k.key_id.as_ref() == Some(&kid))
             .ok_or_else(|| Error::Authentication(format!("Key ID {} not found in JWKS", kid)))?;
 
         // Validate the token using the key
         let decoding_key = self.jwk_to_decoding_key(jwk)?;
 
-        let mut validation = Validation::new(
-            header.alg
-        );
+        let mut validation = Validation::new(header.alg);
         validation.set_audience(&[&self.client_id]);
         validation.set_issuer(&[&self.issuer_url]);
 
@@ -500,18 +508,26 @@ impl OIDCTokenValidator {
     fn jwk_to_decoding_key(&self, jwk: &JsonWebKey) -> Result<DecodingKey> {
         match jwk.key_type.as_str() {
             "RSA" => {
-                let modulus = jwk.modulus.as_ref()
+                let modulus = jwk
+                    .modulus
+                    .as_ref()
                     .ok_or_else(|| Error::Authentication("RSA key missing modulus".to_string()))?;
-                let exponent = jwk.exponent.as_ref()
+                let exponent = jwk
+                    .exponent
+                    .as_ref()
                     .ok_or_else(|| Error::Authentication("RSA key missing exponent".to_string()))?;
 
                 // Decode base64url encoded values
                 let n = base64::engine::general_purpose::URL_SAFE_NO_PAD
                     .decode(modulus)
-                    .map_err(|e| Error::Authentication(format!("Failed to decode modulus: {}", e)))?;
+                    .map_err(|e| {
+                        Error::Authentication(format!("Failed to decode modulus: {}", e))
+                    })?;
                 let e = base64::engine::general_purpose::URL_SAFE_NO_PAD
                     .decode(exponent)
-                    .map_err(|e| Error::Authentication(format!("Failed to decode exponent: {}", e)))?;
+                    .map_err(|e| {
+                        Error::Authentication(format!("Failed to decode exponent: {}", e))
+                    })?;
 
                 DecodingKey::from_rsa_components(
                     &base64::engine::general_purpose::STANDARD.encode(&n),
@@ -519,7 +535,10 @@ impl OIDCTokenValidator {
                 )
                 .map_err(|e| Error::Authentication(format!("Failed to create decoding key: {}", e)))
             }
-            _ => Err(Error::Authentication(format!("Unsupported key type: {}", jwk.key_type)))
+            _ => Err(Error::Authentication(format!(
+                "Unsupported key type: {}",
+                jwk.key_type
+            ))),
         }
     }
 
@@ -588,7 +607,8 @@ impl WebhookTokenAuthenticator {
         };
 
         // Send request to webhook
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&self.webhook_url)
             .json(&token_review)
             .send()
@@ -603,24 +623,27 @@ impl WebhookTokenAuthenticator {
         }
 
         // Parse response
-        let token_review_response: TokenReview = response
-            .json()
-            .await
-            .map_err(|e| Error::Authentication(format!("Failed to parse webhook response: {}", e)))?;
+        let token_review_response: TokenReview = response.json().await.map_err(|e| {
+            Error::Authentication(format!("Failed to parse webhook response: {}", e))
+        })?;
 
         // Check if authentication succeeded
-        let status = token_review_response.status
+        let status = token_review_response
+            .status
             .ok_or_else(|| Error::Authentication("Webhook response missing status".to_string()))?;
 
         if !status.authenticated.unwrap_or(false) {
             return Err(Error::Authentication(
-                status.error.unwrap_or_else(|| "Authentication failed".to_string())
+                status
+                    .error
+                    .unwrap_or_else(|| "Authentication failed".to_string()),
             ));
         }
 
         // Extract user info
-        let user = status.user
-            .ok_or_else(|| Error::Authentication("Webhook response missing user info".to_string()))?;
+        let user = status.user.ok_or_else(|| {
+            Error::Authentication("Webhook response missing user info".to_string())
+        })?;
 
         Ok(UserInfo {
             username: user.username.unwrap_or_default(),

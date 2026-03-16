@@ -37,17 +37,26 @@ async fn test_storage_connectivity() {
 
     // Read
     let read_result: Result<String, _> = storage.get(&key).await;
-    assert!(read_result.is_ok(), "Should be able to read data from storage");
+    assert!(
+        read_result.is_ok(),
+        "Should be able to read data from storage"
+    );
     assert_eq!(read_result.unwrap(), test_data);
 
     // Update
     let updated_data = "updated-value".to_string();
     let update_result = storage.update(&key, &updated_data).await;
-    assert!(update_result.is_ok(), "Should be able to update data in storage");
+    assert!(
+        update_result.is_ok(),
+        "Should be able to update data in storage"
+    );
 
     // Delete
     let delete_result = storage.delete(&key).await;
-    assert!(delete_result.is_ok(), "Should be able to delete data from storage");
+    assert!(
+        delete_result.is_ok(),
+        "Should be able to delete data from storage"
+    );
 
     // Verify deletion
     let final_result: Result<String, _> = storage.get(&key).await;
@@ -75,7 +84,10 @@ async fn test_token_manager_initialization() {
     // Validate the token
     let token_str = token.unwrap();
     let validation = token_manager.validate_token(&token_str);
-    assert!(validation.is_ok(), "Should be able to validate generated token");
+    assert!(
+        validation.is_ok(),
+        "Should be able to validate generated token"
+    );
 
     let validated_claims = validation.unwrap();
     assert_eq!(validated_claims.sub, claims.sub);
@@ -99,8 +111,7 @@ async fn test_rbac_authorizer_initialization() {
         extra: std::collections::HashMap::new(),
     };
 
-    let attrs = RequestAttributes::new(user, "get", "pods")
-        .with_namespace("default");
+    let attrs = RequestAttributes::new(user, "get", "pods").with_namespace("default");
 
     let decision = authorizer.authorize(&attrs).await;
     assert!(decision.is_ok(), "Authorizer should return a decision");
@@ -110,7 +121,9 @@ async fn test_rbac_authorizer_initialization() {
 async fn test_always_allow_authorizer_initialization() {
     // Test AlwaysAllowAuthorizer for development mode
     use rusternetes_common::auth::UserInfo;
-    use rusternetes_common::authz::{AlwaysAllowAuthorizer, Authorizer, Decision, RequestAttributes};
+    use rusternetes_common::authz::{
+        AlwaysAllowAuthorizer, Authorizer, Decision, RequestAttributes,
+    };
 
     let authorizer = AlwaysAllowAuthorizer;
 
@@ -125,7 +138,11 @@ async fn test_always_allow_authorizer_initialization() {
 
     let decision = authorizer.authorize(&attrs).await;
     assert!(decision.is_ok(), "AlwaysAllow should always authorize");
-    assert_eq!(decision.unwrap(), Decision::Allow, "AlwaysAllow should return Allow");
+    assert_eq!(
+        decision.unwrap(),
+        Decision::Allow,
+        "AlwaysAllow should return Allow"
+    );
 }
 
 #[tokio::test]
@@ -135,7 +152,10 @@ async fn test_metrics_registry_initialization() {
 
     // Add API server metrics
     let result = metrics.with_api_server_metrics();
-    assert!(result.is_ok(), "Should be able to initialize API server metrics");
+    assert!(
+        result.is_ok(),
+        "Should be able to initialize API server metrics"
+    );
 
     // Verify metrics can be recorded (this is a smoke test)
     let _metrics_with_api = result.unwrap();
@@ -153,7 +173,10 @@ async fn test_component_health_checks() {
     let health_status = "healthy".to_string();
 
     let create_result = storage.create(&health_check_key, &health_status).await;
-    assert!(create_result.is_ok(), "Should be able to write health status");
+    assert!(
+        create_result.is_ok(),
+        "Should be able to write health status"
+    );
 
     let read_result: Result<String, _> = storage.get(&health_check_key).await;
     assert!(read_result.is_ok(), "Should be able to read health status");
@@ -204,8 +227,14 @@ async fn test_namespace_isolation() {
     let ns1_key = build_key("pods", Some("namespace1"), "pod1");
     let ns2_key = build_key("pods", Some("namespace2"), "pod1");
 
-    storage.create(&ns1_key, &"pod-in-ns1".to_string()).await.unwrap();
-    storage.create(&ns2_key, &"pod-in-ns2".to_string()).await.unwrap();
+    storage
+        .create(&ns1_key, &"pod-in-ns1".to_string())
+        .await
+        .unwrap();
+    storage
+        .create(&ns2_key, &"pod-in-ns2".to_string())
+        .await
+        .unwrap();
 
     // Verify namespace isolation
     let ns1_data: String = storage.get(&ns1_key).await.unwrap();
@@ -224,8 +253,14 @@ async fn test_cluster_scoped_resources() {
     let node_key = build_key("nodes", None, "node-1");
     let pv_key = build_key("persistentvolumes", None, "pv-1");
 
-    storage.create(&node_key, &"node-data".to_string()).await.unwrap();
-    storage.create(&pv_key, &"pv-data".to_string()).await.unwrap();
+    storage
+        .create(&node_key, &"node-data".to_string())
+        .await
+        .unwrap();
+    storage
+        .create(&pv_key, &"pv-data".to_string())
+        .await
+        .unwrap();
 
     // Verify cluster-scoped resources are accessible
     let node_data: String = storage.get(&node_key).await.unwrap();
@@ -242,7 +277,10 @@ async fn test_list_operations() {
     // Create multiple resources
     for i in 0..5 {
         let key = build_key("pods", Some("default"), &format!("pod-{}", i));
-        storage.create(&key, &format!("pod-data-{}", i)).await.unwrap();
+        storage
+            .create(&key, &format!("pod-data-{}", i))
+            .await
+            .unwrap();
     }
 
     // List all pods in default namespace
@@ -263,7 +301,10 @@ async fn test_storage_error_handling() {
     storage.create(&key, &"first".to_string()).await.unwrap();
 
     let duplicate_result = storage.create(&key, &"second".to_string()).await;
-    assert!(duplicate_result.is_err(), "Should fail to create duplicate key");
+    assert!(
+        duplicate_result.is_err(),
+        "Should fail to create duplicate key"
+    );
 }
 
 #[tokio::test]
@@ -307,12 +348,18 @@ async fn test_graceful_degradation() {
     // Test that individual component failures don't crash entire system
     // Simulate storage read failure by reading non-existent key
     let read_result: Result<String, _> = storage.get("/missing-key").await;
-    assert!(read_result.is_err(), "Should handle missing keys gracefully");
+    assert!(
+        read_result.is_err(),
+        "Should handle missing keys gracefully"
+    );
 
     // Verify storage still works for other operations
     let key = build_key("test", None, "recovery");
     let create_result = storage.create(&key, &"data".to_string()).await;
-    assert!(create_result.is_ok(), "Storage should recover and continue working");
+    assert!(
+        create_result.is_ok(),
+        "Storage should recover and continue working"
+    );
 }
 
 #[tokio::test]

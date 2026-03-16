@@ -33,8 +33,7 @@ impl<S: Storage> CronJobController<S> {
             if let Err(e) = self.reconcile(&mut cronjob).await {
                 error!(
                     "Failed to reconcile CronJob {}: {}",
-                    cronjob.metadata.name,
-                    e
+                    cronjob.metadata.name, e
                 );
             }
         }
@@ -84,7 +83,11 @@ impl<S: Storage> CronJobController<S> {
                         .status
                         .as_ref()
                         .and_then(|s| s.conditions.as_ref())
-                        .map(|conds| !conds.iter().any(|c| c.condition_type == "Complete" && c.status == "True"))
+                        .map(|conds| {
+                            !conds
+                                .iter()
+                                .any(|c| c.condition_type == "Complete" && c.status == "True")
+                        })
                         .unwrap_or(true) // Job not completed
             })
             .collect();
@@ -127,10 +130,7 @@ impl<S: Storage> CronJobController<S> {
         cronjob.status = Some(CronJobStatus {
             active: None, // Will be set with actual ObjectReferences in production
             last_schedule_time: Some(now),
-            last_successful_time: cronjob
-                .status
-                .as_ref()
-                .and_then(|s| s.last_successful_time),
+            last_successful_time: cronjob.status.as_ref().and_then(|s| s.last_successful_time),
         });
 
         // Save updated status
@@ -150,10 +150,7 @@ impl<S: Storage> CronJobController<S> {
         cronjob: &CronJob,
     ) -> Result<bool> {
         // Get last schedule time
-        let last_schedule = cronjob
-            .status
-            .as_ref()
-            .and_then(|s| s.last_schedule_time);
+        let last_schedule = cronjob.status.as_ref().and_then(|s| s.last_schedule_time);
 
         // Handle special schedules
         let cron_schedule = match schedule {
@@ -182,10 +179,7 @@ impl<S: Storage> CronJobController<S> {
                 // Should run if current time >= next scheduled time
                 let should_run = now >= next_run;
                 if should_run {
-                    info!(
-                        "CronJob should run: next_run={}, current={}",
-                        next_run, now
-                    );
+                    info!("CronJob should run: next_run={}, current={}", next_run, now);
                 }
                 Ok(should_run)
             } else {
@@ -199,10 +193,7 @@ impl<S: Storage> CronJobController<S> {
             if let Some(next_run) = schedule_parsed.after(&one_minute_ago).next() {
                 let should_run = now >= next_run;
                 if should_run {
-                    info!(
-                        "CronJob first run: next_run={}, current={}",
-                        next_run, now
-                    );
+                    info!("CronJob first run: next_run={}, current={}", next_run, now);
                 }
                 Ok(should_run)
             } else {
@@ -216,12 +207,20 @@ impl<S: Storage> CronJobController<S> {
         let timestamp = chrono::Utc::now().timestamp();
         let job_name = format!("{}-{}", cronjob_name, timestamp);
 
-        let mut labels = cronjob.spec.job_template.metadata.as_ref()
+        let mut labels = cronjob
+            .spec
+            .job_template
+            .metadata
+            .as_ref()
             .and_then(|m| m.labels.clone())
             .unwrap_or_default();
         labels.insert("cronjob-name".to_string(), cronjob_name.clone());
 
-        let annotations = cronjob.spec.job_template.metadata.as_ref()
+        let annotations = cronjob
+            .spec
+            .job_template
+            .metadata
+            .as_ref()
             .and_then(|m| m.annotations.clone());
 
         let job = Job {
@@ -279,7 +278,11 @@ impl<S: Storage> CronJobController<S> {
                 job.status
                     .as_ref()
                     .and_then(|s| s.conditions.as_ref())
-                    .map(|conds| conds.iter().any(|c| c.condition_type == "Complete" && c.status == "True"))
+                    .map(|conds| {
+                        conds
+                            .iter()
+                            .any(|c| c.condition_type == "Complete" && c.status == "True")
+                    })
                     .unwrap_or(false)
             })
             .cloned()
@@ -291,7 +294,11 @@ impl<S: Storage> CronJobController<S> {
                 job.status
                     .as_ref()
                     .and_then(|s| s.conditions.as_ref())
-                    .map(|conds| conds.iter().any(|c| c.condition_type == "Failed" && c.status == "True"))
+                    .map(|conds| {
+                        conds
+                            .iter()
+                            .any(|c| c.condition_type == "Failed" && c.status == "True")
+                    })
                     .unwrap_or(false)
             })
             .cloned()
@@ -299,10 +306,14 @@ impl<S: Storage> CronJobController<S> {
 
         // Sort by creation timestamp (oldest first)
         successful_jobs.sort_by(|a, b| {
-            a.metadata.creation_timestamp.cmp(&b.metadata.creation_timestamp)
+            a.metadata
+                .creation_timestamp
+                .cmp(&b.metadata.creation_timestamp)
         });
         failed_jobs.sort_by(|a, b| {
-            a.metadata.creation_timestamp.cmp(&b.metadata.creation_timestamp)
+            a.metadata
+                .creation_timestamp
+                .cmp(&b.metadata.creation_timestamp)
         });
 
         // Delete old successful jobs

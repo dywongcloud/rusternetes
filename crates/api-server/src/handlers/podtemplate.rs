@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::PodTemplate,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -214,8 +213,7 @@ pub async fn list_all_podtemplates(
     info!("Listing all podtemplates");
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "podtemplates")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "podtemplates").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -235,7 +233,7 @@ pub async fn list_all_podtemplates(
 crate::patch_handler_namespaced!(patch_podtemplate, PodTemplate, "podtemplates", "");
 
 #[cfg(test)]
-#[cfg(feature = "integration-tests")]  // Disable tests that require full setup
+#[cfg(feature = "integration-tests")] // Disable tests that require full setup
 mod tests {
     use super::*;
     use crate::state::ApiServerState;
@@ -249,7 +247,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_podtemplate_create() {
-        use rusternetes_common::auth::{TokenManager, BootstrapTokenManager};
+        use rusternetes_common::auth::{BootstrapTokenManager, TokenManager};
         use rusternetes_common::authz::AlwaysAllowAuthorizer;
         use rusternetes_common::observability::MetricsRegistry;
 
@@ -280,6 +278,7 @@ mod tests {
                 node_selector: None,
                 service_account_name: None,
                 hostname: None,
+                subdomain: None,
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,
@@ -323,7 +322,10 @@ pub async fn deletecollection_podtemplates(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection podtemplates in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection podtemplates in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "podtemplates")
@@ -369,6 +371,9 @@ pub async fn deletecollection_podtemplates(
         }
     }
 
-    info!("DeleteCollection completed: {} podtemplates deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} podtemplates deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

@@ -9,8 +9,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::CustomResourceDefinition,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -47,18 +46,20 @@ pub async fn create_crd(
 
     // Initialize status
     if crd.status.is_none() {
-        crd.status = Some(rusternetes_common::resources::CustomResourceDefinitionStatus {
-            conditions: Some(vec![]),
-            accepted_names: Some(crd.spec.names.clone()),
-            stored_versions: Some(
-                crd.spec
-                    .versions
-                    .iter()
-                    .filter(|v| v.storage)
-                    .map(|v| v.name.clone())
-                    .collect(),
-            ),
-        });
+        crd.status = Some(
+            rusternetes_common::resources::CustomResourceDefinitionStatus {
+                conditions: Some(vec![]),
+                accepted_names: Some(crd.spec.names.clone()),
+                stored_versions: Some(
+                    crd.spec
+                        .versions
+                        .iter()
+                        .filter(|v| v.storage)
+                        .map(|v| v.name.clone())
+                        .collect(),
+                ),
+            },
+        );
     }
 
     // Handle dry-run
@@ -127,7 +128,11 @@ pub async fn list_crds(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut crds, &params)?;
 
-    let list = List::new("CustomResourceDefinitionList", "apiextensions.k8s.io/v1", crds);
+    let list = List::new(
+        "CustomResourceDefinitionList",
+        "apiextensions.k8s.io/v1",
+        crds,
+    );
     Ok(Json(list))
 }
 
@@ -208,16 +213,27 @@ pub async fn delete_crd(
     // Custom resources are stored with keys like: /apis/{group}/{version}/{resource}/{namespace}/{name}
     // or /apis/{group}/{version}/{resource}/{name} for cluster-scoped
     for version in &crd.spec.versions {
-        let resource_prefix = if crd.spec.scope == rusternetes_common::resources::ResourceScope::Namespaced {
-            // For namespaced resources, check across all namespaces
-            format!("/apis/{}/{}/{}/", crd.spec.group, version.name, crd.spec.names.plural)
-        } else {
-            // For cluster-scoped resources
-            format!("/apis/{}/{}/{}/", crd.spec.group, version.name, crd.spec.names.plural)
-        };
+        let resource_prefix =
+            if crd.spec.scope == rusternetes_common::resources::ResourceScope::Namespaced {
+                // For namespaced resources, check across all namespaces
+                format!(
+                    "/apis/{}/{}/{}/",
+                    crd.spec.group, version.name, crd.spec.names.plural
+                )
+            } else {
+                // For cluster-scoped resources
+                format!(
+                    "/apis/{}/{}/{}/",
+                    crd.spec.group, version.name, crd.spec.names.plural
+                )
+            };
 
         // List all custom resources with this prefix
-        let custom_resources: Vec<serde_json::Value> = state.storage.list(&resource_prefix).await.unwrap_or_default();
+        let custom_resources: Vec<serde_json::Value> = state
+            .storage
+            .list(&resource_prefix)
+            .await
+            .unwrap_or_default();
 
         if !custom_resources.is_empty() {
             warn!(
@@ -238,12 +254,9 @@ pub async fn delete_crd(
     }
 
     // Handle deletion with finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
-        &state.storage,
-        &key,
-        &crd,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &crd)
+            .await?;
 
     if deleted_immediately {
         // Notify dynamic route manager to remove routes for this CRD
@@ -268,12 +281,7 @@ fn validate_crd(crd: &CustomResourceDefinition) -> Result<()> {
     }
 
     // Validate that exactly one version is marked as storage
-    let storage_versions: Vec<_> = crd
-        .spec
-        .versions
-        .iter()
-        .filter(|v| v.storage)
-        .collect();
+    let storage_versions: Vec<_> = crd.spec.versions.iter().filter(|v| v.storage).collect();
 
     if storage_versions.is_empty() {
         return Err(rusternetes_common::Error::InvalidResource(
@@ -330,14 +338,19 @@ fn validate_crd(crd: &CustomResourceDefinition) -> Result<()> {
 }
 
 // Use the macro to create a PATCH handler for cluster-scoped CustomResourceDefinition
-crate::patch_handler_cluster!(patch_crd, CustomResourceDefinition, "customresourcedefinitions", "apiextensions.k8s.io");
+crate::patch_handler_cluster!(
+    patch_crd,
+    CustomResourceDefinition,
+    "customresourcedefinitions",
+    "apiextensions.k8s.io"
+);
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rusternetes_common::resources::{
-        CustomResourceDefinition, CustomResourceDefinitionNames,
-        CustomResourceDefinitionSpec, CustomResourceDefinitionVersion, ResourceScope,
+        CustomResourceDefinition, CustomResourceDefinitionNames, CustomResourceDefinitionSpec,
+        CustomResourceDefinitionVersion, ResourceScope,
     };
     use rusternetes_common::types::ObjectMeta;
 
@@ -430,11 +443,18 @@ pub async fn deletecollection_customresourcedefinitions(
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection customresourcedefinitions with params: {:?}", params);
+    info!(
+        "DeleteCollection customresourcedefinitions with params: {:?}",
+        params
+    );
 
     // Check authorization
-    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "customresourcedefinitions")
-        .with_api_group("apiextensions.k8s.io");
+    let attrs = RequestAttributes::new(
+        auth_ctx.user,
+        "deletecollection",
+        "customresourcedefinitions",
+    )
+    .with_api_group("apiextensions.k8s.io");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -452,7 +472,10 @@ pub async fn deletecollection_customresourcedefinitions(
 
     // Get all customresourcedefinitions
     let prefix = build_prefix("customresourcedefinitions", None);
-    let mut items = state.storage.list::<CustomResourceDefinition>(&prefix).await?;
+    let mut items = state
+        .storage
+        .list::<CustomResourceDefinition>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;
@@ -475,6 +498,9 @@ pub async fn deletecollection_customresourcedefinitions(
         }
     }
 
-    info!("DeleteCollection completed: {} customresourcedefinitions deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} customresourcedefinitions deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

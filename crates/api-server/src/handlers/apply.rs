@@ -88,9 +88,10 @@ where
     // Get current resource (if exists)
     let key = build_key(resource_type, Some(&namespace), &name);
     let current_json = match state.storage.get::<T>(&key).await {
-        Ok(current) => Some(serde_json::to_value(&current).map_err(|e| {
-            rusternetes_common::Error::Internal(e.to_string())
-        })?),
+        Ok(current) => Some(
+            serde_json::to_value(&current)
+                .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?,
+        ),
         Err(rusternetes_common::Error::NotFound(_)) => None,
         Err(e) => return Err(e),
     };
@@ -194,9 +195,10 @@ where
     // Get current resource (if exists)
     let key = build_key(resource_type, None, &name);
     let current_json = match state.storage.get::<T>(&key).await {
-        Ok(current) => Some(serde_json::to_value(&current).map_err(|e| {
-            rusternetes_common::Error::Internal(e.to_string())
-        })?),
+        Ok(current) => Some(
+            serde_json::to_value(&current)
+                .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?,
+        ),
         Err(rusternetes_common::Error::NotFound(_)) => None,
         Err(e) => return Err(e),
     };

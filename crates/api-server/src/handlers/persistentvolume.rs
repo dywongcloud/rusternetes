@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::PersistentVolume,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -27,8 +26,8 @@ pub async fn create_pv(
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization (cluster-scoped)
-    let attrs = RequestAttributes::new(auth_ctx.user, "create", "persistentvolumes")
-        .with_api_group("");
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "create", "persistentvolumes").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -44,7 +43,10 @@ pub async fn create_pv(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: PersistentVolume {} validated successfully (not created)", pv.metadata.name);
+        info!(
+            "Dry-run: PersistentVolume {} validated successfully (not created)",
+            pv.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(pv)));
     }
 
@@ -84,8 +86,8 @@ pub async fn list_pvs(
 ) -> Result<Json<List<PersistentVolume>>> {
     info!("Listing all PersistentVolumes");
 
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "persistentvolumes")
-        .with_api_group("");
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "list", "persistentvolumes").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -133,7 +135,10 @@ pub async fn update_pv(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: PersistentVolume {} validated successfully (not updated)", name);
+        info!(
+            "Dry-run: PersistentVolume {} validated successfully (not updated)",
+            name
+        );
         return Ok(Json(pv));
     }
 
@@ -171,7 +176,10 @@ pub async fn delete_pv(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: PersistentVolume {} validated successfully (not deleted)", name);
+        info!(
+            "Dry-run: PersistentVolume {} validated successfully (not deleted)",
+            name
+        );
         return Ok(StatusCode::OK);
     }
 
@@ -188,7 +196,10 @@ pub async fn deletecollection_persistentvolumes(
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection persistentvolumes with params: {:?}", params);
+    info!(
+        "DeleteCollection persistentvolumes with params: {:?}",
+        params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "persistentvolumes")
@@ -233,6 +244,9 @@ pub async fn deletecollection_persistentvolumes(
         }
     }
 
-    info!("DeleteCollection completed: {} persistentvolumes deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} persistentvolumes deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

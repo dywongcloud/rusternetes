@@ -17,11 +17,11 @@
 //!
 //! Reference: https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/
 
+use async_trait::async_trait;
 use rusternetes_common::resources::{Node, Pod};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
-use async_trait::async_trait;
 
 /// Result of a plugin operation
 #[derive(Debug, Clone)]
@@ -123,7 +123,10 @@ pub struct FrameworkHandle {
 
 impl FrameworkHandle {
     pub fn new(all_pods: Vec<Pod>, all_nodes: Vec<Node>) -> Self {
-        Self { all_pods, all_nodes }
+        Self {
+            all_pods,
+            all_nodes,
+        }
     }
 }
 
@@ -431,11 +434,7 @@ impl Framework {
         for plugin in &self.registry.pre_filter_plugins {
             let result = plugin.pre_filter(&mut state, pod, &handle).await;
             if !result.is_success() {
-                tracing::debug!(
-                    "PreFilter plugin {} failed: {}",
-                    plugin.name(),
-                    result
-                );
+                tracing::debug!("PreFilter plugin {} failed: {}", plugin.name(), result);
                 return None;
             }
         }
@@ -465,9 +464,7 @@ impl Framework {
         // Phase 3: PostFilter (if no feasible nodes)
         if feasible_nodes.is_empty() {
             for plugin in &self.registry.post_filter_plugins {
-                let result = plugin
-                    .post_filter(&mut state, pod, &nodes, &handle)
-                    .await;
+                let result = plugin.post_filter(&mut state, pod, &nodes, &handle).await;
                 if result.is_success() {
                     // PostFilter might enable scheduling (e.g., via preemption)
                     // Re-run filter phase
@@ -487,11 +484,7 @@ impl Framework {
                 .pre_score(&mut state, pod, &feasible_nodes, &handle)
                 .await;
             if !result.is_success() {
-                tracing::warn!(
-                    "PreScore plugin {} failed: {}",
-                    plugin.name(),
-                    result
-                );
+                tracing::warn!("PreScore plugin {} failed: {}", plugin.name(), result);
             }
         }
 
@@ -539,11 +532,7 @@ impl Framework {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "NormalizeScore failed for plugin {}: {}",
-                        plugin.name(),
-                        e
-                    );
+                    tracing::warn!("NormalizeScore failed for plugin {}: {}", plugin.name(), e);
                 }
             }
         }

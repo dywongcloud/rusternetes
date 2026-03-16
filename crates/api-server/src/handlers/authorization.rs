@@ -1,12 +1,15 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
-use axum::{extract::{Path, State}, Extension, Json};
+use axum::{
+    extract::{Path, State},
+    Extension, Json,
+};
 use rusternetes_common::{
     auth::UserInfo,
     authz::{Decision, RequestAttributes},
     resources::{
-        SubjectAccessReview, SubjectAccessReviewStatus, SelfSubjectAccessReview,
-        LocalSubjectAccessReview, SelfSubjectRulesReview, SubjectRulesReviewStatus,
-        ResourceRule, NonResourceRule,
+        LocalSubjectAccessReview, NonResourceRule, ResourceRule, SelfSubjectAccessReview,
+        SelfSubjectRulesReview, SubjectAccessReview, SubjectAccessReviewStatus,
+        SubjectRulesReviewStatus,
     },
     Result,
 };
@@ -168,13 +171,10 @@ pub async fn create_local_subject_access_review(
     );
 
     // Check authorization
-    let attrs = RequestAttributes::new(
-        auth_ctx.user.clone(),
-        "create",
-        "localsubjectaccessreviews",
-    )
-    .with_api_group("authorization.k8s.io")
-    .with_namespace(&namespace);
+    let attrs =
+        RequestAttributes::new(auth_ctx.user.clone(), "create", "localsubjectaccessreviews")
+            .with_api_group("authorization.k8s.io")
+            .with_namespace(&namespace);
 
     if let Decision::Deny(reason) = state.authorizer.authorize(&attrs).await? {
         return Err(rusternetes_common::Error::Forbidden(reason));

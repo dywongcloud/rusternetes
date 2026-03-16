@@ -5,7 +5,7 @@
 
 use rusternetes_common::{
     admission::{
-        AdmissionReview, AdmissionReviewRequest, AdmissionReviewResponse, AdmissionResponse,
+        AdmissionResponse, AdmissionReview, AdmissionReviewRequest, AdmissionReviewResponse,
         GroupVersionKind, GroupVersionResource, Operation, PatchOperation, UserInfo,
     },
     resources::{
@@ -48,10 +48,7 @@ impl AdmissionWebhookClient {
             .map(|t| Duration::from_secs(t as u64))
             .unwrap_or(Duration::from_secs(10));
 
-        debug!(
-            "Calling validating webhook {} at {}",
-            webhook.name, url
-        );
+        debug!("Calling validating webhook {} at {}", webhook.name, url);
 
         let review = AdmissionReview::new_request(request.clone());
 
@@ -73,7 +70,10 @@ impl AdmissionWebhookClient {
                         Ok(AdmissionReviewResponse::allow(request.uid.clone()))
                     }
                     FailurePolicy::Fail => {
-                        error!("Webhook {} failed with FailurePolicy Fail: {}", webhook.name, e);
+                        error!(
+                            "Webhook {} failed with FailurePolicy Fail: {}",
+                            webhook.name, e
+                        );
                         Err(e)
                     }
                 }
@@ -93,10 +93,7 @@ impl AdmissionWebhookClient {
             .map(|t| Duration::from_secs(t as u64))
             .unwrap_or(Duration::from_secs(10));
 
-        debug!(
-            "Calling mutating webhook {} at {}",
-            webhook.name, url
-        );
+        debug!("Calling mutating webhook {} at {}", webhook.name, url);
 
         let review = AdmissionReview::new_request(request.clone());
 
@@ -118,7 +115,10 @@ impl AdmissionWebhookClient {
                         Ok(AdmissionReviewResponse::allow(request.uid.clone()))
                     }
                     FailurePolicy::Fail => {
-                        error!("Webhook {} failed with FailurePolicy Fail: {}", webhook.name, e);
+                        error!(
+                            "Webhook {} failed with FailurePolicy Fail: {}",
+                            webhook.name, e
+                        );
                         Err(e)
                     }
                 }
@@ -140,14 +140,9 @@ impl AdmissionWebhookClient {
                 rusternetes_common::Error::Network(format!("Failed to create HTTP client: {}", e))
             })?;
 
-        let response = client
-            .post(url)
-            .json(review)
-            .send()
-            .await
-            .map_err(|e| {
-                rusternetes_common::Error::Network(format!("Webhook request failed: {}", e))
-            })?;
+        let response = client.post(url).json(review).send().await.map_err(|e| {
+            rusternetes_common::Error::Network(format!("Webhook request failed: {}", e))
+        })?;
 
         if !response.status().is_success() {
             return Err(rusternetes_common::Error::Network(format!(
@@ -161,7 +156,9 @@ impl AdmissionWebhookClient {
         })?;
 
         review_response.response.ok_or_else(|| {
-            rusternetes_common::Error::Network("Webhook response missing response field".to_string())
+            rusternetes_common::Error::Network(
+                "Webhook response missing response field".to_string(),
+            )
         })
     }
 
@@ -264,7 +261,10 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     };
 
                     // Call the webhook
-                    let response = self.client.call_validating_webhook(webhook, &request).await?;
+                    let response = self
+                        .client
+                        .call_validating_webhook(webhook, &request)
+                        .await?;
 
                     // Collect warnings
                     if let Some(warnings) = &response.warnings {
@@ -371,15 +371,14 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     if let Some(patch_base64) = &response.patch {
                         // Decode base64 patch
                         use base64::Engine;
-                        let patch_bytes = base64::engine::general_purpose::STANDARD.decode(
-                            patch_base64,
-                        )
-                        .map_err(|e| {
-                            rusternetes_common::Error::InvalidResource(format!(
-                                "Failed to decode webhook patch: {}",
-                                e
-                            ))
-                        })?;
+                        let patch_bytes = base64::engine::general_purpose::STANDARD
+                            .decode(patch_base64)
+                            .map_err(|e| {
+                                rusternetes_common::Error::InvalidResource(format!(
+                                    "Failed to decode webhook patch: {}",
+                                    e
+                                ))
+                            })?;
 
                         let patch_str = String::from_utf8(patch_bytes).map_err(|e| {
                             rusternetes_common::Error::InvalidResource(format!(
@@ -388,8 +387,8 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                             ))
                         })?;
 
-                        let patches: Vec<PatchOperation> =
-                            serde_json::from_str(&patch_str).map_err(|e| {
+                        let patches: Vec<PatchOperation> = serde_json::from_str(&patch_str)
+                            .map_err(|e| {
                                 rusternetes_common::Error::InvalidResource(format!(
                                     "Failed to parse webhook patch as JSON: {}",
                                     e
@@ -476,14 +475,21 @@ impl<S: Storage> AdmissionWebhookManager<S> {
     }
 
     /// Check if resource matches webhook rule
-    fn resource_matches(&self, rule: &Rule, _gvk: &GroupVersionKind, gvr: &GroupVersionResource) -> bool {
+    fn resource_matches(
+        &self,
+        rule: &Rule,
+        _gvk: &GroupVersionKind,
+        gvr: &GroupVersionResource,
+    ) -> bool {
         // Check API group
         if !rule.api_groups.contains(&"*".to_string()) && !rule.api_groups.contains(&gvr.group) {
             return false;
         }
 
         // Check API version
-        if !rule.api_versions.contains(&"*".to_string()) && !rule.api_versions.contains(&gvr.version) {
+        if !rule.api_versions.contains(&"*".to_string())
+            && !rule.api_versions.contains(&gvr.version)
+        {
             return false;
         }
 
@@ -545,10 +551,7 @@ fn apply_json_pointer_add(object: &mut Value, path: &str, value: Value) -> Resul
                 .as_object_mut()
                 .and_then(|obj| obj.get_mut(*part))
                 .ok_or_else(|| {
-                    rusternetes_common::Error::InvalidResource(format!(
-                        "Path not found: {}",
-                        path
-                    ))
+                    rusternetes_common::Error::InvalidResource(format!("Path not found: {}", path))
                 })?;
         }
     }
@@ -579,10 +582,7 @@ fn apply_json_pointer_remove(object: &mut Value, path: &str) -> Result<()> {
                 .as_object_mut()
                 .and_then(|obj| obj.get_mut(*part))
                 .ok_or_else(|| {
-                    rusternetes_common::Error::InvalidResource(format!(
-                        "Path not found: {}",
-                        path
-                    ))
+                    rusternetes_common::Error::InvalidResource(format!("Path not found: {}", path))
                 })?;
         }
     }
@@ -612,10 +612,7 @@ fn apply_json_pointer_replace(object: &mut Value, path: &str, value: Value) -> R
                 .as_object_mut()
                 .and_then(|obj| obj.get_mut(*part))
                 .ok_or_else(|| {
-                    rusternetes_common::Error::InvalidResource(format!(
-                        "Path not found: {}",
-                        path
-                    ))
+                    rusternetes_common::Error::InvalidResource(format!("Path not found: {}", path))
                 })?;
         }
     }
@@ -649,10 +646,7 @@ mod tests {
 
         apply_json_patch(&mut obj, &patch).unwrap();
 
-        assert_eq!(
-            obj["metadata"]["labels"],
-            json!({"app": "test"})
-        );
+        assert_eq!(obj["metadata"]["labels"], json!({"app": "test"}));
     }
 
     #[test]
@@ -760,7 +754,10 @@ mod tests {
 
         let result = apply_json_patch(&mut obj, &patch);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Cannot remove root"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Cannot remove root"));
     }
 
     // ===== Webhook Matching Tests =====
@@ -927,13 +924,7 @@ mod tests {
             resource: "pods".to_string(),
         };
 
-        assert!(manager.webhook_matches(
-            &rules,
-            &Operation::Create,
-            &gvk,
-            &gvr,
-            Some("default")
-        ));
+        assert!(manager.webhook_matches(&rules, &Operation::Create, &gvk, &gvr, Some("default")));
     }
 
     #[test]
@@ -963,22 +954,10 @@ mod tests {
         };
 
         // Should match for cluster-scoped (no namespace)
-        assert!(manager.webhook_matches(
-            &rules,
-            &Operation::Create,
-            &gvk,
-            &gvr,
-            None
-        ));
+        assert!(manager.webhook_matches(&rules, &Operation::Create, &gvk, &gvr, None));
 
         // Should NOT match for namespaced resources
-        assert!(!manager.webhook_matches(
-            &rules,
-            &Operation::Create,
-            &gvk,
-            &gvr,
-            Some("default")
-        ));
+        assert!(!manager.webhook_matches(&rules, &Operation::Create, &gvk, &gvr, Some("default")));
     }
 
     #[test]
@@ -1008,13 +987,7 @@ mod tests {
         };
 
         // Should NOT match UPDATE operation
-        assert!(!manager.webhook_matches(
-            &rules,
-            &Operation::Update,
-            &gvk,
-            &gvr,
-            Some("default")
-        ));
+        assert!(!manager.webhook_matches(&rules, &Operation::Update, &gvk, &gvr, Some("default")));
     }
 
     #[test]
@@ -1055,13 +1028,7 @@ mod tests {
         };
 
         // Should match the second rule
-        assert!(manager.webhook_matches(
-            &rules,
-            &Operation::Create,
-            &gvk,
-            &gvr,
-            Some("default")
-        ));
+        assert!(manager.webhook_matches(&rules, &Operation::Create, &gvk, &gvr, Some("default")));
     }
 
     // ===== Webhook Client Tests =====
@@ -1094,7 +1061,10 @@ mod tests {
         };
 
         let url = client.build_webhook_url(&config).unwrap();
-        assert_eq!(url, "https://webhook-service.webhook-system.svc:8443/validate");
+        assert_eq!(
+            url,
+            "https://webhook-service.webhook-system.svc:8443/validate"
+        );
     }
 
     #[test]
@@ -1126,6 +1096,9 @@ mod tests {
 
         let result = client.build_webhook_url(&config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must specify either url or service"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must specify either url or service"));
     }
 }

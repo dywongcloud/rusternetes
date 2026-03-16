@@ -1,4 +1,4 @@
-use crate::{middleware::AuthContext, state::ApiServerState, handlers::watch::WatchParams};
+use crate::{handlers::watch::WatchParams, middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -8,8 +8,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::Endpoints,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -24,7 +23,10 @@ pub async fn create_endpoints(
     Query(params): Query<HashMap<String, String>>,
     Json(mut endpoints): Json<Endpoints>,
 ) -> Result<(StatusCode, Json<Endpoints>)> {
-    info!("Creating endpoints: {}/{}", namespace, endpoints.metadata.name);
+    info!(
+        "Creating endpoints: {}/{}",
+        namespace, endpoints.metadata.name
+    );
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -51,7 +53,10 @@ pub async fn create_endpoints(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Endpoints {}/{} validated successfully (not created)", namespace, endpoints.metadata.name);
+        info!(
+            "Dry-run: Endpoints {}/{} validated successfully (not created)",
+            namespace, endpoints.metadata.name
+        );
         return Ok((StatusCode::CREATED, Json(endpoints)));
     }
 
@@ -157,8 +162,7 @@ pub async fn list_all_endpoints(
     }
 
     // Check authorization (cluster-wide list)
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "endpoints")
-        .with_api_group("");
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "endpoints").with_api_group("");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -217,7 +221,10 @@ pub async fn update_endpoints(
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
-        info!("Dry-run: Endpoints {}/{} validated successfully (not updated)", namespace, name);
+        info!(
+            "Dry-run: Endpoints {}/{} validated successfully (not updated)",
+            namespace, name
+        );
         return Ok(Json(endpoints));
     }
 
@@ -258,11 +265,15 @@ pub async fn delete_endpoints(
 
     // If dry-run, skip delete operation
     if is_dry_run {
-        info!("Dry-run: Endpoints {}/{} validated successfully (not deleted)", namespace, name);
+        info!(
+            "Dry-run: Endpoints {}/{} validated successfully (not deleted)",
+            namespace, name
+        );
         return Ok(StatusCode::OK);
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &endpoints).await?;
+    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &endpoints)
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -276,7 +287,10 @@ pub async fn deletecollection_endpoints(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection endpoints in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection endpoints in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "endpoints")
@@ -322,6 +336,9 @@ pub async fn deletecollection_endpoints(
         }
     }
 
-    info!("DeleteCollection completed: {} endpoints deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} endpoints deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

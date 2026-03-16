@@ -73,7 +73,9 @@ async fn rollout_status(
 ) -> Result<()> {
     let (api_path, api_version) = get_resource_api_path(resource_type, namespace, name)?;
 
-    let resource: Value = client.get(&api_path).await
+    let resource: Value = client
+        .get(&api_path)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to get {} {}: {}", resource_type, name, e))?;
 
     // Extract status information
@@ -82,9 +84,14 @@ async fn rollout_status(
 
     if let Some(spec_val) = spec {
         if let Some(replicas) = spec_val.get("replicas").and_then(|v| v.as_i64()) {
-            println!("{}/{} replicas are available",
-                status.and_then(|s| s.get("availableReplicas")).and_then(|v| v.as_i64()).unwrap_or(0),
-                replicas);
+            println!(
+                "{}/{} replicas are available",
+                status
+                    .and_then(|s| s.get("availableReplicas"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0),
+                replicas
+            );
         }
     }
 
@@ -93,9 +100,18 @@ async fn rollout_status(
         if let Some(conditions) = status_val.get("conditions").and_then(|v| v.as_array()) {
             for condition in conditions {
                 if let Some(cond_type) = condition.get("type").and_then(|v| v.as_str()) {
-                    let status = condition.get("status").and_then(|v| v.as_str()).unwrap_or("Unknown");
-                    let reason = condition.get("reason").and_then(|v| v.as_str()).unwrap_or("");
-                    let message = condition.get("message").and_then(|v| v.as_str()).unwrap_or("");
+                    let status = condition
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown");
+                    let reason = condition
+                        .get("reason")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let message = condition
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
 
                     if cond_type == "Progressing" {
                         println!("Condition: {} = {}", cond_type, status);
@@ -135,18 +151,22 @@ async fn rollout_history(
     let (api_base, _) = get_resource_api_path(resource_type, namespace, name)?;
     let rs_path = format!("/apis/apps/v1/namespaces/{}/replicasets", namespace);
 
-    let replicasets: Value = client.get(&rs_path).await
+    let replicasets: Value = client
+        .get(&rs_path)
+        .await
         .context("Failed to get replicasets")?;
 
     if let Some(items) = replicasets.get("items").and_then(|v| v.as_array()) {
-        let mut history: Vec<_> = items.iter()
+        let mut history: Vec<_> = items
+            .iter()
             .filter(|rs| {
                 rs.get("metadata")
                     .and_then(|m| m.get("ownerReferences"))
                     .and_then(|o| o.as_array())
-                    .map(|refs| refs.iter().any(|r|
-                        r.get("name").and_then(|n| n.as_str()) == Some(name)
-                    ))
+                    .map(|refs| {
+                        refs.iter()
+                            .any(|r| r.get("name").and_then(|n| n.as_str()) == Some(name))
+                    })
                     .unwrap_or(false)
             })
             .collect();
@@ -167,7 +187,8 @@ async fn rollout_history(
                     .and_then(|m| m.get("annotations"))
                     .and_then(|a| a.get("deployment.kubernetes.io/revision"))
                     .and_then(|r| r.as_str())
-                    .and_then(|s| s.parse::<i32>().ok()) == Some(rev)
+                    .and_then(|s| s.parse::<i32>().ok())
+                    == Some(rev)
             }) {
                 println!("Revision {}:", rev);
                 if let Some(spec) = rs.get("spec") {
@@ -180,12 +201,14 @@ async fn rollout_history(
             // Show all revisions
             println!("{:<10} {:<30}", "REVISION", "CHANGE-CAUSE");
             for rs in history {
-                let rev = rs.get("metadata")
+                let rev = rs
+                    .get("metadata")
                     .and_then(|m| m.get("annotations"))
                     .and_then(|a| a.get("deployment.kubernetes.io/revision"))
                     .and_then(|r| r.as_str())
                     .unwrap_or("0");
-                let cause = rs.get("metadata")
+                let cause = rs
+                    .get("metadata")
                     .and_then(|m| m.get("annotations"))
                     .and_then(|a| a.get("kubernetes.io/change-cause"))
                     .and_then(|c| c.as_str())
@@ -212,23 +235,29 @@ async fn rollout_undo(
     }
 
     // Get the deployment
-    let deployment: Value = client.get(&api_path).await
+    let deployment: Value = client
+        .get(&api_path)
+        .await
         .context("Failed to get deployment")?;
 
     // Get replicasets to find the target revision
     let rs_path = format!("/apis/apps/v1/namespaces/{}/replicasets", namespace);
-    let replicasets: Value = client.get(&rs_path).await
+    let replicasets: Value = client
+        .get(&rs_path)
+        .await
         .context("Failed to get replicasets")?;
 
     if let Some(items) = replicasets.get("items").and_then(|v| v.as_array()) {
-        let mut history: Vec<_> = items.iter()
+        let mut history: Vec<_> = items
+            .iter()
             .filter(|rs| {
                 rs.get("metadata")
                     .and_then(|m| m.get("ownerReferences"))
                     .and_then(|o| o.as_array())
-                    .map(|refs| refs.iter().any(|r|
-                        r.get("name").and_then(|n| n.as_str()) == Some(name)
-                    ))
+                    .map(|refs| {
+                        refs.iter()
+                            .any(|r| r.get("name").and_then(|n| n.as_str()) == Some(name))
+                    })
                     .unwrap_or(false)
             })
             .collect();
@@ -248,7 +277,8 @@ async fn rollout_undo(
                     .and_then(|m| m.get("annotations"))
                     .and_then(|a| a.get("deployment.kubernetes.io/revision"))
                     .and_then(|r| r.as_str())
-                    .and_then(|s| s.parse::<i32>().ok()) == Some(rev)
+                    .and_then(|s| s.parse::<i32>().ok())
+                    == Some(rev)
             })
         } else {
             // Get previous revision (second to last)
@@ -264,16 +294,22 @@ async fn rollout_undo(
                     }
                 });
 
-                let _: Value = client.patch(&api_path, &patch, "application/merge-patch+json").await
+                let _: Value = client
+                    .patch(&api_path, &patch, "application/merge-patch+json")
+                    .await
                     .context("Failed to rollback deployment")?;
 
-                let target_rev = rs.get("metadata")
+                let target_rev = rs
+                    .get("metadata")
                     .and_then(|m| m.get("annotations"))
                     .and_then(|a| a.get("deployment.kubernetes.io/revision"))
                     .and_then(|r| r.as_str())
                     .unwrap_or("unknown");
 
-                println!("deployment.apps/{} rolled back to revision {}", name, target_rev);
+                println!(
+                    "deployment.apps/{} rolled back to revision {}",
+                    name, target_rev
+                );
             } else {
                 anyhow::bail!("Target replicaset has no template");
             }
@@ -307,7 +343,9 @@ async fn rollout_restart(
         }
     });
 
-    let _: Value = client.patch(&api_path, &patch, "application/merge-patch+json").await
+    let _: Value = client
+        .patch(&api_path, &patch, "application/merge-patch+json")
+        .await
         .context("Failed to restart resource")?;
 
     println!("{} {} restarted", resource_type, name);
@@ -325,7 +363,10 @@ async fn rollout_pause(
         anyhow::bail!("Rollout pause is only supported for deployments");
     }
 
-    let api_path = format!("/apis/apps/v1/namespaces/{}/deployments/{}", namespace, name);
+    let api_path = format!(
+        "/apis/apps/v1/namespaces/{}/deployments/{}",
+        namespace, name
+    );
 
     let patch = json!({
         "spec": {
@@ -333,7 +374,9 @@ async fn rollout_pause(
         }
     });
 
-    let _: Value = client.patch(&api_path, &patch, "application/merge-patch+json").await
+    let _: Value = client
+        .patch(&api_path, &patch, "application/merge-patch+json")
+        .await
         .context("Failed to pause deployment")?;
 
     println!("deployment.apps/{} paused", name);
@@ -351,7 +394,10 @@ async fn rollout_resume(
         anyhow::bail!("Rollout resume is only supported for deployments");
     }
 
-    let api_path = format!("/apis/apps/v1/namespaces/{}/deployments/{}", namespace, name);
+    let api_path = format!(
+        "/apis/apps/v1/namespaces/{}/deployments/{}",
+        namespace, name
+    );
 
     let patch = json!({
         "spec": {
@@ -359,7 +405,9 @@ async fn rollout_resume(
         }
     });
 
-    let _: Value = client.patch(&api_path, &patch, "application/merge-patch+json").await
+    let _: Value = client
+        .patch(&api_path, &patch, "application/merge-patch+json")
+        .await
         .context("Failed to resume deployment")?;
 
     println!("deployment.apps/{} resumed", name);
@@ -367,17 +415,30 @@ async fn rollout_resume(
     Ok(())
 }
 
-fn get_resource_api_path(resource_type: &str, namespace: &str, name: &str) -> Result<(String, String)> {
+fn get_resource_api_path(
+    resource_type: &str,
+    namespace: &str,
+    name: &str,
+) -> Result<(String, String)> {
     match resource_type {
-        "deployment" | "deployments" | "deploy" => {
-            Ok((format!("/apis/apps/v1/namespaces/{}/deployments/{}", namespace, name), "apps/v1".to_string()))
-        }
-        "statefulset" | "statefulsets" | "sts" => {
-            Ok((format!("/apis/apps/v1/namespaces/{}/statefulsets/{}", namespace, name), "apps/v1".to_string()))
-        }
-        "daemonset" | "daemonsets" | "ds" => {
-            Ok((format!("/apis/apps/v1/namespaces/{}/daemonsets/{}", namespace, name), "apps/v1".to_string()))
-        }
+        "deployment" | "deployments" | "deploy" => Ok((
+            format!(
+                "/apis/apps/v1/namespaces/{}/deployments/{}",
+                namespace, name
+            ),
+            "apps/v1".to_string(),
+        )),
+        "statefulset" | "statefulsets" | "sts" => Ok((
+            format!(
+                "/apis/apps/v1/namespaces/{}/statefulsets/{}",
+                namespace, name
+            ),
+            "apps/v1".to_string(),
+        )),
+        "daemonset" | "daemonsets" | "ds" => Ok((
+            format!("/apis/apps/v1/namespaces/{}/daemonsets/{}", namespace, name),
+            "apps/v1".to_string(),
+        )),
         _ => anyhow::bail!("Unsupported resource type for rollout: {}", resource_type),
     }
 }

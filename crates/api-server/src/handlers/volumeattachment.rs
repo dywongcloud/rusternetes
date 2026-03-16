@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::VolumeAttachment,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -184,13 +183,18 @@ pub async fn delete_volumeattachment(
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_cluster!(patch_volumeattachment, VolumeAttachment, "volumeattachments", "storage.k8s.io");
+crate::patch_handler_cluster!(
+    patch_volumeattachment,
+    VolumeAttachment,
+    "volumeattachments",
+    "storage.k8s.io"
+);
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rusternetes_common::{
-        resources::{VolumeAttachmentSpec, VolumeAttachmentSource},
+        resources::{VolumeAttachmentSource, VolumeAttachmentSpec},
         types::{ObjectMeta, TypeMeta},
     };
 
@@ -227,7 +231,10 @@ pub async fn deletecollection_volumeattachments(
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection volumeattachments with params: {:?}", params);
+    info!(
+        "DeleteCollection volumeattachments with params: {:?}",
+        params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "volumeattachments")
@@ -272,6 +279,9 @@ pub async fn deletecollection_volumeattachments(
         }
     }
 
-    info!("DeleteCollection completed: {} volumeattachments deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} volumeattachments deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

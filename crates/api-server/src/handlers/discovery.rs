@@ -399,10 +399,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "namespace".to_string(),
             namespaced: false,
             kind: "Namespace".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["ns".to_string()]),
             categories: None,
         },
@@ -423,10 +425,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "pod".to_string(),
             namespaced: true,
             kind: "Pod".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["po".to_string()]),
             categories: Some(vec!["all".to_string()]),
         },
@@ -501,10 +505,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "service".to_string(),
             namespaced: true,
             kind: "Service".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["svc".to_string()]),
             categories: Some(vec!["all".to_string()]),
         },
@@ -525,10 +531,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "node".to_string(),
             namespaced: false,
             kind: "Node".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["no".to_string()]),
             categories: None,
         },
@@ -549,10 +557,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "configmap".to_string(),
             namespaced: true,
             kind: "ConfigMap".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["cm".to_string()]),
             categories: None,
         },
@@ -561,10 +571,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "secret".to_string(),
             namespaced: true,
             kind: "Secret".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -573,10 +585,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "serviceaccount".to_string(),
             namespaced: true,
             kind: "ServiceAccount".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["sa".to_string()]),
             categories: None,
         },
@@ -585,10 +599,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "persistentvolume".to_string(),
             namespaced: false,
             kind: "PersistentVolume".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["pv".to_string()]),
             categories: None,
         },
@@ -597,10 +613,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "persistentvolumeclaim".to_string(),
             namespaced: true,
             kind: "PersistentVolumeClaim".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["pvc".to_string()]),
             categories: None,
         },
@@ -609,10 +627,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "endpoints".to_string(),
             namespaced: true,
             kind: "Endpoints".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["ep".to_string()]),
             categories: None,
         },
@@ -621,10 +641,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "event".to_string(),
             namespaced: true,
             kind: "Event".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["ev".to_string()]),
             categories: None,
         },
@@ -633,10 +655,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "resourcequota".to_string(),
             namespaced: true,
             kind: "ResourceQuota".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["quota".to_string()]),
             categories: None,
         },
@@ -645,10 +669,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "limitrange".to_string(),
             namespaced: true,
             kind: "LimitRange".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["limits".to_string()]),
             categories: None,
         },
@@ -657,10 +683,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "replicationcontroller".to_string(),
             namespaced: true,
             kind: "ReplicationController".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["rc".to_string()]),
             categories: Some(vec!["all".to_string()]),
         },
@@ -693,10 +721,12 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "podtemplate".to_string(),
             namespaced: true,
             kind: "PodTemplate".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -705,10 +735,7 @@ pub async fn get_core_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "componentstatus".to_string(),
             namespaced: false,
             kind: "ComponentStatus".to_string(),
-            verbs: vec!["get", "list"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec!["get", "list"].iter().map(|s| s.to_string()).collect(),
             short_names: Some(vec!["cs".to_string()]),
             categories: None,
         },
@@ -733,10 +760,12 @@ pub async fn get_apps_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "deployment".to_string(),
             namespaced: true,
             kind: "Deployment".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["deploy".to_string()]),
             categories: Some(vec!["all".to_string()]),
         },
@@ -769,10 +798,12 @@ pub async fn get_apps_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "replicaset".to_string(),
             namespaced: true,
             kind: "ReplicaSet".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["rs".to_string()]),
             categories: Some(vec!["all".to_string()]),
         },
@@ -805,10 +836,12 @@ pub async fn get_apps_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "statefulset".to_string(),
             namespaced: true,
             kind: "StatefulSet".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["sts".to_string()]),
             categories: Some(vec!["all".to_string()]),
         },
@@ -841,10 +874,12 @@ pub async fn get_apps_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "daemonset".to_string(),
             namespaced: true,
             kind: "DaemonSet".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["ds".to_string()]),
             categories: Some(vec!["all".to_string()]),
         },
@@ -865,10 +900,12 @@ pub async fn get_apps_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "controllerrevision".to_string(),
             namespaced: true,
             kind: "ControllerRevision".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create", "delete", "get", "list", "patch", "update", "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -893,10 +930,19 @@ pub async fn get_batch_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "job".to_string(),
             namespaced: true,
             kind: "Job".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: Some(vec!["all".to_string()]),
         },
@@ -917,10 +963,19 @@ pub async fn get_batch_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "cronjob".to_string(),
             namespaced: true,
             kind: "CronJob".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["cj".to_string()]),
             categories: Some(vec!["all".to_string()]),
         },
@@ -957,10 +1012,19 @@ pub async fn get_networking_v1_resources() -> (StatusCode, Json<APIResourceList>
             singular_name: "ingress".to_string(),
             namespaced: true,
             kind: "Ingress".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["ing".to_string()]),
             categories: None,
         },
@@ -981,10 +1045,19 @@ pub async fn get_networking_v1_resources() -> (StatusCode, Json<APIResourceList>
             singular_name: "ingressclass".to_string(),
             namespaced: false,
             kind: "IngressClass".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -993,10 +1066,19 @@ pub async fn get_networking_v1_resources() -> (StatusCode, Json<APIResourceList>
             singular_name: "networkpolicy".to_string(),
             namespaced: true,
             kind: "NetworkPolicy".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["netpol".to_string()]),
             categories: None,
         },
@@ -1005,10 +1087,19 @@ pub async fn get_networking_v1_resources() -> (StatusCode, Json<APIResourceList>
             singular_name: "servicecidr".to_string(),
             namespaced: false,
             kind: "ServiceCIDR".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1017,10 +1108,19 @@ pub async fn get_networking_v1_resources() -> (StatusCode, Json<APIResourceList>
             singular_name: "ipaddress".to_string(),
             namespaced: false,
             kind: "IPAddress".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1045,10 +1145,19 @@ pub async fn get_rbac_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "role".to_string(),
             namespaced: true,
             kind: "Role".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1057,10 +1166,19 @@ pub async fn get_rbac_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "rolebinding".to_string(),
             namespaced: true,
             kind: "RoleBinding".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1069,10 +1187,19 @@ pub async fn get_rbac_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "clusterrole".to_string(),
             namespaced: false,
             kind: "ClusterRole".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1081,10 +1208,19 @@ pub async fn get_rbac_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "clusterrolebinding".to_string(),
             namespaced: false,
             kind: "ClusterRoleBinding".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1109,10 +1245,19 @@ pub async fn get_storage_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "storageclass".to_string(),
             namespaced: false,
             kind: "StorageClass".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["sc".to_string()]),
             categories: None,
         },
@@ -1121,10 +1266,19 @@ pub async fn get_storage_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "csidriver".to_string(),
             namespaced: false,
             kind: "CSIDriver".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1133,10 +1287,19 @@ pub async fn get_storage_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "csinode".to_string(),
             namespaced: false,
             kind: "CSINode".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1145,10 +1308,19 @@ pub async fn get_storage_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "csistoragecapacity".to_string(),
             namespaced: true,
             kind: "CSIStorageCapacity".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1157,10 +1329,19 @@ pub async fn get_storage_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "volumeattachment".to_string(),
             namespaced: false,
             kind: "VolumeAttachment".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1181,10 +1362,19 @@ pub async fn get_storage_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "volumeattributesclass".to_string(),
             namespaced: false,
             kind: "VolumeAttributesClass".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1203,20 +1393,27 @@ pub async fn get_storage_v1_resources() -> (StatusCode, Json<APIResourceList>) {
 /// GET /apis/scheduling.k8s.io/v1
 /// Returns the list of resources available in the scheduling.k8s.io/v1 API
 pub async fn get_scheduling_v1_resources() -> (StatusCode, Json<APIResourceList>) {
-    let resources = vec![
-        APIResource {
-            name: "priorityclasses".to_string(),
-            singular_name: "priorityclass".to_string(),
-            namespaced: false,
-            kind: "PriorityClass".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            short_names: Some(vec!["pc".to_string()]),
-            categories: None,
-        },
-    ];
+    let resources = vec![APIResource {
+        name: "priorityclasses".to_string(),
+        singular_name: "priorityclass".to_string(),
+        namespaced: false,
+        kind: "PriorityClass".to_string(),
+        verbs: vec![
+            "create",
+            "delete",
+            "deletecollection",
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect(),
+        short_names: Some(vec!["pc".to_string()]),
+        categories: None,
+    }];
 
     let resource_list = APIResourceList {
         kind: "APIResourceList".to_string(),
@@ -1237,10 +1434,19 @@ pub async fn get_apiextensions_v1_resources() -> (StatusCode, Json<APIResourceLi
             singular_name: "customresourcedefinition".to_string(),
             namespaced: false,
             kind: "CustomResourceDefinition".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["crd".to_string(), "crds".to_string()]),
             categories: None,
         },
@@ -1277,10 +1483,19 @@ pub async fn get_admissionregistration_v1_resources() -> (StatusCode, Json<APIRe
             singular_name: "validatingwebhookconfiguration".to_string(),
             namespaced: false,
             kind: "ValidatingWebhookConfiguration".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1289,10 +1504,19 @@ pub async fn get_admissionregistration_v1_resources() -> (StatusCode, Json<APIRe
             singular_name: "mutatingwebhookconfiguration".to_string(),
             namespaced: false,
             kind: "MutatingWebhookConfiguration".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1301,10 +1525,19 @@ pub async fn get_admissionregistration_v1_resources() -> (StatusCode, Json<APIRe
             singular_name: "validatingadmissionpolicy".to_string(),
             namespaced: false,
             kind: "ValidatingAdmissionPolicy".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1313,10 +1546,19 @@ pub async fn get_admissionregistration_v1_resources() -> (StatusCode, Json<APIRe
             singular_name: "validatingadmissionpolicybinding".to_string(),
             namespaced: false,
             kind: "ValidatingAdmissionPolicyBinding".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1335,20 +1577,27 @@ pub async fn get_admissionregistration_v1_resources() -> (StatusCode, Json<APIRe
 /// GET /apis/coordination.k8s.io/v1
 /// Returns the list of resources available in the coordination.k8s.io/v1 API
 pub async fn get_coordination_v1_resources() -> (StatusCode, Json<APIResourceList>) {
-    let resources = vec![
-        APIResource {
-            name: "leases".to_string(),
-            singular_name: "lease".to_string(),
-            namespaced: true,
-            kind: "Lease".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            short_names: None,
-            categories: None,
-        },
-    ];
+    let resources = vec![APIResource {
+        name: "leases".to_string(),
+        singular_name: "lease".to_string(),
+        namespaced: true,
+        kind: "Lease".to_string(),
+        verbs: vec![
+            "create",
+            "delete",
+            "deletecollection",
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect(),
+        short_names: None,
+        categories: None,
+    }];
 
     let resource_list = APIResourceList {
         kind: "APIResourceList".to_string(),
@@ -1369,10 +1618,19 @@ pub async fn get_flowcontrol_v1_resources() -> (StatusCode, Json<APIResourceList
             singular_name: "flowschema".to_string(),
             namespaced: false,
             kind: "FlowSchema".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1393,10 +1651,19 @@ pub async fn get_flowcontrol_v1_resources() -> (StatusCode, Json<APIResourceList
             singular_name: "prioritylevelconfiguration".to_string(),
             namespaced: false,
             kind: "PriorityLevelConfiguration".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1433,10 +1700,19 @@ pub async fn get_certificates_v1_resources() -> (StatusCode, Json<APIResourceLis
             singular_name: "certificatesigningrequest".to_string(),
             namespaced: false,
             kind: "CertificateSigningRequest".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["csr".to_string()]),
             categories: None,
         },
@@ -1485,10 +1761,19 @@ pub async fn get_snapshot_v1_resources() -> (StatusCode, Json<APIResourceList>) 
             singular_name: "volumesnapshotclass".to_string(),
             namespaced: false,
             kind: "VolumeSnapshotClass".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1497,10 +1782,19 @@ pub async fn get_snapshot_v1_resources() -> (StatusCode, Json<APIResourceList>) 
             singular_name: "volumesnapshot".to_string(),
             namespaced: true,
             kind: "VolumeSnapshot".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1521,10 +1815,19 @@ pub async fn get_snapshot_v1_resources() -> (StatusCode, Json<APIResourceList>) 
             singular_name: "volumesnapshotcontent".to_string(),
             namespaced: false,
             kind: "VolumeSnapshotContent".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1555,20 +1858,20 @@ pub async fn get_snapshot_v1_resources() -> (StatusCode, Json<APIResourceList>) 
 /// GET /apis/discovery.k8s.io/v1
 /// Returns the list of resources available in the discovery.k8s.io/v1 API
 pub async fn get_discovery_v1_resources() -> (StatusCode, Json<APIResourceList>) {
-    let resources = vec![
-        APIResource {
-            name: "endpointslices".to_string(),
-            singular_name: "endpointslice".to_string(),
-            namespaced: true,
-            kind: "EndpointSlice".to_string(),
-            verbs: vec!["create", "delete", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            short_names: None,
-            categories: None,
-        },
-    ];
+    let resources = vec![APIResource {
+        name: "endpointslices".to_string(),
+        singular_name: "endpointslice".to_string(),
+        namespaced: true,
+        kind: "EndpointSlice".to_string(),
+        verbs: vec![
+            "create", "delete", "get", "list", "patch", "update", "watch",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect(),
+        short_names: None,
+        categories: None,
+    }];
 
     let resource_list = APIResourceList {
         kind: "APIResourceList".to_string(),
@@ -1583,20 +1886,27 @@ pub async fn get_discovery_v1_resources() -> (StatusCode, Json<APIResourceList>)
 /// GET /apis/node.k8s.io/v1
 /// Returns the list of resources available in the node.k8s.io/v1 API
 pub async fn get_node_v1_resources() -> (StatusCode, Json<APIResourceList>) {
-    let resources = vec![
-        APIResource {
-            name: "runtimeclasses".to_string(),
-            singular_name: "runtimeclass".to_string(),
-            namespaced: false,
-            kind: "RuntimeClass".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            short_names: None,
-            categories: None,
-        },
-    ];
+    let resources = vec![APIResource {
+        name: "runtimeclasses".to_string(),
+        singular_name: "runtimeclass".to_string(),
+        namespaced: false,
+        kind: "RuntimeClass".to_string(),
+        verbs: vec![
+            "create",
+            "delete",
+            "deletecollection",
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect(),
+        short_names: None,
+        categories: None,
+    }];
 
     let resource_list = APIResourceList {
         kind: "APIResourceList".to_string(),
@@ -1731,17 +2041,15 @@ pub async fn get_metrics_v1beta1_resources() -> (StatusCode, Json<APIResourceLis
 /// GET /apis/custom.metrics.k8s.io/v1beta2
 /// Returns the list of resources available in the custom.metrics.k8s.io/v1beta2 API
 pub async fn get_custom_metrics_v1beta2_resources() -> (StatusCode, Json<APIResourceList>) {
-    let resources = vec![
-        APIResource {
-            name: "*".to_string(),
-            singular_name: "".to_string(),
-            namespaced: true,
-            kind: "MetricValueList".to_string(),
-            verbs: vec!["get"].iter().map(|s| s.to_string()).collect(),
-            short_names: None,
-            categories: None,
-        },
-    ];
+    let resources = vec![APIResource {
+        name: "*".to_string(),
+        singular_name: "".to_string(),
+        namespaced: true,
+        kind: "MetricValueList".to_string(),
+        verbs: vec!["get"].iter().map(|s| s.to_string()).collect(),
+        short_names: None,
+        categories: None,
+    }];
 
     let resource_list = APIResourceList {
         kind: "APIResourceList".to_string(),
@@ -1762,10 +2070,19 @@ pub async fn get_resource_v1_resources() -> (StatusCode, Json<APIResourceList>) 
             singular_name: "resourceclaim".to_string(),
             namespaced: true,
             kind: "ResourceClaim".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1786,10 +2103,19 @@ pub async fn get_resource_v1_resources() -> (StatusCode, Json<APIResourceList>) 
             singular_name: "resourceclaimtemplate".to_string(),
             namespaced: true,
             kind: "ResourceClaimTemplate".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1798,10 +2124,19 @@ pub async fn get_resource_v1_resources() -> (StatusCode, Json<APIResourceList>) 
             singular_name: "deviceclass".to_string(),
             namespaced: false,
             kind: "DeviceClass".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1810,10 +2145,19 @@ pub async fn get_resource_v1_resources() -> (StatusCode, Json<APIResourceList>) 
             singular_name: "resourceslice".to_string(),
             namespaced: false,
             kind: "ResourceSlice".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: None,
             categories: None,
         },
@@ -1838,10 +2182,19 @@ pub async fn get_autoscaling_v2_resources() -> (StatusCode, Json<APIResourceList
             singular_name: "horizontalpodautoscaler".to_string(),
             namespaced: true,
             kind: "HorizontalPodAutoscaler".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["hpa".to_string()]),
             categories: Some(vec!["all".to_string()]),
         },
@@ -1878,10 +2231,19 @@ pub async fn get_policy_v1_resources() -> (StatusCode, Json<APIResourceList>) {
             singular_name: "poddisruptionbudget".to_string(),
             namespaced: true,
             kind: "PodDisruptionBudget".to_string(),
-            verbs: vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             short_names: Some(vec!["pdb".to_string()]),
             categories: None,
         },

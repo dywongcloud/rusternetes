@@ -100,7 +100,9 @@ pub async fn handle_exec_websocket(
                                         channel: StreamChannel::Stdout,
                                         data: buffer[..n].to_vec(),
                                     };
-                                    if let Err(e) = tx.lock().await.send(Message::Binary(msg.encode())).await {
+                                    if let Err(e) =
+                                        tx.lock().await.send(Message::Binary(msg.encode())).await
+                                    {
                                         error!("Failed to send stdout: {}", e);
                                         break;
                                     }
@@ -130,7 +132,9 @@ pub async fn handle_exec_websocket(
                                         channel: StreamChannel::Stderr,
                                         data: buffer[..n].to_vec(),
                                     };
-                                    if let Err(e) = tx.lock().await.send(Message::Binary(msg.encode())).await {
+                                    if let Err(e) =
+                                        tx.lock().await.send(Message::Binary(msg.encode())).await
+                                    {
                                         error!("Failed to send stderr: {}", e);
                                         break;
                                     }
@@ -252,7 +256,9 @@ pub async fn handle_attach_websocket(
                                         channel: StreamChannel::Stdout,
                                         data: buffer[..n].to_vec(),
                                     };
-                                    if let Err(e) = tx.lock().await.send(Message::Binary(msg.encode())).await {
+                                    if let Err(e) =
+                                        tx.lock().await.send(Message::Binary(msg.encode())).await
+                                    {
                                         error!("Failed to send stdout: {}", e);
                                         break;
                                     }
@@ -282,7 +288,9 @@ pub async fn handle_attach_websocket(
                                         channel: StreamChannel::Stderr,
                                         data: buffer[..n].to_vec(),
                                     };
-                                    if let Err(e) = tx.lock().await.send(Message::Binary(msg.encode())).await {
+                                    if let Err(e) =
+                                        tx.lock().await.send(Message::Binary(msg.encode())).await
+                                    {
                                         error!("Failed to send stderr: {}", e);
                                         break;
                                     }
@@ -322,12 +330,11 @@ pub async fn handle_attach_websocket(
 }
 
 /// Handle WebSocket connection for port-forward
-pub async fn handle_portforward_websocket(
-    mut socket: WebSocket,
-    pod: Pod,
-    ports: Vec<u16>,
-) {
-    debug!("WebSocket port-forward: pod={}, ports={:?}", pod.metadata.name, ports);
+pub async fn handle_portforward_websocket(mut socket: WebSocket, pod: Pod, ports: Vec<u16>) {
+    debug!(
+        "WebSocket port-forward: pod={}, ports={:?}",
+        pod.metadata.name, ports
+    );
 
     // For now, send a message explaining port-forward requires special handling
     warn!("Port-forward not yet fully implemented - requires TCP proxy");
@@ -421,9 +428,18 @@ mod tests {
 
     #[test]
     fn test_stream_channel_from_id() {
-        assert!(matches!(StreamChannel::from_id(0), Some(StreamChannel::Stdin)));
-        assert!(matches!(StreamChannel::from_id(1), Some(StreamChannel::Stdout)));
-        assert!(matches!(StreamChannel::from_id(2), Some(StreamChannel::Stderr)));
+        assert!(matches!(
+            StreamChannel::from_id(0),
+            Some(StreamChannel::Stdin)
+        ));
+        assert!(matches!(
+            StreamChannel::from_id(1),
+            Some(StreamChannel::Stdout)
+        ));
+        assert!(matches!(
+            StreamChannel::from_id(2),
+            Some(StreamChannel::Stderr)
+        ));
         assert!(StreamChannel::from_id(255).is_none());
     }
 

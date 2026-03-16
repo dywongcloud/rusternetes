@@ -7,8 +7,7 @@ use axum::{
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
     resources::ResourceClaimTemplate,
-    List,
-    Result,
+    List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -22,7 +21,15 @@ pub async fn create_resourceclaimtemplate(
     Query(params): Query<HashMap<String, String>>,
     Json(mut template): Json<ResourceClaimTemplate>,
 ) -> Result<(StatusCode, Json<ResourceClaimTemplate>)> {
-    info!("Creating ResourceClaimTemplate: {}/{}", namespace, template.metadata.as_ref().map(|m| m.name.as_ref().map(|n| n.as_str()).unwrap_or("")).unwrap_or(""));
+    info!(
+        "Creating ResourceClaimTemplate: {}/{}",
+        namespace,
+        template
+            .metadata
+            .as_ref()
+            .map(|m| m.name.as_ref().map(|n| n.as_str()).unwrap_or(""))
+            .unwrap_or("")
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "resourceclaimtemplates")
@@ -48,8 +55,9 @@ pub async fn create_resourceclaimtemplate(
         metadata.creation_timestamp = Some(chrono::Utc::now());
     }
 
-    let name = metadata.name.as_ref()
-        .ok_or_else(|| rusternetes_common::Error::InvalidResource("metadata.name is required".to_string()))?;
+    let name = metadata.name.as_ref().ok_or_else(|| {
+        rusternetes_common::Error::InvalidResource("metadata.name is required".to_string())
+    })?;
 
     // Check for dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -221,7 +229,12 @@ pub async fn delete_resourceclaimtemplate(
 }
 
 // Use the macro to create a PATCH handler (namespace-scoped)
-crate::patch_handler_namespaced!(patch_resourceclaimtemplate, ResourceClaimTemplate, "resourceclaimtemplates", "resource.k8s.io");
+crate::patch_handler_namespaced!(
+    patch_resourceclaimtemplate,
+    ResourceClaimTemplate,
+    "resourceclaimtemplates",
+    "resource.k8s.io"
+);
 
 pub async fn deletecollection_resourceclaimtemplates(
     State(state): State<Arc<ApiServerState>>,
@@ -229,7 +242,10 @@ pub async fn deletecollection_resourceclaimtemplates(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<StatusCode> {
-    info!("DeleteCollection resourceclaimtemplates in namespace: {} with params: {:?}", namespace, params);
+    info!(
+        "DeleteCollection resourceclaimtemplates in namespace: {} with params: {:?}",
+        namespace, params
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "resourceclaimtemplates")
@@ -273,6 +289,9 @@ pub async fn deletecollection_resourceclaimtemplates(
         }
     }
 
-    info!("DeleteCollection completed: {} resourceclaimtemplates deleted", deleted_count);
+    info!(
+        "DeleteCollection completed: {} resourceclaimtemplates deleted",
+        deleted_count
+    );
     Ok(StatusCode::OK)
 }

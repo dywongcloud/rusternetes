@@ -2,7 +2,7 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for EndpointSlices
 
-use rusternetes_common::resources::endpointslice::{EndpointSlice, Endpoint, EndpointPort};
+use rusternetes_common::resources::endpointslice::{Endpoint, EndpointPort, EndpointSlice};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -76,14 +76,14 @@ async fn test_endpointslice_update() {
 
     // Update endpointslice with additional endpoint
     endpointslice.endpoints.push(Endpoint {
-            addresses: vec!["10.0.0.2".to_string()],
-            conditions: None,
-            hostname: Some("pod-2".to_string()),
-            target_ref: None,
-            node_name: Some("node-2".to_string()),
-            zone: None,
-            hints: None,
-            deprecated_topology: None,
+        addresses: vec!["10.0.0.2".to_string()],
+        conditions: None,
+        hostname: Some("pod-2".to_string()),
+        target_ref: None,
+        node_name: Some("node-2".to_string()),
+        zone: None,
+        hints: None,
+        deprecated_topology: None,
     });
 
     let updated: EndpointSlice = storage.update(&key, &endpointslice).await.unwrap();
@@ -120,7 +120,11 @@ async fn test_endpointslice_list_in_namespace() {
     // Create multiple endpointslices
     for i in 1..=3 {
         let endpointslice = create_test_endpointslice(&format!("endpointslice-{}", i), namespace);
-        let key = build_key("endpointslices", Some(namespace), &format!("endpointslice-{}", i));
+        let key = build_key(
+            "endpointslices",
+            Some(namespace),
+            &format!("endpointslice-{}", i),
+        );
         storage.create(&key, &endpointslice).await.unwrap();
     }
 
@@ -132,7 +136,11 @@ async fn test_endpointslice_list_in_namespace() {
 
     // Cleanup
     for i in 1..=3 {
-        let key = build_key("endpointslices", Some(namespace), &format!("endpointslice-{}", i));
+        let key = build_key(
+            "endpointslices",
+            Some(namespace),
+            &format!("endpointslice-{}", i),
+        );
         storage.delete(&key).await.unwrap();
     }
 }
@@ -264,7 +272,11 @@ async fn test_endpointslice_with_multiple_ports() {
         ],
     };
 
-    let key = build_key("endpointslices", Some(namespace), "multi-port-endpointslice");
+    let key = build_key(
+        "endpointslices",
+        Some(namespace),
+        "multi-port-endpointslice",
+    );
     let created: EndpointSlice = storage.create(&key, &endpointslice).await.unwrap();
 
     assert_eq!(created.ports.len(), 3);
@@ -304,8 +316,8 @@ async fn test_endpointslice_with_endpoint_conditions() {
                 target_ref: None,
                 node_name: Some("node-1".to_string()),
                 zone: None,
-            hints: None,
-            deprecated_topology: None,
+                hints: None,
+                deprecated_topology: None,
             },
             Endpoint {
                 addresses: vec!["10.0.0.2".to_string()],
@@ -318,8 +330,8 @@ async fn test_endpointslice_with_endpoint_conditions() {
                 target_ref: None,
                 node_name: Some("node-2".to_string()),
                 zone: None,
-            hints: None,
-            deprecated_topology: None,
+                hints: None,
+                deprecated_topology: None,
             },
         ],
         ports: vec![EndpointPort {
@@ -330,12 +342,26 @@ async fn test_endpointslice_with_endpoint_conditions() {
         }],
     };
 
-    let key = build_key("endpointslices", Some(namespace), "conditions-endpointslice");
+    let key = build_key(
+        "endpointslices",
+        Some(namespace),
+        "conditions-endpointslice",
+    );
     let created: EndpointSlice = storage.create(&key, &endpointslice).await.unwrap();
 
     assert_eq!(created.endpoints.len(), 2);
-    assert_eq!(created.endpoints[0].conditions.as_ref().unwrap().ready, Some(true));
-    assert_eq!(created.endpoints[1].conditions.as_ref().unwrap().terminating, Some(true));
+    assert_eq!(
+        created.endpoints[0].conditions.as_ref().unwrap().ready,
+        Some(true)
+    );
+    assert_eq!(
+        created.endpoints[1]
+            .conditions
+            .as_ref()
+            .unwrap()
+            .terminating,
+        Some(true)
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -365,8 +391,8 @@ async fn test_endpointslice_with_zone_hints() {
                 target_ref: None,
                 node_name: Some("node-1".to_string()),
                 zone: Some("us-west-1a".to_string()),
-            hints: None,
-            deprecated_topology: None,
+                hints: None,
+                deprecated_topology: None,
             },
             Endpoint {
                 addresses: vec!["10.0.0.2".to_string()],
@@ -375,8 +401,8 @@ async fn test_endpointslice_with_zone_hints() {
                 target_ref: None,
                 node_name: Some("node-2".to_string()),
                 zone: Some("us-east-1b".to_string()),
-            hints: None,
-            deprecated_topology: None,
+                hints: None,
+                deprecated_topology: None,
             },
         ],
         ports: vec![EndpointPort {
@@ -442,7 +468,10 @@ async fn test_endpointslice_with_labels() {
         let mut labels = HashMap::new();
         labels.insert("app".to_string(), "nginx".to_string());
         labels.insert("tier".to_string(), "frontend".to_string());
-        labels.insert("kubernetes.io/service-name".to_string(), "nginx-service".to_string());
+        labels.insert(
+            "kubernetes.io/service-name".to_string(),
+            "nginx-service".to_string(),
+        );
         labels
     });
 
@@ -450,8 +479,19 @@ async fn test_endpointslice_with_labels() {
     let created: EndpointSlice = storage.create(&key, &endpointslice).await.unwrap();
 
     assert!(created.metadata.labels.is_some());
-    assert_eq!(created.metadata.labels.as_ref().unwrap().get("app"), Some(&"nginx".to_string()));
-    assert_eq!(created.metadata.labels.as_ref().unwrap().get("kubernetes.io/service-name"), Some(&"nginx-service".to_string()));
+    assert_eq!(
+        created.metadata.labels.as_ref().unwrap().get("app"),
+        Some(&"nginx".to_string())
+    );
+    assert_eq!(
+        created
+            .metadata
+            .labels
+            .as_ref()
+            .unwrap()
+            .get("kubernetes.io/service-name"),
+        Some(&"nginx-service".to_string())
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -476,7 +516,12 @@ async fn test_endpointslice_with_annotations() {
 
     assert!(created.metadata.annotations.is_some());
     assert_eq!(
-        created.metadata.annotations.as_ref().unwrap().get("description"),
+        created
+            .metadata
+            .annotations
+            .as_ref()
+            .unwrap()
+            .get("description"),
         Some(&"Test endpointslice".to_string())
     );
 
@@ -497,7 +542,10 @@ async fn test_endpointslice_with_finalizers() {
     let created: EndpointSlice = storage.create(&key, &endpointslice).await.unwrap();
 
     assert!(created.metadata.finalizers.is_some());
-    assert_eq!(created.metadata.finalizers.as_ref().unwrap()[0], "test.finalizer.io/cleanup");
+    assert_eq!(
+        created.metadata.finalizers.as_ref().unwrap()[0],
+        "test.finalizer.io/cleanup"
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -520,7 +568,10 @@ async fn test_endpointslice_metadata_immutability() {
     let updated: EndpointSlice = storage.update(&key, &created).await.unwrap();
 
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.metadata.creation_timestamp, original_creation_timestamp);
+    assert_eq!(
+        updated.metadata.creation_timestamp,
+        original_creation_timestamp
+    );
 
     // Cleanup
     storage.delete(&key).await.unwrap();
@@ -534,7 +585,11 @@ async fn test_endpointslice_list_all_namespaces() {
     for i in 1..=3 {
         let namespace = format!("ns-{}", i);
         let endpointslice = create_test_endpointslice(&format!("endpointslice-{}", i), &namespace);
-        let key = build_key("endpointslices", Some(&namespace), &format!("endpointslice-{}", i));
+        let key = build_key(
+            "endpointslices",
+            Some(&namespace),
+            &format!("endpointslice-{}", i),
+        );
         storage.create(&key, &endpointslice).await.unwrap();
     }
 
@@ -547,7 +602,11 @@ async fn test_endpointslice_list_all_namespaces() {
     // Cleanup
     for i in 1..=3 {
         let namespace = format!("ns-{}", i);
-        let key = build_key("endpointslices", Some(&namespace), &format!("endpointslice-{}", i));
+        let key = build_key(
+            "endpointslices",
+            Some(&namespace),
+            &format!("endpointslice-{}", i),
+        );
         storage.delete(&key).await.unwrap();
     }
 }

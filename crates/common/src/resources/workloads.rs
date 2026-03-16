@@ -20,7 +20,11 @@ pub struct ReplicationController {
 }
 
 impl ReplicationController {
-    pub fn new(name: impl Into<String>, namespace: impl Into<String>, spec: ReplicationControllerSpec) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        namespace: impl Into<String>,
+        spec: ReplicationControllerSpec,
+    ) -> Self {
         Self {
             type_meta: TypeMeta {
                 kind: "ReplicationController".to_string(),
@@ -120,7 +124,11 @@ pub struct ReplicaSet {
 }
 
 impl ReplicaSet {
-    pub fn new(name: impl Into<String>, namespace: impl Into<String>, spec: ReplicaSetSpec) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        namespace: impl Into<String>,
+        spec: ReplicaSetSpec,
+    ) -> Self {
         Self {
             type_meta: TypeMeta {
                 kind: "ReplicaSet".to_string(),
@@ -216,7 +224,11 @@ pub struct StatefulSet {
 }
 
 impl StatefulSet {
-    pub fn new(name: impl Into<String>, namespace: impl Into<String>, spec: StatefulSetSpec) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        namespace: impl Into<String>,
+        spec: StatefulSetSpec,
+    ) -> Self {
         Self {
             type_meta: TypeMeta {
                 kind: "StatefulSet".to_string(),
@@ -569,7 +581,11 @@ pub struct PodTemplate {
 }
 
 impl PodTemplate {
-    pub fn new(name: impl Into<String>, namespace: impl Into<String>, template: PodTemplateSpec) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        namespace: impl Into<String>,
+        template: PodTemplateSpec,
+    ) -> Self {
         Self {
             type_meta: TypeMeta {
                 kind: "PodTemplate".to_string(),
@@ -609,6 +625,7 @@ mod tests {
                 node_selector: None,
                 service_account_name: None,
                 hostname: None,
+                subdomain: None,
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,
@@ -626,7 +643,12 @@ mod tests {
 
         let rc_spec = ReplicationControllerSpec {
             replicas: Some(3),
-            selector: Some([("app".to_string(), "nginx".to_string())].iter().cloned().collect()),
+            selector: Some(
+                [("app".to_string(), "nginx".to_string())]
+                    .iter()
+                    .cloned()
+                    .collect(),
+            ),
             template: pod_template_spec,
             min_ready_seconds: None,
         };
@@ -654,6 +676,7 @@ mod tests {
                 node_selector: None,
                 service_account_name: None,
                 hostname: None,
+                subdomain: None,
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,
@@ -691,6 +714,7 @@ mod tests {
                 node_selector: None,
                 service_account_name: None,
                 hostname: None,
+                subdomain: None,
                 host_network: None,
                 host_pid: None,
                 host_ipc: None,

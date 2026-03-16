@@ -61,7 +61,10 @@ async fn test_ingressclass_with_controller() {
     // Create with controller
     let created: IngressClass = storage.create(&key, &ic).await.unwrap();
     assert!(created.spec.is_some());
-    assert_eq!(created.spec.as_ref().unwrap().controller, "k8s.io/ingress-nginx");
+    assert_eq!(
+        created.spec.as_ref().unwrap().controller,
+        "k8s.io/ingress-nginx"
+    );
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -209,13 +212,7 @@ async fn test_ingressclass_with_cluster_scoped_parameters() {
 
     // Create with cluster-scoped parameters
     let created: IngressClass = storage.create(&key, &ic).await.unwrap();
-    let params = created
-        .spec
-        .as_ref()
-        .unwrap()
-        .parameters
-        .as_ref()
-        .unwrap();
+    let params = created.spec.as_ref().unwrap().parameters.as_ref().unwrap();
     assert_eq!(params.scope, Some("Cluster".to_string()));
     assert!(params.namespace.is_none());
 
@@ -331,7 +328,10 @@ async fn test_ingressclass_with_annotations() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut annotations = HashMap::new();
-    annotations.insert("description".to_string(), "NGINX Ingress Controller".to_string());
+    annotations.insert(
+        "description".to_string(),
+        "NGINX Ingress Controller".to_string(),
+    );
     annotations.insert(
         "ingressclass.kubernetes.io/is-default-class".to_string(),
         "true".to_string(),
@@ -394,13 +394,7 @@ async fn test_ingressclass_with_parameters_no_api_group() {
 
     // Create with parameters referencing core API group
     let created: IngressClass = storage.create(&key, &ic).await.unwrap();
-    let params = created
-        .spec
-        .as_ref()
-        .unwrap()
-        .parameters
-        .as_ref()
-        .unwrap();
+    let params = created.spec.as_ref().unwrap().parameters.as_ref().unwrap();
     assert!(params.api_group.is_none());
     assert_eq!(params.kind, "ConfigMap");
 
@@ -413,7 +407,8 @@ async fn test_ingressclass_with_long_controller_name() {
     let storage = Arc::new(MemoryStorage::new());
 
     // Controller names can be long (up to 250 characters)
-    let long_controller = "very.long.domain.example.com/ingress-controller-with-a-very-long-name-that-is-still-valid";
+    let long_controller =
+        "very.long.domain.example.com/ingress-controller-with-a-very-long-name-that-is-still-valid";
 
     let mut ic = create_test_ingressclass("test-long-controller");
     ic.spec = Some(IngressClassSpec {

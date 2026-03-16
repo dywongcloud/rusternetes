@@ -6,7 +6,9 @@
 // 3. Dual-stack CIDR configurations
 // 4. ServiceCIDR status and conditions
 
-use rusternetes_common::resources::{ServiceCIDR, ServiceCIDRSpec, ServiceCIDRStatus, ServiceCIDRCondition};
+use rusternetes_common::resources::{
+    ServiceCIDR, ServiceCIDRCondition, ServiceCIDRSpec, ServiceCIDRStatus,
+};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 
 fn create_servicecidr(name: &str, cidrs: Vec<String>) -> ServiceCIDR {
@@ -61,10 +63,7 @@ fn test_servicecidr_ipv6_single_cidr() {
 fn test_servicecidr_dual_stack() {
     let cidr = create_servicecidr(
         "dual-stack-cidr",
-        vec![
-            "10.96.0.0/12".to_string(),
-            "fd00::/108".to_string(),
-        ],
+        vec!["10.96.0.0/12".to_string(), "fd00::/108".to_string()],
     );
 
     assert!(cidr.spec.is_some());
@@ -79,14 +78,14 @@ fn test_servicecidr_max_two_cidrs() {
     // Per Kubernetes spec, max 2 CIDRs allowed (one of each IP family)
     let cidr = create_servicecidr(
         "two-cidrs",
-        vec![
-            "10.96.0.0/12".to_string(),
-            "fd00::/108".to_string(),
-        ],
+        vec!["10.96.0.0/12".to_string(), "fd00::/108".to_string()],
     );
 
     let spec = cidr.spec.unwrap();
-    assert!(spec.cidrs.len() <= 2, "ServiceCIDR should have at most 2 CIDRs");
+    assert!(
+        spec.cidrs.len() <= 2,
+        "ServiceCIDR should have at most 2 CIDRs"
+    );
 }
 
 // ===== Serialization Tests =====
@@ -109,17 +108,17 @@ fn test_servicecidr_serialization() {
 
     assert_eq!(deserialized.type_meta.kind, "ServiceCIDR");
     assert_eq!(deserialized.metadata.name, "test-cidr");
-    assert_eq!(deserialized.spec.as_ref().unwrap().cidrs, vec!["10.96.0.0/12"]);
+    assert_eq!(
+        deserialized.spec.as_ref().unwrap().cidrs,
+        vec!["10.96.0.0/12"]
+    );
 }
 
 #[test]
 fn test_servicecidr_dual_stack_serialization() {
     let cidr = create_servicecidr(
         "dual-stack",
-        vec![
-            "10.96.0.0/12".to_string(),
-            "fd00::/108".to_string(),
-        ],
+        vec!["10.96.0.0/12".to_string(), "fd00::/108".to_string()],
     );
 
     let json = serde_json::to_string(&cidr).unwrap();
@@ -273,7 +272,10 @@ fn test_servicecidr_metadata_fields() {
     let deserialized: ServiceCIDR = serde_json::from_str(&json).unwrap();
 
     assert_eq!(deserialized.metadata.uid, "test-uid-123");
-    assert_eq!(deserialized.metadata.resource_version, Some("1".to_string()));
+    assert_eq!(
+        deserialized.metadata.resource_version,
+        Some("1".to_string())
+    );
 }
 
 #[test]

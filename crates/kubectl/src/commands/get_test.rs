@@ -130,7 +130,9 @@ mod tests {
         // These should all be valid resource type strings
         for resource_type in new_types {
             assert!(resource_type.len() > 0);
-            assert!(resource_type.chars().all(|c| c.is_lowercase() || c.is_ascii_alphanumeric()));
+            assert!(resource_type
+                .chars()
+                .all(|c| c.is_lowercase() || c.is_ascii_alphanumeric()));
         }
     }
 }

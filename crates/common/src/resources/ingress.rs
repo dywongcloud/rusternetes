@@ -228,9 +228,7 @@ mod tests {
             backend,
         };
 
-        let http = HTTPIngressRuleValue {
-            paths: vec![path],
-        };
+        let http = HTTPIngressRuleValue { paths: vec![path] };
 
         let rule = IngressRule {
             host: Some("example.com".to_string()),

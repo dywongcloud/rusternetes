@@ -115,8 +115,7 @@ mod tests {
             pod_fixed: Some(pod_fixed),
         };
 
-        let rc = RuntimeClass::new("my-runtime", "runc")
-            .with_overhead(overhead.clone());
+        let rc = RuntimeClass::new("my-runtime", "runc").with_overhead(overhead.clone());
 
         assert!(rc.overhead.is_some());
         let overhead_val = rc.overhead.unwrap();
@@ -137,8 +136,7 @@ mod tests {
             tolerations: None,
         };
 
-        let rc = RuntimeClass::new("kata", "kata-runtime")
-            .with_scheduling(scheduling);
+        let rc = RuntimeClass::new("kata", "kata-runtime").with_scheduling(scheduling);
 
         assert!(rc.scheduling.is_some());
         let sched = rc.scheduling.unwrap();
@@ -171,15 +169,13 @@ mod tests {
         let mut node_selector = HashMap::new();
         node_selector.insert("runtime".to_string(), "gvisor".to_string());
 
-        let tolerations = vec![
-            crate::resources::pod::Toleration {
-                key: Some("runtime".to_string()),
-                operator: Some("Equal".to_string()),
-                value: Some("gvisor".to_string()),
-                effect: Some("NoSchedule".to_string()),
-                toleration_seconds: None,
-            },
-        ];
+        let tolerations = vec![crate::resources::pod::Toleration {
+            key: Some("runtime".to_string()),
+            operator: Some("Equal".to_string()),
+            value: Some("gvisor".to_string()),
+            effect: Some("NoSchedule".to_string()),
+            toleration_seconds: None,
+        }];
 
         let scheduling = Scheduling {
             node_selector: Some(node_selector),

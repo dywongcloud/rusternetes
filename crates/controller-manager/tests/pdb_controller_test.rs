@@ -23,7 +23,12 @@ async fn setup_test() -> Arc<MemoryStorage> {
     Arc::new(MemoryStorage::new())
 }
 
-fn create_test_pod(name: &str, namespace: &str, labels: HashMap<String, String>, is_healthy: bool) -> Pod {
+fn create_test_pod(
+    name: &str,
+    namespace: &str,
+    labels: HashMap<String, String>,
+    is_healthy: bool,
+) -> Pod {
     Pod {
         type_meta: TypeMeta {
             kind: "Pod".to_string(),
@@ -71,6 +76,7 @@ fn create_test_pod(name: &str, namespace: &str, labels: HashMap<String, String>,
             priority: None,
             priority_class_name: None,
             hostname: None,
+            subdomain: None,
             host_network: None,
             host_pid: None,
             host_ipc: None,
@@ -82,7 +88,11 @@ fn create_test_pod(name: &str, namespace: &str, labels: HashMap<String, String>,
             resource_claims: None,
         }),
         status: Some(PodStatus {
-            phase: Some(if is_healthy { Phase::Running } else { Phase::Pending }),
+            phase: Some(if is_healthy {
+                Phase::Running
+            } else {
+                Phase::Pending
+            }),
             message: None,
             reason: None,
             host_ip: Some("10.0.0.1".to_string()),
@@ -104,9 +114,7 @@ async fn test_pdb_calculates_status_with_min_available() {
         min_available: Some(IntOrString::Int(2)),
         max_unavailable: None,
         selector: LabelSelector {
-            match_labels: Some(HashMap::from([
-                ("app".to_string(), "web".to_string()),
-            ])),
+            match_labels: Some(HashMap::from([("app".to_string(), "web".to_string())])),
             match_expressions: None,
         },
         unhealthy_pod_eviction_policy: None,
@@ -137,7 +145,10 @@ async fn test_pdb_calculates_status_with_min_available() {
 
     assert_eq!(status.current_healthy, 3, "Should count 3 healthy pods");
     assert_eq!(status.desired_healthy, 2, "minAvailable=2");
-    assert_eq!(status.disruptions_allowed, 1, "3 - 2 = 1 disruption allowed");
+    assert_eq!(
+        status.disruptions_allowed, 1,
+        "3 - 2 = 1 disruption allowed"
+    );
     assert_eq!(status.expected_pods, 3, "Total pods matching selector");
 }
 
@@ -151,9 +162,7 @@ async fn test_pdb_calculates_status_with_max_unavailable() {
         min_available: None,
         max_unavailable: Some(IntOrString::Int(1)),
         selector: LabelSelector {
-            match_labels: Some(HashMap::from([
-                ("app".to_string(), "api".to_string()),
-            ])),
+            match_labels: Some(HashMap::from([("app".to_string(), "api".to_string())])),
             match_expressions: None,
         },
         unhealthy_pod_eviction_policy: None,
@@ -198,9 +207,7 @@ async fn test_pdb_blocks_disruptions_when_at_minimum() {
         min_available: Some(IntOrString::Int(3)),
         max_unavailable: None,
         selector: LabelSelector {
-            match_labels: Some(HashMap::from([
-                ("app".to_string(), "critical".to_string()),
-            ])),
+            match_labels: Some(HashMap::from([("app".to_string(), "critical".to_string())])),
             match_expressions: None,
         },
         unhealthy_pod_eviction_policy: None,
@@ -231,7 +238,10 @@ async fn test_pdb_blocks_disruptions_when_at_minimum() {
 
     assert_eq!(status.current_healthy, 3);
     assert_eq!(status.desired_healthy, 3);
-    assert_eq!(status.disruptions_allowed, 0, "No disruptions allowed - at minimum");
+    assert_eq!(
+        status.disruptions_allowed, 0,
+        "No disruptions allowed - at minimum"
+    );
 }
 
 #[tokio::test]
@@ -308,9 +318,7 @@ async fn test_pdb_namespace_isolation() {
         min_available: Some(IntOrString::Int(3)),
         max_unavailable: None,
         selector: LabelSelector {
-            match_labels: Some(HashMap::from([
-                ("app".to_string(), "web".to_string()),
-            ])),
+            match_labels: Some(HashMap::from([("app".to_string(), "web".to_string())])),
             match_expressions: None,
         },
         unhealthy_pod_eviction_policy: None,
@@ -366,9 +374,7 @@ async fn test_pdb_percentage_min_available() {
         min_available: Some(IntOrString::String("80%".to_string())),
         max_unavailable: None,
         selector: LabelSelector {
-            match_labels: Some(HashMap::from([
-                ("app".to_string(), "cache".to_string()),
-            ])),
+            match_labels: Some(HashMap::from([("app".to_string(), "cache".to_string())])),
             match_expressions: None,
         },
         unhealthy_pod_eviction_policy: None,
@@ -413,9 +419,10 @@ async fn test_pdb_percentage_max_unavailable() {
         min_available: None,
         max_unavailable: Some(IntOrString::String("30%".to_string())),
         selector: LabelSelector {
-            match_labels: Some(HashMap::from([
-                ("component".to_string(), "worker".to_string()),
-            ])),
+            match_labels: Some(HashMap::from([(
+                "component".to_string(),
+                "worker".to_string(),
+            )])),
             match_expressions: None,
         },
         unhealthy_pod_eviction_policy: None,
@@ -446,7 +453,10 @@ async fn test_pdb_percentage_max_unavailable() {
 
     assert_eq!(status.expected_pods, 10);
     assert_eq!(status.current_healthy, 10);
-    assert_eq!(status.desired_healthy, 7, "10 - floor(30% of 10) = 10 - 3 = 7");
+    assert_eq!(
+        status.desired_healthy, 7,
+        "10 - floor(30% of 10) = 10 - 3 = 7"
+    );
     assert_eq!(status.disruptions_allowed, 3, "10 - 7 = 3");
 }
 
@@ -459,9 +469,7 @@ async fn test_pdb_only_counts_healthy_pods() {
         min_available: Some(IntOrString::Int(3)),
         max_unavailable: None,
         selector: LabelSelector {
-            match_labels: Some(HashMap::from([
-                ("app".to_string(), "db".to_string()),
-            ])),
+            match_labels: Some(HashMap::from([("app".to_string(), "db".to_string())])),
             match_expressions: None,
         },
         unhealthy_pod_eviction_policy: None,
@@ -505,5 +513,8 @@ async fn test_pdb_only_counts_healthy_pods() {
     assert_eq!(status.expected_pods, 5, "Total pods matching selector");
     assert_eq!(status.current_healthy, 3, "Only Running pods are healthy");
     assert_eq!(status.desired_healthy, 3);
-    assert_eq!(status.disruptions_allowed, 0, "At minimum healthy threshold");
+    assert_eq!(
+        status.disruptions_allowed, 0,
+        "At minimum healthy threshold"
+    );
 }

@@ -22,15 +22,18 @@ pub async fn execute(
     };
 
     // Parse the patch to validate JSON
-    let patch_value: Value = serde_json::from_str(&patch_content)
-        .context("Failed to parse patch as JSON")?;
+    let patch_value: Value =
+        serde_json::from_str(&patch_content).context("Failed to parse patch as JSON")?;
 
     // Determine content type based on patch type
     let content_type = match patch_type {
         "strategic" => "application/strategic-merge-patch+json",
         "merge" => "application/merge-patch+json",
         "json" => "application/json-patch+json",
-        _ => anyhow::bail!("Invalid patch type: {}. Must be one of: strategic, merge, json", patch_type),
+        _ => anyhow::bail!(
+            "Invalid patch type: {}. Must be one of: strategic, merge, json",
+            patch_type
+        ),
     };
 
     // Build API path based on resource type
@@ -50,11 +53,16 @@ pub async fn execute(
     let path = if resource_name == "nodes" {
         format!("/{}/{}/{}", api_path, resource_name, name)
     } else {
-        format!("/{}/namespaces/{}/{}/{}", api_path, namespace, resource_name, name)
+        format!(
+            "/{}/namespaces/{}/{}/{}",
+            api_path, namespace, resource_name, name
+        )
     };
 
     // Send PATCH request
-    let result: Value = client.patch(&path, &patch_value, content_type).await
+    let result: Value = client
+        .patch(&path, &patch_value, content_type)
+        .await
         .context("Failed to patch resource")?;
 
     // Pretty print the result
