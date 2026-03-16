@@ -1,6 +1,6 @@
 # Rusternetes
 
-A Kubernetes reimplementation in Rust, focusing on memory safety, performance, and educational value.
+A Kubernetes reimplementation in Rust, focusing on memory safety, performance.
 
 ## Architecture
 
