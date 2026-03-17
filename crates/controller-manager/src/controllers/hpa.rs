@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::Utc;
 use rusternetes_common::resources::autoscaling::ResourceMetricStatus;
 use rusternetes_common::resources::{
     Deployment, HorizontalPodAutoscaler, HorizontalPodAutoscalerCondition,
@@ -405,6 +406,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
                         pods: None,
                         object: None,
                         external: None,
+                        container_resource: None,
                     })
                     .collect(),
             )
@@ -413,12 +415,12 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
         };
 
         // Build conditions
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = Utc::now();
         let mut conditions = vec![
             HorizontalPodAutoscalerCondition {
                 condition_type: "AbleToScale".to_string(),
                 status: "True".to_string(),
-                last_transition_time: Some(now.clone()),
+                last_transition_time: Some(now),
                 reason: Some("ReadyForNewScale".to_string()),
                 message: Some(
                     "the HPA controller was able to get the target's current scale".to_string(),
@@ -427,7 +429,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
             HorizontalPodAutoscalerCondition {
                 condition_type: "ScalingActive".to_string(),
                 status: "True".to_string(),
-                last_transition_time: Some(now.clone()),
+                last_transition_time: Some(now),
                 reason: Some("ValidMetricFound".to_string()),
                 message: Some(
                     "the HPA was able to successfully calculate a replica count from the metrics"
@@ -443,7 +445,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
             conditions.push(HorizontalPodAutoscalerCondition {
                 condition_type: "ScalingLimited".to_string(),
                 status: "True".to_string(),
-                last_transition_time: Some(now.clone()),
+                last_transition_time: Some(now),
                 reason: Some("TooManyReplicas".to_string()),
                 message: Some(format!(
                     "the desired replica count is more than the maximum replica count of {}",
@@ -454,7 +456,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
             conditions.push(HorizontalPodAutoscalerCondition {
                 condition_type: "ScalingLimited".to_string(),
                 status: "True".to_string(),
-                last_transition_time: Some(now.clone()),
+                last_transition_time: Some(now),
                 reason: Some("TooFewReplicas".to_string()),
                 message: Some(format!(
                     "the desired replica count is less than the minimum replica count of {}",
@@ -474,9 +476,9 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
         }
 
         let last_scale_time = if current_replicas != desired_replicas {
-            Some(chrono::Utc::now().to_rfc3339())
+            Some(Utc::now())
         } else {
-            hpa.status.as_ref().and_then(|s| s.last_scale_time.clone())
+            hpa.status.as_ref().and_then(|s| s.last_scale_time)
         };
 
         updated_hpa.status = Some(HorizontalPodAutoscalerStatus {
@@ -508,7 +510,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
         );
 
         let mut updated_hpa = hpa.clone();
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = Utc::now();
 
         let current_replicas = hpa.status.as_ref().map(|s| s.current_replicas).unwrap_or(0);
 
@@ -516,7 +518,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
             HorizontalPodAutoscalerCondition {
                 condition_type: "AbleToScale".to_string(),
                 status: "False".to_string(),
-                last_transition_time: Some(now.clone()),
+                last_transition_time: Some(now),
                 reason: Some("FailedGetScale".to_string()),
                 message: Some(error_msg.to_string()),
             },
@@ -531,7 +533,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
 
         updated_hpa.status = Some(HorizontalPodAutoscalerStatus {
             observed_generation: None,
-            last_scale_time: hpa.status.as_ref().and_then(|s| s.last_scale_time.clone()),
+            last_scale_time: hpa.status.as_ref().and_then(|s| s.last_scale_time),
             current_replicas,
             desired_replicas: current_replicas,
             current_metrics: None,

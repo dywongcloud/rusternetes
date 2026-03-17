@@ -411,7 +411,7 @@ async fn test_hpa_with_status() {
 
     hpa.status = Some(HorizontalPodAutoscalerStatus {
         observed_generation: Some(1),
-        last_scale_time: Some(chrono::Utc::now().to_rfc3339()),
+        last_scale_time: Some(chrono::Utc::now()),
         current_replicas: 3,
         desired_replicas: 5,
         current_metrics: None,

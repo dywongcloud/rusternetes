@@ -54,15 +54,16 @@ pub use authorization::{
     SubjectAccessReviewStatus, SubjectRulesReviewStatus,
 };
 pub use autoscaling::{
-    ContainerResourceMetricSource, ContainerResourcePolicy, CrossVersionObjectReference,
-    ExternalMetricSource, HPAScalingPolicy, HPAScalingRules, HorizontalPodAutoscaler,
-    HorizontalPodAutoscalerBehavior, HorizontalPodAutoscalerCondition, HorizontalPodAutoscalerSpec,
-    HorizontalPodAutoscalerStatus, MetricIdentifier, MetricSpec, MetricStatus, MetricTarget,
-    MetricValueStatus, ObjectMetricSource, PodResourcePolicy, PodUpdatePolicy, PodsMetricSource,
-    RecommendedContainerResources, RecommendedPodResources, ResourceMetricSource,
-    VerticalPodAutoscaler, VerticalPodAutoscalerCondition,
-    VerticalPodAutoscalerRecommenderSelector, VerticalPodAutoscalerSpec,
-    VerticalPodAutoscalerStatus,
+    ContainerResourceMetricSource, ContainerResourceMetricStatus, ContainerResourcePolicy,
+    CrossVersionObjectReference, ExternalMetricSource, ExternalMetricStatus, HPAScalingPolicy,
+    HPAScalingRules, HorizontalPodAutoscaler, HorizontalPodAutoscalerBehavior,
+    HorizontalPodAutoscalerCondition, HorizontalPodAutoscalerSpec, HorizontalPodAutoscalerStatus,
+    MetricIdentifier, MetricSpec, MetricStatus, MetricTarget, MetricValueStatus,
+    ObjectMetricSource, ObjectMetricStatus, PodResourcePolicy, PodUpdatePolicy, PodsMetricSource,
+    PodsMetricStatus, RecommendedContainerResources, RecommendedPodResources,
+    ResourceMetricSource, ResourceMetricStatus, VerticalPodAutoscaler,
+    VerticalPodAutoscalerCondition, VerticalPodAutoscalerRecommenderSelector,
+    VerticalPodAutoscalerSpec, VerticalPodAutoscalerStatus,
 };
 pub use binding::Binding;
 pub use certificates::{

@@ -1,4 +1,5 @@
 use crate::types::{ObjectMeta, TypeMeta};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// HorizontalPodAutoscaler automatically scales the number of pods
@@ -249,7 +250,7 @@ pub struct HorizontalPodAutoscalerStatus {
 
     /// Last time the autoscaler scaled the number of pods
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_scale_time: Option<String>,
+    pub last_scale_time: Option<DateTime<Utc>>,
 
     /// Current number of replicas
     pub current_replicas: i32,
@@ -289,6 +290,24 @@ pub struct MetricStatus {
     /// External metric status
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external: Option<ExternalMetricStatus>,
+
+    /// ContainerResource metric status (per-container resource metric)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub container_resource: Option<ContainerResourceMetricStatus>,
+}
+
+/// ContainerResourceMetricStatus indicates the current value of a container resource metric
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerResourceMetricStatus {
+    /// Name of the resource
+    pub name: String,
+
+    /// Container is the name of the container the metric applies to
+    pub container: String,
+
+    /// Current contains the current value for the metric
+    pub current: MetricValueStatus,
 }
 
 /// ResourceMetricStatus indicates the current value of a resource metric
@@ -368,7 +387,7 @@ pub struct HorizontalPodAutoscalerCondition {
 
     /// Last time the condition transitioned
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_transition_time: Option<String>,
+    pub last_transition_time: Option<DateTime<Utc>>,
 
     /// Reason for the condition's last transition
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -541,7 +560,7 @@ pub struct VerticalPodAutoscalerCondition {
 
     /// Last time the condition transitioned
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_transition_time: Option<String>,
+    pub last_transition_time: Option<DateTime<Utc>>,
 
     /// Reason for the condition's last transition
     #[serde(skip_serializing_if = "Option::is_none")]

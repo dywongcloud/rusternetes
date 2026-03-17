@@ -99,7 +99,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 ---
 
-## 3. core/v1 — Container
+## 3. core/v1 — Container ✅ (partial)
 
 **File**: `crates/common/src/resources/pod.rs`
 
@@ -110,6 +110,12 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 | `resizePolicy: Option<Vec<ContainerResizePolicy>>` | ✅ Added |
 | `restartPolicy: Option<String>` | ✅ Added (also used for sidecar detection) |
 | `ContainerResizePolicy` type | ✅ Added |
+
+### ✅ Completed (current session)
+
+| Field | Status |
+|-------|--------|
+| `lifecycle: Option<Lifecycle>` | ✅ Added |
 
 ### Still missing
 
@@ -583,18 +589,25 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 ---
 
-## 23. autoscaling/v2 — HPA
+## 23. autoscaling/v2 — HPA ✅ (partial)
 
 **File**: `crates/common/src/resources/autoscaling.rs`
 
-### Gaps vs swagger
+### ✅ Completed (current session)
+
+| Item | Status |
+|------|--------|
+| `HorizontalPodAutoscalerCondition.last_transition_time` | ✅ Fixed: `Option<String>` → `Option<DateTime<Utc>>` |
+| `HorizontalPodAutoscalerStatus.last_scale_time` | ✅ Fixed: `Option<String>` → `Option<DateTime<Utc>>` |
+| `MetricStatus.containerResource` | ✅ Added: `container_resource: Option<ContainerResourceMetricStatus>` |
+| `ContainerResourceMetricStatus` type | ✅ Added |
+| `currentReplicas: i32` | ✅ Already present as non-optional |
+
+### Still missing
 
 | Item | Issue | Priority |
 |------|-------|----------|
-| `HorizontalPodAutoscalerStatus.conditions` | Present but condition timestamps are `Option<String>` instead of `Option<DateTime<Utc>>` | P1 |
 | `HPAScalingRules.tolerance` | Missing `tolerance: Quantity` field (k8s 1.35 new field) | P2 |
-| `MetricStatus` | Missing `containerResource` variant | P1 |
-| `HorizontalPodAutoscalerStatus` | We are missing `currentReplicas: i32` as always-present field | P1 |
 
 ---
 
@@ -741,24 +754,30 @@ Status: **largely complete**. No remaining critical gaps.
 | `ResourceRequirements.claims` | ✅ Done (commit e24e251) |
 | `ResourceQuota`: full implementation | ✅ Already implemented (policy.rs) |
 | `StorageClass`: full implementation | ✅ Already implemented (volume.rs) |
+| `Container.lifecycle` + `Lifecycle`/`LifecycleHandler`/`SleepAction` types | ✅ Done (current session) |
+| `EphemeralContainer`: `resizePolicy`, `restartPolicy`, `resources` | ✅ Done (current session) |
+| `Volume` struct: `nfs`, `iscsi`, `projected`, `image` + projection types | ✅ Done (current session) |
+| `NodeSpec.podCIDRs` | ✅ Done (current session) |
+| `PersistentVolumeClaimSpec`: `dataSourceRef`, `volumeAttributesClassName` | ✅ Done (current session) |
+| HPA: `MetricStatus.containerResource`, timestamp types | ✅ Done (current session) |
+| `PodDisruptionBudgetSpec.unhealthyPodEvictionPolicy` | ✅ Already implemented (policy.rs) |
+| `PodDisruptionBudgetStatus.conditions` | ✅ Already implemented (policy.rs) |
+| `PersistentVolumeStatus.reason/message` | ✅ Already implemented (volume.rs) |
 
 ### Phase 3 — P2 fixes (Not started)
 
 | Item | Priority |
 |------|----------|
-| `Volume` struct: expand from enum to flat struct with all K8s volume types | P2 |
 | `PodSecurityContext`: `seLinuxChangePolicy`, `supplementalGroupsPolicy` | P2 |
 | `LimitRange`: full implementation | P2 |
-| `PersistentVolumeClaimSpec/Status`: missing fields | P2 |
-| `NodeSpec.podCIDRs` | P2 |
+| `PersistentVolumeClaimStatus`: `currentVolumeAttributesClassName`, `modifyVolumeStatus` | P2 |
 | `NodeSystemInfo.swap` | P2 |
-| `Lifecycle.sleep` (`SleepAction`), `Lifecycle.stopSignal` | P2 |
+| `Lifecycle.stopSignal` | P2 |
 | `HPAScalingRules.tolerance` | P2 |
 | `DeploymentStatus.terminatingReplicas` | P2 |
 | `StatefulSetSpec.ordinals` | P2 |
 | `JobSpec`: `podFailurePolicy`, `successPolicy`, `podReplacementPolicy` | P2 |
 | `JobStatus`: `completedIndexes`, `failedIndexes`, `uncountedTerminatedPods` | P2 |
-| `PodDisruptionBudget`: `unhealthyPodEvictionPolicy`, `conditions` | P2 |
 
 ### Phase 4 — P3 (Nice to have / legacy)
 
