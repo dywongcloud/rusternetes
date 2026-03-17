@@ -1801,11 +1801,17 @@ impl ContainerRuntime {
                     } else if exit_code != 0 {
                         Some(ContainerState::Terminated {
                             exit_code: exit_code as i32,
+                            signal: None,
                             reason: state.error,
+                            message: None,
+                            started_at: None,
+                            finished_at: state.finished_at,
+                            container_id: inspect.id.clone(),
                         })
                     } else {
                         Some(ContainerState::Waiting {
                             reason: Some("ContainerCreating".to_string()),
+                            message: None,
                         })
                     };
 
@@ -1827,7 +1833,9 @@ impl ContainerRuntime {
                         ready,
                         restart_count,
                         state: container_state,
+                        last_state: None,
                         image: Some(container.image.clone()),
+                        image_id: None,
                         container_id: inspect.id,
                         started: None,
                         allocated_resources: None,
@@ -1841,8 +1849,11 @@ impl ContainerRuntime {
                     restart_count: 0,
                     state: Some(ContainerState::Waiting {
                         reason: Some("ContainerCreating".to_string()),
+                        message: None,
                     }),
+                    last_state: None,
                     image: Some(container.image.clone()),
+                    image_id: None,
                     container_id: None,
                     started: None,
                     allocated_resources: None,
@@ -2303,6 +2314,13 @@ mod tests {
             restart_policy: None,
             resize_policy: None,
             lifecycle: None,
+            termination_message_path: None,
+            termination_message_policy: None,
+            stdin: None,
+            stdin_once: None,
+            tty: None,
+            env_from: None,
+            volume_devices: None,
         }
     }
 

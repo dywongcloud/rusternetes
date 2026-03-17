@@ -710,6 +710,13 @@ mod tests {
             restart_policy: None,
             resize_policy: None,
             lifecycle: None,
+            termination_message_path: None,
+            termination_message_policy: None,
+            stdin: None,
+            stdin_once: None,
+            tty: None,
+            env_from: None,
+            volume_devices: None,
         }
     }
 
@@ -774,7 +781,9 @@ mod tests {
             name: name.to_string(),
             ready: true,
             restart_count: 0,
+            last_state: None,
             image: Some("nginx:latest".to_string()),
+            image_id: None,
             container_id: Some("docker://abc123".to_string()),
             state: Some(ContainerState::Running {
                 started_at: Some("2024-01-01T00:00:00Z".to_string()),
@@ -880,10 +889,13 @@ mod tests {
             name: "app".to_string(),
             ready: false,
             restart_count: 0,
+            last_state: None,
             image: Some("nginx:latest".to_string()),
+            image_id: None,
             container_id: None,
             state: Some(ContainerState::Waiting {
                 reason: Some("ContainerCreating".to_string()),
+                message: None,
             }),
             started: None,
             allocated_resources: None,

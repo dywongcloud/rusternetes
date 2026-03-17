@@ -452,10 +452,16 @@ pub struct Container {
     pub env: Option<Vec<EnvVar>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub env_from: Option<Vec<EnvFromSource>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resources: Option<ResourceRequirements>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub volume_mounts: Option<Vec<VolumeMount>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_devices: Option<Vec<VolumeDevice>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_pull_policy: Option<String>, // Always, Never, IfNotPresent
@@ -484,6 +490,21 @@ pub struct Container {
     /// Lifecycle describes actions that the management system should take in response to container lifecycle events
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lifecycle: Option<Lifecycle>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub termination_message_path: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub termination_message_policy: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdin: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdin_once: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tty: Option<bool>,
 }
 
 /// Lifecycle describes actions that management system should take in response to container lifecycle events
@@ -670,6 +691,48 @@ pub struct EnvVarSource {
     pub resource_field_ref: Option<ResourceFieldSelector>,
 }
 
+/// EnvFromSource represents the source of a set of ConfigMaps/Secrets to populate env vars
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvFromSource {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_map_ref: Option<ConfigMapEnvSource>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_ref: Option<SecretEnvSource>,
+}
+
+/// ConfigMapEnvSource selects a ConfigMap to populate the env vars with
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigMapEnvSource {
+    pub name: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optional: Option<bool>,
+}
+
+/// SecretEnvSource selects a Secret to populate the env vars with
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretEnvSource {
+    pub name: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optional: Option<bool>,
+}
+
+/// VolumeDevice describes a mapping of a raw block device within a container
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeDevice {
+    pub name: String,
+    pub device_path: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigMapKeySelector {
@@ -695,6 +758,15 @@ pub struct VolumeMount {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sub_path: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sub_path_expr: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mount_propagation: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recursive_read_only: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1092,7 +1164,13 @@ pub struct ContainerStatus {
     pub state: Option<ContainerState>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_state: Option<ContainerState>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container_id: Option<String>,
@@ -1143,13 +1221,19 @@ pub struct ResourceHealth {
 pub enum ContainerState {
     Waiting {
         reason: Option<String>,
+        message: Option<String>,
     },
     Running {
         started_at: Option<String>,
     },
     Terminated {
         exit_code: i32,
+        signal: Option<i32>,
         reason: Option<String>,
+        message: Option<String>,
+        started_at: Option<String>,
+        finished_at: Option<String>,
+        container_id: Option<String>,
     },
 }
 
@@ -1506,6 +1590,13 @@ mod tests {
                     restart_policy: None,
                     resize_policy: None,
                     lifecycle: None,
+                    termination_message_path: None,
+                    termination_message_policy: None,
+                    stdin: None,
+                    stdin_once: None,
+                    tty: None,
+                    env_from: None,
+                    volume_devices: None,
                 },
                 Container {
                     name: "init-mydb".to_string(),
@@ -1529,6 +1620,13 @@ mod tests {
                     restart_policy: None,
                     resize_policy: None,
                     lifecycle: None,
+                    termination_message_path: None,
+                    termination_message_policy: None,
+                    stdin: None,
+                    stdin_once: None,
+                    tty: None,
+                    env_from: None,
+                    volume_devices: None,
                 },
             ]),
             containers: vec![Container {
@@ -1554,6 +1652,13 @@ mod tests {
                 restart_policy: None,
                 resize_policy: None,
                 lifecycle: None,
+                termination_message_path: None,
+                termination_message_policy: None,
+                stdin: None,
+                stdin_once: None,
+                tty: None,
+                env_from: None,
+                volume_devices: None,
             }],
             ephemeral_containers: None,
             volumes: None,
@@ -1698,7 +1803,9 @@ mod tests {
                 state: Some(ContainerState::Running {
                     started_at: Some("2024-01-01T00:00:00Z".to_string()),
                 }),
+                last_state: None,
                 image: Some("nginx:latest".to_string()),
+                image_id: None,
                 container_id: Some("containerd://abc123".to_string()),
                 started: None,
                 allocated_resources: None,
@@ -1713,8 +1820,15 @@ mod tests {
                     state: Some(ContainerState::Terminated {
                         exit_code: 0,
                         reason: Some("Completed".to_string()),
+                        signal: None,
+                        message: None,
+                        started_at: None,
+                        finished_at: None,
+                        container_id: None,
                     }),
+                    last_state: None,
                     image: Some("busybox:1.28".to_string()),
+                    image_id: None,
                     container_id: Some("containerd://def456".to_string()),
                     started: None,
                     allocated_resources: None,
@@ -1728,8 +1842,15 @@ mod tests {
                     state: Some(ContainerState::Terminated {
                         exit_code: 0,
                         reason: Some("Completed".to_string()),
+                        signal: None,
+                        message: None,
+                        started_at: None,
+                        finished_at: None,
+                        container_id: None,
                     }),
+                    last_state: None,
                     image: Some("busybox:1.28".to_string()),
+                    image_id: None,
                     container_id: Some("containerd://ghi789".to_string()),
                     started: None,
                     allocated_resources: None,
@@ -1857,6 +1978,13 @@ mod tests {
                 restart_policy: None,
                 resize_policy: None,
                 lifecycle: None,
+                termination_message_path: None,
+                termination_message_policy: None,
+                stdin: None,
+                stdin_once: None,
+                tty: None,
+                env_from: None,
+                volume_devices: None,
             }],
             init_containers: None,
             ephemeral_containers: None,

@@ -36,6 +36,13 @@ fn create_pod_with_sidecar(
             restart_policy: None, // Regular init container - runs to completion
             resize_policy: None,
             lifecycle: None,
+            termination_message_path: None,
+            termination_message_policy: None,
+            stdin: None,
+            stdin_once: None,
+            tty: None,
+            env_from: None,
+            volume_devices: None,
         });
     }
 
@@ -59,6 +66,13 @@ fn create_pod_with_sidecar(
             restart_policy: Some("Always".to_string()), // Sidecar - runs alongside main containers
             resize_policy: None,
             lifecycle: None,
+            termination_message_path: None,
+            termination_message_policy: None,
+            stdin: None,
+            stdin_once: None,
+            tty: None,
+            env_from: None,
+            volume_devices: None,
         });
     }
 
@@ -82,6 +96,13 @@ fn create_pod_with_sidecar(
             restart_policy: None,
             resize_policy: None,
             lifecycle: None,
+            termination_message_path: None,
+            termination_message_policy: None,
+            stdin: None,
+            stdin_once: None,
+            tty: None,
+            env_from: None,
+            volume_devices: None,
         });
     }
 
@@ -193,10 +214,17 @@ fn test_sidecar_runs_alongside_main_containers() {
                 state: Some(ContainerState::Terminated {
                     exit_code: 0,
                     reason: Some("Completed".to_string()),
+                    signal: None,
+                    message: None,
+                    started_at: None,
+                    finished_at: None,
+                    container_id: None,
                 }),
                 ready: false,
                 restart_count: 0,
+                last_state: None,
                 image: Some("busybox:0".to_string()),
+                image_id: None,
                 container_id: Some("init-0-container".to_string()),
                 started: None,
                 allocated_resources: None,
@@ -211,7 +239,9 @@ fn test_sidecar_runs_alongside_main_containers() {
                 }),
                 ready: true,
                 restart_count: 0,
+                last_state: None,
                 image: Some("nginx:0".to_string()),
+                image_id: None,
                 container_id: Some("sidecar-0-container".to_string()),
                 started: None,
                 allocated_resources: None,
@@ -226,7 +256,9 @@ fn test_sidecar_runs_alongside_main_containers() {
             }),
             ready: true,
             restart_count: 0,
+            last_state: None,
             image: Some("nginx:latest".to_string()),
+            image_id: None,
             container_id: Some("app-0-container".to_string()),
             started: None,
             allocated_resources: None,
@@ -246,7 +278,7 @@ fn test_sidecar_runs_alongside_main_containers() {
 
     // Regular init container should be terminated
     match &init_statuses[0].state {
-        Some(ContainerState::Terminated { exit_code, reason }) => {
+        Some(ContainerState::Terminated { exit_code, reason, .. }) => {
             assert_eq!(*exit_code, 0);
             assert_eq!(*reason, Some("Completed".to_string()));
         }
@@ -382,10 +414,17 @@ fn test_sidecar_failure_should_not_block_pod() {
             state: Some(ContainerState::Terminated {
                 exit_code: 1,
                 reason: Some("Error".to_string()),
+                signal: None,
+                message: None,
+                started_at: None,
+                finished_at: None,
+                container_id: None,
             }),
             ready: false,
             restart_count: 3,
+            last_state: None,
             image: Some("nginx:0".to_string()),
+            image_id: None,
             container_id: Some("sidecar-0-container".to_string()),
             started: None,
             allocated_resources: None,
@@ -399,7 +438,9 @@ fn test_sidecar_failure_should_not_block_pod() {
             }),
             ready: true,
             restart_count: 0,
+            last_state: None,
             image: Some("nginx:latest".to_string()),
+            image_id: None,
             container_id: Some("app-0-container".to_string()),
             started: None,
             allocated_resources: None,

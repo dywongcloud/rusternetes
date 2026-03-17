@@ -398,6 +398,9 @@ impl<S: Storage> DaemonSetController<S> {
             mount_path: "/var/run/secrets/kubernetes.io/serviceaccount".to_string(),
             read_only: Some(true),
             sub_path: None,
+            sub_path_expr: None,
+            mount_propagation: None,
+            recursive_read_only: None,
         };
 
         // Add volume mount to all containers

@@ -20,6 +20,13 @@ fn make_container(name: &str) -> Container {
         restart_policy: None,
         resize_policy: None,
         lifecycle: None,
+        termination_message_path: None,
+        termination_message_policy: None,
+        stdin: None,
+        stdin_once: None,
+        tty: None,
+        env_from: None,
+        volume_devices: None,
     }
 }
 

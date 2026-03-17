@@ -50,6 +50,13 @@ fn create_test_pod(name: &str, namespace: &str) -> Pod {
                 resize_policy: None,
                 security_context: None,
                 lifecycle: None,
+                termination_message_path: None,
+                termination_message_policy: None,
+                stdin: None,
+                stdin_once: None,
+                tty: None,
+                env_from: None,
+                volume_devices: None,
             }],
             init_containers: None,
             ephemeral_containers: None,
@@ -416,6 +423,13 @@ async fn test_pod_with_multiple_containers() {
             resize_policy: None,
             security_context: None,
             lifecycle: None,
+            termination_message_path: None,
+            termination_message_policy: None,
+            stdin: None,
+            stdin_once: None,
+            tty: None,
+            env_from: None,
+            volume_devices: None,
         });
     }
 

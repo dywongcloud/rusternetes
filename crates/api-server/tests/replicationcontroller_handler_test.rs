@@ -58,6 +58,13 @@ fn create_test_rc(name: &str, namespace: &str, replicas: i32) -> ReplicationCont
                         resize_policy: None,
                         security_context: None,
                         lifecycle: None,
+                        termination_message_path: None,
+                        termination_message_policy: None,
+                        stdin: None,
+                        stdin_once: None,
+                        tty: None,
+                        env_from: None,
+                        volume_devices: None,
                     }],
                     init_containers: None,
                     ephemeral_containers: None,
@@ -549,6 +556,13 @@ async fn test_rc_multiple_containers() {
         resize_policy: None,
         security_context: None,
         lifecycle: None,
+        termination_message_path: None,
+        termination_message_policy: None,
+        stdin: None,
+        stdin_once: None,
+        tty: None,
+        env_from: None,
+        volume_devices: None,
     });
 
     let key = build_key(

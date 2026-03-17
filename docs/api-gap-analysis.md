@@ -111,29 +111,28 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 | `restartPolicy: Option<String>` | ✅ Added (also used for sidecar detection) |
 | `ContainerResizePolicy` type | ✅ Added |
 
-### ✅ Completed (current session)
+### ✅ Completed (current session — swagger audit)
 
 | Field | Status |
 |-------|--------|
 | `lifecycle: Option<Lifecycle>` | ✅ Added |
+| `envFrom: Option<Vec<EnvFromSource>>` | ✅ Added |
+| `volumeDevices: Option<Vec<VolumeDevice>>` | ✅ Added |
+| `terminationMessagePath: Option<String>` | ✅ Added |
+| `terminationMessagePolicy: Option<String>` | ✅ Added |
+| `stdin: Option<bool>` | ✅ Added |
+| `stdinOnce: Option<bool>` | ✅ Added |
+| `tty: Option<bool>` | ✅ Added |
+| `EnvFromSource` type | ✅ Added |
+| `ConfigMapEnvSource` type | ✅ Added |
+| `SecretEnvSource` type | ✅ Added |
+| `VolumeDevice` type | ✅ Added |
 
 ### Still missing
 
 | Field | K8s Type | Priority | Notes |
 |-------|----------|----------|-------|
-| `restartPolicyRules` | `[]ContainerRestartRule` | P2 | Fine-grained restart rules |
-| `stdin` | `bool` | P2 | Keep stdin open |
-| `stdinOnce` | `bool` | P2 | Close stdin after first attach |
-| `tty` | `bool` | P2 | Allocate TTY |
-| `terminationMessagePath` | `string` | P2 | Path for termination message file |
-| `terminationMessagePolicy` | `string` | P2 | File or FallbackToLogsOnError |
-
-### Missing helper types
-
-| Type | Fields | Priority |
-|------|--------|----------|
-| `ContainerRestartRule` | `action: string`, `exitCodes: ContainerRestartRuleOnExitCodes` | P2 |
-| `ContainerRestartRuleOnExitCodes` | `operator: string`, `values: []int32` | P2 |
+| `restartPolicyRules` | `[]ContainerRestartRule` | P2 | Fine-grained restart rules (k8s 1.35 alpha) |
 
 ---
 
@@ -157,6 +156,24 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 | `ResourceStatus` type | ✅ Added |
 | `ResourceHealth` type | ✅ Added |
 
+### ✅ Completed (current session — swagger audit)
+
+| Field | Status |
+|-------|--------|
+| `lastState: Option<ContainerState>` | ✅ Added |
+| `imageID: Option<String>` | ✅ Added |
+
+### ✅ Completed (current session — ContainerState fields)
+
+| Field | Status |
+|-------|--------|
+| `ContainerState::Terminated.signal` | ✅ Added |
+| `ContainerState::Terminated.message` | ✅ Added |
+| `ContainerState::Terminated.startedAt` | ✅ Added |
+| `ContainerState::Terminated.finishedAt` | ✅ Added |
+| `ContainerState::Terminated.containerID` | ✅ Added |
+| `ContainerState::Waiting.message` | ✅ Added |
+
 ### Still missing
 
 | Field | K8s Type | Priority | Notes |
@@ -164,14 +181,6 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 | `stopSignal` | `string` | P2 | Stop signal sent to the container |
 | `user` | `ContainerUser` | P2 | User that the container process runs as |
 | `volumeMounts` | `[]VolumeMountStatus` | P2 | Status of volume mounts |
-
-### Missing helper types
-
-| Type | Fields | Priority |
-|------|--------|----------|
-| `ContainerUser` | `linux: LinuxContainerUser` | P2 |
-| `LinuxContainerUser` | `uid: int64`, `gid: int64`, `supplementalGroups: []int64` | P2 |
-| `VolumeMountStatus` | `name: string`, `mountPath: string`, `readOnly: bool`, `recursiveReadOnly: string`, `volumeStatus: VolumeStatus` | P2 |
 
 ---
 
@@ -775,6 +784,12 @@ Status: **largely complete**. No remaining critical gaps.
 | `PodDisruptionBudgetSpec.unhealthyPodEvictionPolicy` | ✅ Already implemented (policy.rs) |
 | `PodDisruptionBudgetStatus.conditions` | ✅ Already implemented (policy.rs) |
 | `PersistentVolumeStatus.reason/message` | ✅ Already implemented (volume.rs) |
+| `Container`: `envFrom`, `volumeDevices`, `terminationMessagePath`, `terminationMessagePolicy`, `stdin`, `stdinOnce`, `tty` | ✅ Done (swagger audit) |
+| `ContainerStatus`: `lastState`, `imageID` | ✅ Done (swagger audit) |
+| `ContainerState::Terminated`: `signal`, `message`, `startedAt`, `finishedAt`, `containerID` | ✅ Done (swagger audit) |
+| `ContainerState::Waiting`: `message` | ✅ Done (swagger audit) |
+| `VolumeMount`: `subPathExpr`, `mountPropagation`, `recursiveReadOnly` | ✅ Done (swagger audit) |
+| `EnvFromSource`, `ConfigMapEnvSource`, `SecretEnvSource`, `VolumeDevice` types | ✅ Done (swagger audit) |
 
 ### Phase 3 — P2 fixes (Not started)
 
