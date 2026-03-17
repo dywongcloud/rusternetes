@@ -573,16 +573,34 @@ pub struct SecurityContext {
     pub run_as_user: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_group: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub run_as_non_root: Option<bool>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_only_root_filesystem: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_privilege_escalation: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proc_mount: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<Capabilities>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seccomp_profile: Option<SeccompProfile>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub se_linux_options: Option<SELinuxOptions>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_armor_profile: Option<AppArmorProfile>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub windows_options: Option<WindowsSecurityContextOptions>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1426,6 +1444,26 @@ pub struct Probe {
     /// Minimum consecutive failures for the probe to be considered failed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_threshold: Option<i32>,
+
+    /// GRPC probe
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grpc: Option<GRPCAction>,
+
+    /// Optional duration in seconds the pod needs to terminate gracefully upon probe failure
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub termination_grace_period_seconds: Option<i64>,
+}
+
+/// GRPCAction describes an action based on GRPC health check
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GRPCAction {
+    /// Port number of the gRPC service
+    pub port: i32,
+
+    /// Service is the name of the service to place in the gRPC HealthCheckRequest
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service: Option<String>,
 }
 
 /// HTTPGetAction describes an action based on HTTP Get requests
