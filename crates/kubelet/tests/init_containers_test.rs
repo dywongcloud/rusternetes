@@ -28,6 +28,7 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             security_context: None,
             restart_policy: None,
             resize_policy: None,
+            lifecycle: None,
         });
     }
 
@@ -50,6 +51,7 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             security_context: None,
             restart_policy: None,
             resize_policy: None,
+            lifecycle: None,
         });
     }
 

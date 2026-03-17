@@ -35,6 +35,7 @@ fn create_pod_with_sidecar(
             security_context: None,
             restart_policy: None, // Regular init container - runs to completion
             resize_policy: None,
+            lifecycle: None,
         });
     }
 
@@ -57,6 +58,7 @@ fn create_pod_with_sidecar(
             security_context: None,
             restart_policy: Some("Always".to_string()), // Sidecar - runs alongside main containers
             resize_policy: None,
+            lifecycle: None,
         });
     }
 
@@ -79,6 +81,7 @@ fn create_pod_with_sidecar(
             security_context: None,
             restart_policy: None,
             resize_policy: None,
+            lifecycle: None,
         });
     }
 

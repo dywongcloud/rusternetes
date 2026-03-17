@@ -58,6 +58,7 @@ fn create_test_job(name: &str, namespace: &str) -> Job {
                         restart_policy: None,
                         resize_policy: None,
                         security_context: None,
+                        lifecycle: None,
                     }],
                     init_containers: None,
                     restart_policy: Some("OnFailure".to_string()),

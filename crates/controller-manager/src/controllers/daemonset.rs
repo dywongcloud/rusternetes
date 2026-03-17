@@ -368,6 +368,10 @@ impl<S: Storage> DaemonSetController<S> {
             downward_api: None,
             csi: None,
             ephemeral: None,
+            nfs: None,
+            iscsi: None,
+            projected: None,
+            image: None,
         };
 
         // Add volume to pod spec
@@ -468,6 +472,7 @@ mod tests {
             },
             spec: Some(rusternetes_common::resources::NodeSpec {
                 pod_cidr: None,
+                pod_cidrs: None,
                 provider_id: None,
                 unschedulable: None,
                 taints: None,

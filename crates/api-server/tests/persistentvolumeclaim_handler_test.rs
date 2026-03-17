@@ -51,12 +51,15 @@ fn create_test_pvc(name: &str, namespace: &str, storage: &str) -> PersistentVolu
             selector: None,
             volume_name: None,
             data_source: None,
+            data_source_ref: None,
+            volume_attributes_class_name: None,
         },
         status: Some(PersistentVolumeClaimStatus {
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
             allocated_resources: None,
+            allocated_resource_statuses: None,
             conditions: None,
             resize_status: None,
         }),
@@ -324,6 +327,7 @@ async fn test_pvc_status_bound() {
         access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
         capacity: None,
         allocated_resources: None,
+        allocated_resource_statuses: None,
         conditions: None,
         resize_status: None,
     });

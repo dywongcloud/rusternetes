@@ -308,6 +308,7 @@ mod tests {
                     security_context: None,
                     restart_policy: None,
                     resize_policy: None,
+                    lifecycle: None,
                 }],
                 restart_policy: None,
                 node_selector: None,

@@ -40,6 +40,7 @@ fn create_test_node(name: &str, labels: Option<HashMap<String, String>>) -> Node
         },
         spec: Some(NodeSpec {
             pod_cidr: None,
+            pod_cidrs: None,
             provider_id: None,
             unschedulable: None,
             taints: None,
@@ -96,6 +97,7 @@ fn create_test_daemonset(
                         restart_policy: None,
                         resize_policy: None,
                         security_context: None,
+                        lifecycle: None,
                     }],
                     init_containers: None,
                     restart_policy: Some("Always".to_string()),

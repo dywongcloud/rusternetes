@@ -138,16 +138,19 @@ pub use node::{
     NodeDaemonEndpoints, NodeSpec, NodeStatus, NodeSystemInfo, Taint,
 };
 pub use pod::{
-    Affinity, Capabilities, ConfigMapKeySelector, ConfigMapVolumeSource, Container, ContainerPort,
-    ContainerState, ContainerStatus, DownwardAPIVolumeFile, DownwardAPIVolumeSource,
+    Affinity, Capabilities, ClusterTrustBundleProjection, ConfigMapKeySelector,
+    ConfigMapProjection, ConfigMapVolumeSource, Container, ContainerPort, ContainerState,
+    ContainerStatus, DownwardAPIProjection, DownwardAPIVolumeFile, DownwardAPIVolumeSource,
     EmptyDirVolumeSource, EnvVar, EnvVarSource, EphemeralContainer, EphemeralVolumeSource,
-    ExecAction, HTTPGetAction, HTTPHeader, HostPathVolumeSource, NodeAffinity, NodeSelector,
-    NodeSelectorRequirement, NodeSelectorTerm, ObjectFieldSelector, PersistentVolumeClaimTemplate,
-    PersistentVolumeClaimVolumeSource, Pod, PodAffinity, PodAffinityTerm, PodAntiAffinity, PodSpec,
-    PodCondition, PodStatus, PreferredSchedulingTerm, Probe, ResourceFieldSelector, ResourceHealth,
-    ResourceStatus, SeccompProfile, SecretKeySelector, SecretVolumeSource, SecurityContext,
-    TCPSocketAction, Toleration, TopologySpreadConstraint, Volume, VolumeMount,
-    WeightedPodAffinityTerm,
+    ExecAction, HTTPGetAction, HTTPHeader, HostPathVolumeSource, ImageVolumeSource, KeyToPath,
+    Lifecycle, LifecycleHandler, NodeAffinity,
+    NodeSelector, NodeSelectorRequirement, NodeSelectorTerm, ObjectFieldSelector,
+    PersistentVolumeClaimTemplate, PersistentVolumeClaimVolumeSource, Pod, PodAffinity,
+    PodAffinityTerm, PodAntiAffinity, PodSpec, PodCondition, PodStatus, PreferredSchedulingTerm,
+    Probe, ProjectedVolumeSource, ResourceFieldSelector, ResourceHealth, ResourceStatus,
+    SeccompProfile, SecretKeySelector, SecretProjection, SecretVolumeSource, SecurityContext,
+    ServiceAccountTokenProjection, SleepAction, TCPSocketAction, Toleration,
+    TopologySpreadConstraint, Volume, VolumeMount, VolumeProjection, WeightedPodAffinityTerm,
 };
 pub use policy::{
     IntOrString, LimitRange, LimitRangeItem, LimitRangeSpec, PodDisruptionBudget,
@@ -174,11 +177,12 @@ pub use validating_admission_policy::{
     ValidatingAdmissionPolicyStatus, Validation, ValidationAction, Variable,
 };
 pub use volume::{
-    DeletionPolicy, PersistentVolume, PersistentVolumeAccessMode, PersistentVolumeClaim,
-    PersistentVolumeClaimSpec, PersistentVolumeClaimStatus, PersistentVolumeSpec,
-    PersistentVolumeStatus, StorageClass, VolumeBindingMode, VolumeSnapshot, VolumeSnapshotClass,
-    VolumeSnapshotContent, VolumeSnapshotContentSpec, VolumeSnapshotContentStatus,
-    VolumeSnapshotSource, VolumeSnapshotSpec, VolumeSnapshotStatus,
+    DeletionPolicy, ISCSIVolumeSource, NFSVolumeSource, PersistentVolume,
+    PersistentVolumeAccessMode, PersistentVolumeClaim, PersistentVolumeClaimSpec,
+    PersistentVolumeClaimStatus, PersistentVolumeSpec, PersistentVolumeStatus, StorageClass,
+    TypedObjectReference, VolumeBindingMode, VolumeSnapshot,
+    VolumeSnapshotClass, VolumeSnapshotContent, VolumeSnapshotContentSpec,
+    VolumeSnapshotContentStatus, VolumeSnapshotSource, VolumeSnapshotSpec, VolumeSnapshotStatus,
 };
 pub use workloads::{
     CronJob, CronJobSpec, CronJobStatus, DaemonSet, DaemonSetSpec, DaemonSetStatus, Job, JobSpec,

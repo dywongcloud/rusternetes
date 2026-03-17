@@ -182,63 +182,73 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 ---
 
-## 6. core/v1 — Volume
+## 6. core/v1 — Volume ✅ (partial)
 
 **File**: `crates/common/src/resources/pod.rs`
 
-### Missing volume source types (swagger has them, we lack struct support)
+### ✅ Completed (current session)
+
+| Field | Status |
+|-------|--------|
+| `nfs: Option<NFSVolumeSource>` | ✅ Added |
+| `iscsi: Option<ISCSIVolumeSource>` | ✅ Added |
+| `projected: Option<ProjectedVolumeSource>` | ✅ Added |
+| `image: Option<ImageVolumeSource>` | ✅ Added |
+| `ProjectedVolumeSource` type | ✅ Added |
+| `VolumeProjection` type | ✅ Added |
+| `SecretProjection` type | ✅ Added |
+| `ConfigMapProjection` type | ✅ Added |
+| `ServiceAccountTokenProjection` type | ✅ Added |
+| `DownwardAPIProjection` type | ✅ Added |
+| `ClusterTrustBundleProjection` type | ✅ Added |
+| `ImageVolumeSource` type | ✅ Added |
+
+### Still missing
 
 | Type | Priority | Notes |
 |------|----------|-------|
-| `image` (`ImageVolumeSource`) | P1 | OCI image volumes (k8s 1.33+) |
-| `ephemeral` (`EphemeralVolumeSource`) | P1 | Inline PVC volumes |
-| `projected` (`ProjectedVolumeSource`) | P1 | Combined volume projections |
-| `downwardAPI` (`DownwardAPIVolumeSource`) | P1 | Pod metadata as volume |
-| `configMap` (`ConfigMapVolumeSource`) | P1 | ConfigMap as volume |
-| `secret` (`SecretVolumeSource`) | P1 | Secret as volume |
-| `emptyDir` (`EmptyDirVolumeSource`) | P1 | Temp storage |
 | `csi` (`CSIVolumeSource`) | P2 | Inline CSI volume |
 | `hostPath` | P2 | Already partially present but missing `type` field in pod volume context |
-| `persistentVolumeClaim` (`PersistentVolumeClaimVolumeSource`) | P1 | PVC reference |
-
-**Current state**: `Volume` is an enum with only `HostPath`, `NFS`, `ISCSI`, `Local` variants. It needs to become a struct with optional fields for each volume type (matching Kubernetes's approach), plus the `name` field.
 
 ---
 
-## 7. core/v1 — Lifecycle / LifecycleHandler
+## 7. core/v1 — Lifecycle / LifecycleHandler ✅ (partial)
 
 **File**: `crates/common/src/resources/pod.rs`
 
-### Missing fields on LifecycleHandler
+### ✅ Completed (current session)
+
+| Field | Status |
+|-------|--------|
+| `lifecycle: Option<Lifecycle>` on `Container` | ✅ Added |
+| `Lifecycle` type (`post_start`, `pre_stop`) | ✅ Added |
+| `LifecycleHandler` type (`exec`, `http_get`, `tcp_socket`, `sleep`) | ✅ Added |
+| `SleepAction` type (`seconds: i64`) | ✅ Added |
+
+### Still missing
 
 | Field | K8s Type | Priority |
 |-------|----------|----------|
-| `sleep` | `SleepAction` | P1 |
-
-### Missing fields on Lifecycle
-
-| Field | K8s Type | Priority |
-|-------|----------|----------|
-| `stopSignal` | `string` | P2 |
-
-### Missing types
-
-| Type | Fields | Priority |
-|------|--------|----------|
-| `SleepAction` | `seconds: int64` | P1 |
+| `stopSignal` on `Lifecycle` | `string` | P2 |
 
 ---
 
-## 8. core/v1 — EphemeralContainer
+## 8. core/v1 — EphemeralContainer ✅ (partial)
 
 **File**: `crates/common/src/resources/pod.rs`
 
-### Missing fields (same gaps as Container above, plus)
+### ✅ Completed (current session)
+
+| Field | Status |
+|-------|--------|
+| `resizePolicy: Option<Vec<ContainerResizePolicy>>` | ✅ Added |
+| `restartPolicy: Option<String>` | ✅ Added |
+| `resources: Option<ResourceRequirements>` | ✅ Added |
+
+### Still missing
 
 | Field | K8s Type | Priority | Notes |
 |-------|----------|----------|-------|
-| `resizePolicy` | `[]ContainerResizePolicy` | P1 | |
-| `restartPolicy` | `string` | P1 | |
 | `restartPolicyRules` | `[]ContainerRestartRule` | P2 | |
 | `stdin`, `stdinOnce`, `tty` | `bool` | P2 | |
 | `terminationMessagePath`, `terminationMessagePolicy` | `string` | P2 | |
@@ -431,15 +441,20 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 ---
 
-## 18. core/v1 — NodeSpec
+## 18. core/v1 — NodeSpec ✅ (partial)
 
 **File**: `crates/common/src/resources/node.rs`
 
-### Missing fields
+### ✅ Completed (current session)
+
+| Field | Status |
+|-------|--------|
+| `podCIDRs: Option<Vec<String>>` | ✅ Added |
+
+### Still missing
 
 | Field | K8s Type | Priority | Notes |
 |-------|----------|----------|-------|
-| `podCIDRs` | `[]string` | P1 | All pod CIDRs (dual-stack) |
 | `configSource` | `NodeConfigSource` | P2 | Dynamic kubelet config |
 | `externalID` | `string` | P3 | Deprecated external ID |
 
@@ -525,26 +540,27 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 ---
 
-## 21. core/v1 — PersistentVolumeClaimSpec / Status
+## 21. core/v1 — PersistentVolumeClaimSpec / Status ✅ (partial)
 
 **File**: `crates/common/src/resources/volume.rs`
 
-### PersistentVolumeClaimSpec — Missing fields
+### ✅ Completed (current session)
+
+| Field | Status |
+|-------|--------|
+| `dataSource: Option<TypedLocalObjectReference>` | ✅ Added |
+| `dataSourceRef: Option<TypedObjectReference>` | ✅ Added |
+| `volumeAttributesClassName: Option<String>` | ✅ Added (as `volume_attributes_class_name`) |
+| `TypedObjectReference` type | ✅ Added |
+| `allocatedResources: Option<HashMap<String, String>>` on Status | ✅ Added |
+| `allocatedResourceStatuses: Option<HashMap<String, String>>` on Status | ✅ Added |
+
+### Still missing
 
 | Field | K8s Type | Priority |
 |-------|----------|----------|
-| `dataSource` | `TypedLocalObjectReference` | P1 |
-| `dataSourceRef` | `TypedObjectReference` | P1 |
-| `volumeAttributesClassName` | `string` | P2 |
-
-### PersistentVolumeClaimStatus — Missing fields
-
-| Field | K8s Type | Priority |
-|-------|----------|----------|
-| `allocatedResources` | `map[string]Quantity` | P1 |
-| `allocatedResourceStatuses` | `map[string]string` | P1 |
-| `currentVolumeAttributesClassName` | `string` | P2 |
-| `modifyVolumeStatus` | `ModifyVolumeStatus` | P2 |
+| `currentVolumeAttributesClassName` on Status | `string` | P2 |
+| `modifyVolumeStatus` on Status | `ModifyVolumeStatus` | P2 |
 
 ### Missing types
 

@@ -35,6 +35,10 @@ pub struct NodeSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pod_cidr: Option<String>,
 
+    /// PodCIDRs represents the IP ranges assigned to the node for usage by pods (supports dual-stack)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pod_cidrs: Option<Vec<String>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_id: Option<String>,
 

@@ -58,6 +58,7 @@ fn create_test_daemonset(name: &str, namespace: &str) -> DaemonSet {
                         restart_policy: None,
                         resize_policy: None,
                         security_context: None,
+                        lifecycle: None,
                     }],
                     init_containers: None,
                     restart_policy: Some("Always".to_string()),

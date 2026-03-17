@@ -238,6 +238,14 @@ pub struct PersistentVolumeClaimSpec {
     /// Data source
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_source: Option<TypedLocalObjectReference>,
+
+    /// DataSourceRef specifies the object from which to populate the volume with data
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_source_ref: Option<TypedObjectReference>,
+
+    /// VolumeAttributesClassName may be used to set the VolumeAttributesClass used by this claim
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_attributes_class_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -275,6 +283,18 @@ pub struct TypedLocalObjectReference {
     pub name: String,
 }
 
+/// TypedObjectReference contains enough information to let you locate the typed referenced object
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypedObjectReference {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_group: Option<String>,
+    pub kind: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistentVolumeClaimStatus {
@@ -289,6 +309,9 @@ pub struct PersistentVolumeClaimStatus {
     /// Used during volume expansion to track the new size
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allocated_resources: Option<HashMap<String, String>>,
+    /// AllocatedResourceStatuses stores status of resource being resized for the given PVC
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allocated_resource_statuses: Option<HashMap<String, String>>,
     /// Resize status indicates the state of volume resize operation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resize_status: Option<PersistentVolumeClaimResizeStatus>,
@@ -611,6 +634,8 @@ mod tests {
                 volume_mode: Some(PersistentVolumeMode::Filesystem),
                 selector: None,
                 data_source: None,
+                data_source_ref: None,
+                volume_attributes_class_name: None,
             },
             status: Some(PersistentVolumeClaimStatus {
                 phase: PersistentVolumeClaimPhase::Pending,
@@ -618,6 +643,7 @@ mod tests {
                 capacity: None,
                 conditions: None,
                 allocated_resources: None,
+                allocated_resource_statuses: None,
                 resize_status: None,
             }),
         };

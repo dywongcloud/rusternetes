@@ -557,6 +557,10 @@ pub async fn inject_service_account_token<S: Storage>(
         downward_api: None,
         csi: None,
         ephemeral: None,
+        nfs: None,
+        iscsi: None,
+        projected: None,
+        image: None,
     };
 
     // Add volume to pod spec

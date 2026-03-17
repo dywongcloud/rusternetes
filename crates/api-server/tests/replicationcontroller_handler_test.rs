@@ -57,6 +57,7 @@ fn create_test_rc(name: &str, namespace: &str, replicas: i32) -> ReplicationCont
                         restart_policy: None,
                         resize_policy: None,
                         security_context: None,
+                        lifecycle: None,
                     }],
                     init_containers: None,
                     ephemeral_containers: None,
@@ -547,6 +548,7 @@ async fn test_rc_multiple_containers() {
         restart_policy: None,
         resize_policy: None,
         security_context: None,
+        lifecycle: None,
     });
 
     let key = build_key(

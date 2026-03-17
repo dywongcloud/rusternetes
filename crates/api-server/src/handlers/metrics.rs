@@ -314,6 +314,7 @@ mod tests {
             metadata: ObjectMeta::new("test-node"),
             spec: Some(NodeSpec {
                 pod_cidr: Some("10.244.0.0/24".to_string()),
+                pod_cidrs: None,
                 provider_id: None,
                 taints: None,
                 unschedulable: None,

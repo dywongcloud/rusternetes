@@ -57,6 +57,7 @@ fn create_test_replicaset(name: &str, namespace: &str, replicas: i32) -> Replica
                         restart_policy: None,
                         resize_policy: None,
                         security_context: None,
+                        lifecycle: None,
                     }],
                     init_containers: None,
                     ephemeral_containers: None,

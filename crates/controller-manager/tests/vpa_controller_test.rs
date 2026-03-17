@@ -61,6 +61,7 @@ fn create_test_deployment_with_pods(
                         restart_policy: None,
                         resize_policy: None,
                         security_context: None,
+                        lifecycle: None,
                     }],
                     init_containers: None,
                     ephemeral_containers: None,

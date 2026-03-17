@@ -19,6 +19,7 @@ fn make_container(name: &str) -> Container {
         security_context: None,
         restart_policy: None,
         resize_policy: None,
+        lifecycle: None,
     }
 }
 

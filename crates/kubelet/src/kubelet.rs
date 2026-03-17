@@ -82,6 +82,7 @@ impl Kubelet {
         // Set node spec to mark it as schedulable
         node.spec = Some(NodeSpec {
             pod_cidr: None,
+            pod_cidrs: None,
             provider_id: None,
             unschedulable: Some(false),
             taints: None,
@@ -708,6 +709,7 @@ mod tests {
             security_context: None,
             restart_policy: None,
             resize_policy: None,
+            lifecycle: None,
         }
     }
 

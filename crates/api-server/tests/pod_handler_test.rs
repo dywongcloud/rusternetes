@@ -49,6 +49,7 @@ fn create_test_pod(name: &str, namespace: &str) -> Pod {
                 restart_policy: None,
                 resize_policy: None,
                 security_context: None,
+                lifecycle: None,
             }],
             init_containers: None,
             ephemeral_containers: None,
@@ -414,6 +415,7 @@ async fn test_pod_with_multiple_containers() {
             restart_policy: None,
             resize_policy: None,
             security_context: None,
+            lifecycle: None,
         });
     }
 

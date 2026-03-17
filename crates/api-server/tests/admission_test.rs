@@ -42,6 +42,7 @@ fn create_minimal_pod(name: &str, namespace: &str) -> Pod {
                 restart_policy: None,
                 resize_policy: None,
                 security_context: None,
+                lifecycle: None,
             }],
             init_containers: None,
             volumes: None,
@@ -255,6 +256,8 @@ fn create_test_pvc(name: &str, namespace: &str) -> PersistentVolumeClaim {
             selector: None,
             volume_mode: None,
             data_source: None,
+            data_source_ref: None,
+            volume_attributes_class_name: None,
         },
         status: None,
     }

@@ -60,6 +60,7 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
                         restart_policy: None,
                         resize_policy: None,
                         security_context: None,
+                        lifecycle: None,
                     }],
                     init_containers: None,
                     restart_policy: Some("Always".to_string()),

@@ -171,6 +171,7 @@ impl<S: Storage> VolumeExpansionController<S> {
                     capacity: None,
                     conditions: None,
                     allocated_resources: None,
+                    allocated_resource_statuses: None,
                     resize_status: None,
                 });
 
@@ -335,6 +336,8 @@ mod tests {
                 volume_mode: None,
                 selector: None,
                 data_source: None,
+                data_source_ref: None,
+                volume_attributes_class_name: None,
             },
             status: Some(PersistentVolumeClaimStatus {
                 phase: PersistentVolumeClaimPhase::Bound,
@@ -342,6 +345,7 @@ mod tests {
                 capacity: None, // No capacity yet
                 conditions: None,
                 allocated_resources: None,
+                allocated_resource_statuses: None,
                 resize_status: None,
             }),
         };
@@ -377,6 +381,8 @@ mod tests {
                 volume_mode: None,
                 selector: None,
                 data_source: None,
+                data_source_ref: None,
+                volume_attributes_class_name: None,
             },
             status: Some(PersistentVolumeClaimStatus {
                 phase: PersistentVolumeClaimPhase::Bound,
@@ -384,6 +390,7 @@ mod tests {
                 capacity: Some(capacity),
                 conditions: None,
                 allocated_resources: None,
+                allocated_resource_statuses: None,
                 resize_status: None,
             }),
         };
@@ -419,6 +426,8 @@ mod tests {
                 volume_mode: None,
                 selector: None,
                 data_source: None,
+                data_source_ref: None,
+                volume_attributes_class_name: None,
             },
             status: Some(PersistentVolumeClaimStatus {
                 phase: PersistentVolumeClaimPhase::Bound,
@@ -426,6 +435,7 @@ mod tests {
                 capacity: Some(capacity),
                 conditions: None,
                 allocated_resources: None,
+                allocated_resource_statuses: None,
                 resize_status: None,
             }),
         };

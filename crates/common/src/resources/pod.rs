@@ -380,6 +380,18 @@ pub struct EphemeralContainer {
     /// TTY allocates a pseudo-TTY for the ephemeral container
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tty: Option<bool>,
+
+    /// ResizePolicy is a list of resource resize policies for containers
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resize_policy: Option<Vec<ContainerResizePolicy>>,
+
+    /// RestartPolicy defines the restart behavior of this container
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restart_policy: Option<String>,
+
+    /// Resources are the compute resource requirements for this container
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<crate::types::ResourceRequirements>,
 }
 
 /// TopologySpreadConstraint specifies how to spread pods across topology domains
@@ -468,6 +480,56 @@ pub struct Container {
     /// ResizePolicy is the list of container resource resize policies
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resize_policy: Option<Vec<ContainerResizePolicy>>,
+
+    /// Lifecycle describes actions that the management system should take in response to container lifecycle events
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lifecycle: Option<Lifecycle>,
+}
+
+/// Lifecycle describes actions that management system should take in response to container lifecycle events
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Lifecycle {
+    /// PostStart is called immediately after a container is created
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_start: Option<LifecycleHandler>,
+
+    /// PreStop is called immediately before a container is terminated
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pre_stop: Option<LifecycleHandler>,
+
+    /// StopSignal defines the stop signal to send to the container
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_signal: Option<String>,
+}
+
+/// LifecycleHandler defines a specific action that should be taken in a lifecycle hook
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LifecycleHandler {
+    /// Exec specifies the action to take
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exec: Option<ExecAction>,
+
+    /// HTTPGet specifies the http request to perform
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_get: Option<HTTPGetAction>,
+
+    /// TCPSocket specifies an action involving a TCP port
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tcp_socket: Option<TCPSocketAction>,
+
+    /// Sleep represents the duration that the container should sleep before being terminated
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sleep: Option<SleepAction>,
+}
+
+/// SleepAction describes a "sleep" action
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SleepAction {
+    /// Seconds is the number of seconds to sleep
+    pub seconds: i64,
 }
 
 /// ContainerResizePolicy represents resource resize policy for the container
@@ -666,6 +728,116 @@ pub struct Volume {
     /// Generic ephemeral volume with volumeClaimTemplate
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ephemeral: Option<EphemeralVolumeSource>,
+
+    /// NFS represents an NFS mount on the host
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nfs: Option<crate::resources::volume::NFSVolumeSource>,
+
+    /// ISCSI represents an ISCSI volume attached and mounted on the host
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iscsi: Option<crate::resources::volume::ISCSIVolumeSource>,
+
+    /// Projected defines a projected volume that maps several existing volume sources into one
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projected: Option<ProjectedVolumeSource>,
+
+    /// Image represents an OCI object (container image or artifact) pulled and mounted on the host
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<ImageVolumeSource>,
+}
+
+/// ProjectedVolumeSource represents a projected volume
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectedVolumeSource {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sources: Option<Vec<VolumeProjection>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_mode: Option<i32>,
+}
+
+/// VolumeProjection is a single volume source for a projected volume
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeProjection {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret: Option<SecretProjection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_map: Option<ConfigMapProjection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_account_token: Option<ServiceAccountTokenProjection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub downward_api: Option<DownwardAPIProjection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster_trust_bundle: Option<ClusterTrustBundleProjection>,
+}
+
+/// SecretProjection adapts a Secret into a projected volume
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretProjection {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<KeyToPath>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optional: Option<bool>,
+}
+
+/// ConfigMapProjection adapts a ConfigMap into a projected volume
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigMapProjection {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<KeyToPath>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optional: Option<bool>,
+}
+
+/// ServiceAccountTokenProjection represents a projected service account token volume
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceAccountTokenProjection {
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audience: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expiration_seconds: Option<i64>,
+}
+
+/// DownwardAPIProjection represents Downward API info for the projected volume
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownwardAPIProjection {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<DownwardAPIVolumeFile>>,
+}
+
+/// ClusterTrustBundleProjection projects a ClusterTrustBundle into a projected volume
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClusterTrustBundleProjection {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signer_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_selector: Option<crate::types::LabelSelector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optional: Option<bool>,
+    pub path: String,
+}
+
+/// ImageVolumeSource represents an OCI object (container image or artifact)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageVolumeSource {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pull_policy: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1333,6 +1505,7 @@ mod tests {
                     security_context: None,
                     restart_policy: None,
                     resize_policy: None,
+                    lifecycle: None,
                 },
                 Container {
                     name: "init-mydb".to_string(),
@@ -1355,6 +1528,7 @@ mod tests {
                     security_context: None,
                     restart_policy: None,
                     resize_policy: None,
+                    lifecycle: None,
                 },
             ]),
             containers: vec![Container {
@@ -1379,6 +1553,7 @@ mod tests {
                 security_context: None,
                 restart_policy: None,
                 resize_policy: None,
+                lifecycle: None,
             }],
             ephemeral_containers: None,
             volumes: None,
@@ -1681,6 +1856,7 @@ mod tests {
                 security_context: None,
                 restart_policy: None,
                 resize_policy: None,
+                lifecycle: None,
             }],
             init_containers: None,
             ephemeral_containers: None,

@@ -42,6 +42,7 @@ async fn create_test_node(
         },
         spec: Some(NodeSpec {
             pod_cidr: Some("10.244.0.0/24".to_string()),
+            pod_cidrs: None,
             provider_id: None,
             taints,
             unschedulable: Some(false),
@@ -118,6 +119,7 @@ fn create_test_pod(
                 security_context: None,
                 restart_policy: None,
                 resize_policy: None,
+                lifecycle: None,
             }],
             init_containers: None,
             ephemeral_containers: None,

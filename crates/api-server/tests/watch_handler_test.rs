@@ -54,6 +54,7 @@ fn create_minimal_pod_spec() -> PodSpec {
             restart_policy: None,
             resize_policy: None,
             security_context: None,
+            lifecycle: None,
         }],
         init_containers: None,
         ephemeral_containers: None,

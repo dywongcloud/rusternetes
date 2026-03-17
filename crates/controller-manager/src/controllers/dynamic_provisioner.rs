@@ -401,6 +401,8 @@ mod tests {
                 volume_mode: Some(PersistentVolumeMode::Filesystem),
                 selector: None,
                 data_source: None,
+                data_source_ref: None,
+                volume_attributes_class_name: None,
             },
             status: Some(PersistentVolumeClaimStatus {
                 phase: PersistentVolumeClaimPhase::Pending,
@@ -408,6 +410,7 @@ mod tests {
                 capacity: None,
                 conditions: None,
                 allocated_resources: None,
+                allocated_resource_statuses: None,
                 resize_status: None,
             }),
         };

@@ -54,6 +54,7 @@ fn create_test_pod(name: &str, namespace: &str, owner_uid: Option<&str>) -> Pod 
                 restart_policy: None,
                 resize_policy: None,
                 security_context: None,
+                lifecycle: None,
             }],
             init_containers: None,
             restart_policy: Some("Always".to_string()),

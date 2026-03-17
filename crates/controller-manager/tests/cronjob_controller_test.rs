@@ -68,6 +68,7 @@ fn create_test_cronjob(name: &str, namespace: &str, schedule: &str) -> CronJob {
                                 restart_policy: None,
                                 resize_policy: None,
                                 security_context: None,
+                                lifecycle: None,
                             }],
                             init_containers: None,
                             restart_policy: Some("Never".to_string()),

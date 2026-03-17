@@ -75,7 +75,8 @@ async fn test_complete_pod_lifecycle() {
                 args: None,
                 restart_policy: None,
                 resize_policy: None,
-                security_context: None
+                security_context: None,
+                lifecycle: None,
             }],
             init_containers: None,
             restart_policy: Some("Always".to_string()),
@@ -239,7 +240,8 @@ async fn test_deployment_workflow() {
                         args: None,
                         restart_policy: None,
                         resize_policy: None,
-                        security_context: None
+                        security_context: None,
+                        lifecycle: None,
                     }],
                     init_containers: None,
                     restart_policy: Some("Always".to_string()),
@@ -407,10 +409,13 @@ async fn test_dynamic_pvc_workflow() {
             storage_class_name: Some("fast".to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None
+            data_source: None,
+            data_source_ref: None,
+            volume_attributes_class_name: None,
         },
         status: Some(PersistentVolumeClaimStatus {
             allocated_resources: None,
+            allocated_resource_statuses: None,
             resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
@@ -539,10 +544,13 @@ async fn test_snapshot_workflow() {
             storage_class_name: Some("fast".to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None
+            data_source: None,
+            data_source_ref: None,
+            volume_attributes_class_name: None,
         },
         status: Some(PersistentVolumeClaimStatus {
             allocated_resources: None,
+            allocated_resource_statuses: None,
             resize_status: None,
             phase: PersistentVolumeClaimPhase::Bound,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),

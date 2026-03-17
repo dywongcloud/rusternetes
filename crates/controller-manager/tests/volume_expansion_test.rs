@@ -124,10 +124,13 @@ async fn create_bound_pvc(
             storage_class_name: Some(storage_class.to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None
+            data_source: None,
+            data_source_ref: None,
+            volume_attributes_class_name: None,
         },
         status: Some(PersistentVolumeClaimStatus {
             allocated_resources: None,
+            allocated_resource_statuses: None,
             resize_status: None,
             phase: PersistentVolumeClaimPhase::Bound,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
@@ -296,10 +299,13 @@ async fn test_expansion_only_for_bound_pvcs() {
             storage_class_name: Some("expandable-2".to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None
+            data_source: None,
+            data_source_ref: None,
+            volume_attributes_class_name: None,
         },
         status: Some(PersistentVolumeClaimStatus {
             allocated_resources: None,
+            allocated_resource_statuses: None,
             resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending, // Not bound
             access_modes: None,

@@ -65,6 +65,7 @@ fn create_test_job(name: &str, namespace: &str, completions: i32, parallelism: i
                         restart_policy: None,
                         resize_policy: None,
                         security_context: None,
+                        lifecycle: None,
                     }],
                     init_containers: None,
                     restart_policy: Some("Never".to_string()),

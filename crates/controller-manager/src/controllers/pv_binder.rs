@@ -142,6 +142,7 @@ impl<S: Storage> PVBinderController<S> {
                 capacity: Some(pv_capacity),
                 conditions: None,
                 allocated_resources: None,
+                allocated_resource_statuses: None,
                 resize_status: None,
             });
 

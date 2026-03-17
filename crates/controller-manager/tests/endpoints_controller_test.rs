@@ -89,6 +89,7 @@ fn create_test_pod(
                 restart_policy: None,
                 resize_policy: None,
                 security_context: None,
+                lifecycle: None,
             }],
             init_containers: None,
             ephemeral_containers: None,

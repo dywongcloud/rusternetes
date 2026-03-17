@@ -36,6 +36,7 @@ fn create_test_node(name: &str) -> Node {
         },
         spec: Some(NodeSpec {
             pod_cidr: Some("10.244.0.0/24".to_string()),
+            pod_cidrs: None,
             provider_id: None,
             unschedulable: Some(false),
             taints: None,

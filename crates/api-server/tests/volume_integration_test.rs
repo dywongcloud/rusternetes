@@ -97,10 +97,13 @@ fn test_persistentvolumeclaim_creation() {
             storage_class_name: Some("manual".to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None
+            data_source: None,
+            data_source_ref: None,
+            volume_attributes_class_name: None,
         },
         status: Some(PersistentVolumeClaimStatus {
             allocated_resources: None,
+            allocated_resource_statuses: None,
             resize_status: None,
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
@@ -379,7 +382,9 @@ fn test_pvc_with_resource_limits_and_requests() {
             storage_class_name: Some("fast".to_string()),
             volume_mode: Some(PersistentVolumeMode::Block),
             selector: None,
-            data_source: None
+            data_source: None,
+            data_source_ref: None,
+            volume_attributes_class_name: None,
         },
         status: None
     };

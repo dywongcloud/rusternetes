@@ -29,6 +29,7 @@ fn create_running_pod(name: &str) -> Pod {
                 security_context: None,
                 restart_policy: None,
                 resize_policy: None,
+                lifecycle: None,
             }],
             init_containers: None,
             ephemeral_containers: None,
@@ -117,6 +118,9 @@ fn create_ephemeral_container(name: &str, target_container: Option<&str>) -> Eph
         stdin: Some(true),
         stdin_once: Some(false),
         tty: Some(true),
+        resize_policy: None,
+        restart_policy: None,
+        resources: None,
     }
 }
 
@@ -375,6 +379,9 @@ fn test_ephemeral_container_tty_and_stdin() {
         stdin: Some(true),
         stdin_once: Some(false),
         tty: Some(true),
+        resize_policy: None,
+        restart_policy: None,
+        resources: None,
     };
 
     assert_eq!(ephemeral.stdin, Some(true));

@@ -75,6 +75,7 @@ fn create_pod_with_qos(name: &str, namespace: &str, qos: QoSClass) -> Pod {
                 security_context: None,
                 restart_policy: None,
                 resize_policy: None,
+                lifecycle: None,
             }],
             init_containers: None,
             ephemeral_containers: None,
