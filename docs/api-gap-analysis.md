@@ -7,7 +7,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 **Scope**: `core/v1`, `apps/v1`, `batch/v1`, `autoscaling/v2`, `networking/v1`, `rbac/v1`,
 `storage/v1`, `policy/v1`
 
-**Last updated**: 2026-03-17 (commit e24e251)
+**Last updated**: 2026-03-17 (commit 55b1d34)
 
 ---
 
@@ -536,12 +536,17 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 |-------|----------|----------|
 | `volumeAttributesClassName` | `string` | P2 |
 
-### Missing fields on PersistentVolumeStatus
+### PersistentVolumeStatus ✅ (partial)
+
+| Field | Status |
+|-------|--------|
+| `reason: Option<String>` | ✅ Already present |
+| `message: Option<String>` | ✅ Already present |
+
+### Still missing on PersistentVolumeStatus
 
 | Field | K8s Type | Priority |
 |-------|----------|----------|
-| `reason` | `string` | P1 |
-| `message` | `string` | P1 |
 | `lastPhaseTransitionTime` | `Time` | P2 |
 
 ---
@@ -611,27 +616,31 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 ---
 
-## 24. core/v1 — ResourceQuota
+## 24. core/v1 — ResourceQuota ✅
 
-**File**: Not implemented — **completely missing**
+**File**: `crates/common/src/resources/policy.rs`
 
-| Resource | Priority |
-|----------|----------|
-| `ResourceQuota` struct with `spec` and `status` | P1 |
-| `ResourceQuotaSpec`: `hard`, `scopes`, `scopeSelector` | P1 |
-| `ResourceQuotaStatus`: `hard`, `used` | P1 |
-| `ScopeSelector`, `ScopedResourceSelectorRequirement` | P1 |
+### ✅ Already implemented
+
+| Resource | Status |
+|----------|--------|
+| `ResourceQuota` struct with `spec` and `status` | ✅ Present |
+| `ResourceQuotaSpec`: `hard`, `scopes`, `scopeSelector` | ✅ Present |
+| `ResourceQuotaStatus`: `hard`, `used` | ✅ Present |
+| `ScopeSelector`, `ScopedResourceSelectorRequirement` | ✅ Present |
 
 ---
 
-## 25. core/v1 — LimitRange
+## 25. core/v1 — LimitRange ✅
 
-**File**: Not implemented — **completely missing**
+**File**: `crates/common/src/resources/policy.rs`
 
-| Resource | Priority |
-|----------|----------|
-| `LimitRange` struct | P2 |
-| `LimitRangeSpec`, `LimitRangeItem` | P2 |
+### ✅ Already implemented
+
+| Resource | Status |
+|----------|--------|
+| `LimitRange` struct | ✅ Present |
+| `LimitRangeSpec`, `LimitRangeItem` | ✅ Present |
 
 ---
 
@@ -653,15 +662,22 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 ---
 
-## 27. storage/v1 — StorageClass, VolumeAttachment, CSIDriver, CSINode
+## 27. storage/v1 — StorageClass, VolumeAttachment, CSIDriver, CSINode ✅ (partial)
 
-**File**: Not implemented — **completely missing**
+**File**: `crates/common/src/resources/volume.rs` (StorageClass), `crates/common/src/resources/csi.rs` (CSIDriver)
+
+### ✅ Already implemented
+
+| Resource | Status |
+|----------|--------|
+| `StorageClass` | ✅ Present (volume.rs) |
+| `CSIDriver` + `CSIDriverSpec` | ✅ Present (csi.rs) |
+
+### Still missing
 
 | Resource | Priority |
 |----------|----------|
-| `StorageClass` | P1 |
 | `VolumeAttachment` + `VolumeAttachmentSpec` + `VolumeAttachmentStatus` | P2 |
-| `CSIDriver` + `CSIDriverSpec` | P2 |
 | `CSINode` + `CSINodeSpec` + `CSINodeDriver` | P2 |
 | `CSIStorageCapacity` | P3 |
 | `VolumeAttributesClass` | P3 |
@@ -695,21 +711,17 @@ Status: **largely complete**. No remaining critical gaps.
 
 ---
 
-## 30. policy/v1 — PodDisruptionBudgetSpec / Status
+## 30. policy/v1 — PodDisruptionBudgetSpec / Status ✅
 
 **File**: `crates/common/src/resources/policy.rs`
 
-### PodDisruptionBudgetSpec — Missing fields
+### ✅ Already implemented
 
-| Field | K8s Type | Priority |
-|-------|----------|----------|
-| `unhealthyPodEvictionPolicy` | `string` | P1 |
-
-### PodDisruptionBudgetStatus — Missing fields
-
-| Field | K8s Type | Priority |
-|-------|----------|----------|
-| `conditions` | `[]Condition` | P1 |
+| Field | Status |
+|-------|--------|
+| `unhealthyPodEvictionPolicy: Option<String>` | ✅ Present |
+| `conditions: Option<Vec<PodDisruptionBudgetCondition>>` | ✅ Present |
+| `PodDisruptionBudgetCondition` type | ✅ Present |
 
 ---
 
@@ -769,8 +781,9 @@ Status: **largely complete**. No remaining critical gaps.
 | Item | Priority |
 |------|----------|
 | `PodSecurityContext`: `seLinuxChangePolicy`, `supplementalGroupsPolicy` | P2 |
-| `LimitRange`: full implementation | P2 |
 | `PersistentVolumeClaimStatus`: `currentVolumeAttributesClassName`, `modifyVolumeStatus` | P2 |
+| `PersistentVolumeStatus.lastPhaseTransitionTime` | P2 |
+| `PersistentVolumeSpec.volumeAttributesClassName` | P2 |
 | `NodeSystemInfo.swap` | P2 |
 | `Lifecycle.stopSignal` | P2 |
 | `HPAScalingRules.tolerance` | P2 |
@@ -778,6 +791,11 @@ Status: **largely complete**. No remaining critical gaps.
 | `StatefulSetSpec.ordinals` | P2 |
 | `JobSpec`: `podFailurePolicy`, `successPolicy`, `podReplacementPolicy` | P2 |
 | `JobStatus`: `completedIndexes`, `failedIndexes`, `uncountedTerminatedPods` | P2 |
+| `Container`: `stdin`, `stdinOnce`, `tty`, `terminationMessagePath`, `terminationMessagePolicy` | P2 |
+| `ContainerStatus`: `stopSignal`, `user`, `volumeMounts` | P2 |
+| `PodStatus`: `resize`, `resourceClaimStatuses`, `observedGeneration` | P2 |
+| `NodeStatus`: `config`, `features`, `runtimeHandlers` | P2 |
+| `Volume`: `csi` (inline CSI volume) | P2 |
 
 ### Phase 4 — P3 (Nice to have / legacy)
 
