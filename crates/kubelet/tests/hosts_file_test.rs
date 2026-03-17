@@ -18,6 +18,7 @@ fn make_container(name: &str) -> Container {
         working_dir: None,
         security_context: None,
         restart_policy: None,
+        resize_policy: None,
     }
 }
 
@@ -64,6 +65,9 @@ fn make_pod(name: &str, namespace: &str, hostname: Option<&str>, subdomain: Opti
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         }),
         status: None,
     }

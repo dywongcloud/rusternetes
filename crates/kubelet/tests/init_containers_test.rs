@@ -27,6 +27,7 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             working_dir: None,
             security_context: None,
             restart_policy: None,
+            resize_policy: None,
         });
     }
 
@@ -48,6 +49,7 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             working_dir: None,
             security_context: None,
             restart_policy: None,
+            resize_policy: None,
         });
     }
 
@@ -93,6 +95,9 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         }),
         status: None,
     }
@@ -127,7 +132,12 @@ fn test_init_container_status_sequence() {
         message: Some("Initializing".to_string()),
         reason: Some("PodInitializing".to_string()),
         pod_ip: None,
+        pod_i_ps: None,
+        nominated_node_name: None,
+        qos_class: None,
+        start_time: None,
         host_ip: None,
+        host_i_ps: None,
         container_statuses: None,
         init_container_statuses: Some(vec![
             ContainerStatus {
@@ -139,6 +149,8 @@ fn test_init_container_status_sequence() {
                 restart_count: 0,
                 image: Some("busybox:0".to_string()),
                 container_id: Some("container-0".to_string()),
+    started: None,
+    allocated_resources: None,
             },
             // init-1 and init-2 are waiting
         ]),
@@ -170,7 +182,12 @@ fn test_init_containers_completed_app_starting() {
         message: None,
         reason: None,
         pod_ip: Some("10.244.0.5".to_string()),
+        pod_i_ps: None,
+        nominated_node_name: None,
+        qos_class: None,
+        start_time: None,
         host_ip: Some("192.168.1.10".to_string()),
+        host_i_ps: None,
         init_container_statuses: Some(vec![
             ContainerStatus {
                 name: "init-0".to_string(),
@@ -182,6 +199,8 @@ fn test_init_containers_completed_app_starting() {
                 restart_count: 0,
                 image: Some("busybox:0".to_string()),
                 container_id: Some("init-0-container".to_string()),
+    started: None,
+    allocated_resources: None,
             },
             ContainerStatus {
                 name: "init-1".to_string(),
@@ -193,6 +212,8 @@ fn test_init_containers_completed_app_starting() {
                 restart_count: 0,
                 image: Some("busybox:1".to_string()),
                 container_id: Some("init-1-container".to_string()),
+    started: None,
+    allocated_resources: None,
             },
         ]),
         container_statuses: Some(vec![ContainerStatus {
@@ -204,6 +225,8 @@ fn test_init_containers_completed_app_starting() {
             restart_count: 0,
             image: Some("nginx:0".to_string()),
             container_id: Some("app-0-container".to_string()),
+started: None,
+allocated_resources: None,
         }]),
         ephemeral_container_statuses: None,
         conditions: None,
@@ -246,7 +269,12 @@ fn test_init_container_failure_blocks_app() {
         message: Some("Init container init-0 failed".to_string()),
         reason: Some("Init:Error".to_string()),
         pod_ip: None,
+        pod_i_ps: None,
+        nominated_node_name: None,
+        qos_class: None,
+        start_time: None,
         host_ip: None,
+        host_i_ps: None,
         init_container_statuses: Some(vec![ContainerStatus {
             name: "init-0".to_string(),
             state: Some(ContainerState::Terminated {
@@ -257,6 +285,8 @@ fn test_init_container_failure_blocks_app() {
             restart_count: 1,
             image: Some("busybox:0".to_string()),
             container_id: Some("init-0-container".to_string()),
+started: None,
+allocated_resources: None,
         }]),
         container_statuses: None, // App container never started
         ephemeral_container_statuses: None,
@@ -291,7 +321,12 @@ fn test_init_container_restart_count() {
         message: Some("Init container restarting".to_string()),
         reason: Some("Init:CrashLoopBackOff".to_string()),
         pod_ip: None,
+        pod_i_ps: None,
+        nominated_node_name: None,
+        qos_class: None,
+        start_time: None,
         host_ip: None,
+        host_i_ps: None,
         init_container_statuses: Some(vec![ContainerStatus {
             name: "init-0".to_string(),
             state: Some(ContainerState::Terminated {
@@ -302,6 +337,8 @@ fn test_init_container_restart_count() {
             restart_count: 5, // Container has restarted 5 times
             image: Some("busybox:0".to_string()),
             container_id: Some("init-0-container-5".to_string()),
+started: None,
+allocated_resources: None,
         }]),
         container_statuses: None,
         ephemeral_container_statuses: None,

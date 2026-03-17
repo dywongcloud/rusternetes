@@ -34,7 +34,7 @@ async fn test_pv_pvc_binding_lifecycle() {
     let pv = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("test-pv");
@@ -43,23 +43,27 @@ async fn test_pv_pvc_binding_lifecycle() {
         },
         spec: PersistentVolumeSpec {
             capacity: capacity.clone(),
-            volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
+            host_path: Some(HostPathVolumeSource {
                 path: "/mnt/data".to_string(),
-                r#type: Some(HostPathType::DirectoryOrCreate),
+                r#type: Some(HostPathType::DirectoryOrCreate)
             }),
+            nfs: None,
+            iscsi: None,
+            local: None,
+            csi: None,
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             persistent_volume_reclaim_policy: Some(PersistentVolumeReclaimPolicy::Retain),
             storage_class_name: Some("standard".to_string()),
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None,
+            claim_ref: None
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None,
-        }),
+            reason: None
+        })
     };
 
     let pv_key = build_key("persistentvolumes", None, "test-pv");
@@ -76,7 +80,7 @@ async fn test_pv_pvc_binding_lifecycle() {
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("test-pvc");
@@ -88,13 +92,13 @@ async fn test_pv_pvc_binding_lifecycle() {
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 limits: None,
-                requests: Some(requests),
+                requests: Some(requests)
             },
             volume_name: None,
             storage_class_name: Some("standard".to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None,
+            data_source: None
         },
         status: Some(PersistentVolumeClaimStatus {
             phase: PersistentVolumeClaimPhase::Pending,
@@ -102,8 +106,8 @@ async fn test_pv_pvc_binding_lifecycle() {
             resize_status: None,
             conditions: None,
             access_modes: None,
-            capacity: None,
-        }),
+            capacity: None
+        })
     };
 
     let pvc_key = build_key("persistentvolumeclaims", Some("default"), "test-pvc");
@@ -143,7 +147,7 @@ async fn test_dynamic_provisioning() {
     let storage_class = StorageClass {
         type_meta: TypeMeta {
             kind: "StorageClass".to_string(),
-            api_version: "storage.k8s.io/v1".to_string(),
+            api_version: "storage.k8s.io/v1".to_string()
         },
         metadata: ObjectMeta::new("fast-storage"),
         provisioner: "rusternetes.io/hostpath".to_string(),
@@ -155,7 +159,7 @@ async fn test_dynamic_provisioning() {
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
-        allow_volume_expansion: Some(true),
+        allow_volume_expansion: Some(true)
     };
 
     let sc_key = build_key("storageclasses", None, "fast-storage");
@@ -168,7 +172,7 @@ async fn test_dynamic_provisioning() {
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("dynamic-pvc");
@@ -180,13 +184,13 @@ async fn test_dynamic_provisioning() {
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 limits: None,
-                requests: Some(requests),
+                requests: Some(requests)
             },
             volume_name: None,
             storage_class_name: Some("fast-storage".to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None,
+            data_source: None
         },
         status: Some(PersistentVolumeClaimStatus {
             phase: PersistentVolumeClaimPhase::Pending,
@@ -194,8 +198,8 @@ async fn test_dynamic_provisioning() {
             resize_status: None,
             conditions: None,
             access_modes: None,
-            capacity: None,
-        }),
+            capacity: None
+        })
     };
 
     let pvc_key = build_key("persistentvolumeclaims", Some("default"), "dynamic-pvc");
@@ -241,7 +245,7 @@ async fn test_storage_class_parameters() {
     let storage_class = StorageClass {
         type_meta: TypeMeta {
             kind: "StorageClass".to_string(),
-            api_version: "storage.k8s.io/v1".to_string(),
+            api_version: "storage.k8s.io/v1".to_string()
         },
         metadata: ObjectMeta::new("custom-storage"),
         provisioner: "rusternetes.io/hostpath".to_string(),
@@ -254,7 +258,7 @@ async fn test_storage_class_parameters() {
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Retain),
         volume_binding_mode: Some(VolumeBindingMode::WaitForFirstConsumer),
         allowed_topologies: None,
-        allow_volume_expansion: Some(false),
+        allow_volume_expansion: Some(false)
     };
 
     let sc_key = build_key("storageclasses", None, "custom-storage");
@@ -288,7 +292,7 @@ async fn test_access_modes_matching() {
     let pv_rwo = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("pv-rwo");
@@ -297,23 +301,27 @@ async fn test_access_modes_matching() {
         },
         spec: PersistentVolumeSpec {
             capacity: capacity_rwo.clone(),
-            volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
+            host_path: Some(HostPathVolumeSource {
                 path: "/mnt/rwo".to_string(),
-                r#type: Some(HostPathType::DirectoryOrCreate),
+                r#type: Some(HostPathType::DirectoryOrCreate)
             }),
+            nfs: None,
+            iscsi: None,
+            local: None,
+            csi: None,
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             persistent_volume_reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
             storage_class_name: Some("standard".to_string()),
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None,
+            claim_ref: None
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None,
-        }),
+            reason: None
+        })
     };
 
     let pv_rwo_key = build_key("persistentvolumes", None, "pv-rwo");
@@ -326,7 +334,7 @@ async fn test_access_modes_matching() {
     let pv_rwx = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("pv-rwx");
@@ -335,23 +343,27 @@ async fn test_access_modes_matching() {
         },
         spec: PersistentVolumeSpec {
             capacity: capacity_rwx.clone(),
-            volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
+            host_path: Some(HostPathVolumeSource {
                 path: "/mnt/rwx".to_string(),
-                r#type: Some(HostPathType::DirectoryOrCreate),
+                r#type: Some(HostPathType::DirectoryOrCreate)
             }),
+            nfs: None,
+            iscsi: None,
+            local: None,
+            csi: None,
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteMany],
             persistent_volume_reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
             storage_class_name: Some("standard".to_string()),
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None,
+            claim_ref: None
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None,
-        }),
+            reason: None
+        })
     };
 
     let pv_rwx_key = build_key("persistentvolumes", None, "pv-rwx");
@@ -380,7 +392,7 @@ async fn test_reclaim_policies() {
     let pv_retain = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("pv-retain");
@@ -389,23 +401,27 @@ async fn test_reclaim_policies() {
         },
         spec: PersistentVolumeSpec {
             capacity: capacity_retain.clone(),
-            volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
+            host_path: Some(HostPathVolumeSource {
                 path: "/mnt/retain".to_string(),
-                r#type: Some(HostPathType::DirectoryOrCreate),
+                r#type: Some(HostPathType::DirectoryOrCreate)
             }),
+            nfs: None,
+            iscsi: None,
+            local: None,
+            csi: None,
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             persistent_volume_reclaim_policy: Some(PersistentVolumeReclaimPolicy::Retain),
             storage_class_name: Some("standard".to_string()),
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None,
+            claim_ref: None
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None,
-        }),
+            reason: None
+        })
     };
 
     let pv_retain_key = build_key("persistentvolumes", None, "pv-retain");
@@ -418,7 +434,7 @@ async fn test_reclaim_policies() {
     let pv_delete = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("pv-delete");
@@ -427,23 +443,27 @@ async fn test_reclaim_policies() {
         },
         spec: PersistentVolumeSpec {
             capacity: capacity_delete.clone(),
-            volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
+            host_path: Some(HostPathVolumeSource {
                 path: "/mnt/delete".to_string(),
-                r#type: Some(HostPathType::DirectoryOrCreate),
+                r#type: Some(HostPathType::DirectoryOrCreate)
             }),
+            nfs: None,
+            iscsi: None,
+            local: None,
+            csi: None,
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             persistent_volume_reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
             storage_class_name: Some("standard".to_string()),
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None,
+            claim_ref: None
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None,
-        }),
+            reason: None
+        })
     };
 
     let pv_delete_key = build_key("persistentvolumes", None, "pv-delete");

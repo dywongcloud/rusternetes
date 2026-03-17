@@ -176,6 +176,18 @@ pub struct PodSpec {
     /// TerminationGracePeriodSeconds is the grace period before forcible pod termination
     #[serde(skip_serializing_if = "Option::is_none")]
     pub termination_grace_period_seconds: Option<i64>,
+
+    /// HostAliases is a list of hosts and IPs that will be injected into /etc/hosts
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_aliases: Option<Vec<HostAlias>>,
+
+    /// OS is the target operating system for this pod
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub os: Option<PodOS>,
+
+    /// SchedulingGates is a list of conditions that must be satisfied before the pod may be scheduled
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduling_gates: Option<Vec<PodSchedulingGate>>,
 }
 
 /// PodResourceClaim references a ResourceClaim that must be allocated for the pod
@@ -185,15 +197,6 @@ pub struct PodResourceClaim {
     /// Name uniquely identifies this resource claim inside the pod
     pub name: String,
 
-    /// Source describes where to find the ResourceClaim
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<ClaimSource>,
-}
-
-/// ClaimSource describes a reference to a ResourceClaim
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClaimSource {
     /// ResourceClaimName is the name of a ResourceClaim object in the same namespace
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_claim_name: Option<String>,
@@ -201,6 +204,29 @@ pub struct ClaimSource {
     /// ResourceClaimTemplateName is the name of a ResourceClaimTemplate object in the same namespace
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_claim_template_name: Option<String>,
+}
+
+/// HostAlias holds the mapping between IP and hostnames that will be injected into /etc/hosts
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostAlias {
+    pub ip: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostnames: Option<Vec<String>>,
+}
+
+/// PodOS identifies the OS for a pod
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PodOS {
+    pub name: String,
+}
+
+/// PodSchedulingGate is associated to a Pod to guard its scheduling
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PodSchedulingGate {
+    pub name: String,
 }
 
 /// PodDNSConfig defines DNS parameters for the pod
@@ -434,6 +460,20 @@ pub struct Container {
     /// Possible values: Always (sidecar container that runs alongside main containers)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub restart_policy: Option<String>,
+
+    /// ResizePolicy is the list of container resource resize policies
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resize_policy: Option<Vec<ContainerResizePolicy>>,
+}
+
+/// ContainerResizePolicy represents resource resize policy for the container
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerResizePolicy {
+    /// Name of the resource to which this resource resize policy applies (cpu, memory)
+    pub resource_name: String,
+    /// Restart policy to apply when the specified resource is resized (NotRequired or RestartContainer)
+    pub restart_policy: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -772,6 +812,20 @@ pub struct PersistentVolumeClaimTemplate {
     pub spec: crate::resources::volume::PersistentVolumeClaimSpec,
 }
 
+/// HostIP represents a single host IP address
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostIP {
+    pub ip: String,
+}
+
+/// PodIP represents a single pod IP address
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PodIP {
+    pub ip: String,
+}
+
 /// PodCondition represents a condition of a pod
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -791,6 +845,9 @@ pub struct PodCondition {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_transition_time: Option<chrono::DateTime<chrono::Utc>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_generation: Option<i64>,
 }
 
 /// PodStatus represents the current state of a pod
@@ -809,8 +866,28 @@ pub struct PodStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host_ip: Option<String>,
 
+    /// All host IPs for dual-stack
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_i_ps: Option<Vec<HostIP>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pod_ip: Option<String>,
+
+    /// All pod IPs for dual-stack
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pod_i_ps: Option<Vec<PodIP>>,
+
+    /// Node nominated for preemption to make room for this pod
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nominated_node_name: Option<String>,
+
+    /// QOS class for the pod (Guaranteed, Burstable, or BestEffort)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qos_class: Option<String>,
+
+    /// Time at which the pod was acknowledged by the kubelet
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<chrono::DateTime<chrono::Utc>>,
 
     /// Pod-level conditions (Ready, ContainersReady, Initialized, PodScheduled)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -843,6 +920,14 @@ pub struct ContainerStatus {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container_id: Option<String>,
+
+    /// Whether the container has passed its startup probe
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started: Option<bool>,
+
+    /// Resources allocated to this container by the node
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allocated_resources: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1211,6 +1296,7 @@ mod tests {
                     startup_probe: None,
                     security_context: None,
                     restart_policy: None,
+                    resize_policy: None,
                 },
                 Container {
                     name: "init-mydb".to_string(),
@@ -1232,6 +1318,7 @@ mod tests {
                     startup_probe: None,
                     security_context: None,
                     restart_policy: None,
+                    resize_policy: None,
                 },
             ]),
             containers: vec![Container {
@@ -1255,6 +1342,7 @@ mod tests {
                 startup_probe: None,
                 security_context: None,
                 restart_policy: None,
+                resize_policy: None,
             }],
             ephemeral_containers: None,
             volumes: None,
@@ -1289,6 +1377,9 @@ mod tests {
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         };
 
         let pod = Pod::new("myapp-pod", spec);
@@ -1382,7 +1473,12 @@ mod tests {
             message: None,
             reason: None,
             host_ip: Some("192.168.1.1".to_string()),
+            host_i_ps: None,
             pod_ip: Some("10.0.0.1".to_string()),
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
             container_statuses: Some(vec![ContainerStatus {
                 name: "app".to_string(),
                 ready: true,
@@ -1392,6 +1488,8 @@ mod tests {
                 }),
                 image: Some("nginx:latest".to_string()),
                 container_id: Some("containerd://abc123".to_string()),
+                started: None,
+                allocated_resources: None,
             }]),
             init_container_statuses: Some(vec![
                 ContainerStatus {
@@ -1404,6 +1502,8 @@ mod tests {
                     }),
                     image: Some("busybox:1.28".to_string()),
                     container_id: Some("containerd://def456".to_string()),
+                    started: None,
+                    allocated_resources: None,
                 },
                 ContainerStatus {
                     name: "init-mydb".to_string(),
@@ -1415,6 +1515,8 @@ mod tests {
                     }),
                     image: Some("busybox:1.28".to_string()),
                     container_id: Some("containerd://ghi789".to_string()),
+                    started: None,
+                    allocated_resources: None,
                 },
             ]),
             ephemeral_container_statuses: None,
@@ -1535,6 +1637,7 @@ mod tests {
                 startup_probe: None,
                 security_context: None,
                 restart_policy: None,
+                resize_policy: None,
             }],
             init_containers: None,
             ephemeral_containers: None,
@@ -1570,6 +1673,9 @@ mod tests {
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         };
 
         // Clone it (like DaemonSet controller does)
@@ -1603,91 +1709,21 @@ mod tests {
     }
 
     #[test]
-    fn test_claim_source_serialization() {
-        // Test that ClaimSource with only resource_claim_name set serializes correctly
-        // (not as an empty object {})
-        let claim_source = ClaimSource {
-            resource_claim_name: Some("my-claim".to_string()),
-            resource_claim_template_name: None,
-        };
-
-        let json = serde_json::to_string(&claim_source).expect("Failed to serialize ClaimSource");
-        println!("Serialized ClaimSource: {}", json);
-
-        // Should NOT be an empty object
-        assert!(
-            !json.contains("{}"),
-            "ClaimSource should not serialize as empty object"
-        );
-
-        // Should contain the resource_claim_name field
-        assert!(
-            json.contains("resourceClaimName"),
-            "Should contain resourceClaimName field"
-        );
-        assert!(json.contains("my-claim"), "Should contain the claim name");
-
-        // Test round-trip
-        let deserialized: ClaimSource =
-            serde_json::from_str(&json).expect("Failed to deserialize ClaimSource");
-        assert_eq!(
-            deserialized.resource_claim_name,
-            Some("my-claim".to_string())
-        );
-        assert_eq!(deserialized.resource_claim_template_name, None);
-
-        // Test with resource_claim_template_name set instead
-        let claim_source2 = ClaimSource {
-            resource_claim_name: None,
-            resource_claim_template_name: Some("my-template".to_string()),
-        };
-
-        let json2 = serde_json::to_string(&claim_source2).expect("Failed to serialize ClaimSource");
-        println!("Serialized ClaimSource (template): {}", json2);
-
-        assert!(
-            !json2.contains("{}"),
-            "ClaimSource should not serialize as empty object"
-        );
-        assert!(
-            json2.contains("resourceClaimTemplateName"),
-            "Should contain resourceClaimTemplateName field"
-        );
-        assert!(
-            json2.contains("my-template"),
-            "Should contain the template name"
-        );
-
-        // Test round-trip for template
-        let deserialized2: ClaimSource =
-            serde_json::from_str(&json2).expect("Failed to deserialize ClaimSource with template");
-        assert_eq!(deserialized2.resource_claim_name, None);
-        assert_eq!(
-            deserialized2.resource_claim_template_name,
-            Some("my-template".to_string())
-        );
-    }
-
-    #[test]
     fn test_pod_resource_claim_serialization() {
-        // Test that PodResourceClaim with ClaimSource serializes correctly
+        // Test that PodResourceClaim with resourceClaimName serializes correctly
         let resource_claim = PodResourceClaim {
             name: "test-claim".to_string(),
-            source: Some(ClaimSource {
-                resource_claim_name: Some("my-resource-claim".to_string()),
-                resource_claim_template_name: None,
-            }),
+            resource_claim_name: Some("my-resource-claim".to_string()),
+            resource_claim_template_name: None,
         };
 
         let json =
             serde_json::to_string(&resource_claim).expect("Failed to serialize PodResourceClaim");
         println!("Serialized PodResourceClaim: {}", json);
 
-        // Verify source is present and not empty
-        assert!(json.contains("source"), "Should contain source field");
         assert!(
             json.contains("resourceClaimName"),
-            "Should contain resourceClaimName in source"
+            "Should contain resourceClaimName field"
         );
         assert!(
             json.contains("my-resource-claim"),
@@ -1698,13 +1734,28 @@ mod tests {
         let deserialized: PodResourceClaim =
             serde_json::from_str(&json).expect("Failed to deserialize PodResourceClaim");
         assert_eq!(deserialized.name, "test-claim");
-        assert!(deserialized.source.is_some(), "source should be Some");
-
-        let source = deserialized.source.unwrap();
         assert_eq!(
-            source.resource_claim_name,
+            deserialized.resource_claim_name,
             Some("my-resource-claim".to_string())
         );
-        assert_eq!(source.resource_claim_template_name, None);
+        assert_eq!(deserialized.resource_claim_template_name, None);
+
+        // Test with resourceClaimTemplateName instead
+        let resource_claim2 = PodResourceClaim {
+            name: "template-claim".to_string(),
+            resource_claim_name: None,
+            resource_claim_template_name: Some("my-template".to_string()),
+        };
+
+        let json2 = serde_json::to_string(&resource_claim2)
+            .expect("Failed to serialize PodResourceClaim with template");
+        assert!(
+            json2.contains("resourceClaimTemplateName"),
+            "Should contain resourceClaimTemplateName field"
+        );
+        assert!(
+            json2.contains("my-template"),
+            "Should contain the template name"
+        );
     }
 }

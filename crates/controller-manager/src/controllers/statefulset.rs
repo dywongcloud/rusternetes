@@ -262,6 +262,11 @@ impl<S: Storage> StatefulSetController<S> {
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
+                host_i_ps: None,
+                pod_i_ps: None,
+                nominated_node_name: None,
+                qos_class: None,
+                start_time: None,
             }),
         };
 

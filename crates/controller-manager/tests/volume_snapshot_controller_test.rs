@@ -29,7 +29,7 @@ async fn create_test_pvc(
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -41,13 +41,13 @@ async fn create_test_pvc(
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 limits: None,
-                requests: Some(requests),
+                requests: Some(requests)
             },
             volume_name: Some(pv_name.to_string()),
             storage_class_name: Some("fast".to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None,
+            data_source: None
         },
         status: Some(PersistentVolumeClaimStatus {
             allocated_resources: None,
@@ -59,8 +59,8 @@ async fn create_test_pvc(
                 cap.insert("storage".to_string(), "5Gi".to_string());
                 cap
             }),
-            conditions: None,
-        }),
+            conditions: None
+        })
     };
 
     let key = build_key("persistentvolumeclaims", Some(namespace), name);
@@ -74,7 +74,7 @@ async fn create_test_pv(storage: &MemoryStorage, name: &str) -> PersistentVolume
     let pv = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -83,23 +83,27 @@ async fn create_test_pv(storage: &MemoryStorage, name: &str) -> PersistentVolume
         },
         spec: PersistentVolumeSpec {
             capacity,
-            volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
+            host_path: Some(HostPathVolumeSource {
                 path: format!("/tmp/test-pv/{}", name),
                 r#type: Some(HostPathType::DirectoryOrCreate),
             }),
+            nfs: None,
+            iscsi: None,
+            local: None,
+            csi: None,
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             persistent_volume_reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
             storage_class_name: Some("fast".to_string()),
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None,
+            claim_ref: None
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None,
-        }),
+            reason: None
+        })
     };
 
     let key = build_key("persistentvolumes", None, name);
@@ -114,12 +118,12 @@ async fn test_snapshot_content_auto_creation() {
     let vsc = VolumeSnapshotClass {
         type_meta: TypeMeta {
             kind: "VolumeSnapshotClass".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string(),
+            api_version: "snapshot.storage.k8s.io/v1".to_string()
         },
         metadata: ObjectMeta::new("test-snapclass"),
         driver: "rusternetes.io/hostpath-snapshotter".to_string(),
         parameters: None,
-        deletion_policy: DeletionPolicy::Delete,
+        deletion_policy: DeletionPolicy::Delete
     };
 
     let vsc_key = build_key("volumesnapshotclasses", None, "test-snapclass");
@@ -133,7 +137,7 @@ async fn test_snapshot_content_auto_creation() {
     let vs = VolumeSnapshot {
         type_meta: TypeMeta {
             kind: "VolumeSnapshot".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string(),
+            api_version: "snapshot.storage.k8s.io/v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("test-snapshot");
@@ -144,11 +148,11 @@ async fn test_snapshot_content_auto_creation() {
         spec: VolumeSnapshotSpec {
             source: VolumeSnapshotSource {
                 persistent_volume_claim_name: Some("test-pvc".to_string()),
-                volume_snapshot_content_name: None,
+                volume_snapshot_content_name: None
             },
-            volume_snapshot_class_name: "test-snapclass".to_string(),
+            volume_snapshot_class_name: "test-snapclass".to_string()
         },
-        status: None,
+        status: None
     };
 
     let vs_key = build_key("volumesnapshots", Some("default"), "test-snapshot");
@@ -187,12 +191,12 @@ async fn test_snapshot_deletion_with_delete_policy() {
     let vsc = VolumeSnapshotClass {
         type_meta: TypeMeta {
             kind: "VolumeSnapshotClass".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string(),
+            api_version: "snapshot.storage.k8s.io/v1".to_string()
         },
         metadata: ObjectMeta::new("delete-policy-class"),
         driver: "rusternetes.io/hostpath-snapshotter".to_string(),
         parameters: None,
-        deletion_policy: DeletionPolicy::Delete,
+        deletion_policy: DeletionPolicy::Delete
     };
 
     let vsc_key = build_key("volumesnapshotclasses", None, "delete-policy-class");
@@ -206,7 +210,7 @@ async fn test_snapshot_deletion_with_delete_policy() {
     let vs = VolumeSnapshot {
         type_meta: TypeMeta {
             kind: "VolumeSnapshot".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string(),
+            api_version: "snapshot.storage.k8s.io/v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("test-snapshot-delete");
@@ -217,11 +221,11 @@ async fn test_snapshot_deletion_with_delete_policy() {
         spec: VolumeSnapshotSpec {
             source: VolumeSnapshotSource {
                 persistent_volume_claim_name: Some("test-pvc-delete".to_string()),
-                volume_snapshot_content_name: None,
+                volume_snapshot_content_name: None
             },
-            volume_snapshot_class_name: "delete-policy-class".to_string(),
+            volume_snapshot_class_name: "delete-policy-class".to_string()
         },
-        status: None,
+        status: None
     };
 
     let vs_key = build_key("volumesnapshots", Some("default"), "test-snapshot-delete");
@@ -264,12 +268,12 @@ async fn test_snapshot_deletion_with_retain_policy() {
     let vsc = VolumeSnapshotClass {
         type_meta: TypeMeta {
             kind: "VolumeSnapshotClass".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string(),
+            api_version: "snapshot.storage.k8s.io/v1".to_string()
         },
         metadata: ObjectMeta::new("retain-policy-class"),
         driver: "rusternetes.io/hostpath-snapshotter".to_string(),
         parameters: None,
-        deletion_policy: DeletionPolicy::Retain,
+        deletion_policy: DeletionPolicy::Retain
     };
 
     let vsc_key = build_key("volumesnapshotclasses", None, "retain-policy-class");
@@ -283,7 +287,7 @@ async fn test_snapshot_deletion_with_retain_policy() {
     let vs = VolumeSnapshot {
         type_meta: TypeMeta {
             kind: "VolumeSnapshot".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string(),
+            api_version: "snapshot.storage.k8s.io/v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("test-snapshot-retain");
@@ -294,11 +298,11 @@ async fn test_snapshot_deletion_with_retain_policy() {
         spec: VolumeSnapshotSpec {
             source: VolumeSnapshotSource {
                 persistent_volume_claim_name: Some("test-pvc-retain".to_string()),
-                volume_snapshot_content_name: None,
+                volume_snapshot_content_name: None
             },
-            volume_snapshot_class_name: "retain-policy-class".to_string(),
+            volume_snapshot_class_name: "retain-policy-class".to_string()
         },
-        status: None,
+        status: None
     };
 
     let vs_key = build_key("volumesnapshots", Some("default"), "test-snapshot-retain");
@@ -341,12 +345,12 @@ async fn test_snapshot_without_bound_pvc_fails() {
     let vsc = VolumeSnapshotClass {
         type_meta: TypeMeta {
             kind: "VolumeSnapshotClass".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string(),
+            api_version: "snapshot.storage.k8s.io/v1".to_string()
         },
         metadata: ObjectMeta::new("test-class-unbound"),
         driver: "rusternetes.io/hostpath-snapshotter".to_string(),
         parameters: None,
-        deletion_policy: DeletionPolicy::Delete,
+        deletion_policy: DeletionPolicy::Delete
     };
 
     let vsc_key = build_key("volumesnapshotclasses", None, "test-class-unbound");
@@ -359,7 +363,7 @@ async fn test_snapshot_without_bound_pvc_fails() {
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("unbound-pvc");
@@ -371,13 +375,13 @@ async fn test_snapshot_without_bound_pvc_fails() {
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 limits: None,
-                requests: Some(requests),
+                requests: Some(requests)
             },
             volume_name: None, // Not bound
             storage_class_name: Some("fast".to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None,
+            data_source: None
         },
         status: Some(PersistentVolumeClaimStatus {
             allocated_resources: None,
@@ -385,8 +389,8 @@ async fn test_snapshot_without_bound_pvc_fails() {
             phase: PersistentVolumeClaimPhase::Pending, // Pending, not Bound
             access_modes: None,
             capacity: None,
-            conditions: None,
-        }),
+            conditions: None
+        })
     };
 
     let pvc_key = build_key("persistentvolumeclaims", Some("default"), "unbound-pvc");
@@ -396,7 +400,7 @@ async fn test_snapshot_without_bound_pvc_fails() {
     let vs = VolumeSnapshot {
         type_meta: TypeMeta {
             kind: "VolumeSnapshot".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string(),
+            api_version: "snapshot.storage.k8s.io/v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("snapshot-unbound");
@@ -407,11 +411,11 @@ async fn test_snapshot_without_bound_pvc_fails() {
         spec: VolumeSnapshotSpec {
             source: VolumeSnapshotSource {
                 persistent_volume_claim_name: Some("unbound-pvc".to_string()),
-                volume_snapshot_content_name: None,
+                volume_snapshot_content_name: None
             },
-            volume_snapshot_class_name: "test-class-unbound".to_string(),
+            volume_snapshot_class_name: "test-class-unbound".to_string()
         },
-        status: None,
+        status: None
     };
 
     let vs_key = build_key("volumesnapshots", Some("default"), "snapshot-unbound");
@@ -444,7 +448,7 @@ async fn test_snapshot_with_invalid_class_fails() {
     let vs = VolumeSnapshot {
         type_meta: TypeMeta {
             kind: "VolumeSnapshot".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string(),
+            api_version: "snapshot.storage.k8s.io/v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("snapshot-invalid-class");
@@ -455,11 +459,11 @@ async fn test_snapshot_with_invalid_class_fails() {
         spec: VolumeSnapshotSpec {
             source: VolumeSnapshotSource {
                 persistent_volume_claim_name: Some("test-pvc-invalid".to_string()),
-                volume_snapshot_content_name: None,
+                volume_snapshot_content_name: None
             },
-            volume_snapshot_class_name: "non-existent-class".to_string(),
+            volume_snapshot_class_name: "non-existent-class".to_string()
         },
-        status: None,
+        status: None
     };
 
     let vs_key = build_key("volumesnapshots", Some("default"), "snapshot-invalid-class");

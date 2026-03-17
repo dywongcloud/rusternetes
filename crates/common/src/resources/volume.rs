@@ -21,10 +21,6 @@ pub struct PersistentVolumeSpec {
     /// Storage capacity
     pub capacity: HashMap<String, String>,
 
-    /// Volume source
-    #[serde(flatten)]
-    pub volume_source: PersistentVolumeSource,
-
     /// Access modes
     pub access_modes: Vec<PersistentVolumeAccessMode>,
 
@@ -51,17 +47,22 @@ pub struct PersistentVolumeSpec {
     /// Claim reference (binding to a PVC)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claim_ref: Option<ObjectReference>,
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PersistentVolumeSource {
-    HostPath(HostPathVolumeSource),
-    #[serde(rename = "nfs")]
-    NFS(NFSVolumeSource),
-    #[serde(rename = "iscsi")]
-    ISCSI(ISCSIVolumeSource),
-    Local(LocalVolumeSource),
+    // Volume source fields (only one should be set, matching Kubernetes flat struct layout)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_path: Option<HostPathVolumeSource>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nfs: Option<NFSVolumeSource>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iscsi: Option<ISCSIVolumeSource>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local: Option<LocalVolumeSource>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub csi: Option<CSIVolumeSource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +111,20 @@ pub struct LocalVolumeSource {
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fs_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CSIVolumeSource {
+    pub driver: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_handle: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_only: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fs_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_attributes: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -547,10 +562,14 @@ mod tests {
             metadata: ObjectMeta::new("test-pv"),
             spec: PersistentVolumeSpec {
                 capacity,
-                volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
+                host_path: Some(HostPathVolumeSource {
                     path: "/mnt/data".to_string(),
                     r#type: Some(HostPathType::DirectoryOrCreate),
                 }),
+                nfs: None,
+                iscsi: None,
+                local: None,
+                csi: None,
                 access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
                 persistent_volume_reclaim_policy: Some(PersistentVolumeReclaimPolicy::Retain),
                 storage_class_name: Some("manual".to_string()),

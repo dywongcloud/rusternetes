@@ -44,6 +44,9 @@ fn empty_pod_spec() -> PodSpec {
         host_users: None,
         set_hostname_as_fqdn: None,
         termination_grace_period_seconds: None,
+        host_aliases: None,
+        os: None,
+        scheduling_gates: None,
     }
 }
 

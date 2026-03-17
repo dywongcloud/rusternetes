@@ -87,6 +87,7 @@ fn create_test_pod(
                 command: None,
                 args: None,
                 restart_policy: None,
+                resize_policy: None,
                 security_context: None,
             }],
             init_containers: None,
@@ -123,6 +124,9 @@ fn create_test_pod(
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         }),
         status: Some(PodStatus {
             phase: if ready {
@@ -133,7 +137,12 @@ fn create_test_pod(
             message: None,
             reason: None,
             host_ip: Some("192.168.1.10".to_string()),
+            host_i_ps: None,
             pod_ip,
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
             conditions: None,
             container_statuses: if ready {
                 Some(vec![ContainerStatus {
@@ -143,6 +152,8 @@ fn create_test_pod(
                     state: None,
                     image: Some("nginx:latest".to_string()),
                     container_id: Some("container-123".to_string()),
+                    started: None,
+                    allocated_resources: None,
                 }])
             } else {
                 None

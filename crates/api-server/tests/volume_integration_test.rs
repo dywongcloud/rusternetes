@@ -13,10 +13,10 @@ use rusternetes_common::{
         HostPathType, HostPathVolumeSource, PersistentVolume, PersistentVolumeAccessMode,
         PersistentVolumeClaim, PersistentVolumeClaimPhase, PersistentVolumeClaimSpec,
         PersistentVolumeClaimStatus, PersistentVolumeMode, PersistentVolumePhase,
-        PersistentVolumeReclaimPolicy, PersistentVolumeSource, PersistentVolumeSpec,
-        PersistentVolumeStatus, ResourceRequirements, StorageClass, VolumeBindingMode,
+        PersistentVolumeReclaimPolicy, PersistentVolumeSpec,
+        PersistentVolumeStatus, ResourceRequirements, StorageClass, VolumeBindingMode
     },
-    types::{ObjectMeta, TypeMeta},
+    types::{ObjectMeta, TypeMeta}
 };
 use std::collections::HashMap;
 
@@ -28,28 +28,32 @@ fn test_persistentvolume_creation() {
     let pv = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: ObjectMeta::new("test-pv"),
         spec: PersistentVolumeSpec {
             capacity,
-            volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
+            host_path: Some(HostPathVolumeSource {
                 path: "/mnt/data".to_string(),
-                r#type: Some(HostPathType::DirectoryOrCreate),
+                r#type: Some(HostPathType::DirectoryOrCreate)
             }),
+            nfs: None,
+            iscsi: None,
+            local: None,
+            csi: None,
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             persistent_volume_reclaim_policy: Some(PersistentVolumeReclaimPolicy::Retain),
             storage_class_name: Some("manual".to_string()),
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None,
+            claim_ref: None
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None,
-        }),
+            reason: None
+        })
     };
 
     // Verify basic fields
@@ -80,20 +84,20 @@ fn test_persistentvolumeclaim_creation() {
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: ObjectMeta::new("test-pvc").with_namespace("default"),
         spec: PersistentVolumeClaimSpec {
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 limits: None,
-                requests: Some(requests),
+                requests: Some(requests)
             },
             volume_name: None,
             storage_class_name: Some("manual".to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None,
+            data_source: None
         },
         status: Some(PersistentVolumeClaimStatus {
             allocated_resources: None,
@@ -101,8 +105,8 @@ fn test_persistentvolumeclaim_creation() {
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
-            conditions: None,
-        }),
+            conditions: None
+        })
     };
 
     // Verify basic fields
@@ -131,7 +135,7 @@ fn test_storageclass_creation() {
     let sc = StorageClass {
         type_meta: TypeMeta {
             kind: "StorageClass".to_string(),
-            api_version: "storage.k8s.io/v1".to_string(),
+            api_version: "storage.k8s.io/v1".to_string()
         },
         metadata: ObjectMeta::new("fast-storage"),
         provisioner: "rusternetes.io/hostpath".to_string(),
@@ -139,7 +143,7 @@ fn test_storageclass_creation() {
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
-        allow_volume_expansion: Some(true),
+        allow_volume_expansion: Some(true)
     };
 
     // Verify basic fields
@@ -165,7 +169,7 @@ fn test_pv_authorization_cluster_scoped() {
         username: "test-user".to_string(),
         uid: "123".to_string(),
         groups: vec![],
-        extra: HashMap::new(),
+        extra: HashMap::new()
     };
 
     // PersistentVolume is cluster-scoped (no namespace)
@@ -182,7 +186,7 @@ fn test_pvc_authorization_namespace_scoped() {
         username: "test-user".to_string(),
         uid: "123".to_string(),
         groups: vec![],
-        extra: HashMap::new(),
+        extra: HashMap::new()
     };
 
     // PersistentVolumeClaim is namespace-scoped
@@ -201,7 +205,7 @@ fn test_storageclass_authorization_cluster_scoped() {
         username: "test-user".to_string(),
         uid: "123".to_string(),
         groups: vec![],
-        extra: HashMap::new(),
+        extra: HashMap::new()
     };
 
     // StorageClass is cluster-scoped with storage.k8s.io API group
@@ -318,15 +322,19 @@ fn test_pv_with_multiple_access_modes() {
     let pv = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: ObjectMeta::new("shared-pv"),
         spec: PersistentVolumeSpec {
             capacity,
-            volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
+            host_path: Some(HostPathVolumeSource {
                 path: "/shared".to_string(),
-                r#type: Some(HostPathType::Directory),
+                r#type: Some(HostPathType::Directory)
             }),
+            nfs: None,
+            iscsi: None,
+            local: None,
+            csi: None,
             access_modes: vec![
                 PersistentVolumeAccessMode::ReadWriteMany,
                 PersistentVolumeAccessMode::ReadOnlyMany,
@@ -336,9 +344,9 @@ fn test_pv_with_multiple_access_modes() {
             mount_options: Some(vec!["ro".to_string(), "noexec".to_string()]),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None,
+            claim_ref: None
         },
-        status: None,
+        status: None
     };
 
     // Verify multiple access modes
@@ -358,22 +366,22 @@ fn test_pvc_with_resource_limits_and_requests() {
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: ObjectMeta::new("limited-pvc").with_namespace("production"),
         spec: PersistentVolumeClaimSpec {
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 limits: Some(limits),
-                requests: Some(requests),
+                requests: Some(requests)
             },
             volume_name: Some("specific-pv".to_string()),
             storage_class_name: Some("fast".to_string()),
             volume_mode: Some(PersistentVolumeMode::Block),
             selector: None,
-            data_source: None,
+            data_source: None
         },
-        status: None,
+        status: None
     };
 
     // Verify resource requirements
@@ -388,7 +396,7 @@ fn test_storageclass_with_topologies() {
     let sc = StorageClass {
         type_meta: TypeMeta {
             kind: "StorageClass".to_string(),
-            api_version: "storage.k8s.io/v1".to_string(),
+            api_version: "storage.k8s.io/v1".to_string()
         },
         metadata: ObjectMeta::new("zonal-storage"),
         provisioner: "kubernetes.io/aws-ebs".to_string(),
@@ -396,7 +404,7 @@ fn test_storageclass_with_topologies() {
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
         volume_binding_mode: Some(VolumeBindingMode::WaitForFirstConsumer),
         allowed_topologies: None,
-        allow_volume_expansion: Some(false),
+        allow_volume_expansion: Some(false)
     };
 
     // Verify binding mode

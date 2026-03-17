@@ -47,6 +47,7 @@ fn create_test_pod(name: &str, namespace: &str) -> Pod {
                 startup_probe: None,
                 image_pull_policy: None,
                 restart_policy: None,
+                resize_policy: None,
                 security_context: None,
             }],
             init_containers: None,
@@ -83,6 +84,9 @@ fn create_test_pod(name: &str, namespace: &str) -> Pod {
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         }),
         status: None,
     }
@@ -407,6 +411,7 @@ async fn test_pod_with_multiple_containers() {
             startup_probe: None,
             image_pull_policy: None,
             restart_policy: None,
+            resize_policy: None,
             security_context: None,
         });
     }

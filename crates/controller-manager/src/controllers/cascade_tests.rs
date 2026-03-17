@@ -67,6 +67,9 @@ mod tests {
                 host_users: None,
                 set_hostname_as_fqdn: None,
                 termination_grace_period_seconds: None,
+                host_aliases: None,
+                os: None,
+                scheduling_gates: None,
             },
         }
     }
@@ -77,7 +80,12 @@ mod tests {
             message: None,
             reason: None,
             host_ip: None,
+            host_i_ps: None,
             pod_ip: None,
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
             conditions: None,
             container_statuses: None,
             init_container_statuses: None,

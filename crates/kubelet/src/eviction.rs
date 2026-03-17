@@ -763,6 +763,7 @@ mod tests {
                     working_dir: None,
                     security_context: None,
                     restart_policy: None,
+                    resize_policy: None,
                 }],
                 init_containers: None,
                 ephemeral_containers: None,
@@ -798,6 +799,9 @@ mod tests {
                 host_users: None,
                 set_hostname_as_fqdn: None,
                 termination_grace_period_seconds: None,
+                host_aliases: None,
+                os: None,
+                scheduling_gates: None,
             }),
             status: None,
         };

@@ -8,7 +8,7 @@ pub fn create_test_namespace(name: &str) -> Namespace {
     Namespace {
         type_meta: TypeMeta {
             kind: "Namespace".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -16,7 +16,7 @@ pub fn create_test_namespace(name: &str) -> Namespace {
             meta
         },
         spec: None,
-        status: None,
+        status: None
     }
 }
 
@@ -28,7 +28,7 @@ pub fn create_test_pvc(name: &str, namespace: &str, storage_class: Option<String
     PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -40,20 +40,20 @@ pub fn create_test_pvc(name: &str, namespace: &str, storage_class: Option<String
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 limits: None,
-                requests: Some(requests),
+                requests: Some(requests)
             },
             volume_name: None,
             storage_class_name: storage_class,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None,
+            data_source: None
         },
         status: Some(PersistentVolumeClaimStatus {
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
-            conditions: None,
-        }),
+            conditions: None
+        })
     }
 }
 
@@ -65,7 +65,7 @@ pub fn create_test_pv(name: &str, storage_class: Option<String>, capacity_gb: u3
     PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -74,23 +74,27 @@ pub fn create_test_pv(name: &str, storage_class: Option<String>, capacity_gb: u3
         },
         spec: PersistentVolumeSpec {
             capacity,
-            volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
+            host_path: Some(HostPathVolumeSource {
                 path: format!("/tmp/test-pv/{}", name),
                 r#type: Some(HostPathType::DirectoryOrCreate),
             }),
+            nfs: None,
+            iscsi: None,
+            local: None,
+            csi: None,
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             persistent_volume_reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
             storage_class_name: storage_class,
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None,
+            claim_ref: None
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None,
-        }),
+            reason: None
+        })
     }
 }
 
@@ -99,7 +103,7 @@ pub fn create_test_storage_class(name: &str, provisioner: &str) -> StorageClass 
     StorageClass {
         type_meta: TypeMeta {
             kind: "StorageClass".to_string(),
-            api_version: "storage.k8s.io/v1".to_string(),
+            api_version: "storage.k8s.io/v1".to_string()
         },
         metadata: ObjectMeta::new(name),
         provisioner: provisioner.to_string(),
@@ -111,7 +115,7 @@ pub fn create_test_storage_class(name: &str, provisioner: &str) -> StorageClass 
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
-        allow_volume_expansion: None,
+        allow_volume_expansion: None
     }
 }
 
@@ -120,12 +124,12 @@ pub fn create_test_volume_snapshot_class(name: &str, driver: &str) -> VolumeSnap
     VolumeSnapshotClass {
         type_meta: TypeMeta {
             kind: "VolumeSnapshotClass".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string(),
+            api_version: "snapshot.storage.k8s.io/v1".to_string()
         },
         metadata: ObjectMeta::new(name),
         driver: driver.to_string(),
         parameters: None,
-        deletion_policy: DeletionPolicy::Delete,
+        deletion_policy: DeletionPolicy::Delete
     }
 }
 
@@ -139,7 +143,7 @@ pub fn create_test_volume_snapshot(
     VolumeSnapshot {
         type_meta: TypeMeta {
             kind: "VolumeSnapshot".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string(),
+            api_version: "snapshot.storage.k8s.io/v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -150,11 +154,11 @@ pub fn create_test_volume_snapshot(
         spec: VolumeSnapshotSpec {
             source: VolumeSnapshotSource {
                 persistent_volume_claim_name: Some(pvc_name.to_string()),
-                volume_snapshot_content_name: None,
+                volume_snapshot_content_name: None
             },
-            volume_snapshot_class_name: class_name.to_string(),
+            volume_snapshot_class_name: class_name.to_string()
         },
-        status: None,
+        status: None
     }
 }
 
@@ -166,7 +170,7 @@ pub fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Dep
     Deployment {
         type_meta: TypeMeta {
             kind: "Deployment".to_string(),
-            api_version: "apps/v1".to_string(),
+            api_version: "apps/v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -178,7 +182,7 @@ pub fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Dep
             replicas: Some(replicas),
             selector: rusternetes_common::types::LabelSelector {
                 match_labels: Some(labels.clone()),
-                match_expressions: None,
+                match_expressions: None
             },
             template: PodTemplateSpec {
                 metadata: Some({
@@ -200,7 +204,7 @@ pub fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Dep
                         resources: None,
                         working_dir: None,
                         command: None,
-                        args: None,
+                        args: None
                     }],
                     restart_policy: Some("Always".to_string()),
                     node_selector: None,
@@ -213,12 +217,12 @@ pub fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Dep
                     priority_class_name: None,
                     hostname: None,
                     subdomain: None,
-                    host_network: None,
-                }),
+                    host_network: None
+                })
             },
             strategy: None,
             min_ready_seconds: None,
-            revision_history_limit: None,
+            revision_history_limit: None
         },
         status: Some(DeploymentStatus {
             replicas: Some(0),
@@ -226,8 +230,8 @@ pub fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Dep
             available_replicas: Some(0),
             unavailable_replicas: Some(0),
             updated_replicas: Some(0),
-            conditions: None,
-        }),
+            conditions: None
+        })
     }
 }
 
@@ -247,7 +251,7 @@ pub fn create_test_loadbalancer_service(
     Service {
         type_meta: TypeMeta {
             kind: "Service".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -263,14 +267,14 @@ pub fn create_test_loadbalancer_service(
                 port,
                 target_port: Some(port),
                 protocol: Some("TCP".to_string()),
-                node_port: Some(node_port),
+                node_port: Some(node_port)
             }],
             service_type: Some(ServiceType::LoadBalancer),
             cluster_ip: Some("10.96.100.123".to_string()),
             external_ips: None,
-            session_affinity: None,
+            session_affinity: None
         },
-        status: None,
+        status: None
     }
 }
 
@@ -279,7 +283,7 @@ pub fn create_test_node(name: &str, internal_ip: &str) -> Node {
     Node {
         type_meta: TypeMeta {
             kind: "Node".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -290,7 +294,7 @@ pub fn create_test_node(name: &str, internal_ip: &str) -> Node {
             pod_cidr: Some("10.244.0.0/24".to_string()),
             provider_id: None,
             unschedulable: None,
-            taints: None,
+            taints: None
         },
         status: Some(NodeStatus {
             conditions: Some(vec![NodeCondition {
@@ -299,11 +303,11 @@ pub fn create_test_node(name: &str, internal_ip: &str) -> Node {
                 reason: Some("NodeReady".to_string()),
                 message: Some("Node is ready".to_string()),
                 last_heartbeat_time: chrono::Utc::now(),
-                last_transition_time: chrono::Utc::now(),
+                last_transition_time: chrono::Utc::now()
             }]),
             addresses: Some(vec![NodeAddress {
                 address_type: "InternalIP".to_string(),
-                address: internal_ip.to_string(),
+                address: internal_ip.to_string()
             }]),
             capacity: Some({
                 let mut cap = HashMap::new();
@@ -317,7 +321,7 @@ pub fn create_test_node(name: &str, internal_ip: &str) -> Node {
                 alloc.insert("memory".to_string(), "8Gi".to_string());
                 alloc
             }),
-            node_info: None,
-        }),
+            node_info: None
+        })
     }
 }

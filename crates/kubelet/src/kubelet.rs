@@ -331,6 +331,11 @@ impl Kubelet {
                             container_statuses,
                             init_container_statuses: None,
                             ephemeral_container_statuses: None,
+                            host_i_ps: None,
+                            pod_i_ps: None,
+                            nominated_node_name: None,
+                            qos_class: None,
+                            start_time: None,
                         });
 
                         if let Err(e) = self.storage.update(&key, &new_pod).await {
@@ -386,6 +391,11 @@ impl Kubelet {
                     container_statuses,
                     init_container_statuses: None,
                     ephemeral_container_statuses: None,
+                    host_i_ps: None,
+                    pod_i_ps: None,
+                    nominated_node_name: None,
+                    qos_class: None,
+                    start_time: None,
                 });
 
                 self.storage.update(&key, &new_pod).await?;
@@ -514,6 +524,7 @@ impl Kubelet {
                 reason: None,
                 message: None,
                 last_transition_time: now,
+                observed_generation: None,
             },
             PodCondition {
                 condition_type: "PodScheduled".to_string(),
@@ -521,6 +532,7 @@ impl Kubelet {
                 reason: None,
                 message: None,
                 last_transition_time: now,
+                observed_generation: None,
             },
             PodCondition {
                 condition_type: "ContainersReady".to_string(),
@@ -528,6 +540,7 @@ impl Kubelet {
                 reason: None,
                 message: None,
                 last_transition_time: now,
+                observed_generation: None,
             },
             PodCondition {
                 condition_type: "Ready".to_string(),
@@ -535,6 +548,7 @@ impl Kubelet {
                 reason: None,
                 message: None,
                 last_transition_time: now,
+                observed_generation: None,
             },
         ]
     }
@@ -558,6 +572,11 @@ impl Kubelet {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            host_i_ps: None,
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
         });
 
         let key = build_key(
@@ -684,6 +703,7 @@ mod tests {
             working_dir: None,
             security_context: None,
             restart_policy: None,
+            resize_policy: None,
         }
     }
 
@@ -734,6 +754,9 @@ mod tests {
                 host_users: None,
                 set_hostname_as_fqdn: None,
                 termination_grace_period_seconds: None,
+                host_aliases: None,
+                os: None,
+                scheduling_gates: None,
             }),
             status: None,
         }
@@ -749,6 +772,8 @@ mod tests {
             state: Some(ContainerState::Running {
                 started_at: Some("2024-01-01T00:00:00Z".to_string()),
             }),
+            started: None,
+            allocated_resources: None,
         }
     }
 
@@ -762,7 +787,12 @@ mod tests {
             message: Some("All containers started".to_string()),
             reason: None,
             host_ip: Some("127.0.0.1".to_string()),
+            host_i_ps: None,
             pod_ip: Some("10.244.0.5".to_string()),
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
             conditions: None,
             container_statuses: Some(vec![make_running_container_status("app")]),
             init_container_statuses: None,
@@ -786,7 +816,12 @@ mod tests {
             message: Some("ContainerCreating".to_string()),
             reason: None,
             host_ip: None,
+            host_i_ps: None,
             pod_ip: None,
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
             conditions: None,
             container_statuses: None, // <-- the bug: sonobuoy-worker sees this and declares done
             init_container_statuses: None,
@@ -841,6 +876,8 @@ mod tests {
             state: Some(ContainerState::Waiting {
                 reason: Some("ContainerCreating".to_string()),
             }),
+            started: None,
+            allocated_resources: None,
         };
         let is_terminated = matches!(status.state, Some(ContainerState::Terminated { .. }));
         assert!(!is_terminated, "Waiting container is not terminated — sonobuoy-worker should wait");

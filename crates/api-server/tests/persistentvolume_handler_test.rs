@@ -4,11 +4,10 @@
 
 use rusternetes_common::resources::volume::{
     HostPathType, HostPathVolumeSource, NFSVolumeSource, NodeSelector, NodeSelectorRequirement,
-    NodeSelectorTerm, PersistentVolumeMode, PersistentVolumePhase, PersistentVolumeReclaimPolicy,
-    PersistentVolumeSource, VolumeNodeAffinity,
+    NodeSelectorTerm, PersistentVolumeMode, PersistentVolumePhase, PersistentVolumeReclaimPolicy, VolumeNodeAffinity
 };
 use rusternetes_common::resources::{
-    PersistentVolume, PersistentVolumeAccessMode, PersistentVolumeSpec, PersistentVolumeStatus,
+    PersistentVolume, PersistentVolumeAccessMode, PersistentVolumeSpec, PersistentVolumeStatus
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
@@ -23,7 +22,7 @@ fn create_test_pv(name: &str, capacity: &str) -> PersistentVolume {
     PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: ObjectMeta {
             name: name.to_string(),
@@ -39,27 +38,31 @@ fn create_test_pv(name: &str, capacity: &str) -> PersistentVolume {
             annotations: None,
             generate_name: None,
             generation: None,
-            managed_fields: None,
+            managed_fields: None
         },
         spec: PersistentVolumeSpec {
             capacity: capacity_map,
-            volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
+            host_path: Some(HostPathVolumeSource {
                 path: "/mnt/data".to_string(),
                 r#type: Some(HostPathType::Directory),
             }),
+            nfs: None,
+            iscsi: None,
+            local: None,
+            csi: None,
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             persistent_volume_reclaim_policy: Some(PersistentVolumeReclaimPolicy::Retain),
             storage_class_name: Some("standard".to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             mount_options: None,
             node_affinity: None,
-            claim_ref: None,
+            claim_ref: None
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None,
-        }),
+            reason: None
+        })
     }
 }
 
@@ -260,22 +263,19 @@ async fn test_pv_with_nfs() {
     let storage = Arc::new(MemoryStorage::new());
 
     let mut pv = create_test_pv("test-nfs", "10Gi");
-    pv.spec.volume_source = PersistentVolumeSource::NFS(NFSVolumeSource {
+    pv.spec.nfs = Some(NFSVolumeSource {
         server: "nfs.example.com".to_string(),
         path: "/exports/data".to_string(),
         read_only: Some(false),
     });
+    pv.spec.host_path = None;
 
     let key = build_key("persistentvolumes", None, "test-nfs");
 
     // Create with NFS
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    match &created.spec.volume_source {
-        PersistentVolumeSource::NFS(nfs) => {
-            assert_eq!(nfs.server, "nfs.example.com");
-        }
-        _ => panic!("Expected NFS volume source"),
-    }
+    let nfs = created.spec.nfs.as_ref().expect("Expected NFS volume source");
+    assert_eq!(nfs.server, "nfs.example.com");
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -307,7 +307,7 @@ async fn test_pv_status_bound() {
     pv.status = Some(PersistentVolumeStatus {
         phase: PersistentVolumePhase::Bound,
         message: None,
-        reason: None,
+        reason: None
     });
 
     let key = build_key("persistentvolumes", None, "test-bound");

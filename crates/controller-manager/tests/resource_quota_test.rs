@@ -42,6 +42,7 @@ fn create_test_pod(name: &str, cpu_request: &str, memory_request: &str) -> Pod {
                 readiness_probe: None,
                 startup_probe: None,
                 restart_policy: None,
+                resize_policy: None,
                 security_context: None,
             }],
             init_containers: None,
@@ -78,6 +79,9 @@ fn create_test_pod(name: &str, cpu_request: &str, memory_request: &str) -> Pod {
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         }),
         status: None,
     }

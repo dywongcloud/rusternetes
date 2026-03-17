@@ -736,6 +736,9 @@ mod tests {
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         };
         let mut pod = Pod::new("test-pod", spec);
         pod.metadata.namespace = Some("default".to_string());
@@ -807,6 +810,9 @@ mod tests {
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         };
         let mut pod = Pod::new("test-pod-finalizers", spec);
         pod.metadata.namespace = Some("default".to_string());
@@ -900,6 +906,9 @@ mod tests {
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         };
         let mut pod = Pod::new("test-pod-remove-finalizer", spec);
         pod.metadata.namespace = Some("default".to_string());

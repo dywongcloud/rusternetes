@@ -1,10 +1,9 @@
 use rusternetes_common::resources::volume::{
     HostPathType, HostPathVolumeSource, PersistentVolumeAccessMode, PersistentVolumeClaimPhase,
-    PersistentVolumeMode, PersistentVolumePhase, PersistentVolumeReclaimPolicy,
-    PersistentVolumeSource, ResourceRequirements,
+    PersistentVolumeMode, PersistentVolumePhase, PersistentVolumeReclaimPolicy, ResourceRequirements
 };
 use rusternetes_common::resources::{
-    PersistentVolume, PersistentVolumeClaim, PersistentVolumeClaimStatus, StorageClass,
+    PersistentVolume, PersistentVolumeClaim, PersistentVolumeClaimStatus, StorageClass
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::volume_expansion::VolumeExpansionController;
@@ -25,7 +24,7 @@ async fn create_test_storage_class(
     let sc = StorageClass {
         type_meta: TypeMeta {
             kind: "StorageClass".to_string(),
-            api_version: "storage.k8s.io/v1".to_string(),
+            api_version: "storage.k8s.io/v1".to_string()
         },
         metadata: ObjectMeta::new(name),
         provisioner: "rusternetes.io/hostpath".to_string(),
@@ -33,7 +32,7 @@ async fn create_test_storage_class(
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
         volume_binding_mode: None,
         allowed_topologies: None,
-        allow_volume_expansion: Some(allow_expansion),
+        allow_volume_expansion: Some(allow_expansion)
     };
 
     let key = build_key("storageclasses", None, name);
@@ -53,7 +52,7 @@ async fn create_test_pv(
     let pv = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -62,23 +61,27 @@ async fn create_test_pv(
         },
         spec: rusternetes_common::resources::PersistentVolumeSpec {
             capacity,
-            volume_source: PersistentVolumeSource::HostPath(HostPathVolumeSource {
+            host_path: Some(HostPathVolumeSource {
                 path: format!("/tmp/test/{}", name),
                 r#type: Some(HostPathType::DirectoryOrCreate),
             }),
+            nfs: None,
+            iscsi: None,
+            local: None,
+            csi: None,
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             persistent_volume_reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
             storage_class_name: Some(storage_class.to_string()),
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None,
+            claim_ref: None
         },
         status: Some(rusternetes_common::resources::PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None,
-        }),
+            reason: None
+        })
     };
 
     let key = build_key("persistentvolumes", None, name);
@@ -103,7 +106,7 @@ async fn create_bound_pvc(
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -115,13 +118,13 @@ async fn create_bound_pvc(
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 requests: Some(requests),
-                limits: None,
+                limits: None
             },
             volume_name: Some(pv_name.to_string()),
             storage_class_name: Some(storage_class.to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None,
+            data_source: None
         },
         status: Some(PersistentVolumeClaimStatus {
             allocated_resources: None,
@@ -129,8 +132,8 @@ async fn create_bound_pvc(
             phase: PersistentVolumeClaimPhase::Bound,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
             capacity: Some(capacity),
-            conditions: None,
-        }),
+            conditions: None
+        })
     };
 
     let key = build_key("persistentvolumeclaims", Some(namespace), name);
@@ -275,7 +278,7 @@ async fn test_expansion_only_for_bound_pvcs() {
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string(),
+            api_version: "v1".to_string()
         },
         metadata: {
             let mut meta = ObjectMeta::new("test-pvc-unbound");
@@ -287,13 +290,13 @@ async fn test_expansion_only_for_bound_pvcs() {
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 requests: Some(requests),
-                limits: None,
+                limits: None
             },
             volume_name: None, // Not bound
             storage_class_name: Some("expandable-2".to_string()),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             selector: None,
-            data_source: None,
+            data_source: None
         },
         status: Some(PersistentVolumeClaimStatus {
             allocated_resources: None,
@@ -301,8 +304,8 @@ async fn test_expansion_only_for_bound_pvcs() {
             phase: PersistentVolumeClaimPhase::Pending, // Not bound
             access_modes: None,
             capacity: None,
-            conditions: None,
-        }),
+            conditions: None
+        })
     };
 
     let pvc_key = build_key(

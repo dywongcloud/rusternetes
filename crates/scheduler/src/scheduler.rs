@@ -364,6 +364,11 @@ impl Scheduler {
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
+                host_i_ps: None,
+                pod_i_ps: None,
+                nominated_node_name: None,
+                qos_class: None,
+                start_time: None,
             });
         }
 
@@ -595,28 +600,20 @@ impl Scheduler {
 
         // For each claim reference, resolve the ResourceClaim object
         for claim_ref in resource_claims_refs {
-            let claim_name = match &claim_ref.source {
-                Some(source) => {
-                    if let Some(name) = &source.resource_claim_name {
-                        name.as_str()
-                    } else if let Some(template_name) = &source.resource_claim_template_name {
-                        // TODO: In a full implementation, we'd need to resolve the template
-                        // and create a ResourceClaim from it. For now, we'll treat the template
-                        // name as the claim name (simplified)
-                        debug!(
-                            "ResourceClaimTemplate '{}' referenced, treating as claim name",
-                            template_name
-                        );
-                        template_name.as_str()
-                    } else {
-                        warn!("ResourceClaim reference has no name or template");
-                        return false;
-                    }
-                }
-                None => {
-                    warn!("ResourceClaim reference has no source");
-                    return false;
-                }
+            let claim_name = if let Some(name) = &claim_ref.resource_claim_name {
+                name.as_str()
+            } else if let Some(template_name) = &claim_ref.resource_claim_template_name {
+                // TODO: In a full implementation, we'd need to resolve the template
+                // and create a ResourceClaim from it. For now, we'll treat the template
+                // name as the claim name (simplified)
+                debug!(
+                    "ResourceClaimTemplate '{}' referenced, treating as claim name",
+                    template_name
+                );
+                template_name.as_str()
+            } else {
+                warn!("ResourceClaim reference has no name or template");
+                return false;
             };
 
             // Get the ResourceClaim from storage

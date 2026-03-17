@@ -8,7 +8,6 @@ use bollard::image::CreateImageOptions;
 use bollard::Docker;
 use chrono::Utc;
 use futures_util::StreamExt;
-use rusternetes_common::resources::volume::PersistentVolumeSource;
 use rusternetes_common::resources::{
     ConfigMap, Container, ContainerState, ContainerStatus, ExecAction, HTTPGetAction,
     PersistentVolume, PersistentVolumeClaim, Pod, Probe, Secret, TCPSocketAction,
@@ -1020,13 +1019,12 @@ impl ContainerRuntime {
                 .with_context(|| format!("PersistentVolume {} not found", pv_name))?;
 
             // Get the host path from the PV
-            let path = match &pv.spec.volume_source {
-                PersistentVolumeSource::HostPath(hp) => hp.path.clone(),
-                _ => {
-                    return Err(anyhow::anyhow!(
-                        "PersistentVolume does not have a hostPath volume source"
-                    ))
-                }
+            let path = if let Some(hp) = &pv.spec.host_path {
+                hp.path.clone()
+            } else {
+                return Err(anyhow::anyhow!(
+                    "PersistentVolume does not have a hostPath volume source"
+                ));
             };
             info!(
                 "Using PersistentVolumeClaim volume {} backed by PV {} at {}",
@@ -1172,13 +1170,12 @@ impl ContainerRuntime {
                         )
                     })?;
 
-                    let path = match &pv.spec.volume_source {
-                        PersistentVolumeSource::HostPath(hp) => hp.path.clone(),
-                        _ => {
-                            return Err(anyhow::anyhow!(
-                                "PersistentVolume does not have a hostPath volume source"
-                            ))
-                        }
+                    let path = if let Some(hp) = &pv.spec.host_path {
+                        hp.path.clone()
+                    } else {
+                        return Err(anyhow::anyhow!(
+                            "PersistentVolume does not have a hostPath volume source"
+                        ));
                     };
 
                     info!(
@@ -1832,6 +1829,8 @@ impl ContainerRuntime {
                         state: container_state,
                         image: Some(container.image.clone()),
                         container_id: inspect.id,
+                        started: None,
+                        allocated_resources: None,
                     }
                 }
                 Err(_) => ContainerStatus {
@@ -1843,6 +1842,8 @@ impl ContainerRuntime {
                     }),
                     image: Some(container.image.clone()),
                     container_id: None,
+                    started: None,
+                    allocated_resources: None,
                 },
             };
 
@@ -2296,6 +2297,7 @@ mod tests {
             working_dir: None,
             security_context: None,
             restart_policy: None,
+            resize_policy: None,
         }
     }
 
@@ -2342,6 +2344,9 @@ mod tests {
                 host_users: None,
                 set_hostname_as_fqdn: None,
                 termination_grace_period_seconds: None,
+                host_aliases: None,
+                os: None,
+                scheduling_gates: None,
             }),
             status: None,
         }

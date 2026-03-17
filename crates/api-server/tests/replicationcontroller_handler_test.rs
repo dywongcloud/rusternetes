@@ -55,6 +55,7 @@ fn create_test_rc(name: &str, namespace: &str, replicas: i32) -> ReplicationCont
                         readiness_probe: None,
                         startup_probe: None,
                         restart_policy: None,
+                        resize_policy: None,
                         security_context: None,
                     }],
                     init_containers: None,
@@ -91,6 +92,9 @@ fn create_test_rc(name: &str, namespace: &str, replicas: i32) -> ReplicationCont
                     host_users: None,
                     set_hostname_as_fqdn: None,
                     termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
                 },
             },
             min_ready_seconds: Some(0),
@@ -540,6 +544,7 @@ async fn test_rc_multiple_containers() {
         readiness_probe: None,
         startup_probe: None,
         restart_policy: None,
+        resize_policy: None,
         security_context: None,
     });
 

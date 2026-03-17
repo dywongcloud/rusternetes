@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use rusternetes_common::resources::volume::{
     HostPathType, HostPathVolumeSource, PersistentVolumePhase, PersistentVolumeReclaimPolicy,
-    PersistentVolumeSource,
 };
 use rusternetes_common::resources::{
     PersistentVolume, PersistentVolumeClaim, PersistentVolumeStatus, StorageClass, VolumeSnapshot,
@@ -190,21 +189,20 @@ impl<S: Storage> DynamicProvisionerController<S> {
             }
         );
 
-        // Create PV based on provisioner type
-        let volume_source = match storage_class.provisioner.as_str() {
-            "rusternetes.io/hostpath" | "kubernetes.io/hostpath" | "hostpath" => {
-                PersistentVolumeSource::HostPath(HostPathVolumeSource {
-                    path: volume_path,
-                    r#type: Some(HostPathType::DirectoryOrCreate),
-                })
-            }
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "Unsupported provisioner: {}",
-                    storage_class.provisioner
-                ));
-            }
-        };
+        // Validate provisioner type
+        if !matches!(
+            storage_class.provisioner.as_str(),
+            "rusternetes.io/hostpath" | "kubernetes.io/hostpath" | "hostpath"
+        ) {
+            return Err(anyhow::anyhow!(
+                "Unsupported provisioner: {}",
+                storage_class.provisioner
+            ));
+        }
+        let host_path_source = Some(HostPathVolumeSource {
+            path: volume_path,
+            r#type: Some(HostPathType::DirectoryOrCreate),
+        });
 
         // Determine reclaim policy (default to Delete for dynamically provisioned volumes)
         let reclaim_policy = storage_class
@@ -244,7 +242,11 @@ impl<S: Storage> DynamicProvisionerController<S> {
             },
             spec: rusternetes_common::resources::PersistentVolumeSpec {
                 capacity,
-                volume_source,
+                host_path: host_path_source,
+                nfs: None,
+                iscsi: None,
+                local: None,
+                csi: None,
                 access_modes: pvc.spec.access_modes.clone(),
                 persistent_volume_reclaim_policy: Some(reclaim_policy),
                 storage_class_name: Some(storage_class.metadata.name.clone()),
@@ -447,13 +449,9 @@ mod tests {
         );
 
         // Verify hostpath volume source
-        match &pv.spec.volume_source {
-            PersistentVolumeSource::HostPath(hp) => {
-                assert_eq!(hp.path, "/tmp/rusternetes/dynamic-pvs/pvc-default-test-pvc");
-                assert_eq!(hp.r#type, Some(HostPathType::DirectoryOrCreate));
-            }
-            _ => panic!("Expected HostPath volume source"),
-        }
+        let hp = pv.spec.host_path.as_ref().expect("Expected HostPath volume source");
+        assert_eq!(hp.path, "/tmp/rusternetes/dynamic-pvs/pvc-default-test-pvc");
+        assert_eq!(hp.r#type, Some(HostPathType::DirectoryOrCreate));
 
         // Verify labels
         let labels = pv.metadata.labels.as_ref().unwrap();

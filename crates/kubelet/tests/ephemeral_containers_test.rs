@@ -28,6 +28,7 @@ fn create_running_pod(name: &str) -> Pod {
                 working_dir: None,
                 security_context: None,
                 restart_policy: None,
+                resize_policy: None,
             }],
             init_containers: None,
             ephemeral_containers: None,
@@ -63,13 +64,21 @@ fn create_running_pod(name: &str) -> Pod {
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         }),
         status: Some(PodStatus {
             phase: Some(Phase::Running),
             message: Some("Pod is running".to_string()),
             reason: None,
-            pod_ip: Some("10.244.0.5".to_string()),
             host_ip: Some("192.168.1.10".to_string()),
+            host_i_ps: None,
+            pod_ip: Some("10.244.0.5".to_string()),
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
             container_statuses: Some(vec![ContainerStatus {
                 name: "main".to_string(),
                 state: Some(ContainerState::Running {
@@ -79,6 +88,8 @@ fn create_running_pod(name: &str) -> Pod {
                 restart_count: 0,
                 image: Some("nginx:latest".to_string()),
                 container_id: Some("main-container-id".to_string()),
+                started: None,
+                allocated_resources: None,
             }]),
             init_container_statuses: None,
             ephemeral_container_statuses: None,
@@ -265,6 +276,8 @@ fn test_ephemeral_container_status() {
             restart_count: 0,
             image: Some("busybox:latest".to_string()),
             container_id: Some("debugger-container-id".to_string()),
+started: None,
+allocated_resources: None,
         }]);
     }
 
@@ -391,6 +404,8 @@ fn test_ephemeral_container_lifecycle() {
             restart_count: 0,
             image: Some("busybox:latest".to_string()),
             container_id: None,
+started: None,
+allocated_resources: None,
         }]);
     }
 
@@ -413,6 +428,8 @@ fn test_ephemeral_container_lifecycle() {
             restart_count: 0,
             image: Some("busybox:latest".to_string()),
             container_id: Some("debugger-container-id".to_string()),
+started: None,
+allocated_resources: None,
         }]);
     }
 

@@ -72,6 +72,7 @@ fn create_pod_with_qos(name: &str, namespace: &str, qos: QoSClass) -> Pod {
                 working_dir: None,
                 security_context: None,
                 restart_policy: None,
+                resize_policy: None,
             }],
             init_containers: None,
             ephemeral_containers: None,
@@ -107,6 +108,9 @@ fn create_pod_with_qos(name: &str, namespace: &str, qos: QoSClass) -> Pod {
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         }),
         status: None,
     }

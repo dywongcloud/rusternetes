@@ -34,6 +34,7 @@ fn create_pod_with_sidecar(
             working_dir: None,
             security_context: None,
             restart_policy: None, // Regular init container - runs to completion
+            resize_policy: None,
         });
     }
 
@@ -55,6 +56,7 @@ fn create_pod_with_sidecar(
             working_dir: None,
             security_context: None,
             restart_policy: Some("Always".to_string()), // Sidecar - runs alongside main containers
+            resize_policy: None,
         });
     }
 
@@ -76,6 +78,7 @@ fn create_pod_with_sidecar(
             working_dir: None,
             security_context: None,
             restart_policy: None,
+            resize_policy: None,
         });
     }
 
@@ -121,6 +124,9 @@ fn create_pod_with_sidecar(
             host_users: None,
             set_hostname_as_fqdn: None,
             termination_grace_period_seconds: None,
+            host_aliases: None,
+            os: None,
+            scheduling_gates: None,
         }),
         status: None,
     }
@@ -171,6 +177,11 @@ fn test_sidecar_runs_alongside_main_containers() {
         reason: None,
         pod_ip: Some("10.244.0.5".to_string()),
         host_ip: Some("192.168.1.10".to_string()),
+        host_i_ps: None,
+        pod_i_ps: None,
+        nominated_node_name: None,
+        qos_class: None,
+        start_time: None,
         init_container_statuses: Some(vec![
             // Regular init container - completed
             ContainerStatus {
@@ -183,6 +194,8 @@ fn test_sidecar_runs_alongside_main_containers() {
                 restart_count: 0,
                 image: Some("busybox:0".to_string()),
                 container_id: Some("init-0-container".to_string()),
+                started: None,
+                allocated_resources: None,
             },
             // Sidecar - running
             ContainerStatus {
@@ -194,6 +207,8 @@ fn test_sidecar_runs_alongside_main_containers() {
                 restart_count: 0,
                 image: Some("nginx:0".to_string()),
                 container_id: Some("sidecar-0-container".to_string()),
+                started: None,
+                allocated_resources: None,
             },
         ]),
         container_statuses: Some(vec![ContainerStatus {
@@ -205,6 +220,8 @@ fn test_sidecar_runs_alongside_main_containers() {
             restart_count: 0,
             image: Some("nginx:latest".to_string()),
             container_id: Some("app-0-container".to_string()),
+            started: None,
+            allocated_resources: None,
         }]),
         ephemeral_container_statuses: None,
         conditions: None,
@@ -345,6 +362,11 @@ fn test_sidecar_failure_should_not_block_pod() {
         reason: None,
         pod_ip: Some("10.244.0.5".to_string()),
         host_ip: Some("192.168.1.10".to_string()),
+        host_i_ps: None,
+        pod_i_ps: None,
+        nominated_node_name: None,
+        qos_class: None,
+        start_time: None,
         init_container_statuses: Some(vec![ContainerStatus {
             name: "sidecar-0".to_string(),
             state: Some(ContainerState::Terminated {
@@ -355,6 +377,8 @@ fn test_sidecar_failure_should_not_block_pod() {
             restart_count: 3,
             image: Some("nginx:0".to_string()),
             container_id: Some("sidecar-0-container".to_string()),
+            started: None,
+            allocated_resources: None,
         }]),
         container_statuses: Some(vec![ContainerStatus {
             name: "app-0".to_string(),
@@ -365,6 +389,8 @@ fn test_sidecar_failure_should_not_block_pod() {
             restart_count: 0,
             image: Some("nginx:latest".to_string()),
             container_id: Some("app-0-container".to_string()),
+            started: None,
+            allocated_resources: None,
         }]),
         ephemeral_container_statuses: None,
         conditions: None,

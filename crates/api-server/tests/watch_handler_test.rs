@@ -52,6 +52,7 @@ fn create_minimal_pod_spec() -> PodSpec {
             command: None,
             args: None,
             restart_policy: None,
+            resize_policy: None,
             security_context: None,
         }],
         init_containers: None,
@@ -88,6 +89,9 @@ fn create_minimal_pod_spec() -> PodSpec {
         host_users: None,
         set_hostname_as_fqdn: None,
         termination_grace_period_seconds: None,
+        host_aliases: None,
+        os: None,
+        scheduling_gates: None,
     }
 }
 
@@ -98,7 +102,12 @@ fn create_minimal_pod_status() -> PodStatus {
         message: None,
         reason: None,
         host_ip: None,
+        host_i_ps: None,
         pod_ip: None,
+        pod_i_ps: None,
+        nominated_node_name: None,
+        qos_class: None,
+        start_time: None,
         container_statuses: None,
         init_container_statuses: None,
         ephemeral_container_statuses: None,
