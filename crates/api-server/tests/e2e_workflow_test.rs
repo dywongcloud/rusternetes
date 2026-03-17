@@ -392,7 +392,8 @@ async fn test_dynamic_pvc_workflow() {
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
-        allow_volume_expansion: None
+        allow_volume_expansion: None,
+            mount_options: None
     };
 
     let sc_key = build_key("storageclasses", None, "fast");
@@ -434,7 +435,9 @@ async fn test_dynamic_pvc_workflow() {
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
-            conditions: None
+            conditions: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None
         })
     };
 
@@ -522,12 +525,14 @@ async fn test_snapshot_workflow() {
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None
+            claim_ref: None,
+            volume_attributes_class_name: None
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     };
 
@@ -569,7 +574,9 @@ async fn test_snapshot_workflow() {
             phase: PersistentVolumeClaimPhase::Bound,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
             capacity: Some(capacity),
-            conditions: None
+            conditions: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None
         })
     };
 

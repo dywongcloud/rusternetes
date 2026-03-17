@@ -95,6 +95,7 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
             expected_pods: total_pods,
             observed_generation: None, // Generation tracking would need to be added to ObjectMeta
             conditions: None,
+            disrupted_pods: None,
         });
 
         // Save updated PDB back to storage

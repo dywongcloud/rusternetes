@@ -54,12 +54,14 @@ async fn create_test_pv(
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None
+            claim_ref: None,
+            volume_attributes_class_name: None,
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     };
 
@@ -109,7 +111,9 @@ async fn create_test_pvc(
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
-            conditions: None
+            conditions: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None,
         })
     };
 
@@ -293,12 +297,14 @@ async fn test_matches_access_modes() {
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None
+            claim_ref: None,
+            volume_attributes_class_name: None,
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     };
 
@@ -341,7 +347,9 @@ async fn test_matches_access_modes() {
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
-            conditions: None
+            conditions: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None,
         })
     };
 
@@ -405,12 +413,14 @@ async fn test_skips_already_bound_pv() {
                 api_version: Some("v1".to_string()),
                 resource_version: None,
                 field_path: None
-            })
+            }),
+            volume_attributes_class_name: None,
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Bound,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     };
 
@@ -498,7 +508,9 @@ async fn test_skips_already_bound_pvc() {
                 cap.insert("storage".to_string(), "5Gi".to_string());
                 cap
             }),
-            conditions: None
+            conditions: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None,
         })
     };
 

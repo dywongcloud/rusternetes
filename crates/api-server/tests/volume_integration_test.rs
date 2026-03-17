@@ -47,12 +47,14 @@ fn test_persistentvolume_creation() {
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None
+            claim_ref: None,
+            volume_attributes_class_name: None
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     };
 
@@ -108,7 +110,9 @@ fn test_persistentvolumeclaim_creation() {
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
-            conditions: None
+            conditions: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None
         })
     };
 
@@ -146,7 +150,8 @@ fn test_storageclass_creation() {
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
-        allow_volume_expansion: Some(true)
+        allow_volume_expansion: Some(true),
+            mount_options: None
     };
 
     // Verify basic fields
@@ -347,7 +352,8 @@ fn test_pv_with_multiple_access_modes() {
             mount_options: Some(vec!["ro".to_string(), "noexec".to_string()]),
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None
+            claim_ref: None,
+            volume_attributes_class_name: None
         },
         status: None
     };
@@ -409,7 +415,8 @@ fn test_storageclass_with_topologies() {
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
         volume_binding_mode: Some(VolumeBindingMode::WaitForFirstConsumer),
         allowed_topologies: None,
-        allow_volume_expansion: Some(false)
+        allow_volume_expansion: Some(false),
+            mount_options: None
     };
 
     // Verify binding mode

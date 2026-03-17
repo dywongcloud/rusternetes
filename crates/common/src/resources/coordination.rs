@@ -56,4 +56,15 @@ pub struct LeaseSpec {
     /// leaseTransitions is the number of transitions of a lease between holders
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lease_transitions: Option<i32>,
+
+    /// preferredHolder signals to a lease holder that the lease has a more optimal holder
+    /// and should be given up. This field can only be set if Strategy is also set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_holder: Option<String>,
+
+    /// strategy indicates the strategy for picking the leader for coordinated leader election.
+    /// If the field is not specified, there is no active coordination for this lease.
+    /// (OldestEmulationVersion)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strategy: Option<String>,
 }

@@ -5,9 +5,10 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 **Source of truth**: `~/Downloads/swagger.json` (Kubernetes master branch, ~1.35 era)
 **Scope**: `core/v1`, `apps/v1`, `batch/v1`, `autoscaling/v2`, `networking/v1`, `rbac/v1`,
-`storage/v1`, `policy/v1`
+`storage/v1`, `policy/v1`, `coordination/v1`, `discovery/v1`, `events.k8s.io/v1`,
+`meta/v1` (ObjectMeta, Status, etc.)
 
-**Last updated**: 2026-03-17 (commit 55b1d34)
+**Last updated**: 2026-03-17 (comprehensive swagger.json audit)
 
 ---
 
@@ -20,6 +21,131 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 - ✅ **Done** – Implemented
 
 ---
+
+## ================================
+## NEWLY DISCOVERED GAPS (This Audit)
+## ================================
+
+### NEW-1. meta/v1 — Status response object (P0 - CRITICAL)
+
+**File**: `crates/common/src/error.rs` (ad-hoc JSON), `crates/common/src/types.rs` (missing struct)
+
+The Kubernetes `metav1.Status` type is NOT implemented as a proper struct. Currently, error responses
+are built ad-hoc in `error.rs` with only `kind`, `apiVersion`, `status`, `message`, and `code` fields.
+The Kubernetes spec requires additional fields that kubectl and other clients depend on.
+
+| Item | K8s Type | Priority | Notes |
+|------|----------|----------|-------|
+| `Status` struct | `metav1.Status` | **P0** | Missing: `reason`, `details`, `metadata` (ListMeta) |
+| `StatusDetails` struct | `metav1.StatusDetails` | **P0** | Missing entirely — needed for validation errors |
+| `StatusCause` struct | `metav1.StatusCause` | **P0** | Missing entirely — needed for field-level errors |
+| `Status.reason` field | `string` | **P0** | e.g. "NotFound", "AlreadyExists", "Conflict" — kubectl uses this |
+| `Status.details` field | `StatusDetails` | **P1** | Resource name/kind in error responses |
+
+**Why P0**: kubectl parses `reason` from Status responses to decide error handling behavior (e.g.,
+retry on Conflict, display validation errors from `details.causes`). Conformance tests check
+for correct Status responses. The current ad-hoc JSON is missing critical fields.
+
+### NEW-2. core/v1 — Event fields (P1)
+
+**File**: `crates/common/src/resources/event.rs`
+
+| Field | K8s Type | Priority | Notes |
+|-------|----------|----------|-------|
+| `eventTime` | `MicroTime` | P1 | Used by events.v1 API, kubectl |
+| `reportingComponent` | `string` | P1 | Component that reported the event |
+| `reportingInstance` | `string` | P1 | Instance of the reporting component |
+
+### NEW-3. events.k8s.io/v1 — Event (P1)
+
+**File**: Missing entirely
+
+The `events.k8s.io/v1.Event` type is completely missing. This is the modern events API that
+kubectl and many controllers use.
+
+| Field | K8s Type | Priority |
+|-------|----------|----------|
+| `action` | `string` (required) | P1 |
+| `eventTime` | `MicroTime` (required) | P1 |
+| `regarding` | `ObjectReference` | P1 |
+| `related` | `ObjectReference` | P1 |
+| `reportingController` | `string` (required) | P1 |
+| `reportingInstance` | `string` (required) | P1 |
+| `reason` | `string` | P1 |
+| `note` | `string` | P1 |
+| `type` | `string` | P1 |
+| `series` | `EventSeries` | P2 |
+| `deprecatedCount` | `int32` | P2 |
+| `deprecatedFirstTimestamp` | `Time` | P2 |
+| `deprecatedLastTimestamp` | `Time` | P2 |
+| `deprecatedSource` | `EventSource` | P2 |
+
+### NEW-4. coordination/v1 — LeaseSpec missing fields (P1)
+
+**File**: `crates/common/src/resources/coordination.rs`
+
+| Field | K8s Type | Priority | Notes |
+|-------|----------|----------|-------|
+| `preferredHolder` | `string` | P1 | Preferred lease holder (leader election) |
+| `strategy` | `string` | P1 | Lease strategy (OldestEmulationVersion, etc.) |
+
+### NEW-5. discovery/v1 — EndpointHints missing field (P2)
+
+**File**: `crates/common/src/resources/endpointslice.rs`
+
+| Field | K8s Type | Priority | Notes |
+|-------|----------|----------|-------|
+| `forNodes` | `[]ForNode` | P2 | Node-level topology hints |
+| `ForNode` type | `name: string` | P2 | New type needed |
+
+### NEW-6. policy/v1 — PodDisruptionBudgetStatus missing field (P1)
+
+**File**: `crates/common/src/resources/policy.rs`
+
+| Field | K8s Type | Priority | Notes |
+|-------|----------|----------|-------|
+| `disruptedPods` | `map[string]Time` | P1 | Tracks pods whose eviction was processed |
+
+### NEW-7. storage/v1 — StorageClass missing field (P1)
+
+**File**: `crates/common/src/resources/volume.rs`
+
+| Field | K8s Type | Priority | Notes |
+|-------|----------|----------|-------|
+| `mountOptions` | `[]string` | P1 | Mount options for PVs created by this class |
+
+### NEW-8. storage/v1 — CSIDriverSpec missing fields (P2)
+
+**File**: `crates/common/src/resources/csi.rs`
+
+| Field | K8s Type | Priority | Notes |
+|-------|----------|----------|-------|
+| `nodeAllocatableUpdatePeriodSeconds` | `int64` | P2 | Periodic update interval |
+
+### NEW-9. apps/v1 — ReplicaSetStatus missing field (P2)
+
+**File**: `crates/common/src/resources/workloads.rs`
+
+| Field | K8s Type | Priority | Notes |
+|-------|----------|----------|-------|
+| `terminatingReplicas` | `int32` | P2 | Number of terminating pods |
+
+### NEW-10. ServicePort.targetPort type mismatch (P1)
+
+**File**: `crates/common/src/resources/service.rs`
+
+| Issue | Current | Expected | Priority |
+|-------|---------|----------|----------|
+| `targetPort` uses `u16` only | `Option<u16>` | `IntOrString` (int or named port) | P1 |
+
+kubectl and clients send named ports (e.g., `"http"`) as targetPort. Our `u16` type will
+reject these. This should be `Option<String>` or a proper `IntOrString` enum.
+
+---
+
+## ================================
+## PREVIOUSLY TRACKED GAPS
+## ================================
 
 ## 1. core/v1 — PodSpec
 
@@ -46,15 +172,9 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 | Field | K8s Type | Priority | Notes |
 |-------|----------|----------|-------|
-| `schedulingGroup` | `PodSchedulingGroup` | P2 | Group-based scheduling |
-| `hostnameOverride` | `string` | P2 | Override hostname independently of setHostnameAsFQDN |
 | `serviceAccount` | `string` | P2 | Deprecated alias for serviceAccountName (still present in spec) |
-
-### Missing helper types
-
-| Type | Fields | Priority |
-|------|--------|----------|
-| `PodSchedulingGroup` | `podGroupName: string` | P2 |
+| `schedulingGroup` | `PodSchedulingGroup` | P3 | Group-based scheduling (alpha) |
+| `hostnameOverride` | `string` | P3 | Override hostname (alpha) |
 
 ### ✅ Structural fixes (commit 1383ff8)
 
@@ -87,15 +207,9 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 |-------|----------|----------|-------|
 | `resize` | `string` | P2 | InProgress/Deferred/Infeasible for resource resizing |
 | `resourceClaimStatuses` | `[]PodResourceClaimStatus` | P2 | Status of each resource claim |
-| `allocatedResources` | `map[string]Quantity` | P2 | Allocated resources for the pod |
-| `extendedResourceClaimStatus` | `[]PodExtendedResourceClaimStatus` | P3 | Extended resource claim tracking |
 | `observedGeneration` | `int64` | P2 | Generation the kubelet observed when last syncing |
-
-### Missing helper types
-
-| Type | Fields | Priority |
-|------|--------|----------|
-| `PodResourceClaimStatus` | `name: string`, `resourceClaimName: string` | P2 |
+| `allocatedResources` | `map[string]Quantity` | P3 | Allocated resources for the pod |
+| `extendedResourceClaimStatus` | `[]PodExtendedResourceClaimStatus` | P3 | Extended resource claim tracking |
 
 ---
 
@@ -111,7 +225,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 | `restartPolicy: Option<String>` | ✅ Added (also used for sidecar detection) |
 | `ContainerResizePolicy` type | ✅ Added |
 
-### ✅ Completed (current session — swagger audit)
+### ✅ Completed (swagger audit)
 
 | Field | Status |
 |-------|--------|
@@ -132,7 +246,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 | Field | K8s Type | Priority | Notes |
 |-------|----------|----------|-------|
-| `restartPolicyRules` | `[]ContainerRestartRule` | P2 | Fine-grained restart rules (k8s 1.35 alpha) |
+| `restartPolicyRules` | `[]ContainerRestartRule` | P3 | Fine-grained restart rules (k8s 1.35 alpha) |
 
 ---
 
@@ -140,47 +254,26 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 **File**: `crates/common/src/resources/pod.rs`
 
-### ✅ Completed (commit 1383ff8)
+### ✅ Completed (commit 1383ff8 + e24e251 + swagger audit)
 
 | Field | Status |
 |-------|--------|
 | `allocatedResources: Option<HashMap<String, String>>` | ✅ Added |
 | `started: Option<bool>` | ✅ Added |
-
-### ✅ Completed (commit e24e251)
-
-| Field | Status |
-|-------|--------|
 | `allocatedResourcesStatus: Option<Vec<ResourceStatus>>` | ✅ Added |
 | `resources: Option<ResourceRequirements>` | ✅ Added |
-| `ResourceStatus` type | ✅ Added |
-| `ResourceHealth` type | ✅ Added |
-
-### ✅ Completed (current session — swagger audit)
-
-| Field | Status |
-|-------|--------|
 | `lastState: Option<ContainerState>` | ✅ Added |
 | `imageID: Option<String>` | ✅ Added |
-
-### ✅ Completed (current session — ContainerState fields)
-
-| Field | Status |
-|-------|--------|
-| `ContainerState::Terminated.signal` | ✅ Added |
-| `ContainerState::Terminated.message` | ✅ Added |
-| `ContainerState::Terminated.startedAt` | ✅ Added |
-| `ContainerState::Terminated.finishedAt` | ✅ Added |
-| `ContainerState::Terminated.containerID` | ✅ Added |
-| `ContainerState::Waiting.message` | ✅ Added |
+| `ContainerState::Terminated`: `signal`, `message`, `startedAt`, `finishedAt`, `containerID` | ✅ Added |
+| `ContainerState::Waiting`: `message` | ✅ Added |
 
 ### Still missing
 
 | Field | K8s Type | Priority | Notes |
 |-------|----------|----------|-------|
-| `stopSignal` | `string` | P2 | Stop signal sent to the container |
 | `user` | `ContainerUser` | P2 | User that the container process runs as |
 | `volumeMounts` | `[]VolumeMountStatus` | P2 | Status of volume mounts |
+| `stopSignal` | `string` | P2 | Stop signal sent to the container |
 
 ---
 
@@ -201,7 +294,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 **File**: `crates/common/src/resources/pod.rs`
 
-### ✅ Completed (current session)
+### ✅ Completed
 
 | Field | Status |
 |-------|--------|
@@ -209,21 +302,13 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 | `iscsi: Option<ISCSIVolumeSource>` | ✅ Added |
 | `projected: Option<ProjectedVolumeSource>` | ✅ Added |
 | `image: Option<ImageVolumeSource>` | ✅ Added |
-| `ProjectedVolumeSource` type | ✅ Added |
-| `VolumeProjection` type | ✅ Added |
-| `SecretProjection` type | ✅ Added |
-| `ConfigMapProjection` type | ✅ Added |
-| `ServiceAccountTokenProjection` type | ✅ Added |
-| `DownwardAPIProjection` type | ✅ Added |
-| `ClusterTrustBundleProjection` type | ✅ Added |
-| `ImageVolumeSource` type | ✅ Added |
+| All projection types | ✅ Added |
 
 ### Still missing
 
 | Type | Priority | Notes |
 |------|----------|-------|
 | `csi` (`CSIVolumeSource`) | P2 | Inline CSI volume |
-| `hostPath` | P2 | Already partially present but missing `type` field in pod volume context |
 
 ---
 
@@ -231,7 +316,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 **File**: `crates/common/src/resources/pod.rs`
 
-### ✅ Completed (current session)
+### ✅ Completed
 
 | Field | Status |
 |-------|--------|
@@ -252,7 +337,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 **File**: `crates/common/src/resources/pod.rs`
 
-### ✅ Completed (current session)
+### ✅ Completed
 
 | Field | Status |
 |-------|--------|
@@ -264,488 +349,133 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 | Field | K8s Type | Priority | Notes |
 |-------|----------|----------|-------|
-| `restartPolicyRules` | `[]ContainerRestartRule` | P2 | |
 | `stdin`, `stdinOnce`, `tty` | `bool` | P2 | |
 | `terminationMessagePath`, `terminationMessagePolicy` | `string` | P2 | |
+| `restartPolicyRules` | `[]ContainerRestartRule` | P3 | Alpha |
 
 ---
 
-## 9. apps/v1 — DeploymentSpec ✅
+## 9-13. apps/v1 — Deployments, StatefulSets, DaemonSets ✅
 
-**File**: `crates/common/src/resources/deployment.rs`
-
-### ✅ Completed (commit 8f34586)
-
-| Field | Status |
-|-------|--------|
-| `paused: Option<bool>` | ✅ Added |
-| `progressDeadlineSeconds: Option<i32>` | ✅ Added |
-| `replicas: i32` → `Option<i32>` | ✅ Fixed |
-
----
-
-## 10. apps/v1 — DeploymentStatus ✅
-
-**File**: `crates/common/src/resources/deployment.rs`
-
-### ✅ Completed (commit 8f34586)
-
-| Field | Status |
-|-------|--------|
-| `conditions: Option<Vec<DeploymentCondition>>` | ✅ Added |
-| `collisionCount: Option<i32>` | ✅ Added |
-| `observedGeneration: Option<i64>` | ✅ Added |
-| `DeploymentCondition` type | ✅ Added |
+All previously completed items remain done. See Phase 2 completion table below.
 
 ### Still missing
 
 | Field | K8s Type | Priority |
 |-------|----------|----------|
-| `terminatingReplicas` | `int32` | P2 |
+| `DeploymentStatus.terminatingReplicas` | `int32` | P2 |
+| `ReplicaSetStatus.terminatingReplicas` | `int32` | P2 |
+| `StatefulSetSpec.ordinals` | `StatefulSetOrdinals` | P2 |
 
 ---
 
-## 11. apps/v1 — StatefulSetSpec ✅
-
-**File**: `crates/common/src/resources/workloads.rs`
-
-### ✅ Completed (commit 8f34586)
-
-| Field | Status |
-|-------|--------|
-| `replicas: i32` → `Option<i32>` | ✅ Fixed |
-| `minReadySeconds: Option<i32>` | ✅ Added |
-| `revisionHistoryLimit: Option<i32>` | ✅ Added |
-| `volumeClaimTemplates: Option<Vec<PersistentVolumeClaim>>` | ✅ Added |
-| `persistentVolumeClaimRetentionPolicy` | ✅ Added (`StatefulSetPersistentVolumeClaimRetentionPolicy`) |
+## 14-16. batch/v1 — Jobs, CronJobs ✅ (partial)
 
 ### Still missing
 
 | Field | K8s Type | Priority |
 |-------|----------|----------|
-| `ordinals` | `StatefulSetOrdinals` | P2 |
+| `JobSpec.backoffLimitPerIndex` | `int32` | P2 |
+| `JobSpec.maxFailedIndexes` | `int32` | P2 |
+| `JobSpec.podFailurePolicy` | `PodFailurePolicy` | P2 |
+| `JobSpec.podReplacementPolicy` | `string` | P2 |
+| `JobSpec.successPolicy` | `SuccessPolicy` | P2 |
+| `JobSpec.managedBy` | `string` | P2 |
+| `JobStatus.completedIndexes` | `string` | P2 |
+| `JobStatus.failedIndexes` | `string` | P2 |
+| `JobStatus.uncountedTerminatedPods` | `UncountedTerminatedPods` | P2 |
 
 ---
 
-## 12. apps/v1 — StatefulSetStatus ✅
+## 17-30. Other completed sections
 
-**File**: `crates/common/src/resources/workloads.rs`
-
-### ✅ Completed (commit 8f34586)
-
-| Field | Status |
-|-------|--------|
-| `availableReplicas: Option<i32>` | ✅ Added |
-| `collisionCount: Option<i32>` | ✅ Added |
-| `observedGeneration: Option<i64>` | ✅ Added |
-| `currentRevision: Option<String>` | ✅ Added |
-| `updateRevision: Option<String>` | ✅ Added |
-| `conditions: Option<Vec<StatefulSetCondition>>` | ✅ Added |
-| `StatefulSetCondition` type | ✅ Added |
-| `readyReplicas`, `currentReplicas`, `updatedReplicas` → `Option<i32>` | ✅ Fixed |
+See Phase 2 completion table below. All previously tracked items remain done.
 
 ---
 
-## 13. apps/v1 — DaemonSetSpec / DaemonSetStatus ✅
+## ================================
+## IMPLEMENTATION PLAN
+## ================================
 
-**File**: `crates/common/src/resources/workloads.rs`
+### Phase 3A — P0 fixes (CRITICAL — do first)
 
-### ✅ Completed (commit 8f34586)
+These are blocking conformance tests and correct kubectl behavior.
 
-| Field | Status |
-|-------|--------|
-| `DaemonSetSpec.minReadySeconds: Option<i32>` | ✅ Added |
-| `DaemonSetSpec.revisionHistoryLimit: Option<i32>` | ✅ Added |
-| `DaemonSetStatus.numberAvailable: Option<i32>` | ✅ Added |
-| `DaemonSetStatus.numberUnavailable: Option<i32>` | ✅ Added |
-| `DaemonSetStatus.updatedNumberScheduled: Option<i32>` | ✅ Added |
-| `DaemonSetStatus.observedGeneration: Option<i64>` | ✅ Added |
-| `DaemonSetStatus.collisionCount: Option<i32>` | ✅ Added |
-| `DaemonSetStatus.conditions: Option<Vec<DaemonSetCondition>>` | ✅ Added |
-| `DaemonSetCondition` type | ✅ Added |
-| `RollingUpdateDaemonSet.maxSurge: Option<String>` | ✅ Added |
+| # | Item | File | Est. Complexity |
+|---|------|------|-----------------|
+| 1 | **`Status` struct** with `reason`, `details`, `metadata` fields | `types.rs` + `error.rs` | Medium |
+| 2 | **`StatusDetails` struct** with `name`, `group`, `kind`, `uid`, `causes`, `retryAfterSeconds` | `types.rs` | Small |
+| 3 | **`StatusCause` struct** with `field`, `message`, `reason` | `types.rs` | Small |
+| 4 | **Refactor error.rs** to use proper `Status` struct instead of ad-hoc JSON | `error.rs` | Medium |
+| 5 | **Map Error variants to Status reasons**: NotFound→"NotFound", AlreadyExists→"AlreadyExists", Conflict→"Conflict", InvalidResource→"Invalid" | `error.rs` | Small |
 
----
+### Phase 3B — P1 fixes (Important for kubectl/client compatibility)
 
-## 14. batch/v1 — JobSpec ✅ (partial)
+| # | Item | File | Est. Complexity |
+|---|------|------|-----------------|
+| 6 | **`ServicePort.targetPort`**: Change from `Option<u16>` to `Option<String>` (IntOrString) | `service.rs` + all instantiation sites | Medium |
+| 7 | **`StorageClass.mountOptions`**: Add `Option<Vec<String>>` | `volume.rs` | Small |
+| 8 | **`LeaseSpec`**: Add `preferredHolder` and `strategy` fields | `coordination.rs` | Small |
+| 9 | **`PodDisruptionBudgetStatus.disruptedPods`**: Add `Option<HashMap<String, DateTime<Utc>>>` | `policy.rs` | Small |
+| 10 | **core/v1 Event**: Add `eventTime`, `reportingComponent`, `reportingInstance` | `event.rs` | Small |
+| 11 | **events.k8s.io/v1 Event**: New type + handler + routes | `event.rs` + `handlers/event.rs` | Large |
 
-**File**: `crates/common/src/resources/workloads.rs`
+### Phase 3C — P2 fixes (Feature completeness)
 
-### ✅ Completed (commit 8f34586)
+| # | Item | File |
+|---|------|------|
+| 12 | `PodSecurityContext`: `seLinuxChangePolicy`, `supplementalGroupsPolicy` | `pod.rs` |
+| 13 | `PVCStatus`: `currentVolumeAttributesClassName`, `modifyVolumeStatus` + `ModifyVolumeStatus` type | `volume.rs` |
+| 14 | `PVStatus.lastPhaseTransitionTime` | `volume.rs` |
+| 15 | `PVSpec.volumeAttributesClassName` | `volume.rs` |
+| 16 | `NodeSystemInfo.swap` + `NodeSwapStatus` type | `node.rs` |
+| 17 | `NodeStatus`: `config`, `features`, `runtimeHandlers`, `declaredFeatures` + 4 new types | `node.rs` |
+| 18 | `Lifecycle.stopSignal` | `pod.rs` |
+| 19 | `HPAScalingRules.tolerance` | `autoscaling.rs` |
+| 20 | `DeploymentStatus.terminatingReplicas` | `deployment.rs` |
+| 21 | `ReplicaSetStatus.terminatingReplicas` | `workloads.rs` |
+| 22 | `StatefulSetSpec.ordinals` + `StatefulSetOrdinals` type | `workloads.rs` |
+| 23 | `JobSpec`: `backoffLimitPerIndex`, `maxFailedIndexes`, `podFailurePolicy`, `podReplacementPolicy`, `successPolicy`, `managedBy` + helper types | `workloads.rs` |
+| 24 | `JobStatus`: `completedIndexes`, `failedIndexes`, `uncountedTerminatedPods` + `UncountedTerminatedPods` type | `workloads.rs` |
+| 25 | `ContainerStatus`: `user` + `ContainerUser`/`LinuxContainerUser`, `volumeMounts` + `VolumeMountStatus`, `stopSignal` | `pod.rs` |
+| 26 | `PodStatus`: `resize`, `resourceClaimStatuses`, `observedGeneration` + `PodResourceClaimStatus` type | `pod.rs` |
+| 27 | `EphemeralContainer`: `stdin`, `stdinOnce`, `tty`, `terminationMessagePath`, `terminationMessagePolicy` | `pod.rs` |
+| 28 | `Volume.csi` (inline `CSIVolumeSource`) | `pod.rs` |
+| 29 | `EndpointHints.forNodes` + `ForNode` type | `endpointslice.rs` |
+| 30 | `CSIDriverSpec.nodeAllocatableUpdatePeriodSeconds` | `csi.rs` |
+| 31 | `PodSpec.serviceAccount` (deprecated alias) | `pod.rs` |
+| 32 | `EnvVarSource.fileKeyRef` + `FileKeySelector` type | `pod.rs` |
 
-| Field | Status |
-|-------|--------|
-| `selector: Option<LabelSelector>` | ✅ Added |
-| `manualSelector: Option<bool>` | ✅ Added |
-| `suspend: Option<bool>` | ✅ Added |
-| `ttlSecondsAfterFinished: Option<i32>` | ✅ Added |
-| `completionMode: Option<String>` | ✅ Added |
+### Phase 4 — P3 (Nice to have / legacy / alpha)
 
-### Still missing (P2)
-
-| Field | K8s Type | Priority |
-|-------|----------|----------|
-| `backoffLimitPerIndex` | `int32` | P2 |
-| `maxFailedIndexes` | `int32` | P2 |
-| `podFailurePolicy` | `PodFailurePolicy` | P2 |
-| `podReplacementPolicy` | `string` | P2 |
-| `successPolicy` | `SuccessPolicy` | P2 |
-| `managedBy` | `string` | P2 |
-
----
-
-## 15. batch/v1 — JobStatus ✅ (partial)
-
-**File**: `crates/common/src/resources/workloads.rs`
-
-### ✅ Completed (commit 8f34586)
-
-| Field | Status |
-|-------|--------|
-| `startTime: Option<DateTime<Utc>>` | ✅ Added |
-| `completionTime: Option<DateTime<Utc>>` | ✅ Added |
-| `ready: Option<i32>` | ✅ Added |
-| `terminating: Option<i32>` | ✅ Added |
-
-### Still missing (P2)
-
-| Field | K8s Type | Priority |
-|-------|----------|----------|
-| `completedIndexes` | `string` | P2 |
-| `failedIndexes` | `string` | P2 |
-| `uncountedTerminatedPods` | `UncountedTerminatedPods` | P2 |
-
----
-
-## 16. batch/v1 — CronJobSpec ✅
-
-**File**: `crates/common/src/resources/workloads.rs`
-
-### ✅ Completed (commit 8f34586)
-
-| Field | Status |
-|-------|--------|
-| `startingDeadlineSeconds: Option<i64>` | ✅ Added |
-| `timeZone: Option<String>` | ✅ Added |
-
----
-
-## 17. core/v1 — ServiceSpec ✅
-
-**File**: `crates/common/src/resources/service.rs`
-
-### ✅ Completed (commit 8f34586)
-
-| Field | Status |
-|-------|--------|
-| `healthCheckNodePort: Option<i32>` | ✅ Added |
-| `loadBalancerClass: Option<String>` | ✅ Added |
-| `loadBalancerIP: Option<String>` | ✅ Added |
-| `loadBalancerSourceRanges: Option<Vec<String>>` | ✅ Added |
-| `allocateLoadBalancerNodePorts: Option<bool>` | ✅ Added |
-| `publishNotReadyAddresses: Option<bool>` | ✅ Added |
-| `sessionAffinityConfig: Option<SessionAffinityConfig>` | ✅ Added |
-| `trafficDistribution: Option<String>` | ✅ Added |
-| `ServicePort.appProtocol: Option<String>` | ✅ Added |
-| `ServiceStatus.conditions: Option<Vec<Condition>>` | ✅ Added |
-| `LoadBalancerIngress.ipMode: Option<String>` | ✅ Added |
-| `LoadBalancerIngress.ports: Option<Vec<PortStatus>>` | ✅ Added |
-| `SessionAffinityConfig` type | ✅ Added |
-| `ClientIPConfig` type | ✅ Added |
-| `PortStatus` type | ✅ Added |
-
----
-
-## 18. core/v1 — NodeSpec ✅ (partial)
-
-**File**: `crates/common/src/resources/node.rs`
-
-### ✅ Completed (current session)
-
-| Field | Status |
-|-------|--------|
-| `podCIDRs: Option<Vec<String>>` | ✅ Added |
-
-### Still missing
-
-| Field | K8s Type | Priority | Notes |
-|-------|----------|----------|-------|
-| `configSource` | `NodeConfigSource` | P2 | Dynamic kubelet config |
-| `externalID` | `string` | P3 | Deprecated external ID |
-
----
-
-## 19. core/v1 — NodeStatus
-
-**File**: `crates/common/src/resources/node.rs`
-
-### ✅ Completed (commit e24e251)
-
-| Field | Status |
-|-------|--------|
-| `images: Option<Vec<ContainerImage>>` | ✅ Added |
-| `volumesInUse: Option<Vec<String>>` | ✅ Added |
-| `volumesAttached: Option<Vec<AttachedVolume>>` | ✅ Added |
-| `daemonEndpoints: Option<NodeDaemonEndpoints>` | ✅ Added |
-| `ContainerImage` type | ✅ Added |
-| `AttachedVolume` type | ✅ Added |
-| `NodeDaemonEndpoints` type | ✅ Added |
-| `DaemonEndpoint` type | ✅ Added |
-
-### Still missing
-
-| Field | K8s Type | Priority | Notes |
-|-------|----------|----------|-------|
-| `config` | `NodeConfigStatus` | P2 | Config source status |
-| `features` | `NodeFeatures` | P2 | Feature gate status |
-| `runtimeHandlers` | `[]NodeRuntimeHandler` | P2 | Available runtime handlers |
-| `declaredFeatures` | object | P2 | Declared node features |
-| `phase` | `string` | P3 | Deprecated node phase |
-
-### Missing types
-
-| Type | Fields | Priority |
-|------|--------|----------|
-| `NodeConfigStatus` | `assigned`, `active`, `lastKnownGood`, `error` | P2 |
-| `NodeFeatures` | `supplementalGroupsPolicy: bool` | P2 |
-| `NodeRuntimeHandler` | `name: string`, `features: NodeRuntimeHandlerFeatures` | P2 |
-| `NodeRuntimeHandlerFeatures` | `recursiveReadOnlyMounts: bool`, `userNamespaces: bool` | P2 |
-
-### Structural issues
-
-| Item | Issue | Priority |
-|------|-------|----------|
-| `NodeSystemInfo` | Missing `swap: NodeSwapStatus` field | P2 |
-
----
-
-## 20. core/v1 — PersistentVolumeSpec
-
-**File**: `crates/common/src/resources/volume.rs`
-
-### ✅ Structural fixes (commit 1383ff8)
-
-| Item | Status |
-|------|--------|
-| `PersistentVolumeSource` enum | ✅ Removed — replaced with flat optional fields on `PersistentVolumeSpec`: `host_path`, `nfs`, `iscsi`, `local`, `csi` |
-
-### Missing volume source types in PV context
-
-| Type | Priority |
+| Item | Priority |
 |------|----------|
-| `AWSElasticBlockStore`, `AzureDisk`, `AzureFile` | P2 |
-| `CephFS`, `Cinder`, `FC`, `FlexVolume`, `Flocker` | P3 |
-| `GCEPersistentDisk`, `Glusterfs`, `PhotonPersistentDisk` | P3 |
-| `PortworxVolume`, `Quobyte`, `RBD`, `ScaleIO` | P3 |
-| `StorageOS`, `VsphereVirtualDisk`, `CSI` | P2 |
-
-### Missing fields on PersistentVolumeSpec
-
-| Field | K8s Type | Priority |
-|-------|----------|----------|
-| `volumeAttributesClassName` | `string` | P2 |
-
-### PersistentVolumeStatus ✅ (partial)
-
-| Field | Status |
-|-------|--------|
-| `reason: Option<String>` | ✅ Already present |
-| `message: Option<String>` | ✅ Already present |
-
-### Still missing on PersistentVolumeStatus
-
-| Field | K8s Type | Priority |
-|-------|----------|----------|
-| `lastPhaseTransitionTime` | `Time` | P2 |
-
----
-
-## 21. core/v1 — PersistentVolumeClaimSpec / Status ✅ (partial)
-
-**File**: `crates/common/src/resources/volume.rs`
-
-### ✅ Completed (current session)
-
-| Field | Status |
-|-------|--------|
-| `dataSource: Option<TypedLocalObjectReference>` | ✅ Added |
-| `dataSourceRef: Option<TypedObjectReference>` | ✅ Added |
-| `volumeAttributesClassName: Option<String>` | ✅ Added (as `volume_attributes_class_name`) |
-| `TypedObjectReference` type | ✅ Added |
-| `allocatedResources: Option<HashMap<String, String>>` on Status | ✅ Added |
-| `allocatedResourceStatuses: Option<HashMap<String, String>>` on Status | ✅ Added |
-
-### Still missing
-
-| Field | K8s Type | Priority |
-|-------|----------|----------|
-| `currentVolumeAttributesClassName` on Status | `string` | P2 |
-| `modifyVolumeStatus` on Status | `ModifyVolumeStatus` | P2 |
-
-### Missing types
-
-| Type | Fields | Priority |
-|------|--------|----------|
-| `ModifyVolumeStatus` | `targetVolumeAttributesClassName: string`, `status: string` | P2 |
-
----
-
-## 22. core/v1 — NamespaceStatus
-
-**File**: `crates/common/src/resources/namespace.rs`
-
-### ✅ Completed (commit e24e251)
-
-| Field | Status |
-|-------|--------|
-| `conditions: Option<Vec<NamespaceCondition>>` | ✅ Added |
-| `NamespaceCondition` type | ✅ Added |
-
----
-
-## 23. autoscaling/v2 — HPA ✅ (partial)
-
-**File**: `crates/common/src/resources/autoscaling.rs`
-
-### ✅ Completed (current session)
-
-| Item | Status |
-|------|--------|
-| `HorizontalPodAutoscalerCondition.last_transition_time` | ✅ Fixed: `Option<String>` → `Option<DateTime<Utc>>` |
-| `HorizontalPodAutoscalerStatus.last_scale_time` | ✅ Fixed: `Option<String>` → `Option<DateTime<Utc>>` |
-| `MetricStatus.containerResource` | ✅ Added: `container_resource: Option<ContainerResourceMetricStatus>` |
-| `ContainerResourceMetricStatus` type | ✅ Added |
-| `currentReplicas: i32` | ✅ Already present as non-optional |
-
-### Still missing
-
-| Item | Issue | Priority |
-|------|-------|----------|
-| `HPAScalingRules.tolerance` | Missing `tolerance: Quantity` field (k8s 1.35 new field) | P2 |
-
----
-
-## 24. core/v1 — ResourceQuota ✅
-
-**File**: `crates/common/src/resources/policy.rs`
-
-### ✅ Already implemented
-
-| Resource | Status |
-|----------|--------|
-| `ResourceQuota` struct with `spec` and `status` | ✅ Present |
-| `ResourceQuotaSpec`: `hard`, `scopes`, `scopeSelector` | ✅ Present |
-| `ResourceQuotaStatus`: `hard`, `used` | ✅ Present |
-| `ScopeSelector`, `ScopedResourceSelectorRequirement` | ✅ Present |
-
----
-
-## 25. core/v1 — LimitRange ✅
-
-**File**: `crates/common/src/resources/policy.rs`
-
-### ✅ Already implemented
-
-| Resource | Status |
-|----------|--------|
-| `LimitRange` struct | ✅ Present |
-| `LimitRangeSpec`, `LimitRangeItem` | ✅ Present |
-
----
-
-## 26. core/v1 — EnvVarSource / Downward API
-
-**File**: `crates/common/src/resources/pod.rs`
-
-### Missing fields on EnvVarSource
-
-| Field | K8s Type | Priority |
-|-------|----------|----------|
-| `fileKeyRef` | `FileKeySelector` | P2 |
-
-### Missing types
-
-| Type | Fields | Priority |
-|------|--------|----------|
-| `FileKeySelector` | `volumeName`, `path`, `key`, `optional` | P2 |
-
----
-
-## 27. storage/v1 — StorageClass, VolumeAttachment, CSIDriver, CSINode ✅ (partial)
-
-**File**: `crates/common/src/resources/volume.rs` (StorageClass), `crates/common/src/resources/csi.rs` (CSIDriver)
-
-### ✅ Already implemented
-
-| Resource | Status |
-|----------|--------|
-| `StorageClass` | ✅ Present (volume.rs) |
-| `CSIDriver` + `CSIDriverSpec` | ✅ Present (csi.rs) |
-
-### Still missing
-
-| Resource | Priority |
-|----------|----------|
-| `VolumeAttachment` + `VolumeAttachmentSpec` + `VolumeAttachmentStatus` | P2 |
-| `CSINode` + `CSINodeSpec` + `CSINodeDriver` | P2 |
-| `CSIStorageCapacity` | P3 |
+| Legacy PV volume backends (AzureDisk, CephFS, GCE, etc.) — all deprecated | P3 |
+| `PodSchedulingGroup` + `schedulingGroup` (alpha) | P3 |
+| `ContainerRestartRule` + `restartPolicyRules` (alpha) | P3 |
+| `PodExtendedResourceClaimStatus` | P3 |
+| `PodSpec.hostnameOverride` (alpha) | P3 |
 | `VolumeAttributesClass` | P3 |
+| `NodeSpec.externalID` (deprecated) | P3 |
+| `NodeStatus.phase` (deprecated) | P3 |
+| `VolumeProjection.podCertificate` + `PodCertificateProjection` (alpha) | P3 |
 
 ---
 
-## 28. core/v1 — ObjectMeta / types.rs ✅ (partial)
-
-**File**: `crates/common/src/types.rs`
-
-### ✅ Completed (commit 8f34586)
-
-| Type | Status |
-|------|--------|
-| `Condition` (standard metav1.Condition) | ✅ Added |
-
-Status: **largely complete**. No remaining critical gaps.
-
----
-
-## 29. core/v1 — ResourceRequirements (types.rs)
-
-**File**: `crates/common/src/types.rs`
-
-### ✅ Completed (commit e24e251)
-
-| Field | Status |
-|-------|--------|
-| `claims: Option<Vec<ResourceClaim>>` | ✅ Added |
-| `ResourceClaim` type | ✅ Added |
-
----
-
-## 30. policy/v1 — PodDisruptionBudgetSpec / Status ✅
-
-**File**: `crates/common/src/resources/policy.rs`
-
-### ✅ Already implemented
-
-| Field | Status |
-|-------|--------|
-| `unhealthyPodEvictionPolicy: Option<String>` | ✅ Present |
-| `conditions: Option<Vec<PodDisruptionBudgetCondition>>` | ✅ Present |
-| `PodDisruptionBudgetCondition` type | ✅ Present |
-
----
-
-## Summary: Implementation Plan
+## ================================
+## COMPLETED ITEMS (All Phases)
+## ================================
 
 ### ✅ Phase 1 — P0 fixes (Complete)
 
 | Item | Status |
 |------|--------|
 | `DeploymentStatus.conditions` + `DeploymentCondition` | ✅ Done |
-| `DaemonSetStatus` missing counters (`numberAvailable`, `numberUnavailable`, `updatedNumberScheduled`) | ✅ Done |
-| `PodResourceClaim` flattening (remove `ClaimSource` wrapper, flatten `resourceClaimName`/`resourceClaimTemplateName` directly) | ✅ Done |
-| `PersistentVolumeSource` enum → flat struct (all volume types as optional fields on `PersistentVolumeSpec`) | ✅ Done |
+| `DaemonSetStatus` missing counters | ✅ Done |
+| `PodResourceClaim` flattening | ✅ Done |
+| `PersistentVolumeSource` enum → flat struct | ✅ Done |
 
-### ✅ Phase 2 — P1 fixes (Partially complete)
+### ✅ Phase 2 — P1 fixes (Complete)
 
 | Item | Status |
 |------|--------|
@@ -768,59 +498,43 @@ Status: **largely complete**. No remaining critical gaps.
 | `PodSpec`: `hostAliases`, `os`, `schedulingGates` + helper types | ✅ Done |
 | `Container`: `resizePolicy` + `ContainerResizePolicy` type | ✅ Done |
 | `ContainerStatus`: `allocatedResources`, `started` | ✅ Done |
-| `PodSpec.resources` (pod-level resource requests) | ✅ Done (commit e24e251) |
-| `ContainerStatus`: `allocatedResourcesStatus`, `resources` | ✅ Done (commit e24e251) |
-| `NodeStatus`: `images`, `volumesInUse`, `volumesAttached`, `daemonEndpoints` | ✅ Done (commit e24e251) |
-| `NamespaceStatus.conditions` | ✅ Done (commit e24e251) |
-| `ResourceRequirements.claims` | ✅ Done (commit e24e251) |
-| `ResourceQuota`: full implementation | ✅ Already implemented (policy.rs) |
-| `StorageClass`: full implementation | ✅ Already implemented (volume.rs) |
-| `Container.lifecycle` + `Lifecycle`/`LifecycleHandler`/`SleepAction` types | ✅ Done (current session) |
-| `EphemeralContainer`: `resizePolicy`, `restartPolicy`, `resources` | ✅ Done (current session) |
-| `Volume` struct: `nfs`, `iscsi`, `projected`, `image` + projection types | ✅ Done (current session) |
-| `NodeSpec.podCIDRs` | ✅ Done (current session) |
-| `PersistentVolumeClaimSpec`: `dataSourceRef`, `volumeAttributesClassName` | ✅ Done (current session) |
-| HPA: `MetricStatus.containerResource`, timestamp types | ✅ Done (current session) |
-| `PodDisruptionBudgetSpec.unhealthyPodEvictionPolicy` | ✅ Already implemented (policy.rs) |
-| `PodDisruptionBudgetStatus.conditions` | ✅ Already implemented (policy.rs) |
-| `PersistentVolumeStatus.reason/message` | ✅ Already implemented (volume.rs) |
-| `Container`: `envFrom`, `volumeDevices`, `terminationMessagePath`, `terminationMessagePolicy`, `stdin`, `stdinOnce`, `tty` | ✅ Done (swagger audit) |
-| `ContainerStatus`: `lastState`, `imageID` | ✅ Done (swagger audit) |
-| `ContainerState::Terminated`: `signal`, `message`, `startedAt`, `finishedAt`, `containerID` | ✅ Done (swagger audit) |
-| `ContainerState::Waiting`: `message` | ✅ Done (swagger audit) |
-| `VolumeMount`: `subPathExpr`, `mountPropagation`, `recursiveReadOnly` | ✅ Done (swagger audit) |
-| `EnvFromSource`, `ConfigMapEnvSource`, `SecretEnvSource`, `VolumeDevice` types | ✅ Done (swagger audit) |
-
-### Phase 3 — P2 fixes (Not started)
-
-| Item | Priority |
-|------|----------|
-| `PodSecurityContext`: `seLinuxChangePolicy`, `supplementalGroupsPolicy` | P2 |
-| `PersistentVolumeClaimStatus`: `currentVolumeAttributesClassName`, `modifyVolumeStatus` | P2 |
-| `PersistentVolumeStatus.lastPhaseTransitionTime` | P2 |
-| `PersistentVolumeSpec.volumeAttributesClassName` | P2 |
-| `NodeSystemInfo.swap` | P2 |
-| `Lifecycle.stopSignal` | P2 |
-| `HPAScalingRules.tolerance` | P2 |
-| `DeploymentStatus.terminatingReplicas` | P2 |
-| `StatefulSetSpec.ordinals` | P2 |
-| `JobSpec`: `podFailurePolicy`, `successPolicy`, `podReplacementPolicy` | P2 |
-| `JobStatus`: `completedIndexes`, `failedIndexes`, `uncountedTerminatedPods` | P2 |
-| `Container`: `stdin`, `stdinOnce`, `tty`, `terminationMessagePath`, `terminationMessagePolicy` | P2 |
-| `ContainerStatus`: `stopSignal`, `user`, `volumeMounts` | P2 |
-| `PodStatus`: `resize`, `resourceClaimStatuses`, `observedGeneration` | P2 |
-| `NodeStatus`: `config`, `features`, `runtimeHandlers` | P2 |
-| `Volume`: `csi` (inline CSI volume) | P2 |
-
-### Phase 4 — P3 (Nice to have / legacy)
-
-| Item | Priority |
-|------|----------|
-| Legacy PV volume backends (AzureDisk, CephFS, GCE, etc.) | P3 |
-| `NodeConfigSource` / dynamic kubelet config types | P3 |
-| `CSIDriver`, `CSINode`, `CSIStorageCapacity` | P3 |
-| `VolumeAttributesClass` | P3 |
-| Deprecated fields (`serviceAccount` alias, `externalID`, etc.) | P3 |
+| `PodSpec.resources` (pod-level resource requests) | ✅ Done |
+| `ContainerStatus`: `allocatedResourcesStatus`, `resources` | ✅ Done |
+| `NodeStatus`: `images`, `volumesInUse`, `volumesAttached`, `daemonEndpoints` | ✅ Done |
+| `NamespaceStatus.conditions` | ✅ Done |
+| `ResourceRequirements.claims` | ✅ Done |
+| `ResourceQuota`: full implementation | ✅ Already implemented |
+| `StorageClass`: full implementation | ✅ Already implemented |
+| `Container.lifecycle` + `Lifecycle`/`LifecycleHandler`/`SleepAction` types | ✅ Done |
+| `EphemeralContainer`: `resizePolicy`, `restartPolicy`, `resources` | ✅ Done |
+| `Volume` struct: `nfs`, `iscsi`, `projected`, `image` + projection types | ✅ Done |
+| `NodeSpec.podCIDRs` | ✅ Done |
+| `PersistentVolumeClaimSpec`: `dataSourceRef`, `volumeAttributesClassName` | ✅ Done |
+| HPA: `MetricStatus.containerResource`, timestamp types | ✅ Done |
+| `PodDisruptionBudget`: `unhealthyPodEvictionPolicy`, `conditions` | ✅ Already implemented |
+| `PersistentVolumeStatus.reason/message` | ✅ Already implemented |
+| `Container`: `envFrom`, `volumeDevices`, `terminationMessagePath/Policy`, `stdin/stdinOnce/tty` | ✅ Done |
+| `ContainerStatus`: `lastState`, `imageID` | ✅ Done |
+| `ContainerState` fields: `signal`, `message`, `startedAt`, `finishedAt`, `containerID` | ✅ Done |
+| `VolumeMount`: `subPathExpr`, `mountPropagation`, `recursiveReadOnly` | ✅ Done |
+| `EnvFromSource`, `ConfigMapEnvSource`, `SecretEnvSource`, `VolumeDevice` types | ✅ Done |
+| `ControllerRevision` (apps/v1) | ✅ Already implemented |
+| `VolumeAttachment` + spec/status (storage/v1) | ✅ Already implemented |
+| `CSINode` + spec/drivers (storage/v1) | ✅ Already implemented |
+| `CSIStorageCapacity` (storage/v1) | ✅ Already implemented |
+| `RuntimeClass` (node.k8s.io/v1) | ✅ Already implemented |
+| Endpoints, EndpointSubset, EndpointAddress, EndpointPort | ✅ Complete |
+| EndpointSlice, Endpoint, EndpointConditions | ✅ Complete |
+| ConfigMap, Secret | ✅ Complete |
+| ServiceAccount | ✅ Complete |
+| Lease, LeaseSpec (partial) | ✅ Mostly complete |
+| Binding | ✅ Complete |
+| ComponentStatus, ComponentCondition | ✅ Complete |
+| PodTemplate, PodTemplateSpec | ✅ Complete |
+| NetworkPolicy, Ingress, IngressClass | ✅ Complete |
+| RBAC: ClusterRole, ClusterRoleBinding, Role, RoleBinding, PolicyRule, Subject, RoleRef | ✅ Complete |
+| ObjectMeta, TypeMeta, ListMeta, OwnerReference, ManagedFieldsEntry | ✅ Complete |
+| ObjectReference | ✅ Complete |
 
 ---
 
@@ -832,3 +546,4 @@ Status: **largely complete**. No remaining critical gaps.
 - **Time fields**: K8s `Time` maps to `Option<DateTime<Utc>>` with our chrono setup. Several status fields use `Option<String>` instead — these should be corrected to `Option<DateTime<Utc>>`.
 - **`replicas` optionality**: ✅ Fixed for `Deployment` and `StatefulSet` — now `Option<i32>` defaulting to 1 in controller logic.
 - **Bulk struct updates**: When adding fields to widely-used structs like `PodSpec`, run a Python brace-matching script rather than manual edits — there are 80+ instantiation sites across the workspace. See past session notes.
+- **Status struct**: The `metav1.Status` struct is critical for Kubernetes API compliance. Every error response MUST include `kind: "Status"`, `apiVersion: "v1"`, `status: "Failure"`, `message`, `reason` (machine-readable), `code` (HTTP status code), and optionally `details` with resource-specific information. kubectl uses `reason` to decide retry behavior.

@@ -62,7 +62,9 @@ async fn create_test_pvc(
                 cap.insert("storage".to_string(), "5Gi".to_string());
                 cap
             }),
-            conditions: None
+            conditions: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None,
         })
     };
 
@@ -100,12 +102,14 @@ async fn create_test_pv(storage: &MemoryStorage, name: &str) -> PersistentVolume
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None
+            claim_ref: None,
+            volume_attributes_class_name: None,
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     };
 
@@ -395,7 +399,9 @@ async fn test_snapshot_without_bound_pvc_fails() {
             phase: PersistentVolumeClaimPhase::Pending, // Pending, not Bound
             access_modes: None,
             capacity: None,
-            conditions: None
+            conditions: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None,
         })
     };
 

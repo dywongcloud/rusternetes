@@ -51,6 +51,18 @@ pub struct Event {
     /// Event series data (for aggregated events)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub series: Option<EventSeries>,
+
+    /// Time when this Event was first observed (MicroTime precision)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_time: Option<DateTime<Utc>>,
+
+    /// Name of the controller that emitted this Event (e.g., "kubernetes.io/kubelet")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reporting_component: Option<String>,
+
+    /// ID of the controller instance (e.g., "kubelet-xyzf")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reporting_instance: Option<String>,
 }
 
 impl Event {
@@ -82,6 +94,9 @@ impl Event {
             action: None,
             related: None,
             series: None,
+            event_time: None,
+            reporting_component: None,
+            reporting_instance: None,
         }
     }
 

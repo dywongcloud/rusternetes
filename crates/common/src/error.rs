@@ -39,6 +39,26 @@ pub enum Error {
     Internal(String),
 }
 
+impl Error {
+    /// Returns the machine-readable reason string matching Kubernetes StatusReason values
+    pub fn reason(&self) -> &str {
+        match self {
+            Error::NotFound(_) => "NotFound",
+            Error::AlreadyExists(_) => "AlreadyExists",
+            Error::InvalidResource(_) => "Invalid",
+            Error::Serialization(_) => "BadRequest",
+            Error::Storage(_) => "InternalError",
+            Error::Network(_) => "ServiceUnavailable",
+            Error::Authentication(_) => "Unauthorized",
+            Error::Authorization(_) => "Forbidden",
+            Error::Forbidden(_) => "Forbidden",
+            Error::Conflict(_) => "Conflict",
+            Error::TooManyRequests(_) => "TooManyRequests",
+            Error::Internal(_) => "InternalError",
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(feature = "axum-support")]
@@ -46,7 +66,6 @@ impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         use axum::http::StatusCode;
         use axum::Json;
-        use serde_json::json;
 
         let (status, message) = match self {
             Error::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
@@ -63,14 +82,24 @@ impl axum::response::IntoResponse for Error {
             Error::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
         };
 
-        let body = Json(json!({
-            "kind": "Status",
-            "apiVersion": "v1",
-            "status": "Failure",
-            "message": message,
-            "code": status.as_u16(),
-        }));
+        // Reconstruct reason from the status code (we consumed self above)
+        let reason = match status {
+            StatusCode::NOT_FOUND => "NotFound",
+            StatusCode::CONFLICT => "Conflict",
+            StatusCode::BAD_REQUEST => "Invalid",
+            StatusCode::UNAUTHORIZED => "Unauthorized",
+            StatusCode::FORBIDDEN => "Forbidden",
+            StatusCode::TOO_MANY_REQUESTS => "TooManyRequests",
+            StatusCode::SERVICE_UNAVAILABLE => "ServiceUnavailable",
+            _ => "InternalError",
+        };
 
-        (status, body).into_response()
+        let status_obj = crate::types::Status::failure(
+            &message,
+            reason,
+            status.as_u16(),
+        );
+
+        (status, Json(status_obj)).into_response()
     }
 }

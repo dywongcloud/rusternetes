@@ -272,6 +272,7 @@ async fn test_pdb_with_status() {
         expected_pods: 5,
         observed_generation: Some(1),
         conditions: None,
+            disrupted_pods: None,
     });
 
     let key = build_key("poddisruptionbudgets", Some("default"), "test-status");
@@ -309,6 +310,7 @@ async fn test_pdb_with_conditions() {
             reason: Some("SufficientPods".to_string()),
             message: Some("Sufficient pods available for disruption".to_string()),
         }]),
+        disrupted_pods: None,
     });
 
     let key = build_key("poddisruptionbudgets", Some("default"), "test-conditions");
@@ -562,6 +564,7 @@ async fn test_pdb_observed_generation() {
         expected_pods: 3,
         observed_generation: Some(5),
         conditions: None,
+            disrupted_pods: None,
     });
 
     let key = build_key("poddisruptionbudgets", Some("default"), "test-generation");
@@ -587,6 +590,7 @@ async fn test_pdb_zero_disruptions_allowed() {
         expected_pods: 3,
         observed_generation: Some(1),
         conditions: None,
+            disrupted_pods: None,
     });
 
     let key = build_key(

@@ -1,5 +1,6 @@
 use crate::resources::service_account::ObjectReference;
 use crate::types::{ObjectMeta, TypeMeta};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -63,6 +64,10 @@ pub struct PersistentVolumeSpec {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub csi: Option<CSIVolumeSource>,
+
+    /// volumeAttributesClassName may be used to set the VolumeAttributesClass used by this claim
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_attributes_class_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,6 +192,9 @@ pub struct PersistentVolumeStatus {
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// lastPhaseTransitionTime is the time the phase transitioned from one to another
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_phase_transition_time: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -315,6 +323,27 @@ pub struct PersistentVolumeClaimStatus {
     /// Resize status indicates the state of volume resize operation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resize_status: Option<PersistentVolumeClaimResizeStatus>,
+
+    /// currentVolumeAttributesClassName is the current name of the VolumeAttributesClass
+    /// the PVC is using
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_volume_attributes_class_name: Option<String>,
+
+    /// modifyVolumeStatus represents the status object of ControllerModifyVolume operation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modify_volume_status: Option<ModifyVolumeStatus>,
+}
+
+/// ModifyVolumeStatus represents the status object of ControllerModifyVolume operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModifyVolumeStatus {
+    /// targetVolumeAttributesClassName is the name of the VolumeAttributesClass the PVC currently being reconciled
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_volume_attributes_class_name: Option<String>,
+
+    /// status is the status of the ControllerModifyVolume operation
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -387,6 +416,11 @@ pub struct StorageClass {
     /// Allow volume expansion
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_volume_expansion: Option<bool>,
+
+    /// Dynamically provisioned PersistentVolumes of this storage class are
+    /// created with these mountOptions (e.g., ["ro", "soft"])
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mount_options: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -600,11 +634,13 @@ mod tests {
                 volume_mode: Some(PersistentVolumeMode::Filesystem),
                 node_affinity: None,
                 claim_ref: None,
+                volume_attributes_class_name: None,
             },
             status: Some(PersistentVolumeStatus {
                 phase: PersistentVolumePhase::Available,
                 message: None,
                 reason: None,
+                last_phase_transition_time: None,
             }),
         };
 
@@ -645,6 +681,8 @@ mod tests {
                 allocated_resources: None,
                 allocated_resource_statuses: None,
                 resize_status: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None,
             }),
         };
 

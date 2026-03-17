@@ -56,12 +56,14 @@ fn create_test_pv(name: &str, capacity: &str) -> PersistentVolume {
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             mount_options: None,
             node_affinity: None,
-            claim_ref: None
+            claim_ref: None,
+            volume_attributes_class_name: None
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     }
 }
@@ -307,8 +309,9 @@ async fn test_pv_status_bound() {
     pv.status = Some(PersistentVolumeStatus {
         phase: PersistentVolumePhase::Bound,
         message: None,
-        reason: None
-    });
+        reason: None,
+            last_phase_transition_time: None,
+        });
 
     let key = build_key("persistentvolumes", None, "test-bound");
 

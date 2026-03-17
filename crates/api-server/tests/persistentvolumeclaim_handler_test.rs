@@ -62,6 +62,8 @@ fn create_test_pvc(name: &str, namespace: &str, storage: &str) -> PersistentVolu
             allocated_resource_statuses: None,
             conditions: None,
             resize_status: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None,
         }),
     }
 }
@@ -330,6 +332,8 @@ async fn test_pvc_status_bound() {
         allocated_resource_statuses: None,
         conditions: None,
         resize_status: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None,
     });
 
     let key = build_key("persistentvolumeclaims", Some("default"), "test-bound");

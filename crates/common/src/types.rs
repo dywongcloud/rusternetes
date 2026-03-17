@@ -423,6 +423,150 @@ pub struct Condition {
     pub message: Option<String>,
 }
 
+/// Status is a return value for calls that don't return other objects (metav1.Status).
+/// This is the standard Kubernetes error/status response type.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Status {
+    /// Kind is always "Status"
+    #[serde(default = "default_status_kind")]
+    pub kind: String,
+
+    /// APIVersion is always "v1"
+    #[serde(default = "default_status_api_version")]
+    pub api_version: String,
+
+    /// Standard list metadata (usually empty for Status)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ListMeta>,
+
+    /// Status of the operation: "Success" or "Failure"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+
+    /// A human-readable description of the status of this operation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+
+    /// A machine-readable description of why this operation is in the "Failure" status.
+    /// E.g., "NotFound", "AlreadyExists", "Conflict", "Invalid", "Forbidden", "Unauthorized"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    /// Extended data associated with the reason
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<StatusDetails>,
+
+    /// Suggested HTTP return code for this status (0 if not set)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<u16>,
+}
+
+fn default_status_kind() -> String {
+    "Status".to_string()
+}
+
+fn default_status_api_version() -> String {
+    "v1".to_string()
+}
+
+impl Status {
+    /// Create a failure Status response
+    pub fn failure(message: impl Into<String>, reason: impl Into<String>, code: u16) -> Self {
+        Self {
+            kind: "Status".to_string(),
+            api_version: "v1".to_string(),
+            metadata: None,
+            status: Some("Failure".to_string()),
+            message: Some(message.into()),
+            reason: Some(reason.into()),
+            details: None,
+            code: Some(code),
+        }
+    }
+
+    /// Create a failure Status with details
+    pub fn failure_with_details(
+        message: impl Into<String>,
+        reason: impl Into<String>,
+        code: u16,
+        details: StatusDetails,
+    ) -> Self {
+        Self {
+            kind: "Status".to_string(),
+            api_version: "v1".to_string(),
+            metadata: None,
+            status: Some("Failure".to_string()),
+            message: Some(message.into()),
+            reason: Some(reason.into()),
+            details: Some(details),
+            code: Some(code),
+        }
+    }
+
+    /// Create a success Status response
+    pub fn success() -> Self {
+        Self {
+            kind: "Status".to_string(),
+            api_version: "v1".to_string(),
+            metadata: None,
+            status: Some("Success".to_string()),
+            message: None,
+            reason: None,
+            details: None,
+            code: Some(200),
+        }
+    }
+}
+
+/// StatusDetails is a set of additional properties that MAY be set by the server
+/// to provide additional information about a response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusDetails {
+    /// The name attribute of the resource associated with the status StatusReason
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// The group attribute of the resource associated with the status StatusReason
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+
+    /// The kind attribute of the resource associated with the status StatusReason
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+
+    /// UID of the resource (when there is a single resource which can be described)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
+
+    /// The Causes array includes more details associated with the StatusReason failure
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub causes: Option<Vec<StatusCause>>,
+
+    /// If specified, the time in seconds before the operation should be retried
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_seconds: Option<i32>,
+}
+
+/// StatusCause provides more information about an api.Status failure, including
+/// cases when multiple errors are encountered.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusCause {
+    /// A machine-readable description of the cause of the error
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    /// A human-readable description of the cause of the error
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+
+    /// The field of the resource that has caused this error
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+}
+
 /// ManagedFieldsEntry is a workflow-id, a FieldSet and the group version of the resource
 /// that the fieldset applies to.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -32,7 +32,8 @@ async fn create_test_storage_class(
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
         volume_binding_mode: None,
         allowed_topologies: None,
-        allow_volume_expansion: Some(allow_expansion)
+        allow_volume_expansion: Some(allow_expansion),
+            mount_options: None
     };
 
     let key = build_key("storageclasses", None, name);
@@ -75,13 +76,14 @@ async fn create_test_pv(
             mount_options: None,
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
-            claim_ref: None
+            claim_ref: None,
+            volume_attributes_class_name: None,
         },
         status: Some(rusternetes_common::resources::PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
-        })
+            reason: None,
+            last_phase_transition_time: None,        })
     };
 
     let key = build_key("persistentvolumes", None, name);
@@ -135,7 +137,9 @@ async fn create_bound_pvc(
             phase: PersistentVolumeClaimPhase::Bound,
             access_modes: Some(vec![PersistentVolumeAccessMode::ReadWriteOnce]),
             capacity: Some(capacity),
-            conditions: None
+            conditions: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None,
         })
     };
 
@@ -310,7 +314,9 @@ async fn test_expansion_only_for_bound_pvcs() {
             phase: PersistentVolumeClaimPhase::Pending, // Not bound
             access_modes: None,
             capacity: None,
-            conditions: None
+            conditions: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None,
         })
     };
 

@@ -40,6 +40,9 @@ fn create_test_event(name: &str, namespace: &str) -> Event {
         action: Some("Started".to_string()),
         related: None,
         series: None,
+        event_time: None,
+        reporting_component: None,
+        reporting_instance: None,
     }
 }
 

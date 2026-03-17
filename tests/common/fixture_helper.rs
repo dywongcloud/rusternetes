@@ -93,7 +93,8 @@ pub fn create_test_pv(name: &str, storage_class: Option<String>, capacity_gb: u3
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     }
 }
@@ -115,7 +116,8 @@ pub fn create_test_storage_class(name: &str, provisioner: &str) -> StorageClass 
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
-        allow_volume_expansion: None
+        allow_volume_expansion: None,
+            mount_options: None
     }
 }
 

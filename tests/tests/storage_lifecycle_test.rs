@@ -62,7 +62,8 @@ async fn test_pv_pvc_binding_lifecycle() {
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     };
 
@@ -159,7 +160,8 @@ async fn test_dynamic_provisioning() {
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
-        allow_volume_expansion: Some(true)
+        allow_volume_expansion: Some(true),
+            mount_options: None
     };
 
     let sc_key = build_key("storageclasses", None, "fast-storage");
@@ -258,7 +260,8 @@ async fn test_storage_class_parameters() {
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Retain),
         volume_binding_mode: Some(VolumeBindingMode::WaitForFirstConsumer),
         allowed_topologies: None,
-        allow_volume_expansion: Some(false)
+        allow_volume_expansion: Some(false),
+            mount_options: None
     };
 
     let sc_key = build_key("storageclasses", None, "custom-storage");
@@ -320,7 +323,8 @@ async fn test_access_modes_matching() {
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     };
 
@@ -362,7 +366,8 @@ async fn test_access_modes_matching() {
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     };
 
@@ -420,7 +425,8 @@ async fn test_reclaim_policies() {
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     };
 
@@ -462,7 +468,8 @@ async fn test_reclaim_policies() {
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
-            reason: None
+            reason: None,
+            last_phase_transition_time: None,
         })
     };
 

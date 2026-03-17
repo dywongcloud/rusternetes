@@ -254,11 +254,13 @@ impl<S: Storage> DynamicProvisionerController<S> {
                 volume_mode: pvc.spec.volume_mode.clone(),
                 node_affinity: None,
                 claim_ref: None, // Will be bound by the PV binder controller
+                volume_attributes_class_name: None,
             },
             status: Some(PersistentVolumeStatus {
                 phase: PersistentVolumePhase::Available,
                 message,
                 reason: None,
+                last_phase_transition_time: None,
             }),
         };
 
@@ -412,6 +414,8 @@ mod tests {
                 allocated_resources: None,
                 allocated_resource_statuses: None,
                 resize_status: None,
+            current_volume_attributes_class_name: None,
+            modify_volume_status: None,
             }),
         };
 
@@ -427,6 +431,7 @@ mod tests {
             volume_binding_mode: None,
             allowed_topologies: None,
             allow_volume_expansion: None,
+            mount_options: None,
         };
 
         let pv = controller
