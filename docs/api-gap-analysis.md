@@ -7,7 +7,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 **Scope**: `core/v1`, `apps/v1`, `batch/v1`, `autoscaling/v2`, `networking/v1`, `rbac/v1`,
 `storage/v1`, `policy/v1`
 
-**Last updated**: 2026-03-17 (commit 1383ff8)
+**Last updated**: 2026-03-17 (commit e24e251)
 
 ---
 
@@ -36,11 +36,16 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 | `PodOS` type | ✅ Added |
 | `PodSchedulingGate` type | ✅ Added |
 
+### ✅ Completed (commit e24e251)
+
+| Field | Status |
+|-------|--------|
+| `resources: Option<ResourceRequirements>` | ✅ Added (pod-level resource requests, k8s 1.32+) |
+
 ### Still missing
 
 | Field | K8s Type | Priority | Notes |
 |-------|----------|----------|-------|
-| `resources` | `ResourceRequirements` | P1 | Pod-level resource requests (k8s 1.32+) |
 | `schedulingGroup` | `PodSchedulingGroup` | P2 | Group-based scheduling |
 | `hostnameOverride` | `string` | P2 | Override hostname independently of setHostnameAsFQDN |
 | `serviceAccount` | `string` | P2 | Deprecated alias for serviceAccountName (still present in spec) |
@@ -137,12 +142,19 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 | `allocatedResources: Option<HashMap<String, String>>` | ✅ Added |
 | `started: Option<bool>` | ✅ Added |
 
+### ✅ Completed (commit e24e251)
+
+| Field | Status |
+|-------|--------|
+| `allocatedResourcesStatus: Option<Vec<ResourceStatus>>` | ✅ Added |
+| `resources: Option<ResourceRequirements>` | ✅ Added |
+| `ResourceStatus` type | ✅ Added |
+| `ResourceHealth` type | ✅ Added |
+
 ### Still missing
 
 | Field | K8s Type | Priority | Notes |
 |-------|----------|----------|-------|
-| `allocatedResourcesStatus` | `[]ResourceStatus` | P1 | Detailed allocated resource status |
-| `resources` | `ResourceRequirements` | P1 | Effective resource requirements |
 | `stopSignal` | `string` | P2 | Stop signal sent to the container |
 | `user` | `ContainerUser` | P2 | User that the container process runs as |
 | `volumeMounts` | `[]VolumeMountStatus` | P2 | Status of volume mounts |
@@ -153,8 +165,6 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 |------|--------|----------|
 | `ContainerUser` | `linux: LinuxContainerUser` | P2 |
 | `LinuxContainerUser` | `uid: int64`, `gid: int64`, `supplementalGroups: []int64` | P2 |
-| `ResourceStatus` | `name: string`, `resources: []ResourceHealth` | P2 |
-| `ResourceHealth` | `resourceID: string`, `health: string`, `message: string` | P2 |
 | `VolumeMountStatus` | `name: string`, `mountPath: string`, `readOnly: bool`, `recursiveReadOnly: string`, `volumeStatus: VolumeStatus` | P2 |
 
 ---
@@ -439,14 +449,23 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 **File**: `crates/common/src/resources/node.rs`
 
-### Missing fields
+### ✅ Completed (commit e24e251)
+
+| Field | Status |
+|-------|--------|
+| `images: Option<Vec<ContainerImage>>` | ✅ Added |
+| `volumesInUse: Option<Vec<String>>` | ✅ Added |
+| `volumesAttached: Option<Vec<AttachedVolume>>` | ✅ Added |
+| `daemonEndpoints: Option<NodeDaemonEndpoints>` | ✅ Added |
+| `ContainerImage` type | ✅ Added |
+| `AttachedVolume` type | ✅ Added |
+| `NodeDaemonEndpoints` type | ✅ Added |
+| `DaemonEndpoint` type | ✅ Added |
+
+### Still missing
 
 | Field | K8s Type | Priority | Notes |
 |-------|----------|----------|-------|
-| `images` | `[]ContainerImage` | P1 | Images present on node |
-| `volumesInUse` | `[]string` | P1 | Volumes in use |
-| `volumesAttached` | `[]AttachedVolume` | P1 | Attached volumes |
-| `daemonEndpoints` | `NodeDaemonEndpoints` | P1 | Kubelet endpoint |
 | `config` | `NodeConfigStatus` | P2 | Config source status |
 | `features` | `NodeFeatures` | P2 | Feature gate status |
 | `runtimeHandlers` | `[]NodeRuntimeHandler` | P2 | Available runtime handlers |
@@ -457,10 +476,6 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 | Type | Fields | Priority |
 |------|--------|----------|
-| `ContainerImage` | `names: []string`, `sizeBytes: int64` | P1 |
-| `AttachedVolume` | `name: string`, `devicePath: string` | P1 |
-| `NodeDaemonEndpoints` | `kubeletEndpoint: DaemonEndpoint` | P1 |
-| `DaemonEndpoint` | `Port: int32` | P1 |
 | `NodeConfigStatus` | `assigned`, `active`, `lastKnownGood`, `error` | P2 |
 | `NodeFeatures` | `supplementalGroupsPolicy: bool` | P2 |
 | `NodeRuntimeHandler` | `name: string`, `features: NodeRuntimeHandlerFeatures` | P2 |
@@ -543,17 +558,12 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 **File**: `crates/common/src/resources/namespace.rs`
 
-### Missing fields
+### ✅ Completed (commit e24e251)
 
-| Field | K8s Type | Priority |
-|-------|----------|----------|
-| `conditions` | `[]NamespaceCondition` | P1 |
-
-### Missing types
-
-| Type | Fields | Priority |
-|------|--------|----------|
-| `NamespaceCondition` | `type`, `status`, `lastTransitionTime`, `reason`, `message` | P1 |
+| Field | Status |
+|-------|--------|
+| `conditions: Option<Vec<NamespaceCondition>>` | ✅ Added |
+| `NamespaceCondition` type | ✅ Added |
 
 ---
 
@@ -647,17 +657,12 @@ Status: **largely complete**. No remaining critical gaps.
 
 **File**: `crates/common/src/types.rs`
 
-### Missing fields
+### ✅ Completed (commit e24e251)
 
-| Field | K8s Type | Priority |
-|-------|----------|----------|
-| `claims` | `[]ResourceClaim` | P1 — DRA support |
-
-### Missing types
-
-| Type | Fields | Priority |
-|------|--------|----------|
-| `ResourceClaim` | `name: string`, `request: string` | P1 |
+| Field | Status |
+|-------|--------|
+| `claims: Option<Vec<ResourceClaim>>` | ✅ Added |
+| `ResourceClaim` type | ✅ Added |
 
 ---
 
@@ -713,13 +718,13 @@ Status: **largely complete**. No remaining critical gaps.
 | `PodSpec`: `hostAliases`, `os`, `schedulingGates` + helper types | ✅ Done |
 | `Container`: `resizePolicy` + `ContainerResizePolicy` type | ✅ Done |
 | `ContainerStatus`: `allocatedResources`, `started` | ✅ Done |
-| `PodSpec.resources` (pod-level resource requests) | ❌ Still needed |
-| `ContainerStatus`: `allocatedResourcesStatus`, `resources` | ❌ Still needed |
-| `NodeStatus`: `images`, `volumesInUse`, `volumesAttached`, `daemonEndpoints` | ❌ Still needed |
-| `NamespaceStatus.conditions` | ❌ Still needed |
-| `ResourceQuota`: full implementation | ❌ Still needed |
-| `StorageClass`: full implementation | ❌ Still needed |
-| `ResourceRequirements.claims` | ❌ Still needed |
+| `PodSpec.resources` (pod-level resource requests) | ✅ Done (commit e24e251) |
+| `ContainerStatus`: `allocatedResourcesStatus`, `resources` | ✅ Done (commit e24e251) |
+| `NodeStatus`: `images`, `volumesInUse`, `volumesAttached`, `daemonEndpoints` | ✅ Done (commit e24e251) |
+| `NamespaceStatus.conditions` | ✅ Done (commit e24e251) |
+| `ResourceRequirements.claims` | ✅ Done (commit e24e251) |
+| `ResourceQuota`: full implementation | ✅ Already implemented (policy.rs) |
+| `StorageClass`: full implementation | ✅ Already implemented (volume.rs) |
 
 ### Phase 3 — P2 fixes (Not started)
 
