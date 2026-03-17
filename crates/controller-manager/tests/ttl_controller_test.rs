@@ -99,6 +99,7 @@ fn create_test_job(name: &str, namespace: &str, ttl_seconds: i32, finished: bool
                     host_aliases: None,
                     os: None,
                     scheduling_gates: None,
+                    resources: None,
                 },
             },
             completions: Some(1),
@@ -285,6 +286,7 @@ async fn test_ttl_controller_deletes_job_pods() {
                 host_aliases: None,
                 os: None,
                 scheduling_gates: None,
+                resources: None,
             }),
             status: Some(PodStatus {
                 phase: Some(rusternetes_common::types::Phase::Succeeded),

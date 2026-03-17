@@ -96,6 +96,7 @@ fn create_test_job(name: &str, namespace: &str) -> Job {
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
                 },
             },
             active_deadline_seconds: None,

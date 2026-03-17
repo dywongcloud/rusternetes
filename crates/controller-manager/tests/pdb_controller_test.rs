@@ -106,6 +106,7 @@ fn create_test_pod(
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         }),
         status: Some(PodStatus {
             phase: Some(if is_healthy {

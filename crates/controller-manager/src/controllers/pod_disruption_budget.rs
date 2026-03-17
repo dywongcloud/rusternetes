@@ -346,6 +346,7 @@ mod tests {
                 host_aliases: None,
                 os: None,
                 scheduling_gates: None,
+                resources: None,
             }),
             status: None,
         };
@@ -437,6 +438,7 @@ mod tests {
                 host_aliases: None,
                 os: None,
                 scheduling_gates: None,
+                resources: None,
             }),
             status: Some(rusternetes_common::resources::PodStatus {
                 phase: Some(Phase::Running),

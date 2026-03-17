@@ -128,12 +128,15 @@ pub use ipaddress::{IPAddress, IPAddressSpec, ParentReference};
 pub use metrics::{
     ContainerMetrics, NodeMetrics, NodeMetricsMetadata, PodMetrics, PodMetricsMetadata,
 };
-pub use namespace::Namespace;
+pub use namespace::{Namespace, NamespaceCondition};
 pub use networking::{
     IPBlock, NetworkPolicy, NetworkPolicyEgressRule, NetworkPolicyIngressRule, NetworkPolicyPeer,
     NetworkPolicyPort, NetworkPolicySpec,
 };
-pub use node::{Node, NodeAddress, NodeCondition, NodeSpec, NodeStatus, Taint};
+pub use node::{
+    AttachedVolume, ContainerImage, DaemonEndpoint, Node, NodeAddress, NodeCondition,
+    NodeDaemonEndpoints, NodeSpec, NodeStatus, NodeSystemInfo, Taint,
+};
 pub use pod::{
     Affinity, Capabilities, ConfigMapKeySelector, ConfigMapVolumeSource, Container, ContainerPort,
     ContainerState, ContainerStatus, DownwardAPIVolumeFile, DownwardAPIVolumeSource,
@@ -141,9 +144,10 @@ pub use pod::{
     ExecAction, HTTPGetAction, HTTPHeader, HostPathVolumeSource, NodeAffinity, NodeSelector,
     NodeSelectorRequirement, NodeSelectorTerm, ObjectFieldSelector, PersistentVolumeClaimTemplate,
     PersistentVolumeClaimVolumeSource, Pod, PodAffinity, PodAffinityTerm, PodAntiAffinity, PodSpec,
-    PodCondition, PodStatus, PreferredSchedulingTerm, Probe, ResourceFieldSelector, SeccompProfile,
-    SecretKeySelector, SecretVolumeSource, SecurityContext, TCPSocketAction, Toleration,
-    TopologySpreadConstraint, Volume, VolumeMount, WeightedPodAffinityTerm,
+    PodCondition, PodStatus, PreferredSchedulingTerm, Probe, ResourceFieldSelector, ResourceHealth,
+    ResourceStatus, SeccompProfile, SecretKeySelector, SecretVolumeSource, SecurityContext,
+    TCPSocketAction, Toleration, TopologySpreadConstraint, Volume, VolumeMount,
+    WeightedPodAffinityTerm,
 };
 pub use policy::{
     IntOrString, LimitRange, LimitRangeItem, LimitRangeSpec, PodDisruptionBudget,

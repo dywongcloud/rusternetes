@@ -106,6 +106,7 @@ fn create_test_cronjob(name: &str, namespace: &str, schedule: &str) -> CronJob {
                             host_aliases: None,
                             os: None,
                             scheduling_gates: None,
+                            resources: None,
                         },
                     },
                 selector: None,

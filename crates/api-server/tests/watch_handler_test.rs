@@ -92,6 +92,7 @@ fn create_minimal_pod_spec() -> PodSpec {
         host_aliases: None,
         os: None,
         scheduling_gates: None,
+        resources: None,
     }
 }
 
@@ -416,6 +417,7 @@ async fn test_watch_cluster_scoped_resources() {
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
             phase: Phase::Active,
+            conditions: None,
         }),
     };
 

@@ -174,6 +174,10 @@ impl<S: Storage> NodeController<S> {
                 capacity: None,
                 allocatable: None,
                 node_info: None,
+                images: None,
+                volumes_in_use: None,
+                volumes_attached: None,
+                daemon_endpoints: None,
             });
         }
 
@@ -382,6 +386,10 @@ mod tests {
                 capacity: None,
                 allocatable: None,
                 node_info: None,
+                images: None,
+                volumes_in_use: None,
+                volumes_attached: None,
+                daemon_endpoints: None,
             }),
         };
 
@@ -403,6 +411,10 @@ mod tests {
                 capacity: None,
                 allocatable: None,
                 node_info: None,
+                images: None,
+                volumes_in_use: None,
+                volumes_attached: None,
+                daemon_endpoints: None,
             }),
             ..node_ready
         };

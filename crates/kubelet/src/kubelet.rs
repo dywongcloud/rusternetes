@@ -118,6 +118,10 @@ impl Kubelet {
                 },
             ]),
             node_info: None,
+            images: None,
+            volumes_in_use: None,
+            volumes_attached: None,
+            daemon_endpoints: None,
         });
 
         let key = build_key("nodes", None, &self.node_name);
@@ -757,6 +761,7 @@ mod tests {
                 host_aliases: None,
                 os: None,
                 scheduling_gates: None,
+                resources: None,
             }),
             status: None,
         }
@@ -774,6 +779,8 @@ mod tests {
             }),
             started: None,
             allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
         }
     }
 
@@ -878,6 +885,8 @@ mod tests {
             }),
             started: None,
             allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
         };
         let is_terminated = matches!(status.state, Some(ContainerState::Terminated { .. }));
         assert!(!is_terminated, "Waiting container is not terminated — sonobuoy-worker should wait");

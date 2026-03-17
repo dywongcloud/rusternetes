@@ -45,6 +45,10 @@ async fn test_proxy_node_missing_address() {
             capacity: None,
             allocatable: None,
             node_info: None,
+            images: None,
+            volumes_in_use: None,
+            volumes_attached: None,
+            daemon_endpoints: None,
         }),
     };
 
@@ -202,6 +206,7 @@ async fn test_proxy_pod_missing_ip() {
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         }),
         status: Some(PodStatus {
             phase: Some(Phase::Pending),

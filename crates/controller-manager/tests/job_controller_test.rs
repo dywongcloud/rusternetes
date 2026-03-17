@@ -103,6 +103,7 @@ fn create_test_job(name: &str, namespace: &str, completions: i32, parallelism: i
                     host_aliases: None,
                     os: None,
                     scheduling_gates: None,
+                    resources: None,
                 },
             },
         selector: None,

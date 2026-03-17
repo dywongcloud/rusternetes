@@ -739,6 +739,7 @@ mod tests {
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         };
         let mut pod = Pod::new("test-pod", spec);
         pod.metadata.namespace = Some("default".to_string());
@@ -813,6 +814,7 @@ mod tests {
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         };
         let mut pod = Pod::new("test-pod-finalizers", spec);
         pod.metadata.namespace = Some("default".to_string());
@@ -909,6 +911,7 @@ mod tests {
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         };
         let mut pod = Pod::new("test-pod-remove-finalizer", spec);
         pod.metadata.namespace = Some("default".to_string());

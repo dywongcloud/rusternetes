@@ -275,6 +275,7 @@ mod tests {
                         host_aliases: None,
                         os: None,
                         scheduling_gates: None,
+                        resources: None,
                     },
                 },
                 completions: Some(1),

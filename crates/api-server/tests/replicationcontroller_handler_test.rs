@@ -95,6 +95,7 @@ fn create_test_rc(name: &str, namespace: &str, replicas: i32) -> ReplicationCont
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
                 },
             },
             min_ready_seconds: Some(0),

@@ -87,6 +87,7 @@ fn create_test_pod(name: &str, namespace: &str) -> Pod {
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         }),
         status: None,
     }

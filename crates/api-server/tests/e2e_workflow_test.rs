@@ -113,7 +113,8 @@ async fn test_complete_pod_lifecycle() {
             termination_grace_period_seconds: None,
             host_aliases: None,
             os: None,
-            scheduling_gates: None
+            scheduling_gates: None,
+            resources: None,
         }),
         status: Some(PodStatus {
             phase: Some(Phase::Pending),
@@ -276,7 +277,8 @@ async fn test_deployment_workflow() {
                     termination_grace_period_seconds: None,
             host_aliases: None,
             os: None,
-            scheduling_gates: None
+            scheduling_gates: None,
+            resources: None,
                 }
             },
             strategy: None,

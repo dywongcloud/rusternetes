@@ -350,6 +350,7 @@ mod tests {
                 host_aliases: None,
                 os: None,
                 scheduling_gates: None,
+                resources: None,
             }),
             status: None,
         };
@@ -439,6 +440,7 @@ mod tests {
                 host_aliases: None,
                 os: None,
                 scheduling_gates: None,
+                resources: None,
             }),
             status: None,
         };
@@ -489,6 +491,8 @@ mod tests {
                     container_id: Some("container-123".to_string()),
                     started: None,
                     allocated_resources: None,
+                    allocated_resources_status: None,
+                    resources: None,
                 }]),
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
@@ -520,6 +524,8 @@ mod tests {
                     container_id: Some("container-123".to_string()),
                     started: None,
                     allocated_resources: None,
+                    allocated_resources_status: None,
+                    resources: None,
                 }]),
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,

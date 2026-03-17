@@ -35,6 +35,7 @@ fn create_test_pod(name: &str, cpu_request: &str, memory_request: &str) -> Pod {
                 resources: Some(ResourceRequirements {
                     requests: Some(requests),
                     limits: None,
+                    claims: None,
                 }),
                 volume_mounts: None,
                 image_pull_policy: None,
@@ -82,6 +83,7 @@ fn create_test_pod(name: &str, cpu_request: &str, memory_request: &str) -> Pod {
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         }),
         status: None,
     }

@@ -134,6 +134,7 @@ fn create_test_daemonset(
                     host_aliases: None,
                     os: None,
                     scheduling_gates: None,
+                    resources: None,
                 },
             },
             update_strategy: None,

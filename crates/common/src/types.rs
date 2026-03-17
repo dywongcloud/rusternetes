@@ -245,6 +245,22 @@ pub struct ResourceRequirements {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requests: Option<HashMap<String, String>>,
+
+    /// Claims lists the names of resources, defined in spec.resourceClaims, that are used by this container
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claims: Option<Vec<ResourceClaim>>,
+}
+
+/// ResourceClaim references one entry in PodSpec.resourceClaims
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceClaim {
+    /// Name must match the name of one entry in pod.spec.resourceClaims of the Pod
+    pub name: String,
+
+    /// Request is the name chosen for a request in the referenced claim
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
 }
 
 /// OwnerReference contains information about an object that owns another object

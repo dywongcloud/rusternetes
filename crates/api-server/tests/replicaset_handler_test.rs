@@ -95,6 +95,7 @@ fn create_test_replicaset(name: &str, namespace: &str, replicas: i32) -> Replica
                     host_aliases: None,
                     os: None,
                     scheduling_gates: None,
+                    resources: None,
                 },
             },
             min_ready_seconds: Some(0),

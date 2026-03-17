@@ -119,6 +119,7 @@ pub async fn apply_limit_range<S: Storage>(
                             container.resources = Some(ResourceRequirements {
                                 limits: None,
                                 requests: None,
+                                claims: None,
                             });
                         }
 

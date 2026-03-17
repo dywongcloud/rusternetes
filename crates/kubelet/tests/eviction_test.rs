@@ -28,6 +28,7 @@ fn create_pod_with_qos(name: &str, namespace: &str, qos: QoSClass) -> Pod {
                     ("cpu".to_string(), "100m".to_string()),
                     ("memory".to_string(), "128Mi".to_string()),
                 ])),
+                claims: None,
             })
         }
         QoSClass::Burstable => {
@@ -41,6 +42,7 @@ fn create_pod_with_qos(name: &str, namespace: &str, qos: QoSClass) -> Pod {
                     ("cpu".to_string(), "200m".to_string()),
                     ("memory".to_string(), "256Mi".to_string()),
                 ])),
+                claims: None,
             })
         }
         QoSClass::BestEffort => {
@@ -111,6 +113,7 @@ fn create_pod_with_qos(name: &str, namespace: &str, qos: QoSClass) -> Pod {
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         }),
         status: None,
     }
@@ -368,6 +371,10 @@ fn test_node_condition_updates_memory_pressure() {
         }]),
         addresses: None,
         node_info: None,
+        images: None,
+        volumes_in_use: None,
+        volumes_attached: None,
+        daemon_endpoints: None,
     });
 
     // Update conditions with memory pressure
@@ -404,6 +411,10 @@ fn test_node_condition_updates_disk_pressure() {
         conditions: Some(vec![]),
         addresses: None,
         node_info: None,
+        images: None,
+        volumes_in_use: None,
+        volumes_attached: None,
+        daemon_endpoints: None,
     });
 
     // Update conditions with disk pressure
@@ -437,6 +448,10 @@ fn test_node_condition_clears_when_pressure_resolved() {
         conditions: Some(vec![]),
         addresses: None,
         node_info: None,
+        images: None,
+        volumes_in_use: None,
+        volumes_attached: None,
+        daemon_endpoints: None,
     });
 
     // Set memory pressure

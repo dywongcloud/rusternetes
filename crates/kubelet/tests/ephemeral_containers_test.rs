@@ -67,6 +67,7 @@ fn create_running_pod(name: &str) -> Pod {
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         }),
         status: Some(PodStatus {
             phase: Some(Phase::Running),
@@ -90,6 +91,8 @@ fn create_running_pod(name: &str) -> Pod {
                 container_id: Some("main-container-id".to_string()),
                 started: None,
                 allocated_resources: None,
+                allocated_resources_status: None,
+                resources: None,
             }]),
             init_container_statuses: None,
             ephemeral_container_statuses: None,
@@ -278,6 +281,8 @@ fn test_ephemeral_container_status() {
             container_id: Some("debugger-container-id".to_string()),
 started: None,
 allocated_resources: None,
+allocated_resources_status: None,
+resources: None,
         }]);
     }
 
@@ -406,6 +411,8 @@ fn test_ephemeral_container_lifecycle() {
             container_id: None,
 started: None,
 allocated_resources: None,
+allocated_resources_status: None,
+resources: None,
         }]);
     }
 
@@ -430,6 +437,8 @@ allocated_resources: None,
             container_id: Some("debugger-container-id".to_string()),
 started: None,
 allocated_resources: None,
+allocated_resources_status: None,
+resources: None,
         }]);
     }
 

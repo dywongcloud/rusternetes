@@ -98,6 +98,7 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         }),
         status: None,
     }
@@ -151,6 +152,8 @@ fn test_init_container_status_sequence() {
                 container_id: Some("container-0".to_string()),
     started: None,
     allocated_resources: None,
+    allocated_resources_status: None,
+    resources: None,
             },
             // init-1 and init-2 are waiting
         ]),
@@ -201,6 +204,8 @@ fn test_init_containers_completed_app_starting() {
                 container_id: Some("init-0-container".to_string()),
     started: None,
     allocated_resources: None,
+    allocated_resources_status: None,
+    resources: None,
             },
             ContainerStatus {
                 name: "init-1".to_string(),
@@ -214,6 +219,8 @@ fn test_init_containers_completed_app_starting() {
                 container_id: Some("init-1-container".to_string()),
     started: None,
     allocated_resources: None,
+    allocated_resources_status: None,
+    resources: None,
             },
         ]),
         container_statuses: Some(vec![ContainerStatus {
@@ -227,6 +234,8 @@ fn test_init_containers_completed_app_starting() {
             container_id: Some("app-0-container".to_string()),
 started: None,
 allocated_resources: None,
+allocated_resources_status: None,
+resources: None,
         }]),
         ephemeral_container_statuses: None,
         conditions: None,
@@ -287,6 +296,8 @@ fn test_init_container_failure_blocks_app() {
             container_id: Some("init-0-container".to_string()),
 started: None,
 allocated_resources: None,
+allocated_resources_status: None,
+resources: None,
         }]),
         container_statuses: None, // App container never started
         ephemeral_container_statuses: None,
@@ -339,6 +350,8 @@ fn test_init_container_restart_count() {
             container_id: Some("init-0-container-5".to_string()),
 started: None,
 allocated_resources: None,
+allocated_resources_status: None,
+resources: None,
         }]),
         container_statuses: None,
         ephemeral_container_statuses: None,

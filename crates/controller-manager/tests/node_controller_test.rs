@@ -54,6 +54,10 @@ async fn test_node_ready_with_recent_heartbeat() {
             capacity: None,
             allocatable: None,
             node_info: None,
+            images: None,
+            volumes_in_use: None,
+            volumes_attached: None,
+            daemon_endpoints: None,
         }),
     };
 
@@ -121,6 +125,10 @@ async fn test_node_not_ready_with_old_heartbeat() {
             capacity: None,
             allocatable: None,
             node_info: None,
+            images: None,
+            volumes_in_use: None,
+            volumes_attached: None,
+            daemon_endpoints: None,
         }),
     };
 
@@ -182,6 +190,10 @@ async fn test_node_without_ready_condition() {
             capacity: None,
             allocatable: None,
             node_info: None,
+            images: None,
+            volumes_in_use: None,
+            volumes_attached: None,
+            daemon_endpoints: None,
         }),
     };
 

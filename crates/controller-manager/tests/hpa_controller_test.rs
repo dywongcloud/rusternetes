@@ -94,6 +94,7 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                     host_aliases: None,
                     os: None,
                     scheduling_gates: None,
+                    resources: None,
                 },
             },
             strategy: None,

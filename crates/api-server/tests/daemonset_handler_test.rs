@@ -96,6 +96,7 @@ fn create_test_daemonset(name: &str, namespace: &str) -> DaemonSet {
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
                 },
             },
             update_strategy: None,

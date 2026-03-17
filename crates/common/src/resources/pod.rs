@@ -188,6 +188,10 @@ pub struct PodSpec {
     /// SchedulingGates is a list of conditions that must be satisfied before the pod may be scheduled
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scheduling_gates: Option<Vec<PodSchedulingGate>>,
+
+    /// Resources is the total amount of CPU and Memory resources required by all containers in the pod
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<ResourceRequirements>,
 }
 
 /// PodResourceClaim references a ResourceClaim that must be allocated for the pod
@@ -928,6 +932,38 @@ pub struct ContainerStatus {
     /// Resources allocated to this container by the node
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allocated_resources: Option<HashMap<String, String>>,
+
+    /// Detailed status of allocated resources for this container
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allocated_resources_status: Option<Vec<ResourceStatus>>,
+
+    /// Resources represents the compute resource requests/limits of this container
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<ResourceRequirements>,
+}
+
+/// ResourceStatus represents the status of an individual resource allocation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceStatus {
+    /// Name of the resource (e.g., "cpu", "memory", or extended resource)
+    pub name: String,
+
+    /// List of individual resources tracked for this allocation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<Vec<ResourceHealth>>,
+}
+
+/// ResourceHealth represents the health of an individual resource
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceHealth {
+    /// Unique identifier of the resource (e.g., device ID)
+    pub resource_id: String,
+
+    /// Health status of the resource (Healthy, Unhealthy, Unknown)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1380,6 +1416,7 @@ mod tests {
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         };
 
         let pod = Pod::new("myapp-pod", spec);
@@ -1490,6 +1527,8 @@ mod tests {
                 container_id: Some("containerd://abc123".to_string()),
                 started: None,
                 allocated_resources: None,
+                allocated_resources_status: None,
+                resources: None,
             }]),
             init_container_statuses: Some(vec![
                 ContainerStatus {
@@ -1504,6 +1543,8 @@ mod tests {
                     container_id: Some("containerd://def456".to_string()),
                     started: None,
                     allocated_resources: None,
+                    allocated_resources_status: None,
+                    resources: None,
                 },
                 ContainerStatus {
                     name: "init-mydb".to_string(),
@@ -1517,6 +1558,8 @@ mod tests {
                     container_id: Some("containerd://ghi789".to_string()),
                     started: None,
                     allocated_resources: None,
+                    allocated_resources_status: None,
+                    resources: None,
                 },
             ]),
             ephemeral_container_statuses: None,
@@ -1676,6 +1719,7 @@ mod tests {
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         };
 
         // Clone it (like DaemonSet controller does)

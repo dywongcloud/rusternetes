@@ -345,6 +345,7 @@ mod tests {
                 host_aliases: None,
                 os: None,
                 scheduling_gates: None,
+                resources: None,
             }),
             status: Some(PodStatus {
                 phase: Some(match phase {

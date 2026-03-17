@@ -1831,6 +1831,8 @@ impl ContainerRuntime {
                         container_id: inspect.id,
                         started: None,
                         allocated_resources: None,
+                        allocated_resources_status: None,
+                        resources: None,
                     }
                 }
                 Err(_) => ContainerStatus {
@@ -1844,6 +1846,8 @@ impl ContainerRuntime {
                     container_id: None,
                     started: None,
                     allocated_resources: None,
+                    allocated_resources_status: None,
+                    resources: None,
                 },
             };
 
@@ -2347,6 +2351,7 @@ mod tests {
                 host_aliases: None,
                 os: None,
                 scheduling_gates: None,
+                resources: None,
             }),
             status: None,
         }

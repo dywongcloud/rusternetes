@@ -127,6 +127,7 @@ fn create_pod_with_sidecar(
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         }),
         status: None,
     }
@@ -196,6 +197,8 @@ fn test_sidecar_runs_alongside_main_containers() {
                 container_id: Some("init-0-container".to_string()),
                 started: None,
                 allocated_resources: None,
+                allocated_resources_status: None,
+                resources: None,
             },
             // Sidecar - running
             ContainerStatus {
@@ -209,6 +212,8 @@ fn test_sidecar_runs_alongside_main_containers() {
                 container_id: Some("sidecar-0-container".to_string()),
                 started: None,
                 allocated_resources: None,
+                allocated_resources_status: None,
+                resources: None,
             },
         ]),
         container_statuses: Some(vec![ContainerStatus {
@@ -222,6 +227,8 @@ fn test_sidecar_runs_alongside_main_containers() {
             container_id: Some("app-0-container".to_string()),
             started: None,
             allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
         }]),
         ephemeral_container_statuses: None,
         conditions: None,
@@ -379,6 +386,8 @@ fn test_sidecar_failure_should_not_block_pod() {
             container_id: Some("sidecar-0-container".to_string()),
             started: None,
             allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
         }]),
         container_statuses: Some(vec![ContainerStatus {
             name: "app-0".to_string(),
@@ -391,6 +400,8 @@ fn test_sidecar_failure_should_not_block_pod() {
             container_id: Some("app-0-container".to_string()),
             started: None,
             allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
         }]),
         ephemeral_container_statuses: None,
         conditions: None,

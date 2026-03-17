@@ -77,6 +77,64 @@ pub struct NodeStatus {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub node_info: Option<NodeSystemInfo>,
+
+    /// Images is the list of container images on this node
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<ContainerImage>>,
+
+    /// VolumesInUse is the list of unique volumes in use (mounted) by the node
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volumes_in_use: Option<Vec<String>>,
+
+    /// VolumesAttached is the list of volumes attached to the node
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volumes_attached: Option<Vec<AttachedVolume>>,
+
+    /// DaemonEndpoints contains endpoints of daemons running on the node
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub daemon_endpoints: Option<NodeDaemonEndpoints>,
+}
+
+/// ContainerImage describes a container image present on the node
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerImage {
+    /// Names is the list of names by which this image is known
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub names: Option<Vec<String>>,
+
+    /// SizeBytes is the size of the image in bytes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<i64>,
+}
+
+/// AttachedVolume describes a volume attached to a node
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachedVolume {
+    /// Name of the attached volume
+    pub name: String,
+
+    /// DevicePath is the path where the volume is attached on the host
+    pub device_path: String,
+}
+
+/// NodeDaemonEndpoints lists ports opened by daemons running on the node
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeDaemonEndpoints {
+    /// KubeletEndpoint is the endpoint on which Kubelet is listening
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kubelet_endpoint: Option<DaemonEndpoint>,
+}
+
+/// DaemonEndpoint contains information about a single Daemon endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonEndpoint {
+    /// Port number of the given endpoint
+    #[serde(rename = "Port")]
+    pub port: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

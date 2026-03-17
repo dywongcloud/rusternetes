@@ -92,6 +92,7 @@ fn create_test_pod(name: &str, namespace: &str, owner_uid: Option<&str>) -> Pod 
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         }),
         status: Some(PodStatus {
             phase: Some(Phase::Running),

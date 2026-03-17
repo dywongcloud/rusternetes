@@ -98,6 +98,7 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
                     host_aliases: None,
                     os: None,
                     scheduling_gates: None,
+                    resources: None,
                 },
             },
             service_name: format!("{}-headless", name),

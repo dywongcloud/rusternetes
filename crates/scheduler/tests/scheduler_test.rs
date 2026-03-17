@@ -52,6 +52,10 @@ async fn create_test_node(
             conditions: None,
             addresses: None,
             node_info: None,
+            images: None,
+            volumes_in_use: None,
+            volumes_attached: None,
+            daemon_endpoints: None,
         }),
     };
 
@@ -103,6 +107,7 @@ fn create_test_pod(
                     Some(ResourceRequirements {
                         requests: Some(requests),
                         limits: None,
+                        claims: None,
                     })
                 } else {
                     None
@@ -151,6 +156,7 @@ fn create_test_pod(
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         }),
         status: Some(PodStatus {
             phase: Some(Phase::Pending),

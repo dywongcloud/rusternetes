@@ -127,6 +127,7 @@ fn create_test_pod(
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         }),
         status: Some(PodStatus {
             phase: if ready {
@@ -154,6 +155,8 @@ fn create_test_pod(
                     container_id: Some("container-123".to_string()),
                     started: None,
                     allocated_resources: None,
+                    allocated_resources_status: None,
+                    resources: None,
                 }])
             } else {
                 None

@@ -70,6 +70,7 @@ mod tests {
                 host_aliases: None,
                 os: None,
                 scheduling_gates: None,
+                resources: None,
             },
         }
     }
@@ -107,6 +108,10 @@ mod tests {
                 capacity: None,
                 allocatable: None,
                 node_info: None,
+                images: None,
+                volumes_in_use: None,
+                volumes_attached: None,
+                daemon_endpoints: None,
             }),
         }
     }

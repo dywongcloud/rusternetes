@@ -1,4 +1,5 @@
 use crate::types::{ObjectMeta, Phase, TypeMeta};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Namespace provides a scope for resource names
@@ -25,6 +26,7 @@ impl Namespace {
             spec: None,
             status: Some(NamespaceStatus {
                 phase: Phase::Active,
+                conditions: None,
             }),
         }
     }
@@ -42,4 +44,29 @@ pub struct NamespaceSpec {
 #[serde(rename_all = "camelCase")]
 pub struct NamespaceStatus {
     pub phase: Phase,
+
+    /// Conditions describe the current conditions of a namespace
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<Vec<NamespaceCondition>>,
+}
+
+/// NamespaceCondition contains details about the current condition of a namespace
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NamespaceCondition {
+    /// Type of namespace condition (NamespaceDeletionDiscoveryFailure, NamespaceDeletionGroupVersionParsingFailure, etc.)
+    #[serde(rename = "type")]
+    pub condition_type: String,
+
+    /// Status of the condition (True, False, Unknown)
+    pub status: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_transition_time: Option<DateTime<Utc>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }

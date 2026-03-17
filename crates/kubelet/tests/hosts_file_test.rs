@@ -68,6 +68,7 @@ fn make_pod(name: &str, namespace: &str, hostname: Option<&str>, subdomain: Opti
             host_aliases: None,
             os: None,
             scheduling_gates: None,
+            resources: None,
         }),
         status: None,
     }
