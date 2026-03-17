@@ -47,6 +47,9 @@ async fn test_namespace_active_not_deleted() {
             deletion_timestamp: None, // Not being deleted
             labels: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
@@ -95,6 +98,9 @@ async fn test_namespace_with_finalizer_marked_for_deletion() {
             deletion_timestamp: Some(Utc::now()), // Being deleted
             labels: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
@@ -148,6 +154,9 @@ async fn test_namespace_deletion_removes_finalizers() {
             deletion_timestamp: Some(Utc::now()),
             labels: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {

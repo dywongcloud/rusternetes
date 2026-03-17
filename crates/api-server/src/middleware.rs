@@ -95,6 +95,41 @@ pub async fn auth_middleware(
     Ok(next.run(request).await)
 }
 
+/// Middleware that normalizes Content-Type to application/json for write requests.
+/// The Kubernetes client defaults to application/vnd.kubernetes.protobuf, but we only
+/// support JSON. Axum's Json extractor rejects non-application/json content types with
+/// HTTP 415, so we rewrite the header before the request reaches the handler.
+pub async fn normalize_content_type_middleware(
+    mut request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    if request.method() == axum::http::Method::POST
+        || request.method() == axum::http::Method::PUT
+        || request.method() == axum::http::Method::PATCH
+    {
+        let content_type = request
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+
+        // If not already a JSON content type, normalize to application/json
+        if !content_type.starts_with("application/json")
+            && !content_type.starts_with("application/strategic-merge-patch+json")
+            && !content_type.starts_with("application/merge-patch+json")
+            && !content_type.starts_with("application/json-patch+json")
+        {
+            request.headers_mut().insert(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::HeaderValue::from_static("application/json"),
+            );
+        }
+    }
+
+    Ok(next.run(request).await)
+}
+
 /// Middleware to log request bodies for debugging JSON deserialization errors
 pub async fn log_request_body_middleware(
     request: Request,

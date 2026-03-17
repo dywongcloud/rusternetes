@@ -32,9 +32,12 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
             deletion_grace_period_seconds: None,
             owner_references: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: DeploymentSpec {
-            replicas,
+            replicas: Some(replicas),
             selector: LabelSelector {
                 match_labels: Some(labels.clone()),
                 match_expressions: None,
@@ -54,6 +57,9 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                     deletion_grace_period_seconds: None,
                     owner_references: None,
                     annotations: None,
+                    generate_name: None,
+                    generation: None,
+                    managed_fields: None,
                 }),
                 spec: PodSpec {
                     containers: vec![Container {
@@ -94,9 +100,24 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                     overhead: None,
                     topology_spread_constraints: None,
                     resource_claims: None,
+                    active_deadline_seconds: None,
+                    dns_policy: None,
+                    dns_config: None,
+                    security_context: None,
+                    image_pull_secrets: None,
+                    share_process_namespace: None,
+                    readiness_gates: None,
+                    runtime_class_name: None,
+                    enable_service_links: None,
+                    preemption_policy: None,
+                    host_users: None,
+                    set_hostname_as_fqdn: None,
+                    termination_grace_period_seconds: None,
                 },
             },
             strategy: None,
+        paused: None,
+        progress_deadline_seconds: None,
         },
         status: None,
     }
@@ -113,13 +134,13 @@ async fn test_deployment_create_and_get() {
     let created: Deployment = storage.create(&key, &deployment).await.unwrap();
     assert_eq!(created.metadata.name, "test-deploy");
     assert_eq!(created.metadata.namespace, Some("default".to_string()));
-    assert_eq!(created.spec.replicas, 3);
+    assert_eq!(created.spec.replicas, Some(3));
     assert!(!created.metadata.uid.is_empty());
 
     // Get
     let retrieved: Deployment = storage.get(&key).await.unwrap();
     assert_eq!(retrieved.metadata.name, "test-deploy");
-    assert_eq!(retrieved.spec.replicas, 3);
+    assert_eq!(retrieved.spec.replicas, Some(3));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -136,13 +157,13 @@ async fn test_deployment_update() {
     storage.create(&key, &deployment).await.unwrap();
 
     // Update replicas
-    deployment.spec.replicas = 5;
+    deployment.spec.replicas = Some(5);
     let updated: Deployment = storage.update(&key, &deployment).await.unwrap();
-    assert_eq!(updated.spec.replicas, 5);
+    assert_eq!(updated.spec.replicas, Some(5));
 
     // Verify update
     let retrieved: Deployment = storage.get(&key).await.unwrap();
-    assert_eq!(retrieved.spec.replicas, 5);
+    assert_eq!(retrieved.spec.replicas, Some(5));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -287,11 +308,11 @@ async fn test_deployment_metadata_immutability() {
 
     // Try to update - UID should remain unchanged
     let mut updated_deploy = created.clone();
-    updated_deploy.spec.replicas = 10;
+    updated_deploy.spec.replicas = Some(10);
 
     let updated: Deployment = storage.update(&key, &updated_deploy).await.unwrap();
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.spec.replicas, 10);
+    assert_eq!(updated.spec.replicas, Some(10));
 
     // Clean up
     storage.delete(&key).await.unwrap();

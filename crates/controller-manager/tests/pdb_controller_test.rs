@@ -46,6 +46,9 @@ fn create_test_pod(
             creation_timestamp: Some(chrono::Utc::now()),
             deletion_timestamp: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: Some(PodSpec {
             containers: vec![Container {
@@ -86,6 +89,19 @@ fn create_test_pod(
             scheduler_name: None,
             topology_spread_constraints: None,
             resource_claims: None,
+            active_deadline_seconds: None,
+            dns_policy: None,
+            dns_config: None,
+            security_context: None,
+            image_pull_secrets: None,
+            share_process_namespace: None,
+            readiness_gates: None,
+            runtime_class_name: None,
+            enable_service_links: None,
+            preemption_policy: None,
+            host_users: None,
+            set_hostname_as_fqdn: None,
+            termination_grace_period_seconds: None,
         }),
         status: Some(PodStatus {
             phase: Some(if is_healthy {
@@ -97,6 +113,7 @@ fn create_test_pod(
             reason: None,
             host_ip: Some("10.0.0.1".to_string()),
             pod_ip: Some("10.244.0.1".to_string()),
+            conditions: None,
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,

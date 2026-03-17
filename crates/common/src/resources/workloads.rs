@@ -1,5 +1,6 @@
 use crate::resources::pod::PodSpec;
 use crate::types::{LabelSelector, ObjectMeta, TypeMeta};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -245,8 +246,9 @@ impl StatefulSet {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatefulSetSpec {
-    /// Number of desired pods
-    pub replicas: i32,
+    /// Number of desired pods (defaults to 1)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replicas: Option<i32>,
 
     /// Selector for pods
     pub selector: LabelSelector,
@@ -265,6 +267,22 @@ pub struct StatefulSetSpec {
     /// Pod management policy: OrderedReady or Parallel
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pod_management_policy: Option<String>,
+
+    /// Minimum seconds for a pod to be ready before it's considered available
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_ready_seconds: Option<i32>,
+
+    /// Number of revisions to retain in history
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision_history_limit: Option<i32>,
+
+    /// Volume claim templates for persistent storage
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_claim_templates: Option<Vec<crate::resources::volume::PersistentVolumeClaim>>,
+
+    /// Policy for PVC retention when StatefulSet is deleted or scaled
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub persistent_volume_claim_retention_policy: Option<StatefulSetPersistentVolumeClaimRetentionPolicy>,
 }
 
 /// StatefulSetUpdateStrategy indicates the strategy for updating StatefulSet
@@ -287,6 +305,19 @@ pub struct RollingUpdateStatefulSetStrategy {
     pub partition: Option<i32>,
 }
 
+/// StatefulSetPersistentVolumeClaimRetentionPolicy describes the policy for PVC lifecycle
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StatefulSetPersistentVolumeClaimRetentionPolicy {
+    /// WhenDeleted specifies what happens to PVCs when the StatefulSet is deleted
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub when_deleted: Option<String>,
+
+    /// WhenScaled specifies what happens to PVCs when the StatefulSet is scaled down
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub when_scaled: Option<String>,
+}
+
 /// StatefulSetStatus represents the current state of a StatefulSet
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -295,13 +326,58 @@ pub struct StatefulSetStatus {
     pub replicas: i32,
 
     /// Number of ready replicas
-    pub ready_replicas: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ready_replicas: Option<i32>,
 
     /// Number of current replicas
-    pub current_replicas: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_replicas: Option<i32>,
 
     /// Number of updated replicas
-    pub updated_replicas: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_replicas: Option<i32>,
+
+    /// Number of available replicas (ready for at least minReadySeconds)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available_replicas: Option<i32>,
+
+    /// Hash collision count for pod template
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collision_count: Option<i32>,
+
+    /// Generation observed by the controller
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_generation: Option<i64>,
+
+    /// Current update revision
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_revision: Option<String>,
+
+    /// Update revision
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_revision: Option<String>,
+
+    /// Conditions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<Vec<StatefulSetCondition>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StatefulSetCondition {
+    #[serde(rename = "type")]
+    pub condition_type: String,
+
+    pub status: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_transition_time: Option<DateTime<Utc>>,
 }
 
 /// DaemonSet ensures that all (or some) nodes run a copy of a pod
@@ -346,6 +422,14 @@ pub struct DaemonSetSpec {
     /// Update strategy
     #[serde(skip_serializing_if = "Option::is_none")]
     pub update_strategy: Option<DaemonSetUpdateStrategy>,
+
+    /// Minimum seconds for a pod to be ready before it's considered available
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_ready_seconds: Option<i32>,
+
+    /// Number of revisions to retain in history
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision_history_limit: Option<i32>,
 }
 
 /// DaemonSetUpdateStrategy indicates the strategy for updating DaemonSet
@@ -366,6 +450,10 @@ pub struct RollingUpdateDaemonSet {
     /// The maximum number of pods that can be unavailable during the update
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_unavailable: Option<String>, // IntOrString
+
+    /// The maximum number of nodes with an existing available daemonset pod that can have an updated one
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_surge: Option<String>, // IntOrString
 }
 
 /// DaemonSetStatus represents the current state of a DaemonSet
@@ -383,6 +471,48 @@ pub struct DaemonSetStatus {
 
     /// Number of nodes that should be running but aren't
     pub number_misscheduled: i32,
+
+    /// Number of nodes running an available daemon pod (ready for at least minReadySeconds)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number_available: Option<i32>,
+
+    /// Number of nodes that should be running the daemon pod but don't have one running
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number_unavailable: Option<i32>,
+
+    /// Number of nodes that are running an updated daemon pod
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_number_scheduled: Option<i32>,
+
+    /// Generation observed by the controller
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_generation: Option<i64>,
+
+    /// Hash collision count
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collision_count: Option<i32>,
+
+    /// Conditions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<Vec<DaemonSetCondition>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonSetCondition {
+    #[serde(rename = "type")]
+    pub condition_type: String,
+
+    pub status: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_transition_time: Option<DateTime<Utc>>,
 }
 
 /// Job represents a single batch process
@@ -436,6 +566,26 @@ pub struct JobSpec {
     /// Duration in seconds relative to startTime that the job may be active
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_deadline_seconds: Option<i64>,
+
+    /// Label selector for pods
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selector: Option<LabelSelector>,
+
+    /// Allow manual selector (bypass automatic selector generation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manual_selector: Option<bool>,
+
+    /// Suspend specifies whether the job controller should create pods or not
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suspend: Option<bool>,
+
+    /// TTL seconds after job finishes before auto-cleanup
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds_after_finished: Option<i32>,
+
+    /// Completion mode: NonIndexed or Indexed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_mode: Option<String>,
 }
 
 /// JobStatus represents the current state of a Job
@@ -457,6 +607,22 @@ pub struct JobStatus {
     /// Conditions of the job
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conditions: Option<Vec<JobCondition>>,
+
+    /// When the job started
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<DateTime<Utc>>,
+
+    /// When the job completed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_time: Option<DateTime<Utc>>,
+
+    /// Number of pods which have a ready condition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ready: Option<i32>,
+
+    /// Number of pods which are terminating
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminating: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -539,6 +705,14 @@ pub struct CronJobSpec {
     /// Number of failed job history to retain
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failed_jobs_history_limit: Option<i32>,
+
+    /// Deadline in seconds for starting a job if it misses its scheduled time
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub starting_deadline_seconds: Option<i64>,
+
+    /// IANA timezone for the schedule (e.g., "America/New_York")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_zone: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -638,6 +812,19 @@ mod tests {
                 overhead: None,
                 scheduler_name: None,
                 resource_claims: None,
+                active_deadline_seconds: None,
+                dns_policy: None,
+                dns_config: None,
+                security_context: None,
+                image_pull_secrets: None,
+                share_process_namespace: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                enable_service_links: None,
+                preemption_policy: None,
+                host_users: None,
+                set_hostname_as_fqdn: None,
+                termination_grace_period_seconds: None,
             },
         };
 
@@ -689,6 +876,19 @@ mod tests {
                 overhead: None,
                 scheduler_name: None,
                 resource_claims: None,
+                active_deadline_seconds: None,
+                dns_policy: None,
+                dns_config: None,
+                security_context: None,
+                image_pull_secrets: None,
+                share_process_namespace: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                enable_service_links: None,
+                preemption_policy: None,
+                host_users: None,
+                set_hostname_as_fqdn: None,
+                termination_grace_period_seconds: None,
             },
         };
 
@@ -727,6 +927,19 @@ mod tests {
                 overhead: None,
                 scheduler_name: None,
                 resource_claims: None,
+                active_deadline_seconds: None,
+                dns_policy: None,
+                dns_config: None,
+                security_context: None,
+                image_pull_secrets: None,
+                share_process_namespace: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                enable_service_links: None,
+                preemption_policy: None,
+                host_users: None,
+                set_hostname_as_fqdn: None,
+                termination_grace_period_seconds: None,
             },
         };
 
@@ -736,6 +949,11 @@ mod tests {
             parallelism: Some(1),
             backoff_limit: Some(3),
             active_deadline_seconds: None,
+            selector: None,
+            manual_selector: None,
+            suspend: None,
+            ttl_seconds_after_finished: None,
+            completion_mode: None,
         };
 
         let job = Job::new("test-job", "default", job_spec);

@@ -25,7 +25,7 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
             meta
         },
         spec: DeploymentSpec {
-            replicas,
+            replicas: Some(replicas),
             selector: LabelSelector {
                 match_labels: Some(labels.clone()),
                 match_expressions: None,
@@ -77,9 +77,24 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                     overhead: None,
                     topology_spread_constraints: None,
                     resource_claims: None,
+                    active_deadline_seconds: None,
+                    dns_policy: None,
+                    dns_config: None,
+                    security_context: None,
+                    image_pull_secrets: None,
+                    share_process_namespace: None,
+                    readiness_gates: None,
+                    runtime_class_name: None,
+                    enable_service_links: None,
+                    preemption_policy: None,
+                    host_users: None,
+                    set_hostname_as_fqdn: None,
+                    termination_grace_period_seconds: None,
                 },
             },
             strategy: None,
+        paused: None,
+        progress_deadline_seconds: None,
         },
         status: None,
     }
@@ -156,9 +171,9 @@ async fn test_hpa_scales_deployment_up_when_cpu_high() {
     // Mock CPU utilization is 85%, target is 80%
     // Formula: ceil(2 * (85/80)) = ceil(2.125) = 3
     assert!(
-        updated_deployment.spec.replicas >= 2,
+        updated_deployment.spec.replicas.unwrap_or(0) >= 2,
         "Replicas should be at least 2 (current or scaled up), got {}",
-        updated_deployment.spec.replicas
+        updated_deployment.spec.replicas.unwrap_or(0)
     );
 
     // Verify HPA status was updated
@@ -207,9 +222,9 @@ async fn test_hpa_respects_min_replicas() {
     // Verify deployment was scaled to at least min_replicas
     let updated_deployment: Deployment = storage.get(&deploy_key).await.unwrap();
     assert!(
-        updated_deployment.spec.replicas >= 3,
+        updated_deployment.spec.replicas.unwrap_or(0) >= 3,
         "Deployment should be scaled to at least min_replicas (3), got {}",
-        updated_deployment.spec.replicas
+        updated_deployment.spec.replicas.unwrap_or(0)
     );
 }
 
@@ -243,9 +258,9 @@ async fn test_hpa_respects_max_replicas() {
     // Verify deployment was scaled down to max_replicas
     let updated_deployment: Deployment = storage.get(&deploy_key).await.unwrap();
     assert_eq!(
-        updated_deployment.spec.replicas, 5,
+        updated_deployment.spec.replicas, Some(5),
         "Deployment should be capped at max_replicas (5), got {}",
-        updated_deployment.spec.replicas
+        updated_deployment.spec.replicas.unwrap_or(0)
     );
 }
 
@@ -391,9 +406,9 @@ async fn test_hpa_with_no_metrics_maintains_current() {
     // Verify deployment replicas unchanged (should maintain current)
     let updated_deployment: Deployment = storage.get(&deploy_key).await.unwrap();
     assert_eq!(
-        updated_deployment.spec.replicas, 4,
+        updated_deployment.spec.replicas, Some(4),
         "Deployment replicas should remain unchanged when no metrics specified, got {}",
-        updated_deployment.spec.replicas
+        updated_deployment.spec.replicas.unwrap_or(0)
     );
 }
 

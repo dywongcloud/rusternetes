@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rusternetes_common::resources::workloads::{Job, JobCondition, JobStatus};
 use rusternetes_common::resources::{Pod, PodStatus};
-use rusternetes_common::types::Phase;
+use rusternetes_common::types::{OwnerReference, Phase};
 use rusternetes_storage::Storage;
 use std::sync::Arc;
 use std::time::Duration;
@@ -44,6 +44,11 @@ impl<S: Storage> JobController<S> {
         let name = &job.metadata.name;
         let namespace = job.metadata.namespace.as_ref().unwrap();
 
+        // Skip reconciliation for Jobs being deleted — GC handles pod cleanup
+        if job.metadata.is_being_deleted() {
+            return Ok(());
+        }
+
         info!("Reconciling Job {}/{}", namespace, name);
 
         let completions = job.spec.completions.unwrap_or(1);
@@ -54,16 +59,26 @@ impl<S: Storage> JobController<S> {
         let pod_prefix = format!("/registry/pods/{}/", namespace);
         let all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
 
-        // Filter pods that belong to this Job
+        // Find pods owned by this Job via ownerReferences (authoritative)
+        // Fall back to label matching for backwards compatibility
+        let job_uid = &job.metadata.uid;
         let job_pods: Vec<Pod> = all_pods
             .into_iter()
             .filter(|pod| {
-                pod.metadata
+                let owned_by_ref = pod
+                    .metadata
+                    .owner_references
+                    .as_ref()
+                    .map(|refs| refs.iter().any(|r| &r.uid == job_uid))
+                    .unwrap_or(false);
+                let owned_by_label = pod
+                    .metadata
                     .labels
                     .as_ref()
                     .and_then(|labels| labels.get("job-name"))
                     .map(|j| j == name)
-                    .unwrap_or(false)
+                    .unwrap_or(false);
+                owned_by_ref || owned_by_label
             })
             .collect();
 
@@ -105,6 +120,10 @@ impl<S: Storage> JobController<S> {
                     reason: Some("Completed".to_string()),
                     message: Some("Job completed successfully".to_string()),
                 }]),
+                start_time: None,
+                completion_time: None,
+                ready: None,
+                terminating: None,
             });
         } else if is_failed {
             warn!(
@@ -126,6 +145,10 @@ impl<S: Storage> JobController<S> {
                         backoff_limit
                     )),
                 }]),
+                start_time: None,
+                completion_time: None,
+                ready: None,
+                terminating: None,
             });
         } else {
             // Calculate how many new pods to create
@@ -181,6 +204,10 @@ impl<S: Storage> JobController<S> {
                 succeeded: Some(succeeded),
                 failed: Some(failed),
                 conditions: None,
+                start_time: None,
+                completion_time: None,
+                ready: None,
+                terminating: None,
             });
         }
 
@@ -220,6 +247,9 @@ impl<S: Storage> JobController<S> {
             },
             metadata: rusternetes_common::types::ObjectMeta {
                 name: pod_name.clone(),
+                generate_name: None,
+                generation: None,
+                managed_fields: None,
                 namespace: Some(namespace.to_string()),
                 labels: Some(labels),
                 annotations: template
@@ -232,7 +262,14 @@ impl<S: Storage> JobController<S> {
                 resource_version: None,
                 deletion_grace_period_seconds: None,
                 finalizers: None,
-                owner_references: None,
+                owner_references: Some(vec![OwnerReference {
+                    api_version: "batch/v1".to_string(),
+                    kind: "Job".to_string(),
+                    name: job_name.clone(),
+                    uid: job.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                }]),
             },
             spec: Some(spec),
             status: Some(PodStatus {
@@ -241,6 +278,7 @@ impl<S: Storage> JobController<S> {
                 reason: None,
                 pod_ip: None,
                 host_ip: None,
+                conditions: None,
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,

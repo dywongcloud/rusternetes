@@ -97,6 +97,19 @@ async fn test_complete_pod_lifecycle() {
             scheduler_name: None,
             topology_spread_constraints: None,
             resource_claims: None,
+            active_deadline_seconds: None,
+            dns_policy: None,
+            dns_config: None,
+            security_context: None,
+            image_pull_secrets: None,
+            share_process_namespace: None,
+            readiness_gates: None,
+            runtime_class_name: None,
+            enable_service_links: None,
+            preemption_policy: None,
+            host_users: None,
+            set_hostname_as_fqdn: None,
+            termination_grace_period_seconds: None,
         }),
         status: Some(PodStatus {
             phase: Some(Phase::Pending),
@@ -107,6 +120,7 @@ async fn test_complete_pod_lifecycle() {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            conditions: None,
         }),
     };
 
@@ -144,6 +158,7 @@ async fn test_complete_pod_lifecycle() {
         container_statuses: None,
         init_container_statuses: None,
         ephemeral_container_statuses: None,
+        conditions: None,
     });
     storage.update(&pod_key, &running_pod).await.unwrap();
 
@@ -179,7 +194,7 @@ async fn test_deployment_workflow() {
             meta
         },
         spec: DeploymentSpec {
-            replicas: 3,
+            replicas: Some(3),
             selector: LabelSelector {
                 match_labels: Some(labels.clone()),
                 match_expressions: None,
@@ -231,9 +246,24 @@ async fn test_deployment_workflow() {
                     scheduler_name: None,
                     topology_spread_constraints: None,
                     resource_claims: None,
+                    active_deadline_seconds: None,
+                    dns_policy: None,
+                    dns_config: None,
+                    security_context: None,
+                    image_pull_secrets: None,
+                    share_process_namespace: None,
+                    readiness_gates: None,
+                    runtime_class_name: None,
+                    enable_service_links: None,
+                    preemption_policy: None,
+                    host_users: None,
+                    set_hostname_as_fqdn: None,
+                    termination_grace_period_seconds: None,
                 },
             },
             strategy: None,
+        paused: None,
+        progress_deadline_seconds: None,
         },
         status: Some(DeploymentStatus {
             replicas: Some(0),
@@ -241,6 +271,9 @@ async fn test_deployment_workflow() {
             available_replicas: Some(0),
             unavailable_replicas: Some(0),
             updated_replicas: Some(0),
+        conditions: None,
+        collision_count: None,
+        observed_generation: None,
         }),
     };
 
@@ -282,6 +315,7 @@ async fn test_deployment_workflow() {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            conditions: None,
         });
         storage.update(&pod_key, &updated_pod).await.unwrap();
     }

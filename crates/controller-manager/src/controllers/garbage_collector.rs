@@ -160,6 +160,16 @@ impl<S: Storage + 'static> GarbageCollector<S> {
             ("namespaces", false), // cluster-scoped
             ("pods", true),
             ("services", true),
+            ("endpoints", true),
+            ("endpointslices", true),
+            ("ingresses", true),
+            ("networkpolicies", true),
+            ("verticalpodautoscalers", true),
+            ("volumesnapshots", true),
+            ("volumesnapshotcontents", false), // cluster-scoped
+            ("resourceclaims", true),
+            ("certificatesigningrequests", false), // cluster-scoped
+            ("customresourcedefinitions", false),  // cluster-scoped
             ("deployments", true),
             ("replicasets", true),
             ("statefulsets", true),

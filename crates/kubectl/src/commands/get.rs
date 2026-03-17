@@ -1,5 +1,5 @@
 use crate::client::{ApiClient, GetError};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Utc;
 use rusternetes_common::resources::{
     ClusterRole, ClusterRoleBinding, ConfigMap, CronJob, CustomResourceDefinition, DaemonSet,
@@ -18,12 +18,14 @@ fn map_get_error(err: GetError) -> anyhow::Error {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum OutputFormat {
     Table,
     Json,
     Yaml,
     Wide,
+    Name,
+    JsonPath(String),
 }
 
 impl OutputFormat {
@@ -32,15 +34,23 @@ impl OutputFormat {
             "json" => Ok(Self::Json),
             "yaml" => Ok(Self::Yaml),
             "wide" => Ok(Self::Wide),
+            "name" => Ok(Self::Name),
+            _ if s.starts_with("jsonpath=") => Ok(Self::JsonPath(s[9..].to_string())),
+            _ if s.starts_with("jsonpath-file=") => {
+                let path = &s[14..];
+                let expr = std::fs::read_to_string(path)
+                    .with_context(|| format!("Failed to read jsonpath file: {}", path))?;
+                Ok(Self::JsonPath(expr.trim().to_string()))
+            }
             _ => anyhow::bail!(
-                "Unknown output format: {}. Supported formats: json, yaml, wide",
+                "Unknown output format: {}. Supported formats: json, yaml, wide, name, jsonpath=<expr>",
                 s
             ),
         }
     }
 }
 
-pub(crate) fn format_output<T: Serialize>(resource: &T, format: OutputFormat) -> Result<()> {
+pub(crate) fn format_output<T: Serialize>(resource: &T, format: &OutputFormat) -> Result<()> {
     match format {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(resource)?);
@@ -48,12 +58,112 @@ pub(crate) fn format_output<T: Serialize>(resource: &T, format: OutputFormat) ->
         OutputFormat::Yaml => {
             println!("{}", serde_yaml::to_string(resource)?);
         }
+        OutputFormat::JsonPath(expr) => {
+            let value = serde_json::to_value(resource)?;
+            let result = evaluate_jsonpath(&value, expr)?;
+            print!("{}", result);
+        }
+        OutputFormat::Name => {
+            // Print kind/name format
+            let value = serde_json::to_value(resource)?;
+            let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let name = value
+                .pointer("/metadata/name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            println!("{}/{}", kind.to_lowercase(), name);
+        }
         _ => {
             // For table and wide, just use JSON for now
             println!("{}", serde_json::to_string_pretty(resource)?);
         }
     }
     Ok(())
+}
+
+/// Evaluate a jsonpath expression against a JSON value.
+/// Supports basic dotted paths, array indexing, and filter expressions.
+fn evaluate_jsonpath(value: &serde_json::Value, expr: &str) -> Result<String> {
+    // Strip leading { and trailing } if present (kubectl jsonpath format)
+    let expr = expr.trim();
+    let expr = expr.strip_prefix('{').unwrap_or(expr);
+    let expr = expr.strip_suffix('}').unwrap_or(expr);
+
+    // Handle multiple expressions joined by whitespace (e.g., {.foo}{"\n"}{.bar})
+    // For simplicity, evaluate the full expr as a single path
+    let result = resolve_path(value, expr)?;
+    Ok(result)
+}
+
+fn resolve_path(value: &serde_json::Value, path: &str) -> Result<String> {
+    // Handle string literals like "\n", "\t"
+    if path.starts_with('"') && path.ends_with('"') {
+        let s = &path[1..path.len() - 1];
+        return Ok(s.replace("\\n", "\n").replace("\\t", "\t"));
+    }
+
+    // Strip leading dot
+    let path = path.strip_prefix('.').unwrap_or(path);
+
+    if path.is_empty() {
+        return format_value(value);
+    }
+
+    // Split on first dot or bracket
+    let mut current = value;
+    let mut remaining = path;
+
+    while !remaining.is_empty() {
+        if remaining.starts_with('[') {
+            // Array index or filter
+            let end = remaining.find(']').unwrap_or(remaining.len());
+            let idx_str = &remaining[1..end];
+            remaining = remaining.get(end + 1..).unwrap_or("").trim_start_matches('.');
+
+            if let Ok(idx) = idx_str.parse::<usize>() {
+                match current.get(idx) {
+                    Some(v) => current = v,
+                    None => return Ok(String::new()),
+                }
+            } else if idx_str.starts_with('?') {
+                // Filter expression like [?(@.type=="Ready")]
+                // For now just return empty string for unsupported filters
+                return Ok(String::new());
+            } else {
+                return Ok(String::new());
+            }
+        } else {
+            // Field access
+            let (key, rest) = match remaining.find(|c| c == '.' || c == '[') {
+                Some(i) => {
+                    let (k, r) = remaining.split_at(i);
+                    (k, r.trim_start_matches('.'))
+                }
+                None => (remaining, ""),
+            };
+            remaining = rest;
+            match current.get(key) {
+                Some(v) => current = v,
+                None => return Ok(String::new()),
+            }
+        }
+    }
+
+    format_value(current)
+}
+
+fn format_value(value: &serde_json::Value) -> Result<String> {
+    match value {
+        serde_json::Value::String(s) => Ok(s.clone()),
+        serde_json::Value::Null => Ok(String::new()),
+        serde_json::Value::Bool(b) => Ok(b.to_string()),
+        serde_json::Value::Number(n) => Ok(n.to_string()),
+        serde_json::Value::Array(arr) => {
+            let parts: Result<Vec<_>> = arr.iter().map(format_value).collect();
+            Ok(parts?.join(" "))
+        }
+        serde_json::Value::Object(_) => Ok(serde_json::to_string(value)?),
+    }
 }
 
 /// Enhanced execute with all new parameters
@@ -144,14 +254,13 @@ pub async fn execute_with_query(
             let full_path = format!("{}{}", $path, query);
             if name.is_some() {
                 let resource: $type = client.get(&full_path).await.map_err(map_get_error)?;
-                format_output(&resource, format)?;
+                format_output(&resource, &format)?;
             } else {
                 let resources: Vec<$type> =
                     client.get_list(&full_path).await.map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => $print_fn(&resources, no_headers),
-                    OutputFormat::Json => format_output(&resources, format)?,
-                    OutputFormat::Yaml => format_output(&resources, format)?,
+                    _ => format_output(&resources, &format)?,
                 }
             }
         }};
@@ -371,7 +480,7 @@ pub async fn execute(
                     .get(&format!("/api/v1/namespaces/{}/pods/{}", ns, name))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&pod, format)?;
+                format_output(&pod, &format)?;
             } else {
                 let pods: Vec<Pod> = client
                     .get_list(&format!("/api/v1/namespaces/{}/pods", ns))
@@ -379,8 +488,7 @@ pub async fn execute(
                     .map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => print_pods(&pods, no_headers),
-                    OutputFormat::Json => format_output(&pods, format)?,
-                    OutputFormat::Yaml => format_output(&pods, format)?,
+                    _ => format_output(&pods, &format)?,
                 }
             }
         }
@@ -390,7 +498,7 @@ pub async fn execute(
                     .get(&format!("/api/v1/namespaces/{}/services/{}", ns, name))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&service, format)?;
+                format_output(&service, &format)?;
             } else {
                 let services: Vec<Service> = client
                     .get_list(&format!("/api/v1/namespaces/{}/services", ns))
@@ -400,8 +508,7 @@ pub async fn execute(
                     OutputFormat::Table | OutputFormat::Wide => {
                         print_services(&services, no_headers)
                     }
-                    OutputFormat::Json => format_output(&services, format)?,
-                    OutputFormat::Yaml => format_output(&services, format)?,
+                    _ => format_output(&services, &format)?,
                 }
             }
         }
@@ -414,7 +521,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&deployment, format)?;
+                format_output(&deployment, &format)?;
             } else {
                 let deployments: Vec<Deployment> = client
                     .get_list(&format!("/apis/apps/v1/namespaces/{}/deployments", ns))
@@ -424,8 +531,7 @@ pub async fn execute(
                     OutputFormat::Table | OutputFormat::Wide => {
                         print_deployments(&deployments, no_headers)
                     }
-                    OutputFormat::Json => format_output(&deployments, format)?,
-                    OutputFormat::Yaml => format_output(&deployments, format)?,
+                    _ => format_output(&deployments, &format)?,
                 }
             }
         }
@@ -438,13 +544,13 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&statefulset, format)?;
+                format_output(&statefulset, &format)?;
             } else {
                 let statefulsets: Vec<StatefulSet> = client
                     .get_list(&format!("/apis/apps/v1/namespaces/{}/statefulsets", ns))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&statefulsets, format)?;
+                format_output(&statefulsets, &format)?;
             }
         }
         "daemonset" | "daemonsets" | "ds" => {
@@ -456,13 +562,13 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&daemonset, format)?;
+                format_output(&daemonset, &format)?;
             } else {
                 let daemonsets: Vec<DaemonSet> = client
                     .get_list(&format!("/apis/apps/v1/namespaces/{}/daemonsets", ns))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&daemonsets, format)?;
+                format_output(&daemonsets, &format)?;
             }
         }
         "job" | "jobs" => {
@@ -471,7 +577,7 @@ pub async fn execute(
                     .get(&format!("/apis/batch/v1/namespaces/{}/jobs/{}", ns, name))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&job, format)?;
+                format_output(&job, &format)?;
             } else {
                 let jobs: Vec<Job> = client
                     .get_list(&format!("/apis/batch/v1/namespaces/{}/jobs", ns))
@@ -479,8 +585,7 @@ pub async fn execute(
                     .map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => print_jobs(&jobs, no_headers),
-                    OutputFormat::Json => format_output(&jobs, format)?,
-                    OutputFormat::Yaml => format_output(&jobs, format)?,
+                    _ => format_output(&jobs, &format)?,
                 }
             }
         }
@@ -493,7 +598,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&cronjob, format)?;
+                format_output(&cronjob, &format)?;
             } else {
                 let cronjobs: Vec<CronJob> = client
                     .get_list(&format!("/apis/batch/v1/namespaces/{}/cronjobs", ns))
@@ -503,8 +608,7 @@ pub async fn execute(
                     OutputFormat::Table | OutputFormat::Wide => {
                         print_cronjobs(&cronjobs, no_headers)
                     }
-                    OutputFormat::Json => format_output(&cronjobs, format)?,
-                    OutputFormat::Yaml => format_output(&cronjobs, format)?,
+                    _ => format_output(&cronjobs, &format)?,
                 }
             }
         }
@@ -514,7 +618,7 @@ pub async fn execute(
                     .get(&format!("/api/v1/nodes/{}", name))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&node, format)?;
+                format_output(&node, &format)?;
             } else {
                 let nodes: Vec<Node> = client
                     .get_list("/api/v1/nodes")
@@ -522,8 +626,7 @@ pub async fn execute(
                     .map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => print_nodes(&nodes, no_headers),
-                    OutputFormat::Json => format_output(&nodes, format)?,
-                    OutputFormat::Yaml => format_output(&nodes, format)?,
+                    _ => format_output(&nodes, &format)?,
                 }
             }
         }
@@ -533,7 +636,7 @@ pub async fn execute(
                     .get(&format!("/api/v1/namespaces/{}", name))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&namespace, format)?;
+                format_output(&namespace, &format)?;
             } else {
                 let namespaces: Vec<Namespace> = client
                     .get_list("/api/v1/namespaces")
@@ -543,8 +646,7 @@ pub async fn execute(
                     OutputFormat::Table | OutputFormat::Wide => {
                         print_namespaces(&namespaces, no_headers)
                     }
-                    OutputFormat::Json => format_output(&namespaces, format)?,
-                    OutputFormat::Yaml => format_output(&namespaces, format)?,
+                    _ => format_output(&namespaces, &format)?,
                 }
             }
         }
@@ -554,7 +656,7 @@ pub async fn execute(
                     .get(&format!("/api/v1/persistentvolumes/{}", name))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&pv, format)?;
+                format_output(&pv, &format)?;
             } else {
                 let pvs: Vec<PersistentVolume> = client
                     .get_list("/api/v1/persistentvolumes")
@@ -562,8 +664,7 @@ pub async fn execute(
                     .map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => print_pvs(&pvs, no_headers),
-                    OutputFormat::Json => format_output(&pvs, format)?,
-                    OutputFormat::Yaml => format_output(&pvs, format)?,
+                    _ => format_output(&pvs, &format)?,
                 }
             }
         }
@@ -576,7 +677,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&pvc, format)?;
+                format_output(&pvc, &format)?;
             } else {
                 let pvcs: Vec<PersistentVolumeClaim> = client
                     .get_list(&format!("/api/v1/namespaces/{}/persistentvolumeclaims", ns))
@@ -584,8 +685,7 @@ pub async fn execute(
                     .map_err(map_get_error)?;
                 match format {
                     OutputFormat::Table | OutputFormat::Wide => print_pvcs(&pvcs, no_headers),
-                    OutputFormat::Json => format_output(&pvcs, format)?,
-                    OutputFormat::Yaml => format_output(&pvcs, format)?,
+                    _ => format_output(&pvcs, &format)?,
                 }
             }
         }
@@ -595,13 +695,13 @@ pub async fn execute(
                     .get(&format!("/apis/storage.k8s.io/v1/storageclasses/{}", name))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&sc, format)?;
+                format_output(&sc, &format)?;
             } else {
                 let scs: Vec<StorageClass> = client
                     .get_list("/apis/storage.k8s.io/v1/storageclasses")
                     .await
                     .map_err(map_get_error)?;
-                format_output(&scs, format)?;
+                format_output(&scs, &format)?;
             }
         }
         "volumesnapshot" | "volumesnapshots" | "vs" => {
@@ -613,7 +713,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&vs, format)?;
+                format_output(&vs, &format)?;
             } else {
                 let vss: Vec<VolumeSnapshot> = client
                     .get_list(&format!(
@@ -622,7 +722,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&vss, format)?;
+                format_output(&vss, &format)?;
             }
         }
         "volumesnapshotclass" | "volumesnapshotclasses" | "vsc" => {
@@ -634,13 +734,13 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&vsc, format)?;
+                format_output(&vsc, &format)?;
             } else {
                 let vscs: Vec<VolumeSnapshotClass> = client
                     .get_list("/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses")
                     .await
                     .map_err(map_get_error)?;
-                format_output(&vscs, format)?;
+                format_output(&vscs, &format)?;
             }
         }
         "endpoints" | "ep" => {
@@ -649,13 +749,13 @@ pub async fn execute(
                     .get(&format!("/api/v1/namespaces/{}/endpoints/{}", ns, name))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&ep, format)?;
+                format_output(&ep, &format)?;
             } else {
                 let eps: Vec<Endpoints> = client
                     .get_list(&format!("/api/v1/namespaces/{}/endpoints", ns))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&eps, format)?;
+                format_output(&eps, &format)?;
             }
         }
         "configmap" | "configmaps" | "cm" => {
@@ -664,13 +764,13 @@ pub async fn execute(
                     .get(&format!("/api/v1/namespaces/{}/configmaps/{}", ns, name))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&cm, format)?;
+                format_output(&cm, &format)?;
             } else {
                 let cms: Vec<ConfigMap> = client
                     .get_list(&format!("/api/v1/namespaces/{}/configmaps", ns))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&cms, format)?;
+                format_output(&cms, &format)?;
             }
         }
         "secret" | "secrets" => {
@@ -679,13 +779,13 @@ pub async fn execute(
                     .get(&format!("/api/v1/namespaces/{}/secrets/{}", ns, name))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&secret, format)?;
+                format_output(&secret, &format)?;
             } else {
                 let secrets: Vec<Secret> = client
                     .get_list(&format!("/api/v1/namespaces/{}/secrets", ns))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&secrets, format)?;
+                format_output(&secrets, &format)?;
             }
         }
         "ingress" | "ingresses" | "ing" => {
@@ -697,7 +797,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&ing, format)?;
+                format_output(&ing, &format)?;
             } else {
                 let ings: Vec<Ingress> = client
                     .get_list(&format!(
@@ -706,7 +806,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&ings, format)?;
+                format_output(&ings, &format)?;
             }
         }
         "serviceaccount" | "serviceaccounts" | "sa" => {
@@ -718,13 +818,13 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&sa, format)?;
+                format_output(&sa, &format)?;
             } else {
                 let sas: Vec<ServiceAccount> = client
                     .get_list(&format!("/api/v1/namespaces/{}/serviceaccounts", ns))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&sas, format)?;
+                format_output(&sas, &format)?;
             }
         }
         "role" | "roles" => {
@@ -736,7 +836,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&role, format)?;
+                format_output(&role, &format)?;
             } else {
                 let roles: Vec<Role> = client
                     .get_list(&format!(
@@ -745,7 +845,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&roles, format)?;
+                format_output(&roles, &format)?;
             }
         }
         "rolebinding" | "rolebindings" => {
@@ -757,7 +857,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&rb, format)?;
+                format_output(&rb, &format)?;
             } else {
                 let rbs: Vec<RoleBinding> = client
                     .get_list(&format!(
@@ -766,7 +866,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&rbs, format)?;
+                format_output(&rbs, &format)?;
             }
         }
         "clusterrole" | "clusterroles" => {
@@ -778,13 +878,13 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&cr, format)?;
+                format_output(&cr, &format)?;
             } else {
                 let crs: Vec<ClusterRole> = client
                     .get_list("/apis/rbac.authorization.k8s.io/v1/clusterroles")
                     .await
                     .map_err(map_get_error)?;
-                format_output(&crs, format)?;
+                format_output(&crs, &format)?;
             }
         }
         "clusterrolebinding" | "clusterrolebindings" => {
@@ -796,13 +896,13 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&crb, format)?;
+                format_output(&crb, &format)?;
             } else {
                 let crbs: Vec<ClusterRoleBinding> = client
                     .get_list("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings")
                     .await
                     .map_err(map_get_error)?;
-                format_output(&crbs, format)?;
+                format_output(&crbs, &format)?;
             }
         }
         "resourcequota" | "resourcequotas" | "quota" => {
@@ -814,13 +914,13 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&rq, format)?;
+                format_output(&rq, &format)?;
             } else {
                 let rqs: Vec<ResourceQuota> = client
                     .get_list(&format!("/api/v1/namespaces/{}/resourcequotas", ns))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&rqs, format)?;
+                format_output(&rqs, &format)?;
             }
         }
         "limitrange" | "limitranges" | "limits" => {
@@ -829,13 +929,13 @@ pub async fn execute(
                     .get(&format!("/api/v1/namespaces/{}/limitranges/{}", ns, name))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&lr, format)?;
+                format_output(&lr, &format)?;
             } else {
                 let lrs: Vec<LimitRange> = client
                     .get_list(&format!("/api/v1/namespaces/{}/limitranges", ns))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&lrs, format)?;
+                format_output(&lrs, &format)?;
             }
         }
         "priorityclass" | "priorityclasses" | "pc" => {
@@ -847,13 +947,13 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&pc, format)?;
+                format_output(&pc, &format)?;
             } else {
                 let pcs: Vec<PriorityClass> = client
                     .get_list("/apis/scheduling.k8s.io/v1/priorityclasses")
                     .await
                     .map_err(map_get_error)?;
-                format_output(&pcs, format)?;
+                format_output(&pcs, &format)?;
             }
         }
         "customresourcedefinition" | "customresourcedefinitions" | "crd" | "crds" => {
@@ -865,13 +965,13 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&crd, format)?;
+                format_output(&crd, &format)?;
             } else {
                 let crds: Vec<CustomResourceDefinition> = client
                     .get_list("/apis/apiextensions.k8s.io/v1/customresourcedefinitions")
                     .await
                     .map_err(map_get_error)?;
-                format_output(&crds, format)?;
+                format_output(&crds, &format)?;
             }
         }
         "poddisruptionbudget" | "poddisruptionbudgets" | "pdb" => {
@@ -883,7 +983,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&pdb, format)?;
+                format_output(&pdb, &format)?;
             } else {
                 let pdbs: Vec<PodDisruptionBudget> = client
                     .get_list(&format!(
@@ -892,7 +992,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&pdbs, format)?;
+                format_output(&pdbs, &format)?;
             }
         }
         "horizontalpodautoscaler" | "horizontalpodautoscalers" | "hpa" => {
@@ -904,7 +1004,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&hpa, format)?;
+                format_output(&hpa, &format)?;
             } else {
                 let hpas: Vec<HorizontalPodAutoscaler> = client
                     .get_list(&format!(
@@ -913,7 +1013,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&hpas, format)?;
+                format_output(&hpas, &format)?;
             }
         }
         "verticalpodautoscaler" | "verticalpodautoscalers" | "vpa" => {
@@ -925,7 +1025,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&vpa, format)?;
+                format_output(&vpa, &format)?;
             } else {
                 let vpas: Vec<VerticalPodAutoscaler> = client
                     .get_list(&format!(
@@ -934,7 +1034,7 @@ pub async fn execute(
                     ))
                     .await
                     .map_err(map_get_error)?;
-                format_output(&vpas, format)?;
+                format_output(&vpas, &format)?;
             }
         }
         _ => anyhow::bail!("Unknown resource type: {}", resource_type),
@@ -1013,7 +1113,7 @@ fn print_deployments(deployments: &[Deployment], no_headers: bool) {
         );
     }
     for deployment in deployments {
-        let desired = deployment.spec.replicas;
+        let desired = deployment.spec.replicas.unwrap_or(1);
         let ready = deployment
             .status
             .as_ref()

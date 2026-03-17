@@ -2,6 +2,7 @@ use anyhow::Result;
 use rusternetes_common::resources::{
     EndpointAddress, EndpointPort, EndpointReference, EndpointSubset, Endpoints, Pod, Service,
 };
+use rusternetes_common::types::OwnerReference;
 use rusternetes_storage::{build_key, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -100,12 +101,22 @@ impl<S: Storage> EndpointsController<S> {
             },
             metadata: rusternetes_common::types::ObjectMeta {
                 name: service_name.clone(),
+                generate_name: None,
+                generation: None,
+                managed_fields: None,
                 namespace: Some(namespace.clone()),
                 uid: String::new(),
                 resource_version: None,
                 deletion_grace_period_seconds: None,
                 finalizers: None,
-                owner_references: None,
+                owner_references: Some(vec![OwnerReference {
+                    api_version: "v1".to_string(),
+                    kind: "Service".to_string(),
+                    name: service_name.clone(),
+                    uid: service.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                }]),
                 creation_timestamp: None,
                 deletion_timestamp: None,
                 labels: service.metadata.labels.clone(),
@@ -296,6 +307,9 @@ mod tests {
                 deletion_timestamp: None,
                 labels: Some(pod_labels),
                 annotations: None,
+                generate_name: None,
+                generation: None,
+                managed_fields: None,
             },
             spec: Some(rusternetes_common::resources::PodSpec {
                 init_containers: None,
@@ -320,6 +334,19 @@ mod tests {
                 scheduler_name: None,
                 topology_spread_constraints: None,
                 resource_claims: None,
+                active_deadline_seconds: None,
+                dns_policy: None,
+                dns_config: None,
+                security_context: None,
+                image_pull_secrets: None,
+                share_process_namespace: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                enable_service_links: None,
+                preemption_policy: None,
+                host_users: None,
+                set_hostname_as_fqdn: None,
+                termination_grace_period_seconds: None,
             }),
             status: None,
         };
@@ -366,6 +393,9 @@ mod tests {
                 deletion_timestamp: None,
                 labels: None,
                 annotations: None,
+                generate_name: None,
+                generation: None,
+                managed_fields: None,
             },
             spec: Some(rusternetes_common::resources::PodSpec {
                 init_containers: None,
@@ -390,6 +420,19 @@ mod tests {
                 scheduler_name: None,
                 topology_spread_constraints: None,
                 resource_claims: None,
+                active_deadline_seconds: None,
+                dns_policy: None,
+                dns_config: None,
+                security_context: None,
+                image_pull_secrets: None,
+                share_process_namespace: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                enable_service_links: None,
+                preemption_policy: None,
+                host_users: None,
+                set_hostname_as_fqdn: None,
+                termination_grace_period_seconds: None,
             }),
             status: None,
         };
@@ -403,6 +446,7 @@ mod tests {
                 reason: None,
                 host_ip: None,
                 pod_ip: None,
+                conditions: None,
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
@@ -419,6 +463,7 @@ mod tests {
                 reason: None,
                 host_ip: None,
                 pod_ip: None,
+                conditions: None,
                 container_statuses: Some(vec![rusternetes_common::resources::ContainerStatus {
                     name: "nginx".to_string(),
                     ready: true,
@@ -442,6 +487,7 @@ mod tests {
                 reason: None,
                 host_ip: None,
                 pod_ip: None,
+                conditions: None,
                 container_statuses: Some(vec![rusternetes_common::resources::ContainerStatus {
                     name: "nginx".to_string(),
                     ready: false,

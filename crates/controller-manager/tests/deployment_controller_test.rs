@@ -32,7 +32,7 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
             meta
         },
         spec: DeploymentSpec {
-            replicas,
+            replicas: Some(replicas),
             selector: LabelSelector {
                 match_labels: Some(labels.clone()),
                 match_expressions: None,
@@ -84,9 +84,24 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                     scheduler_name: None,
                     topology_spread_constraints: None,
                     resource_claims: None,
+                    active_deadline_seconds: None,
+                    dns_policy: None,
+                    dns_config: None,
+                    security_context: None,
+                    image_pull_secrets: None,
+                    share_process_namespace: None,
+                    readiness_gates: None,
+                    runtime_class_name: None,
+                    enable_service_links: None,
+                    preemption_policy: None,
+                    host_users: None,
+                    set_hostname_as_fqdn: None,
+                    termination_grace_period_seconds: None,
                 },
             },
             strategy: None,
+        paused: None,
+        progress_deadline_seconds: None,
         },
         status: Some(DeploymentStatus {
             replicas: Some(0),
@@ -94,6 +109,9 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
             available_replicas: Some(0),
             unavailable_replicas: Some(0),
             updated_replicas: Some(0),
+        conditions: None,
+        collision_count: None,
+        observed_generation: None,
         }),
     }
 }
@@ -161,7 +179,7 @@ async fn test_deployment_scales_up_replicaset() {
     );
 
     // Update deployment to 5 replicas
-    deployment.spec.replicas = 5;
+    deployment.spec.replicas = Some(5);
     storage.update(&key, &deployment).await.unwrap();
 
     // Run controller again
@@ -206,7 +224,7 @@ async fn test_deployment_scales_down_replicaset() {
     );
 
     // Update deployment to 2 replicas
-    deployment.spec.replicas = 2;
+    deployment.spec.replicas = Some(2);
     storage.update(&key, &deployment).await.unwrap();
 
     // Run controller again

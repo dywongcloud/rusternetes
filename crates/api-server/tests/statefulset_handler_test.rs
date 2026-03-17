@@ -33,9 +33,12 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
             deletion_grace_period_seconds: None,
             owner_references: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: StatefulSetSpec {
-            replicas,
+            replicas: Some(replicas),
             selector: LabelSelector {
                 match_labels: Some(labels.clone()),
                 match_expressions: None,
@@ -53,6 +56,9 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
                     deletion_grace_period_seconds: None,
                     owner_references: None,
                     annotations: None,
+                    generate_name: None,
+                    generation: None,
+                    managed_fields: None,
                 }),
                 spec: PodSpec {
                     containers: vec![Container {
@@ -93,17 +99,40 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
                     overhead: None,
                     topology_spread_constraints: None,
                     resource_claims: None,
+                    active_deadline_seconds: None,
+                    dns_policy: None,
+                    dns_config: None,
+                    security_context: None,
+                    image_pull_secrets: None,
+                    share_process_namespace: None,
+                    readiness_gates: None,
+                    runtime_class_name: None,
+                    enable_service_links: None,
+                    preemption_policy: None,
+                    host_users: None,
+                    set_hostname_as_fqdn: None,
+                    termination_grace_period_seconds: None,
                 },
             },
             service_name: format!("{}-service", name),
             pod_management_policy: Some("OrderedReady".to_string()),
             update_strategy: None,
+        min_ready_seconds: None,
+        revision_history_limit: None,
+        volume_claim_templates: None,
+        persistent_volume_claim_retention_policy: None,
         },
         status: Some(StatefulSetStatus {
             replicas: 0,
-            ready_replicas: 0,
-            current_replicas: 0,
-            updated_replicas: 0,
+            ready_replicas: Some(0),
+            current_replicas: Some(0),
+            updated_replicas: Some(0),
+        available_replicas: None,
+        collision_count: None,
+        observed_generation: None,
+        current_revision: None,
+        update_revision: None,
+        conditions: None,
         }),
     }
 }
@@ -119,14 +148,14 @@ async fn test_statefulset_create_and_get() {
     let created: StatefulSet = storage.create(&key, &statefulset).await.unwrap();
     assert_eq!(created.metadata.name, "test-sts");
     assert_eq!(created.metadata.namespace, Some("default".to_string()));
-    assert_eq!(created.spec.replicas, 3);
+    assert_eq!(created.spec.replicas, Some(3));
     assert_eq!(created.spec.service_name, "test-sts-service");
     assert!(!created.metadata.uid.is_empty());
 
     // Get
     let retrieved: StatefulSet = storage.get(&key).await.unwrap();
     assert_eq!(retrieved.metadata.name, "test-sts");
-    assert_eq!(retrieved.spec.replicas, 3);
+    assert_eq!(retrieved.spec.replicas, Some(3));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -143,13 +172,13 @@ async fn test_statefulset_update() {
     storage.create(&key, &statefulset).await.unwrap();
 
     // Update replicas
-    statefulset.spec.replicas = 5;
+    statefulset.spec.replicas = Some(5);
     let updated: StatefulSet = storage.update(&key, &statefulset).await.unwrap();
-    assert_eq!(updated.spec.replicas, 5);
+    assert_eq!(updated.spec.replicas, Some(5));
 
     // Verify update
     let retrieved: StatefulSet = storage.get(&key).await.unwrap();
-    assert_eq!(retrieved.spec.replicas, 5);
+    assert_eq!(retrieved.spec.replicas, Some(5));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -242,9 +271,15 @@ async fn test_statefulset_with_status() {
     let mut statefulset = create_test_statefulset("test-status", "default", 3);
     statefulset.status = Some(StatefulSetStatus {
         replicas: 3,
-        ready_replicas: 2,
-        current_replicas: 3,
-        updated_replicas: 3,
+        ready_replicas: Some(2),
+        current_replicas: Some(3),
+        updated_replicas: Some(3),
+        available_replicas: None,
+        collision_count: None,
+        observed_generation: None,
+        current_revision: None,
+        update_revision: None,
+        conditions: None,
     });
 
     let key = build_key("statefulsets", Some("default"), "test-status");
@@ -252,7 +287,7 @@ async fn test_statefulset_with_status() {
     // Create with status
     let created: StatefulSet = storage.create(&key, &statefulset).await.unwrap();
     assert_eq!(created.status.as_ref().unwrap().replicas, 3);
-    assert_eq!(created.status.as_ref().unwrap().ready_replicas, 2);
+    assert_eq!(created.status.as_ref().unwrap().ready_replicas, Some(2));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -315,11 +350,11 @@ async fn test_statefulset_metadata_immutability() {
 
     // Try to update - UID should remain unchanged
     let mut updated_sts = created.clone();
-    updated_sts.spec.replicas = 10;
+    updated_sts.spec.replicas = Some(10);
 
     let updated: StatefulSet = storage.update(&key, &updated_sts).await.unwrap();
     assert_eq!(updated.metadata.uid, original_uid);
-    assert_eq!(updated.spec.replicas, 10);
+    assert_eq!(updated.spec.replicas, Some(10));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -411,7 +446,7 @@ async fn test_statefulset_zero_replicas() {
 
     // Create with zero replicas
     let created: StatefulSet = storage.create(&key, &statefulset).await.unwrap();
-    assert_eq!(created.spec.replicas, 0);
+    assert_eq!(created.spec.replicas, Some(0));
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -453,9 +488,15 @@ async fn test_statefulset_observed_generation() {
     let mut statefulset = create_test_statefulset("test-generation", "default", 3);
     statefulset.status = Some(StatefulSetStatus {
         replicas: 3,
-        ready_replicas: 3,
-        current_replicas: 3,
-        updated_replicas: 3,
+        ready_replicas: Some(3),
+        current_replicas: Some(3),
+        updated_replicas: Some(3),
+        available_replicas: None,
+        collision_count: None,
+        observed_generation: None,
+        current_revision: None,
+        update_revision: None,
+        conditions: None,
     });
 
     let key = build_key("statefulsets", Some("default"), "test-generation");

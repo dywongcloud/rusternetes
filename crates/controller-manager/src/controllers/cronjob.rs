@@ -1,5 +1,6 @@
 use anyhow::Result;
 use rusternetes_common::resources::workloads::{CronJob, CronJobStatus, Job};
+use rusternetes_common::types::OwnerReference;
 use rusternetes_storage::Storage;
 use std::sync::Arc;
 use std::time::Duration;
@@ -44,6 +45,11 @@ impl<S: Storage> CronJobController<S> {
     async fn reconcile(&self, cronjob: &mut CronJob) -> Result<()> {
         let name = &cronjob.metadata.name;
         let namespace = cronjob.metadata.namespace.as_ref().unwrap();
+
+        // Skip reconciliation for CronJobs being deleted — GC handles Job cleanup
+        if cronjob.metadata.is_being_deleted() {
+            return Ok(());
+        }
 
         info!("Reconciling CronJob {}/{}", namespace, name);
 
@@ -230,6 +236,9 @@ impl<S: Storage> CronJobController<S> {
             },
             metadata: rusternetes_common::types::ObjectMeta {
                 name: job_name.clone(),
+                generate_name: None,
+                generation: None,
+                managed_fields: None,
                 namespace: Some(namespace.to_string()),
                 labels: Some(labels),
                 annotations,
@@ -239,7 +248,14 @@ impl<S: Storage> CronJobController<S> {
                 resource_version: None,
                 deletion_grace_period_seconds: None,
                 finalizers: None,
-                owner_references: None,
+                owner_references: Some(vec![OwnerReference {
+                    api_version: "batch/v1".to_string(),
+                    kind: "CronJob".to_string(),
+                    name: cronjob_name.clone(),
+                    uid: cronjob.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                }]),
             },
             spec: cronjob.spec.job_template.spec.clone(),
             status: None,

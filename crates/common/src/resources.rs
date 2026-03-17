@@ -141,7 +141,7 @@ pub use pod::{
     ExecAction, HTTPGetAction, HTTPHeader, HostPathVolumeSource, NodeAffinity, NodeSelector,
     NodeSelectorRequirement, NodeSelectorTerm, ObjectFieldSelector, PersistentVolumeClaimTemplate,
     PersistentVolumeClaimVolumeSource, Pod, PodAffinity, PodAffinityTerm, PodAntiAffinity, PodSpec,
-    PodStatus, PreferredSchedulingTerm, Probe, ResourceFieldSelector, SeccompProfile,
+    PodCondition, PodStatus, PreferredSchedulingTerm, Probe, ResourceFieldSelector, SeccompProfile,
     SecretKeySelector, SecretVolumeSource, SecurityContext, TCPSocketAction, Toleration,
     TopologySpreadConstraint, Volume, VolumeMount, WeightedPodAffinityTerm,
 };

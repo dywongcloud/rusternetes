@@ -45,7 +45,7 @@ impl Pod {
 }
 
 /// PodSpec describes the desired state of a pod
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PodSpec {
     pub containers: Vec<Container>,
@@ -124,6 +124,58 @@ pub struct PodSpec {
     /// ResourceClaims defines which ResourceClaims must be allocated and reserved before the Pod is allowed to start
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_claims: Option<Vec<PodResourceClaim>>,
+
+    /// ActiveDeadlineSeconds is the max duration in seconds before the pod may be terminated
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_deadline_seconds: Option<i64>,
+
+    /// DNSPolicy determines DNS policy for the pod (ClusterFirst, ClusterFirstWithHostNet, Default, None)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dns_policy: Option<String>,
+
+    /// DNSConfig defines DNS parameters for the pod
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dns_config: Option<PodDNSConfig>,
+
+    /// SecurityContext holds pod-level security attributes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub security_context: Option<PodSecurityContext>,
+
+    /// ImagePullSecrets is a list of references to secrets for pulling images
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_pull_secrets: Option<Vec<LocalObjectReference>>,
+
+    /// ShareProcessNamespace indicates whether a single process namespace should be shared between all containers
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub share_process_namespace: Option<bool>,
+
+    /// ReadinessGates specifies additional conditions to be evaluated for pod readiness
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readiness_gates: Option<Vec<PodReadinessGate>>,
+
+    /// RuntimeClassName refers to a RuntimeClass object in the node.k8s.io group
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_class_name: Option<String>,
+
+    /// EnableServiceLinks indicates whether information about services should be injected into pod's environment variables
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_service_links: Option<bool>,
+
+    /// PreemptionPolicy is the policy for preempting pods with lower priority (Never, PreemptLowerPriority)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preemption_policy: Option<String>,
+
+    /// HostUsers controls whether host user namespace is used
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_users: Option<bool>,
+
+    /// SetHostnameAsFQDN determines if the pod's hostname will be configured as the pod's FQDN
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub set_hostname_as_fqdn: Option<bool>,
+
+    /// TerminationGracePeriodSeconds is the grace period before forcible pod termination
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub termination_grace_period_seconds: Option<i64>,
 }
 
 /// PodResourceClaim references a ResourceClaim that must be allocated for the pod
@@ -149,6 +201,110 @@ pub struct ClaimSource {
     /// ResourceClaimTemplateName is the name of a ResourceClaimTemplate object in the same namespace
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_claim_template_name: Option<String>,
+}
+
+/// PodDNSConfig defines DNS parameters for the pod
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PodDNSConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nameservers: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub searches: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<PodDNSConfigOption>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PodDNSConfigOption {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+}
+
+/// PodSecurityContext holds pod-level security attributes
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PodSecurityContext {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_user: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_group: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_non_root: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fs_group: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fs_group_change_policy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supplemental_groups: Option<Vec<i64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sysctls: Option<Vec<Sysctl>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seccomp_profile: Option<SeccompProfile>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_armor_profile: Option<AppArmorProfile>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub se_linux_options: Option<SELinuxOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub windows_options: Option<WindowsSecurityContextOptions>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sysctl {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppArmorProfile {
+    #[serde(rename = "type")]
+    pub type_: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub localhost_profile: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SELinuxOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowsSecurityContextOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gmsa_credential_spec_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gmsa_credential_spec: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_as_user_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_process: Option<bool>,
+}
+
+/// LocalObjectReference is a reference to an object in the same namespace
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalObjectReference {
+    pub name: String,
+}
+
+/// PodReadinessGate specifies an additional condition to evaluate for pod readiness
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PodReadinessGate {
+    pub condition_type: String,
 }
 
 /// EphemeralContainer is a temporary container added to a running pod for debugging
@@ -616,6 +772,27 @@ pub struct PersistentVolumeClaimTemplate {
     pub spec: crate::resources::volume::PersistentVolumeClaimSpec,
 }
 
+/// PodCondition represents a condition of a pod
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PodCondition {
+    /// Type of pod condition (e.g. Ready, ContainersReady, Initialized, PodScheduled)
+    #[serde(rename = "type")]
+    pub condition_type: String,
+
+    /// Status of the condition (True, False, or Unknown)
+    pub status: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_transition_time: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 /// PodStatus represents the current state of a pod
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -634,6 +811,10 @@ pub struct PodStatus {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pod_ip: Option<String>,
+
+    /// Pod-level conditions (Ready, ContainersReady, Initialized, PodScheduled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<Vec<PodCondition>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container_statuses: Option<Vec<ContainerStatus>>,
@@ -1095,6 +1276,19 @@ mod tests {
             overhead: None,
             scheduler_name: None,
             resource_claims: None,
+            active_deadline_seconds: None,
+            dns_policy: None,
+            dns_config: None,
+            security_context: None,
+            image_pull_secrets: None,
+            share_process_namespace: None,
+            readiness_gates: None,
+            runtime_class_name: None,
+            enable_service_links: None,
+            preemption_policy: None,
+            host_users: None,
+            set_hostname_as_fqdn: None,
+            termination_grace_period_seconds: None,
         };
 
         let pod = Pod::new("myapp-pod", spec);
@@ -1224,6 +1418,7 @@ mod tests {
                 },
             ]),
             ephemeral_container_statuses: None,
+            conditions: None,
         };
 
         assert_eq!(status.phase, Some(Phase::Running));
@@ -1362,6 +1557,19 @@ mod tests {
             overhead: None,
             scheduler_name: None,
             resource_claims: None,
+            active_deadline_seconds: None,
+            dns_policy: None,
+            dns_config: None,
+            security_context: None,
+            image_pull_secrets: None,
+            share_process_namespace: None,
+            readiness_gates: None,
+            runtime_class_name: None,
+            enable_service_links: None,
+            preemption_policy: None,
+            host_users: None,
+            set_hostname_as_fqdn: None,
+            termination_grace_period_seconds: None,
         };
 
         // Clone it (like DaemonSet controller does)

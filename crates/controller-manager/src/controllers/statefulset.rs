@@ -1,6 +1,6 @@
 use anyhow::Result;
 use rusternetes_common::resources::{Pod, PodStatus, StatefulSet, StatefulSetStatus};
-use rusternetes_common::types::Phase;
+use rusternetes_common::types::{OwnerReference, Phase};
 use rusternetes_storage::Storage;
 use std::sync::Arc;
 use std::time::Duration;
@@ -46,24 +46,45 @@ impl<S: Storage> StatefulSetController<S> {
         let name = &statefulset.metadata.name;
         let namespace = statefulset.metadata.namespace.as_ref().unwrap();
 
+        // Skip reconciliation for StatefulSets being deleted — GC handles pod cleanup
+        if statefulset.metadata.is_being_deleted() {
+            return Ok(());
+        }
+
         info!("Reconciling StatefulSet {}/{}", namespace, name);
 
-        let desired_replicas = statefulset.spec.replicas;
+        let desired_replicas = statefulset.spec.replicas.unwrap_or(1);
 
         // Get current pods for this StatefulSet
         let pod_prefix = format!("/registry/pods/{}/", namespace);
         let all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
 
-        // Filter pods that belong to this StatefulSet
+        // Filter pods that belong to this StatefulSet via ownerReferences (authoritative)
+        // Fall back to label matching for backwards compatibility
+        let statefulset_uid = &statefulset.metadata.uid;
         let mut statefulset_pods: Vec<Pod> = all_pods
             .into_iter()
             .filter(|pod| {
-                pod.metadata
+                let owned_by_ref = pod
+                    .metadata
+                    .owner_references
+                    .as_ref()
+                    .map(|refs| refs.iter().any(|r| &r.uid == statefulset_uid))
+                    .unwrap_or(false);
+                let owned_by_label = pod
+                    .metadata
                     .labels
                     .as_ref()
                     .and_then(|labels| labels.get("app"))
                     .map(|app| app == name)
                     .unwrap_or(false)
+                    && pod
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|labels| labels.get("statefulset.kubernetes.io/pod-name"))
+                        .is_some();
+                owned_by_ref || owned_by_label
             })
             .collect();
 
@@ -129,12 +150,26 @@ impl<S: Storage> StatefulSetController<S> {
         let statefulset_pods_after: Vec<Pod> = all_pods_after
             .into_iter()
             .filter(|pod| {
-                pod.metadata
+                let owned_by_ref = pod
+                    .metadata
+                    .owner_references
+                    .as_ref()
+                    .map(|refs| refs.iter().any(|r| &r.uid == statefulset_uid))
+                    .unwrap_or(false);
+                let owned_by_label = pod
+                    .metadata
                     .labels
                     .as_ref()
-                    .and_then(|labels| labels.get("app"))
-                    .map(|app| app == name)
-                    .unwrap_or(false)
+                    .and_then(|labels| labels.get("statefulset.kubernetes.io/pod-name"))
+                    .is_some()
+                    && pod
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|labels| labels.get("app"))
+                        .map(|app| app == name)
+                        .unwrap_or(false);
+                owned_by_ref || owned_by_label
             })
             .collect();
 
@@ -152,9 +187,15 @@ impl<S: Storage> StatefulSetController<S> {
         // Update status with accurate counts
         statefulset.status = Some(StatefulSetStatus {
             replicas: final_current_replicas.min(desired_replicas),
-            ready_replicas: final_ready_pods,
-            current_replicas: final_current_replicas,
-            updated_replicas: final_current_replicas.min(desired_replicas),
+            ready_replicas: Some(final_ready_pods),
+            current_replicas: Some(final_current_replicas),
+            updated_replicas: Some(final_current_replicas.min(desired_replicas)),
+            available_replicas: None,
+            collision_count: None,
+            observed_generation: None,
+            current_revision: None,
+            update_revision: None,
+            conditions: None,
         });
 
         // Save updated status
@@ -188,7 +229,15 @@ impl<S: Storage> StatefulSetController<S> {
 
         let mut metadata = rusternetes_common::types::ObjectMeta::new(pod_name.clone())
             .with_namespace(namespace.to_string())
-            .with_labels(labels);
+            .with_labels(labels)
+            .with_owner_reference(OwnerReference {
+                api_version: "apps/v1".to_string(),
+                kind: "StatefulSet".to_string(),
+                name: statefulset_name.clone(),
+                uid: statefulset.metadata.uid.clone(),
+                controller: Some(true),
+                block_owner_deletion: Some(true),
+            });
 
         if let Some(template_meta) = &template.metadata {
             if let Some(ref annotations) = template_meta.annotations {
@@ -209,6 +258,7 @@ impl<S: Storage> StatefulSetController<S> {
                 reason: None,
                 pod_ip: None,
                 host_ip: None,
+                conditions: None,
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,

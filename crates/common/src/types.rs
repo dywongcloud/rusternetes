@@ -10,6 +10,11 @@ pub struct ObjectMeta {
     #[serde(default)]
     pub name: String,
 
+    /// GenerateName is an optional prefix used to generate a unique name when Name is empty.
+    /// The server will append a random suffix to this prefix.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generate_name: Option<String>,
+
     /// Namespace defines the space within which the resource name must be unique
     #[serde(skip_serializing_if = "Option::is_none")]
     pub namespace: Option<String>,
@@ -18,9 +23,17 @@ pub struct ObjectMeta {
     #[serde(default = "generate_uid", skip_serializing_if = "String::is_empty")]
     pub uid: String,
 
+    /// Generation is a sequence number representing a specific generation of the desired state
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation: Option<i64>,
+
     /// ResourceVersion is an opaque value for concurrency control
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_version: Option<String>,
+
+    /// ManagedFields maps workflow-id and version to the set of fields that are managed by that workflow
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub managed_fields: Option<Vec<ManagedFieldsEntry>>,
 
     /// CreationTimestamp is the creation time
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -59,9 +72,12 @@ impl Default for ObjectMeta {
     fn default() -> Self {
         Self {
             name: String::new(),
+            generate_name: None,
             namespace: None,
             uid: String::new(),
+            generation: None,
             resource_version: None,
+            managed_fields: None,
             creation_timestamp: None,
             deletion_timestamp: None,
             deletion_grace_period_seconds: None,
@@ -77,8 +93,11 @@ impl ObjectMeta {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
+            generate_name: None,
             namespace: None,
             uid: uuid::Uuid::new_v4().to_string(),
+            generation: None,
+            managed_fields: None,
             resource_version: None,
             creation_timestamp: Some(Utc::now()),
             deletion_timestamp: None,
@@ -115,8 +134,27 @@ impl ObjectMeta {
         self
     }
 
-    /// Ensure uid is populated (generate if empty)
+    /// Ensure name is populated. If name is empty and generateName is set,
+    /// generate a unique name by appending a random 5-character suffix.
+    pub fn ensure_name(&mut self) {
+        if self.name.is_empty() {
+            let prefix = self
+                .generate_name
+                .as_deref()
+                .unwrap_or("auto-")
+                .to_string();
+            let suffix: String = uuid::Uuid::new_v4()
+                .to_string()
+                .chars()
+                .take(5)
+                .collect();
+            self.name = format!("{}{}", prefix, suffix);
+        }
+    }
+
+    /// Ensure uid is populated (generate if empty). Also resolves generateName if name is empty.
     pub fn ensure_uid(&mut self) {
+        self.ensure_name();
         if self.uid.is_empty() {
             self.uid = uuid::Uuid::new_v4().to_string();
         }
@@ -338,4 +376,67 @@ impl<T> List<T> {
         self.metadata.resource_version = Some(resource_version.into());
         self
     }
+}
+
+/// Condition contains details for one aspect of the current state of an API Resource
+/// This is the standard Kubernetes condition type (metav1.Condition)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Condition {
+    /// Type of condition in CamelCase
+    #[serde(rename = "type")]
+    pub condition_type: String,
+
+    /// Status of the condition: True, False, or Unknown
+    pub status: String,
+
+    /// ObservedGeneration represents the .metadata.generation that the condition was set based upon
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_generation: Option<i64>,
+
+    /// LastTransitionTime is the last time the condition transitioned from one status to another
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_transition_time: Option<DateTime<Utc>>,
+
+    /// Reason contains a programmatic identifier indicating the reason for the condition's last transition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    /// Message is a human readable message indicating details about the transition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// ManagedFieldsEntry is a workflow-id, a FieldSet and the group version of the resource
+/// that the fieldset applies to.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedFieldsEntry {
+    /// Manager is an identifier of the workflow managing these fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manager: Option<String>,
+
+    /// Operation is the type of operation which lead to this ManagedFieldsEntry (Apply or Update)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation: Option<String>,
+
+    /// APIVersion defines the version of the resource that this field set applies to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_version: Option<String>,
+
+    /// Time is the timestamp of when the ManagedFields entry was added
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time: Option<DateTime<Utc>>,
+
+    /// FieldsType is the discriminator for the different fields format
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fields_type: Option<String>,
+
+    /// FieldsV1 stores a JSON representation of the fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fields_v1: Option<serde_json::Value>,
+
+    /// Subresource is the name of the subresource used to update that object
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subresource: Option<String>,
 }

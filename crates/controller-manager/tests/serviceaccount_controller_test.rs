@@ -38,6 +38,9 @@ async fn test_serviceaccount_creates_default_in_namespace() {
             deletion_timestamp: None,
             labels: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
@@ -95,6 +98,9 @@ async fn test_serviceaccount_does_not_recreate_existing() {
             deletion_timestamp: None,
             labels: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
@@ -123,6 +129,9 @@ async fn test_serviceaccount_does_not_recreate_existing() {
             deletion_timestamp: None,
             labels: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         secrets: None,
         image_pull_secrets: None,
@@ -167,6 +176,9 @@ async fn test_serviceaccount_token_contains_required_fields() {
             deletion_timestamp: None,
             labels: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
@@ -232,6 +244,9 @@ async fn test_serviceaccount_skips_terminating_namespaces() {
             deletion_timestamp: Some(chrono::Utc::now()), // Being deleted
             labels: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {

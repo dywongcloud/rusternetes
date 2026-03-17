@@ -50,6 +50,19 @@ fn create_running_pod(name: &str) -> Pod {
             overhead: None,
             scheduler_name: None,
             resource_claims: None,
+            active_deadline_seconds: None,
+            dns_policy: None,
+            dns_config: None,
+            security_context: None,
+            image_pull_secrets: None,
+            share_process_namespace: None,
+            readiness_gates: None,
+            runtime_class_name: None,
+            enable_service_links: None,
+            preemption_policy: None,
+            host_users: None,
+            set_hostname_as_fqdn: None,
+            termination_grace_period_seconds: None,
         }),
         status: Some(PodStatus {
             phase: Some(Phase::Running),
@@ -69,6 +82,7 @@ fn create_running_pod(name: &str) -> Pod {
             }]),
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            conditions: None,
         }),
     }
 }

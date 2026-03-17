@@ -225,6 +225,8 @@ impl<S: Storage> LoadBalancerController<S> {
                 .map(|ing| LoadBalancerIngress {
                     ip: ing.ip.clone(),
                     hostname: ing.hostname.clone(),
+                    ip_mode: None,
+                    ports: None,
                 })
                 .collect(),
         };
@@ -232,6 +234,7 @@ impl<S: Storage> LoadBalancerController<S> {
         // Update status
         service.status = Some(ServiceStatus {
             load_balancer: Some(service_lb_status),
+            conditions: None,
         });
 
         // Save updated service

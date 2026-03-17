@@ -80,6 +80,19 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             overhead: None,
             scheduler_name: None,
             resource_claims: None,
+            active_deadline_seconds: None,
+            dns_policy: None,
+            dns_config: None,
+            security_context: None,
+            image_pull_secrets: None,
+            share_process_namespace: None,
+            readiness_gates: None,
+            runtime_class_name: None,
+            enable_service_links: None,
+            preemption_policy: None,
+            host_users: None,
+            set_hostname_as_fqdn: None,
+            termination_grace_period_seconds: None,
         }),
         status: None,
     }
@@ -130,6 +143,7 @@ fn test_init_container_status_sequence() {
             // init-1 and init-2 are waiting
         ]),
         ephemeral_container_statuses: None,
+        conditions: None,
     });
 
     let status = pod.status.as_ref().unwrap();
@@ -192,6 +206,7 @@ fn test_init_containers_completed_app_starting() {
             container_id: Some("app-0-container".to_string()),
         }]),
         ephemeral_container_statuses: None,
+        conditions: None,
     });
 
     let status = pod.status.as_ref().unwrap();
@@ -245,6 +260,7 @@ fn test_init_container_failure_blocks_app() {
         }]),
         container_statuses: None, // App container never started
         ephemeral_container_statuses: None,
+        conditions: None,
     });
 
     let status = pod.status.as_ref().unwrap();
@@ -289,6 +305,7 @@ fn test_init_container_restart_count() {
         }]),
         container_statuses: None,
         ephemeral_container_statuses: None,
+        conditions: None,
     });
 
     let status = pod.status.as_ref().unwrap();

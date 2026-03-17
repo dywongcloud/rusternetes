@@ -31,6 +31,19 @@ fn empty_pod_spec() -> PodSpec {
         topology_spread_constraints: None,
         automount_service_account_token: None,
         resource_claims: None,
+        active_deadline_seconds: None,
+        dns_policy: None,
+        dns_config: None,
+        security_context: None,
+        image_pull_secrets: None,
+        share_process_namespace: None,
+        readiness_gates: None,
+        runtime_class_name: None,
+        enable_service_links: None,
+        preemption_policy: None,
+        host_users: None,
+        set_hostname_as_fqdn: None,
+        termination_grace_period_seconds: None,
     }
 }
 
@@ -214,7 +227,7 @@ async fn test_has_metadata_trait_implementations() {
     let deployment = Deployment::new(
         "test-deployment",
         DeploymentSpec {
-            replicas: 1,
+            replicas: Some(1),
             selector: LabelSelector {
                 match_labels: Some(HashMap::new()),
                 match_expressions: None,
@@ -226,6 +239,8 @@ async fn test_has_metadata_trait_implementations() {
             strategy: None,
             min_ready_seconds: None,
             revision_history_limit: None,
+            paused: None,
+            progress_deadline_seconds: None,
         },
     );
     assert_eq!(deployment.metadata().name, "test-deployment");

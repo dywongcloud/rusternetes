@@ -31,7 +31,7 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
             meta
         },
         spec: StatefulSetSpec {
-            replicas,
+            replicas: Some(replicas),
             selector: LabelSelector {
                 match_labels: Some(labels.clone()),
                 match_expressions: None,
@@ -81,17 +81,40 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
                     scheduler_name: None,
                     topology_spread_constraints: None,
                     resource_claims: None,
+                    active_deadline_seconds: None,
+                    dns_policy: None,
+                    dns_config: None,
+                    security_context: None,
+                    image_pull_secrets: None,
+                    share_process_namespace: None,
+                    readiness_gates: None,
+                    runtime_class_name: None,
+                    enable_service_links: None,
+                    preemption_policy: None,
+                    host_users: None,
+                    set_hostname_as_fqdn: None,
+                    termination_grace_period_seconds: None,
                 },
             },
             service_name: format!("{}-headless", name),
             pod_management_policy: Some("OrderedReady".to_string()),
             update_strategy: None,
+        min_ready_seconds: None,
+        revision_history_limit: None,
+        volume_claim_templates: None,
+        persistent_volume_claim_retention_policy: None,
         },
         status: Some(StatefulSetStatus {
             replicas: 0,
-            ready_replicas: 0,
-            current_replicas: 0,
-            updated_replicas: 0,
+            ready_replicas: Some(0),
+            current_replicas: Some(0),
+            updated_replicas: Some(0),
+        available_replicas: None,
+        collision_count: None,
+        observed_generation: None,
+        current_revision: None,
+        update_revision: None,
+        conditions: None,
         }),
     }
 }
@@ -147,7 +170,7 @@ async fn test_statefulset_scales_up_ordered() {
     assert_eq!(pods.len(), 2, "Should create 2 pods initially");
 
     // Scale up to 4 replicas
-    statefulset.spec.replicas = 4;
+    statefulset.spec.replicas = Some(4);
     storage.update(&key, &statefulset).await.unwrap();
 
     // Run controller again
@@ -181,7 +204,7 @@ async fn test_statefulset_scales_down_reverse_order() {
     assert_eq!(pods.len(), 4);
 
     // Scale down to 2 replicas
-    statefulset.spec.replicas = 2;
+    statefulset.spec.replicas = Some(2);
     storage.update(&key, &statefulset).await.unwrap();
 
     // Run controller again
@@ -215,5 +238,5 @@ async fn test_statefulset_updates_status() {
     let status = updated_ss.status.expect("Status should be set");
 
     assert_eq!(status.replicas, 3, "Status replicas should match actual");
-    assert_eq!(status.current_replicas, 3, "Current replicas should be 3");
+    assert_eq!(status.current_replicas, Some(3), "Current replicas should be 3");
 }

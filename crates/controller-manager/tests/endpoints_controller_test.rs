@@ -27,6 +27,7 @@ fn create_test_service(name: &str, namespace: &str, selector: HashMap<String, St
                 port: 80,
                 target_port: Some(8080),
                 node_port: None,
+            app_protocol: None,
             }],
             cluster_ip: Some("10.96.0.1".to_string()),
             service_type: None,
@@ -38,6 +39,14 @@ fn create_test_service(name: &str, namespace: &str, selector: HashMap<String, St
             ip_family_policy: None,
             internal_traffic_policy: None,
             external_traffic_policy: None,
+        health_check_node_port: None,
+        load_balancer_class: None,
+        load_balancer_ip: None,
+        load_balancer_source_ranges: None,
+        allocate_load_balancer_node_ports: None,
+        publish_not_ready_addresses: None,
+        session_affinity_config: None,
+        traffic_distribution: None,
         },
         status: None,
     }
@@ -101,6 +110,19 @@ fn create_test_pod(
             overhead: None,
             topology_spread_constraints: None,
             resource_claims: None,
+            active_deadline_seconds: None,
+            dns_policy: None,
+            dns_config: None,
+            security_context: None,
+            image_pull_secrets: None,
+            share_process_namespace: None,
+            readiness_gates: None,
+            runtime_class_name: None,
+            enable_service_links: None,
+            preemption_policy: None,
+            host_users: None,
+            set_hostname_as_fqdn: None,
+            termination_grace_period_seconds: None,
         }),
         status: Some(PodStatus {
             phase: if ready {
@@ -112,6 +134,7 @@ fn create_test_pod(
             reason: None,
             host_ip: Some("192.168.1.10".to_string()),
             pod_ip,
+            conditions: None,
             container_statuses: if ready {
                 Some(vec![ContainerStatus {
                     name: "nginx".to_string(),
@@ -655,6 +678,7 @@ async fn test_endpoints_includes_port_mapping() {
             port: 80,
             target_port: Some(8080),
             node_port: None,
+            app_protocol: None,
         },
         ServicePort {
             name: Some("https".to_string()),
@@ -662,6 +686,7 @@ async fn test_endpoints_includes_port_mapping() {
             port: 443,
             target_port: Some(8443),
             node_port: None,
+            app_protocol: None,
         },
     ];
 

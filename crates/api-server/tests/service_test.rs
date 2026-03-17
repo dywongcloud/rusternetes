@@ -26,6 +26,7 @@ fn create_basic_service_spec() -> ServiceSpec {
             target_port: Some(8080),
             protocol: Some("TCP".to_string()),
             node_port: None,
+        app_protocol: None,
         }],
         service_type: Some(ServiceType::ClusterIP),
         cluster_ip: None,
@@ -37,6 +38,14 @@ fn create_basic_service_spec() -> ServiceSpec {
         ip_family_policy: None,
         internal_traffic_policy: None,
         external_traffic_policy: None,
+        health_check_node_port: None,
+        load_balancer_class: None,
+        load_balancer_ip: None,
+        load_balancer_source_ranges: None,
+        allocate_load_balancer_node_ports: None,
+        publish_not_ready_addresses: None,
+        session_affinity_config: None,
+        traffic_distribution: None,
     }
 }
 
@@ -60,6 +69,14 @@ fn create_external_name_service(name: &str, namespace: &str, external_name: &str
             ip_family_policy: None,
             internal_traffic_policy: None,
             external_traffic_policy: None,
+        health_check_node_port: None,
+        load_balancer_class: None,
+        load_balancer_ip: None,
+        load_balancer_source_ranges: None,
+        allocate_load_balancer_node_ports: None,
+        publish_not_ready_addresses: None,
+        session_affinity_config: None,
+        traffic_distribution: None,
         },
         status: None,
     }
@@ -84,6 +101,7 @@ fn create_dual_stack_service(name: &str, namespace: &str) -> Service {
                 target_port: Some(8080),
                 protocol: Some("TCP".to_string()),
                 node_port: None,
+            app_protocol: None,
             }],
             service_type: Some(ServiceType::ClusterIP),
             cluster_ip: None,
@@ -95,6 +113,14 @@ fn create_dual_stack_service(name: &str, namespace: &str) -> Service {
             ip_family_policy: Some(IPFamilyPolicy::PreferDualStack),
             internal_traffic_policy: None,
             external_traffic_policy: None,
+        health_check_node_port: None,
+        load_balancer_class: None,
+        load_balancer_ip: None,
+        load_balancer_source_ranges: None,
+        allocate_load_balancer_node_ports: None,
+        publish_not_ready_addresses: None,
+        session_affinity_config: None,
+        traffic_distribution: None,
         },
         status: None,
     }
@@ -312,6 +338,7 @@ fn test_nodeport_with_external_traffic_policy_local() {
         target_port: Some(8080),
         protocol: Some("TCP".to_string()),
         node_port: Some(30080),
+        app_protocol: None,
     }];
 
     let service = Service {

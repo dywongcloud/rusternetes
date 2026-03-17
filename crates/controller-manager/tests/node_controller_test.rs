@@ -36,6 +36,9 @@ async fn test_node_ready_with_recent_heartbeat() {
             deletion_timestamp: None,
             labels: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: None,
         status: Some(NodeStatus {
@@ -100,6 +103,9 @@ async fn test_node_not_ready_with_old_heartbeat() {
             deletion_timestamp: None,
             labels: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: None,
         status: Some(NodeStatus {
@@ -165,6 +171,9 @@ async fn test_node_without_ready_condition() {
             deletion_timestamp: None,
             labels: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: None,
         status: Some(NodeStatus {

@@ -378,7 +378,7 @@ impl ContainerRuntime {
         } else {
             // Start a pause container to obtain the pod's Docker-assigned IP before
             // creating any real containers.
-            match self.start_pause_container(pod_name).await {
+            match self.start_pause_container(pod_name, pod).await {
                 Ok(ip) => {
                     info!("Pause container assigned IP {} for pod {}", ip, pod_name);
                     Some(ip)
@@ -599,7 +599,7 @@ impl ContainerRuntime {
     /// correctly populate Downward API env vars like `status.podIP`.
     ///
     /// Returns the IP address assigned to the pause container.
-    async fn start_pause_container(&self, pod_name: &str) -> Result<String> {
+    async fn start_pause_container(&self, pod_name: &str, pod: &Pod) -> Result<String> {
         let pause_name = format!("{}_pause", pod_name);
 
         // Remove any existing pause container for this pod
@@ -618,6 +618,32 @@ impl ContainerRuntime {
                 .await;
         }
 
+        // Collect all ports from all containers in the pod.
+        // The pause container owns the network namespace and must declare all ports;
+        // child containers that join via --network container:<pause> cannot re-declare them.
+        let mut exposed_ports: HashMap<String, HashMap<(), ()>> = HashMap::new();
+        let mut port_bindings: HashMap<String, Option<Vec<bollard::models::PortBinding>>> = HashMap::new();
+        if let Some(spec) = &pod.spec {
+            for c in &spec.containers {
+                if let Some(ports) = &c.ports {
+                    for port in ports {
+                        let proto = port.protocol.as_deref().unwrap_or("TCP").to_lowercase();
+                        let port_key = format!("{}/{}", port.container_port, proto);
+                        exposed_ports.insert(port_key.clone(), HashMap::new());
+                        if let Some(host_port) = port.host_port {
+                            port_bindings.insert(
+                                port_key,
+                                Some(vec![bollard::models::PortBinding {
+                                    host_ip: Some("0.0.0.0".to_string()),
+                                    host_port: Some(host_port.to_string()),
+                                }]),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         // Create the pause container using busybox with sleep infinity.
         // This holds the pod's network namespace so all real containers can
         // join it via --network container:<pause_name>.
@@ -625,10 +651,12 @@ impl ContainerRuntime {
         let config = Config {
             image: Some("busybox:latest".to_string()),
             cmd: Some(vec!["sleep".to_string(), "infinity".to_string()]),
+            exposed_ports: if exposed_ports.is_empty() { None } else { Some(exposed_ports) },
             host_config: Some(bollard::models::HostConfig {
                 network_mode: Some(self.network.clone()),
                 dns: Some(vec![self.cluster_dns.clone()]),
                 dns_options: Some(vec!["ndots:5".to_string()]),
+                port_bindings: if port_bindings.is_empty() { None } else { Some(port_bindings) },
                 ..Default::default()
             }),
             ..Default::default()
@@ -1446,23 +1474,30 @@ impl ContainerRuntime {
             Some(env_list)
         };
 
-        // Build port bindings
+        // Build port bindings.
+        // When using container:<pause> network mode, ports must be declared on the
+        // pause container (which owns the network namespace), not on child containers.
+        // Docker rejects port declarations on containers that join another's network.
+        let using_pause_network = !self.use_cni && netns_path.is_none();
+
         let mut exposed_ports = HashMap::new();
         let mut port_bindings = HashMap::new();
 
-        if let Some(ports) = &container.ports {
-            for port in ports {
-                let port_key = format!("{}/tcp", port.container_port);
-                exposed_ports.insert(port_key.clone(), HashMap::new());
+        if !using_pause_network {
+            if let Some(ports) = &container.ports {
+                for port in ports {
+                    let port_key = format!("{}/tcp", port.container_port);
+                    exposed_ports.insert(port_key.clone(), HashMap::new());
 
-                if let Some(host_port) = port.host_port {
-                    port_bindings.insert(
-                        port_key,
-                        Some(vec![bollard::models::PortBinding {
-                            host_ip: Some("0.0.0.0".to_string()),
-                            host_port: Some(host_port.to_string()),
-                        }]),
-                    );
+                    if let Some(host_port) = port.host_port {
+                        port_bindings.insert(
+                            port_key,
+                            Some(vec![bollard::models::PortBinding {
+                                host_ip: Some("0.0.0.0".to_string()),
+                                host_port: Some(host_port.to_string()),
+                            }]),
+                        );
+                    }
                 }
             }
         }
@@ -2294,6 +2329,19 @@ mod tests {
                 scheduler_name: None,
                 resource_claims: None,
                 volumes: None,
+                active_deadline_seconds: None,
+                dns_policy: None,
+                dns_config: None,
+                security_context: None,
+                image_pull_secrets: None,
+                share_process_namespace: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                enable_service_links: None,
+                preemption_policy: None,
+                host_users: None,
+                set_hostname_as_fqdn: None,
+                termination_grace_period_seconds: None,
             }),
             status: None,
         }

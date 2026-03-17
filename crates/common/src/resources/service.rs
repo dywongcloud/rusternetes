@@ -1,4 +1,4 @@
-use crate::types::{ObjectMeta, TypeMeta};
+use crate::types::{Condition, ObjectMeta, TypeMeta};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -79,6 +79,38 @@ pub struct ServiceSpec {
     /// and Nodeport type services, but risks potentially imbalanced traffic spreading.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_traffic_policy: Option<ServiceExternalTrafficPolicy>,
+
+    /// HealthCheckNodePort specifies the healthcheck nodePort for the service (when type=LoadBalancer and externalTrafficPolicy=Local)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health_check_node_port: Option<i32>,
+
+    /// LoadBalancerClass is the class of the load balancer implementation this Service belongs to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_balancer_class: Option<String>,
+
+    /// LoadBalancerIP is the IP to use when creating a load balancer (deprecated, use loadBalancerClass instead)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_balancer_ip: Option<String>,
+
+    /// LoadBalancerSourceRanges restricts traffic through the cloud-provider load-balancer to these CIDRs
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_balancer_source_ranges: Option<Vec<String>>,
+
+    /// AllocateLoadBalancerNodePorts defines if NodePorts will be allocated for Services with type LoadBalancer
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allocate_load_balancer_node_ports: Option<bool>,
+
+    /// PublishNotReadyAddresses indicates that endpoints for this Service should be published even when not ready
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publish_not_ready_addresses: Option<bool>,
+
+    /// SessionAffinityConfig contains the configurations of session affinity
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_affinity_config: Option<SessionAffinityConfig>,
+
+    /// TrafficDistribution offers a way to express preferences for how traffic is distributed to Service endpoints
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub traffic_distribution: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +129,10 @@ pub struct ServicePort {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub node_port: Option<u16>,
+
+    /// Application protocol for the port (e.g., "http", "https")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_protocol: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -113,6 +149,9 @@ pub enum ServiceType {
 pub struct ServiceStatus {
     #[serde(skip_serializing_if = "Option::is_none", rename = "loadBalancer")]
     pub load_balancer: Option<LoadBalancerStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<Vec<Condition>>,
 }
 
 /// LoadBalancerStatus represents the status of a load balancer
@@ -131,6 +170,38 @@ pub struct LoadBalancerIngress {
     pub ip: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
+    /// IPMode specifies how the load-balancer IP behaves (VIP or Proxy)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip_mode: Option<String>,
+    /// Ports is a list of records of service ports
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ports: Option<Vec<PortStatus>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortStatus {
+    pub port: i32,
+    pub protocol: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// SessionAffinityConfig contains the configurations of session affinity
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionAffinityConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_ip: Option<ClientIPConfig>,
+}
+
+/// ClientIPConfig represents the configurations of Client IP based session affinity
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientIPConfig {
+    /// TimeoutSeconds specifies the seconds of ClientIP type session sticky time
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<i32>,
 }
 
 /// IPFamily represents the IP family (IPv4 or IPv6)

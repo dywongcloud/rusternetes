@@ -150,7 +150,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
             "Deployment" => {
                 let key = build_key("deployments", Some(namespace), &target_ref.name);
                 let deployment: Deployment = self.storage.get(&key).await?;
-                Ok(deployment.spec.replicas)
+                Ok(deployment.spec.replicas.unwrap_or(1))
             }
             "ReplicaSet" => {
                 let key = build_key("replicasets", Some(namespace), &target_ref.name);
@@ -160,7 +160,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
             "StatefulSet" => {
                 let key = build_key("statefulsets", Some(namespace), &target_ref.name);
                 let statefulset: StatefulSet = self.storage.get(&key).await?;
-                Ok(statefulset.spec.replicas)
+                Ok(statefulset.spec.replicas.unwrap_or(1))
             }
             _ => Err(anyhow::anyhow!(
                 "Unsupported scale target kind: {}",
@@ -180,7 +180,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
             "Deployment" => {
                 let key = build_key("deployments", Some(namespace), &target_ref.name);
                 let mut deployment: Deployment = self.storage.get(&key).await?;
-                deployment.spec.replicas = desired_replicas;
+                deployment.spec.replicas = Some(desired_replicas);
                 self.storage.update(&key, &deployment).await?;
                 info!(
                     "Scaled Deployment {}/{} to {} replicas",
@@ -200,7 +200,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
             "StatefulSet" => {
                 let key = build_key("statefulsets", Some(namespace), &target_ref.name);
                 let mut statefulset: StatefulSet = self.storage.get(&key).await?;
-                statefulset.spec.replicas = desired_replicas;
+                statefulset.spec.replicas = Some(desired_replicas);
                 self.storage.update(&key, &statefulset).await?;
                 info!(
                     "Scaled StatefulSet {}/{} to {} replicas",
@@ -572,7 +572,7 @@ mod tests {
             },
             metadata: ObjectMeta::new("web-app").with_namespace("default"),
             spec: DeploymentSpec {
-                replicas: 3,
+                replicas: Some(3),
                 selector: rusternetes_common::types::LabelSelector {
                     match_labels: Some(HashMap::from([("app".to_string(), "web".to_string())])),
                     match_expressions: None,
@@ -602,11 +602,26 @@ mod tests {
                         scheduler_name: None,
                         topology_spread_constraints: None,
                         resource_claims: None,
+                        active_deadline_seconds: None,
+                        dns_policy: None,
+                        dns_config: None,
+                        security_context: None,
+                        image_pull_secrets: None,
+                        share_process_namespace: None,
+                        readiness_gates: None,
+                        runtime_class_name: None,
+                        enable_service_links: None,
+                        preemption_policy: None,
+                        host_users: None,
+                        set_hostname_as_fqdn: None,
+                        termination_grace_period_seconds: None,
                     },
                 },
                 strategy: None,
                 min_ready_seconds: None,
                 revision_history_limit: None,
+            paused: None,
+            progress_deadline_seconds: None,
             },
             status: None,
         };
@@ -699,7 +714,7 @@ mod tests {
             },
             metadata: ObjectMeta::new("web-app").with_namespace("default"),
             spec: DeploymentSpec {
-                replicas: 2,
+                replicas: Some(2),
                 selector: rusternetes_common::types::LabelSelector {
                     match_labels: Some(HashMap::from([("app".to_string(), "web".to_string())])),
                     match_expressions: None,
@@ -729,11 +744,26 @@ mod tests {
                         scheduler_name: None,
                         topology_spread_constraints: None,
                         resource_claims: None,
+                        active_deadline_seconds: None,
+                        dns_policy: None,
+                        dns_config: None,
+                        security_context: None,
+                        image_pull_secrets: None,
+                        share_process_namespace: None,
+                        readiness_gates: None,
+                        runtime_class_name: None,
+                        enable_service_links: None,
+                        preemption_policy: None,
+                        host_users: None,
+                        set_hostname_as_fqdn: None,
+                        termination_grace_period_seconds: None,
                     },
                 },
                 strategy: None,
                 min_ready_seconds: None,
                 revision_history_limit: None,
+            paused: None,
+            progress_deadline_seconds: None,
             },
             status: None,
         };
@@ -757,6 +787,6 @@ mod tests {
 
         // Verify the deployment was scaled
         let updated_deployment: Deployment = storage.get(&key).await.unwrap();
-        assert_eq!(updated_deployment.spec.replicas, 5);
+        assert_eq!(updated_deployment.spec.replicas, Some(5));
     }
 }

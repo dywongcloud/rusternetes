@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rusternetes_common::resources::pod::{SecretVolumeSource, Volume, VolumeMount};
 use rusternetes_common::resources::{DaemonSet, DaemonSetStatus, Node, Pod, PodStatus};
-use rusternetes_common::types::Phase;
+use rusternetes_common::types::{OwnerReference, Phase};
 use rusternetes_storage::Storage;
 use std::sync::Arc;
 use std::time::Duration;
@@ -47,6 +47,11 @@ impl<S: Storage> DaemonSetController<S> {
         let name = &daemonset.metadata.name;
         let namespace = daemonset.metadata.namespace.as_ref().unwrap();
 
+        // Skip reconciliation for DaemonSets being deleted — GC handles pod cleanup
+        if daemonset.metadata.is_being_deleted() {
+            return Ok(());
+        }
+
         info!("Reconciling DaemonSet {}/{}", namespace, name);
 
         // Get all nodes
@@ -65,20 +70,30 @@ impl<S: Storage> DaemonSetController<S> {
             eligible_nodes.len()
         );
 
-        // Get current pods for this DaemonSet
+        // Get current pods for this DaemonSet using owner references
         let pod_prefix = format!("/registry/pods/{}/", namespace);
         let all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
 
-        // Filter pods that belong to this DaemonSet
+        // Find pods owned by this DaemonSet via ownerReferences (authoritative)
+        // Fall back to label matching for backwards compatibility with pods created before this fix
+        let daemonset_uid = &daemonset.metadata.uid;
         let daemonset_pods: Vec<Pod> = all_pods
             .into_iter()
             .filter(|pod| {
-                pod.metadata
+                let owned_by_ref = pod
+                    .metadata
+                    .owner_references
+                    .as_ref()
+                    .map(|refs| refs.iter().any(|r| &r.uid == daemonset_uid))
+                    .unwrap_or(false);
+                let owned_by_label = pod
+                    .metadata
                     .labels
                     .as_ref()
-                    .and_then(|labels| labels.get("app"))
-                    .map(|app| app == name)
-                    .unwrap_or(false)
+                    .and_then(|labels| labels.get("controller-uid"))
+                    .map(|uid| uid == daemonset_uid)
+                    .unwrap_or(false);
+                owned_by_ref || owned_by_label
             })
             .collect();
 
@@ -123,12 +138,20 @@ impl<S: Storage> DaemonSetController<S> {
         let daemonset_pods_after: Vec<Pod> = all_pods_after
             .into_iter()
             .filter(|pod| {
-                pod.metadata
+                let owned_by_ref = pod
+                    .metadata
+                    .owner_references
+                    .as_ref()
+                    .map(|refs| refs.iter().any(|r| &r.uid == daemonset_uid))
+                    .unwrap_or(false);
+                let owned_by_label = pod
+                    .metadata
                     .labels
                     .as_ref()
-                    .and_then(|labels| labels.get("app"))
-                    .map(|app| app == name)
-                    .unwrap_or(false)
+                    .and_then(|labels| labels.get("controller-uid"))
+                    .map(|uid| uid == daemonset_uid)
+                    .unwrap_or(false);
+                owned_by_ref || owned_by_label
             })
             .collect();
 
@@ -158,6 +181,12 @@ impl<S: Storage> DaemonSetController<S> {
             current_number_scheduled,
             number_ready,
             number_misscheduled: 0,
+            number_available: None,
+            number_unavailable: None,
+            updated_number_scheduled: None,
+            observed_generation: None,
+            collision_count: None,
+            conditions: None,
         });
 
         // Save updated status
@@ -265,7 +294,15 @@ impl<S: Storage> DaemonSetController<S> {
 
         let mut metadata = rusternetes_common::types::ObjectMeta::new(pod_name.clone())
             .with_namespace(namespace.to_string())
-            .with_labels(labels);
+            .with_labels(labels)
+            .with_owner_reference(OwnerReference {
+                api_version: "apps/v1".to_string(),
+                kind: "DaemonSet".to_string(),
+                name: daemonset_name.clone(),
+                uid: daemonset.metadata.uid.clone(),
+                controller: Some(true),
+                block_owner_deletion: Some(true),
+            });
 
         if let Some(template_meta) = &template.metadata {
             if let Some(ref annotations) = template_meta.annotations {
@@ -286,6 +323,7 @@ impl<S: Storage> DaemonSetController<S> {
                 reason: None,
                 pod_ip: None,
                 host_ip: None,
+                conditions: None,
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
@@ -419,6 +457,9 @@ mod tests {
                 deletion_grace_period_seconds: None,
                 finalizers: None,
                 owner_references: None,
+                generate_name: None,
+                generation: None,
+                managed_fields: None,
             },
             spec: Some(rusternetes_common::resources::NodeSpec {
                 pod_cidr: None,
@@ -447,6 +488,9 @@ mod tests {
                 deletion_grace_period_seconds: None,
                 finalizers: None,
                 owner_references: None,
+                generate_name: None,
+                generation: None,
+                managed_fields: None,
             },
             spec: rusternetes_common::resources::DaemonSetSpec {
                 selector: rusternetes_common::types::LabelSelector {
@@ -466,6 +510,9 @@ mod tests {
                         deletion_grace_period_seconds: None,
                         finalizers: None,
                         owner_references: None,
+                        generate_name: None,
+                        generation: None,
+                        managed_fields: None,
                     }),
                     spec: PodSpec {
                         init_containers: None,
@@ -490,9 +537,24 @@ mod tests {
                         scheduler_name: None,
                         topology_spread_constraints: None,
                         resource_claims: None,
+                        active_deadline_seconds: None,
+                        dns_policy: None,
+                        dns_config: None,
+                        security_context: None,
+                        image_pull_secrets: None,
+                        share_process_namespace: None,
+                        readiness_gates: None,
+                        runtime_class_name: None,
+                        enable_service_links: None,
+                        preemption_policy: None,
+                        host_users: None,
+                        set_hostname_as_fqdn: None,
+                        termination_grace_period_seconds: None,
                     },
                 },
                 update_strategy: None,
+            min_ready_seconds: None,
+            revision_history_limit: None,
             },
             status: None,
         };

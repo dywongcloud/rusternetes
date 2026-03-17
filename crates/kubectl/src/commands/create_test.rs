@@ -105,7 +105,7 @@ spec:
         let deployment: Deployment = serde_yaml::from_str(yaml).unwrap();
 
         assert_eq!(deployment.metadata.name, "test-deployment");
-        assert_eq!(deployment.spec.replicas, 3);
+        assert_eq!(deployment.spec.replicas, Some(3));
     }
 
     #[test]

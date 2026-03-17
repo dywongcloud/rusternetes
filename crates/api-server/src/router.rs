@@ -1753,12 +1753,18 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // In skip-auth mode, inject a default admin user context
         protected_routes = protected_routes
             .layer(axum_middleware::from_fn(
+                middleware::normalize_content_type_middleware,
+            ))
+            .layer(axum_middleware::from_fn(
                 middleware::log_request_body_middleware,
             ))
             .layer(axum_middleware::from_fn(middleware::skip_auth_middleware));
     } else {
         // In normal mode, apply full authentication
         protected_routes = protected_routes
+            .layer(axum_middleware::from_fn(
+                middleware::normalize_content_type_middleware,
+            ))
             .layer(axum_middleware::from_fn(
                 middleware::log_request_body_middleware,
             ))

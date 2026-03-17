@@ -30,6 +30,9 @@ fn create_test_node(name: &str) -> Node {
             owner_references: None,
             annotations: None,
             deletion_grace_period_seconds: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: Some(NodeSpec {
             pod_cidr: Some("10.244.0.0/24".to_string()),

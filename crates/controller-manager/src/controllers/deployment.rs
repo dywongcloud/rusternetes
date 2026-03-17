@@ -92,14 +92,16 @@ impl<S: Storage> DeploymentController<S> {
             .iter()
             .find(|rs| self.replicaset_matches_template(rs, deployment));
 
+        let desired_replicas = deployment.spec.replicas.unwrap_or(1);
+
         if let Some(active) = active_rs {
             // Active ReplicaSet exists, ensure it has correct replica count
-            if active.spec.replicas != deployment.spec.replicas {
+            if active.spec.replicas != desired_replicas {
                 info!(
                     "Updating ReplicaSet {}/{} replicas from {} to {}",
-                    namespace, active.metadata.name, active.spec.replicas, deployment.spec.replicas
+                    namespace, active.metadata.name, active.spec.replicas, desired_replicas
                 );
-                self.update_replicaset_replicas(active, deployment.spec.replicas)
+                self.update_replicaset_replicas(active, desired_replicas)
                     .await?;
             }
 
@@ -217,7 +219,7 @@ impl<S: Storage> DeploymentController<S> {
             },
             metadata,
             spec: ReplicaSetSpec {
-                replicas: deployment.spec.replicas,
+                replicas: deployment.spec.replicas.unwrap_or(1),
                 selector: deployment.spec.selector.clone(),
                 template: deployment.spec.template.clone(),
                 min_ready_seconds: deployment.spec.min_ready_seconds,
@@ -307,6 +309,9 @@ impl<S: Storage> DeploymentController<S> {
             available_replicas: Some(available_replicas),
             unavailable_replicas: Some(unavailable),
             updated_replicas: Some(updated_replicas),
+            conditions: None,
+            collision_count: None,
+            observed_generation: None,
         };
 
         let mut updated_deployment = deployment.clone();

@@ -298,6 +298,7 @@ impl<S: Storage> NodeController<S> {
                 reason: None,
                 host_ip: None,
                 pod_ip: None,
+                conditions: None,
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
@@ -358,6 +359,9 @@ mod tests {
                 deletion_timestamp: None,
                 labels: None,
                 annotations: None,
+                generate_name: None,
+                generation: None,
+                managed_fields: None,
             },
             spec: None,
             status: Some(NodeStatus {

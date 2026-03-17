@@ -33,6 +33,9 @@ fn create_test_service(name: &str, namespace: &str, service_type: ServiceType) -
             deletion_grace_period_seconds: None,
             owner_references: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: ServiceSpec {
             selector: Some(selector),
@@ -42,6 +45,7 @@ fn create_test_service(name: &str, namespace: &str, service_type: ServiceType) -
                 port: 80,
                 target_port: Some(8080),
                 node_port: None,
+            app_protocol: None,
             }],
             cluster_ip: None,
             cluster_ips: None,
@@ -53,6 +57,14 @@ fn create_test_service(name: &str, namespace: &str, service_type: ServiceType) -
             ip_families: None,
             ip_family_policy: None,
             internal_traffic_policy: None,
+        health_check_node_port: None,
+        load_balancer_class: None,
+        load_balancer_ip: None,
+        load_balancer_source_ranges: None,
+        allocate_load_balancer_node_ports: None,
+        publish_not_ready_addresses: None,
+        session_affinity_config: None,
+        traffic_distribution: None,
         },
         status: None,
     }
@@ -301,6 +313,7 @@ async fn test_service_with_multiple_ports() {
             port: 80,
             target_port: Some(8080),
             node_port: None,
+            app_protocol: None,
         },
         ServicePort {
             name: Some("https".to_string()),
@@ -308,6 +321,7 @@ async fn test_service_with_multiple_ports() {
             port: 443,
             target_port: Some(8443),
             node_port: None,
+            app_protocol: None,
         },
     ];
 

@@ -37,6 +37,9 @@ fn create_test_pv(name: &str, capacity: &str) -> PersistentVolume {
             deletion_grace_period_seconds: None,
             owner_references: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: PersistentVolumeSpec {
             capacity: capacity_map,

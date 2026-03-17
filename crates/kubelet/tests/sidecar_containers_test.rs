@@ -108,6 +108,19 @@ fn create_pod_with_sidecar(
             overhead: None,
             scheduler_name: None,
             resource_claims: None,
+            active_deadline_seconds: None,
+            dns_policy: None,
+            dns_config: None,
+            security_context: None,
+            image_pull_secrets: None,
+            share_process_namespace: None,
+            readiness_gates: None,
+            runtime_class_name: None,
+            enable_service_links: None,
+            preemption_policy: None,
+            host_users: None,
+            set_hostname_as_fqdn: None,
+            termination_grace_period_seconds: None,
         }),
         status: None,
     }
@@ -194,6 +207,7 @@ fn test_sidecar_runs_alongside_main_containers() {
             container_id: Some("app-0-container".to_string()),
         }]),
         ephemeral_container_statuses: None,
+        conditions: None,
     });
 
     let status = pod.status.as_ref().unwrap();
@@ -353,6 +367,7 @@ fn test_sidecar_failure_should_not_block_pod() {
             container_id: Some("app-0-container".to_string()),
         }]),
         ephemeral_container_statuses: None,
+        conditions: None,
     });
 
     let status = pod.status.as_ref().unwrap();

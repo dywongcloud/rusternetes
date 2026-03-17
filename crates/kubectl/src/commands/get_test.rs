@@ -56,7 +56,7 @@ mod tests {
         };
 
         // Just verify it doesn't panic
-        let result = format_output(&resource, OutputFormat::Json);
+        let result = format_output(&resource, &OutputFormat::Json);
         assert!(result.is_ok());
     }
 
@@ -76,7 +76,7 @@ mod tests {
         };
 
         // Just verify it doesn't panic
-        let result = format_output(&resource, OutputFormat::Yaml);
+        let result = format_output(&resource, &OutputFormat::Yaml);
         assert!(result.is_ok());
     }
 
@@ -101,6 +101,112 @@ mod tests {
             assert!(["service", "services", "svc"].contains(&alias));
         }
         // ... etc
+    }
+
+    #[test]
+    fn test_output_format_jsonpath() {
+        let format = OutputFormat::from_str("jsonpath={.metadata.name}").unwrap();
+        assert!(matches!(format, OutputFormat::JsonPath(_)));
+        if let OutputFormat::JsonPath(expr) = format {
+            assert_eq!(expr, "{.metadata.name}");
+        }
+    }
+
+    #[test]
+    fn test_output_format_name() {
+        let format = OutputFormat::from_str("name").unwrap();
+        assert!(matches!(format, OutputFormat::Name));
+    }
+
+    #[test]
+    fn test_format_output_jsonpath_basic_field() {
+        use serde::Serialize;
+        use serde_json::json;
+
+        #[derive(Serialize)]
+        struct TestResource {
+            metadata: serde_json::Value,
+        }
+
+        let resource = TestResource {
+            metadata: json!({ "name": "my-pod", "namespace": "default" }),
+        };
+
+        let format = OutputFormat::JsonPath("{.metadata.name}".to_string());
+        let result = format_output(&resource, &format);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_format_output_jsonpath_array_index() {
+        use serde::Serialize;
+        use serde_json::json;
+
+        #[derive(Serialize)]
+        struct TestResource {
+            status: serde_json::Value,
+        }
+
+        let resource = TestResource {
+            status: json!({
+                "conditions": [
+                    { "type": "Ready", "status": "True" },
+                    { "type": "Initialized", "status": "True" }
+                ]
+            }),
+        };
+
+        let format = OutputFormat::JsonPath("{.status.conditions[0].type}".to_string());
+        let result = format_output(&resource, &format);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_format_output_jsonpath_missing_field() {
+        use serde::Serialize;
+        use serde_json::json;
+
+        #[derive(Serialize)]
+        struct TestResource {
+            metadata: serde_json::Value,
+        }
+
+        let resource = TestResource {
+            metadata: json!({ "name": "my-pod" }),
+        };
+
+        // Missing field should not error — it should return empty
+        let format = OutputFormat::JsonPath("{.metadata.nonexistent}".to_string());
+        let result = format_output(&resource, &format);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_format_output_name() {
+        use serde::Serialize;
+        use serde_json::json;
+
+        #[derive(Serialize)]
+        struct TestResource {
+            kind: String,
+            metadata: serde_json::Value,
+        }
+
+        let resource = TestResource {
+            kind: "Pod".to_string(),
+            metadata: json!({ "name": "my-pod" }),
+        };
+
+        let format = OutputFormat::Name;
+        let result = format_output(&resource, &format);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_output_format_jsonpath_invalid_prefix_rejected() {
+        // jsonpath without the = separator is not a valid format
+        let result = OutputFormat::from_str("jsonpath{.metadata.name}");
+        assert!(result.is_err());
     }
 
     #[test]

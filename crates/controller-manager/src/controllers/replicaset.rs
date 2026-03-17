@@ -292,6 +292,7 @@ impl<S: Storage> ReplicaSetController<S> {
                 reason: None,
                 host_ip: None,
                 pod_ip: None,
+                conditions: None,
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,

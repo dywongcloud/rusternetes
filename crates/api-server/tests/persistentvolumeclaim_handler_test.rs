@@ -36,6 +36,9 @@ fn create_test_pvc(name: &str, namespace: &str, storage: &str) -> PersistentVolu
             deletion_grace_period_seconds: None,
             owner_references: None,
             annotations: None,
+            generate_name: None,
+            generation: None,
+            managed_fields: None,
         },
         spec: PersistentVolumeClaimSpec {
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],

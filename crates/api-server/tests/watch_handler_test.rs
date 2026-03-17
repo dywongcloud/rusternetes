@@ -75,6 +75,19 @@ fn create_minimal_pod_spec() -> PodSpec {
         overhead: None,
         topology_spread_constraints: None,
         resource_claims: None,
+        active_deadline_seconds: None,
+        dns_policy: None,
+        dns_config: None,
+        security_context: None,
+        image_pull_secrets: None,
+        share_process_namespace: None,
+        readiness_gates: None,
+        runtime_class_name: None,
+        enable_service_links: None,
+        preemption_policy: None,
+        host_users: None,
+        set_hostname_as_fqdn: None,
+        termination_grace_period_seconds: None,
     }
 }
 
@@ -89,6 +102,7 @@ fn create_minimal_pod_status() -> PodStatus {
         container_statuses: None,
         init_container_statuses: None,
         ephemeral_container_statuses: None,
+        conditions: None,
     }
 }
 
@@ -503,6 +517,7 @@ async fn test_watch_namespace_isolation() {
                 port: 80,
                 target_port: None,
                 node_port: None,
+            app_protocol: None,
             }],
             cluster_ip: None,
             cluster_ips: None,
@@ -514,6 +529,14 @@ async fn test_watch_namespace_isolation() {
             ip_families: None,
             ip_family_policy: None,
             internal_traffic_policy: None,
+        health_check_node_port: None,
+        load_balancer_class: None,
+        load_balancer_ip: None,
+        load_balancer_source_ranges: None,
+        allocate_load_balancer_node_ports: None,
+        publish_not_ready_addresses: None,
+        session_affinity_config: None,
+        traffic_distribution: None,
         },
         status: None,
     };
@@ -541,6 +564,7 @@ async fn test_watch_namespace_isolation() {
                 port: 80,
                 target_port: None,
                 node_port: None,
+            app_protocol: None,
             }],
             cluster_ip: None,
             cluster_ips: None,
@@ -552,6 +576,14 @@ async fn test_watch_namespace_isolation() {
             ip_families: None,
             ip_family_policy: None,
             internal_traffic_policy: None,
+        health_check_node_port: None,
+        load_balancer_class: None,
+        load_balancer_ip: None,
+        load_balancer_source_ranges: None,
+        allocate_load_balancer_node_ports: None,
+        publish_not_ready_addresses: None,
+        session_affinity_config: None,
+        traffic_distribution: None,
         },
         status: None,
     };

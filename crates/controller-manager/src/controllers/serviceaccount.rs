@@ -170,6 +170,9 @@ impl<S: Storage> ServiceAccountController<S> {
             },
             metadata: ObjectMeta {
                 name: sa_name.to_string(),
+                generate_name: None,
+                generation: None,
+                managed_fields: None,
                 namespace: Some(namespace.to_string()),
                 uid: String::new(),
                 resource_version: None,
@@ -239,6 +242,9 @@ impl<S: Storage> ServiceAccountController<S> {
             },
             metadata: ObjectMeta {
                 name: secret_name.clone(),
+                generate_name: None,
+                generation: None,
+                managed_fields: None,
                 namespace: Some(namespace.to_string()),
                 uid: String::new(),
                 resource_version: None,

@@ -1,6 +1,7 @@
 use crate::resources::workloads::PodTemplateSpec;
 use crate::types::{LabelSelector, ObjectMeta, TypeMeta};
 use serde::{Deserialize, Serialize};
+use chrono::{DateTime, Utc};
 
 /// Deployment provides declarative updates for Pods
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,7 +32,9 @@ impl Deployment {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeploymentSpec {
-    pub replicas: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replicas: Option<i32>,
+
     pub selector: LabelSelector,
     pub template: PodTemplateSpec,
 
@@ -43,6 +46,12 @@ pub struct DeploymentSpec {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revision_history_limit: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paused: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress_deadline_seconds: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,4 +91,34 @@ pub struct DeploymentStatus {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unavailable_replicas: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<Vec<DeploymentCondition>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collision_count: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_generation: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeploymentCondition {
+    #[serde(rename = "type")]
+    pub condition_type: String,
+
+    pub status: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_update_time: Option<DateTime<Utc>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_transition_time: Option<DateTime<Utc>>,
 }
