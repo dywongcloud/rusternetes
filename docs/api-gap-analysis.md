@@ -7,7 +7,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 **Scope**: `core/v1`, `apps/v1`, `batch/v1`, `autoscaling/v2`, `networking/v1`, `rbac/v1`,
 `storage/v1`, `policy/v1`
 
-**Last updated**: 2026-03-17 (commit 7bdf79c)
+**Last updated**: 2026-03-17 (commit 1383ff8)
 
 ---
 
@@ -25,7 +25,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 **File**: `crates/common/src/resources/pod.rs`
 
-### ✅ Completed (commit 7bdf79c)
+### ✅ Completed (commit 1383ff8)
 
 | Field | Status |
 |-------|--------|
@@ -51,7 +51,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 |------|--------|----------|
 | `PodSchedulingGroup` | `podGroupName: string` | P2 |
 
-### ✅ Structural fixes (commit 7bdf79c)
+### ✅ Structural fixes (commit 1383ff8)
 
 | Item | Status |
 |------|--------|
@@ -63,7 +63,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 **File**: `crates/common/src/resources/pod.rs`
 
-### ✅ Completed (commit 7bdf79c)
+### ✅ Completed (commit 1383ff8)
 
 | Field | Status |
 |-------|--------|
@@ -98,7 +98,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 **File**: `crates/common/src/resources/pod.rs`
 
-### ✅ Completed (commit 7bdf79c)
+### ✅ Completed (commit 1383ff8)
 
 | Field | Status |
 |-------|--------|
@@ -130,7 +130,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 **File**: `crates/common/src/resources/pod.rs`
 
-### ✅ Completed (commit 7bdf79c)
+### ✅ Completed (commit 1383ff8)
 
 | Field | Status |
 |-------|--------|
@@ -478,7 +478,7 @@ This document compares rusternetes type definitions against the Kubernetes 1.35 
 
 **File**: `crates/common/src/resources/volume.rs`
 
-### ✅ Structural fixes (commit 7bdf79c)
+### ✅ Structural fixes (commit 1383ff8)
 
 | Item | Status |
 |------|--------|
