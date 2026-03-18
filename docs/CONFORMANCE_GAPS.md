@@ -138,12 +138,9 @@ Now computed and set (Guaranteed/Burstable/BestEffort) from resource requests/li
 
 ## 3. Controller-Manager Behavioral Gaps
 
-### P0 — Deployment controller missing rolling update strategy
+### ✅ P0 — Deployment controller rolling update strategy — FIXED
 
-**File**: `crates/controller-manager/src/controllers/deployment.rs`
-
-**Issue**: Rolling updates don't respect `maxSurge` and `maxUnavailable`. Deployments
-scale directly to desired replicas instantly instead of gradually rolling.
+Gradual scale-up/down per reconcile cycle, respecting maxSurge/maxUnavailable.
 
 ### ✅ P0 — Deployment controller doesn't set status conditions — FIXED
 
@@ -159,13 +156,13 @@ All controllers (deployment, replicaset, statefulset, daemonset, job) now set
 replicaset.rs and endpoints.rs now check `conditions[type=Ready].status == "True"`
 instead of `phase == Running`.
 
-### P1 — StatefulSet doesn't manage PVCs from volumeClaimTemplates
+### ✅ P1 — StatefulSet PVC management — FIXED
 
-StatefulSets should create PVCs from `spec.volumeClaimTemplates` for each replica.
+Creates PVCs from volumeClaimTemplates for each replica ordinal with owner references.
 
-### P1 — DaemonSet doesn't match taint tolerations
+### ✅ P1 — DaemonSet taint tolerations — FIXED
 
-DaemonSet creates pods on all matching nodes without checking taints.
+Nodes with untolerated NoSchedule/NoExecute taints are now skipped.
 
 ### P1 — Node controller doesn't respect PodDisruptionBudgets during eviction
 
@@ -226,14 +223,11 @@ No endpoint for `/apis/apps`, `/apis/batch`, etc. (individual API group details)
 22. ✅ Service env vars
 23. ✅ DNS policy/config
 
-### Remaining P0:
+### ✅ All P0 and P1 items COMPLETE
 
-24. Deployment rolling update strategy (controller-manager)
-
-### Remaining P1:
-
-25. StatefulSet PVC management (controller-manager)
-26. DaemonSet taint tolerations (controller-manager)
+24. ✅ Deployment rolling update strategy
+25. ✅ StatefulSet PVC management
+26. ✅ DaemonSet taint tolerations
 
 ### Remaining P2:
 

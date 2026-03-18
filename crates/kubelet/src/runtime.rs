@@ -2166,17 +2166,20 @@ impl ContainerRuntime {
                     let running = state.running.unwrap_or(false);
                     let exit_code = state.exit_code.unwrap_or(0);
 
-                    // Get restart count from host config (Docker/Podman tracks this in restart policy)
-                    // For now, we'll get it from the pod status if available, otherwise default to 0
-                    let restart_count = pod
-                        .status
-                        .as_ref()
-                        .and_then(|s| s.container_statuses.as_ref())
-                        .and_then(|statuses| {
-                            statuses
-                                .iter()
-                                .find(|cs| cs.name == container.name)
-                                .map(|cs| cs.restart_count)
+                    // Get restart count from Docker/Podman container inspect
+                    // (tracks actual container restarts), falling back to pod status
+                    let restart_count = inspect.restart_count
+                        .map(|c| c as u32)
+                        .or_else(|| {
+                            pod.status
+                                .as_ref()
+                                .and_then(|s| s.container_statuses.as_ref())
+                                .and_then(|statuses| {
+                                    statuses
+                                        .iter()
+                                        .find(|cs| cs.name == container.name)
+                                        .map(|cs| cs.restart_count)
+                                })
                         })
                         .unwrap_or(0);
 

@@ -587,17 +587,17 @@ pub async fn list(
 
     // Get a resource version for consistency
     // In a real implementation, this would be from etcd or storage layer
-    let resource_version = "1"; // Simplified for now
+    let resource_version = chrono::Utc::now().timestamp().to_string();
 
     // Apply pagination
-    let paginated = rusternetes_common::paginate(pods, pagination_params, resource_version)
+    let paginated = rusternetes_common::paginate(pods, pagination_params, &resource_version)
         .map_err(|e| rusternetes_common::Error::InvalidResource(e))?;
 
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());
     if crate::handlers::table::wants_table(accept) {
         let table =
-            crate::handlers::table::pods_table(paginated.items, Some(resource_version.to_string()));
+            crate::handlers::table::pods_table(paginated.items, Some(resource_version.clone()));
         return Ok(axum::Json(table).into_response());
     }
 
@@ -605,7 +605,7 @@ pub async fn list(
     let mut list = List::new("PodList", "v1", paginated.items);
     list.metadata.continue_token = paginated.continue_token;
     list.metadata.remaining_item_count = paginated.remaining_item_count;
-    list.metadata.resource_version = Some(resource_version.to_string());
+    list.metadata.resource_version = Some(resource_version);
 
     Ok(axum::Json(list).into_response())
 }
@@ -675,17 +675,17 @@ pub async fn list_all_pods(
     };
 
     // Get a resource version for consistency
-    let resource_version = "1"; // Simplified for now
+    let resource_version = chrono::Utc::now().timestamp().to_string();
 
     // Apply pagination
-    let paginated = rusternetes_common::paginate(pods, pagination_params, resource_version)
+    let paginated = rusternetes_common::paginate(pods, pagination_params, &resource_version)
         .map_err(|e| rusternetes_common::Error::InvalidResource(e))?;
 
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());
     if crate::handlers::table::wants_table(accept) {
         let table =
-            crate::handlers::table::pods_table(paginated.items, Some(resource_version.to_string()));
+            crate::handlers::table::pods_table(paginated.items, Some(resource_version.clone()));
         return Ok(axum::Json(table).into_response());
     }
 
@@ -693,7 +693,7 @@ pub async fn list_all_pods(
     let mut list = List::new("PodList", "v1", paginated.items);
     list.metadata.continue_token = paginated.continue_token;
     list.metadata.remaining_item_count = paginated.remaining_item_count;
-    list.metadata.resource_version = Some(resource_version.to_string());
+    list.metadata.resource_version = Some(resource_version);
 
     Ok(axum::Json(list).into_response())
 }

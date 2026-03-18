@@ -106,6 +106,19 @@ impl<S: Storage> JobController<S> {
         let is_complete = succeeded >= completions;
         let is_failed = failed > backoff_limit;
 
+        // Preserve the existing start_time if the job was already started
+        let existing_start_time = job
+            .status
+            .as_ref()
+            .and_then(|s| s.start_time);
+
+        // Set start_time when the job first has any pods (active, succeeded, or failed)
+        let start_time = if active > 0 || succeeded > 0 || failed > 0 {
+            Some(existing_start_time.unwrap_or_else(chrono::Utc::now))
+        } else {
+            existing_start_time
+        };
+
         if is_complete {
             info!("Job {}/{} completed successfully", namespace, name);
             job.status = Some(JobStatus {
@@ -120,8 +133,8 @@ impl<S: Storage> JobController<S> {
                     reason: Some("Completed".to_string()),
                     message: Some("Job completed successfully".to_string()),
                 }]),
-                start_time: None,
-                completion_time: None,
+                start_time,
+                completion_time: Some(chrono::Utc::now()),
                 ready: None,
                 terminating: None,
                 completed_indexes: None,
@@ -149,8 +162,8 @@ impl<S: Storage> JobController<S> {
                         backoff_limit
                     )),
                 }]),
-                start_time: None,
-                completion_time: None,
+                start_time,
+                completion_time: Some(chrono::Utc::now()),
                 ready: None,
                 terminating: None,
                 completed_indexes: None,
@@ -212,7 +225,7 @@ impl<S: Storage> JobController<S> {
                 succeeded: Some(succeeded),
                 failed: Some(failed),
                 conditions: None,
-                start_time: None,
+                start_time,
                 completion_time: None,
                 ready: None,
                 terminating: None,

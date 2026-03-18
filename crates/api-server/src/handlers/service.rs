@@ -319,7 +319,7 @@ pub async fn list(
     crate::handlers::filtering::apply_selectors(&mut services, &params_map)?;
 
     // Get a resource version for consistency
-    let resource_version = "1"; // Simplified for now
+    let resource_version = chrono::Utc::now().timestamp().to_string();
 
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());
@@ -382,7 +382,7 @@ pub async fn list_all_services(
     crate::handlers::filtering::apply_selectors(&mut services, &params_map)?;
 
     // Get a resource version for consistency
-    let resource_version = "1"; // Simplified for now
+    let resource_version = chrono::Utc::now().timestamp().to_string();
 
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());

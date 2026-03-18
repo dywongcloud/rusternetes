@@ -113,8 +113,7 @@ where
         tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
 
     // Extract parameters
-    // TODO: Fix bookmark implementation - currently disabled as CoreDNS can't decode them
-    let allow_bookmarks = false; // params.allow_watch_bookmarks.unwrap_or(false);
+    let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
 
     // Spawn task to convert watch events to HTTP response
@@ -350,8 +349,7 @@ where
         tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
 
     // Extract parameters
-    // TODO: Fix bookmark implementation - currently disabled as CoreDNS can't decode them
-    let allow_bookmarks = false; // params.allow_watch_bookmarks.unwrap_or(false);
+    let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
 
     // Spawn task to convert watch events to HTTP response
