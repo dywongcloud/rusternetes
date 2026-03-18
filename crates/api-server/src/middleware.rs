@@ -114,6 +114,23 @@ pub async fn normalize_content_type_middleware(
             .unwrap_or("")
             .to_string();
 
+        // Reject protobuf with 415 so client-go negotiates down to JSON
+        if content_type.starts_with("application/vnd.kubernetes.protobuf") {
+            let status_body = serde_json::json!({
+                "kind": "Status",
+                "apiVersion": "v1",
+                "status": "Failure",
+                "message": "the body of the request was in an unknown format - accepted media types include: application/json, application/yaml",
+                "reason": "UnsupportedMediaType",
+                "code": 415
+            });
+            return Ok(axum::response::Response::builder()
+                .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_vec(&status_body).unwrap()))
+                .unwrap());
+        }
+
         // If not already a JSON content type, normalize to application/json
         if !content_type.starts_with("application/json")
             && !content_type.starts_with("application/strategic-merge-patch+json")
@@ -136,6 +153,8 @@ pub async fn log_request_body_middleware(
     next: Next,
 ) -> Result<Response, Response> {
     let (parts, body) = request.into_parts();
+    let method_str = parts.method.to_string();
+    let uri_str = parts.uri.to_string();
 
     // Only log POST/PUT/PATCH requests
     if parts.method == axum::http::Method::POST
@@ -162,6 +181,13 @@ pub async fn log_request_body_middleware(
                     "Request body for {} {}: {}",
                     parts.method, parts.uri, body_str
                 );
+            } else {
+                warn!(
+                    "Request body for {} {} is binary ({} bytes, first 20: {:?}), content-type: {:?}",
+                    parts.method, parts.uri, bytes.len(),
+                    &bytes[..std::cmp::min(20, bytes.len())],
+                    parts.headers.get(axum::http::header::CONTENT_TYPE)
+                );
             }
         }
 
@@ -169,9 +195,14 @@ pub async fn log_request_body_middleware(
         let request = Request::from_parts(parts, Body::from(bytes));
         let response = next.run(request).await;
 
-        // Log if the response is 422
-        if response.status() == StatusCode::UNPROCESSABLE_ENTITY {
-            error!("422 Unprocessable Entity returned - check request body above");
+        // Log if the response is a client error
+        if response.status().is_client_error() {
+            warn!(
+                "HTTP {} returned for {} {} - check request body above",
+                response.status().as_u16(),
+                method_str,
+                uri_str
+            );
         }
 
         Ok(response)
