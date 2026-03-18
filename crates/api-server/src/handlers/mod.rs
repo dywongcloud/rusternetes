@@ -32,6 +32,7 @@ pub mod ingressclass;
 pub mod ipaddress;
 pub mod job;
 pub mod lease;
+pub mod lifecycle;
 pub mod limitrange;
 pub mod metrics;
 pub mod namespace;

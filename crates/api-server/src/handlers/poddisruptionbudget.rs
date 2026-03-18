@@ -141,7 +141,7 @@ pub async fn delete(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<PodDisruptionBudget>> {
     info!("Deleting poddisruptionbudget: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -162,17 +162,17 @@ pub async fn delete(
 
     let key = build_key("poddisruptionbudgets", Some(&namespace), &name);
 
+    // Get the PDB for finalizer handling
+    let pdb: PodDisruptionBudget = state.storage.get(&key).await?;
+
     // If dry-run, skip delete operation
     if is_dry_run {
         info!(
             "Dry-run: PodDisruptionBudget {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(pdb));
     }
-
-    // Get the PDB for finalizer handling
-    let pdb: PodDisruptionBudget = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately =
@@ -180,13 +180,11 @@ pub async fn delete(
             .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(pdb))
     } else {
-        info!(
-            "PodDisruptionBudget {}/{} marked for deletion (has finalizers: {:?})",
-            namespace, name, pdb.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: PodDisruptionBudget = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

@@ -51,6 +51,55 @@ pub async fn create(
         }
     }
 
+    // Validate pod spec
+    if let Some(ref spec) = pod.spec {
+        if spec.containers.is_empty() {
+            return Err(rusternetes_common::Error::InvalidResource(
+                "spec.containers: Required value: must have at least one container".to_string(),
+            ));
+        }
+        for (i, container) in spec.containers.iter().enumerate() {
+            if container.image.is_empty() {
+                return Err(rusternetes_common::Error::InvalidResource(format!(
+                    "spec.containers[{}].image: Required value",
+                    i
+                )));
+            }
+            if container.name.is_empty() {
+                return Err(rusternetes_common::Error::InvalidResource(format!(
+                    "spec.containers[{}].name: Required value",
+                    i
+                )));
+            }
+        }
+    }
+
+    // Set defaults
+    if let Some(ref mut spec) = pod.spec {
+        if spec.restart_policy.is_none() {
+            spec.restart_policy = Some("Always".to_string());
+        }
+        if spec.dns_policy.is_none() {
+            spec.dns_policy = Some("ClusterFirst".to_string());
+        }
+        for container in &mut spec.containers {
+            if container.termination_message_path.is_none() {
+                container.termination_message_path = Some("/dev/termination-log".to_string());
+            }
+            if container.termination_message_policy.is_none() {
+                container.termination_message_policy = Some("File".to_string());
+            }
+            if container.image_pull_policy.is_none() {
+                // Default based on image tag
+                if container.image.contains(":latest") || !container.image.contains(':') {
+                    container.image_pull_policy = Some("Always".to_string());
+                } else {
+                    container.image_pull_policy = Some("IfNotPresent".to_string());
+                }
+            }
+        }
+    }
+
     // Ensure namespace is set correctly
     pod.metadata.namespace = Some(namespace.clone());
 
@@ -209,6 +258,7 @@ pub async fn create(
 
     pod.metadata.ensure_uid();
     pod.metadata.ensure_creation_timestamp();
+    crate::handlers::lifecycle::set_initial_generation(&mut pod.metadata);
 
     let key = build_key("pods", Some(&namespace), &pod.metadata.name);
 
@@ -301,9 +351,17 @@ pub async fn update(
     pod.metadata.name = name.clone();
     pod.metadata.namespace = Some(namespace.clone());
 
-    // Get the old pod for webhook comparison
+    // Get the old pod for webhook comparison and concurrency control
     let key = build_key("pods", Some(&namespace), &name);
     let old_pod: Pod = state.storage.get(&key).await?;
+
+    // Check resourceVersion for optimistic concurrency control
+    crate::handlers::lifecycle::check_resource_version(
+        old_pod.metadata.resource_version.as_deref(),
+        pod.metadata.resource_version.as_deref(),
+        &name,
+    )?;
+
     let old_pod_value = serde_json::to_value(&old_pod)
         .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
 
@@ -367,7 +425,7 @@ pub async fn update(
             Some(&namespace),
             &name,
             Some(final_pod_value),
-            Some(old_pod_value),
+            Some(old_pod_value.clone()),
             &user_info,
         )
         .await?;
@@ -382,6 +440,15 @@ pub async fn update(
             info!("Validating webhooks passed for pod {}/{}", namespace, name);
         }
     }
+
+    // Increment generation if spec changed
+    let new_pod_value = serde_json::to_value(&pod)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+    crate::handlers::lifecycle::maybe_increment_generation(
+        &old_pod_value,
+        &new_pod_value,
+        &mut pod.metadata,
+    );
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
@@ -402,7 +469,7 @@ pub async fn delete_pod(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<Pod>> {
     info!("Deleting pod: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -432,7 +499,7 @@ pub async fn delete_pod(
             "Dry-run: Pod {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(pod));
     }
 
     // Handle deletion with finalizers
@@ -443,15 +510,11 @@ pub async fn delete_pod(
             .await?;
 
     if deleted_immediately {
-        // Pod had no finalizers and was deleted immediately
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(pod))
     } else {
-        // Pod has finalizers and was marked for deletion
-        info!(
-            "Pod {}/{} marked for deletion (has finalizers: {:?})",
-            namespace, name, pod.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: Pod = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

@@ -127,7 +127,7 @@ pub async fn delete_node(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<Node>> {
     info!("Deleting node: {}", name);
 
     // Check if this is a dry-run request
@@ -147,17 +147,17 @@ pub async fn delete_node(
 
     let key = build_key("nodes", None, &name);
 
+    // Get the node for finalizer handling
+    let node: Node = state.storage.get(&key).await?;
+
     // If dry-run, skip delete operation
     if is_dry_run {
         info!(
             "Dry-run: Node {} validated successfully (not deleted)",
             name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(node));
     }
-
-    // Get the node for finalizer handling
-    let node: Node = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately =
@@ -165,13 +165,11 @@ pub async fn delete_node(
             .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(node))
     } else {
-        info!(
-            "Node {} marked for deletion (has finalizers: {:?})",
-            name, node.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: Node = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

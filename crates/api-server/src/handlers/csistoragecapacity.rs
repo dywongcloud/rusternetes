@@ -182,7 +182,7 @@ pub async fn delete_csistoragecapacity(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<CSIStorageCapacity>> {
     info!(
         "Deleting CSIStorageCapacity: {} in namespace: {}",
         name, namespace
@@ -203,13 +203,14 @@ pub async fn delete_csistoragecapacity(
     let key = build_key("csistoragecapacities", Some(&namespace), &name);
 
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
-    if is_dry_run {
-        info!("Dry-run: CSIStorageCapacity validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
-    }
 
     // Get the resource for finalizer handling
     let resource: CSIStorageCapacity = state.storage.get(&key).await?;
+
+    if is_dry_run {
+        info!("Dry-run: CSIStorageCapacity validated successfully (not deleted)");
+        return Ok(Json(resource));
+    }
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -220,13 +221,11 @@ pub async fn delete_csistoragecapacity(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(resource))
     } else {
-        info!(
-            "CSIStorageCapacity marked for deletion (has finalizers: {:?})",
-            resource.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: CSIStorageCapacity = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

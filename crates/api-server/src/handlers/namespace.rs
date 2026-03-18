@@ -160,7 +160,7 @@ pub async fn delete_ns(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<Namespace>> {
     info!("Deleting namespace: {}", name);
 
     // Check if this is a dry-run request
@@ -189,7 +189,7 @@ pub async fn delete_ns(
             "Dry-run: Namespace {} validated successfully (not deleted)",
             name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(namespace));
     }
 
     // CASCADE DELETE: Delete all resources in this namespace before deleting the namespace
@@ -207,17 +207,12 @@ pub async fn delete_ns(
     .await?;
 
     if deleted_immediately {
-        // Namespace had no finalizers and was deleted immediately
         info!("Namespace {} deleted successfully (no finalizers)", name);
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(namespace))
     } else {
-        // Namespace has finalizers and was marked for deletion
-        // The namespace controller will handle cleanup and finalizer removal
-        info!(
-            "Namespace {} marked for deletion (has finalizers: {:?})",
-            name, namespace.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: Namespace = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

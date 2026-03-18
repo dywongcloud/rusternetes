@@ -145,7 +145,7 @@ pub async fn delete(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<HorizontalPodAutoscaler>> {
     info!("Deleting horizontalpodautoscaler: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -166,17 +166,17 @@ pub async fn delete(
 
     let key = build_key("horizontalpodautoscalers", Some(&namespace), &name);
 
+    // Get the HPA for finalizer handling
+    let hpa: HorizontalPodAutoscaler = state.storage.get(&key).await?;
+
     // If dry-run, skip delete operation
     if is_dry_run {
         info!(
             "Dry-run: HorizontalPodAutoscaler {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(hpa));
     }
-
-    // Get the HPA for finalizer handling
-    let hpa: HorizontalPodAutoscaler = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately =
@@ -184,13 +184,11 @@ pub async fn delete(
             .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(hpa))
     } else {
-        info!(
-            "HorizontalPodAutoscaler {}/{} marked for deletion (has finalizers: {:?})",
-            namespace, name, hpa.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: HorizontalPodAutoscaler = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

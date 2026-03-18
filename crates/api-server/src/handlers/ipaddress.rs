@@ -118,7 +118,7 @@ pub async fn delete_ipaddress(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<IPAddress>> {
     info!("Deleting IPAddress: {}", name);
 
     // Check authorization
@@ -135,15 +135,15 @@ pub async fn delete_ipaddress(
 
     let key = build_key("ipaddresses", None, &name);
 
+    // Get the resource for finalizer handling
+    let ipaddress: IPAddress = state.storage.get(&key).await?;
+
     // Handle dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: IPAddress validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(ipaddress));
     }
-
-    // Get the resource for finalizer handling
-    let ipaddress: IPAddress = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -154,13 +154,11 @@ pub async fn delete_ipaddress(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(ipaddress))
     } else {
-        info!(
-            "IPAddress marked for deletion (has finalizers: {:?})",
-            ipaddress.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: IPAddress = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

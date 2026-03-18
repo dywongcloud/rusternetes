@@ -124,7 +124,7 @@ pub async fn delete_role(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<Role>> {
     info!("Deleting role: {}/{}", namespace, name);
 
     // Check authorization
@@ -142,15 +142,15 @@ pub async fn delete_role(
 
     let key = build_key("roles", Some(&namespace), &name);
 
+    // Get the resource for finalizer handling
+    let role: Role = state.storage.get(&key).await?;
+
     // Handle dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: Role validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(role));
     }
-
-    // Get the resource for finalizer handling
-    let role: Role = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately =
@@ -158,13 +158,11 @@ pub async fn delete_role(
             .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(role))
     } else {
-        info!(
-            "Role marked for deletion (has finalizers: {:?})",
-            role.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: Role = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 
@@ -340,7 +338,7 @@ pub async fn delete_rolebinding(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<RoleBinding>> {
     info!("Deleting rolebinding: {}/{}", namespace, name);
 
     // Check authorization
@@ -358,15 +356,15 @@ pub async fn delete_rolebinding(
 
     let key = build_key("rolebindings", Some(&namespace), &name);
 
+    // Get the resource for finalizer handling
+    let rolebinding: RoleBinding = state.storage.get(&key).await?;
+
     // Handle dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: RoleBinding validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(rolebinding));
     }
-
-    // Get the resource for finalizer handling
-    let rolebinding: RoleBinding = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -377,13 +375,11 @@ pub async fn delete_rolebinding(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(rolebinding))
     } else {
-        info!(
-            "RoleBinding marked for deletion (has finalizers: {:?})",
-            rolebinding.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: RoleBinding = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 
@@ -572,7 +568,7 @@ pub async fn delete_clusterrole(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<ClusterRole>> {
     info!("Deleting clusterrole: {}", name);
 
     // Check authorization
@@ -589,15 +585,15 @@ pub async fn delete_clusterrole(
 
     let key = build_key("clusterroles", None, &name);
 
+    // Get the resource for finalizer handling
+    let clusterrole: ClusterRole = state.storage.get(&key).await?;
+
     // Handle dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: ClusterRole validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(clusterrole));
     }
-
-    // Get the resource for finalizer handling
-    let clusterrole: ClusterRole = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -608,13 +604,11 @@ pub async fn delete_clusterrole(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(clusterrole))
     } else {
-        info!(
-            "ClusterRole marked for deletion (has finalizers: {:?})",
-            clusterrole.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: ClusterRole = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 
@@ -775,7 +769,7 @@ pub async fn delete_clusterrolebinding(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<ClusterRoleBinding>> {
     info!("Deleting clusterrolebinding: {}", name);
 
     // Check authorization
@@ -792,15 +786,15 @@ pub async fn delete_clusterrolebinding(
 
     let key = build_key("clusterrolebindings", None, &name);
 
+    // Get the resource for finalizer handling
+    let clusterrolebinding: ClusterRoleBinding = state.storage.get(&key).await?;
+
     // Handle dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: ClusterRoleBinding validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(clusterrolebinding));
     }
-
-    // Get the resource for finalizer handling
-    let clusterrolebinding: ClusterRoleBinding = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -811,13 +805,11 @@ pub async fn delete_clusterrolebinding(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(clusterrolebinding))
     } else {
-        info!(
-            "ClusterRoleBinding marked for deletion (has finalizers: {:?})",
-            clusterrolebinding.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: ClusterRoleBinding = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

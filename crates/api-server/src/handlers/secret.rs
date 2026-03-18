@@ -147,7 +147,7 @@ pub async fn delete_secret(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<Secret>> {
     info!("Deleting secret: {} in namespace: {}", name, namespace);
 
     // Check if this is a dry-run request
@@ -177,13 +177,19 @@ pub async fn delete_secret(
             "Dry-run: Secret {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(secret));
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &secret)
+    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &secret)
         .await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    if has_finalizers {
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: Secret = state.storage.get(&key).await?;
+        Ok(Json(updated))
+    } else {
+        Ok(Json(secret))
+    }
 }
 
 pub async fn list(

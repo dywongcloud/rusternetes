@@ -134,7 +134,7 @@ pub async fn delete(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<PriorityClass>> {
     info!("Deleting PriorityClass: {}", name);
 
     // Check if this is a dry-run request
@@ -154,17 +154,17 @@ pub async fn delete(
 
     let key = build_key("priorityclasses", None, &name);
 
+    // Get the priority class for finalizer handling
+    let priority_class: PriorityClass = state.storage.get(&key).await?;
+
     // If dry-run, skip delete operation
     if is_dry_run {
         info!(
             "Dry-run: PriorityClass {} validated successfully (not deleted)",
             name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(priority_class));
     }
-
-    // Get the priority class for finalizer handling
-    let priority_class: PriorityClass = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -175,13 +175,11 @@ pub async fn delete(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(priority_class))
     } else {
-        info!(
-            "PriorityClass {} marked for deletion (has finalizers: {:?})",
-            name, priority_class.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: PriorityClass = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

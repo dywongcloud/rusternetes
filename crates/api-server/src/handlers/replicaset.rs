@@ -155,7 +155,7 @@ pub async fn delete_replicaset(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<ReplicaSet>> {
     info!("Deleting replicaset: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -183,7 +183,7 @@ pub async fn delete_replicaset(
             "Dry-run: ReplicaSet {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(replicaset));
     }
 
     // Handle deletion with finalizers
@@ -195,13 +195,11 @@ pub async fn delete_replicaset(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(replicaset))
     } else {
-        info!(
-            "ReplicaSet {}/{} marked for deletion (has finalizers: {:?})",
-            namespace, name, replicaset.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: ReplicaSet = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

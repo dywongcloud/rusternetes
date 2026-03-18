@@ -138,7 +138,7 @@ pub async fn delete_ingress(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<Ingress>> {
     info!("Deleting ingress: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -168,13 +168,19 @@ pub async fn delete_ingress(
             "Dry-run: Ingress {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(ingress));
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &ingress)
+    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &ingress)
         .await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    if has_finalizers {
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: Ingress = state.storage.get(&key).await?;
+        Ok(Json(updated))
+    } else {
+        Ok(Json(ingress))
+    }
 }
 
 pub async fn list(

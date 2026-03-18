@@ -113,7 +113,7 @@ pub async fn delete_priority_level_configuration(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<PriorityLevelConfiguration>> {
     info!("Deleting PriorityLevelConfiguration: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "prioritylevelconfigurations")
@@ -127,15 +127,15 @@ pub async fn delete_priority_level_configuration(
 
     let key = build_key("prioritylevelconfigurations", None, &name);
 
+    // Get the resource for finalizer handling
+    let resource: PriorityLevelConfiguration = state.storage.get(&key).await?;
+
     // Check for dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: PriorityLevelConfiguration validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(resource));
     }
-
-    // Get the resource for finalizer handling
-    let resource: PriorityLevelConfiguration = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -146,13 +146,11 @@ pub async fn delete_priority_level_configuration(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(resource))
     } else {
-        info!(
-            "PriorityLevelConfiguration marked for deletion (has finalizers: {:?})",
-            resource.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: PriorityLevelConfiguration = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 
@@ -291,7 +289,7 @@ pub async fn delete_flow_schema(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<FlowSchema>> {
     info!("Deleting FlowSchema: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "flowschemas")
@@ -305,15 +303,15 @@ pub async fn delete_flow_schema(
 
     let key = build_key("flowschemas", None, &name);
 
+    // Get the resource for finalizer handling
+    let resource: FlowSchema = state.storage.get(&key).await?;
+
     // Check for dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: FlowSchema validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(resource));
     }
-
-    // Get the resource for finalizer handling
-    let resource: FlowSchema = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -324,13 +322,11 @@ pub async fn delete_flow_schema(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(resource))
     } else {
-        info!(
-            "FlowSchema marked for deletion (has finalizers: {:?})",
-            resource.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: FlowSchema = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

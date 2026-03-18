@@ -143,7 +143,7 @@ pub async fn delete_configmap(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<ConfigMap>> {
     info!("Deleting configmap: {} in namespace: {}", name, namespace);
 
     // Check if this is a dry-run request
@@ -173,14 +173,20 @@ pub async fn delete_configmap(
             "Dry-run: ConfigMap {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(configmap));
     }
 
     // Handle deletion with finalizers
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &configmap)
+    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &configmap)
         .await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    if has_finalizers {
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: ConfigMap = state.storage.get(&key).await?;
+        Ok(Json(updated))
+    } else {
+        Ok(Json(configmap))
+    }
 }
 
 pub async fn list(

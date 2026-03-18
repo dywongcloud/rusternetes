@@ -184,7 +184,7 @@ pub async fn delete_crd(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<CustomResourceDefinition>> {
     info!("Deleting CustomResourceDefinition: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "customresourcedefinitions")
@@ -206,7 +206,7 @@ pub async fn delete_crd(
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: CustomResourceDefinition validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(crd));
     }
 
     // Check if there are any custom resources of this type
@@ -259,15 +259,12 @@ pub async fn delete_crd(
             .await?;
 
     if deleted_immediately {
-        // Notify dynamic route manager to remove routes for this CRD
         info!("CRD deleted: {}", name);
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(crd))
     } else {
-        info!(
-            "CustomResourceDefinition marked for deletion (has finalizers: {:?})",
-            crd.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: CustomResourceDefinition = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

@@ -45,6 +45,7 @@ pub async fn create(
     deployment.metadata.namespace = Some(namespace.clone());
     deployment.metadata.ensure_uid();
     deployment.metadata.ensure_creation_timestamp();
+    crate::handlers::lifecycle::set_initial_generation(&mut deployment.metadata);
 
     let key = build_key("deployments", Some(&namespace), &deployment.metadata.name);
 
@@ -118,6 +119,27 @@ pub async fn update(
 
     let key = build_key("deployments", Some(&namespace), &name);
 
+    // Get the old deployment for concurrency control and generation tracking
+    let old_deployment: Deployment = state.storage.get(&key).await?;
+
+    // Check resourceVersion for optimistic concurrency control
+    crate::handlers::lifecycle::check_resource_version(
+        old_deployment.metadata.resource_version.as_deref(),
+        deployment.metadata.resource_version.as_deref(),
+        &name,
+    )?;
+
+    // Increment generation if spec changed
+    let old_value = serde_json::to_value(&old_deployment)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+    let new_value = serde_json::to_value(&deployment)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+    crate::handlers::lifecycle::maybe_increment_generation(
+        &old_value,
+        &new_value,
+        &mut deployment.metadata,
+    );
+
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
         info!(
@@ -144,7 +166,7 @@ pub async fn delete_deployment(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<Deployment>> {
     info!("Deleting deployment: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -174,7 +196,7 @@ pub async fn delete_deployment(
             "Dry-run: Deployment {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(deployment));
     }
 
     // Handle deletion with finalizers
@@ -188,15 +210,11 @@ pub async fn delete_deployment(
     .await?;
 
     if deleted_immediately {
-        // Deployment had no finalizers and was deleted immediately
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(deployment))
     } else {
-        // Deployment has finalizers and was marked for deletion
-        info!(
-            "Deployment {}/{} marked for deletion (has finalizers: {:?})",
-            namespace, name, deployment.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: Deployment = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

@@ -176,7 +176,7 @@ pub async fn delete_volumesnapshot(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<VolumeSnapshot>> {
     info!("Deleting VolumeSnapshot: {}/{}", namespace, name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "volumesnapshots")
@@ -194,13 +194,14 @@ pub async fn delete_volumesnapshot(
     let key = build_key("volumesnapshots", Some(&namespace), &name);
 
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
-    if is_dry_run {
-        info!("Dry-run: VolumeSnapshot validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
-    }
 
     // Get the resource for finalizer handling
     let resource: VolumeSnapshot = state.storage.get(&key).await?;
+
+    if is_dry_run {
+        info!("Dry-run: VolumeSnapshot validated successfully (not deleted)");
+        return Ok(Json(resource));
+    }
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -211,13 +212,11 @@ pub async fn delete_volumesnapshot(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(resource))
     } else {
-        info!(
-            "VolumeSnapshot marked for deletion (has finalizers: {:?})",
-            resource.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: VolumeSnapshot = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

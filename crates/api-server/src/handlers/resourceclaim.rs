@@ -235,7 +235,7 @@ pub async fn delete_resourceclaim(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<ResourceClaim>> {
     info!("Deleting ResourceClaim: {}/{}", namespace, name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "resourceclaims")
@@ -252,18 +252,21 @@ pub async fn delete_resourceclaim(
 
     let key = build_key("resourceclaims", Some(&namespace), &name);
 
+    // Get the resource before deletion
+    let resource: ResourceClaim = state.storage.get(&key).await?;
+
     // Check for dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: ResourceClaim validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(resource));
     }
 
     // NOTE: DRA resources use dra::ObjectMeta which is incompatible with finalizers.
     // We perform a simple delete without finalizer support.
     state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    Ok(Json(resource))
 }
 
 // Use the macro to create a PATCH handler (namespace-scoped)

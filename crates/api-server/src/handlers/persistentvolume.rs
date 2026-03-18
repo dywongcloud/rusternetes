@@ -152,7 +152,7 @@ pub async fn delete_pv(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<PersistentVolume>> {
     info!("Deleting PersistentVolume: {}", name);
 
     // Check if this is a dry-run request
@@ -180,12 +180,18 @@ pub async fn delete_pv(
             "Dry-run: PersistentVolume {} validated successfully (not deleted)",
             name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(pv));
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &pv).await?;
+    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &pv).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    if has_finalizers {
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: PersistentVolume = state.storage.get(&key).await?;
+        Ok(Json(updated))
+    } else {
+        Ok(Json(pv))
+    }
 }
 
 // Use the macro to create a PATCH handler

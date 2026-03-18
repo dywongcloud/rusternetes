@@ -126,7 +126,7 @@ pub async fn delete_validating_admission_policy(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<ValidatingAdmissionPolicy>> {
     info!("Deleting ValidatingAdmissionPolicy: {}", name);
 
     // Check authorization
@@ -143,15 +143,15 @@ pub async fn delete_validating_admission_policy(
 
     let key = build_key("validatingadmissionpolicies", None, &name);
 
+    // Get the resource for finalizer handling
+    let resource: ValidatingAdmissionPolicy = state.storage.get(&key).await?;
+
     // Check for dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: ValidatingAdmissionPolicy validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(resource));
     }
-
-    // Get the resource for finalizer handling
-    let resource: ValidatingAdmissionPolicy = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -162,13 +162,11 @@ pub async fn delete_validating_admission_policy(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(resource))
     } else {
-        info!(
-            "ValidatingAdmissionPolicy marked for deletion (has finalizers: {:?})",
-            resource.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: ValidatingAdmissionPolicy = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 
@@ -330,7 +328,7 @@ pub async fn delete_validating_admission_policy_binding(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<ValidatingAdmissionPolicyBinding>> {
     info!("Deleting ValidatingAdmissionPolicyBinding: {}", name);
 
     // Check authorization
@@ -348,15 +346,15 @@ pub async fn delete_validating_admission_policy_binding(
 
     let key = build_key("validatingadmissionpolicybindings", None, &name);
 
+    // Get the resource for finalizer handling
+    let resource: ValidatingAdmissionPolicyBinding = state.storage.get(&key).await?;
+
     // Check for dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: ValidatingAdmissionPolicyBinding validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(resource));
     }
-
-    // Get the resource for finalizer handling
-    let resource: ValidatingAdmissionPolicyBinding = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -367,13 +365,11 @@ pub async fn delete_validating_admission_policy_binding(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(resource))
     } else {
-        info!(
-            "ValidatingAdmissionPolicyBinding marked for deletion (has finalizers: {:?})",
-            resource.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: ValidatingAdmissionPolicyBinding = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

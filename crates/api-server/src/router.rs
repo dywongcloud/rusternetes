@@ -427,6 +427,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
     let public_routes = Router::new()
         .route("/healthz", get(handlers::health::healthz))
         .route("/healthz/verbose", get(handlers::health::healthz_verbose))
+        .route("/livez", get(handlers::health::healthz))
         .route("/readyz", get(handlers::health::readyz))
         .route("/metrics", get(handlers::health::metrics))
         // Discovery API endpoints
@@ -517,7 +518,11 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/resource.k8s.io/v1",
             get(handlers::discovery::get_resource_v1_resources),
         )
-        .route("/version", get(handlers::discovery::get_version));
+        .route("/version", get(handlers::discovery::get_version))
+        // OpenAPI spec endpoints
+        .route("/openapi/v2", get(handlers::openapi::get_swagger_spec))
+        .route("/openapi/v3", get(handlers::openapi::get_openapi_spec))
+        .route("/swagger.json", get(handlers::openapi::get_swagger_spec));
 
     // Routes that require authentication (unless skip_auth is enabled)
     let mut protected_routes = Router::new()

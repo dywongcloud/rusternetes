@@ -132,7 +132,7 @@ pub async fn delete_podtemplate(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<PodTemplate>> {
     info!("Deleting podtemplate: {} in namespace: {}", name, namespace);
 
     // Check authorization
@@ -150,15 +150,15 @@ pub async fn delete_podtemplate(
 
     let key = build_key("podtemplates", Some(&namespace), &name);
 
+    // Get the resource for finalizer handling
+    let podtemplate: PodTemplate = state.storage.get(&key).await?;
+
     // Handle dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: PodTemplate validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(podtemplate));
     }
-
-    // Get the resource for finalizer handling
-    let podtemplate: PodTemplate = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -169,13 +169,11 @@ pub async fn delete_podtemplate(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(podtemplate))
     } else {
-        info!(
-            "PodTemplate marked for deletion (has finalizers: {:?})",
-            podtemplate.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: PodTemplate = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

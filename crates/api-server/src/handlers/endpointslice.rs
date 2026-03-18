@@ -228,7 +228,7 @@ pub async fn delete_endpointslice(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<EndpointSlice>> {
     info!("Deleting endpointslice: {}/{}", namespace, name);
 
     // Check authorization
@@ -255,17 +255,23 @@ pub async fn delete_endpointslice(
             "Dry-run: EndpointSlice {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(endpointslice));
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(
+    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(
         &*state.storage,
         &key,
         &endpointslice,
     )
     .await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    if has_finalizers {
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: EndpointSlice = state.storage.get(&key).await?;
+        Ok(Json(updated))
+    } else {
+        Ok(Json(endpointslice))
+    }
 }
 
 // Use the macro to create a PATCH handler

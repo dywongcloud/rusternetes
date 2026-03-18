@@ -210,7 +210,7 @@ pub async fn delete(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<Event>> {
     info!("Deleting event: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -231,17 +231,17 @@ pub async fn delete(
 
     let key = build_key("events", Some(&namespace), &name);
 
+    // Get the event for finalizer handling
+    let event: Event = state.storage.get(&key).await?;
+
     // If dry-run, skip delete operation
     if is_dry_run {
         info!(
             "Dry-run: Event {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(event));
     }
-
-    // Get the event for finalizer handling
-    let event: Event = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately =
@@ -249,13 +249,11 @@ pub async fn delete(
             .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(event))
     } else {
-        info!(
-            "Event {}/{} marked for deletion (has finalizers: {:?})",
-            namespace, name, event.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: Event = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

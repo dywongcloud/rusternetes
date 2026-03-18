@@ -124,7 +124,7 @@ pub async fn delete_ingressclass(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<IngressClass>> {
     info!("Deleting IngressClass: {}", name);
 
     // Check authorization
@@ -141,15 +141,15 @@ pub async fn delete_ingressclass(
 
     let key = build_key("ingressclasses", None, &name);
 
+    // Get the resource for finalizer handling
+    let ingress_class: IngressClass = state.storage.get(&key).await?;
+
     // Handle dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: IngressClass validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(ingress_class));
     }
-
-    // Get the resource for finalizer handling
-    let ingress_class: IngressClass = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -160,13 +160,11 @@ pub async fn delete_ingressclass(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(ingress_class))
     } else {
-        info!(
-            "IngressClass marked for deletion (has finalizers: {:?})",
-            ingress_class.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: IngressClass = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

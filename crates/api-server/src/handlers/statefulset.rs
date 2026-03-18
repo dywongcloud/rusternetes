@@ -142,7 +142,7 @@ pub async fn delete_statefulset(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<StatefulSet>> {
     info!("Deleting statefulset: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -172,13 +172,19 @@ pub async fn delete_statefulset(
             "Dry-run: StatefulSet {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(statefulset));
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &statefulset)
+    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &statefulset)
         .await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    if has_finalizers {
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: StatefulSet = state.storage.get(&key).await?;
+        Ok(Json(updated))
+    } else {
+        Ok(Json(statefulset))
+    }
 }
 
 pub async fn list(

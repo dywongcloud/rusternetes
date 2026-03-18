@@ -488,7 +488,7 @@ pub async fn delete_custom_resource(
         String,
     )>,
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<CustomResource>> {
     info!(
         "Deleting custom resource {}/{}/{}: {}",
         group, version, plural, name
@@ -534,12 +534,18 @@ pub async fn delete_custom_resource(
             "Dry-run: CustomResource {}/{}/{} validated successfully (not deleted)",
             group, plural, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(cr));
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &cr).await?;
+    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &cr).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    if has_finalizers {
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: CustomResource = state.storage.get(&key).await?;
+        Ok(Json(updated))
+    } else {
+        Ok(Json(cr))
+    }
 }
 
 /// Helper to get CRD from storage

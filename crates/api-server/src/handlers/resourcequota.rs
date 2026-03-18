@@ -148,7 +148,7 @@ pub async fn delete(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<ResourceQuota>> {
     info!(
         "Deleting ResourceQuota: {} in namespace: {}",
         name, namespace
@@ -172,17 +172,17 @@ pub async fn delete(
 
     let key = build_key("resourcequotas", Some(&namespace), &name);
 
+    // Get the resource quota for finalizer handling
+    let quota: ResourceQuota = state.storage.get(&key).await?;
+
     // If dry-run, skip delete operation
     if is_dry_run {
         info!(
             "Dry-run: ResourceQuota {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(quota));
     }
-
-    // Get the resource quota for finalizer handling
-    let quota: ResourceQuota = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately =
@@ -190,13 +190,11 @@ pub async fn delete(
             .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(quota))
     } else {
-        info!(
-            "ResourceQuota {}/{} marked for deletion (has finalizers: {:?})",
-            namespace, name, quota.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: ResourceQuota = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

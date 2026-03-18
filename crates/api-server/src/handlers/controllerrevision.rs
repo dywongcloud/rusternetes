@@ -136,7 +136,7 @@ pub async fn delete_controllerrevision(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<ControllerRevision>> {
     info!(
         "Deleting controllerrevision: {} in namespace: {}",
         name, namespace
@@ -157,15 +157,15 @@ pub async fn delete_controllerrevision(
 
     let key = build_key("controllerrevisions", Some(&namespace), &name);
 
+    // Get the resource for finalizer handling
+    let cr: ControllerRevision = state.storage.get(&key).await?;
+
     // Handle dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: ControllerRevision validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(cr));
     }
-
-    // Get the resource for finalizer handling
-    let cr: ControllerRevision = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately =
@@ -173,13 +173,11 @@ pub async fn delete_controllerrevision(
             .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(cr))
     } else {
-        info!(
-            "ControllerRevision marked for deletion (has finalizers: {:?})",
-            cr.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: ControllerRevision = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

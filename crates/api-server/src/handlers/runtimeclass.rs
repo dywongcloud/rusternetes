@@ -135,7 +135,7 @@ pub async fn delete_runtimeclass(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<RuntimeClass>> {
     info!("Deleting RuntimeClass: {}", name);
 
     // Check if this is a dry-run request
@@ -155,17 +155,17 @@ pub async fn delete_runtimeclass(
 
     let key = build_key("runtimeclasses", None, &name);
 
+    // Get the runtime class for finalizer handling
+    let runtime_class: RuntimeClass = state.storage.get(&key).await?;
+
     // If dry-run, skip delete operation
     if is_dry_run {
         info!(
             "Dry-run: RuntimeClass {} validated successfully (not deleted)",
             name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(runtime_class));
     }
-
-    // Get the runtime class for finalizer handling
-    let runtime_class: RuntimeClass = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -176,13 +176,11 @@ pub async fn delete_runtimeclass(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(runtime_class))
     } else {
-        info!(
-            "RuntimeClass {} marked for deletion (has finalizers: {:?})",
-            name, runtime_class.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: RuntimeClass = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

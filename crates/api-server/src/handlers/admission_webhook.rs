@@ -130,7 +130,7 @@ pub async fn delete_validating_webhook(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<ValidatingWebhookConfiguration>> {
     info!("Deleting ValidatingWebhookConfiguration: {}", name);
 
     // Check authorization
@@ -147,15 +147,15 @@ pub async fn delete_validating_webhook(
 
     let key = build_key("validatingwebhookconfigurations", None, &name);
 
+    // Get the resource for finalizer handling
+    let resource: ValidatingWebhookConfiguration = state.storage.get(&key).await?;
+
     // Check for dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: ValidatingWebhookConfiguration validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(resource));
     }
-
-    // Get the resource for finalizer handling
-    let resource: ValidatingWebhookConfiguration = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -166,13 +166,11 @@ pub async fn delete_validating_webhook(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(resource))
     } else {
-        info!(
-            "ValidatingWebhookConfiguration marked for deletion (has finalizers: {:?})",
-            resource.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: ValidatingWebhookConfiguration = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 
@@ -328,7 +326,7 @@ pub async fn delete_mutating_webhook(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<MutatingWebhookConfiguration>> {
     info!("Deleting MutatingWebhookConfiguration: {}", name);
 
     // Check authorization
@@ -345,15 +343,15 @@ pub async fn delete_mutating_webhook(
 
     let key = build_key("mutatingwebhookconfigurations", None, &name);
 
+    // Get the resource for finalizer handling
+    let resource: MutatingWebhookConfiguration = state.storage.get(&key).await?;
+
     // Check for dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: MutatingWebhookConfiguration validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(resource));
     }
-
-    // Get the resource for finalizer handling
-    let resource: MutatingWebhookConfiguration = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -364,13 +362,11 @@ pub async fn delete_mutating_webhook(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(resource))
     } else {
-        info!(
-            "MutatingWebhookConfiguration marked for deletion (has finalizers: {:?})",
-            resource.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: MutatingWebhookConfiguration = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

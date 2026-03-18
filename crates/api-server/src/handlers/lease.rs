@@ -134,7 +134,7 @@ pub async fn delete_lease(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<Lease>> {
     info!("Deleting lease: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -154,17 +154,17 @@ pub async fn delete_lease(
 
     let key = build_key("leases", Some(&namespace), &name);
 
+    // Get the lease for finalizer handling
+    let lease: Lease = state.storage.get(&key).await?;
+
     // If dry-run, skip delete operation
     if is_dry_run {
         info!(
             "Dry-run: Lease {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(lease));
     }
-
-    // Get the lease for finalizer handling
-    let lease: Lease = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately =
@@ -172,13 +172,11 @@ pub async fn delete_lease(
             .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(lease))
     } else {
-        info!(
-            "Lease {}/{} marked for deletion (has finalizers: {:?})",
-            namespace, name, lease.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: Lease = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

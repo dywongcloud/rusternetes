@@ -118,7 +118,7 @@ pub async fn delete_servicecidr(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<ServiceCIDR>> {
     info!("Deleting ServiceCIDR: {}", name);
 
     // Check authorization
@@ -135,15 +135,15 @@ pub async fn delete_servicecidr(
 
     let key = build_key("servicecidrs", None, &name);
 
+    // Get the resource for finalizer handling
+    let servicecidr: ServiceCIDR = state.storage.get(&key).await?;
+
     // Handle dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: ServiceCIDR validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(servicecidr));
     }
-
-    // Get the resource for finalizer handling
-    let servicecidr: ServiceCIDR = state.storage.get(&key).await?;
 
     // Handle deletion with finalizers
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
@@ -154,13 +154,11 @@ pub async fn delete_servicecidr(
     .await?;
 
     if deleted_immediately {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(servicecidr))
     } else {
-        info!(
-            "ServiceCIDR marked for deletion (has finalizers: {:?})",
-            servicecidr.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: ServiceCIDR = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

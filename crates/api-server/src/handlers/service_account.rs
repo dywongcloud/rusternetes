@@ -215,7 +215,7 @@ pub async fn delete_service_account(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<ServiceAccount>> {
     info!("Deleting service account: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -245,12 +245,18 @@ pub async fn delete_service_account(
             "Dry-run: ServiceAccount {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(sa));
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &sa).await?;
+    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &sa).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    if has_finalizers {
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: ServiceAccount = state.storage.get(&key).await?;
+        Ok(Json(updated))
+    } else {
+        Ok(Json(sa))
+    }
 }
 
 pub async fn list(

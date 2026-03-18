@@ -130,7 +130,7 @@ pub async fn delete_job(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<Job>> {
     info!("Deleting job: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -159,12 +159,18 @@ pub async fn delete_job(
             "Dry-run: Job {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(job));
     }
 
-    crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &job).await?;
+    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &job).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    if has_finalizers {
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: Job = state.storage.get(&key).await?;
+        Ok(Json(updated))
+    } else {
+        Ok(Json(job))
+    }
 }
 
 pub async fn list(

@@ -44,6 +44,7 @@ pub async fn create(
     // Enrich metadata with system fields
     service.metadata.ensure_uid();
     service.metadata.ensure_creation_timestamp();
+    crate::handlers::lifecycle::set_initial_generation(&mut service.metadata);
 
     // Allocate ClusterIP if needed
     let service_type = service
@@ -178,6 +179,27 @@ pub async fn update(
 
     let key = build_key("services", Some(&namespace), &name);
 
+    // Get the old service for concurrency control and generation tracking
+    let old_service: Service = state.storage.get(&key).await?;
+
+    // Check resourceVersion for optimistic concurrency control
+    crate::handlers::lifecycle::check_resource_version(
+        old_service.metadata.resource_version.as_deref(),
+        service.metadata.resource_version.as_deref(),
+        &name,
+    )?;
+
+    // Increment generation if spec changed
+    let old_value = serde_json::to_value(&old_service)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+    let new_value = serde_json::to_value(&service)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+    crate::handlers::lifecycle::maybe_increment_generation(
+        &old_value,
+        &new_value,
+        &mut service.metadata,
+    );
+
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
         info!(
@@ -197,7 +219,7 @@ pub async fn delete_service(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<Service>> {
     info!("Deleting service: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -226,7 +248,7 @@ pub async fn delete_service(
             "Dry-run: Service {}/{} validated successfully (not deleted)",
             namespace, name
         );
-        return Ok(StatusCode::OK);
+        return Ok(Json(service));
     }
 
     // Handle deletion with finalizers
@@ -235,8 +257,6 @@ pub async fn delete_service(
             .await?;
 
     if deleted_immediately {
-        // Resource had no finalizers and was deleted immediately
-        // Release the ClusterIP back to the pool
         if let Some(cluster_ip) = &service.spec.cluster_ip {
             state.ip_allocator.release(cluster_ip);
             info!(
@@ -244,14 +264,11 @@ pub async fn delete_service(
                 cluster_ip, namespace, name
             );
         }
-        Ok(StatusCode::NO_CONTENT)
+        Ok(Json(service))
     } else {
-        // Resource has finalizers and was marked for deletion
-        info!(
-            "Service {}/{} marked for deletion (has finalizers: {:?})",
-            namespace, name, service.metadata.finalizers
-        );
-        Ok(StatusCode::OK)
+        // Resource has finalizers, re-read to get updated version with deletionTimestamp
+        let updated: Service = state.storage.get(&key).await?;
+        Ok(Json(updated))
     }
 }
 

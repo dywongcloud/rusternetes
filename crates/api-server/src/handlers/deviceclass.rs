@@ -160,7 +160,7 @@ pub async fn delete_deviceclass(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<DeviceClass>> {
     info!("Deleting DeviceClass: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "delete", "deviceclasses")
@@ -176,18 +176,21 @@ pub async fn delete_deviceclass(
 
     let key = build_key("deviceclasses", None, &name);
 
+    // Get the resource before deletion
+    let resource: DeviceClass = state.storage.get(&key).await?;
+
     // Check for dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: DeviceClass validated successfully (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(resource));
     }
 
     // NOTE: DRA resources use dra::ObjectMeta which is incompatible with finalizers.
     // We perform a simple delete without finalizer support.
     state.storage.delete(&key).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    Ok(Json(resource))
 }
 
 // Use the macro to create a PATCH handler
