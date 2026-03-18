@@ -53,7 +53,7 @@ async fn test_namespace_active_not_deleted() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: rusternetes_common::types::Phase::Active,
+            phase: Some(rusternetes_common::types::Phase::Active),
             conditions: None,
         }),
     };
@@ -105,7 +105,7 @@ async fn test_namespace_with_finalizer_marked_for_deletion() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: rusternetes_common::types::Phase::Terminating,
+            phase: Some(rusternetes_common::types::Phase::Terminating),
             conditions: None,
         }),
     };
@@ -162,7 +162,7 @@ async fn test_namespace_deletion_removes_finalizers() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: rusternetes_common::types::Phase::Terminating,
+            phase: Some(rusternetes_common::types::Phase::Terminating),
             conditions: None,
         }),
     };

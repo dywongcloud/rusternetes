@@ -44,7 +44,7 @@ async fn test_serviceaccount_creates_default_in_namespace() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: rusternetes_common::types::Phase::Active,
+            phase: Some(rusternetes_common::types::Phase::Active),
             conditions: None,
         }),
     };
@@ -105,7 +105,7 @@ async fn test_serviceaccount_does_not_recreate_existing() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: rusternetes_common::types::Phase::Active,
+            phase: Some(rusternetes_common::types::Phase::Active),
             conditions: None,
         }),
     };
@@ -184,7 +184,7 @@ async fn test_serviceaccount_token_contains_required_fields() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: rusternetes_common::types::Phase::Active,
+            phase: Some(rusternetes_common::types::Phase::Active),
             conditions: None,
         }),
     };
@@ -253,7 +253,7 @@ async fn test_serviceaccount_skips_terminating_namespaces() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: rusternetes_common::types::Phase::Terminating,
+            phase: Some(rusternetes_common::types::Phase::Terminating),
             conditions: None,
         }),
     };

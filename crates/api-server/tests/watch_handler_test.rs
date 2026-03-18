@@ -428,7 +428,7 @@ async fn test_watch_cluster_scoped_resources() {
         },
         spec: Some(NamespaceSpec { finalizers: None }),
         status: Some(NamespaceStatus {
-            phase: Phase::Active,
+            phase: Some(Phase::Active),
             conditions: None,
         }),
     };

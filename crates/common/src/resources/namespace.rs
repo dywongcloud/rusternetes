@@ -25,7 +25,7 @@ impl Namespace {
             metadata: ObjectMeta::new(name),
             spec: None,
             status: Some(NamespaceStatus {
-                phase: Phase::Active,
+                phase: Some(Phase::Active),
                 conditions: None,
             }),
         }
@@ -43,7 +43,9 @@ pub struct NamespaceSpec {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NamespaceStatus {
-    pub phase: Phase,
+    /// Phase is the current lifecycle phase of the namespace
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<Phase>,
 
     /// Conditions describe the current conditions of a namespace
     #[serde(skip_serializing_if = "Option::is_none")]
