@@ -55,19 +55,13 @@ but ignored. Should affect finalizer behavior and grace period.
 **Issue**: All list responses return `resourceVersion: "1"`. Should return the actual
 storage revision so clients can resume watches from that point.
 
-### P2 — Watch bookmarks disabled
+### ✅ P2 — Watch bookmarks — FIXED
 
-**File**: `crates/api-server/src/handlers/watch.rs`
-
-**Issue**: Watch bookmarks are hardcoded to disabled. Clients can't checkpoint
-long-running watches.
+Re-enabled: clients requesting allowWatchBookmarks now receive bookmark events.
 
 ### P2 — ManagedFields never populated
 
-**Files**: All create/update handlers
-
-**Issue**: `metadata.managedFields` is never set. This tracks field ownership for
-server-side apply. kubectl apply relies on this.
+`metadata.managedFields` is never set. This tracks field ownership for server-side apply.
 
 ---
 
@@ -126,9 +120,9 @@ Implements ClusterFirst, ClusterFirstWithHostNet, Default, None policies. Applie
 
 `pod.spec.hostAliases` entries now added to generated /etc/hosts file.
 
-### P2 — Container restart count not properly tracked
+### ✅ P2 — Container restart count — FIXED
 
-Restart count reads from existing pod status but is never incremented on actual restarts.
+Now reads from Docker/Podman inspect response instead of stale pod status.
 
 ### ✅ P2 — QoS class — FIXED
 
@@ -168,9 +162,9 @@ Nodes with untolerated NoSchedule/NoExecute taints are now skipped.
 
 When evicting pods from a NotReady node, PDBs are not consulted.
 
-### P2 — Job doesn't track start/completion times
+### ✅ P2 — Job start/completion times — FIXED
 
-`JobStatus.startTime` and `completionTime` are never set.
+start_time set when first pod starts, completion_time set on Complete/Failed.
 
 ---
 
@@ -229,11 +223,12 @@ No endpoint for `/apis/apps`, `/apis/batch`, etc. (individual API group details)
 25. ✅ StatefulSet PVC management
 26. ✅ DaemonSet taint tolerations
 
-### Remaining P2:
+### Remaining P2 (not yet fixed):
 
-27. Watch bookmarks (API server)
-28. List resourceVersion (API server)
-29. Container restart count tracking (kubelet)
-30. Job timestamps (controller-manager)
+27. ✅ Watch bookmarks — FIXED
+28. ✅ List resourceVersion — FIXED
+29. ✅ Container restart count — FIXED
+30. ✅ Job timestamps — FIXED
 31. PDB respect during eviction (controller-manager)
 32. /apis/{group} discovery endpoints (API server)
+33. ManagedFields tracking (API server)
