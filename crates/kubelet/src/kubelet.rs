@@ -331,6 +331,7 @@ impl Kubelet {
 
                         // Write Running status using the fresh resourceVersion
                         let mut new_pod = fresh_pod;
+                        let qos = Self::compute_qos_class(&new_pod);
                         new_pod.status = Some(PodStatus {
                             phase: Some(Phase::Running),
                             message: Some("All containers started".to_string()),
@@ -347,8 +348,8 @@ impl Kubelet {
                             host_i_ps: None,
                             pod_i_ps: None,
                             nominated_node_name: None,
-                            qos_class: None,
-                            start_time: None,
+                            qos_class: Some(qos),
+                            start_time: Some(chrono::Utc::now()),
                         });
 
                         if let Err(e) = self.storage.update(&key, &new_pod).await {
@@ -393,6 +394,7 @@ impl Kubelet {
 
                 // Update status to Running
                 let mut new_pod = fresh_pod;
+                let qos = Self::compute_qos_class(&new_pod);
                 new_pod.status = Some(PodStatus {
                     phase: Some(Phase::Running),
                     message: Some("All containers started".to_string()),
@@ -409,8 +411,8 @@ impl Kubelet {
                     host_i_ps: None,
                     pod_i_ps: None,
                     nominated_node_name: None,
-                    qos_class: None,
-                    start_time: None,
+                    qos_class: Some(qos),
+                    start_time: Some(chrono::Utc::now()),
                 });
 
                 self.storage.update(&key, &new_pod).await?;
@@ -435,7 +437,16 @@ impl Kubelet {
                                 );
 
                                 // Stop and restart the pod
-                                if let Err(e) = self.runtime.stop_pod(pod_name).await {
+                                let grace = pod
+                                    .spec
+                                    .as_ref()
+                                    .and_then(|s| s.termination_grace_period_seconds)
+                                    .unwrap_or(30);
+                                if let Err(e) = self
+                                    .runtime
+                                    .stop_pod_with_grace_period(pod_name, grace)
+                                    .await
+                                {
                                     error!("Failed to stop pod for restart: {}", e);
                                 } else {
                                     // Update status
@@ -513,7 +524,14 @@ impl Kubelet {
             Phase::Succeeded | Phase::Failed => {
                 if is_running {
                     info!("Stopping completed pod: {}/{}", namespace, pod_name);
-                    self.runtime.stop_pod(pod_name).await?;
+                    let grace = pod
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.termination_grace_period_seconds)
+                        .unwrap_or(30);
+                    self.runtime
+                        .stop_pod_with_grace_period(pod_name, grace)
+                        .await?;
                 }
             }
             _ => {
@@ -566,6 +584,77 @@ impl Kubelet {
                 observed_generation: None,
             },
         ]
+    }
+
+    /// Compute the QoS class for a pod based on resource requests/limits.
+    ///
+    /// - Guaranteed: every container has both cpu and memory limits AND requests, and they're equal
+    /// - BestEffort: no container has any requests or limits
+    /// - Burstable: everything else
+    fn compute_qos_class(pod: &Pod) -> String {
+        let spec = match &pod.spec {
+            Some(s) => s,
+            None => return "BestEffort".to_string(),
+        };
+
+        let containers = &spec.containers;
+        if containers.is_empty() {
+            return "BestEffort".to_string();
+        }
+
+        let mut all_have_limits_eq_requests = true;
+        let mut none_have_any = true;
+
+        for container in containers {
+            let resources = match &container.resources {
+                Some(r) => r,
+                None => {
+                    all_have_limits_eq_requests = false;
+                    // no resources at all — still counts as "none" for BestEffort
+                    continue;
+                }
+            };
+
+            let limits = resources.limits.as_ref();
+            let requests = resources.requests.as_ref();
+
+            let has_any = limits.map_or(false, |l| !l.is_empty())
+                || requests.map_or(false, |r| !r.is_empty());
+
+            if has_any {
+                none_have_any = false;
+            }
+
+            // For Guaranteed, both cpu and memory limits must exist, and requests must equal limits
+            for res in &["cpu", "memory"] {
+                let limit_val = limits.and_then(|l| l.get(*res));
+                let request_val = requests.and_then(|r| r.get(*res));
+
+                match (limit_val, request_val) {
+                    (Some(l), Some(r)) => {
+                        if l != r {
+                            all_have_limits_eq_requests = false;
+                        }
+                    }
+                    (Some(_), None) => {
+                        // Kubernetes defaults requests to limits if not set,
+                        // but we check explicitly here
+                        // Still counts as Guaranteed if request is missing (defaults to limit)
+                    }
+                    (None, _) => {
+                        all_have_limits_eq_requests = false;
+                    }
+                }
+            }
+        }
+
+        if none_have_any {
+            "BestEffort".to_string()
+        } else if all_have_limits_eq_requests {
+            "Guaranteed".to_string()
+        } else {
+            "Burstable".to_string()
+        }
     }
 
     async fn update_pod_status(
@@ -667,8 +756,17 @@ impl Kubelet {
                     p.metadata.namespace.as_deref().unwrap_or("default") == namespace
                         && p.metadata.name == name
                 }) {
-                    // Stop the pod
-                    if let Err(e) = self.runtime.stop_pod(&pod.metadata.name).await {
+                    // Stop the pod (use short grace period for eviction)
+                    let grace = pod
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.termination_grace_period_seconds)
+                        .unwrap_or(30);
+                    if let Err(e) = self
+                        .runtime
+                        .stop_pod_with_grace_period(&pod.metadata.name, grace)
+                        .await
+                    {
                         error!("Failed to stop evicted pod {}: {}", pod_key, e);
                         continue;
                     }

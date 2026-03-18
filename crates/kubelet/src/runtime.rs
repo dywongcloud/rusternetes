@@ -587,6 +587,15 @@ impl ContainerRuntime {
             );
         }
 
+        // Add entries from spec.hostAliases
+        if let Some(host_aliases) = &spec.host_aliases {
+            for alias in host_aliases {
+                for hostname in alias.hostnames.as_deref().unwrap_or(&[]) {
+                    content.push_str(&format!("{}\t{}\n", alias.ip, hostname));
+                }
+            }
+        }
+
         std::fs::write(&hosts_path, &content)
             .with_context(|| format!("Failed to write /etc/hosts for pod {}", pod_name))?;
 
@@ -1600,6 +1609,40 @@ impl ContainerRuntime {
             (Some(servers), Some(search_domains), Some(options))
         };
 
+        // Parse resource limits for container cgroup enforcement
+        let mut memory_limit: Option<i64> = None;
+        let mut cpu_period: Option<i64> = None;
+        let mut cpu_quota: Option<i64> = None;
+
+        if let Some(ref resources) = container.resources {
+            if let Some(ref limits) = resources.limits {
+                if let Some(memory) = limits.get("memory") {
+                    let parsed = parse_memory_quantity(memory);
+                    if parsed > 0 {
+                        memory_limit = Some(parsed);
+                        info!(
+                            "Setting memory limit for container {}: {} bytes",
+                            container.name, parsed
+                        );
+                    }
+                }
+                if let Some(cpu) = limits.get("cpu") {
+                    let cpu_millicores = parse_cpu_quantity(cpu);
+                    if cpu_millicores > 0 {
+                        cpu_period = Some(100_000); // 100ms in microseconds
+                        cpu_quota = Some((cpu_millicores * 100_000) / 1000);
+                        info!(
+                            "Setting CPU limit for container {}: {}m (quota={}/period={})",
+                            container.name,
+                            cpu_millicores,
+                            cpu_quota.unwrap(),
+                            cpu_period.unwrap()
+                        );
+                    }
+                }
+            }
+        }
+
         let mut config = Config {
             image: Some(container.image.clone()),
             env,
@@ -1631,6 +1674,10 @@ impl ContainerRuntime {
                 } else {
                     Some(self.network.clone())
                 },
+                // Resource limits enforcement via cgroups
+                memory: memory_limit,
+                cpu_period,
+                cpu_quota,
                 ..Default::default()
             }),
             ..Default::default()
@@ -1689,7 +1736,19 @@ impl ContainerRuntime {
 
     /// Stop all containers for a pod
     pub async fn stop_pod(&self, pod_name: &str) -> Result<()> {
-        info!("Stopping pod: {}", pod_name);
+        self.stop_pod_with_grace_period(pod_name, 30).await
+    }
+
+    /// Stop all containers for a pod with a specific grace period in seconds
+    pub async fn stop_pod_with_grace_period(
+        &self,
+        pod_name: &str,
+        grace_period_seconds: i64,
+    ) -> Result<()> {
+        info!(
+            "Stopping pod: {} (grace period: {}s)",
+            pod_name, grace_period_seconds
+        );
 
         // List all containers with this pod prefix
         let mut filters = HashMap::new();
@@ -1707,8 +1766,10 @@ impl ContainerRuntime {
             if let Some(id) = container.id {
                 info!("Stopping container: {}", id);
 
-                // Stop the container gracefully
-                let stop_options = StopContainerOptions { t: 10 };
+                // Stop the container gracefully using the pod's terminationGracePeriodSeconds
+                let stop_options = StopContainerOptions {
+                    t: grace_period_seconds,
+                };
                 if let Err(e) = self.docker.stop_container(&id, Some(stop_options)).await {
                     warn!("Failed to stop container {}: {}", id, e);
                 }
@@ -1839,6 +1900,8 @@ impl ContainerRuntime {
                         false
                     };
 
+                    let is_started =
+                        matches!(container_state, Some(ContainerState::Running { .. }));
                     ContainerStatus {
                         name: container.name.clone(),
                         ready,
@@ -1848,7 +1911,7 @@ impl ContainerRuntime {
                         image: Some(container.image.clone()),
                         image_id: None,
                         container_id: inspect.id,
-                        started: None,
+                        started: Some(is_started),
                         allocated_resources: None,
                         allocated_resources_status: None,
                         resources: None,
@@ -1869,7 +1932,7 @@ impl ContainerRuntime {
                     image: Some(container.image.clone()),
                     image_id: None,
                     container_id: None,
-                    started: None,
+                    started: Some(false),
                     allocated_resources: None,
                     allocated_resources_status: None,
                     resources: None,
@@ -2307,6 +2370,37 @@ impl ContainerRuntime {
     }
 }
 
+/// Parse a Kubernetes memory quantity string (e.g., "128Mi", "1Gi", "1000000") into bytes.
+fn parse_memory_quantity(s: &str) -> i64 {
+    if s.ends_with("Gi") {
+        s.trim_end_matches("Gi").parse::<i64>().unwrap_or(0) * 1024 * 1024 * 1024
+    } else if s.ends_with("Mi") {
+        s.trim_end_matches("Mi").parse::<i64>().unwrap_or(0) * 1024 * 1024
+    } else if s.ends_with("Ki") {
+        s.trim_end_matches("Ki").parse::<i64>().unwrap_or(0) * 1024
+    } else if s.ends_with('G') {
+        s.trim_end_matches('G').parse::<i64>().unwrap_or(0) * 1_000_000_000
+    } else if s.ends_with('M') {
+        s.trim_end_matches('M').parse::<i64>().unwrap_or(0) * 1_000_000
+    } else if s.ends_with('K') || s.ends_with('k') {
+        s.trim_end_matches(|c| c == 'K' || c == 'k')
+            .parse::<i64>()
+            .unwrap_or(0)
+            * 1000
+    } else {
+        s.parse::<i64>().unwrap_or(0)
+    }
+}
+
+/// Parse a Kubernetes CPU quantity string (e.g., "500m", "1", "0.5") into millicores.
+fn parse_cpu_quantity(s: &str) -> i64 {
+    if s.ends_with('m') {
+        s.trim_end_matches('m').parse::<i64>().unwrap_or(0)
+    } else {
+        (s.parse::<f64>().unwrap_or(0.0) * 1000.0) as i64
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rusternetes_common::resources::{Container, Pod, PodSpec};
@@ -2426,6 +2520,15 @@ mod tests {
                 ));
             }
             content.push_str(&format!("{}\t{}\n", ip, aliases.join("\t")));
+        }
+
+        // Add entries from spec.hostAliases
+        if let Some(host_aliases) = &spec.host_aliases {
+            for alias in host_aliases {
+                for ha_hostname in alias.hostnames.as_deref().unwrap_or(&[]) {
+                    content.push_str(&format!("{}\t{}\n", alias.ip, ha_hostname));
+                }
+            }
         }
 
         content
