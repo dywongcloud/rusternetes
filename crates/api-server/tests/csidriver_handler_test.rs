@@ -31,6 +31,7 @@ fn create_test_csidriver(name: &str) -> CSIDriver {
             token_requests: None,
             requires_republish: Some(false),
             se_linux_mount: Some(false),
+            node_allocatable_update_period_seconds: None,
         },
     }
 }

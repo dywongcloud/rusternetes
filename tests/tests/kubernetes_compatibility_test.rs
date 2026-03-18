@@ -110,7 +110,10 @@ async fn test_pod_create_get_update_delete_lifecycle() {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
-        }),
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
+}),
     };
 
     let pod_key = build_key("pods", Some("default"), "test-pod");
@@ -142,10 +145,21 @@ async fn test_pod_create_get_update_delete_lifecycle() {
             image: "nginx:1.25".to_string(),
             image_id: Some("sha256:abc123".to_string()),
             container_id: Some("containerd://xyz789".to_string()),
+            started: None,
+            last_state: None,
+            allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
         }]),
         init_container_statuses: None,
             ephemeral_container_statuses: None,
-    });
+    resize: None,
+    resource_claim_statuses: None,
+    observed_generation: None,
+});
 
     storage.update(&pod_key, &updated_pod).await.expect("Failed to update pod");
 
@@ -348,7 +362,7 @@ async fn test_namespace_isolation() {
             affinity: None,
             tolerations: None,
             service_account_name: None,
-            priority: None,
+            service_account: None,            priority: None,
             priority_class_name: None,
             hostname: None,
 
@@ -368,7 +382,10 @@ async fn test_namespace_isolation() {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
-        }),
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
+}),
     };
 
     // Create resources in namespace "staging"
@@ -393,7 +410,10 @@ async fn test_namespace_isolation() {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
-        }),
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
+}),
     };
 
     let prod_key = build_key("pods", Some("production"), "prod-pod");
@@ -543,7 +563,7 @@ async fn test_label_selectors() {
                 affinity: None,
                 tolerations: None,
                 service_account_name: None,
-                priority: None,
+                service_account: None,                priority: None,
                 priority_class_name: None,
                 hostname: None,
 

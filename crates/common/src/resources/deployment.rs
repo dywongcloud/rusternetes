@@ -1,7 +1,7 @@
 use crate::resources::workloads::PodTemplateSpec;
 use crate::types::{LabelSelector, ObjectMeta, TypeMeta};
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 /// Deployment provides declarative updates for Pods
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +100,9 @@ pub struct DeploymentStatus {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_generation: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminating_replicas: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

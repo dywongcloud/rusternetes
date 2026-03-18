@@ -332,6 +332,9 @@ impl<S: Storage> DaemonSetController<S> {
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
             }),
         };
 
@@ -534,6 +537,7 @@ mod tests {
                         node_selector: None,
                         restart_policy: None,
                         service_account_name: None,
+                        service_account: None,
                         volumes: None,
                         affinity: None,
                         tolerations: None,
@@ -570,8 +574,8 @@ mod tests {
                     },
                 },
                 update_strategy: None,
-            min_ready_seconds: None,
-            revision_history_limit: None,
+                min_ready_seconds: None,
+                revision_history_limit: None,
             },
             status: None,
         };

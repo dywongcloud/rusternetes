@@ -1,9 +1,10 @@
 use rusternetes_common::resources::volume::{
     HostPathType, HostPathVolumeSource, PersistentVolumeAccessMode, PersistentVolumeClaimPhase,
-    PersistentVolumeMode, PersistentVolumePhase, PersistentVolumeReclaimPolicy, ResourceRequirements
+    PersistentVolumeMode, PersistentVolumePhase, PersistentVolumeReclaimPolicy,
+    ResourceRequirements,
 };
 use rusternetes_common::resources::{
-    PersistentVolume, PersistentVolumeClaim, PersistentVolumeClaimStatus, StorageClass
+    PersistentVolume, PersistentVolumeClaim, PersistentVolumeClaimStatus, StorageClass,
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::volume_expansion::VolumeExpansionController;
@@ -24,7 +25,7 @@ async fn create_test_storage_class(
     let sc = StorageClass {
         type_meta: TypeMeta {
             kind: "StorageClass".to_string(),
-            api_version: "storage.k8s.io/v1".to_string()
+            api_version: "storage.k8s.io/v1".to_string(),
         },
         metadata: ObjectMeta::new(name),
         provisioner: "rusternetes.io/hostpath".to_string(),
@@ -33,7 +34,7 @@ async fn create_test_storage_class(
         volume_binding_mode: None,
         allowed_topologies: None,
         allow_volume_expansion: Some(allow_expansion),
-            mount_options: None
+        mount_options: None,
     };
 
     let key = build_key("storageclasses", None, name);
@@ -53,7 +54,7 @@ async fn create_test_pv(
     let pv = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -83,7 +84,8 @@ async fn create_test_pv(
             phase: PersistentVolumePhase::Available,
             message: None,
             reason: None,
-            last_phase_transition_time: None,        })
+            last_phase_transition_time: None,
+        }),
     };
 
     let key = build_key("persistentvolumes", None, name);
@@ -108,7 +110,7 @@ async fn create_bound_pvc(
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -120,7 +122,7 @@ async fn create_bound_pvc(
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 requests: Some(requests),
-                limits: None
+                limits: None,
             },
             volume_name: Some(pv_name.to_string()),
             storage_class_name: Some(storage_class.to_string()),
@@ -140,7 +142,7 @@ async fn create_bound_pvc(
             conditions: None,
             current_volume_attributes_class_name: None,
             modify_volume_status: None,
-        })
+        }),
     };
 
     let key = build_key("persistentvolumeclaims", Some(namespace), name);
@@ -285,7 +287,7 @@ async fn test_expansion_only_for_bound_pvcs() {
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new("test-pvc-unbound");
@@ -297,7 +299,7 @@ async fn test_expansion_only_for_bound_pvcs() {
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 requests: Some(requests),
-                limits: None
+                limits: None,
             },
             volume_name: None, // Not bound
             storage_class_name: Some("expandable-2".to_string()),
@@ -317,7 +319,7 @@ async fn test_expansion_only_for_bound_pvcs() {
             conditions: None,
             current_volume_attributes_class_name: None,
             modify_volume_status: None,
-        })
+        }),
     };
 
     let pvc_key = build_key(

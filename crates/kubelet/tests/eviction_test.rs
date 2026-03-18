@@ -93,6 +93,7 @@ fn create_pod_with_qos(name: &str, namespace: &str, qos: QoSClass) -> Pod {
             affinity: None,
             tolerations: None,
             service_account_name: None,
+            service_account: None,
             priority: None,
             priority_class_name: None,
             hostname: None,
@@ -383,6 +384,9 @@ fn test_node_condition_updates_memory_pressure() {
         volumes_in_use: None,
         volumes_attached: None,
         daemon_endpoints: None,
+        config: None,
+        features: None,
+        runtime_handlers: None,
     });
 
     // Update conditions with memory pressure
@@ -423,6 +427,9 @@ fn test_node_condition_updates_disk_pressure() {
         volumes_in_use: None,
         volumes_attached: None,
         daemon_endpoints: None,
+        config: None,
+        features: None,
+        runtime_handlers: None,
     });
 
     // Update conditions with disk pressure
@@ -460,6 +467,9 @@ fn test_node_condition_clears_when_pressure_resolved() {
         volumes_in_use: None,
         volumes_attached: None,
         daemon_endpoints: None,
+        config: None,
+        features: None,
+        runtime_handlers: None,
     });
 
     // Set memory pressure

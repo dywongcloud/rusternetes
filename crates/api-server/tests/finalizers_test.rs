@@ -15,6 +15,7 @@ fn empty_pod_spec() -> PodSpec {
         restart_policy: None,
         node_selector: None,
         service_account_name: None,
+        service_account: None,
         node_name: None,
         host_network: None,
         host_pid: None,

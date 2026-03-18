@@ -74,6 +74,10 @@ pub struct PodSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_account_name: Option<String>,
 
+    /// Deprecated: Use serviceAccountName instead
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_account: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
 
@@ -279,6 +283,10 @@ pub struct PodSecurityContext {
     pub se_linux_options: Option<SELinuxOptions>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub windows_options: Option<WindowsSecurityContextOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub se_linux_change_policy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supplemental_groups_policy: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -392,6 +400,14 @@ pub struct EphemeralContainer {
     /// Resources are the compute resource requirements for this container
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resources: Option<crate::types::ResourceRequirements>,
+
+    /// TerminationMessagePath is the file path for the container's termination message
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub termination_message_path: Option<String>,
+
+    /// TerminationMessagePolicy indicates how the termination message should be populated
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub termination_message_policy: Option<String>,
 }
 
 /// TopologySpreadConstraint specifies how to spread pods across topology domains
@@ -1169,6 +1185,18 @@ pub struct PodStatus {
     /// Status of ephemeral containers
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ephemeral_container_statuses: Option<Vec<ContainerStatus>>,
+
+    /// Status of resource resize for the pod
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resize: Option<String>,
+
+    /// Status of resource claims
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_claim_statuses: Option<Vec<PodResourceClaimStatus>>,
+
+    /// ObservedGeneration represents the .metadata.generation that the status was set based upon
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_generation: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1208,6 +1236,18 @@ pub struct ContainerStatus {
     /// Resources represents the compute resource requests/limits of this container
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resources: Option<ResourceRequirements>,
+
+    /// User represents the user identity for this container
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<ContainerUser>,
+
+    /// VolumeMounts reports status of volume mounts
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_mounts: Option<Vec<VolumeMountStatus>>,
+
+    /// StopSignal reports the effective stop signal for this container
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_signal: Option<String>,
 }
 
 /// ResourceStatus represents the status of an individual resource allocation
@@ -1518,6 +1558,45 @@ pub struct ExecAction {
     pub command: Vec<String>,
 }
 
+/// ContainerUser represents user identity information for a container
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerUser {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub linux: Option<LinuxContainerUser>,
+}
+
+/// LinuxContainerUser represents Linux-specific user identity
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LinuxContainerUser {
+    pub uid: i64,
+    pub gid: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supplemental_groups: Option<Vec<i64>>,
+}
+
+/// VolumeMountStatus shows status of a VolumeMount
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeMountStatus {
+    pub name: String,
+    pub mount_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_only: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recursive_read_only: Option<String>,
+}
+
+/// PodResourceClaimStatus describes the status of a resource claim in the pod
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PodResourceClaimStatus {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_claim_name: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1704,6 +1783,7 @@ mod tests {
             node_name: None,
             node_selector: None,
             service_account_name: None,
+            service_account: None,
             hostname: None,
             subdomain: None,
             host_network: None,
@@ -1849,6 +1929,9 @@ mod tests {
                 allocated_resources: None,
                 allocated_resources_status: None,
                 resources: None,
+                user: None,
+                volume_mounts: None,
+                stop_signal: None,
             }]),
             init_container_statuses: Some(vec![
                 ContainerStatus {
@@ -1872,6 +1955,9 @@ mod tests {
                     allocated_resources: None,
                     allocated_resources_status: None,
                     resources: None,
+                    user: None,
+                    volume_mounts: None,
+                    stop_signal: None,
                 },
                 ContainerStatus {
                     name: "init-mydb".to_string(),
@@ -1894,10 +1980,16 @@ mod tests {
                     allocated_resources: None,
                     allocated_resources_status: None,
                     resources: None,
+                    user: None,
+                    volume_mounts: None,
+                    stop_signal: None,
                 },
             ]),
             ephemeral_container_statuses: None,
             conditions: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
         };
 
         assert_eq!(status.phase, Some(Phase::Running));
@@ -2031,6 +2123,7 @@ mod tests {
             node_name: None,
             node_selector: None,
             service_account_name: None,
+            service_account: None,
             hostname: None,
             subdomain: None,
             host_network: None,

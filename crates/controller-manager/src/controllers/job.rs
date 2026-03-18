@@ -124,6 +124,9 @@ impl<S: Storage> JobController<S> {
                 completion_time: None,
                 ready: None,
                 terminating: None,
+                completed_indexes: None,
+                failed_indexes: None,
+                uncounted_terminated_pods: None,
             });
         } else if is_failed {
             warn!(
@@ -149,6 +152,9 @@ impl<S: Storage> JobController<S> {
                 completion_time: None,
                 ready: None,
                 terminating: None,
+                completed_indexes: None,
+                failed_indexes: None,
+                uncounted_terminated_pods: None,
             });
         } else {
             // Calculate how many new pods to create
@@ -208,6 +214,9 @@ impl<S: Storage> JobController<S> {
                 completion_time: None,
                 ready: None,
                 terminating: None,
+                completed_indexes: None,
+                failed_indexes: None,
+                uncounted_terminated_pods: None,
             });
         }
 
@@ -287,6 +296,9 @@ impl<S: Storage> JobController<S> {
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
             }),
         };
 

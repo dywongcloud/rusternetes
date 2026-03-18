@@ -60,10 +60,10 @@ pub use autoscaling::{
     HorizontalPodAutoscalerCondition, HorizontalPodAutoscalerSpec, HorizontalPodAutoscalerStatus,
     MetricIdentifier, MetricSpec, MetricStatus, MetricTarget, MetricValueStatus,
     ObjectMetricSource, ObjectMetricStatus, PodResourcePolicy, PodUpdatePolicy, PodsMetricSource,
-    PodsMetricStatus, RecommendedContainerResources, RecommendedPodResources,
-    ResourceMetricSource, ResourceMetricStatus, VerticalPodAutoscaler,
-    VerticalPodAutoscalerCondition, VerticalPodAutoscalerRecommenderSelector,
-    VerticalPodAutoscalerSpec, VerticalPodAutoscalerStatus,
+    PodsMetricStatus, RecommendedContainerResources, RecommendedPodResources, ResourceMetricSource,
+    ResourceMetricStatus, VerticalPodAutoscaler, VerticalPodAutoscalerCondition,
+    VerticalPodAutoscalerRecommenderSelector, VerticalPodAutoscalerSpec,
+    VerticalPodAutoscalerStatus,
 };
 pub use binding::Binding;
 pub use certificates::{
@@ -139,18 +139,18 @@ pub use node::{
     NodeDaemonEndpoints, NodeSpec, NodeStatus, NodeSystemInfo, Taint,
 };
 pub use pod::{
-    Affinity, Capabilities, ClusterTrustBundleProjection, ConfigMapEnvSource,
-    ConfigMapKeySelector, ConfigMapProjection, ConfigMapVolumeSource, Container, ContainerPort,
-    ContainerState, ContainerStatus, DownwardAPIProjection, DownwardAPIVolumeFile,
-    DownwardAPIVolumeSource, EmptyDirVolumeSource, EnvFromSource, EnvVar, EnvVarSource,
-    EphemeralContainer, EphemeralVolumeSource, ExecAction, HTTPGetAction, HTTPHeader,
-    HostPathVolumeSource, ImageVolumeSource, KeyToPath, Lifecycle, LifecycleHandler, NodeAffinity,
-    NodeSelector, NodeSelectorRequirement, NodeSelectorTerm, ObjectFieldSelector,
-    PersistentVolumeClaimTemplate, PersistentVolumeClaimVolumeSource, Pod, PodAffinity,
-    PodAffinityTerm, PodAntiAffinity, PodSpec, PodCondition, PodStatus, PreferredSchedulingTerm,
-    Probe, ProjectedVolumeSource, ResourceFieldSelector, ResourceHealth, ResourceStatus,
-    SeccompProfile, SecretEnvSource, SecretKeySelector, SecretProjection, SecretVolumeSource,
-    SecurityContext, ServiceAccountTokenProjection, SleepAction, TCPSocketAction, Toleration,
+    Affinity, Capabilities, ClusterTrustBundleProjection, ConfigMapEnvSource, ConfigMapKeySelector,
+    ConfigMapProjection, ConfigMapVolumeSource, Container, ContainerPort, ContainerState,
+    ContainerStatus, DownwardAPIProjection, DownwardAPIVolumeFile, DownwardAPIVolumeSource,
+    EmptyDirVolumeSource, EnvFromSource, EnvVar, EnvVarSource, EphemeralContainer,
+    EphemeralVolumeSource, ExecAction, HTTPGetAction, HTTPHeader, HostPathVolumeSource,
+    ImageVolumeSource, KeyToPath, Lifecycle, LifecycleHandler, NodeAffinity, NodeSelector,
+    NodeSelectorRequirement, NodeSelectorTerm, ObjectFieldSelector, PersistentVolumeClaimTemplate,
+    PersistentVolumeClaimVolumeSource, Pod, PodAffinity, PodAffinityTerm, PodAntiAffinity,
+    PodCondition, PodSpec, PodStatus, PreferredSchedulingTerm, Probe, ProjectedVolumeSource,
+    ResourceFieldSelector, ResourceHealth, ResourceStatus, SeccompProfile, SecretEnvSource,
+    SecretKeySelector, SecretProjection, SecretVolumeSource, SecurityContext,
+    ServiceAccountTokenProjection, SleepAction, TCPSocketAction, Toleration,
     TopologySpreadConstraint, Volume, VolumeDevice, VolumeMount, VolumeProjection,
     WeightedPodAffinityTerm,
 };
@@ -182,9 +182,9 @@ pub use volume::{
     DeletionPolicy, ISCSIVolumeSource, NFSVolumeSource, PersistentVolume,
     PersistentVolumeAccessMode, PersistentVolumeClaim, PersistentVolumeClaimSpec,
     PersistentVolumeClaimStatus, PersistentVolumeSpec, PersistentVolumeStatus, StorageClass,
-    TypedObjectReference, VolumeBindingMode, VolumeSnapshot,
-    VolumeSnapshotClass, VolumeSnapshotContent, VolumeSnapshotContentSpec,
-    VolumeSnapshotContentStatus, VolumeSnapshotSource, VolumeSnapshotSpec, VolumeSnapshotStatus,
+    TypedObjectReference, VolumeBindingMode, VolumeSnapshot, VolumeSnapshotClass,
+    VolumeSnapshotContent, VolumeSnapshotContentSpec, VolumeSnapshotContentStatus,
+    VolumeSnapshotSource, VolumeSnapshotSpec, VolumeSnapshotStatus,
 };
 pub use workloads::{
     CronJob, CronJobSpec, CronJobStatus, DaemonSet, DaemonSetSpec, DaemonSetStatus, Job, JobSpec,

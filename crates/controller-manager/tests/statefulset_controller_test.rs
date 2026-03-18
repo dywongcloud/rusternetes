@@ -77,6 +77,7 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
                     affinity: None,
                     tolerations: None,
                     service_account_name: None,
+                    service_account: None,
                     priority: None,
                     priority_class_name: None,
                     hostname: None,
@@ -112,22 +113,23 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
             service_name: format!("{}-headless", name),
             pod_management_policy: Some("OrderedReady".to_string()),
             update_strategy: None,
-        min_ready_seconds: None,
-        revision_history_limit: None,
-        volume_claim_templates: None,
-        persistent_volume_claim_retention_policy: None,
+            min_ready_seconds: None,
+            revision_history_limit: None,
+            volume_claim_templates: None,
+            persistent_volume_claim_retention_policy: None,
+            ordinals: None,
         },
         status: Some(StatefulSetStatus {
             replicas: 0,
             ready_replicas: Some(0),
             current_replicas: Some(0),
             updated_replicas: Some(0),
-        available_replicas: None,
-        collision_count: None,
-        observed_generation: None,
-        current_revision: None,
-        update_revision: None,
-        conditions: None,
+            available_replicas: None,
+            collision_count: None,
+            observed_generation: None,
+            current_revision: None,
+            update_revision: None,
+            conditions: None,
         }),
     }
 }
@@ -251,5 +253,9 @@ async fn test_statefulset_updates_status() {
     let status = updated_ss.status.expect("Status should be set");
 
     assert_eq!(status.replicas, 3, "Status replicas should match actual");
-    assert_eq!(status.current_replicas, Some(3), "Current replicas should be 3");
+    assert_eq!(
+        status.current_replicas,
+        Some(3),
+        "Current replicas should be 3"
+    );
 }

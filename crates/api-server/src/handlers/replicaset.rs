@@ -54,6 +54,7 @@ pub async fn create(
             available_replicas: 0,
             observed_generation: Some(0),
             conditions: None,
+            terminating_replicas: None,
         });
     }
 

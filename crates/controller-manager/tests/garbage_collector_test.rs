@@ -71,6 +71,7 @@ fn create_test_pod(name: &str, namespace: &str, owner_uid: Option<&str>) -> Pod 
             affinity: None,
             tolerations: None,
             service_account_name: None,
+            service_account: None,
             priority: None,
             priority_class_name: None,
             hostname: None,
@@ -117,6 +118,9 @@ fn create_test_pod(name: &str, namespace: &str, owner_uid: Option<&str>) -> Pod 
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
         }),
     }
 }

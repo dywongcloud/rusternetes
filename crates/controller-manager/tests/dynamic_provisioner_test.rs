@@ -42,7 +42,7 @@ async fn test_provisions_pv_for_pvc_with_storageclass() {
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
         allow_volume_expansion: None,
-            mount_options: None,
+        mount_options: None,
     };
 
     let sc_key = build_key("storageclasses", None, "fast");
@@ -200,7 +200,7 @@ async fn test_skips_already_bound_pvcs() {
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
         allow_volume_expansion: None,
-            mount_options: None,
+        mount_options: None,
     };
 
     let sc_key = build_key("storageclasses", None, "fast");
@@ -297,7 +297,7 @@ async fn test_honors_storage_capacity() {
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
         allow_volume_expansion: None,
-            mount_options: None,
+        mount_options: None,
     };
 
     let sc_key = build_key("storageclasses", None, "fast");
@@ -382,7 +382,7 @@ async fn test_honors_access_modes() {
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
         allow_volume_expansion: None,
-            mount_options: None,
+        mount_options: None,
     };
 
     let sc_key = build_key("storageclasses", None, "fast");
@@ -472,7 +472,7 @@ async fn test_honors_reclaim_policy_delete() {
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
         allow_volume_expansion: None,
-            mount_options: None,
+        mount_options: None,
     };
 
     let sc_key = build_key("storageclasses", None, "delete-policy");
@@ -556,7 +556,7 @@ async fn test_honors_reclaim_policy_retain() {
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
         allow_volume_expansion: None,
-            mount_options: None,
+        mount_options: None,
     };
 
     let sc_key = build_key("storageclasses", None, "retain-policy");
@@ -640,7 +640,7 @@ async fn test_restores_pvc_from_snapshot() {
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
         allow_volume_expansion: None,
-            mount_options: None,
+        mount_options: None,
     };
     let sc_key = build_key("storageclasses", None, "fast");
     storage.create(&sc_key, &sc).await.unwrap();
@@ -833,7 +833,7 @@ async fn test_rejects_pvc_restore_from_non_ready_snapshot() {
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
         allow_volume_expansion: None,
-            mount_options: None,
+        mount_options: None,
     };
     let sc_key = build_key("storageclasses", None, "fast");
     storage.create(&sc_key, &sc).await.unwrap();

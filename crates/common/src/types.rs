@@ -138,16 +138,8 @@ impl ObjectMeta {
     /// generate a unique name by appending a random 5-character suffix.
     pub fn ensure_name(&mut self) {
         if self.name.is_empty() {
-            let prefix = self
-                .generate_name
-                .as_deref()
-                .unwrap_or("auto-")
-                .to_string();
-            let suffix: String = uuid::Uuid::new_v4()
-                .to_string()
-                .chars()
-                .take(5)
-                .collect();
+            let prefix = self.generate_name.as_deref().unwrap_or("auto-").to_string();
+            let suffix: String = uuid::Uuid::new_v4().to_string().chars().take(5).collect();
             self.name = format!("{}{}", prefix, suffix);
         }
     }

@@ -184,6 +184,9 @@ pub struct ReplicaSetStatus {
     /// Conditions represent the latest available observations
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conditions: Option<Vec<ReplicaSetCondition>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminating_replicas: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -282,7 +285,11 @@ pub struct StatefulSetSpec {
 
     /// Policy for PVC retention when StatefulSet is deleted or scaled
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub persistent_volume_claim_retention_policy: Option<StatefulSetPersistentVolumeClaimRetentionPolicy>,
+    pub persistent_volume_claim_retention_policy:
+        Option<StatefulSetPersistentVolumeClaimRetentionPolicy>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ordinals: Option<StatefulSetOrdinals>,
 }
 
 /// StatefulSetUpdateStrategy indicates the strategy for updating StatefulSet
@@ -586,6 +593,19 @@ pub struct JobSpec {
     /// Completion mode: NonIndexed or Indexed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completion_mode: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backoff_limit_per_index: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_failed_indexes: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pod_failure_policy: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pod_replacement_policy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success_policy: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub managed_by: Option<String>,
 }
 
 /// JobStatus represents the current state of a Job
@@ -623,6 +643,13 @@ pub struct JobStatus {
     /// Number of pods which are terminating
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminating: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_indexes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_indexes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uncounted_terminated_pods: Option<UncountedTerminatedPods>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -781,6 +808,24 @@ pub struct PodTemplateSpec {
     pub spec: PodSpec,
 }
 
+/// StatefulSetOrdinals describes the policy used for replica index assignment
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StatefulSetOrdinals {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<i32>,
+}
+
+/// UncountedTerminatedPods holds UIDs of Pods that have terminated but haven't been accounted for yet
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UncountedTerminatedPods {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub succeeded: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed: Option<Vec<String>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -798,6 +843,7 @@ mod tests {
                 node_name: None,
                 node_selector: None,
                 service_account_name: None,
+                service_account: None,
                 hostname: None,
                 subdomain: None,
                 host_network: None,
@@ -866,6 +912,7 @@ mod tests {
                 node_name: None,
                 node_selector: None,
                 service_account_name: None,
+                service_account: None,
                 hostname: None,
                 subdomain: None,
                 host_network: None,
@@ -921,6 +968,7 @@ mod tests {
                 node_name: None,
                 node_selector: None,
                 service_account_name: None,
+                service_account: None,
                 hostname: None,
                 subdomain: None,
                 host_network: None,
@@ -966,6 +1014,12 @@ mod tests {
             suspend: None,
             ttl_seconds_after_finished: None,
             completion_mode: None,
+            backoff_limit_per_index: None,
+            max_failed_indexes: None,
+            pod_failure_policy: None,
+            pod_replacement_policy: None,
+            success_policy: None,
+            managed_by: None,
         };
 
         let job = Job::new("test-job", "default", job_spec);

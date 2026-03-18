@@ -123,6 +123,7 @@ fn create_pod_with_sidecar(
             affinity: None,
             tolerations: None,
             service_account_name: None,
+            service_account: None,
             priority: None,
             priority_class_name: None,
             hostname: None,
@@ -230,6 +231,9 @@ fn test_sidecar_runs_alongside_main_containers() {
                 allocated_resources: None,
                 allocated_resources_status: None,
                 resources: None,
+                user: None,
+                volume_mounts: None,
+                stop_signal: None,
             },
             // Sidecar - running
             ContainerStatus {
@@ -247,6 +251,9 @@ fn test_sidecar_runs_alongside_main_containers() {
                 allocated_resources: None,
                 allocated_resources_status: None,
                 resources: None,
+                user: None,
+                volume_mounts: None,
+                stop_signal: None,
             },
         ]),
         container_statuses: Some(vec![ContainerStatus {
@@ -264,8 +271,14 @@ fn test_sidecar_runs_alongside_main_containers() {
             allocated_resources: None,
             allocated_resources_status: None,
             resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
         }]),
         ephemeral_container_statuses: None,
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
         conditions: None,
     });
 
@@ -278,7 +291,9 @@ fn test_sidecar_runs_alongside_main_containers() {
 
     // Regular init container should be terminated
     match &init_statuses[0].state {
-        Some(ContainerState::Terminated { exit_code, reason, .. }) => {
+        Some(ContainerState::Terminated {
+            exit_code, reason, ..
+        }) => {
             assert_eq!(*exit_code, 0);
             assert_eq!(*reason, Some("Completed".to_string()));
         }
@@ -430,6 +445,9 @@ fn test_sidecar_failure_should_not_block_pod() {
             allocated_resources: None,
             allocated_resources_status: None,
             resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
         }]),
         container_statuses: Some(vec![ContainerStatus {
             name: "app-0".to_string(),
@@ -446,8 +464,14 @@ fn test_sidecar_failure_should_not_block_pod() {
             allocated_resources: None,
             allocated_resources_status: None,
             resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
         }]),
         ephemeral_container_statuses: None,
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
         conditions: None,
     });
 

@@ -32,7 +32,7 @@ async fn test_complete_pod_lifecycle() {
     let namespace = Namespace {
         type_meta: TypeMeta {
             kind: "Namespace".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new("test-ns");
@@ -40,7 +40,7 @@ async fn test_complete_pod_lifecycle() {
             meta
         },
         spec: None,
-        status: None
+        status: None,
     };
 
     let ns_key = build_key("namespaces", None, "test-ns");
@@ -50,7 +50,7 @@ async fn test_complete_pod_lifecycle() {
     let pod = Pod {
         type_meta: TypeMeta {
             kind: "Pod".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new("test-pod");
@@ -93,6 +93,7 @@ async fn test_complete_pod_lifecycle() {
             affinity: None,
             tolerations: None,
             service_account_name: None,
+            service_account: None,
             priority: None,
             priority_class_name: None,
             hostname: None,
@@ -138,8 +139,11 @@ async fn test_complete_pod_lifecycle() {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
-            conditions: None
-        })
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
+            conditions: None,
+        }),
     };
 
     let pod_key = build_key("pods", Some("test-ns"), "test-pod");
@@ -181,7 +185,10 @@ async fn test_complete_pod_lifecycle() {
         container_statuses: None,
         init_container_statuses: None,
         ephemeral_container_statuses: None,
-        conditions: None
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
+        conditions: None,
     });
     storage.update(&pod_key, &running_pod).await.unwrap();
 
@@ -208,7 +215,7 @@ async fn test_deployment_workflow() {
     let deployment = Deployment {
         type_meta: TypeMeta {
             kind: "Deployment".to_string(),
-            api_version: "apps/v1".to_string()
+            api_version: "apps/v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new("web-deployment");
@@ -220,7 +227,7 @@ async fn test_deployment_workflow() {
             replicas: Some(3),
             selector: LabelSelector {
                 match_labels: Some(labels.clone()),
-                match_expressions: None
+                match_expressions: None,
             },
             min_ready_seconds: None,
             revision_history_limit: None,
@@ -265,6 +272,7 @@ async fn test_deployment_workflow() {
                     affinity: None,
                     tolerations: None,
                     service_account_name: None,
+                    service_account: None,
                     priority: None,
                     priority_class_name: None,
                     hostname: None,
@@ -291,15 +299,15 @@ async fn test_deployment_workflow() {
                     host_users: None,
                     set_hostname_as_fqdn: None,
                     termination_grace_period_seconds: None,
-            host_aliases: None,
-            os: None,
-            scheduling_gates: None,
-            resources: None,
-                }
+                    host_aliases: None,
+                    os: None,
+                    scheduling_gates: None,
+                    resources: None,
+                },
             },
             strategy: None,
-        paused: None,
-        progress_deadline_seconds: None
+            paused: None,
+            progress_deadline_seconds: None,
         },
         status: Some(DeploymentStatus {
             replicas: Some(0),
@@ -307,10 +315,11 @@ async fn test_deployment_workflow() {
             available_replicas: Some(0),
             unavailable_replicas: Some(0),
             updated_replicas: Some(0),
-        conditions: None,
-        collision_count: None,
-        observed_generation: None
-        })
+            conditions: None,
+            collision_count: None,
+            observed_generation: None,
+            terminating_replicas: None,
+        }),
     };
 
     let deployment_key = build_key("deployments", Some("default"), "web-deployment");
@@ -356,7 +365,10 @@ async fn test_deployment_workflow() {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
-            conditions: None
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
+            conditions: None,
         });
         storage.update(&pod_key, &updated_pod).await.unwrap();
     }
@@ -377,7 +389,7 @@ async fn test_dynamic_pvc_workflow() {
     let sc = StorageClass {
         type_meta: TypeMeta {
             kind: "StorageClass".to_string(),
-            api_version: "storage.k8s.io/v1".to_string()
+            api_version: "storage.k8s.io/v1".to_string(),
         },
         metadata: ObjectMeta::new("fast"),
         provisioner: "rusternetes.io/hostpath".to_string(),
@@ -393,7 +405,7 @@ async fn test_dynamic_pvc_workflow() {
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allowed_topologies: None,
         allow_volume_expansion: None,
-            mount_options: None
+        mount_options: None,
     };
 
     let sc_key = build_key("storageclasses", None, "fast");
@@ -406,7 +418,7 @@ async fn test_dynamic_pvc_workflow() {
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new("my-pvc");
@@ -418,7 +430,7 @@ async fn test_dynamic_pvc_workflow() {
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 limits: None,
-                requests: Some(requests)
+                requests: Some(requests),
             },
             volume_name: None,
             storage_class_name: Some("fast".to_string()),
@@ -437,8 +449,8 @@ async fn test_dynamic_pvc_workflow() {
             capacity: None,
             conditions: None,
             current_volume_attributes_class_name: None,
-            modify_volume_status: None
-        })
+            modify_volume_status: None,
+        }),
     };
 
     let pvc_key = build_key("persistentvolumeclaims", Some("default"), "my-pvc");
@@ -484,12 +496,12 @@ async fn test_snapshot_workflow() {
     let vsc = VolumeSnapshotClass {
         type_meta: TypeMeta {
             kind: "VolumeSnapshotClass".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string()
+            api_version: "snapshot.storage.k8s.io/v1".to_string(),
         },
         metadata: ObjectMeta::new("snapshot-class"),
         driver: "rusternetes.io/hostpath-snapshotter".to_string(),
         parameters: None,
-        deletion_policy: DeletionPolicy::Delete
+        deletion_policy: DeletionPolicy::Delete,
     };
 
     let vsc_key = build_key("volumesnapshotclasses", None, "snapshot-class");
@@ -502,7 +514,7 @@ async fn test_snapshot_workflow() {
     let pv = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new("data-pv");
@@ -526,14 +538,14 @@ async fn test_snapshot_workflow() {
             volume_mode: Some(PersistentVolumeMode::Filesystem),
             node_affinity: None,
             claim_ref: None,
-            volume_attributes_class_name: None
+            volume_attributes_class_name: None,
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
             reason: None,
             last_phase_transition_time: None,
-        })
+        }),
     };
 
     let pv_key = build_key("persistentvolumes", None, "data-pv");
@@ -545,7 +557,7 @@ async fn test_snapshot_workflow() {
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new("data-pvc");
@@ -557,7 +569,7 @@ async fn test_snapshot_workflow() {
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 limits: None,
-                requests: Some(requests)
+                requests: Some(requests),
             },
             volume_name: Some("data-pv".to_string()),
             storage_class_name: Some("fast".to_string()),
@@ -576,8 +588,8 @@ async fn test_snapshot_workflow() {
             capacity: Some(capacity),
             conditions: None,
             current_volume_attributes_class_name: None,
-            modify_volume_status: None
-        })
+            modify_volume_status: None,
+        }),
     };
 
     let pvc_key = build_key("persistentvolumeclaims", Some("default"), "data-pvc");
@@ -587,7 +599,7 @@ async fn test_snapshot_workflow() {
     let vs = VolumeSnapshot {
         type_meta: TypeMeta {
             kind: "VolumeSnapshot".to_string(),
-            api_version: "snapshot.storage.k8s.io/v1".to_string()
+            api_version: "snapshot.storage.k8s.io/v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new("my-snapshot");
@@ -598,11 +610,11 @@ async fn test_snapshot_workflow() {
         spec: VolumeSnapshotSpec {
             source: VolumeSnapshotSource {
                 persistent_volume_claim_name: Some("data-pvc".to_string()),
-                volume_snapshot_content_name: None
+                volume_snapshot_content_name: None,
             },
-            volume_snapshot_class_name: "snapshot-class".to_string()
+            volume_snapshot_class_name: "snapshot-class".to_string(),
         },
-        status: None
+        status: None,
     };
 
     let vs_key = build_key("volumesnapshots", Some("default"), "my-snapshot");

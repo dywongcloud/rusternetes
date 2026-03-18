@@ -47,6 +47,14 @@ pub async fn create_test_node(storage: &EtcdStorage, name: &str) -> Node {
                 allocatable.insert("memory".to_string(), "8Gi".to_string());
                 allocatable
             }),
+            node_info: None,
+            images: None,
+            volumes_in_use: None,
+            volumes_attached: None,
+            daemon_endpoints: None,
+            config: None,
+            features: None,
+            runtime_handlers: None,
         }),
     };
 

@@ -67,6 +67,9 @@ fn create_test_node(name: &str) -> Node {
             volumes_in_use: None,
             volumes_attached: None,
             daemon_endpoints: None,
+            config: None,
+            features: None,
+            runtime_handlers: None,
         }),
     }
 }

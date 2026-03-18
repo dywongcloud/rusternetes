@@ -383,7 +383,10 @@ impl ContainerRuntime {
                     Some(ip)
                 }
                 Err(e) => {
-                    warn!("Failed to start pause container for pod {}: {}", pod_name, e);
+                    warn!(
+                        "Failed to start pause container for pod {}: {}",
+                        pod_name, e
+                    );
                     None
                 }
             }
@@ -621,7 +624,8 @@ impl ContainerRuntime {
         // The pause container owns the network namespace and must declare all ports;
         // child containers that join via --network container:<pause> cannot re-declare them.
         let mut exposed_ports: HashMap<String, HashMap<(), ()>> = HashMap::new();
-        let mut port_bindings: HashMap<String, Option<Vec<bollard::models::PortBinding>>> = HashMap::new();
+        let mut port_bindings: HashMap<String, Option<Vec<bollard::models::PortBinding>>> =
+            HashMap::new();
         if let Some(spec) = &pod.spec {
             for c in &spec.containers {
                 if let Some(ports) = &c.ports {
@@ -650,12 +654,20 @@ impl ContainerRuntime {
         let config = Config {
             image: Some("busybox:latest".to_string()),
             cmd: Some(vec!["sleep".to_string(), "infinity".to_string()]),
-            exposed_ports: if exposed_ports.is_empty() { None } else { Some(exposed_ports) },
+            exposed_ports: if exposed_ports.is_empty() {
+                None
+            } else {
+                Some(exposed_ports)
+            },
             host_config: Some(bollard::models::HostConfig {
                 network_mode: Some(self.network.clone()),
                 dns: Some(vec![self.cluster_dns.clone()]),
                 dns_options: Some(vec!["ndots:5".to_string()]),
-                port_bindings: if port_bindings.is_empty() { None } else { Some(port_bindings) },
+                port_bindings: if port_bindings.is_empty() {
+                    None
+                } else {
+                    Some(port_bindings)
+                },
                 ..Default::default()
             }),
             ..Default::default()
@@ -1421,13 +1433,12 @@ impl ContainerRuntime {
                                 // pod status hasn't been written to etcd yet (i.e., at first
                                 // container creation). This ensures SONOBUOY_ADVERTISE_IP and
                                 // similar env vars get the correct IP.
-                                let resolved = if value.is_empty()
-                                    && field_ref.field_path == "status.podIP"
-                                {
-                                    pod_ip.unwrap_or("").to_string()
-                                } else {
-                                    value
-                                };
+                                let resolved =
+                                    if value.is_empty() && field_ref.field_path == "status.podIP" {
+                                        pod_ip.unwrap_or("").to_string()
+                                    } else {
+                                        value
+                                    };
 
                                 if !resolved.is_empty() {
                                     env_list.push(format!("{}={}", env_var.name, resolved));
@@ -1841,6 +1852,9 @@ impl ContainerRuntime {
                         allocated_resources: None,
                         allocated_resources_status: None,
                         resources: None,
+                        user: None,
+                        volume_mounts: None,
+                        stop_signal: None,
                     }
                 }
                 Err(_) => ContainerStatus {
@@ -1859,6 +1873,9 @@ impl ContainerRuntime {
                     allocated_resources: None,
                     allocated_resources_status: None,
                     resources: None,
+                    user: None,
+                    volume_mounts: None,
+                    stop_signal: None,
                 },
             };
 
@@ -2324,7 +2341,12 @@ mod tests {
         }
     }
 
-    fn make_pod(name: &str, namespace: &str, hostname: Option<&str>, subdomain: Option<&str>) -> Pod {
+    fn make_pod(
+        name: &str,
+        namespace: &str,
+        hostname: Option<&str>,
+        subdomain: Option<&str>,
+    ) -> Pod {
         Pod {
             type_meta: TypeMeta {
                 kind: "Pod".to_string(),
@@ -2339,6 +2361,7 @@ mod tests {
                 node_name: None,
                 node_selector: None,
                 service_account_name: None,
+                service_account: None,
                 hostname: hostname.map(|s| s.to_string()),
                 subdomain: subdomain.map(|s| s.to_string()),
                 host_network: None,
@@ -2378,11 +2401,7 @@ mod tests {
 
     /// Build the /etc/hosts content string the same way create_pod_hosts_file does,
     /// so we can unit-test the logic without needing a live ContainerRuntime.
-    fn build_hosts_content(
-        pod: &Pod,
-        pod_ip: Option<&str>,
-        cluster_domain: &str,
-    ) -> String {
+    fn build_hosts_content(pod: &Pod, pod_ip: Option<&str>, cluster_domain: &str) -> String {
         let pod_name = &pod.metadata.name;
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
         let spec = pod.spec.as_ref().unwrap();
@@ -2475,9 +2494,9 @@ mod tests {
         let pod = make_pod("cache-0", "kube-system", Some("cache-0"), Some("redis"));
         let content = build_hosts_content(&pod, Some("10.244.2.10"), "cluster.local");
 
-        assert!(content.contains(
-            "10.244.2.10\tcache-0\tcache-0.redis.kube-system.svc.cluster.local\n"
-        ));
+        assert!(
+            content.contains("10.244.2.10\tcache-0\tcache-0.redis.kube-system.svc.cluster.local\n")
+        );
     }
 
     #[test]
@@ -2485,9 +2504,7 @@ mod tests {
         let pod = make_pod("web-0", "default", Some("web-0"), Some("nginx"));
         let content = build_hosts_content(&pod, Some("10.244.1.5"), "k8s.example.com");
 
-        assert!(content.contains(
-            "10.244.1.5\tweb-0\tweb-0.nginx.default.svc.k8s.example.com\n"
-        ));
+        assert!(content.contains("10.244.1.5\tweb-0\tweb-0.nginx.default.svc.k8s.example.com\n"));
     }
 
     #[test]

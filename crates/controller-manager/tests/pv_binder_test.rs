@@ -31,7 +31,7 @@ async fn create_test_pv(
     let pv = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -62,7 +62,7 @@ async fn create_test_pv(
             message: None,
             reason: None,
             last_phase_transition_time: None,
-        })
+        }),
     };
 
     let key = build_key("persistentvolumes", None, name);
@@ -82,7 +82,7 @@ async fn create_test_pvc(
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new(name);
@@ -94,7 +94,7 @@ async fn create_test_pvc(
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 limits: None,
-                requests: Some(requests)
+                requests: Some(requests),
             },
             volume_name: None,
             storage_class_name: storage_class,
@@ -114,7 +114,7 @@ async fn create_test_pvc(
             conditions: None,
             current_volume_attributes_class_name: None,
             modify_volume_status: None,
-        })
+        }),
     };
 
     let key = build_key("persistentvolumeclaims", Some(namespace), name);
@@ -274,7 +274,7 @@ async fn test_matches_access_modes() {
     let pv = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new("rwo-pv");
@@ -285,7 +285,7 @@ async fn test_matches_access_modes() {
             capacity,
             host_path: Some(HostPathVolumeSource {
                 path: "/tmp/test-pv/rwo-pv".to_string(),
-                r#type: Some(HostPathType::DirectoryOrCreate)
+                r#type: Some(HostPathType::DirectoryOrCreate),
             }),
             nfs: None,
             iscsi: None,
@@ -305,7 +305,7 @@ async fn test_matches_access_modes() {
             message: None,
             reason: None,
             last_phase_transition_time: None,
-        })
+        }),
     };
 
     let pv_key = build_key("persistentvolumes", None, "rwo-pv");
@@ -318,7 +318,7 @@ async fn test_matches_access_modes() {
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new("rwm-pvc");
@@ -330,7 +330,7 @@ async fn test_matches_access_modes() {
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteMany],
             resources: ResourceRequirements {
                 limits: None,
-                requests: Some(requests)
+                requests: Some(requests),
             },
             volume_name: None,
             storage_class_name: Some("fast".to_string()),
@@ -350,7 +350,7 @@ async fn test_matches_access_modes() {
             conditions: None,
             current_volume_attributes_class_name: None,
             modify_volume_status: None,
-        })
+        }),
     };
 
     let pvc_key = build_key("persistentvolumeclaims", Some("default"), "rwm-pvc");
@@ -382,7 +382,7 @@ async fn test_skips_already_bound_pv() {
     let pv = PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new("bound-pv");
@@ -393,7 +393,7 @@ async fn test_skips_already_bound_pv() {
             capacity,
             host_path: Some(HostPathVolumeSource {
                 path: "/tmp/test-pv/bound-pv".to_string(),
-                r#type: Some(HostPathType::DirectoryOrCreate)
+                r#type: Some(HostPathType::DirectoryOrCreate),
             }),
             nfs: None,
             iscsi: None,
@@ -412,7 +412,7 @@ async fn test_skips_already_bound_pv() {
                 uid: Some("existing-uid".to_string()),
                 api_version: Some("v1".to_string()),
                 resource_version: None,
-                field_path: None
+                field_path: None,
             }),
             volume_attributes_class_name: None,
         },
@@ -421,7 +421,7 @@ async fn test_skips_already_bound_pv() {
             message: None,
             reason: None,
             last_phase_transition_time: None,
-        })
+        }),
     };
 
     let pv_key = build_key("persistentvolumes", None, "bound-pv");
@@ -475,7 +475,7 @@ async fn test_skips_already_bound_pvc() {
     let pvc = PersistentVolumeClaim {
         type_meta: TypeMeta {
             kind: "PersistentVolumeClaim".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: {
             let mut meta = ObjectMeta::new("bound-pvc");
@@ -487,7 +487,7 @@ async fn test_skips_already_bound_pvc() {
             access_modes: vec![PersistentVolumeAccessMode::ReadWriteOnce],
             resources: ResourceRequirements {
                 limits: None,
-                requests: Some(requests)
+                requests: Some(requests),
             },
             volume_name: Some("pv-1".to_string()), // Already bound
             storage_class_name: Some("fast".to_string()),
@@ -511,7 +511,7 @@ async fn test_skips_already_bound_pvc() {
             conditions: None,
             current_volume_attributes_class_name: None,
             modify_volume_status: None,
-        })
+        }),
     };
 
     let pvc_key = build_key("persistentvolumeclaims", Some("default"), "bound-pvc");

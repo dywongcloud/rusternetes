@@ -312,6 +312,7 @@ impl<S: Storage> DeploymentController<S> {
             conditions: None,
             collision_count: None,
             observed_generation: None,
+            terminating_replicas: None,
         };
 
         let mut updated_deployment = deployment.clone();

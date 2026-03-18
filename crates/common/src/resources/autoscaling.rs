@@ -223,6 +223,9 @@ pub struct HPAScalingRules {
     /// Policies is a list of potential scaling policies
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policies: Option<Vec<HPAScalingPolicy>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tolerance: Option<String>,
 }
 
 /// HPAScalingPolicy defines a single policy for scaling

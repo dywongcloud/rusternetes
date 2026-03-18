@@ -319,6 +319,7 @@ mod tests {
                 node_name: None,
                 node_selector: None,
                 service_account_name: None,
+                service_account: None,
                 hostname: None,
                 subdomain: None,
                 host_network: None,
@@ -409,6 +410,7 @@ mod tests {
                 node_name: None,
                 node_selector: None,
                 service_account_name: None,
+                service_account: None,
                 hostname: None,
                 subdomain: None,
                 host_network: None,
@@ -463,6 +465,9 @@ mod tests {
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
             }),
             ..pod_no_status.clone()
         };
@@ -495,9 +500,15 @@ mod tests {
                     allocated_resources: None,
                     allocated_resources_status: None,
                     resources: None,
+                    user: None,
+                    volume_mounts: None,
+                    stop_signal: None,
                 }]),
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
             }),
             ..pod_no_status.clone()
         };
@@ -530,9 +541,15 @@ mod tests {
                     allocated_resources: None,
                     allocated_resources_status: None,
                     resources: None,
+                    user: None,
+                    volume_mounts: None,
+                    stop_signal: None,
                 }]),
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
             }),
             ..pod_no_status
         };

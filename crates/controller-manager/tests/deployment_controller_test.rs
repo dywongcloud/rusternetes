@@ -80,6 +80,7 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                     affinity: None,
                     tolerations: None,
                     service_account_name: None,
+                    service_account: None,
                     priority: None,
                     priority_class_name: None,
                     hostname: None,
@@ -113,8 +114,8 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                 },
             },
             strategy: None,
-        paused: None,
-        progress_deadline_seconds: None,
+            paused: None,
+            progress_deadline_seconds: None,
         },
         status: Some(DeploymentStatus {
             replicas: Some(0),
@@ -122,9 +123,10 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
             available_replicas: Some(0),
             unavailable_replicas: Some(0),
             updated_replicas: Some(0),
-        conditions: None,
-        collision_count: None,
-        observed_generation: None,
+            conditions: None,
+            collision_count: None,
+            observed_generation: None,
+            terminating_replicas: None,
         }),
     }
 }

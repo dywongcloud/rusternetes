@@ -272,6 +272,9 @@ pub struct EndpointHints {
     /// forZones indicates the zone(s) this endpoint should be consumed by to enable topology aware routing.
     #[serde(skip_serializing_if = "Option::is_none", rename = "forZones")]
     pub for_zones: Option<Vec<ForZone>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub for_nodes: Option<Vec<ForNode>>,
 }
 
 /// ForZone provides information about which zones should consume this endpoint.
@@ -279,5 +282,12 @@ pub struct EndpointHints {
 #[serde(rename_all = "camelCase")]
 pub struct ForZone {
     /// name represents the name of the zone.
+    pub name: String,
+}
+
+/// ForNode represents a node for topology-aware endpoint routing
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ForNode {
     pub name: String,
 }

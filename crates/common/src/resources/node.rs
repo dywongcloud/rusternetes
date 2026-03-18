@@ -97,6 +97,15 @@ pub struct NodeStatus {
     /// DaemonEndpoints contains endpoints of daemons running on the node
     #[serde(skip_serializing_if = "Option::is_none")]
     pub daemon_endpoints: Option<NodeDaemonEndpoints>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<NodeConfigStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub features: Option<NodeFeatures>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_handlers: Option<Vec<NodeRuntimeHandler>>,
 }
 
 /// ContainerImage describes a container image present on the node
@@ -184,4 +193,78 @@ pub struct NodeSystemInfo {
     pub kube_proxy_version: String,
     pub operating_system: String,
     pub architecture: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub swap: Option<NodeSwapStatus>,
+}
+
+/// NodeSwapStatus represents the swap status of a node
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeSwapStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<i64>,
+}
+
+/// NodeConfigStatus describes the status of the config assigned by Node.Spec.ConfigSource
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeConfigStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned: Option<NodeConfigSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active: Option<NodeConfigSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_known_good: Option<NodeConfigSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// NodeConfigSource specifies a source of node configuration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeConfigSource {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_map: Option<ConfigMapNodeConfigSource>,
+}
+
+/// ConfigMapNodeConfigSource contains the information to reference a ConfigMap as a config source
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigMapNodeConfigSource {
+    pub namespace: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kubelet_config_key: Option<String>,
+}
+
+/// NodeFeatures describes the set of features implemented by the CRI implementation
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeFeatures {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supplemental_groups_policy: Option<bool>,
+}
+
+/// NodeRuntimeHandler is a set of runtime handler information
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeRuntimeHandler {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub features: Option<NodeRuntimeHandlerFeatures>,
+}
+
+/// NodeRuntimeHandlerFeatures is a set of features implemented by the runtime handler
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeRuntimeHandlerFeatures {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recursive_read_only_mounts: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_namespaces: Option<bool>,
 }

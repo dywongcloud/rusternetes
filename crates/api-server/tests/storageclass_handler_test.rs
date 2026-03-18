@@ -28,7 +28,7 @@ fn create_test_storageclass(name: &str, provisioner: &str) -> StorageClass {
         reclaim_policy: Some(PersistentVolumeReclaimPolicy::Delete),
         volume_binding_mode: Some(VolumeBindingMode::Immediate),
         allow_volume_expansion: Some(false),
-            mount_options: None,
+        mount_options: None,
         allowed_topologies: None,
     }
 }

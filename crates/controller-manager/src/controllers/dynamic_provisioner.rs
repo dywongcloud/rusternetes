@@ -414,8 +414,8 @@ mod tests {
                 allocated_resources: None,
                 allocated_resource_statuses: None,
                 resize_status: None,
-            current_volume_attributes_class_name: None,
-            modify_volume_status: None,
+                current_volume_attributes_class_name: None,
+                modify_volume_status: None,
             }),
         };
 
@@ -457,7 +457,11 @@ mod tests {
         );
 
         // Verify hostpath volume source
-        let hp = pv.spec.host_path.as_ref().expect("Expected HostPath volume source");
+        let hp = pv
+            .spec
+            .host_path
+            .as_ref()
+            .expect("Expected HostPath volume source");
         assert_eq!(hp.path, "/tmp/rusternetes/dynamic-pvs/pvc-default-test-pvc");
         assert_eq!(hp.r#type, Some(HostPathType::DirectoryOrCreate));
 

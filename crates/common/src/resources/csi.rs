@@ -48,6 +48,9 @@ pub struct CSIDriverSpec {
     /// seLinuxMount specifies if the CSI driver supports "-o context" mount option
     #[serde(skip_serializing_if = "Option::is_none", rename = "seLinuxMount")]
     pub se_linux_mount: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_allocatable_update_period_seconds: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -283,6 +286,7 @@ mod tests {
                 token_requests: None,
                 requires_republish: Some(false),
                 se_linux_mount: Some(false),
+                node_allocatable_update_period_seconds: None,
             },
         };
 

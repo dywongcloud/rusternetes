@@ -60,6 +60,7 @@ fn create_test_pod(name: &str, cpu_request: &str, memory_request: &str) -> Pod {
             node_name: None,
             node_selector: None,
             service_account_name: None,
+            service_account: None,
             hostname: None,
             subdomain: None,
             host_network: None,

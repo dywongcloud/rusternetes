@@ -77,6 +77,7 @@ fn create_test_deployment_with_pods(
                     node_name: None,
                     node_selector: None,
                     service_account_name: None,
+                    service_account: None,
                     automount_service_account_token: None,
                     hostname: None,
                     subdomain: None,
@@ -111,8 +112,8 @@ fn create_test_deployment_with_pods(
                 },
             },
             strategy: None,
-        paused: None,
-        progress_deadline_seconds: None,
+            paused: None,
+            progress_deadline_seconds: None,
         },
         status: None,
     };
@@ -148,6 +149,9 @@ fn create_test_deployment_with_pods(
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
             }),
         };
         pods.push(pod);

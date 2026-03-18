@@ -361,6 +361,7 @@ mod tests {
                 node_name: None,
                 node_selector: None,
                 service_account_name: None,
+                service_account: None,
                 hostname: None,
                 subdomain: None,
                 host_network: None,

@@ -95,6 +95,7 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                     node_name: None,
                     node_selector: None,
                     service_account_name: None,
+                    service_account: None,
                     automount_service_account_token: None,
                     hostname: None,
                     subdomain: None,
@@ -129,8 +130,8 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                 },
             },
             strategy: None,
-        paused: None,
-        progress_deadline_seconds: None,
+            paused: None,
+            progress_deadline_seconds: None,
         },
         status: None,
     }

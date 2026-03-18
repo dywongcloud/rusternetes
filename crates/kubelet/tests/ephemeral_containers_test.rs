@@ -47,6 +47,7 @@ fn create_running_pod(name: &str) -> Pod {
             affinity: None,
             tolerations: None,
             service_account_name: None,
+            service_account: None,
             priority: None,
             priority_class_name: None,
             hostname: None,
@@ -103,9 +104,15 @@ fn create_running_pod(name: &str) -> Pod {
                 allocated_resources: None,
                 allocated_resources_status: None,
                 resources: None,
+                user: None,
+                volume_mounts: None,
+                stop_signal: None,
             }]),
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
             conditions: None,
         }),
     }
@@ -130,6 +137,8 @@ fn create_ephemeral_container(name: &str, target_container: Option<&str>) -> Eph
         resize_policy: None,
         restart_policy: None,
         resources: None,
+        termination_message_path: None,
+        termination_message_policy: None,
     }
 }
 
@@ -294,10 +303,13 @@ fn test_ephemeral_container_status() {
             image: Some("busybox:latest".to_string()),
             image_id: None,
             container_id: Some("debugger-container-id".to_string()),
-started: None,
-allocated_resources: None,
-allocated_resources_status: None,
-resources: None,
+            started: None,
+            allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
         }]);
     }
 
@@ -399,6 +411,8 @@ fn test_ephemeral_container_tty_and_stdin() {
         resize_policy: None,
         restart_policy: None,
         resources: None,
+        termination_message_path: None,
+        termination_message_policy: None,
     };
 
     assert_eq!(ephemeral.stdin, Some(true));
@@ -436,10 +450,13 @@ fn test_ephemeral_container_lifecycle() {
             image: Some("busybox:latest".to_string()),
             image_id: None,
             container_id: None,
-started: None,
-allocated_resources: None,
-allocated_resources_status: None,
-resources: None,
+            started: None,
+            allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
         }]);
     }
 
@@ -464,10 +481,13 @@ resources: None,
             image: Some("busybox:latest".to_string()),
             image_id: None,
             container_id: Some("debugger-container-id".to_string()),
-started: None,
-allocated_resources: None,
-allocated_resources_status: None,
-resources: None,
+            started: None,
+            allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
         }]);
     }
 

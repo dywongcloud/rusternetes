@@ -82,6 +82,7 @@ fn create_test_job(name: &str, namespace: &str, completions: i32, parallelism: i
                     affinity: None,
                     tolerations: None,
                     service_account_name: None,
+                    service_account: None,
                     priority: None,
                     priority_class_name: None,
                     hostname: None,
@@ -114,11 +115,17 @@ fn create_test_job(name: &str, namespace: &str, completions: i32, parallelism: i
                     resources: None,
                 },
             },
-        selector: None,
-        manual_selector: None,
-        suspend: None,
-        ttl_seconds_after_finished: None,
-        completion_mode: None,
+            selector: None,
+            manual_selector: None,
+            suspend: None,
+            ttl_seconds_after_finished: None,
+            completion_mode: None,
+            backoff_limit_per_index: None,
+            max_failed_indexes: None,
+            pod_failure_policy: None,
+            pod_replacement_policy: None,
+            success_policy: None,
+            managed_by: None,
         },
         status: None,
     }
@@ -214,6 +221,9 @@ async fn test_job_completion_detection() {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
         });
         let pod_key = build_key("pods", Some("default"), &pod.metadata.name);
         storage.update(&pod_key, &updated_pod).await.unwrap();
@@ -269,6 +279,9 @@ async fn test_job_creates_more_pods_as_they_complete() {
         container_statuses: None,
         init_container_statuses: None,
         ephemeral_container_statuses: None,
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
     });
     let pod_key = build_key("pods", Some("default"), &pod_to_complete.metadata.name);
     storage.update(&pod_key, &updated_pod).await.unwrap();
@@ -315,6 +328,9 @@ async fn test_job_backoff_limit() {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
         });
         let pod_key = build_key("pods", Some("default"), &pods[i].metadata.name);
         storage.update(&pod_key, &failed_pod).await.unwrap();
@@ -340,6 +356,9 @@ async fn test_job_backoff_limit() {
         container_statuses: None,
         init_container_statuses: None,
         ephemeral_container_statuses: None,
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
     });
     let extra_key = build_key("pods", Some("default"), &extra_pod_name);
     storage.create(&extra_key, &extra_pod).await.unwrap();
@@ -390,6 +409,9 @@ async fn test_job_single_completion() {
         container_statuses: None,
         init_container_statuses: None,
         ephemeral_container_statuses: None,
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
     });
     let pod_key = build_key("pods", Some("default"), &pod.metadata.name);
     storage.update(&pod_key, &pod).await.unwrap();

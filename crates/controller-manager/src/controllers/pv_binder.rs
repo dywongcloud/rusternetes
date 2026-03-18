@@ -145,8 +145,8 @@ impl<S: Storage> PVBinderController<S> {
                 allocated_resources: None,
                 allocated_resource_statuses: None,
                 resize_status: None,
-            current_volume_attributes_class_name: None,
-            modify_volume_status: None,
+                current_volume_attributes_class_name: None,
+                modify_volume_status: None,
             });
 
             let pvc_key = build_key("persistentvolumeclaims", Some(namespace), pvc_name);

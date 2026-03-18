@@ -65,8 +65,8 @@ async fn test_lease_update() {
         acquire_time: Some(Utc::now()),
         renew_time: None,
         lease_transitions: Some(0),
-            preferred_holder: None,
-            strategy: None,
+        preferred_holder: None,
+        strategy: None,
     });
 
     let updated: Lease = storage.update(&key, &lease).await.unwrap();
@@ -177,8 +177,8 @@ async fn test_lease_with_holder_identity() {
         acquire_time: Some(Utc::now()),
         renew_time: None,
         lease_transitions: Some(0),
-            preferred_holder: None,
-            strategy: None,
+        preferred_holder: None,
+        strategy: None,
     });
 
     let key = build_key("leases", Some("default"), "test-holder");
@@ -207,8 +207,8 @@ async fn test_lease_with_duration() {
         acquire_time: Some(Utc::now()),
         renew_time: None,
         lease_transitions: Some(0),
-            preferred_holder: None,
-            strategy: None,
+        preferred_holder: None,
+        strategy: None,
     });
 
     let key = build_key("leases", Some("kube-system"), "test-duration");
@@ -234,8 +234,8 @@ async fn test_lease_with_timestamps() {
         acquire_time: Some(now),
         renew_time: Some(now),
         lease_transitions: Some(0),
-            preferred_holder: None,
-            strategy: None,
+        preferred_holder: None,
+        strategy: None,
     });
 
     let key = build_key("leases", Some("default"), "test-timestamps");
@@ -261,8 +261,8 @@ async fn test_lease_transitions() {
         acquire_time: Some(Utc::now()),
         renew_time: None,
         lease_transitions: Some(0),
-            preferred_holder: None,
-            strategy: None,
+        preferred_holder: None,
+        strategy: None,
     });
 
     let key = build_key("leases", Some("default"), "test-transitions");
@@ -277,8 +277,8 @@ async fn test_lease_transitions() {
         acquire_time: Some(Utc::now()),
         renew_time: Some(Utc::now()),
         lease_transitions: Some(1),
-            preferred_holder: None,
-            strategy: None,
+        preferred_holder: None,
+        strategy: None,
     });
 
     let updated: Lease = storage.update(&key, &lease).await.unwrap();
@@ -302,8 +302,8 @@ async fn test_lease_renew() {
         acquire_time: Some(now),
         renew_time: Some(now),
         lease_transitions: Some(0),
-            preferred_holder: None,
-            strategy: None,
+        preferred_holder: None,
+        strategy: None,
     });
 
     let key = build_key("leases", Some("kube-system"), "test-renew");
@@ -319,8 +319,8 @@ async fn test_lease_renew() {
         acquire_time: Some(now),
         renew_time: Some(renew_time),
         lease_transitions: Some(0),
-            preferred_holder: None,
-            strategy: None,
+        preferred_holder: None,
+        strategy: None,
     });
 
     let updated: Lease = storage.update(&key, &lease).await.unwrap();
@@ -380,8 +380,8 @@ async fn test_lease_metadata_immutability() {
         acquire_time: Some(Utc::now()),
         renew_time: None,
         lease_transitions: Some(0),
-            preferred_holder: None,
-            strategy: None,
+        preferred_holder: None,
+        strategy: None,
     });
 
     let updated: Lease = storage.update(&key, &updated_lease).await.unwrap();
@@ -516,8 +516,8 @@ async fn test_lease_leader_election_scenario() {
         acquire_time: Some(now),
         renew_time: Some(now),
         lease_transitions: Some(0),
-            preferred_holder: None,
-            strategy: None,
+        preferred_holder: None,
+        strategy: None,
     });
 
     let key = build_key("leases", Some("kube-system"), "kube-controller-manager");
@@ -578,8 +578,8 @@ async fn test_lease_all_fields() {
         acquire_time: Some(now),
         renew_time: Some(now),
         lease_transitions: Some(5),
-            preferred_holder: None,
-            strategy: None,
+        preferred_holder: None,
+        strategy: None,
     });
 
     let key = build_key("leases", Some("kube-system"), "test-all-fields");

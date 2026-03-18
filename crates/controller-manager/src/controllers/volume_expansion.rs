@@ -173,8 +173,8 @@ impl<S: Storage> VolumeExpansionController<S> {
                     allocated_resources: None,
                     allocated_resource_statuses: None,
                     resize_status: None,
-            current_volume_attributes_class_name: None,
-            modify_volume_status: None,
+                    current_volume_attributes_class_name: None,
+                    modify_volume_status: None,
                 });
 
         // Set allocated resources to the new requested size
@@ -349,8 +349,8 @@ mod tests {
                 allocated_resources: None,
                 allocated_resource_statuses: None,
                 resize_status: None,
-            current_volume_attributes_class_name: None,
-            modify_volume_status: None,
+                current_volume_attributes_class_name: None,
+                modify_volume_status: None,
             }),
         };
 
@@ -396,8 +396,8 @@ mod tests {
                 allocated_resources: None,
                 allocated_resource_statuses: None,
                 resize_status: None,
-            current_volume_attributes_class_name: None,
-            modify_volume_status: None,
+                current_volume_attributes_class_name: None,
+                modify_volume_status: None,
             }),
         };
 
@@ -443,8 +443,8 @@ mod tests {
                 allocated_resources: None,
                 allocated_resource_statuses: None,
                 resize_status: None,
-            current_volume_attributes_class_name: None,
-            modify_volume_status: None,
+                current_volume_attributes_class_name: None,
+                modify_volume_status: None,
             }),
         };
 

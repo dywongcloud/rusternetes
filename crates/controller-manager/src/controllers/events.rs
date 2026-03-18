@@ -324,6 +324,7 @@ mod tests {
                 affinity: None,
                 tolerations: None,
                 service_account_name: None,
+                service_account: None,
                 priority: None,
                 priority_class_name: None,
                 hostname: None,
@@ -376,6 +377,9 @@ mod tests {
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
             }),
         }
     }

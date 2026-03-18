@@ -57,6 +57,9 @@ async fn create_test_node(
             volumes_in_use: None,
             volumes_attached: None,
             daemon_endpoints: None,
+            config: None,
+            features: None,
+            runtime_handlers: None,
         }),
     };
 
@@ -137,6 +140,7 @@ fn create_test_pod(
             affinity,
             tolerations,
             service_account_name: None,
+            service_account: None,
             priority: None,
             priority_class_name: None,
             hostname: None,
@@ -181,6 +185,9 @@ fn create_test_pod(
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
             conditions: None,
         }),
     }

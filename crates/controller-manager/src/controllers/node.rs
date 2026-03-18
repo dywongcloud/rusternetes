@@ -178,6 +178,9 @@ impl<S: Storage> NodeController<S> {
                 volumes_in_use: None,
                 volumes_attached: None,
                 daemon_endpoints: None,
+                config: None,
+                features: None,
+                runtime_handlers: None,
             });
         }
 
@@ -311,6 +314,9 @@ impl<S: Storage> NodeController<S> {
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
             });
         }
 
@@ -390,6 +396,9 @@ mod tests {
                 volumes_in_use: None,
                 volumes_attached: None,
                 daemon_endpoints: None,
+                config: None,
+                features: None,
+                runtime_handlers: None,
             }),
         };
 
@@ -415,6 +424,9 @@ mod tests {
                 volumes_in_use: None,
                 volumes_attached: None,
                 daemon_endpoints: None,
+                config: None,
+                features: None,
+                runtime_handlers: None,
             }),
             ..node_ready
         };

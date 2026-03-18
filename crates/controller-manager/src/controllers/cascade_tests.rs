@@ -8,15 +8,15 @@
 #[cfg(test)]
 mod tests {
     use crate::controllers::{
-        daemonset::DaemonSetController, garbage_collector::GarbageCollector,
-        job::JobController, statefulset::StatefulSetController,
+        daemonset::DaemonSetController, garbage_collector::GarbageCollector, job::JobController,
+        statefulset::StatefulSetController,
     };
     use rusternetes_common::resources::workloads::{
         DaemonSet, DaemonSetSpec, Job, JobSpec, ReplicaSet, ReplicaSetSpec, StatefulSet,
         StatefulSetSpec,
     };
     use rusternetes_common::resources::{
-        Endpoints, EndpointSubset, Node, NodeStatus, Pod, PodSpec, PodStatus, PodTemplateSpec,
+        EndpointSubset, Endpoints, Node, NodeStatus, Pod, PodSpec, PodStatus, PodTemplateSpec,
     };
     use rusternetes_common::types::{LabelSelector, ObjectMeta, OwnerReference, TypeMeta};
     use rusternetes_storage::{memory::MemoryStorage, Storage};
@@ -39,6 +39,7 @@ mod tests {
                 node_name: None,
                 node_selector: None,
                 service_account_name: None,
+                service_account: None,
                 hostname: None,
                 subdomain: None,
                 host_network: None,
@@ -91,6 +92,9 @@ mod tests {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
         }
     }
 
@@ -112,6 +116,9 @@ mod tests {
                 volumes_in_use: None,
                 volumes_attached: None,
                 daemon_endpoints: None,
+                config: None,
+                features: None,
+                runtime_handlers: None,
             }),
         }
     }
@@ -153,6 +160,7 @@ mod tests {
                 revision_history_limit: None,
                 volume_claim_templates: None,
                 persistent_volume_claim_retention_policy: None,
+                ordinals: None,
             },
         );
         sts.metadata.uid = uid.to_string();
@@ -174,6 +182,12 @@ mod tests {
                 suspend: None,
                 ttl_seconds_after_finished: None,
                 completion_mode: None,
+                backoff_limit_per_index: None,
+                max_failed_indexes: None,
+                pod_failure_policy: None,
+                pod_replacement_policy: None,
+                success_policy: None,
+                managed_by: None,
             },
         );
         job.metadata.uid = uid.to_string();
@@ -604,10 +618,7 @@ mod tests {
         // CronJob does NOT exist in storage → Job is orphaned
         gc.scan_and_collect().await.unwrap();
 
-        let jobs: Vec<Job> = storage
-            .list("/registry/jobs/default/")
-            .await
-            .unwrap();
+        let jobs: Vec<Job> = storage.list("/registry/jobs/default/").await.unwrap();
         assert_eq!(
             jobs.len(),
             0,
@@ -661,10 +672,7 @@ mod tests {
         // Service does NOT exist → Endpoints are orphaned
         gc.scan_and_collect().await.unwrap();
 
-        let remaining: Vec<Endpoints> = storage
-            .list("/registry/endpoints/default/")
-            .await
-            .unwrap();
+        let remaining: Vec<Endpoints> = storage.list("/registry/endpoints/default/").await.unwrap();
         assert_eq!(
             remaining.len(),
             0,
@@ -802,12 +810,7 @@ mod tests {
 
         // Pods owned by the ReplicaSet
         for i in 0..2 {
-            let pod = make_orphan_pod(
-                &format!("pod-{}", i),
-                "default",
-                rs_uid,
-                "ReplicaSet",
-            );
+            let pod = make_orphan_pod(&format!("pod-{}", i), "default", rs_uid, "ReplicaSet");
             storage
                 .create(&format!("/registry/pods/default/pod-{}", i), &pod)
                 .await

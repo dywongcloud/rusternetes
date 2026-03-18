@@ -2,7 +2,9 @@ use crate::eviction::{get_node_stats, get_pod_stats, EvictionManager, EvictionSi
 use crate::runtime::ContainerRuntime;
 use anyhow::Result;
 use rusternetes_common::{
-    resources::{Node, NodeAddress, NodeCondition, NodeSpec, NodeStatus, Pod, PodCondition, PodStatus},
+    resources::{
+        Node, NodeAddress, NodeCondition, NodeSpec, NodeStatus, Pod, PodCondition, PodStatus,
+    },
     types::Phase,
 };
 use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
@@ -123,6 +125,9 @@ impl Kubelet {
             volumes_in_use: None,
             volumes_attached: None,
             daemon_endpoints: None,
+            config: None,
+            features: None,
+            runtime_handlers: None,
         });
 
         let key = build_key("nodes", None, &self.node_name);
@@ -336,6 +341,9 @@ impl Kubelet {
                             container_statuses,
                             init_container_statuses: None,
                             ephemeral_container_statuses: None,
+                            resize: None,
+                            resource_claim_statuses: None,
+                            observed_generation: None,
                             host_i_ps: None,
                             pod_i_ps: None,
                             nominated_node_name: None,
@@ -378,8 +386,7 @@ impl Kubelet {
                 };
 
                 // Get container statuses
-                let container_statuses =
-                    self.runtime.get_container_statuses(&fresh_pod).await.ok();
+                let container_statuses = self.runtime.get_container_statuses(&fresh_pod).await.ok();
 
                 // Get pod IP
                 let pod_ip = self.runtime.get_pod_ip(pod_name).await.ok().flatten();
@@ -396,6 +403,9 @@ impl Kubelet {
                     container_statuses,
                     init_container_statuses: None,
                     ephemeral_container_statuses: None,
+                    resize: None,
+                    resource_claim_statuses: None,
+                    observed_generation: None,
                     host_i_ps: None,
                     pod_i_ps: None,
                     nominated_node_name: None,
@@ -577,6 +587,9 @@ impl Kubelet {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
             host_i_ps: None,
             pod_i_ps: None,
             nominated_node_name: None,
@@ -687,8 +700,10 @@ impl Kubelet {
 
 #[cfg(test)]
 mod tests {
-    use rusternetes_common::resources::{Container, ContainerState, ContainerStatus, Pod, PodStatus};
     use rusternetes_common::resources::pod::PodSpec;
+    use rusternetes_common::resources::{
+        Container, ContainerState, ContainerStatus, Pod, PodStatus,
+    };
     use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
 
     fn make_container(name: &str) -> Container {
@@ -739,6 +754,7 @@ mod tests {
                 node_name: None,
                 node_selector: None,
                 service_account_name: None,
+                service_account: None,
                 hostname: None,
                 subdomain: None,
                 host_network: None,
@@ -792,6 +808,9 @@ mod tests {
             allocated_resources: None,
             allocated_resources_status: None,
             resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
         }
     }
 
@@ -815,12 +834,21 @@ mod tests {
             container_statuses: Some(vec![make_running_container_status("app")]),
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
         });
 
         let status = pod.status.as_ref().unwrap();
         assert_eq!(status.phase, Some(Phase::Running));
-        let statuses = status.container_statuses.as_ref().expect("must have containerStatuses");
-        assert!(!statuses.is_empty(), "Running pod must have at least one containerStatus");
+        let statuses = status
+            .container_statuses
+            .as_ref()
+            .expect("must have containerStatuses");
+        assert!(
+            !statuses.is_empty(),
+            "Running pod must have at least one containerStatus"
+        );
         assert!(statuses[0].ready, "container must be ready=true");
     }
 
@@ -844,13 +872,22 @@ mod tests {
             container_statuses: None, // <-- the bug: sonobuoy-worker sees this and declares done
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
         });
 
         let status = pod.status.as_ref().unwrap();
         // Document that this state (Pending + no containerStatuses) is the problematic one
         let is_bug_state = status.phase == Some(Phase::Pending)
-            && status.container_statuses.as_ref().map_or(true, |v| v.is_empty());
-        assert!(is_bug_state, "This is the state that triggers premature result submission");
+            && status
+                .container_statuses
+                .as_ref()
+                .map_or(true, |v| v.is_empty());
+        assert!(
+            is_bug_state,
+            "This is the state that triggers premature result submission"
+        );
     }
 
     // When re-fetching from etcd fails, we fall back to the original pod clone.
@@ -901,9 +938,15 @@ mod tests {
             allocated_resources: None,
             allocated_resources_status: None,
             resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
         };
         let is_terminated = matches!(status.state, Some(ContainerState::Terminated { .. }));
-        assert!(!is_terminated, "Waiting container is not terminated — sonobuoy-worker should wait");
+        assert!(
+            !is_terminated,
+            "Waiting container is not terminated — sonobuoy-worker should wait"
+        );
     }
 
     // Documents why re-fetching from etcd before writing Running status is necessary.
@@ -916,15 +959,16 @@ mod tests {
         let fresh = make_pod("my-pod", "default", Some("6"));
 
         assert_ne!(
-            stale.metadata.resource_version,
-            fresh.metadata.resource_version,
+            stale.metadata.resource_version, fresh.metadata.resource_version,
             "Stale rv={:?} differs from fresh rv={:?} — using stale would cause conflict",
-            stale.metadata.resource_version,
-            fresh.metadata.resource_version
+            stale.metadata.resource_version, fresh.metadata.resource_version
         );
 
         // The fix: always use fresh.metadata.resource_version when writing status
         let rv_to_use = fresh.metadata.resource_version.as_deref().unwrap_or("0");
-        assert_eq!(rv_to_use, "6", "Must use fresh resourceVersion to avoid conflict");
+        assert_eq!(
+            rv_to_use, "6",
+            "Must use fresh resourceVersion to avoid conflict"
+        );
     }
 }

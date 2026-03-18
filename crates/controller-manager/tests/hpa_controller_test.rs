@@ -72,6 +72,7 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                     node_name: None,
                     node_selector: None,
                     service_account_name: None,
+                    service_account: None,
                     automount_service_account_token: None,
                     hostname: None,
                     subdomain: None,
@@ -106,8 +107,8 @@ fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deploym
                 },
             },
             strategy: None,
-        paused: None,
-        progress_deadline_seconds: None,
+            paused: None,
+            progress_deadline_seconds: None,
         },
         status: None,
     }
@@ -271,7 +272,8 @@ async fn test_hpa_respects_max_replicas() {
     // Verify deployment was scaled down to max_replicas
     let updated_deployment: Deployment = storage.get(&deploy_key).await.unwrap();
     assert_eq!(
-        updated_deployment.spec.replicas, Some(5),
+        updated_deployment.spec.replicas,
+        Some(5),
         "Deployment should be capped at max_replicas (5), got {}",
         updated_deployment.spec.replicas.unwrap_or(0)
     );
@@ -419,7 +421,8 @@ async fn test_hpa_with_no_metrics_maintains_current() {
     // Verify deployment replicas unchanged (should maintain current)
     let updated_deployment: Deployment = storage.get(&deploy_key).await.unwrap();
     assert_eq!(
-        updated_deployment.spec.replicas, Some(4),
+        updated_deployment.spec.replicas,
+        Some(4),
         "Deployment replicas should remain unchanged when no metrics specified, got {}",
         updated_deployment.spec.replicas.unwrap_or(0)
     );

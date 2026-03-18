@@ -86,6 +86,7 @@ fn create_pod_with_init_containers(name: &str, init_count: usize, app_count: usi
             affinity: None,
             tolerations: None,
             service_account_name: None,
+            service_account: None,
             priority: None,
             priority_class_name: None,
             hostname: None,
@@ -168,14 +169,20 @@ fn test_init_container_status_sequence() {
                 image: Some("busybox:0".to_string()),
                 image_id: None,
                 container_id: Some("container-0".to_string()),
-    started: None,
-    allocated_resources: None,
-    allocated_resources_status: None,
-    resources: None,
+                started: None,
+                allocated_resources: None,
+                allocated_resources_status: None,
+                resources: None,
+                user: None,
+                volume_mounts: None,
+                stop_signal: None,
             },
             // init-1 and init-2 are waiting
         ]),
         ephemeral_container_statuses: None,
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
         conditions: None,
     });
 
@@ -227,10 +234,13 @@ fn test_init_containers_completed_app_starting() {
                 image: Some("busybox:0".to_string()),
                 image_id: None,
                 container_id: Some("init-0-container".to_string()),
-    started: None,
-    allocated_resources: None,
-    allocated_resources_status: None,
-    resources: None,
+                started: None,
+                allocated_resources: None,
+                allocated_resources_status: None,
+                resources: None,
+                user: None,
+                volume_mounts: None,
+                stop_signal: None,
             },
             ContainerStatus {
                 name: "init-1".to_string(),
@@ -249,10 +259,13 @@ fn test_init_containers_completed_app_starting() {
                 image: Some("busybox:1".to_string()),
                 image_id: None,
                 container_id: Some("init-1-container".to_string()),
-    started: None,
-    allocated_resources: None,
-    allocated_resources_status: None,
-    resources: None,
+                started: None,
+                allocated_resources: None,
+                allocated_resources_status: None,
+                resources: None,
+                user: None,
+                volume_mounts: None,
+                stop_signal: None,
             },
         ]),
         container_statuses: Some(vec![ContainerStatus {
@@ -266,12 +279,18 @@ fn test_init_containers_completed_app_starting() {
             image: Some("nginx:0".to_string()),
             image_id: None,
             container_id: Some("app-0-container".to_string()),
-started: None,
-allocated_resources: None,
-allocated_resources_status: None,
-resources: None,
+            started: None,
+            allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
         }]),
         ephemeral_container_statuses: None,
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
         conditions: None,
     });
 
@@ -284,7 +303,9 @@ resources: None,
 
     for init_status in init_statuses {
         match &init_status.state {
-            Some(ContainerState::Terminated { exit_code, reason, .. }) => {
+            Some(ContainerState::Terminated {
+                exit_code, reason, ..
+            }) => {
                 assert_eq!(*exit_code, 0, "Init container should exit with code 0");
                 assert_eq!(*reason, Some("Completed".to_string()));
             }
@@ -335,13 +356,19 @@ fn test_init_container_failure_blocks_app() {
             image: Some("busybox:0".to_string()),
             image_id: None,
             container_id: Some("init-0-container".to_string()),
-started: None,
-allocated_resources: None,
-allocated_resources_status: None,
-resources: None,
+            started: None,
+            allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
         }]),
         container_statuses: None, // App container never started
         ephemeral_container_statuses: None,
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
         conditions: None,
     });
 
@@ -352,7 +379,9 @@ resources: None,
     // Init container should have failed
     let init_statuses = status.init_container_statuses.as_ref().unwrap();
     match &init_statuses[0].state {
-        Some(ContainerState::Terminated { exit_code, reason, .. }) => {
+        Some(ContainerState::Terminated {
+            exit_code, reason, ..
+        }) => {
             assert_eq!(*exit_code, 1, "Init container should exit with code 1");
             assert_eq!(*reason, Some("Error".to_string()));
         }
@@ -396,13 +425,19 @@ fn test_init_container_restart_count() {
             image: Some("busybox:0".to_string()),
             image_id: None,
             container_id: Some("init-0-container-5".to_string()),
-started: None,
-allocated_resources: None,
-allocated_resources_status: None,
-resources: None,
+            started: None,
+            allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
         }]),
         container_statuses: None,
         ephemeral_container_statuses: None,
+        resize: None,
+        resource_claim_statuses: None,
+        observed_generation: None,
         conditions: None,
     });
 

@@ -114,6 +114,7 @@ fn create_test_daemonset(
                     affinity: None,
                     tolerations: None,
                     service_account_name: None,
+                    service_account: None,
                     priority: None,
                     priority_class_name: None,
                     hostname: None,
@@ -147,8 +148,8 @@ fn create_test_daemonset(
                 },
             },
             update_strategy: None,
-        min_ready_seconds: None,
-        revision_history_limit: None,
+            min_ready_seconds: None,
+            revision_history_limit: None,
         },
         status: None,
     }

@@ -78,6 +78,7 @@ fn create_test_job(name: &str, namespace: &str, ttl_seconds: i32, finished: bool
                     affinity: None,
                     tolerations: None,
                     service_account_name: None,
+                    service_account: None,
                     priority: None,
                     priority_class_name: None,
                     hostname: None,
@@ -114,11 +115,17 @@ fn create_test_job(name: &str, namespace: &str, ttl_seconds: i32, finished: bool
             parallelism: Some(1),
             backoff_limit: Some(3),
             active_deadline_seconds: None,
-        selector: None,
-        manual_selector: None,
-        suspend: None,
-        ttl_seconds_after_finished: None,
-        completion_mode: None,
+            selector: None,
+            manual_selector: None,
+            suspend: None,
+            ttl_seconds_after_finished: None,
+            completion_mode: None,
+            backoff_limit_per_index: None,
+            max_failed_indexes: None,
+            pod_failure_policy: None,
+            pod_replacement_policy: None,
+            success_policy: None,
+            managed_by: None,
         },
         status: if finished {
             Some(JobStatus {
@@ -137,6 +144,9 @@ fn create_test_job(name: &str, namespace: &str, ttl_seconds: i32, finished: bool
                 completion_time: None,
                 ready: None,
                 terminating: None,
+                completed_indexes: None,
+                failed_indexes: None,
+                uncounted_terminated_pods: None,
             })
         } else {
             Some(JobStatus {
@@ -148,6 +158,9 @@ fn create_test_job(name: &str, namespace: &str, ttl_seconds: i32, finished: bool
                 completion_time: None,
                 ready: None,
                 terminating: None,
+                completed_indexes: None,
+                failed_indexes: None,
+                uncounted_terminated_pods: None,
             })
         },
     }
@@ -273,6 +286,7 @@ async fn test_ttl_controller_deletes_job_pods() {
                 affinity: None,
                 tolerations: None,
                 service_account_name: None,
+                service_account: None,
                 priority: None,
                 priority_class_name: None,
                 hostname: None,
@@ -319,6 +333,9 @@ async fn test_ttl_controller_deletes_job_pods() {
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
             }),
         };
 
@@ -379,6 +396,9 @@ async fn test_ttl_controller_handles_failed_jobs() {
         completion_time: None,
         ready: None,
         terminating: None,
+        completed_indexes: None,
+        failed_indexes: None,
+        uncounted_terminated_pods: None,
     });
 
     let job_key = build_key("jobs", Some("default"), "failed-job");

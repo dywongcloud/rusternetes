@@ -57,6 +57,7 @@ fn create_minimal_pod(name: &str, namespace: &str) -> Pod {
             node_name: None,
             node_selector: None,
             service_account_name: None,
+            service_account: None,
             hostname: None,
             subdomain: None,
             host_network: None,
@@ -305,7 +306,7 @@ async fn test_default_storage_class_sets_default() {
         reclaim_policy: None,
         volume_binding_mode: None,
         allow_volume_expansion: None,
-            mount_options: None,
+        mount_options: None,
         allowed_topologies: None,
     };
 
@@ -344,7 +345,7 @@ async fn test_default_storage_class_already_set() {
         reclaim_policy: None,
         volume_binding_mode: None,
         allow_volume_expansion: None,
-            mount_options: None,
+        mount_options: None,
         allowed_topologies: None,
     };
 
@@ -385,7 +386,7 @@ async fn test_default_storage_class_beta_annotation() {
         reclaim_policy: None,
         volume_binding_mode: None,
         allow_volume_expansion: None,
-            mount_options: None,
+        mount_options: None,
         allowed_topologies: None,
     };
 

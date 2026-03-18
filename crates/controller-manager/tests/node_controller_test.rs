@@ -58,6 +58,9 @@ async fn test_node_ready_with_recent_heartbeat() {
             volumes_in_use: None,
             volumes_attached: None,
             daemon_endpoints: None,
+            config: None,
+            features: None,
+            runtime_handlers: None,
         }),
     };
 
@@ -129,6 +132,9 @@ async fn test_node_not_ready_with_old_heartbeat() {
             volumes_in_use: None,
             volumes_attached: None,
             daemon_endpoints: None,
+            config: None,
+            features: None,
+            runtime_handlers: None,
         }),
     };
 
@@ -194,6 +200,9 @@ async fn test_node_without_ready_condition() {
             volumes_in_use: None,
             volumes_attached: None,
             daemon_endpoints: None,
+            config: None,
+            features: None,
+            runtime_handlers: None,
         }),
     };
 

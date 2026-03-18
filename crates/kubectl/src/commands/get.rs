@@ -66,7 +66,10 @@ pub(crate) fn format_output<T: Serialize>(resource: &T, format: &OutputFormat) -
         OutputFormat::Name => {
             // Print kind/name format
             let value = serde_json::to_value(resource)?;
-            let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let kind = value
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             let name = value
                 .pointer("/metadata/name")
                 .and_then(|v| v.as_str())
@@ -118,7 +121,10 @@ fn resolve_path(value: &serde_json::Value, path: &str) -> Result<String> {
             // Array index or filter
             let end = remaining.find(']').unwrap_or(remaining.len());
             let idx_str = &remaining[1..end];
-            remaining = remaining.get(end + 1..).unwrap_or("").trim_start_matches('.');
+            remaining = remaining
+                .get(end + 1..)
+                .unwrap_or("")
+                .trim_start_matches('.');
 
             if let Ok(idx) = idx_str.parse::<usize>() {
                 match current.get(idx) {

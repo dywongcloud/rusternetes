@@ -4,10 +4,11 @@
 
 use rusternetes_common::resources::volume::{
     HostPathType, HostPathVolumeSource, NFSVolumeSource, NodeSelector, NodeSelectorRequirement,
-    NodeSelectorTerm, PersistentVolumeMode, PersistentVolumePhase, PersistentVolumeReclaimPolicy, VolumeNodeAffinity
+    NodeSelectorTerm, PersistentVolumeMode, PersistentVolumePhase, PersistentVolumeReclaimPolicy,
+    VolumeNodeAffinity,
 };
 use rusternetes_common::resources::{
-    PersistentVolume, PersistentVolumeAccessMode, PersistentVolumeSpec, PersistentVolumeStatus
+    PersistentVolume, PersistentVolumeAccessMode, PersistentVolumeSpec, PersistentVolumeStatus,
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
@@ -22,7 +23,7 @@ fn create_test_pv(name: &str, capacity: &str) -> PersistentVolume {
     PersistentVolume {
         type_meta: TypeMeta {
             kind: "PersistentVolume".to_string(),
-            api_version: "v1".to_string()
+            api_version: "v1".to_string(),
         },
         metadata: ObjectMeta {
             name: name.to_string(),
@@ -38,7 +39,7 @@ fn create_test_pv(name: &str, capacity: &str) -> PersistentVolume {
             annotations: None,
             generate_name: None,
             generation: None,
-            managed_fields: None
+            managed_fields: None,
         },
         spec: PersistentVolumeSpec {
             capacity: capacity_map,
@@ -57,14 +58,14 @@ fn create_test_pv(name: &str, capacity: &str) -> PersistentVolume {
             mount_options: None,
             node_affinity: None,
             claim_ref: None,
-            volume_attributes_class_name: None
+            volume_attributes_class_name: None,
         },
         status: Some(PersistentVolumeStatus {
             phase: PersistentVolumePhase::Available,
             message: None,
             reason: None,
             last_phase_transition_time: None,
-        })
+        }),
     }
 }
 
@@ -276,7 +277,11 @@ async fn test_pv_with_nfs() {
 
     // Create with NFS
     let created: PersistentVolume = storage.create(&key, &pv).await.unwrap();
-    let nfs = created.spec.nfs.as_ref().expect("Expected NFS volume source");
+    let nfs = created
+        .spec
+        .nfs
+        .as_ref()
+        .expect("Expected NFS volume source");
     assert_eq!(nfs.server, "nfs.example.com");
 
     // Clean up
@@ -310,8 +315,8 @@ async fn test_pv_status_bound() {
         phase: PersistentVolumePhase::Bound,
         message: None,
         reason: None,
-            last_phase_transition_time: None,
-        });
+        last_phase_transition_time: None,
+    });
 
     let key = build_key("persistentvolumes", None, "test-bound");
 

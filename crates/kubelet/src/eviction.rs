@@ -782,6 +782,7 @@ mod tests {
                 affinity: None,
                 tolerations: None,
                 service_account_name: None,
+                service_account: None,
                 priority: None,
                 priority_class_name: None,
                 hostname: None,

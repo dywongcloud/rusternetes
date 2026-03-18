@@ -45,6 +45,7 @@ fn make_pod(name: &str, namespace: &str, hostname: Option<&str>, subdomain: Opti
             node_name: None,
             node_selector: None,
             service_account_name: None,
+            service_account: None,
             hostname: hostname.map(|s| s.to_string()),
             subdomain: subdomain.map(|s| s.to_string()),
             host_network: None,
@@ -151,10 +152,7 @@ fn test_hostname_falls_back_to_pod_name() {
     let pod = make_pod("my-pod", "default", None, None);
     let spec = pod.spec.as_ref().unwrap();
 
-    let effective_hostname = spec
-        .hostname
-        .as_deref()
-        .unwrap_or(&pod.metadata.name);
+    let effective_hostname = spec.hostname.as_deref().unwrap_or(&pod.metadata.name);
 
     assert_eq!(effective_hostname, "my-pod");
 }
@@ -164,10 +162,7 @@ fn test_hostname_override_takes_precedence() {
     let pod = make_pod("my-pod-abc123", "default", Some("custom-host"), None);
     let spec = pod.spec.as_ref().unwrap();
 
-    let effective_hostname = spec
-        .hostname
-        .as_deref()
-        .unwrap_or(&pod.metadata.name);
+    let effective_hostname = spec.hostname.as_deref().unwrap_or(&pod.metadata.name);
 
     assert_eq!(effective_hostname, "custom-host");
     assert_ne!(effective_hostname, "my-pod-abc123");
@@ -305,7 +300,10 @@ fn test_pod_without_subdomain_deserializes_correctly() {
 #[test]
 fn test_hosts_file_mounted_at_etc_hosts() {
     // Verify the expected container mount path
-    let hosts_bind = format!("{}:/etc/hosts:ro", "/var/lib/rusternetes/volumes/my-pod/hosts");
+    let hosts_bind = format!(
+        "{}:/etc/hosts:ro",
+        "/var/lib/rusternetes/volumes/my-pod/hosts"
+    );
     assert!(hosts_bind.ends_with(":/etc/hosts:ro"));
     assert!(hosts_bind.contains("/hosts:"));
 }

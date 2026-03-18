@@ -52,7 +52,10 @@ pub fn create_test_pvc(name: &str, namespace: &str, storage_class: Option<String
             phase: PersistentVolumeClaimPhase::Pending,
             access_modes: None,
             capacity: None,
-            conditions: None
+            conditions: None,
+            collision_count: None,
+            observed_generation: None,
+            terminating_replicas: None,
         })
     }
 }
@@ -215,7 +218,7 @@ pub fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Dep
                     affinity: None,
                     tolerations: None,
                     service_account_name: None,
-                    priority: None,
+                    service_account: None,                    priority: None,
                     priority_class_name: None,
                     hostname: None,
                     subdomain: None,
@@ -232,7 +235,10 @@ pub fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Dep
             available_replicas: Some(0),
             unavailable_replicas: Some(0),
             updated_replicas: Some(0),
-            conditions: None
+            conditions: None,
+            collision_count: None,
+            observed_generation: None,
+            terminating_replicas: None,
         })
     }
 }
@@ -323,7 +329,14 @@ pub fn create_test_node(name: &str, internal_ip: &str) -> Node {
                 alloc.insert("memory".to_string(), "8Gi".to_string());
                 alloc
             }),
-            node_info: None
+            node_info: None,
+            images: None,
+            volumes_in_use: None,
+            volumes_attached: None,
+            daemon_endpoints: None,
+            config: None,
+            features: None,
+            runtime_handlers: None,
         })
     }
 }

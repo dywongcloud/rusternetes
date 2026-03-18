@@ -70,6 +70,7 @@ fn create_test_replicaset(name: &str, namespace: &str, replicas: i32) -> Replica
                     ephemeral_containers: None,
                     restart_policy: Some("Always".to_string()),
                     service_account_name: None,
+                    service_account: None,
                     automount_service_account_token: None,
                     node_selector: None,
                     node_name: None,
@@ -115,6 +116,7 @@ fn create_test_replicaset(name: &str, namespace: &str, replicas: i32) -> Replica
             available_replicas: 0,
             observed_generation: Some(0),
             conditions: None,
+            terminating_replicas: None,
         }),
     }
 }
@@ -257,6 +259,7 @@ async fn test_replicaset_with_status() {
         available_replicas: 2,
         observed_generation: Some(1),
         conditions: None,
+        terminating_replicas: None,
     });
 
     let key = build_key("replicasets", Some("default"), "test-status");
@@ -443,6 +446,7 @@ async fn test_replicaset_observed_generation() {
         available_replicas: 3,
         observed_generation: Some(5),
         conditions: None,
+        terminating_replicas: None,
     });
 
     let key = build_key("replicasets", Some("default"), "test-generation");

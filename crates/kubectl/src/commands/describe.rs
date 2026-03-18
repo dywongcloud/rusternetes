@@ -276,7 +276,10 @@ fn describe_deployment(deployment: &Deployment) {
         );
     }
 
-    println!("Replicas:     {} desired", deployment.spec.replicas.unwrap_or(1));
+    println!(
+        "Replicas:     {} desired",
+        deployment.spec.replicas.unwrap_or(1)
+    );
 
     if let Some(status) = &deployment.status {
         if let Some(ready) = status.ready_replicas {

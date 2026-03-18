@@ -235,6 +235,7 @@ impl<S: Storage> ReplicaSetController<S> {
             fully_labeled_replicas: Some(replicas), // All pods matching selector are fully labeled
             observed_generation: None,              // TODO: Track generation properly
             conditions: None, // TODO: Add conditions for ReplicaSetReplicaFailure, etc.
+            terminating_replicas: None,
         };
 
         let mut updated_rs = replicaset.clone();
@@ -296,6 +297,9 @@ impl<S: Storage> ReplicaSetController<S> {
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
                 host_i_ps: None,
                 pod_i_ps: None,
                 nominated_node_name: None,

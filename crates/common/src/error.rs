@@ -94,11 +94,7 @@ impl axum::response::IntoResponse for Error {
             _ => "InternalError",
         };
 
-        let status_obj = crate::types::Status::failure(
-            &message,
-            reason,
-            status.as_u16(),
-        );
+        let status_obj = crate::types::Status::failure(&message, reason, status.as_u16());
 
         (status, Json(status_obj)).into_response()
     }

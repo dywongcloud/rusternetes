@@ -63,6 +63,7 @@ fn create_test_pod(name: &str, namespace: &str) -> Pod {
             restart_policy: Some("Always".to_string()),
             node_selector: None,
             service_account_name: None,
+            service_account: None,
             node_name: None,
             host_network: Some(false),
             host_pid: Some(false),

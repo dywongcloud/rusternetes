@@ -69,6 +69,7 @@ fn create_test_replicaset(name: &str, namespace: &str, replicas: i32) -> Replica
                     node_name: None,
                     node_selector: None,
                     service_account_name: None,
+                    service_account: None,
                     automount_service_account_token: None,
                     hostname: None,
                     subdomain: None,
@@ -299,6 +300,7 @@ async fn test_replicaset_selector_matching() {
                     node_name: None,
                     node_selector: None,
                     service_account_name: None,
+                    service_account: None,
                     automount_service_account_token: None,
                     hostname: None,
                     subdomain: None,
@@ -375,6 +377,9 @@ async fn test_replicaset_selector_matching() {
             container_statuses: None,
             init_container_statuses: None,
             ephemeral_container_statuses: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
         }),
     };
 
