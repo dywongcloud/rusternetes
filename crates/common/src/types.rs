@@ -592,3 +592,134 @@ pub struct ManagedFieldsEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subresource: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_status_failure() {
+        let status = Status::failure("pod not found", "NotFound", 404);
+        assert_eq!(status.kind, "Status");
+        assert_eq!(status.api_version, "v1");
+        assert_eq!(status.status, Some("Failure".to_string()));
+        assert_eq!(status.message, Some("pod not found".to_string()));
+        assert_eq!(status.reason, Some("NotFound".to_string()));
+        assert_eq!(status.code, Some(404));
+        assert!(status.details.is_none());
+    }
+
+    #[test]
+    fn test_status_failure_with_details() {
+        let details = StatusDetails {
+            name: Some("my-pod".to_string()),
+            group: None,
+            kind: Some("Pod".to_string()),
+            uid: None,
+            causes: Some(vec![StatusCause {
+                reason: Some("FieldValueInvalid".to_string()),
+                message: Some("spec.containers[0].image is required".to_string()),
+                field: Some("spec.containers[0].image".to_string()),
+            }]),
+            retry_after_seconds: None,
+        };
+
+        let status = Status::failure_with_details(
+            "Pod \"my-pod\" is invalid",
+            "Invalid",
+            422,
+            details,
+        );
+
+        assert_eq!(status.reason, Some("Invalid".to_string()));
+        assert_eq!(status.code, Some(422));
+        let d = status.details.unwrap();
+        assert_eq!(d.name, Some("my-pod".to_string()));
+        assert_eq!(d.kind, Some("Pod".to_string()));
+        assert_eq!(d.causes.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            d.causes.unwrap()[0].field,
+            Some("spec.containers[0].image".to_string())
+        );
+    }
+
+    #[test]
+    fn test_status_success() {
+        let status = Status::success();
+        assert_eq!(status.status, Some("Success".to_string()));
+        assert_eq!(status.code, Some(200));
+        assert!(status.reason.is_none());
+    }
+
+    #[test]
+    fn test_status_serialization() {
+        let status = Status::failure("resource not found", "NotFound", 404);
+        let json = serde_json::to_string(&status).unwrap();
+
+        assert!(json.contains("\"kind\":\"Status\""));
+        assert!(json.contains("\"apiVersion\":\"v1\""));
+        assert!(json.contains("\"status\":\"Failure\""));
+        assert!(json.contains("\"reason\":\"NotFound\""));
+        assert!(json.contains("\"code\":404"));
+
+        let deserialized: Status = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, status);
+    }
+
+    #[test]
+    fn test_status_deserialization_from_kubernetes() {
+        // Simulate a Status response as returned by a real Kubernetes API
+        let json = r#"{
+            "kind": "Status",
+            "apiVersion": "v1",
+            "metadata": {},
+            "status": "Failure",
+            "message": "pods \"nonexistent\" not found",
+            "reason": "NotFound",
+            "details": {
+                "name": "nonexistent",
+                "kind": "pods"
+            },
+            "code": 404
+        }"#;
+
+        let status: Status = serde_json::from_str(json).unwrap();
+        assert_eq!(status.reason, Some("NotFound".to_string()));
+        assert_eq!(status.code, Some(404));
+        let d = status.details.unwrap();
+        assert_eq!(d.name, Some("nonexistent".to_string()));
+    }
+
+    #[test]
+    fn test_condition_serialization() {
+        let condition = Condition {
+            condition_type: "Ready".to_string(),
+            status: "True".to_string(),
+            observed_generation: Some(5),
+            last_transition_time: None,
+            reason: Some("PodReady".to_string()),
+            message: Some("Pod is ready".to_string()),
+        };
+
+        let json = serde_json::to_string(&condition).unwrap();
+        assert!(json.contains("\"type\":\"Ready\""));
+        assert!(json.contains("\"observedGeneration\":5"));
+
+        let deserialized: Condition = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.condition_type, "Ready");
+        assert_eq!(deserialized.observed_generation, Some(5));
+    }
+
+    #[test]
+    fn test_list_meta_with_pagination() {
+        let meta = ListMeta {
+            resource_version: Some("12345".to_string()),
+            continue_token: Some("abc123".to_string()),
+            remaining_item_count: Some(42),
+        };
+
+        let json = serde_json::to_string(&meta).unwrap();
+        assert!(json.contains("\"continue\":\"abc123\""));
+        assert!(json.contains("\"remainingItemCount\":42"));
+    }
+}

@@ -253,3 +253,101 @@ pub enum ServiceExternalTrafficPolicy {
     /// Local routes traffic only to node-local endpoints, preserving client source IP and avoiding second hop
     Local,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_service_port_with_int_target_port() {
+        let port = ServicePort {
+            name: Some("http".to_string()),
+            port: 80,
+            target_port: Some(IntOrString::Int(8080)),
+            protocol: Some("TCP".to_string()),
+            node_port: None,
+            app_protocol: None,
+        };
+
+        let json = serde_json::to_string(&port).unwrap();
+        assert!(json.contains("\"targetPort\":8080"));
+
+        let deserialized: ServicePort = serde_json::from_str(&json).unwrap();
+        match deserialized.target_port {
+            Some(IntOrString::Int(p)) => assert_eq!(p, 8080),
+            _ => panic!("Expected IntOrString::Int"),
+        }
+    }
+
+    #[test]
+    fn test_service_port_with_string_target_port() {
+        let port = ServicePort {
+            name: Some("http".to_string()),
+            port: 80,
+            target_port: Some(IntOrString::String("http-server".to_string())),
+            protocol: Some("TCP".to_string()),
+            node_port: None,
+            app_protocol: None,
+        };
+
+        let json = serde_json::to_string(&port).unwrap();
+        assert!(json.contains("\"targetPort\":\"http-server\""));
+
+        let deserialized: ServicePort = serde_json::from_str(&json).unwrap();
+        match deserialized.target_port {
+            Some(IntOrString::String(ref s)) => assert_eq!(s, "http-server"),
+            _ => panic!("Expected IntOrString::String"),
+        }
+    }
+
+    #[test]
+    fn test_service_port_deserialization_from_kubernetes() {
+        // Kubernetes sends targetPort as either number or string
+        let json_int = r#"{"port": 80, "targetPort": 8080, "protocol": "TCP"}"#;
+        let port: ServicePort = serde_json::from_str(json_int).unwrap();
+        assert!(matches!(port.target_port, Some(IntOrString::Int(8080))));
+
+        let json_str = r#"{"port": 80, "targetPort": "http", "protocol": "TCP"}"#;
+        let port: ServicePort = serde_json::from_str(json_str).unwrap();
+        match port.target_port {
+            Some(IntOrString::String(ref s)) => assert_eq!(s, "http"),
+            _ => panic!("Expected IntOrString::String for named port"),
+        }
+    }
+
+    #[test]
+    fn test_service_with_session_affinity_config() {
+        let svc = Service::new(
+            "test-svc",
+            ServiceSpec {
+                selector: None,
+                ports: vec![],
+                service_type: None,
+                cluster_ip: None,
+                external_ips: None,
+                session_affinity: Some("ClientIP".to_string()),
+                external_name: None,
+                cluster_ips: None,
+                ip_families: None,
+                ip_family_policy: None,
+                internal_traffic_policy: None,
+                external_traffic_policy: None,
+                health_check_node_port: None,
+                load_balancer_class: None,
+                load_balancer_ip: None,
+                load_balancer_source_ranges: None,
+                allocate_load_balancer_node_ports: None,
+                publish_not_ready_addresses: None,
+                session_affinity_config: Some(SessionAffinityConfig {
+                    client_ip: Some(ClientIPConfig {
+                        timeout_seconds: Some(10800),
+                    }),
+                }),
+                traffic_distribution: None,
+            },
+        );
+
+        let json = serde_json::to_string(&svc).unwrap();
+        assert!(json.contains("\"timeoutSeconds\":10800"));
+    }
+}

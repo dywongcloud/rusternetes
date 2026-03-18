@@ -68,3 +68,60 @@ pub struct LeaseSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strategy: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lease_creation() {
+        let lease = Lease::new("test-lease", "default");
+        assert_eq!(lease.metadata.name, "test-lease");
+        assert_eq!(lease.type_meta.kind, "Lease");
+        assert_eq!(lease.type_meta.api_version, "coordination.k8s.io/v1");
+    }
+
+    #[test]
+    fn test_lease_spec_serialization() {
+        let spec = LeaseSpec {
+            holder_identity: Some("node-1".to_string()),
+            lease_duration_seconds: Some(15),
+            acquire_time: None,
+            renew_time: None,
+            lease_transitions: Some(3),
+            preferred_holder: Some("node-2".to_string()),
+            strategy: Some("OldestEmulationVersion".to_string()),
+        };
+
+        let json = serde_json::to_string(&spec).unwrap();
+        assert!(json.contains("\"preferredHolder\":\"node-2\""));
+        assert!(json.contains("\"strategy\":\"OldestEmulationVersion\""));
+        assert!(json.contains("\"leaseTransitions\":3"));
+
+        let deserialized: LeaseSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.preferred_holder, Some("node-2".to_string()));
+        assert_eq!(
+            deserialized.strategy,
+            Some("OldestEmulationVersion".to_string())
+        );
+    }
+
+    #[test]
+    fn test_lease_spec_deserialization_from_kubernetes() {
+        let json = r#"{
+            "holderIdentity": "apiserver-abc123",
+            "leaseDurationSeconds": 15,
+            "leaseTransitions": 5,
+            "preferredHolder": "apiserver-def456",
+            "strategy": "OldestEmulationVersion"
+        }"#;
+
+        let spec: LeaseSpec = serde_json::from_str(json).unwrap();
+        assert_eq!(spec.holder_identity, Some("apiserver-abc123".to_string()));
+        assert_eq!(spec.lease_duration_seconds, Some(15));
+        assert_eq!(
+            spec.preferred_holder,
+            Some("apiserver-def456".to_string())
+        );
+    }
+}
