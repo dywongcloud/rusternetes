@@ -2,22 +2,41 @@ use anyhow::{Context, Result};
 use std::process::Command;
 use tracing::{debug, error, info, warn};
 
-/// iptables command to use - using legacy backend for Podman Machine compatibility
-/// Using full path since /usr/sbin may not be in container PATH
-const IPTABLES_CMD: &str = "/usr/sbin/iptables-legacy";
+/// Detect the correct iptables command to use.
+/// Docker Desktop uses nftables backend (`iptables`), while Podman uses `iptables-legacy`.
+/// We must match the backend that the container runtime uses, otherwise DNAT rules
+/// won't apply to container traffic.
+fn detect_iptables_cmd() -> &'static str {
+    // Try `iptables` first (nftables backend, used by Docker Desktop)
+    if let Ok(output) = Command::new("/usr/sbin/iptables").args(["-t", "nat", "-L", "PREROUTING", "-n"]).output() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // If the DOCKER chain jump exists in iptables (nftables), Docker is using this backend
+        if stdout.contains("DOCKER") {
+            info!("Detected Docker nftables backend, using /usr/sbin/iptables");
+            return "/usr/sbin/iptables";
+        }
+    }
+    // Fall back to iptables-legacy (Podman, older systems)
+    info!("Using /usr/sbin/iptables-legacy (Podman/legacy backend)");
+    "/usr/sbin/iptables-legacy"
+}
 
 /// IptablesManager handles iptables rule programming for service networking
 pub struct IptablesManager {
     /// Chain names we create
     services_chain: String,
     nodeports_chain: String,
+    /// The iptables command to use (detected at init)
+    iptables_cmd: String,
 }
 
 impl IptablesManager {
     pub fn new() -> Self {
+        let iptables_cmd = detect_iptables_cmd().to_string();
         Self {
             services_chain: "RUSTERNETES-SERVICES".to_string(),
             nodeports_chain: "RUSTERNETES-NODEPORTS".to_string(),
+            iptables_cmd,
         }
     }
 
@@ -59,7 +78,7 @@ impl IptablesManager {
     /// Ensure an iptables chain exists
     fn ensure_chain(&self, table: &str, chain: &str) -> Result<()> {
         // Try to create the chain, ignore error if it already exists
-        let output = Command::new(IPTABLES_CMD)
+        let output = Command::new(&self.iptables_cmd)
             .args(["-t", table, "-N", chain])
             .output()
             .context("Failed to create iptables chain")?;
@@ -85,7 +104,7 @@ impl IptablesManager {
         comment: &str,
     ) -> Result<()> {
         // Check if jump rule already exists
-        let check = Command::new(IPTABLES_CMD)
+        let check = Command::new(&self.iptables_cmd)
             .args([
                 "-t",
                 table,
@@ -112,7 +131,7 @@ impl IptablesManager {
         }
 
         // Add the jump rule
-        let output = Command::new(IPTABLES_CMD)
+        let output = Command::new(&self.iptables_cmd)
             .args([
                 "-t",
                 table,
@@ -150,7 +169,7 @@ impl IptablesManager {
 
     /// Flush all rules in a specific chain
     fn flush_chain(&self, table: &str, chain: &str) -> Result<()> {
-        let output = Command::new(IPTABLES_CMD)
+        let output = Command::new(&self.iptables_cmd)
             .args(["-t", table, "-F", chain])
             .output()
             .context(format!("Failed to flush chain {}", chain))?;
@@ -240,7 +259,7 @@ impl IptablesManager {
                 &comment,
             ]);
 
-            let output = Command::new(IPTABLES_CMD)
+            let output = Command::new(&self.iptables_cmd)
                 .args(&args)
                 .output()
                 .context("Failed to add iptables DNAT rule")?;
@@ -324,7 +343,7 @@ impl IptablesManager {
                 &comment,
             ]);
 
-            let output = Command::new(IPTABLES_CMD)
+            let output = Command::new(&self.iptables_cmd)
                 .args(&args)
                 .output()
                 .context("Failed to add iptables DNAT rule for NodePort")?;
@@ -364,7 +383,7 @@ impl IptablesManager {
     }
 
     fn remove_jump_rule(&self, table: &str, from_chain: &str, to_chain: &str) -> Result<()> {
-        let output = Command::new(IPTABLES_CMD)
+        let output = Command::new(&self.iptables_cmd)
             .args(["-t", table, "-D", from_chain, "-j", to_chain])
             .output();
 
@@ -384,7 +403,7 @@ impl IptablesManager {
     }
 
     fn delete_chain(&self, table: &str, chain: &str) -> Result<()> {
-        let output = Command::new(IPTABLES_CMD)
+        let output = Command::new(&self.iptables_cmd)
             .args(["-t", table, "-X", chain])
             .output();
 
