@@ -21,6 +21,7 @@ COPY crates/kubectl/Cargo.toml ./crates/kubectl/
 
 COPY crates ./crates
 
+ENV CARGO_BUILD_JOBS=2
 RUN cargo build --release --bin scheduler
 
 FROM debian:sid-slim

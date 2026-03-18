@@ -115,6 +115,8 @@ where
     // Extract parameters
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
+    let (bookmark_kind, bookmark_api_version) =
+        resource_type_to_kind_and_version(resource_type, api_group);
 
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
@@ -237,6 +239,8 @@ where
                             if let Some(ref rv) = latest_resource_version {
                                 debug!("Sending bookmark with resourceVersion: {}", rv);
                                 let bookmark = BookmarkObject {
+                                    kind: Some(bookmark_kind.clone()),
+                                    api_version: Some(bookmark_api_version.clone()),
                                     metadata: ObjectMeta {
                                         resource_version: Some(rv.clone()),
                                         ..Default::default()
@@ -270,7 +274,9 @@ where
                     if allow_bookmarks {
                         if let Some(ref rv) = latest_resource_version {
                             let bookmark = BookmarkObject {
-                                metadata: ObjectMeta {
+                                    kind: Some(bookmark_kind.clone()),
+                                    api_version: Some(bookmark_api_version.clone()),
+                                    metadata: ObjectMeta {
                                     resource_version: Some(rv.clone()),
                                     ..Default::default()
                                 },
@@ -351,6 +357,8 @@ where
     // Extract parameters
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
+    let (bookmark_kind, bookmark_api_version) =
+        resource_type_to_kind_and_version(resource_type, api_group);
 
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
@@ -473,6 +481,8 @@ where
                             if let Some(ref rv) = latest_resource_version {
                                 debug!("Sending bookmark with resourceVersion: {}", rv);
                                 let bookmark = BookmarkObject {
+                                    kind: Some(bookmark_kind.clone()),
+                                    api_version: Some(bookmark_api_version.clone()),
                                     metadata: ObjectMeta {
                                         resource_version: Some(rv.clone()),
                                         ..Default::default()
@@ -506,7 +516,9 @@ where
                     if allow_bookmarks {
                         if let Some(ref rv) = latest_resource_version {
                             let bookmark = BookmarkObject {
-                                metadata: ObjectMeta {
+                                    kind: Some(bookmark_kind.clone()),
+                                    api_version: Some(bookmark_api_version.clone()),
+                                    metadata: ObjectMeta {
                                     resource_version: Some(rv.clone()),
                                     ..Default::default()
                                 },
@@ -543,6 +555,57 @@ where
     Ok(response)
 }
 
+/// Derive the Kind and apiVersion from resource_type and api_group
+fn resource_type_to_kind_and_version(resource_type: &str, api_group: &str) -> (String, String) {
+    let kind = match resource_type {
+        "pods" => "Pod",
+        "services" => "Service",
+        "deployments" => "Deployment",
+        "replicasets" => "ReplicaSet",
+        "statefulsets" => "StatefulSet",
+        "daemonsets" => "DaemonSet",
+        "jobs" => "Job",
+        "cronjobs" => "CronJob",
+        "configmaps" => "ConfigMap",
+        "secrets" => "Secret",
+        "serviceaccounts" => "ServiceAccount",
+        "namespaces" => "Namespace",
+        "nodes" => "Node",
+        "persistentvolumes" => "PersistentVolume",
+        "persistentvolumeclaims" => "PersistentVolumeClaim",
+        "endpoints" => "Endpoints",
+        "endpointslices" => "EndpointSlice",
+        "events" => "Event",
+        "ingresses" => "Ingress",
+        "networkpolicies" => "NetworkPolicy",
+        "leases" => "Lease",
+        "clusterroles" => "ClusterRole",
+        "clusterrolebindings" => "ClusterRoleBinding",
+        "roles" => "Role",
+        "rolebindings" => "RoleBinding",
+        "storageclasses" => "StorageClass",
+        "customresourcedefinitions" => "CustomResourceDefinition",
+        other => {
+            // CamelCase heuristic: capitalize first letter, remove trailing 's'
+            let s = other.strip_suffix('s').unwrap_or(other);
+            return (
+                format!("{}{}", &s[..1].to_uppercase(), &s[1..]),
+                if api_group.is_empty() {
+                    "v1".to_string()
+                } else {
+                    format!("{}/v1", api_group)
+                },
+            );
+        }
+    };
+    let api_version = if api_group.is_empty() {
+        "v1".to_string()
+    } else {
+        format!("{}/v1", api_group)
+    };
+    (kind.to_string(), api_version)
+}
+
 /// Trait for types that have metadata (all Kubernetes resources)
 pub trait HasMetadata {
     fn metadata(&self) -> &ObjectMeta;
@@ -555,6 +618,10 @@ pub trait HasMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BookmarkObject {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(rename = "apiVersion", skip_serializing_if = "Option::is_none")]
+    pub api_version: Option<String>,
     pub metadata: ObjectMeta,
 }
 

@@ -26,6 +26,7 @@ COPY crates/kubectl/Cargo.toml ./crates/kubectl/
 COPY crates ./crates
 
 # Build the api-server
+ENV CARGO_BUILD_JOBS=2
 RUN cargo build --release --bin api-server
 
 FROM debian:sid-slim
