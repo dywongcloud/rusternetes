@@ -100,9 +100,10 @@ Confirmed handled by admission controller (`inject_service_account_token`).
 
 Now reads `spec.terminationGracePeriodSeconds` (default 30s) instead of hardcoded 10s.
 
-### P1 — Probe failure/success thresholds not implemented
+### ✅ P1 — Probe failure/success thresholds — FIXED
 
-Probes treat a single failure as terminal. Should require `failureThreshold` consecutive failures.
+Now tracks consecutive failures/successes per container using failureThreshold (default 3)
+and successThreshold (default 1).
 
 ### ✅ P1 — Pod start_time — FIXED
 
@@ -112,14 +113,14 @@ Now set when pod enters Running phase.
 
 Kubelet now builds init container statuses (Terminated/Completed) for running pods.
 
-### P1 — Service environment variables not injected
+### ✅ P1 — Service environment variables — FIXED
 
-When `enableServiceLinks` is true (default), `{SVC_NAME}_SERVICE_HOST` and
-`{SVC_NAME}_SERVICE_PORT` should be injected for every Service in the namespace.
+Injects {SVC}_SERVICE_HOST, {SVC}_SERVICE_PORT, {SVC}_PORT_* for all Services in namespace
+when enableServiceLinks is true (default).
 
-### P1 — DNS policy and custom DNS config ignored
+### ✅ P1 — DNS policy and custom DNS config — FIXED
 
-`pod.spec.dnsPolicy` and `pod.spec.dnsConfig` fields are ignored.
+Implements ClusterFirst, ClusterFirstWithHostNet, Default, None policies. Applies dnsConfig overrides.
 
 ### ✅ P1 — Host aliases — FIXED
 
@@ -199,7 +200,7 @@ No endpoint for `/apis/apps`, `/apis/batch`, etc. (individual API group details)
 
 ## Implementation Priority
 
-### ✅ COMPLETED (Phase 1):
+### ✅ COMPLETED (Phase 1 + 2):
 
 1. ✅ DELETE handlers return deleted object (already done)
 2. ✅ generation field incremented on spec changes
@@ -219,18 +220,18 @@ No endpoint for `/apis/apps`, `/apis/batch`, etc. (individual API group details)
 16. ✅ Host aliases
 17. ✅ QoS class
 18. ✅ Init container statuses
+19. ✅ Container lifecycle hooks (postStart/preStop)
+20. ✅ Startup probe support
+21. ✅ Probe failure/success thresholds
+22. ✅ Service env vars
+23. ✅ DNS policy/config
 
-### Remaining P0 (do next):
+### Remaining P0:
 
-19. Container lifecycle hooks (postStart/preStop) (kubelet)
-20. Startup probe support (kubelet)
-21. Deployment rolling update strategy (controller-manager)
+24. Deployment rolling update strategy (controller-manager)
 
 ### Remaining P1:
 
-22. Probe failure/success thresholds (kubelet)
-23. Service env vars (kubelet)
-24. DNS policy/config (kubelet)
 25. StatefulSet PVC management (controller-manager)
 26. DaemonSet taint tolerations (controller-manager)
 
