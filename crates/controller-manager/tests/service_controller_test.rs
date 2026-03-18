@@ -1,6 +1,6 @@
 //! Integration tests for ServiceController
 
-use rusternetes_common::resources::{Service, ServicePort, ServiceSpec, ServiceType};
+use rusternetes_common::resources::{IntOrString, Service, ServicePort, ServiceSpec, ServiceType};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::service::ServiceController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
@@ -48,7 +48,7 @@ async fn test_service_clusterip_allocation() {
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 port: 80,
-                target_port: Some(8080),
+                target_port: Some(IntOrString::Int(8080)),
                 protocol: Some("TCP".to_string()),
                 node_port: None,
                 app_protocol: None,
@@ -127,7 +127,7 @@ async fn test_service_nodeport_allocation() {
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 port: 80,
-                target_port: Some(8080),
+                target_port: Some(IntOrString::Int(8080)),
                 protocol: Some("TCP".to_string()),
                 node_port: None, // Should be allocated
                 app_protocol: None,
@@ -206,7 +206,7 @@ async fn test_service_headless_no_clusterip() {
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 port: 80,
-                target_port: Some(8080),
+                target_port: Some(IntOrString::Int(8080)),
                 protocol: Some("TCP".to_string()),
                 node_port: None,
                 app_protocol: None,
@@ -282,7 +282,7 @@ async fn test_service_multiple_allocations_unique() {
                 ports: vec![ServicePort {
                     name: Some("http".to_string()),
                     port: 80,
-                    target_port: Some(8080),
+                    target_port: Some(IntOrString::Int(8080)),
                     protocol: Some("TCP".to_string()),
                     node_port: None,
                     app_protocol: None,

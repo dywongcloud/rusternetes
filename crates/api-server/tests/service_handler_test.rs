@@ -2,7 +2,7 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for services
 
-use rusternetes_common::resources::{Service, ServicePort, ServiceSpec, ServiceType};
+use rusternetes_common::resources::{IntOrString, Service, ServicePort, ServiceSpec, ServiceType};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -43,7 +43,7 @@ fn create_test_service(name: &str, namespace: &str, service_type: ServiceType) -
                 name: Some("http".to_string()),
                 protocol: Some("TCP".to_string()),
                 port: 80,
-                target_port: Some(8080),
+                target_port: Some(IntOrString::Int(8080)),
                 node_port: None,
                 app_protocol: None,
             }],
@@ -311,7 +311,7 @@ async fn test_service_with_multiple_ports() {
             name: Some("http".to_string()),
             protocol: Some("TCP".to_string()),
             port: 80,
-            target_port: Some(8080),
+            target_port: Some(IntOrString::Int(8080)),
             node_port: None,
             app_protocol: None,
         },
@@ -319,7 +319,7 @@ async fn test_service_with_multiple_ports() {
             name: Some("https".to_string()),
             protocol: Some("TCP".to_string()),
             port: 443,
-            target_port: Some(8443),
+            target_port: Some(IntOrString::Int(8443)),
             node_port: None,
             app_protocol: None,
         },

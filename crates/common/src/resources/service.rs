@@ -1,3 +1,4 @@
+use crate::resources::policy::IntOrString;
 use crate::types::{Condition, ObjectMeta, TypeMeta};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -121,8 +122,10 @@ pub struct ServicePort {
 
     pub port: u16,
 
+    /// Number or name of the port to access on the pods targeted by the service.
+    /// Can be a port number (e.g., 8080) or a named port (e.g., "http").
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_port: Option<u16>,
+    pub target_port: Option<IntOrString>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol: Option<String>, // TCP, UDP, SCTP

@@ -11,6 +11,7 @@
 /// - LoadBalancerController: Provisions external load balancers
 /// - EndpointSliceController: Maintains endpoint slices for scalability
 use anyhow::Result;
+use rusternetes_common::resources::IntOrString;
 use rusternetes_common::resources::Service;
 use rusternetes_common::resources::ServiceType;
 use rusternetes_storage::{build_key, Storage};
@@ -412,7 +413,7 @@ mod tests {
                 ports: vec![ServicePort {
                     name: Some("http".to_string()),
                     port: 80,
-                    target_port: Some(8080),
+                    target_port: Some(IntOrString::Int(8080)),
                     protocol: Some("TCP".to_string()),
                     node_port: None,
                     app_protocol: None,
@@ -487,7 +488,7 @@ mod tests {
                 ports: vec![ServicePort {
                     name: Some("http".to_string()),
                     port: 80,
-                    target_port: Some(8080),
+                    target_port: Some(IntOrString::Int(8080)),
                     protocol: Some("TCP".to_string()),
                     node_port: None, // Should be allocated
                     app_protocol: None,

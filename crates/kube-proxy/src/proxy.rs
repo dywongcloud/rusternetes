@@ -123,7 +123,13 @@ impl KubeProxy {
         // Process each service port
         for service_port in &service.spec.ports {
             let protocol = service_port.protocol.as_deref().unwrap_or("TCP");
-            let target_port = service_port.target_port.unwrap_or(service_port.port);
+            let target_port = match &service_port.target_port {
+                Some(rusternetes_common::resources::IntOrString::Int(p)) => *p as u16,
+                Some(rusternetes_common::resources::IntOrString::String(s)) => {
+                    s.parse::<u16>().unwrap_or(service_port.port)
+                }
+                None => service_port.port,
+            };
 
             // Build list of endpoints with the correct port
             let endpoints_with_port: Vec<(String, u16)> = endpoint_addresses

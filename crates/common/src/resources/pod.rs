@@ -723,6 +723,26 @@ pub struct EnvVarSource {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_field_ref: Option<ResourceFieldSelector>,
+
+    /// Selects a key from a file volume source
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_key_ref: Option<FileKeySelector>,
+}
+
+/// FileKeySelector selects a key from a file volume source
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileKeySelector {
+    /// The name of the volume containing the file
+    pub volume_name: String,
+    /// The relative path of the file to map the key to
+    pub path: String,
+    /// The key to select
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// Specify whether the volume or its key must be defined
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optional: Option<bool>,
 }
 
 /// EnvFromSource represents the source of a set of ConfigMaps/Secrets to populate env vars
@@ -2092,6 +2112,7 @@ mod tests {
                         config_map_key_ref: None,
                         secret_key_ref: None,
                         resource_field_ref: None,
+                        file_key_ref: None,
                     }),
                 }]),
                 command: None,

@@ -6,7 +6,7 @@
 // 3. Traffic policy configuration
 // 4. ClusterIP allocation for different service types
 
-use rusternetes_common::resources::{
+use rusternetes_common::resources::{IntOrString, 
     IPFamily, IPFamilyPolicy, Service, ServiceExternalTrafficPolicy, ServiceInternalTrafficPolicy,
     ServicePort, ServiceSpec, ServiceType,
 };
@@ -23,7 +23,7 @@ fn create_basic_service_spec() -> ServiceSpec {
         ports: vec![ServicePort {
             name: Some("http".to_string()),
             port: 80,
-            target_port: Some(8080),
+            target_port: Some(IntOrString::Int(8080)),
             protocol: Some("TCP".to_string()),
             node_port: None,
             app_protocol: None,
@@ -98,7 +98,7 @@ fn create_dual_stack_service(name: &str, namespace: &str) -> Service {
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 port: 80,
-                target_port: Some(8080),
+                target_port: Some(IntOrString::Int(8080)),
                 protocol: Some("TCP".to_string()),
                 node_port: None,
                 app_protocol: None,
@@ -335,7 +335,7 @@ fn test_nodeport_with_external_traffic_policy_local() {
     spec.ports = vec![ServicePort {
         name: Some("http".to_string()),
         port: 80,
-        target_port: Some(8080),
+        target_port: Some(IntOrString::Int(8080)),
         protocol: Some("TCP".to_string()),
         node_port: Some(30080),
         app_protocol: None,

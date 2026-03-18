@@ -273,7 +273,7 @@ pub fn create_test_loadbalancer_service(
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 port,
-                target_port: Some(port),
+                target_port: Some(IntOrString::Int(port)),
                 protocol: Some("TCP".to_string()),
                 node_port: Some(node_port)
             }],

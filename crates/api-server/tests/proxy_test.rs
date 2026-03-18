@@ -1,7 +1,7 @@
 //! Integration tests for proxy handlers (node, service, pod)
 
 use axum::http::StatusCode;
-use rusternetes_common::resources::{
+use rusternetes_common::resources::{IntOrString, 
     Node, NodeStatus, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec, ServiceType,
 };
 use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
@@ -102,7 +102,7 @@ async fn test_proxy_service_missing_clusterip() {
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 port: 80,
-                target_port: Some(8080),
+                target_port: Some(IntOrString::Int(8080)),
                 protocol: Some("TCP".to_string()),
                 node_port: None,
                 app_protocol: None,

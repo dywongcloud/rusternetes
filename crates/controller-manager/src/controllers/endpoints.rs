@@ -223,7 +223,13 @@ impl<S: Storage> EndpointsController<S> {
             .iter()
             .map(|sp| EndpointPort {
                 name: sp.name.clone(),
-                port: sp.target_port.unwrap_or(sp.port),
+                port: match &sp.target_port {
+                    Some(rusternetes_common::resources::IntOrString::Int(p)) => *p as u16,
+                    Some(rusternetes_common::resources::IntOrString::String(s)) => {
+                        s.parse::<u16>().unwrap_or(sp.port)
+                    }
+                    None => sp.port,
+                },
                 protocol: sp.protocol.clone(),
                 app_protocol: None,
             })

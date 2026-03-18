@@ -229,9 +229,11 @@ fn describe_service(service: &Service) {
                 "{}/{} -> {}",
                 p.port,
                 p.protocol.as_deref().unwrap_or("TCP"),
-                p.target_port
-                    .map(|tp| tp.to_string())
-                    .unwrap_or_else(|| "default".to_string())
+                match &p.target_port {
+                    Some(rusternetes_common::resources::IntOrString::Int(tp)) => tp.to_string(),
+                    Some(rusternetes_common::resources::IntOrString::String(tp)) => tp.clone(),
+                    None => "default".to_string(),
+                }
             ))
             .collect::<Vec<_>>()
             .join("\n              ")

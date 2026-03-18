@@ -1,4 +1,4 @@
-use rusternetes_common::resources::{
+use rusternetes_common::resources::{IntOrString, 
     Container, ContainerStatus, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec,
 };
 use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
@@ -25,7 +25,7 @@ fn create_test_service(name: &str, namespace: &str, selector: HashMap<String, St
                 name: Some("http".to_string()),
                 protocol: Some("TCP".to_string()),
                 port: 80,
-                target_port: Some(8080),
+                target_port: Some(IntOrString::Int(8080)),
                 node_port: None,
                 app_protocol: None,
             }],
@@ -707,7 +707,7 @@ async fn test_endpoints_includes_port_mapping() {
             name: Some("http".to_string()),
             protocol: Some("TCP".to_string()),
             port: 80,
-            target_port: Some(8080),
+            target_port: Some(IntOrString::Int(8080)),
             node_port: None,
             app_protocol: None,
         },
@@ -715,7 +715,7 @@ async fn test_endpoints_includes_port_mapping() {
             name: Some("https".to_string()),
             protocol: Some("TCP".to_string()),
             port: 443,
-            target_port: Some(8443),
+            target_port: Some(IntOrString::Int(8443)),
             node_port: None,
             app_protocol: None,
         },
