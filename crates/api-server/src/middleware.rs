@@ -114,13 +114,18 @@ pub async fn normalize_content_type_middleware(
             .unwrap_or("")
             .to_string();
 
-        // Reject protobuf with 415 so client-go negotiates down to JSON
+        // Reject protobuf — rusternetes only supports JSON encoding.
+        // Return 415 Unsupported Media Type with a proper Status body.
         if content_type.starts_with("application/vnd.kubernetes.protobuf") {
+            warn!(
+                "Rejecting protobuf request: {} {} (use --kube-api-content-type=application/json)",
+                request.method(), request.uri()
+            );
             let status_body = serde_json::json!({
                 "kind": "Status",
                 "apiVersion": "v1",
                 "status": "Failure",
-                "message": "the body of the request was in an unknown format - accepted media types include: application/json, application/yaml",
+                "message": "the body of the request was in an unknown format - accepted media types include: application/json",
                 "reason": "UnsupportedMediaType",
                 "code": 415
             });
