@@ -171,8 +171,9 @@ pub async fn delete_ingress(
         return Ok(Json(ingress));
     }
 
-    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &ingress)
-        .await?;
+    let has_finalizers =
+        crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &ingress)
+            .await?;
 
     if has_finalizers {
         // Resource has finalizers, re-read to get updated version with deletionTimestamp

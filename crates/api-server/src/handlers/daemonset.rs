@@ -175,8 +175,12 @@ pub async fn delete_daemonset(
         return Ok(Json(daemonset));
     }
 
-    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &daemonset)
-        .await?;
+    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(
+        &*state.storage,
+        &key,
+        &daemonset,
+    )
+    .await?;
 
     if has_finalizers {
         // Resource has finalizers, re-read to get updated version with deletionTimestamp

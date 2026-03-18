@@ -127,6 +127,7 @@ impl<S: Storage> JobController<S> {
                 completed_indexes: None,
                 failed_indexes: None,
                 uncounted_terminated_pods: None,
+                observed_generation: job.metadata.generation,
             });
         } else if is_failed {
             warn!(
@@ -155,6 +156,7 @@ impl<S: Storage> JobController<S> {
                 completed_indexes: None,
                 failed_indexes: None,
                 uncounted_terminated_pods: None,
+                observed_generation: job.metadata.generation,
             });
         } else {
             // Calculate how many new pods to create
@@ -217,6 +219,7 @@ impl<S: Storage> JobController<S> {
                 completed_indexes: None,
                 failed_indexes: None,
                 uncounted_terminated_pods: None,
+                observed_generation: job.metadata.generation,
             });
         }
 

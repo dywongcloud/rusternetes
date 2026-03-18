@@ -248,7 +248,9 @@ pub async fn delete_service_account(
         return Ok(Json(sa));
     }
 
-    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &sa).await?;
+    let has_finalizers =
+        crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &sa)
+            .await?;
 
     if has_finalizers {
         // Resource has finalizers, re-read to get updated version with deletionTimestamp

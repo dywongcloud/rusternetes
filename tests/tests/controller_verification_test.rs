@@ -461,6 +461,7 @@ async fn test_job_controller_completion() {
             completed_indexes: None,
             failed_indexes: None,
             uncounted_terminated_pods: None,
+            observed_generation: None,
         }),
     };
 

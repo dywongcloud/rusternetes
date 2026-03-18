@@ -259,23 +259,13 @@ impl<S: Storage> EndpointsController<S> {
         }
     }
 
-    /// Check if a pod is ready based on its status
+    /// Check if a pod is ready by examining its conditions
     fn is_pod_ready(&self, pod: &Pod) -> bool {
-        let status = match &pod.status {
-            Some(s) => s,
-            None => return false,
-        };
-
-        // Pod must be in Running phase
-        if status.phase != Some(rusternetes_common::types::Phase::Running) {
-            return false;
-        }
-
-        // Check container statuses - all containers must be ready
-        if let Some(container_statuses) = &status.container_statuses {
-            container_statuses.iter().all(|cs| cs.ready)
+        if let Some(ref conditions) = pod.status.as_ref().and_then(|s| s.conditions.as_ref()) {
+            conditions
+                .iter()
+                .any(|c| c.condition_type == "Ready" && c.status == "True")
         } else {
-            // If no container statuses, assume not ready
             false
         }
     }
@@ -479,7 +469,7 @@ mod tests {
         };
         assert!(!controller.is_pod_ready(&pod_pending));
 
-        // Pod in Running phase with ready container
+        // Pod with Ready condition = True
         let pod_ready = Pod {
             status: Some(rusternetes_common::resources::PodStatus {
                 phase: Some(rusternetes_common::types::Phase::Running),
@@ -492,7 +482,14 @@ mod tests {
                 nominated_node_name: None,
                 qos_class: None,
                 start_time: None,
-                conditions: None,
+                conditions: Some(vec![rusternetes_common::resources::PodCondition {
+                    condition_type: "Ready".to_string(),
+                    status: "True".to_string(),
+                    reason: None,
+                    message: None,
+                    last_transition_time: None,
+                    observed_generation: None,
+                }]),
                 container_statuses: Some(vec![rusternetes_common::resources::ContainerStatus {
                     name: "nginx".to_string(),
                     ready: true,
@@ -520,7 +517,7 @@ mod tests {
         };
         assert!(controller.is_pod_ready(&pod_ready));
 
-        // Pod in Running phase with not-ready container
+        // Pod with Ready condition = False (not ready)
         let pod_not_ready = Pod {
             status: Some(rusternetes_common::resources::PodStatus {
                 phase: Some(rusternetes_common::types::Phase::Running),
@@ -533,7 +530,14 @@ mod tests {
                 nominated_node_name: None,
                 qos_class: None,
                 start_time: None,
-                conditions: None,
+                conditions: Some(vec![rusternetes_common::resources::PodCondition {
+                    condition_type: "Ready".to_string(),
+                    status: "False".to_string(),
+                    reason: None,
+                    message: None,
+                    last_transition_time: None,
+                    observed_generation: None,
+                }]),
                 container_statuses: Some(vec![rusternetes_common::resources::ContainerStatus {
                     name: "nginx".to_string(),
                     ready: false,

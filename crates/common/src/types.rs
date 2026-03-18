@@ -624,12 +624,8 @@ mod tests {
             retry_after_seconds: None,
         };
 
-        let status = Status::failure_with_details(
-            "Pod \"my-pod\" is invalid",
-            "Invalid",
-            422,
-            details,
-        );
+        let status =
+            Status::failure_with_details("Pod \"my-pod\" is invalid", "Invalid", 422, details);
 
         assert_eq!(status.reason, Some("Invalid".to_string()));
         assert_eq!(status.code, Some(422));

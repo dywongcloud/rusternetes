@@ -147,6 +147,7 @@ fn create_test_job(name: &str, namespace: &str, ttl_seconds: i32, finished: bool
                 completed_indexes: None,
                 failed_indexes: None,
                 uncounted_terminated_pods: None,
+                observed_generation: None,
             })
         } else {
             Some(JobStatus {
@@ -161,6 +162,7 @@ fn create_test_job(name: &str, namespace: &str, ttl_seconds: i32, finished: bool
                 completed_indexes: None,
                 failed_indexes: None,
                 uncounted_terminated_pods: None,
+                observed_generation: None,
             })
         },
     }
@@ -399,6 +401,7 @@ async fn test_ttl_controller_handles_failed_jobs() {
         completed_indexes: None,
         failed_indexes: None,
         uncounted_terminated_pods: None,
+        observed_generation: None,
     });
 
     let job_key = build_key("jobs", Some("default"), "failed-job");

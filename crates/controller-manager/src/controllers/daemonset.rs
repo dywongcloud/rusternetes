@@ -184,7 +184,7 @@ impl<S: Storage> DaemonSetController<S> {
             number_available: None,
             number_unavailable: None,
             updated_number_scheduled: None,
-            observed_generation: None,
+            observed_generation: daemonset.metadata.generation,
             collision_count: None,
             conditions: None,
         });

@@ -6,9 +6,9 @@
 // 3. Traffic policy configuration
 // 4. ClusterIP allocation for different service types
 
-use rusternetes_common::resources::{IntOrString, 
-    IPFamily, IPFamilyPolicy, Service, ServiceExternalTrafficPolicy, ServiceInternalTrafficPolicy,
-    ServicePort, ServiceSpec, ServiceType,
+use rusternetes_common::resources::{
+    IPFamily, IPFamilyPolicy, IntOrString, Service, ServiceExternalTrafficPolicy,
+    ServiceInternalTrafficPolicy, ServicePort, ServiceSpec, ServiceType,
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use std::collections::HashMap;

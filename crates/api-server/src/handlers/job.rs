@@ -162,7 +162,9 @@ pub async fn delete_job(
         return Ok(Json(job));
     }
 
-    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &job).await?;
+    let has_finalizers =
+        crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &job)
+            .await?;
 
     if has_finalizers {
         // Resource has finalizers, re-read to get updated version with deletionTimestamp

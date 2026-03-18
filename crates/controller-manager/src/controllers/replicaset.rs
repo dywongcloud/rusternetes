@@ -182,9 +182,12 @@ impl<S: Storage> ReplicaSetController<S> {
         false
     }
 
+    /// Check if a pod is ready by examining its conditions
     fn is_pod_ready(&self, pod: &Pod) -> bool {
-        if let Some(status) = &pod.status {
-            status.phase == Some(Phase::Running)
+        if let Some(ref conditions) = pod.status.as_ref().and_then(|s| s.conditions.as_ref()) {
+            conditions
+                .iter()
+                .any(|c| c.condition_type == "Ready" && c.status == "True")
         } else {
             false
         }
@@ -233,7 +236,7 @@ impl<S: Storage> ReplicaSetController<S> {
             ready_replicas,
             available_replicas,
             fully_labeled_replicas: Some(replicas), // All pods matching selector are fully labeled
-            observed_generation: None,              // TODO: Track generation properly
+            observed_generation: replicaset.metadata.generation,
             conditions: None, // TODO: Add conditions for ReplicaSetReplicaFailure, etc.
             terminating_replicas: None,
         };

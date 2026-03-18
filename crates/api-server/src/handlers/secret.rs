@@ -180,8 +180,9 @@ pub async fn delete_secret(
         return Ok(Json(secret));
     }
 
-    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &secret)
-        .await?;
+    let has_finalizers =
+        crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &secret)
+            .await?;
 
     if has_finalizers {
         // Resource has finalizers, re-read to get updated version with deletionTimestamp

@@ -1,5 +1,6 @@
-use rusternetes_common::resources::{IntOrString, 
-    Container, ContainerStatus, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec,
+use rusternetes_common::resources::{
+    Container, ContainerStatus, IntOrString, Pod, PodCondition, PodSpec, PodStatus, Service,
+    ServicePort, ServiceSpec,
 };
 use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::endpoints::EndpointsController;
@@ -153,7 +154,18 @@ fn create_test_pod(
             nominated_node_name: None,
             qos_class: None,
             start_time: None,
-            conditions: None,
+            conditions: if ready {
+                Some(vec![PodCondition {
+                    condition_type: "Ready".to_string(),
+                    status: "True".to_string(),
+                    reason: None,
+                    message: None,
+                    last_transition_time: None,
+                    observed_generation: None,
+                }])
+            } else {
+                None
+            },
             container_statuses: if ready {
                 Some(vec![ContainerStatus {
                     name: "nginx".to_string(),

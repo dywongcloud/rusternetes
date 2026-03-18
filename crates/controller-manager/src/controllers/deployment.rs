@@ -1,5 +1,6 @@
+use chrono::Utc;
 use rusternetes_common::{
-    resources::{Deployment, DeploymentStatus, ReplicaSet, ReplicaSetSpec},
+    resources::{Deployment, DeploymentCondition, DeploymentStatus, ReplicaSet, ReplicaSetSpec},
     types::{ObjectMeta, TypeMeta},
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
@@ -297,11 +298,50 @@ impl<S: Storage> DeploymentController<S> {
             }
         }
 
+        let desired_replicas = deployment.spec.replicas.unwrap_or(1);
+
         let unavailable = if total_replicas > available_replicas {
             total_replicas - available_replicas
         } else {
             0
         };
+
+        // Build status conditions
+        let mut conditions = Vec::new();
+
+        // Available condition
+        if available_replicas >= desired_replicas {
+            conditions.push(DeploymentCondition {
+                condition_type: "Available".to_string(),
+                status: "True".to_string(),
+                last_transition_time: Some(Utc::now()),
+                last_update_time: Some(Utc::now()),
+                reason: Some("MinimumReplicasAvailable".to_string()),
+                message: Some("Deployment has minimum availability.".to_string()),
+            });
+        } else {
+            conditions.push(DeploymentCondition {
+                condition_type: "Available".to_string(),
+                status: "False".to_string(),
+                last_transition_time: Some(Utc::now()),
+                last_update_time: Some(Utc::now()),
+                reason: Some("MinimumReplicasUnavailable".to_string()),
+                message: Some(format!(
+                    "Deployment does not have minimum availability. {} of {} available.",
+                    available_replicas, desired_replicas
+                )),
+            });
+        }
+
+        // Progressing condition
+        conditions.push(DeploymentCondition {
+            condition_type: "Progressing".to_string(),
+            status: "True".to_string(),
+            last_transition_time: Some(Utc::now()),
+            last_update_time: Some(Utc::now()),
+            reason: Some("NewReplicaSetAvailable".to_string()),
+            message: Some("ReplicaSet has successfully progressed.".to_string()),
+        });
 
         let status = DeploymentStatus {
             replicas: Some(total_replicas),
@@ -309,9 +349,9 @@ impl<S: Storage> DeploymentController<S> {
             available_replicas: Some(available_replicas),
             unavailable_replicas: Some(unavailable),
             updated_replicas: Some(updated_replicas),
-            conditions: None,
+            conditions: Some(conditions),
             collision_count: None,
-            observed_generation: None,
+            observed_generation: deployment.metadata.generation,
             terminating_replicas: None,
         };
 

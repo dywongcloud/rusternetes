@@ -133,6 +133,7 @@ fn create_test_job(name: &str, namespace: &str) -> Job {
             completed_indexes: None,
             failed_indexes: None,
             uncounted_terminated_pods: None,
+            observed_generation: None,
         }),
     }
 }
@@ -277,6 +278,7 @@ async fn test_job_with_status() {
         completed_indexes: None,
         failed_indexes: None,
         uncounted_terminated_pods: None,
+        observed_generation: None,
     });
 
     let key = build_key("jobs", Some("default"), "test-status");

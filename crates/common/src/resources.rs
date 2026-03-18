@@ -94,7 +94,7 @@ pub use custom_metrics::{
     ListMetadata, MetricSelector, MetricValue, MetricValueList,
     ObjectReference as MetricsObjectReference,
 };
-pub use deployment::{Deployment, DeploymentSpec, DeploymentStatus};
+pub use deployment::{Deployment, DeploymentCondition, DeploymentSpec, DeploymentStatus};
 pub use dra::{
     AllocatedDeviceStatus, AllocationConfigSource, AllocationResult, CELDeviceSelector,
     CapacityRequestPolicy, CapacityRequestPolicyRange, Counter, CounterSet, Device,

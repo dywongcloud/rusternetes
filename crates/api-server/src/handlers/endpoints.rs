@@ -272,8 +272,12 @@ pub async fn delete_endpoints(
         return Ok(Json(endpoints));
     }
 
-    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &endpoints)
-        .await?;
+    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(
+        &*state.storage,
+        &key,
+        &endpoints,
+    )
+    .await?;
 
     if has_finalizers {
         // Resource has finalizers, re-read to get updated version with deletionTimestamp

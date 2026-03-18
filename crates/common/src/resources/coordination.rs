@@ -119,9 +119,6 @@ mod tests {
         let spec: LeaseSpec = serde_json::from_str(json).unwrap();
         assert_eq!(spec.holder_identity, Some("apiserver-abc123".to_string()));
         assert_eq!(spec.lease_duration_seconds, Some(15));
-        assert_eq!(
-            spec.preferred_holder,
-            Some("apiserver-def456".to_string())
-        );
+        assert_eq!(spec.preferred_holder, Some("apiserver-def456".to_string()));
     }
 }

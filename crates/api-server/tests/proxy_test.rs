@@ -1,8 +1,9 @@
 //! Integration tests for proxy handlers (node, service, pod)
 
 use axum::http::StatusCode;
-use rusternetes_common::resources::{IntOrString, 
-    Node, NodeStatus, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec, ServiceType,
+use rusternetes_common::resources::{
+    IntOrString, Node, NodeStatus, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec,
+    ServiceType,
 };
 use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
 use rusternetes_storage::{etcd::EtcdStorage, Storage};

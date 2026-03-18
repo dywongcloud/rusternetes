@@ -650,6 +650,10 @@ pub struct JobStatus {
     pub failed_indexes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uncounted_terminated_pods: Option<UncountedTerminatedPods>,
+
+    /// Generation observed by the controller
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_generation: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

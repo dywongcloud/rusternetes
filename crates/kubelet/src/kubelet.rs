@@ -3,7 +3,8 @@ use crate::runtime::ContainerRuntime;
 use anyhow::Result;
 use rusternetes_common::{
     resources::{
-        Node, NodeAddress, NodeCondition, NodeSpec, NodeStatus, Pod, PodCondition, PodStatus,
+        ContainerState, ContainerStatus, Node, NodeAddress, NodeCondition, NodeSpec, NodeStatus,
+        Pod, PodCondition, PodStatus,
     },
     types::Phase,
 };
@@ -332,6 +333,7 @@ impl Kubelet {
                         // Write Running status using the fresh resourceVersion
                         let mut new_pod = fresh_pod;
                         let qos = Self::compute_qos_class(&new_pod);
+                        let init_container_statuses = Self::build_init_container_statuses(&new_pod);
                         new_pod.status = Some(PodStatus {
                             phase: Some(Phase::Running),
                             message: Some("All containers started".to_string()),
@@ -340,7 +342,7 @@ impl Kubelet {
                             pod_ip,
                             conditions: Some(Self::running_pod_conditions()),
                             container_statuses,
-                            init_container_statuses: None,
+                            init_container_statuses,
                             ephemeral_container_statuses: None,
                             resize: None,
                             resource_claim_statuses: None,
@@ -395,6 +397,7 @@ impl Kubelet {
                 // Update status to Running
                 let mut new_pod = fresh_pod;
                 let qos = Self::compute_qos_class(&new_pod);
+                let init_container_statuses = Self::build_init_container_statuses(&new_pod);
                 new_pod.status = Some(PodStatus {
                     phase: Some(Phase::Running),
                     message: Some("All containers started".to_string()),
@@ -403,7 +406,7 @@ impl Kubelet {
                     pod_ip,
                     conditions: Some(Self::running_pod_conditions()),
                     container_statuses,
-                    init_container_statuses: None,
+                    init_container_statuses,
                     ephemeral_container_statuses: None,
                     resize: None,
                     resource_claim_statuses: None,
@@ -584,6 +587,45 @@ impl Kubelet {
                 observed_generation: None,
             },
         ]
+    }
+
+    /// Build init container statuses for a running pod.
+    /// When a pod is running, all init containers have completed successfully.
+    fn build_init_container_statuses(pod: &Pod) -> Option<Vec<ContainerStatus>> {
+        let init_containers = pod.spec.as_ref()?.init_containers.as_ref()?;
+        if init_containers.is_empty() {
+            return None;
+        }
+        Some(
+            init_containers
+                .iter()
+                .map(|ic| ContainerStatus {
+                    name: ic.name.clone(),
+                    ready: true,
+                    restart_count: 0,
+                    state: Some(ContainerState::Terminated {
+                        exit_code: 0,
+                        signal: None,
+                        reason: Some("Completed".to_string()),
+                        message: None,
+                        started_at: None,
+                        finished_at: None,
+                        container_id: None,
+                    }),
+                    last_state: None,
+                    image: Some(ic.image.clone()),
+                    image_id: None,
+                    container_id: None,
+                    started: Some(false),
+                    allocated_resources: None,
+                    allocated_resources_status: None,
+                    resources: None,
+                    user: None,
+                    volume_mounts: None,
+                    stop_signal: None,
+                })
+                .collect(),
+        )
     }
 
     /// Compute the QoS class for a pod based on resource requests/limits.
