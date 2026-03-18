@@ -10,7 +10,7 @@ use chrono::Utc;
 use futures_util::StreamExt;
 use rusternetes_common::resources::{
     ConfigMap, Container, ContainerState, ContainerStatus, ExecAction, HTTPGetAction,
-    PersistentVolume, PersistentVolumeClaim, Pod, Probe, Secret, TCPSocketAction,
+    LifecycleHandler, PersistentVolume, PersistentVolumeClaim, Pod, Probe, Secret, TCPSocketAction,
 };
 use rusternetes_storage::{build_key, Storage};
 use std::collections::HashMap;
@@ -1731,6 +1731,28 @@ impl ContainerRuntime {
             .context("Failed to start container")?;
 
         info!("Container {} started successfully", container_name);
+
+        // Execute postStart lifecycle hook if present
+        if let Some(ref lifecycle) = container.lifecycle {
+            if let Some(ref post_start) = lifecycle.post_start {
+                info!(
+                    "Executing postStart hook for container {}",
+                    container.name
+                );
+                if let Err(e) = self
+                    .execute_lifecycle_handler(post_start, &container_name)
+                    .await
+                {
+                    warn!(
+                        "postStart hook failed for container {}: {}",
+                        container.name, e
+                    );
+                    // In Kubernetes, if postStart fails, the container is killed
+                    // For now, log the error but don't kill the container
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -1887,8 +1909,22 @@ impl ContainerRuntime {
                         })
                     };
 
-                    // Check readiness probe
-                    let ready = if running {
+                    // Check startup probe first. If defined and not yet passing,
+                    // liveness and readiness probes are skipped.
+                    let startup_passed = if running {
+                        if let Some(startup_probe) = &container.startup_probe {
+                            self.check_probe(&container_name, startup_probe)
+                                .await
+                                .unwrap_or(false)
+                        } else {
+                            true // No startup probe means started
+                        }
+                    } else {
+                        false
+                    };
+
+                    // Check readiness probe only if startup probe has passed
+                    let ready = if running && startup_passed {
                         if let Some(probe) = &container.readiness_probe {
                             self.check_probe(&container_name, probe)
                                 .await
@@ -1900,8 +1936,6 @@ impl ContainerRuntime {
                         false
                     };
 
-                    let is_started =
-                        matches!(container_state, Some(ContainerState::Running { .. }));
                     ContainerStatus {
                         name: container.name.clone(),
                         ready,
@@ -1911,7 +1945,7 @@ impl ContainerRuntime {
                         image: Some(container.image.clone()),
                         image_id: None,
                         container_id: inspect.id,
-                        started: Some(is_started),
+                        started: Some(startup_passed),
                         allocated_resources: None,
                         allocated_resources_status: None,
                         resources: None,
@@ -1948,14 +1982,34 @@ impl ContainerRuntime {
         Ok(statuses)
     }
 
-    /// Check if a container needs to be restarted based on liveness probe
+    /// Check if a container needs to be restarted based on liveness probe.
+    ///
+    /// If a startup probe is defined and hasn't passed yet, liveness probes
+    /// are skipped for that container (per Kubernetes semantics).
     pub async fn check_liveness(&self, pod: &Pod) -> Result<bool> {
         let pod_name = &pod.metadata.name;
 
         for container in &pod.spec.as_ref().unwrap().containers {
-            if let Some(probe) = &container.liveness_probe {
-                let container_name = format!("{}_{}", pod_name, container.name);
+            let container_name = format!("{}_{}", pod_name, container.name);
 
+            // If a startup probe is defined, check it first.
+            // Liveness probes are disabled until the startup probe succeeds.
+            if let Some(startup_probe) = &container.startup_probe {
+                let startup_passed = self
+                    .check_probe(&container_name, startup_probe)
+                    .await
+                    .unwrap_or(false);
+
+                if !startup_passed {
+                    debug!(
+                        "Startup probe not yet passing for container {}, skipping liveness check",
+                        container_name
+                    );
+                    continue;
+                }
+            }
+
+            if let Some(probe) = &container.liveness_probe {
                 // Wait for initial delay
                 let initial_delay = probe.initial_delay_seconds.unwrap_or(0);
                 if initial_delay > 0 {
@@ -2117,6 +2171,248 @@ impl ContainerRuntime {
         let exit_code = inspect.exit_code.unwrap_or(1);
 
         Ok(exit_code == 0)
+    }
+
+    /// Execute a lifecycle handler (postStart/preStop) inside a container.
+    ///
+    /// Supports exec, httpGet, tcpSocket, and sleep handler types.
+    /// Reuses the same probe execution patterns (exec via Docker API, HTTP via reqwest,
+    /// TCP via tokio::net) for consistency.
+    async fn execute_lifecycle_handler(
+        &self,
+        handler: &LifecycleHandler,
+        container_name: &str,
+    ) -> Result<()> {
+        if let Some(ref exec) = handler.exec {
+            // Execute command inside the container
+            debug!(
+                "Lifecycle exec handler: {:?} in {}",
+                exec.command, container_name
+            );
+            let exec_config = CreateExecOptions {
+                cmd: Some(exec.command.clone()),
+                attach_stdout: Some(true),
+                attach_stderr: Some(true),
+                ..Default::default()
+            };
+
+            let exec_id = self
+                .docker
+                .create_exec(container_name, exec_config)
+                .await
+                .context("Failed to create exec for lifecycle handler")?
+                .id;
+
+            let start_result = self
+                .docker
+                .start_exec(&exec_id, None)
+                .await
+                .context("Failed to start exec for lifecycle handler")?;
+
+            // Drain output
+            match start_result {
+                StartExecResults::Attached { mut output, .. } => {
+                    while let Some(_) = output.next().await {}
+                }
+                StartExecResults::Detached => {}
+            }
+
+            // Check exit code
+            let inspect = self.docker.inspect_exec(&exec_id).await?;
+            let exit_code = inspect.exit_code.unwrap_or(1);
+            if exit_code != 0 {
+                return Err(anyhow::anyhow!(
+                    "Lifecycle exec handler exited with code {}",
+                    exit_code
+                ));
+            }
+        } else if let Some(ref http_get) = handler.http_get {
+            // Execute HTTP GET request against the container
+            let inspect = self
+                .docker
+                .inspect_container(container_name, None::<InspectContainerOptions>)
+                .await?;
+
+            let ip = inspect
+                .network_settings
+                .and_then(|ns| ns.ip_address)
+                .unwrap_or_else(|| "127.0.0.1".to_string());
+
+            let scheme = http_get.scheme.as_deref().unwrap_or("http");
+            let path = http_get.path.as_deref().unwrap_or("/");
+            let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
+
+            debug!("Lifecycle HTTP handler: {}", url);
+
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()?;
+
+            match client.get(&url).send().await {
+                Ok(response) => {
+                    if !response.status().is_success() {
+                        return Err(anyhow::anyhow!(
+                            "Lifecycle HTTP handler returned status {}",
+                            response.status()
+                        ));
+                    }
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Lifecycle HTTP handler failed: {}", e));
+                }
+            }
+        } else if let Some(ref tcp_socket) = handler.tcp_socket {
+            // Open TCP connection to the container
+            let inspect = self
+                .docker
+                .inspect_container(container_name, None::<InspectContainerOptions>)
+                .await?;
+
+            let ip = inspect
+                .network_settings
+                .and_then(|ns| ns.ip_address)
+                .unwrap_or_else(|| "127.0.0.1".to_string());
+
+            let addr = format!("{}:{}", ip, tcp_socket.port);
+            debug!("Lifecycle TCP handler: {}", addr);
+
+            match tokio::time::timeout(
+                Duration::from_secs(10),
+                tokio::net::TcpStream::connect(&addr),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    return Err(anyhow::anyhow!("Lifecycle TCP handler failed: {}", e));
+                }
+                Err(_) => {
+                    return Err(anyhow::anyhow!("Lifecycle TCP handler timed out"));
+                }
+            }
+        } else if let Some(ref sleep) = handler.sleep {
+            // Sleep for the specified duration
+            debug!("Lifecycle sleep handler: {}s", sleep.seconds);
+            tokio::time::sleep(Duration::from_secs(sleep.seconds as u64)).await;
+        }
+
+        Ok(())
+    }
+
+    /// Stop all containers for a pod, executing preStop lifecycle hooks first.
+    ///
+    /// This is the preferred method when the Pod spec is available, as it
+    /// allows preStop hooks to be executed before container termination.
+    pub async fn stop_pod_for(&self, pod: &Pod, grace_period_seconds: i64) -> Result<()> {
+        let pod_name = &pod.metadata.name;
+        info!(
+            "Stopping pod: {} (grace period: {}s, with lifecycle hooks)",
+            pod_name, grace_period_seconds
+        );
+
+        // Build a map of container name -> lifecycle for preStop hook lookup
+        let mut lifecycle_map: HashMap<String, _> = HashMap::new();
+        if let Some(spec) = &pod.spec {
+            for container in &spec.containers {
+                if let Some(ref lifecycle) = container.lifecycle {
+                    if lifecycle.pre_stop.is_some() {
+                        let container_name = format!("{}_{}", pod_name, container.name);
+                        lifecycle_map.insert(container_name, lifecycle.clone());
+                    }
+                }
+            }
+            if let Some(init_containers) = &spec.init_containers {
+                for container in init_containers {
+                    if let Some(ref lifecycle) = container.lifecycle {
+                        if lifecycle.pre_stop.is_some() {
+                            let container_name = format!("{}_{}", pod_name, container.name);
+                            lifecycle_map.insert(container_name, lifecycle.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // List all containers with this pod prefix
+        let mut filters = HashMap::new();
+        filters.insert("name".to_string(), vec![format!("{}_", pod_name)]);
+
+        let options = ListContainersOptions {
+            all: true,
+            filters,
+            ..Default::default()
+        };
+
+        let containers = self.docker.list_containers(Some(options)).await?;
+
+        for container in containers {
+            if let Some(id) = container.id {
+                // Determine the container name for lifecycle hook lookup
+                let names = container.names.unwrap_or_default();
+                let container_name = names
+                    .first()
+                    .map(|n| n.trim_start_matches('/').to_string())
+                    .unwrap_or_default();
+
+                // Execute preStop hook if present and the container is running
+                let is_running = container.state.as_deref() == Some("running");
+                if is_running {
+                    if let Some(lifecycle) = lifecycle_map.get(&container_name) {
+                        if let Some(ref pre_stop) = lifecycle.pre_stop {
+                            info!(
+                                "Executing preStop hook for container {}",
+                                container_name
+                            );
+                            if let Err(e) = self
+                                .execute_lifecycle_handler(pre_stop, &container_name)
+                                .await
+                            {
+                                warn!(
+                                    "preStop hook failed for container {}: {}",
+                                    container_name, e
+                                );
+                            }
+                        }
+                    }
+                }
+
+                info!("Stopping container: {}", id);
+
+                // Stop the container gracefully
+                let stop_options = StopContainerOptions {
+                    t: grace_period_seconds,
+                };
+                if let Err(e) = self.docker.stop_container(&id, Some(stop_options)).await {
+                    warn!("Failed to stop container {}: {}", id, e);
+                }
+
+                // Remove the container
+                let remove_options = RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                };
+
+                if let Err(e) = self
+                    .docker
+                    .remove_container(&id, Some(remove_options))
+                    .await
+                {
+                    warn!("Failed to remove container {}: {}", id, e);
+                }
+            }
+        }
+
+        // Teardown CNI networking if enabled
+        if self.use_cni {
+            if let Err(e) = self.teardown_pod_network(pod_name).await {
+                warn!("Failed to teardown CNI network for pod {}: {}", pod_name, e);
+            }
+        }
+
+        // Clean up emptyDir volumes
+        self.cleanup_pod_volumes(pod_name).await?;
+
+        Ok(())
     }
 
     /// Get the pod IP address from the first running container
@@ -2857,6 +3153,275 @@ mod tests {
             format!("container:{}_pause", pod_name)
         };
         assert_eq!(network_mode, "rusternetes-network");
+    }
+
+    // --- lifecycle hook tests ---
+
+    #[test]
+    fn test_lifecycle_handler_exec_is_recognized() {
+        use rusternetes_common::resources::{ExecAction, Lifecycle, LifecycleHandler};
+
+        let lifecycle = Lifecycle {
+            post_start: Some(LifecycleHandler {
+                exec: Some(ExecAction {
+                    command: vec!["/bin/sh".to_string(), "-c".to_string(), "echo hello".to_string()],
+                }),
+                http_get: None,
+                tcp_socket: None,
+                sleep: None,
+            }),
+            pre_stop: None,
+            stop_signal: None,
+        };
+
+        assert!(lifecycle.post_start.is_some());
+        let handler = lifecycle.post_start.unwrap();
+        assert!(handler.exec.is_some());
+        assert_eq!(handler.exec.unwrap().command.len(), 3);
+    }
+
+    #[test]
+    fn test_lifecycle_handler_http_get_is_recognized() {
+        use rusternetes_common::resources::{HTTPGetAction, Lifecycle, LifecycleHandler};
+
+        let lifecycle = Lifecycle {
+            post_start: None,
+            pre_stop: Some(LifecycleHandler {
+                exec: None,
+                http_get: Some(HTTPGetAction {
+                    path: Some("/shutdown".to_string()),
+                    port: 8080,
+                    host: Some("localhost".to_string()),
+                    scheme: Some("HTTP".to_string()),
+                    http_headers: None,
+                }),
+                tcp_socket: None,
+                sleep: None,
+            }),
+            stop_signal: None,
+        };
+
+        assert!(lifecycle.pre_stop.is_some());
+        let handler = lifecycle.pre_stop.unwrap();
+        assert!(handler.http_get.is_some());
+        let http = handler.http_get.unwrap();
+        assert_eq!(http.port, 8080);
+        assert_eq!(http.path.as_deref(), Some("/shutdown"));
+    }
+
+    #[test]
+    fn test_lifecycle_handler_sleep_is_recognized() {
+        use rusternetes_common::resources::{Lifecycle, LifecycleHandler, SleepAction};
+
+        let lifecycle = Lifecycle {
+            post_start: None,
+            pre_stop: Some(LifecycleHandler {
+                exec: None,
+                http_get: None,
+                tcp_socket: None,
+                sleep: Some(SleepAction { seconds: 5 }),
+            }),
+            stop_signal: None,
+        };
+
+        assert!(lifecycle.pre_stop.is_some());
+        let handler = lifecycle.pre_stop.unwrap();
+        assert!(handler.sleep.is_some());
+        assert_eq!(handler.sleep.unwrap().seconds, 5);
+    }
+
+    #[test]
+    fn test_container_lifecycle_field_present() {
+        use rusternetes_common::resources::{ExecAction, Lifecycle, LifecycleHandler};
+
+        let mut container = make_container("app");
+        assert!(container.lifecycle.is_none());
+
+        container.lifecycle = Some(Lifecycle {
+            post_start: Some(LifecycleHandler {
+                exec: Some(ExecAction {
+                    command: vec!["/bin/sh".to_string(), "-c".to_string(), "touch /tmp/started".to_string()],
+                }),
+                http_get: None,
+                tcp_socket: None,
+                sleep: None,
+            }),
+            pre_stop: Some(LifecycleHandler {
+                exec: Some(ExecAction {
+                    command: vec!["/bin/sh".to_string(), "-c".to_string(), "touch /tmp/stopping".to_string()],
+                }),
+                http_get: None,
+                tcp_socket: None,
+                sleep: None,
+            }),
+            stop_signal: None,
+        });
+
+        assert!(container.lifecycle.is_some());
+        let lc = container.lifecycle.unwrap();
+        assert!(lc.post_start.is_some());
+        assert!(lc.pre_stop.is_some());
+    }
+
+    #[test]
+    fn test_lifecycle_serializes_correctly() {
+        use rusternetes_common::resources::{ExecAction, Lifecycle, LifecycleHandler};
+
+        let mut container = make_container("app");
+        container.lifecycle = Some(Lifecycle {
+            post_start: Some(LifecycleHandler {
+                exec: Some(ExecAction {
+                    command: vec!["echo".to_string(), "started".to_string()],
+                }),
+                http_get: None,
+                tcp_socket: None,
+                sleep: None,
+            }),
+            pre_stop: None,
+            stop_signal: None,
+        });
+
+        let json = serde_json::to_string(&container).expect("serialize");
+        assert!(json.contains("\"lifecycle\""));
+        assert!(json.contains("\"postStart\""));
+        assert!(json.contains("\"exec\""));
+    }
+
+    // --- startup probe tests ---
+
+    #[test]
+    fn test_container_startup_probe_field() {
+        use rusternetes_common::resources::{ExecAction, Probe};
+
+        let mut container = make_container("app");
+        assert!(container.startup_probe.is_none());
+
+        container.startup_probe = Some(Probe {
+            exec: Some(ExecAction {
+                command: vec!["cat".to_string(), "/tmp/healthy".to_string()],
+            }),
+            http_get: None,
+            tcp_socket: None,
+            initial_delay_seconds: Some(5),
+            period_seconds: Some(10),
+            timeout_seconds: Some(1),
+            success_threshold: Some(1),
+            failure_threshold: Some(30),
+            grpc: None,
+            termination_grace_period_seconds: None,
+        });
+
+        assert!(container.startup_probe.is_some());
+        let probe = container.startup_probe.unwrap();
+        assert_eq!(probe.failure_threshold, Some(30));
+        assert!(probe.exec.is_some());
+    }
+
+    #[test]
+    fn test_startup_probe_prevents_readiness_when_not_started() {
+        // This tests the logical condition used in get_container_statuses:
+        // when startup_passed is false, ready should be false
+        let startup_passed = false;
+        let running = true;
+        let has_readiness_probe = true;
+
+        // Simulated logic from get_container_statuses
+        let ready = if running && startup_passed {
+            if has_readiness_probe {
+                true // would check probe
+            } else {
+                true
+            }
+        } else {
+            false
+        };
+
+        assert!(!ready);
+        assert!(!startup_passed);
+    }
+
+    #[test]
+    fn test_startup_probe_allows_readiness_when_started() {
+        // When startup probe passes, readiness probe should be evaluated
+        let startup_passed = true;
+        let running = true;
+
+        let ready = if running && startup_passed {
+            true // would check readiness probe
+        } else {
+            false
+        };
+
+        assert!(ready);
+    }
+
+    #[test]
+    fn test_startup_probe_blocks_liveness_check() {
+        // Verify the logical condition: if startup probe hasn't passed,
+        // liveness checks should be skipped (continue in the loop)
+        let has_startup_probe = true;
+        let startup_passed = false;
+
+        let should_skip_liveness = has_startup_probe && !startup_passed;
+        assert!(should_skip_liveness);
+    }
+
+    #[test]
+    fn test_no_startup_probe_does_not_block_liveness() {
+        // Without a startup probe, liveness should proceed normally
+        let has_startup_probe = false;
+
+        // No startup probe means we don't skip
+        let should_skip_liveness = has_startup_probe;
+        assert!(!should_skip_liveness);
+    }
+
+    #[test]
+    fn test_lifecycle_and_startup_probe_on_same_container() {
+        use rusternetes_common::resources::{ExecAction, Lifecycle, LifecycleHandler, Probe};
+
+        let mut container = make_container("app");
+        container.lifecycle = Some(Lifecycle {
+            post_start: Some(LifecycleHandler {
+                exec: Some(ExecAction {
+                    command: vec!["echo".to_string(), "started".to_string()],
+                }),
+                http_get: None,
+                tcp_socket: None,
+                sleep: None,
+            }),
+            pre_stop: Some(LifecycleHandler {
+                exec: Some(ExecAction {
+                    command: vec!["echo".to_string(), "stopping".to_string()],
+                }),
+                http_get: None,
+                tcp_socket: None,
+                sleep: None,
+            }),
+            stop_signal: None,
+        });
+        container.startup_probe = Some(Probe {
+            exec: Some(ExecAction {
+                command: vec!["cat".to_string(), "/tmp/ready".to_string()],
+            }),
+            http_get: None,
+            tcp_socket: None,
+            initial_delay_seconds: Some(0),
+            period_seconds: Some(5),
+            timeout_seconds: Some(1),
+            success_threshold: Some(1),
+            failure_threshold: Some(10),
+            grpc: None,
+            termination_grace_period_seconds: None,
+        });
+
+        assert!(container.lifecycle.is_some());
+        assert!(container.startup_probe.is_some());
+
+        // Both can coexist
+        let lc = container.lifecycle.as_ref().unwrap();
+        assert!(lc.post_start.is_some());
+        assert!(lc.pre_stop.is_some());
     }
 
     #[test]

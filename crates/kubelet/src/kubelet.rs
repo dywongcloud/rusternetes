@@ -447,7 +447,7 @@ impl Kubelet {
                                     .unwrap_or(30);
                                 if let Err(e) = self
                                     .runtime
-                                    .stop_pod_with_grace_period(pod_name, grace)
+                                    .stop_pod_for(pod, grace)
                                     .await
                                 {
                                     error!("Failed to stop pod for restart: {}", e);
@@ -533,7 +533,7 @@ impl Kubelet {
                         .and_then(|s| s.termination_grace_period_seconds)
                         .unwrap_or(30);
                     self.runtime
-                        .stop_pod_with_grace_period(pod_name, grace)
+                        .stop_pod_for(pod, grace)
                         .await?;
                 }
             }
@@ -806,7 +806,7 @@ impl Kubelet {
                         .unwrap_or(30);
                     if let Err(e) = self
                         .runtime
-                        .stop_pod_with_grace_period(&pod.metadata.name, grace)
+                        .stop_pod_for(pod, grace)
                         .await
                     {
                         error!("Failed to stop evicted pod {}: {}", pod_key, e);
