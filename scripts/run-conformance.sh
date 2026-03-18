@@ -52,7 +52,11 @@ echo "Running: sonobuoy run --mode=${SONOBUOY_MODE} --wait"
 echo ""
 
 # Run sonobuoy and capture output
-if sonobuoy run --mode="${SONOBUOY_MODE}" --wait 2>&1 | tee /tmp/sonobuoy-latest.log; then
+# Force JSON encoding (rusternetes doesn't support protobuf, which is client-go's default)
+if sonobuoy run --mode="${SONOBUOY_MODE}" \
+    --plugin-env e2e.KUBE_API_CONTENT_TYPE=application/json \
+    --plugin-env e2e.KUBERNETES_API_CONTENT_TYPE=application/json \
+    --wait 2>&1 | tee /tmp/sonobuoy-latest.log; then
     TEST_RESULT="PASSED"
 else
     TEST_RESULT="FAILED"
