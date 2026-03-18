@@ -71,6 +71,34 @@ impl IptablesManager {
             "kubernetes service node ports",
         )?;
 
+        // Add MASQUERADE rule for hairpin NAT (container→ClusterIP→container on same bridge).
+        // Without this, DNATed traffic within the Docker bridge doesn't have its source
+        // rewritten, so the return path bypasses NAT and the connection fails.
+        let masq_check = Command::new(&self.iptables_cmd)
+            .args([
+                "-t", "nat", "-C", "POSTROUTING",
+                "-m", "comment", "--comment", "rusternetes service hairpin masquerade",
+                "-s", "172.18.0.0/16", "-d", "172.18.0.0/16",
+                "-j", "MASQUERADE",
+            ])
+            .output();
+        if masq_check.map_or(true, |o| !o.status.success()) {
+            let output = Command::new(&self.iptables_cmd)
+                .args([
+                    "-t", "nat", "-A", "POSTROUTING",
+                    "-m", "comment", "--comment", "rusternetes service hairpin masquerade",
+                    "-s", "172.18.0.0/16", "-d", "172.18.0.0/16",
+                    "-j", "MASQUERADE",
+                ])
+                .output()
+                .context("Failed to add hairpin MASQUERADE rule")?;
+            if output.status.success() {
+                info!("Added hairpin MASQUERADE rule for service traffic within Docker network");
+            } else {
+                warn!("Failed to add hairpin MASQUERADE: {}", String::from_utf8_lossy(&output.stderr));
+            }
+        }
+
         info!("Iptables chains initialized successfully");
         Ok(())
     }
