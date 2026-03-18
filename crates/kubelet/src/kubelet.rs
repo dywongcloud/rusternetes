@@ -288,6 +288,42 @@ impl Kubelet {
 
         debug!("Syncing pod: {}/{}", namespace, pod_name);
 
+        // Check if the pod is marked for deletion (deletionTimestamp set by API server)
+        if pod.metadata.deletion_timestamp.is_some() {
+            info!(
+                "Pod {}/{} is marked for deletion, stopping gracefully",
+                namespace, pod_name
+            );
+            let grace_period = pod
+                .spec
+                .as_ref()
+                .and_then(|s| s.termination_grace_period_seconds)
+                .unwrap_or(30);
+
+            // Stop the pod containers gracefully
+            if self.runtime.is_pod_running(pod_name).await.unwrap_or(false) {
+                if let Err(e) = self
+                    .runtime
+                    .stop_pod_with_grace_period(pod_name, grace_period)
+                    .await
+                {
+                    warn!("Error stopping pod {}/{}: {}", namespace, pod_name, e);
+                }
+            }
+
+            // Delete the pod from storage (final removal)
+            let key = build_key("pods", Some(namespace), pod_name);
+            if let Err(e) = self.storage.delete(&key).await {
+                warn!(
+                    "Error deleting pod {}/{} from storage: {}",
+                    namespace, pod_name, e
+                );
+            } else {
+                info!("Pod {}/{} deleted from storage after graceful stop", namespace, pod_name);
+            }
+            return Ok(());
+        }
+
         // Check current runtime status
         let is_running = self.runtime.is_pod_running(pod_name).await?;
 

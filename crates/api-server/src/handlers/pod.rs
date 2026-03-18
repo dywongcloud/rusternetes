@@ -502,20 +502,35 @@ pub async fn delete_pod(
         return Ok(Json(pod));
     }
 
-    // Handle deletion with finalizers
-    // If the pod has finalizers, it will be marked for deletion (deletionTimestamp set)
-    // and remain in storage until controllers remove the finalizers
-    let deleted_immediately =
-        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &pod)
-            .await?;
+    // Kubernetes pod deletion: set deletionTimestamp and let the kubelet
+    // handle graceful shutdown. The pod remains in storage until the kubelet
+    // confirms termination. This is different from other resources where
+    // immediate deletion is acceptable.
+    let mut updated_pod = pod.clone();
 
-    if deleted_immediately {
-        Ok(Json(pod))
-    } else {
-        // Resource has finalizers, re-read to get updated version with deletionTimestamp
-        let updated: Pod = state.storage.get(&key).await?;
-        Ok(Json(updated))
+    // Set deletionTimestamp if not already set
+    if updated_pod.metadata.deletion_timestamp.is_none() {
+        updated_pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
     }
+
+    // Parse gracePeriodSeconds from query params or use pod spec default
+    let grace_period = params
+        .get("gracePeriodSeconds")
+        .and_then(|v| v.parse::<i64>().ok())
+        .or(updated_pod.spec.as_ref().and_then(|s| s.termination_grace_period_seconds))
+        .unwrap_or(30);
+    updated_pod.metadata.deletion_grace_period_seconds = Some(grace_period);
+
+    // If grace period is 0, delete immediately (force delete)
+    if grace_period == 0 {
+        state.storage.delete(&key).await?;
+        return Ok(Json(updated_pod));
+    }
+
+    // Update the pod in storage with deletionTimestamp set
+    // The kubelet will detect this and handle graceful shutdown
+    let saved: Pod = state.storage.update(&key, &updated_pod).await?;
+    Ok(Json(saved))
 }
 
 pub async fn list(
