@@ -15,7 +15,7 @@ use rusternetes_storage::{build_key, build_prefix, Storage};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, warn};
 
 // Removed - using HashMap<String, String> for query params
 
@@ -75,6 +75,39 @@ pub async fn create(
                 e
             );
             // Don't fail namespace creation if default SA creation fails
+        }
+    }
+
+    // Create kube-root-ca.crt ConfigMap (required by Kubernetes conformance)
+    let ca_cert = std::fs::read_to_string("/etc/kubernetes/pki/api-server.crt")
+        .or_else(|_| std::fs::read_to_string("/root/.rusternetes/certs/api-server.crt"))
+        .unwrap_or_else(|_| "".to_string());
+
+    if !ca_cert.is_empty() {
+        let ca_cm = rusternetes_common::resources::ConfigMap {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "ConfigMap".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: rusternetes_common::types::ObjectMeta::new("kube-root-ca.crt")
+                .with_namespace(&namespace.metadata.name),
+            data: Some(std::collections::HashMap::from([(
+                "ca.crt".to_string(),
+                ca_cert,
+            )])),
+            binary_data: None,
+            immutable: None,
+        };
+        let cm_key = build_key(
+            "configmaps",
+            Some(&namespace.metadata.name),
+            "kube-root-ca.crt",
+        );
+        if let Err(e) = state.storage.create(&cm_key, &ca_cm).await {
+            warn!(
+                "Failed to create kube-root-ca.crt in namespace {}: {}",
+                namespace.metadata.name, e
+            );
         }
     }
 
