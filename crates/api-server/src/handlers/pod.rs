@@ -544,7 +544,8 @@ pub async fn list(
             allow_watch_bookmarks: params
                 .get("allowWatchBookmarks")
                 .and_then(|v| v.parse::<bool>().ok()),
-        };
+
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),        };
         return crate::handlers::watch::watch_namespaced::<Pod>(
             state,
             auth_ctx,
@@ -636,7 +637,8 @@ pub async fn list_all_pods(
             allow_watch_bookmarks: params
                 .get("allowWatchBookmarks")
                 .and_then(|v| v.parse::<bool>().ok()),
-        };
+
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),        };
         return crate::handlers::watch::watch_cluster_scoped::<Pod>(
             state,
             auth_ctx,

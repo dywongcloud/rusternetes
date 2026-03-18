@@ -66,6 +66,12 @@ pub struct WatchParams {
     /// Allow watch bookmarks
     #[serde(rename = "allowWatchBookmarks")]
     pub allow_watch_bookmarks: Option<bool>,
+
+    /// Send initial events (consistent reads from cache, K8s 1.30+)
+    /// When true, send all existing resources as ADDED events followed by
+    /// a BOOKMARK to signal initial list is complete.
+    #[serde(rename = "sendInitialEvents")]
+    pub send_initial_events: Option<bool>,
 }
 
 /// Generic watch handler for namespaced resources
@@ -114,6 +120,7 @@ where
 
     // Extract parameters
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
+    let send_initial_events = params.send_initial_events.unwrap_or(false);
     let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
@@ -121,7 +128,9 @@ where
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
         // Track the latest resourceVersion for bookmarks
-        let mut latest_resource_version: Option<String> = None;
+        let mut latest_resource_version: Option<String> = Some(
+            chrono::Utc::now().timestamp().to_string(),
+        );
 
         // Send initial state as ADDED events
         for object in existing_resources {
@@ -141,8 +150,32 @@ where
             }
         }
 
+        // When sendInitialEvents=true or bookmarks enabled, send an initial
+        // BOOKMARK after the ADDED events to signal "initial list is complete".
+        // Required by Kubernetes 1.30+ consistent reads from cache.
+        if send_initial_events || allow_bookmarks {
+            if let Some(ref rv) = latest_resource_version {
+                let bookmark = BookmarkObject {
+                    kind: Some(bookmark_kind.clone()),
+                    api_version: Some(bookmark_api_version.clone()),
+                    metadata: ObjectMeta {
+                        resource_version: Some(rv.clone()),
+                        ..Default::default()
+                    },
+                };
+                let k8s_event = K8sWatchEvent {
+                    event_type: WatchEventType::Bookmark,
+                    object: bookmark,
+                };
+                if let Ok(json) = serde_json::to_string(&k8s_event) {
+                    let _ = tx.send(Ok(format!("{}\n", json)));
+                }
+                debug!("Sent initial sync bookmark with resourceVersion: {}", rv);
+            }
+        }
+
         // Create bookmark interval (60 seconds) if bookmarks are enabled
-        let mut bookmark_interval = if allow_bookmarks {
+        let mut bookmark_interval = if allow_bookmarks || send_initial_events {
             Some(interval(Duration::from_secs(60)))
         } else {
             None
@@ -235,7 +268,7 @@ where
                             futures::future::pending::<()>().await
                         }
                     } => {
-                        if allow_bookmarks {
+                        if allow_bookmarks || send_initial_events {
                             if let Some(ref rv) = latest_resource_version {
                                 debug!("Sending bookmark with resourceVersion: {}", rv);
                                 let bookmark = BookmarkObject {
@@ -271,7 +304,7 @@ where
                 Err(_) => {
                     info!("Watch stream timeout after {:?}", timeout_dur);
                     // Send final bookmark before closing if bookmarks are enabled
-                    if allow_bookmarks {
+                    if allow_bookmarks || send_initial_events {
                         if let Some(ref rv) = latest_resource_version {
                             let bookmark = BookmarkObject {
                                     kind: Some(bookmark_kind.clone()),
@@ -356,6 +389,7 @@ where
 
     // Extract parameters
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
+    let send_initial_events = params.send_initial_events.unwrap_or(false);
     let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
@@ -363,7 +397,9 @@ where
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
         // Track the latest resourceVersion for bookmarks
-        let mut latest_resource_version: Option<String> = None;
+        let mut latest_resource_version: Option<String> = Some(
+            chrono::Utc::now().timestamp().to_string(),
+        );
 
         // Send initial state as ADDED events
         for object in existing_resources {
@@ -383,8 +419,32 @@ where
             }
         }
 
+        // When sendInitialEvents=true or bookmarks enabled, send an initial
+        // BOOKMARK after the ADDED events to signal "initial list is complete".
+        // Required by Kubernetes 1.30+ consistent reads from cache.
+        if send_initial_events || allow_bookmarks {
+            if let Some(ref rv) = latest_resource_version {
+                let bookmark = BookmarkObject {
+                    kind: Some(bookmark_kind.clone()),
+                    api_version: Some(bookmark_api_version.clone()),
+                    metadata: ObjectMeta {
+                        resource_version: Some(rv.clone()),
+                        ..Default::default()
+                    },
+                };
+                let k8s_event = K8sWatchEvent {
+                    event_type: WatchEventType::Bookmark,
+                    object: bookmark,
+                };
+                if let Ok(json) = serde_json::to_string(&k8s_event) {
+                    let _ = tx.send(Ok(format!("{}\n", json)));
+                }
+                debug!("Sent initial sync bookmark with resourceVersion: {}", rv);
+            }
+        }
+
         // Create bookmark interval (60 seconds) if bookmarks are enabled
-        let mut bookmark_interval = if allow_bookmarks {
+        let mut bookmark_interval = if allow_bookmarks || send_initial_events {
             Some(interval(Duration::from_secs(60)))
         } else {
             None
@@ -477,7 +537,7 @@ where
                             futures::future::pending::<()>().await
                         }
                     } => {
-                        if allow_bookmarks {
+                        if allow_bookmarks || send_initial_events {
                             if let Some(ref rv) = latest_resource_version {
                                 debug!("Sending bookmark with resourceVersion: {}", rv);
                                 let bookmark = BookmarkObject {
@@ -513,7 +573,7 @@ where
                 Err(_) => {
                     info!("Watch stream timeout after {:?}", timeout_dur);
                     // Send final bookmark before closing if bookmarks are enabled
-                    if allow_bookmarks {
+                    if allow_bookmarks || send_initial_events {
                         if let Some(ref rv) = latest_resource_version {
                             let bookmark = BookmarkObject {
                                     kind: Some(bookmark_kind.clone()),

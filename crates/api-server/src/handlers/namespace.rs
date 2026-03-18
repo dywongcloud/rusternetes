@@ -364,7 +364,8 @@ pub async fn list(
             allow_watch_bookmarks: params
                 .get("allowWatchBookmarks")
                 .and_then(|v| v.parse::<bool>().ok()),
-        };
+
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),        };
         return watch::watch_cluster_scoped::<Namespace>(
             state,
             auth_ctx,
