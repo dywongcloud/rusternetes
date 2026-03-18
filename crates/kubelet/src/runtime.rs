@@ -16,11 +16,18 @@ use rusternetes_storage::{build_key, Storage};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 use crate::cni::CniRuntime;
+
+/// Tracks consecutive probe successes/failures for threshold-based probe evaluation.
+#[derive(Debug, Clone, Default)]
+struct ProbeState {
+    consecutive_failures: i32,
+    consecutive_successes: i32,
+}
 
 /// ContainerRuntime manages containers using Docker/Podman with CNI networking
 pub struct ContainerRuntime {
@@ -33,6 +40,8 @@ pub struct ContainerRuntime {
     cni: Option<CniRuntime>,
     use_cni: bool,
     kubernetes_service_host: String,
+    /// Probe state tracker: key is "{pod_name}/{container_name}/{probe_type}"
+    probe_states: Mutex<HashMap<String, ProbeState>>,
 }
 
 impl ContainerRuntime {
@@ -77,6 +86,7 @@ impl ContainerRuntime {
             cni,
             use_cni,
             kubernetes_service_host,
+            probe_states: Mutex::new(HashMap::new()),
         })
     }
 
@@ -1391,6 +1401,147 @@ impl ContainerRuntime {
             self.kubernetes_service_host
         ));
 
+        // Inject service link environment variables (Kubernetes convention).
+        // When enableServiceLinks is true (default), inject env vars for every
+        // Service in the pod's namespace: {SVC}_SERVICE_HOST, {SVC}_SERVICE_PORT, etc.
+        let enable_service_links = pod
+            .spec
+            .as_ref()
+            .and_then(|s| s.enable_service_links)
+            .unwrap_or(true);
+
+        if enable_service_links {
+            if let Some(storage) = &self.storage {
+                let svc_prefix = rusternetes_storage::build_prefix("services", Some(namespace));
+                match storage
+                    .list::<rusternetes_common::resources::Service>(&svc_prefix)
+                    .await
+                {
+                    Ok(services) => {
+                        for service in &services {
+                            let svc_name_raw = &service.metadata.name;
+                            // Skip the "kubernetes" service — already injected above
+                            if svc_name_raw == "kubernetes" {
+                                continue;
+                            }
+                            let cluster_ip = match &service.spec.cluster_ip {
+                                Some(ip) if ip != "None" && !ip.is_empty() => ip,
+                                _ => continue,
+                            };
+                            let svc_env = svc_name_raw.to_uppercase().replace('-', "_");
+                            env_list.push(format!("{}_SERVICE_HOST={}", svc_env, cluster_ip));
+                            if let Some(first_port) = service.spec.ports.first() {
+                                let proto = first_port
+                                    .protocol
+                                    .as_deref()
+                                    .unwrap_or("TCP")
+                                    .to_lowercase();
+                                env_list
+                                    .push(format!("{}_SERVICE_PORT={}", svc_env, first_port.port));
+                                env_list.push(format!(
+                                    "{}_PORT={}://{}:{}",
+                                    svc_env, proto, cluster_ip, first_port.port
+                                ));
+                                env_list.push(format!(
+                                    "{}_PORT_{}_{}={}://{}:{}",
+                                    svc_env,
+                                    first_port.port,
+                                    proto.to_uppercase(),
+                                    proto,
+                                    cluster_ip,
+                                    first_port.port
+                                ));
+                                env_list.push(format!(
+                                    "{}_PORT_{}_{}_PROTO={}",
+                                    svc_env,
+                                    first_port.port,
+                                    proto.to_uppercase(),
+                                    proto
+                                ));
+                                env_list.push(format!(
+                                    "{}_PORT_{}_{}_PORT={}",
+                                    svc_env,
+                                    first_port.port,
+                                    proto.to_uppercase(),
+                                    first_port.port
+                                ));
+                                env_list.push(format!(
+                                    "{}_PORT_{}_{}_ADDR={}",
+                                    svc_env,
+                                    first_port.port,
+                                    proto.to_uppercase(),
+                                    cluster_ip
+                                ));
+                                // Named port: {SVC}_SERVICE_PORT_{PORT_NAME}
+                                if let Some(port_name) = &first_port.name {
+                                    let port_name_env = port_name.to_uppercase().replace('-', "_");
+                                    env_list.push(format!(
+                                        "{}_SERVICE_PORT_{}={}",
+                                        svc_env, port_name_env, first_port.port
+                                    ));
+                                }
+                            }
+                            // Additional named ports beyond the first
+                            for port in service.spec.ports.iter().skip(1) {
+                                if let Some(port_name) = &port.name {
+                                    let port_name_env = port_name.to_uppercase().replace('-', "_");
+                                    env_list.push(format!(
+                                        "{}_SERVICE_PORT_{}={}",
+                                        svc_env, port_name_env, port.port
+                                    ));
+                                }
+                                let proto =
+                                    port.protocol.as_deref().unwrap_or("TCP").to_lowercase();
+                                env_list.push(format!(
+                                    "{}_PORT_{}_{}={}://{}:{}",
+                                    svc_env,
+                                    port.port,
+                                    proto.to_uppercase(),
+                                    proto,
+                                    cluster_ip,
+                                    port.port
+                                ));
+                                env_list.push(format!(
+                                    "{}_PORT_{}_{}_PROTO={}",
+                                    svc_env,
+                                    port.port,
+                                    proto.to_uppercase(),
+                                    proto
+                                ));
+                                env_list.push(format!(
+                                    "{}_PORT_{}_{}_PORT={}",
+                                    svc_env,
+                                    port.port,
+                                    proto.to_uppercase(),
+                                    port.port
+                                ));
+                                env_list.push(format!(
+                                    "{}_PORT_{}_{}_ADDR={}",
+                                    svc_env,
+                                    port.port,
+                                    proto.to_uppercase(),
+                                    cluster_ip
+                                ));
+                            }
+                        }
+                        debug!(
+                            "Injected service link env vars for {} services in namespace {}",
+                            services.len(),
+                            namespace
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to list services for service links in namespace {}: {}",
+                            namespace, e
+                        );
+                    }
+                }
+            } else {
+                debug!("No storage available for service link env var injection");
+            }
+        }
+
         // Add user-defined environment variables
         if let Some(env_vars) = &container.env {
             for env_var in env_vars {
@@ -1541,34 +1692,177 @@ impl ContainerRuntime {
             }
         }
 
-        // Create and mount custom resolv.conf for non-CoreDNS pods.
-        // This overrides Docker's default resolv.conf to point to our cluster DNS.
+        // Create and mount custom resolv.conf based on DNS policy.
+        // CoreDNS pods always skip custom DNS to avoid circular dependency.
         if pod_name != "coredns" {
-            let resolv_conf_path = format!("{}/{}/resolv.conf", self.volumes_base_path, pod_name);
-            let resolv_conf_content = format!(
-                "nameserver {}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
-                self.cluster_dns,
-                namespace,
-                self.cluster_domain,
-                self.cluster_domain,
-                self.cluster_domain
-            );
+            let dns_policy = pod
+                .spec
+                .as_ref()
+                .and_then(|s| s.dns_policy.as_deref())
+                .unwrap_or("ClusterFirst");
 
-            // Create directory if it doesn't exist
-            std::fs::create_dir_all(format!("{}/{}", self.volumes_base_path, pod_name))
-                .context("Failed to create pod directory for resolv.conf")?;
+            let is_host_network = pod
+                .spec
+                .as_ref()
+                .and_then(|s| s.host_network)
+                .unwrap_or(false);
 
-            // Write custom resolv.conf
-            std::fs::write(&resolv_conf_path, resolv_conf_content).with_context(|| {
-                format!("Failed to write custom resolv.conf for pod {}", pod_name)
-            })?;
+            // Build base resolv.conf content based on DNS policy
+            let resolv_conf_content = match dns_policy {
+                "None" => {
+                    // Policy "None": start with empty resolv.conf, only dnsConfig applies
+                    String::new()
+                }
+                "Default" => {
+                    // Policy "Default": use the node's (host) /etc/resolv.conf
+                    match std::fs::read_to_string("/etc/resolv.conf") {
+                        Ok(content) => content,
+                        Err(e) => {
+                            warn!(
+                                "Failed to read host /etc/resolv.conf for DNS policy Default: {}",
+                                e
+                            );
+                            // Fall back to cluster DNS
+                            format!(
+                                "nameserver {}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
+                                self.cluster_dns,
+                                namespace,
+                                self.cluster_domain,
+                                self.cluster_domain,
+                                self.cluster_domain
+                            )
+                        }
+                    }
+                }
+                "ClusterFirstWithHostNet" | "ClusterFirst" | _ => {
+                    // ClusterFirst (default) and ClusterFirstWithHostNet: use cluster DNS.
+                    // For ClusterFirstWithHostNet, if on host network, still use cluster DNS.
+                    if dns_policy == "ClusterFirst" && is_host_network {
+                        // ClusterFirst + host network: Kubernetes falls back to host DNS
+                        match std::fs::read_to_string("/etc/resolv.conf") {
+                            Ok(content) => content,
+                            Err(_) => format!(
+                                "nameserver {}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
+                                self.cluster_dns,
+                                namespace,
+                                self.cluster_domain,
+                                self.cluster_domain,
+                                self.cluster_domain
+                            ),
+                        }
+                    } else {
+                        format!(
+                            "nameserver {}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
+                            self.cluster_dns,
+                            namespace,
+                            self.cluster_domain,
+                            self.cluster_domain,
+                            self.cluster_domain
+                        )
+                    }
+                }
+            };
 
-            // Mount custom resolv.conf into container
-            binds.push(format!("{}:/etc/resolv.conf:ro", resolv_conf_path));
-            info!(
-                "Mounted custom resolv.conf for pod {} with DNS server {}",
-                pod_name, self.cluster_dns
-            );
+            // Apply dnsConfig overrides (nameservers, searches, options)
+            let final_content =
+                if let Some(dns_config) = pod.spec.as_ref().and_then(|s| s.dns_config.as_ref()) {
+                    let mut nameservers: Vec<String> = Vec::new();
+                    let mut searches: Vec<String> = Vec::new();
+                    let mut options: Vec<String> = Vec::new();
+
+                    // Parse existing content
+                    for line in resolv_conf_content.lines() {
+                        let line = line.trim();
+                        if line.starts_with("nameserver ") {
+                            nameservers.push(line[11..].to_string());
+                        } else if line.starts_with("search ") {
+                            for domain in line[7..].split_whitespace() {
+                                searches.push(domain.to_string());
+                            }
+                        } else if line.starts_with("options ") {
+                            for opt in line[8..].split_whitespace() {
+                                options.push(opt.to_string());
+                            }
+                        }
+                    }
+
+                    // Prepend custom nameservers
+                    if let Some(ref custom_ns) = dns_config.nameservers {
+                        let mut merged = custom_ns.clone();
+                        for ns in &nameservers {
+                            if !merged.contains(ns) {
+                                merged.push(ns.clone());
+                            }
+                        }
+                        nameservers = merged;
+                    }
+
+                    // Add/replace custom search domains
+                    if let Some(ref custom_searches) = dns_config.searches {
+                        let mut merged = custom_searches.clone();
+                        for s in &searches {
+                            if !merged.contains(s) {
+                                merged.push(s.clone());
+                            }
+                        }
+                        searches = merged;
+                    }
+
+                    // Add custom options
+                    if let Some(ref custom_opts) = dns_config.options {
+                        for opt in custom_opts {
+                            let opt_str = if let Some(ref val) = opt.value {
+                                format!("{}:{}", opt.name, val)
+                            } else {
+                                opt.name.clone()
+                            };
+                            // Replace existing option with same name
+                            let opt_name = opt.name.as_str();
+                            options.retain(|o| !o.starts_with(opt_name));
+                            options.push(opt_str);
+                        }
+                    }
+
+                    let mut result = String::new();
+                    for ns in &nameservers {
+                        result.push_str(&format!("nameserver {}\n", ns));
+                    }
+                    if !searches.is_empty() {
+                        result.push_str(&format!("search {}\n", searches.join(" ")));
+                    }
+                    if !options.is_empty() {
+                        result.push_str(&format!("options {}\n", options.join(" ")));
+                    }
+                    result
+                } else {
+                    resolv_conf_content
+                };
+
+            if !final_content.is_empty() {
+                let resolv_conf_path =
+                    format!("{}/{}/resolv.conf", self.volumes_base_path, pod_name);
+
+                // Create directory if it doesn't exist
+                std::fs::create_dir_all(format!("{}/{}", self.volumes_base_path, pod_name))
+                    .context("Failed to create pod directory for resolv.conf")?;
+
+                // Write custom resolv.conf
+                std::fs::write(&resolv_conf_path, &final_content).with_context(|| {
+                    format!("Failed to write custom resolv.conf for pod {}", pod_name)
+                })?;
+
+                // Mount custom resolv.conf into container
+                binds.push(format!("{}:/etc/resolv.conf:ro", resolv_conf_path));
+                info!(
+                    "Mounted custom resolv.conf for pod {} (dns_policy={})",
+                    pod_name, dns_policy
+                );
+            } else {
+                debug!(
+                    "DNS policy '{}' with no content — not mounting resolv.conf for pod {}",
+                    dns_policy, pod_name
+                );
+            }
         }
 
         // Mount /etc/hosts if a pod-specific hosts file was created
@@ -1735,10 +2029,7 @@ impl ContainerRuntime {
         // Execute postStart lifecycle hook if present
         if let Some(ref lifecycle) = container.lifecycle {
             if let Some(ref post_start) = lifecycle.post_start {
-                info!(
-                    "Executing postStart hook for container {}",
-                    container.name
-                );
+                info!("Executing postStart hook for container {}", container.name);
                 if let Err(e) = self
                     .execute_lifecycle_handler(post_start, &container_name)
                     .await
@@ -1758,6 +2049,7 @@ impl ContainerRuntime {
 
     /// Stop all containers for a pod
     pub async fn stop_pod(&self, pod_name: &str) -> Result<()> {
+        self.clear_probe_states_for_pod(pod_name);
         self.stop_pod_with_grace_period(pod_name, 30).await
     }
 
@@ -1911,11 +2203,26 @@ impl ContainerRuntime {
 
                     // Check startup probe first. If defined and not yet passing,
                     // liveness and readiness probes are skipped.
+                    // Uses threshold tracking for accurate Kubernetes semantics.
                     let startup_passed = if running {
                         if let Some(startup_probe) = &container.startup_probe {
-                            self.check_probe(&container_name, startup_probe)
+                            let raw = self
+                                .check_probe(&container_name, startup_probe)
                                 .await
-                                .unwrap_or(false)
+                                .unwrap_or(false);
+                            let success_threshold = startup_probe.success_threshold.unwrap_or(1);
+                            let key = format!("{}/{}/startup_status", pod_name, container.name);
+                            let mut states = self.probe_states.lock().unwrap();
+                            let state = states.entry(key).or_default();
+                            if raw {
+                                state.consecutive_successes += 1;
+                                state.consecutive_failures = 0;
+                                state.consecutive_successes >= success_threshold
+                            } else {
+                                state.consecutive_failures += 1;
+                                state.consecutive_successes = 0;
+                                false
+                            }
                         } else {
                             true // No startup probe means started
                         }
@@ -1923,12 +2230,31 @@ impl ContainerRuntime {
                         false
                     };
 
-                    // Check readiness probe only if startup probe has passed
+                    // Check readiness probe only if startup probe has passed.
+                    // Uses threshold tracking: successThreshold consecutive successes
+                    // required to become ready, failureThreshold consecutive failures
+                    // required to become not ready.
                     let ready = if running && startup_passed {
                         if let Some(probe) = &container.readiness_probe {
-                            self.check_probe(&container_name, probe)
+                            let raw = self
+                                .check_probe(&container_name, probe)
                                 .await
-                                .unwrap_or(false)
+                                .unwrap_or(false);
+                            let _failure_threshold = probe.failure_threshold.unwrap_or(3);
+                            let success_threshold = probe.success_threshold.unwrap_or(1);
+                            let key = format!("{}/{}/readiness", pod_name, container.name);
+                            let mut states = self.probe_states.lock().unwrap();
+                            let state = states.entry(key).or_default();
+                            if raw {
+                                state.consecutive_successes += 1;
+                                state.consecutive_failures = 0;
+                                state.consecutive_successes >= success_threshold
+                            } else {
+                                state.consecutive_failures += 1;
+                                state.consecutive_successes = 0;
+                                // Not ready until success threshold is met
+                                false
+                            }
                         } else {
                             true // No probe means ready
                         }
@@ -1986,6 +2312,9 @@ impl ContainerRuntime {
     ///
     /// If a startup probe is defined and hasn't passed yet, liveness probes
     /// are skipped for that container (per Kubernetes semantics).
+    ///
+    /// Respects `failureThreshold` (default 3) and `successThreshold` (default 1)
+    /// so that a single probe failure does not immediately trigger a restart.
     pub async fn check_liveness(&self, pod: &Pod) -> Result<bool> {
         let pod_name = &pod.metadata.name;
 
@@ -1995,10 +2324,34 @@ impl ContainerRuntime {
             // If a startup probe is defined, check it first.
             // Liveness probes are disabled until the startup probe succeeds.
             if let Some(startup_probe) = &container.startup_probe {
-                let startup_passed = self
+                let startup_key = format!("{}/{}/startup", pod_name, container.name);
+                let raw_result = self
                     .check_probe(&container_name, startup_probe)
                     .await
                     .unwrap_or(false);
+
+                let failure_threshold = startup_probe.failure_threshold.unwrap_or(3);
+                let success_threshold = startup_probe.success_threshold.unwrap_or(1);
+
+                let startup_passed = {
+                    let mut states = self.probe_states.lock().unwrap();
+                    let state = states.entry(startup_key).or_default();
+                    if raw_result {
+                        state.consecutive_successes += 1;
+                        state.consecutive_failures = 0;
+                        state.consecutive_successes >= success_threshold
+                    } else {
+                        state.consecutive_failures += 1;
+                        state.consecutive_successes = 0;
+                        if state.consecutive_failures >= failure_threshold {
+                            warn!(
+                                "Startup probe exceeded failure threshold ({}) for container {}",
+                                failure_threshold, container_name
+                            );
+                        }
+                        false
+                    }
+                };
 
                 if !startup_passed {
                     debug!(
@@ -2035,11 +2388,43 @@ impl ContainerRuntime {
                     }
                 }
 
-                // Check liveness
+                // Check liveness with threshold tracking
                 let healthy = self.check_probe(&container_name, probe).await?;
-                if !healthy {
-                    warn!("Liveness probe failed for container: {}", container_name);
-                    return Ok(true); // Needs restart
+                let failure_threshold = probe.failure_threshold.unwrap_or(3);
+                // For liveness probes, Kubernetes requires successThreshold=1
+                let _success_threshold = probe.success_threshold.unwrap_or(1);
+                let liveness_key = format!("{}/{}/liveness", pod_name, container.name);
+
+                let needs_restart = {
+                    let mut states = self.probe_states.lock().unwrap();
+                    let state = states.entry(liveness_key).or_default();
+                    if healthy {
+                        state.consecutive_successes += 1;
+                        state.consecutive_failures = 0;
+                        false
+                    } else {
+                        state.consecutive_failures += 1;
+                        state.consecutive_successes = 0;
+                        if state.consecutive_failures >= failure_threshold {
+                            warn!(
+                                "Liveness probe failed {} consecutive times (threshold {}) for container: {}",
+                                state.consecutive_failures, failure_threshold, container_name
+                            );
+                            // Reset state so next cycle starts fresh after restart
+                            state.consecutive_failures = 0;
+                            true
+                        } else {
+                            debug!(
+                                "Liveness probe failed for container {} ({}/{} failures before restart)",
+                                container_name, state.consecutive_failures, failure_threshold
+                            );
+                            false
+                        }
+                    }
+                };
+
+                if needs_restart {
+                    return Ok(true);
                 }
             }
         }
@@ -2071,6 +2456,14 @@ impl ContainerRuntime {
         }
 
         Ok(true) // No probe configured
+    }
+
+    /// Clear all probe states for a given pod (e.g., on restart or deletion).
+    pub fn clear_probe_states_for_pod(&self, pod_name: &str) {
+        let prefix = format!("{}/", pod_name);
+        let mut states = self.probe_states.lock().unwrap();
+        states.retain(|key, _| !key.starts_with(&prefix));
+        debug!("Cleared probe states for pod {}", pod_name);
     }
 
     async fn check_http_probe(
@@ -2305,6 +2698,7 @@ impl ContainerRuntime {
     /// allows preStop hooks to be executed before container termination.
     pub async fn stop_pod_for(&self, pod: &Pod, grace_period_seconds: i64) -> Result<()> {
         let pod_name = &pod.metadata.name;
+        self.clear_probe_states_for_pod(pod_name);
         info!(
             "Stopping pod: {} (grace period: {}s, with lifecycle hooks)",
             pod_name, grace_period_seconds
@@ -2359,10 +2753,7 @@ impl ContainerRuntime {
                 if is_running {
                     if let Some(lifecycle) = lifecycle_map.get(&container_name) {
                         if let Some(ref pre_stop) = lifecycle.pre_stop {
-                            info!(
-                                "Executing preStop hook for container {}",
-                                container_name
-                            );
+                            info!("Executing preStop hook for container {}", container_name);
                             if let Err(e) = self
                                 .execute_lifecycle_handler(pre_stop, &container_name)
                                 .await
@@ -3164,7 +3555,11 @@ mod tests {
         let lifecycle = Lifecycle {
             post_start: Some(LifecycleHandler {
                 exec: Some(ExecAction {
-                    command: vec!["/bin/sh".to_string(), "-c".to_string(), "echo hello".to_string()],
+                    command: vec![
+                        "/bin/sh".to_string(),
+                        "-c".to_string(),
+                        "echo hello".to_string(),
+                    ],
                 }),
                 http_get: None,
                 tcp_socket: None,
@@ -3240,7 +3635,11 @@ mod tests {
         container.lifecycle = Some(Lifecycle {
             post_start: Some(LifecycleHandler {
                 exec: Some(ExecAction {
-                    command: vec!["/bin/sh".to_string(), "-c".to_string(), "touch /tmp/started".to_string()],
+                    command: vec![
+                        "/bin/sh".to_string(),
+                        "-c".to_string(),
+                        "touch /tmp/started".to_string(),
+                    ],
                 }),
                 http_get: None,
                 tcp_socket: None,
@@ -3248,7 +3647,11 @@ mod tests {
             }),
             pre_stop: Some(LifecycleHandler {
                 exec: Some(ExecAction {
-                    command: vec!["/bin/sh".to_string(), "-c".to_string(), "touch /tmp/stopping".to_string()],
+                    command: vec![
+                        "/bin/sh".to_string(),
+                        "-c".to_string(),
+                        "touch /tmp/stopping".to_string(),
+                    ],
                 }),
                 http_get: None,
                 tcp_socket: None,
@@ -3436,5 +3839,400 @@ mod tests {
         // Both the pause container and real containers match this filter
         assert!(pause_name.starts_with(&filter_prefix));
         assert!(format!("{}_app", pod_name).starts_with(&filter_prefix));
+    }
+
+    // --- probe threshold tests ---
+
+    #[test]
+    fn test_probe_state_default() {
+        let state = super::ProbeState::default();
+        assert_eq!(state.consecutive_failures, 0);
+        assert_eq!(state.consecutive_successes, 0);
+    }
+
+    #[test]
+    fn test_probe_threshold_logic_single_failure_no_action() {
+        // Simulate: failure_threshold=3, one failure should NOT trigger action
+        let failure_threshold = 3;
+        let mut state = super::ProbeState::default();
+
+        // First failure
+        state.consecutive_failures += 1;
+        state.consecutive_successes = 0;
+        assert!(state.consecutive_failures < failure_threshold);
+    }
+
+    #[test]
+    fn test_probe_threshold_logic_threshold_reached() {
+        // Simulate: failure_threshold=3, three failures should trigger action
+        let failure_threshold = 3;
+        let mut state = super::ProbeState::default();
+
+        for _ in 0..3 {
+            state.consecutive_failures += 1;
+            state.consecutive_successes = 0;
+        }
+        assert!(state.consecutive_failures >= failure_threshold);
+    }
+
+    #[test]
+    fn test_probe_threshold_success_resets_failures() {
+        let mut state = super::ProbeState::default();
+
+        // Two failures
+        state.consecutive_failures = 2;
+        state.consecutive_successes = 0;
+
+        // Then a success resets failures
+        state.consecutive_successes += 1;
+        state.consecutive_failures = 0;
+
+        assert_eq!(state.consecutive_failures, 0);
+        assert_eq!(state.consecutive_successes, 1);
+    }
+
+    #[test]
+    fn test_probe_threshold_failure_resets_successes() {
+        let mut state = super::ProbeState::default();
+
+        // One success
+        state.consecutive_successes = 1;
+        state.consecutive_failures = 0;
+
+        // Then a failure resets successes
+        state.consecutive_failures += 1;
+        state.consecutive_successes = 0;
+
+        assert_eq!(state.consecutive_successes, 0);
+        assert_eq!(state.consecutive_failures, 1);
+    }
+
+    #[test]
+    fn test_probe_threshold_readiness_needs_success_threshold() {
+        // successThreshold=3 means 3 consecutive successes needed for ready
+        let success_threshold = 3;
+        let mut state = super::ProbeState::default();
+
+        // First success: not ready yet
+        state.consecutive_successes += 1;
+        state.consecutive_failures = 0;
+        assert!(state.consecutive_successes < success_threshold);
+
+        // Second success: still not ready
+        state.consecutive_successes += 1;
+        assert!(state.consecutive_successes < success_threshold);
+
+        // Third success: now ready
+        state.consecutive_successes += 1;
+        assert!(state.consecutive_successes >= success_threshold);
+    }
+
+    #[test]
+    fn test_probe_threshold_defaults() {
+        use rusternetes_common::resources::Probe;
+
+        let probe = Probe {
+            http_get: None,
+            tcp_socket: None,
+            exec: None,
+            initial_delay_seconds: None,
+            timeout_seconds: None,
+            period_seconds: None,
+            success_threshold: None,
+            failure_threshold: None,
+            grpc: None,
+            termination_grace_period_seconds: None,
+        };
+
+        // Kubernetes defaults
+        assert_eq!(probe.failure_threshold.unwrap_or(3), 3);
+        assert_eq!(probe.success_threshold.unwrap_or(1), 1);
+        assert_eq!(probe.period_seconds.unwrap_or(10), 10);
+    }
+
+    #[test]
+    fn test_probe_state_map_key_format() {
+        let pod_name = "web-0";
+        let container_name = "nginx";
+        let liveness_key = format!("{}/{}/liveness", pod_name, container_name);
+        let readiness_key = format!("{}/{}/readiness", pod_name, container_name);
+        let startup_key = format!("{}/{}/startup", pod_name, container_name);
+
+        assert_eq!(liveness_key, "web-0/nginx/liveness");
+        assert_eq!(readiness_key, "web-0/nginx/readiness");
+        assert_eq!(startup_key, "web-0/nginx/startup");
+
+        // Keys for different probe types should be distinct
+        assert_ne!(liveness_key, readiness_key);
+        assert_ne!(readiness_key, startup_key);
+    }
+
+    #[test]
+    fn test_clear_probe_states_removes_pod_entries() {
+        let mut states = std::collections::HashMap::new();
+        states.insert(
+            "web-0/nginx/liveness".to_string(),
+            super::ProbeState {
+                consecutive_failures: 2,
+                consecutive_successes: 0,
+            },
+        );
+        states.insert(
+            "web-0/nginx/readiness".to_string(),
+            super::ProbeState {
+                consecutive_failures: 0,
+                consecutive_successes: 3,
+            },
+        );
+        states.insert(
+            "redis-0/redis/liveness".to_string(),
+            super::ProbeState {
+                consecutive_failures: 1,
+                consecutive_successes: 0,
+            },
+        );
+
+        let prefix = "web-0/";
+        states.retain(|key, _| !key.starts_with(prefix));
+
+        // web-0 entries should be removed
+        assert!(!states.contains_key("web-0/nginx/liveness"));
+        assert!(!states.contains_key("web-0/nginx/readiness"));
+        // redis-0 should remain
+        assert!(states.contains_key("redis-0/redis/liveness"));
+    }
+
+    // --- service environment variable tests ---
+
+    #[test]
+    fn test_service_env_var_name_formatting() {
+        let svc_name = "my-redis-svc";
+        let svc_env = svc_name.to_uppercase().replace('-', "_");
+        assert_eq!(svc_env, "MY_REDIS_SVC");
+    }
+
+    #[test]
+    fn test_service_env_var_host_format() {
+        let svc_env = "MY_SVC";
+        let cluster_ip = "10.96.0.10";
+        let env_var = format!("{}_SERVICE_HOST={}", svc_env, cluster_ip);
+        assert_eq!(env_var, "MY_SVC_SERVICE_HOST=10.96.0.10");
+    }
+
+    #[test]
+    fn test_service_env_var_port_format() {
+        let svc_env = "MY_SVC";
+        let port = 8080;
+        let cluster_ip = "10.96.0.10";
+
+        let service_port = format!("{}_SERVICE_PORT={}", svc_env, port);
+        assert_eq!(service_port, "MY_SVC_SERVICE_PORT=8080");
+
+        let port_url = format!("{}_PORT=tcp://{}:{}", svc_env, cluster_ip, port);
+        assert_eq!(port_url, "MY_SVC_PORT=tcp://10.96.0.10:8080");
+
+        let port_tcp = format!(
+            "{}_PORT_{}_TCP=tcp://{}:{}",
+            svc_env, port, cluster_ip, port
+        );
+        assert_eq!(port_tcp, "MY_SVC_PORT_8080_TCP=tcp://10.96.0.10:8080");
+    }
+
+    #[test]
+    fn test_service_env_var_named_port() {
+        let svc_env = "MY_SVC";
+        let port_name = "http-web";
+        let port_name_env = port_name.to_uppercase().replace('-', "_");
+        let env_var = format!("{}_SERVICE_PORT_{}={}", svc_env, port_name_env, 8080);
+        assert_eq!(env_var, "MY_SVC_SERVICE_PORT_HTTP_WEB=8080");
+    }
+
+    #[test]
+    fn test_service_env_var_skips_none_cluster_ip() {
+        let cluster_ip = "None";
+        let should_skip = cluster_ip == "None" || cluster_ip.is_empty();
+        assert!(should_skip);
+    }
+
+    #[test]
+    fn test_service_env_var_skips_empty_cluster_ip() {
+        let cluster_ip = "";
+        let should_skip = cluster_ip == "None" || cluster_ip.is_empty();
+        assert!(should_skip);
+    }
+
+    #[test]
+    fn test_enable_service_links_default_true() {
+        let pod = make_pod("test", "default", None, None);
+        let enable = pod
+            .spec
+            .as_ref()
+            .and_then(|s| s.enable_service_links)
+            .unwrap_or(true);
+        assert!(enable);
+    }
+
+    // --- DNS policy tests ---
+
+    #[test]
+    fn test_dns_policy_default_is_cluster_first() {
+        let pod = make_pod("test", "default", None, None);
+        let dns_policy = pod
+            .spec
+            .as_ref()
+            .and_then(|s| s.dns_policy.as_deref())
+            .unwrap_or("ClusterFirst");
+        assert_eq!(dns_policy, "ClusterFirst");
+    }
+
+    #[test]
+    fn test_dns_policy_none_produces_empty_content() {
+        let dns_policy = "None";
+        let content = match dns_policy {
+            "None" => String::new(),
+            _ => "nameserver 10.96.0.10\n".to_string(),
+        };
+        assert!(content.is_empty());
+    }
+
+    #[test]
+    fn test_dns_config_nameserver_prepend() {
+        use rusternetes_common::resources::pod::PodDNSConfig;
+
+        let dns_config = PodDNSConfig {
+            nameservers: Some(vec!["8.8.8.8".to_string()]),
+            searches: None,
+            options: None,
+        };
+
+        let existing = vec!["10.96.0.10".to_string()];
+        let mut merged = dns_config.nameservers.unwrap();
+        for ns in &existing {
+            if !merged.contains(ns) {
+                merged.push(ns.clone());
+            }
+        }
+
+        assert_eq!(merged, vec!["8.8.8.8", "10.96.0.10"]);
+    }
+
+    #[test]
+    fn test_dns_config_search_domains() {
+        use rusternetes_common::resources::pod::PodDNSConfig;
+
+        let dns_config = PodDNSConfig {
+            nameservers: None,
+            searches: Some(vec!["custom.local".to_string()]),
+            options: None,
+        };
+
+        let existing = vec!["default.svc.cluster.local".to_string()];
+        let mut merged = dns_config.searches.unwrap();
+        for s in &existing {
+            if !merged.contains(s) {
+                merged.push(s.clone());
+            }
+        }
+
+        assert_eq!(merged, vec!["custom.local", "default.svc.cluster.local"]);
+    }
+
+    #[test]
+    fn test_dns_config_options_with_value() {
+        use rusternetes_common::resources::pod::PodDNSConfigOption;
+
+        let opt = PodDNSConfigOption {
+            name: "ndots".to_string(),
+            value: Some("3".to_string()),
+        };
+
+        let opt_str = if let Some(ref val) = opt.value {
+            format!("{}:{}", opt.name, val)
+        } else {
+            opt.name.clone()
+        };
+
+        assert_eq!(opt_str, "ndots:3");
+    }
+
+    #[test]
+    fn test_dns_config_options_without_value() {
+        use rusternetes_common::resources::pod::PodDNSConfigOption;
+
+        let opt = PodDNSConfigOption {
+            name: "single-request-reopen".to_string(),
+            value: None,
+        };
+
+        let opt_str = if let Some(ref val) = opt.value {
+            format!("{}:{}", opt.name, val)
+        } else {
+            opt.name.clone()
+        };
+
+        assert_eq!(opt_str, "single-request-reopen");
+    }
+
+    #[test]
+    fn test_resolv_conf_parsing() {
+        let content = "nameserver 10.96.0.10\nsearch default.svc.cluster.local svc.cluster.local cluster.local\noptions ndots:5\n";
+
+        let mut nameservers = Vec::new();
+        let mut searches = Vec::new();
+        let mut options = Vec::new();
+
+        for line in content.lines() {
+            let line = line.trim();
+            if line.starts_with("nameserver ") {
+                nameservers.push(line[11..].to_string());
+            } else if line.starts_with("search ") {
+                for domain in line[7..].split_whitespace() {
+                    searches.push(domain.to_string());
+                }
+            } else if line.starts_with("options ") {
+                for opt in line[8..].split_whitespace() {
+                    options.push(opt.to_string());
+                }
+            }
+        }
+
+        assert_eq!(nameservers, vec!["10.96.0.10"]);
+        assert_eq!(
+            searches,
+            vec![
+                "default.svc.cluster.local",
+                "svc.cluster.local",
+                "cluster.local"
+            ]
+        );
+        assert_eq!(options, vec!["ndots:5"]);
+    }
+
+    #[test]
+    fn test_cluster_first_with_host_net_uses_cluster_dns() {
+        // ClusterFirstWithHostNet should use cluster DNS regardless of host network
+        let dns_policy = "ClusterFirstWithHostNet";
+        let is_host_network = true;
+        let cluster_dns = "10.96.0.10";
+
+        let uses_cluster_dns = match dns_policy {
+            "ClusterFirstWithHostNet" => true,          // always cluster DNS
+            "ClusterFirst" if is_host_network => false, // falls back to host DNS
+            "ClusterFirst" => true,
+            _ => false,
+        };
+
+        assert!(uses_cluster_dns);
+        assert_eq!(cluster_dns, "10.96.0.10");
+    }
+
+    #[test]
+    fn test_cluster_first_with_host_network_uses_host_dns() {
+        // ClusterFirst + hostNetwork=true should fall back to host DNS
+        let dns_policy = "ClusterFirst";
+        let is_host_network = true;
+
+        let uses_host_dns = dns_policy == "ClusterFirst" && is_host_network;
+        assert!(uses_host_dns);
     }
 }

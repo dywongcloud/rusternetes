@@ -445,11 +445,7 @@ impl Kubelet {
                                     .as_ref()
                                     .and_then(|s| s.termination_grace_period_seconds)
                                     .unwrap_or(30);
-                                if let Err(e) = self
-                                    .runtime
-                                    .stop_pod_for(pod, grace)
-                                    .await
-                                {
+                                if let Err(e) = self.runtime.stop_pod_for(pod, grace).await {
                                     error!("Failed to stop pod for restart: {}", e);
                                 } else {
                                     // Update status
@@ -532,9 +528,7 @@ impl Kubelet {
                         .as_ref()
                         .and_then(|s| s.termination_grace_period_seconds)
                         .unwrap_or(30);
-                    self.runtime
-                        .stop_pod_for(pod, grace)
-                        .await?;
+                    self.runtime.stop_pod_for(pod, grace).await?;
                 }
             }
             _ => {
@@ -804,11 +798,7 @@ impl Kubelet {
                         .as_ref()
                         .and_then(|s| s.termination_grace_period_seconds)
                         .unwrap_or(30);
-                    if let Err(e) = self
-                        .runtime
-                        .stop_pod_for(pod, grace)
-                        .await
-                    {
+                    if let Err(e) = self.runtime.stop_pod_for(pod, grace).await {
                         error!("Failed to stop evicted pod {}: {}", pod_key, e);
                         continue;
                     }
