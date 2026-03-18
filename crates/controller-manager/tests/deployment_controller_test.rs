@@ -284,9 +284,12 @@ async fn test_deployment_template_change_creates_new_replicaset() {
     deployment.spec.template.spec.containers[0].image = "nginx:1.26-alpine".to_string();
     storage.update(&key, &deployment).await.unwrap();
 
-    // Run controller again
-    controller.reconcile_all().await.unwrap();
-    sleep(Duration::from_millis(500)).await;
+    // Run controller multiple times to complete the rolling update
+    // Each reconcile cycle scales up new RS and scales down old RS gradually
+    for _ in 0..10 {
+        controller.reconcile_all().await.unwrap();
+        sleep(Duration::from_millis(100)).await;
+    }
 
     // Verify 2 ReplicaSets exist (old scaled to 0, new with 3 replicas)
     let replicasets: Vec<ReplicaSet> = storage

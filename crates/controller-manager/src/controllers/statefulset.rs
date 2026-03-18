@@ -1,7 +1,10 @@
 use anyhow::Result;
-use rusternetes_common::resources::{Pod, PodStatus, StatefulSet, StatefulSetStatus};
-use rusternetes_common::types::{OwnerReference, Phase};
-use rusternetes_storage::Storage;
+use rusternetes_common::resources::{
+    PersistentVolumeClaim, PersistentVolumeClaimSpec, Pod, PodStatus, StatefulSet,
+    StatefulSetStatus,
+};
+use rusternetes_common::types::{ObjectMeta, OwnerReference, Phase, TypeMeta};
+use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
@@ -108,6 +111,9 @@ impl<S: Storage> StatefulSetController<S> {
         if current_replicas < desired_replicas {
             // Scale up: create pods in order
             for i in current_replicas..desired_replicas {
+                // Ensure PVCs exist for this ordinal before creating the pod
+                self.ensure_pvcs_for_ordinal(statefulset, i, namespace)
+                    .await?;
                 self.create_pod(statefulset, i, namespace).await?;
                 info!("Created pod {}-{}", name, i);
 
@@ -202,6 +208,72 @@ impl<S: Storage> StatefulSetController<S> {
         let key = format!("/registry/statefulsets/{}/{}", namespace, name);
         self.storage.update(&key, statefulset).await?;
 
+        Ok(())
+    }
+
+    async fn ensure_pvcs_for_ordinal(
+        &self,
+        statefulset: &StatefulSet,
+        ordinal: i32,
+        namespace: &str,
+    ) -> Result<()> {
+        if let Some(ref templates) = statefulset.spec.volume_claim_templates {
+            for template in templates {
+                let pvc_name = format!(
+                    "{}-{}-{}",
+                    template.metadata.name, statefulset.metadata.name, ordinal
+                );
+                let key = build_key("persistentvolumeclaims", Some(namespace), &pvc_name);
+
+                // Check if PVC already exists
+                if self
+                    .storage
+                    .get::<PersistentVolumeClaim>(&key)
+                    .await
+                    .is_ok()
+                {
+                    continue; // PVC already exists
+                }
+
+                // Create PVC from template
+                let mut pvc_metadata =
+                    ObjectMeta::new(&pvc_name).with_namespace(namespace.to_string());
+
+                // Copy labels and annotations from template metadata
+                if let Some(ref tmpl_labels) = template.metadata.labels {
+                    pvc_metadata.labels = Some(tmpl_labels.clone());
+                }
+                if let Some(ref tmpl_annotations) = template.metadata.annotations {
+                    pvc_metadata.annotations = Some(tmpl_annotations.clone());
+                }
+
+                // Set owner reference to the StatefulSet
+                pvc_metadata.owner_references = Some(vec![OwnerReference {
+                    api_version: "apps/v1".to_string(),
+                    kind: "StatefulSet".to_string(),
+                    name: statefulset.metadata.name.clone(),
+                    uid: statefulset.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                }]);
+
+                let pvc = PersistentVolumeClaim {
+                    type_meta: TypeMeta {
+                        kind: "PersistentVolumeClaim".to_string(),
+                        api_version: "v1".to_string(),
+                    },
+                    metadata: pvc_metadata,
+                    spec: template.spec.clone(),
+                    status: None,
+                };
+
+                self.storage.create(&key, &pvc).await?;
+                info!(
+                    "Created PVC {} for StatefulSet {}/{}",
+                    pvc_name, namespace, statefulset.metadata.name
+                );
+            }
+        }
         Ok(())
     }
 

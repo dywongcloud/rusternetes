@@ -1,5 +1,6 @@
 use anyhow::Result;
-use rusternetes_common::resources::pod::{SecretVolumeSource, Volume, VolumeMount};
+use rusternetes_common::resources::node::Taint;
+use rusternetes_common::resources::pod::{SecretVolumeSource, Toleration, Volume, VolumeMount};
 use rusternetes_common::resources::{DaemonSet, DaemonSetStatus, Node, Pod, PodStatus};
 use rusternetes_common::types::{OwnerReference, Phase};
 use rusternetes_storage::Storage;
@@ -7,6 +8,38 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
 use tracing::{error, info, warn};
+
+/// Check whether a set of tolerations tolerates all NoSchedule and NoExecute taints on a node.
+fn pod_tolerates_node_taints(tolerations: &[Toleration], taints: &[Taint]) -> bool {
+    for taint in taints {
+        // Only NoSchedule and NoExecute taints must be tolerated
+        if taint.effect == "NoSchedule" || taint.effect == "NoExecute" {
+            let tolerated = tolerations.iter().any(|t| {
+                // Empty/missing key with Exists operator matches all taints
+                if t.operator.as_deref() == Some("Exists")
+                    && (t.key.is_none() || t.key.as_deref() == Some(""))
+                {
+                    return true;
+                }
+                // Key must match
+                let key_matches = t.key.as_deref() == Some(&taint.key);
+                // Effect must match (or be empty/None = match all effects)
+                let effect_matches =
+                    t.effect.is_none() || t.effect.as_deref() == Some(&taint.effect);
+                // Operator: Equal requires value match, Exists only needs key
+                let value_matches = match t.operator.as_deref() {
+                    Some("Exists") => true,
+                    _ => t.value.as_deref() == taint.value.as_deref(),
+                };
+                key_matches && effect_matches && value_matches
+            });
+            if !tolerated {
+                return false;
+            }
+        }
+    }
+    true
+}
 
 pub struct DaemonSetController<S: Storage> {
     storage: Arc<S>,
@@ -57,10 +90,37 @@ impl<S: Storage> DaemonSetController<S> {
         // Get all nodes
         let nodes: Vec<Node> = self.storage.list("/registry/nodes/").await?;
 
-        // Filter nodes based on node selector
+        // Get pod tolerations from the DaemonSet's pod template
+        let tolerations = daemonset
+            .spec
+            .template
+            .spec
+            .tolerations
+            .as_deref()
+            .unwrap_or(&[]);
+
+        // Filter nodes based on node selector AND taint toleration
         let eligible_nodes: Vec<Node> = nodes
             .into_iter()
-            .filter(|node| self.matches_node_selector(node, daemonset))
+            .filter(|node| {
+                if !self.matches_node_selector(node, daemonset) {
+                    return false;
+                }
+                // Check if the pod tolerates the node's taints
+                let taints = node
+                    .spec
+                    .as_ref()
+                    .and_then(|s| s.taints.as_deref())
+                    .unwrap_or(&[]);
+                if !pod_tolerates_node_taints(tolerations, taints) {
+                    info!(
+                        "DaemonSet {}/{}: skipping node {} due to untolerated taints",
+                        namespace, name, node.metadata.name
+                    );
+                    return false;
+                }
+                true
+            })
             .collect();
 
         info!(
@@ -581,5 +641,155 @@ mod tests {
         };
 
         assert!(controller.matches_node_selector(&node, &ds_no_selector));
+    }
+
+    #[test]
+    fn test_pod_tolerates_no_taints() {
+        // No taints = always tolerated
+        let tolerations: Vec<Toleration> = vec![];
+        let taints: Vec<Taint> = vec![];
+        assert!(pod_tolerates_node_taints(&tolerations, &taints));
+    }
+
+    #[test]
+    fn test_pod_does_not_tolerate_noschedule() {
+        let tolerations: Vec<Toleration> = vec![];
+        let taints = vec![Taint {
+            key: "node-role.kubernetes.io/control-plane".to_string(),
+            value: None,
+            effect: "NoSchedule".to_string(),
+        }];
+        assert!(!pod_tolerates_node_taints(&tolerations, &taints));
+    }
+
+    #[test]
+    fn test_pod_tolerates_with_exists_operator() {
+        let tolerations = vec![Toleration {
+            key: Some("node-role.kubernetes.io/control-plane".to_string()),
+            operator: Some("Exists".to_string()),
+            value: None,
+            effect: Some("NoSchedule".to_string()),
+            toleration_seconds: None,
+        }];
+        let taints = vec![Taint {
+            key: "node-role.kubernetes.io/control-plane".to_string(),
+            value: None,
+            effect: "NoSchedule".to_string(),
+        }];
+        assert!(pod_tolerates_node_taints(&tolerations, &taints));
+    }
+
+    #[test]
+    fn test_pod_tolerates_with_equal_operator() {
+        let tolerations = vec![Toleration {
+            key: Some("dedicated".to_string()),
+            operator: Some("Equal".to_string()),
+            value: Some("gpu".to_string()),
+            effect: Some("NoSchedule".to_string()),
+            toleration_seconds: None,
+        }];
+        let taints = vec![Taint {
+            key: "dedicated".to_string(),
+            value: Some("gpu".to_string()),
+            effect: "NoSchedule".to_string(),
+        }];
+        assert!(pod_tolerates_node_taints(&tolerations, &taints));
+    }
+
+    #[test]
+    fn test_pod_does_not_tolerate_wrong_value() {
+        let tolerations = vec![Toleration {
+            key: Some("dedicated".to_string()),
+            operator: Some("Equal".to_string()),
+            value: Some("cpu".to_string()),
+            effect: Some("NoSchedule".to_string()),
+            toleration_seconds: None,
+        }];
+        let taints = vec![Taint {
+            key: "dedicated".to_string(),
+            value: Some("gpu".to_string()),
+            effect: "NoSchedule".to_string(),
+        }];
+        assert!(!pod_tolerates_node_taints(&tolerations, &taints));
+    }
+
+    #[test]
+    fn test_pod_tolerates_all_with_empty_key_exists() {
+        // Empty key with Exists operator matches all taints
+        let tolerations = vec![Toleration {
+            key: None,
+            operator: Some("Exists".to_string()),
+            value: None,
+            effect: None,
+            toleration_seconds: None,
+        }];
+        let taints = vec![
+            Taint {
+                key: "key1".to_string(),
+                value: Some("val1".to_string()),
+                effect: "NoSchedule".to_string(),
+            },
+            Taint {
+                key: "key2".to_string(),
+                value: None,
+                effect: "NoExecute".to_string(),
+            },
+        ];
+        assert!(pod_tolerates_node_taints(&tolerations, &taints));
+    }
+
+    #[test]
+    fn test_pod_tolerates_prefer_noschedule_always() {
+        // PreferNoSchedule taints are not blocking
+        let tolerations: Vec<Toleration> = vec![];
+        let taints = vec![Taint {
+            key: "preference".to_string(),
+            value: None,
+            effect: "PreferNoSchedule".to_string(),
+        }];
+        assert!(pod_tolerates_node_taints(&tolerations, &taints));
+    }
+
+    #[test]
+    fn test_pod_tolerates_with_no_effect_matches_all() {
+        // A toleration with no effect matches all effects for the same key
+        let tolerations = vec![Toleration {
+            key: Some("key1".to_string()),
+            operator: Some("Exists".to_string()),
+            value: None,
+            effect: None, // matches all effects
+            toleration_seconds: None,
+        }];
+        let taints = vec![Taint {
+            key: "key1".to_string(),
+            value: None,
+            effect: "NoExecute".to_string(),
+        }];
+        assert!(pod_tolerates_node_taints(&tolerations, &taints));
+    }
+
+    #[test]
+    fn test_pod_tolerates_multiple_taints_partial() {
+        // Pod tolerates one taint but not the other
+        let tolerations = vec![Toleration {
+            key: Some("key1".to_string()),
+            operator: Some("Exists".to_string()),
+            value: None,
+            effect: Some("NoSchedule".to_string()),
+            toleration_seconds: None,
+        }];
+        let taints = vec![
+            Taint {
+                key: "key1".to_string(),
+                value: None,
+                effect: "NoSchedule".to_string(),
+            },
+            Taint {
+                key: "key2".to_string(),
+                value: None,
+                effect: "NoSchedule".to_string(),
+            },
+        ];
+        assert!(!pod_tolerates_node_taints(&tolerations, &taints));
     }
 }
