@@ -82,6 +82,9 @@ pub async fn create(
         if spec.dns_policy.is_none() {
             spec.dns_policy = Some("ClusterFirst".to_string());
         }
+        if spec.termination_grace_period_seconds.is_none() {
+            spec.termination_grace_period_seconds = Some(30);
+        }
         for container in &mut spec.containers {
             if container.termination_message_path.is_none() {
                 container.termination_message_path = Some("/dev/termination-log".to_string());
