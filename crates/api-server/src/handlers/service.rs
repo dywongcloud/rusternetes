@@ -15,6 +15,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
+/// Allocate a random NodePort in the range 30000-32767
+fn allocate_node_port() -> u16 {
+    use std::time::SystemTime;
+    let seed = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    // Simple pseudo-random in range 30000-32767 (2768 ports)
+    30000 + (seed % 2768) as u16
+}
+
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
@@ -103,6 +114,23 @@ pub async fn create(
                     "Allocated specific ClusterIP {} for service {}/{}",
                     requested_ip, namespace, service.metadata.name
                 );
+            }
+        }
+    }
+
+    // Auto-assign NodePort for NodePort and LoadBalancer services
+    if matches!(
+        service.spec.service_type,
+        Some(ServiceType::NodePort) | Some(ServiceType::LoadBalancer)
+    ) {
+        for port in &mut service.spec.ports {
+            if port.node_port.is_none() || port.node_port == Some(0) {
+                let node_port = allocate_node_port();
+                info!(
+                    "Allocated NodePort {} for service {}/{} port {:?}",
+                    node_port, namespace, service.metadata.name, port.port
+                );
+                port.node_port = Some(node_port);
             }
         }
     }

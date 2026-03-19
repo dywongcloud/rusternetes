@@ -141,6 +141,7 @@ pub async fn normalize_content_type_middleware(
             && !content_type.starts_with("application/strategic-merge-patch+json")
             && !content_type.starts_with("application/merge-patch+json")
             && !content_type.starts_with("application/json-patch+json")
+            && !content_type.starts_with("application/apply-patch+yaml")
         {
             request.headers_mut().insert(
                 axum::http::header::CONTENT_TYPE,

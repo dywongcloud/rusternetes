@@ -1,6 +1,8 @@
 /// Pod admission controllers for ResourceQuota, LimitRange enforcement, and ServiceAccount injection
 use rusternetes_common::{
-    resources::{LimitRange, Pod, ResourceQuota, SecretVolumeSource, Volume, VolumeMount},
+    resources::{
+        LimitRange, Pod, ResourceQuota, SecretVolumeSource, ServiceAccount, Volume, VolumeMount,
+    },
     types::ResourceRequirements,
 };
 use rusternetes_storage::Storage;
@@ -506,15 +508,6 @@ pub async fn inject_service_account_token<S: Storage>(
         None => return Ok(()), // No spec, nothing to inject
     };
 
-    // Check if automountServiceAccountToken is explicitly set to false
-    if spec.automount_service_account_token == Some(false) {
-        info!(
-            "Skipping service account token injection for pod {}/{} - automountServiceAccountToken is false",
-            namespace, pod.metadata.name
-        );
-        return Ok(());
-    }
-
     // Set service account name to "default" if not specified
     let sa_name = spec
         .service_account_name
@@ -529,13 +522,34 @@ pub async fn inject_service_account_token<S: Storage>(
         spec.service_account_name = Some(sa_name.clone());
     }
 
-    // Verify the service account exists
+    // Look up the ServiceAccount to check its automount setting
     let sa_key = format!("/registry/serviceaccounts/{}/{}", namespace, sa_name);
-    if storage.get::<serde_json::Value>(&sa_key).await.is_err() {
-        warn!(
-            "Service account {}/{} does not exist, but proceeding with token injection",
-            namespace, sa_name
+    let sa_automount = match storage.get::<ServiceAccount>(&sa_key).await {
+        Ok(sa) => sa.automount_service_account_token,
+        Err(_) => {
+            warn!(
+                "Service account {}/{} does not exist, but proceeding with token injection",
+                namespace, sa_name
+            );
+            None
+        }
+    };
+
+    // Determine whether to mount the SA token.
+    // Pod-level setting takes precedence over SA-level.
+    let pod_automount = spec.automount_service_account_token;
+    let should_mount = match pod_automount {
+        Some(false) => false, // Pod explicitly disabled
+        Some(true) => true,   // Pod explicitly enabled
+        None => sa_automount.unwrap_or(true), // Use SA setting, default true
+    };
+
+    if !should_mount {
+        info!(
+            "Skipping service account token injection for pod {}/{} - automountServiceAccountToken is false",
+            namespace, pod.metadata.name
         );
+        return Ok(());
     }
 
     // The service account token secret name follows the pattern: {sa-name}-token
