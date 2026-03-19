@@ -1,12 +1,13 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-19 (round 7 — second node added)
+**Last updated**: 2026-03-19 (round 8 — live monitoring)
 
-## Status: ALL KNOWN ISSUES FIXED
+## Current Run Status
+- Run started: 2026-03-19 21:28 UTC
+- Tests completed: 3 of 441
+- Passed: 1, Failed: 2
 
-Every identified conformance failure root cause has been addressed.
-
-## Fixed Issues (23 root causes)
+## Fixed Issues (25 root causes, all committed)
 
 | # | Issue | Tests | Commit |
 |---|-------|-------|--------|
@@ -28,22 +29,54 @@ Every identified conformance failure root cause has been addressed.
 | 16 | Watch empty RV + status details | ~3 | ad10a8b |
 | 17 | DaemonSet dupes + node deser + validation | ~4 | ad10a8b |
 | 18 | IPAddress API + RoleBinding errors | ~2 | ad10a8b |
-| 19 | Protobuf 406 fallback (CRD tests) | ~3 | 6d0788a |
+| 19 | Protobuf 406 fallback | ~3 | 6d0788a |
 | 20 | SubPathExpr variable expansion | ~2 | 6d0788a |
 | 21 | GC replicationcontrollers scan | ~2 | 6d0788a |
 | 22 | Scheduler preemption eviction | ~2 | 6d0788a |
-| 23 | Second node (node-2) for multi-node tests | ~2 | de9175a |
-| 24 | Pod initial Pending phase on creation | ~2 | ad78f7e |
+| 23 | Second node (node-2) | ~2 | de9175a |
+| 24 | Pod initial Pending phase | ~2 | ad78f7e |
 | 25 | Probe IP through pause containers | ~5 | ad78f7e |
 
-## No Remaining Issues
+## Known Failures in Current Run
 
-All identified conformance test failure root causes have been fixed.
+### F1. Variable Expansion subpath — pod should FAIL but doesn't
+**Test**: `expansion.go:272`
+**Error**: `Failed after 10.037s. Expected Pod to be in "Pending" Got instead: Running`
+**Root cause**: Test creates pod with `$(ANNOTATION)` in subPathExpr where annotation
+'mysubpath' is NOT set. The kubelet should detect the missing annotation and set
+container to Waiting/CreateContainerError, but instead the pod reaches Running.
+**Fix needed**: In `expand_subpath_expr()` in runtime.rs, when resolving downward API
+field refs like `metadata.annotations['key']`, return error if annotation doesn't exist
+instead of returning empty string.
+**File**: `crates/kubelet/src/runtime.rs`
 
-## Test Results
+### F2. StatefulSet pods — "Failed waiting for pods to enter running"
+**Test**: `statefulset/wait.go:63`
+**Error**: `context deadline exceeded`
+**Root cause**: Pod IS running and Ready (verified via API), but the test's watch
+stream isn't receiving the status update events. The StatefulSet test uses a polling
+function that watches for pod status changes. The issue may be:
+- Watch stream not delivering MODIFIED events for pod status updates
+- The kubelet updates pod status but the watch event is filtered or dropped
+**File**: `crates/api-server/src/handlers/watch.rs` (event delivery)
 
-| Run | Date | Passed | Failed | Total | Rate |
-|-----|------|--------|--------|-------|------|
-| Quick mode | 2026-03-18 | 1 | 0 | 1 | 100% |
-| Full run 1 | 2026-03-19 | 11 | 75 | 86 | 13% |
-| Full run (all fixes) | pending | — | — | 441 | — |
+### F3. Exec command "No such file or directory" (affects ~30 tests)
+**Error**: `Failed to spawn exec command: No such file or directory (os error 2)`
+**Root cause**: The API server's SPDY/exec handler tries to spawn `docker exec`
+as a subprocess, but the Docker CLI is not installed in the API server container.
+Exec should use bollard's exec API instead of spawning a process.
+**File**: `crates/api-server/src/spdy_handlers.rs`
+
+## Infrastructure Limitations
+
+| # | Issue | Tests | Reason |
+|---|-------|-------|--------|
+| A | 2 nodes required | ~2 | Fixed: node-2 added |
+
+## Notes for Next Session
+
+- All 25 fixes are committed and deployed
+- Conformance run is in progress with all fixes
+- Key remaining issues: F1 (subpath expansion failure), F2 (watch event delivery), F3 (exec via Docker)
+- F3 is the highest impact (30+ tests use exec)
+- The exec fix requires changing spdy_handlers.rs to use bollard API instead of docker CLI
