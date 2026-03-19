@@ -32,7 +32,9 @@ Every identified conformance failure root cause has been addressed.
 | 20 | SubPathExpr variable expansion | ~2 | 6d0788a |
 | 21 | GC replicationcontrollers scan | ~2 | 6d0788a |
 | 22 | Scheduler preemption eviction | ~2 | 6d0788a |
-| 23 | Second node (node-2) for multi-node tests | ~2 | pending commit |
+| 23 | Second node (node-2) for multi-node tests | ~2 | de9175a |
+| 24 | Pod initial Pending phase on creation | ~2 | ad78f7e |
+| 25 | Probe IP through pause containers | ~5 | ad78f7e |
 
 ## No Remaining Issues
 
