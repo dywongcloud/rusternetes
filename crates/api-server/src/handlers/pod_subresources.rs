@@ -23,6 +23,33 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tracing::info;
 
+/// Simple percent-decoding for URL query parameters
+fn percent_decode_str(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let hi = chars.next().unwrap_or(b'0');
+            let lo = chars.next().unwrap_or(b'0');
+            let hex = [hi, lo];
+            if let Ok(s) = std::str::from_utf8(&hex) {
+                if let Ok(val) = u8::from_str_radix(s, 16) {
+                    result.push(val as char);
+                    continue;
+                }
+            }
+            result.push('%');
+            result.push(hi as char);
+            result.push(lo as char);
+        } else if b == b'+' {
+            result.push(' ');
+        } else {
+            result.push(b as char);
+        }
+    }
+    result
+}
+
 #[derive(Debug, Deserialize)]
 pub struct LogsQuery {
     /// The container for which to stream logs
@@ -307,10 +334,44 @@ pub async fn exec(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
-    Query(query): Query<ExecQuery>,
     ws: Option<WebSocketUpgrade>,
     req: Request,
 ) -> Result<Response> {
+    // Parse query params manually because `command` can appear multiple times
+    // (e.g., ?command=/bin/sh&command=-c&command=echo+hello) which serde's
+    // query deserializer can't handle as Vec<String>.
+    let raw_query = req.uri().query().unwrap_or("");
+    let query = {
+        let mut command = Vec::new();
+        let mut container = None;
+        let mut stdin = false;
+        let mut stdout = false;
+        let mut stderr = false;
+        let mut tty = false;
+        for pair in raw_query.split('&') {
+            if let Some((key, value)) = pair.split_once('=') {
+                let value = percent_decode_str(value);
+                match key {
+                    "command" => command.push(value),
+                    "container" => container = Some(value),
+                    "stdin" => stdin = value == "true" || value == "1",
+                    "stdout" => stdout = value == "true" || value == "1",
+                    "stderr" => stderr = value == "true" || value == "1",
+                    "tty" => tty = value == "true" || value == "1",
+                    _ => {}
+                }
+            }
+        }
+        ExecQuery {
+            container,
+            command,
+            stdin,
+            stdout,
+            stderr,
+            tty,
+        }
+    };
+
     info!(
         "Executing command in pod {}/{}: {:?}",
         namespace, name, query.command
