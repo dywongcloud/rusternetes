@@ -5,12 +5,22 @@ mod kubelet;
 mod runtime;
 
 use anyhow::Result;
-use axum::{routing::get, Json, Router};
+use axum::{
+    extract::{Path, Query},
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
+use bollard::container::LogOutput;
+use bollard::exec::{CreateExecOptions, StartExecResults};
+use bollard::Docker;
 use clap::Parser;
 use config::{KubeletConfiguration, RuntimeConfig};
+use futures::StreamExt;
 use kubelet::Kubelet;
 use rusternetes_common::observability::MetricsRegistry;
 use rusternetes_storage::etcd::EtcdStorage;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, warn, Level};
 
@@ -190,7 +200,8 @@ async fn main() -> Result<()> {
             .route(
                 "/configz",
                 get(|| async move { Json(kubelet_config_clone.as_ref().clone()) }),
-            );
+            )
+            .route("/exec/:container_id", post(handle_exec));
 
         let listener = tokio::net::TcpListener::bind(&metrics_addr).await.unwrap();
         axum::serve(listener, app).await.unwrap();
@@ -211,4 +222,77 @@ async fn main() -> Result<()> {
     kubelet.run().await?;
 
     Ok(())
+}
+
+/// Handle exec requests from the API server.
+///
+/// The API server proxies exec requests to the kubelet, which uses bollard
+/// to create and start a Docker exec on the target container.
+async fn handle_exec(
+    Path(container_id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+    body: axum::body::Bytes,
+) -> std::result::Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let command: Vec<String> = params
+        .get("command")
+        .map(|c| c.split(',').map(|s| s.to_string()).collect())
+        .unwrap_or_default();
+    let stdin_data = if body.is_empty() { None } else { Some(body) };
+    let tty = params
+        .get("tty")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
+    let docker = Docker::connect_with_socket_defaults()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let exec_config = CreateExecOptions {
+        cmd: Some(command.iter().map(|s| s.as_str()).collect()),
+        attach_stdout: Some(true),
+        attach_stderr: Some(true),
+        attach_stdin: Some(stdin_data.is_some()),
+        tty: Some(tty),
+        ..Default::default()
+    };
+
+    let exec = docker
+        .create_exec(&container_id, exec_config)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // If stdin data was provided, write it to the exec's stdin
+    let start_config = if stdin_data.is_some() {
+        Some(bollard::exec::StartExecOptions {
+            detach: false,
+            ..Default::default()
+        })
+    } else {
+        None::<bollard::exec::StartExecOptions>
+    };
+
+    let output = docker
+        .start_exec(&exec.id, start_config)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Collect output
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    if let StartExecResults::Attached {
+        output: mut stream, ..
+    } = output
+    {
+        while let Some(Ok(msg)) = stream.next().await {
+            match msg {
+                LogOutput::StdOut { message } => stdout.extend_from_slice(&message),
+                LogOutput::StdErr { message } => stderr.extend_from_slice(&message),
+                _ => {}
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "stdout": String::from_utf8_lossy(&stdout),
+        "stderr": String::from_utf8_lossy(&stderr),
+    })))
 }

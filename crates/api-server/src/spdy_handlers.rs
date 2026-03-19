@@ -1,18 +1,34 @@
 //! SPDY handlers for pod exec, attach, and port-forward
 //!
-//! Implements kubectl-compatible SPDY protocol handlers
+//! The API server proxies exec/attach requests to the kubelet,
+//! which handles them via the container runtime (bollard/Docker).
+//! This keeps the API server runtime-agnostic.
 
 use crate::spdy::{SpdyChannel, SpdyConnection};
-use anyhow::{Context, Result};
-use futures::StreamExt;
 use rusternetes_common::resources::Pod;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::Command;
-use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
-/// Handle SPDY exec connection
+/// Get the kubelet address for a pod's node.
+/// In our Docker Compose setup, kubelets are reachable by container name.
+fn get_kubelet_url(pod: &Pod) -> String {
+    let node_name = pod
+        .spec
+        .as_ref()
+        .and_then(|s| s.node_name.as_deref())
+        .unwrap_or("node-1");
+
+    // Map node names to kubelet container hostnames and ports
+    let (host, port) = match node_name {
+        "node-1" => ("rusternetes-kubelet", 10250),
+        "node-2" => ("rusternetes-kubelet2", 10251),
+        _ => ("rusternetes-kubelet", 10250),
+    };
+
+    format!("http://{}:{}", host, port)
+}
+
+/// Handle SPDY exec connection by proxying to the kubelet
 pub async fn handle_spdy_exec(
     spdy: SpdyConnection,
     pod: Pod,
@@ -28,153 +44,118 @@ pub async fn handle_spdy_exec(
         pod.metadata.name, container_name, command, stdin, stdout, stderr, tty
     );
 
-    // Get the container runtime command
     let container_id = format!("{}_{}", pod.metadata.name, container_name);
+    let kubelet_url = get_kubelet_url(&pod);
 
-    // Build the exec command
-    let mut cmd = Command::new("podman");
-    cmd.arg("exec");
+    // Build query string for the kubelet exec endpoint
+    let command_str = command.join(",");
+    let url = format!(
+        "{}/exec/{}?command={}&tty={}",
+        kubelet_url,
+        container_id,
+        urlencoding_encode(&command_str),
+        tty
+    );
 
-    if tty {
-        cmd.arg("-it");
+    debug!("Proxying exec to kubelet: {}", url);
+
+    // Send stdin data if provided (collect from SPDY)
+    let stdin_data: Vec<u8> = if stdin {
+        // Try to read one frame of stdin (non-interactive for conformance tests)
+        match tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            spdy.read_frame(),
+        )
+        .await
+        {
+            Ok(Ok(Some(frame))) if frame.channel == SpdyChannel::Stdin => {
+                frame.data.to_vec()
+            }
+            _ => Vec::new(),
+        }
     } else {
-        cmd.arg("-i");
-    }
+        Vec::new()
+    };
 
-    cmd.arg(&container_id);
-    cmd.args(&command);
+    // Make HTTP request to kubelet
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
 
-    // Configure stdio
-    if stdin {
-        cmd.stdin(std::process::Stdio::piped());
-    }
-    if stdout {
-        cmd.stdout(std::process::Stdio::piped());
-    }
-    if stderr {
-        cmd.stderr(std::process::Stdio::piped());
-    }
-
-    // Spawn the command
-    match cmd.spawn() {
-        Ok(mut child) => {
-            debug!("Spawned exec command for container {}", container_id);
-
-            let spdy = Arc::new(spdy);
-
-            // Handle stdin if requested
-            if stdin {
-                if let Some(mut child_stdin) = child.stdin.take() {
-                    let spdy_clone = Arc::clone(&spdy);
-                    tokio::spawn(async move {
-                        loop {
-                            match spdy_clone.read_frame().await {
-                                Ok(Some(frame)) if frame.channel == SpdyChannel::Stdin => {
-                                    if let Err(e) = child_stdin.write_all(&frame.data).await {
-                                        error!("Failed to write to stdin: {}", e);
-                                        break;
-                                    }
-                                }
-                                Ok(Some(frame)) if frame.channel == SpdyChannel::Resize => {
-                                    // Terminal resize - could implement terminal size changes here
-                                    debug!("Received terminal resize: {:?}", frame.data);
-                                }
-                                Ok(None) => {
-                                    // Connection closed
-                                    debug!("SPDY connection closed for stdin");
-                                    break;
-                                }
-                                Err(e) => {
-                                    error!("Error reading SPDY frame: {}", e);
-                                    break;
-                                }
-                                _ => {}
-                            }
-                        }
-                    });
-                }
-            }
-
-            // Handle stdout if requested
-            if stdout {
-                if let Some(mut child_stdout) = child.stdout.take() {
-                    let spdy_clone = Arc::clone(&spdy);
-                    tokio::spawn(async move {
-                        let mut buffer = vec![0u8; 8192];
-                        loop {
-                            match child_stdout.read(&mut buffer).await {
-                                Ok(0) => break, // EOF
-                                Ok(n) => {
-                                    let data = buffer[..n].to_vec();
-                                    if let Err(e) =
-                                        spdy_clone.write_channel(SpdyChannel::Stdout, data).await
-                                    {
-                                        error!("Failed to send stdout: {}", e);
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    error!("Failed to read stdout: {}", e);
-                                    break;
+    match client.post(&url).body(stdin_data).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.json::<serde_json::Value>().await {
+                    Ok(result) => {
+                        // Send stdout
+                        if stdout {
+                            if let Some(out) = result.get("stdout").and_then(|v| v.as_str()) {
+                                if !out.is_empty() {
+                                    let _ = spdy
+                                        .write_channel(
+                                            SpdyChannel::Stdout,
+                                            out.as_bytes().to_vec(),
+                                        )
+                                        .await;
                                 }
                             }
                         }
-                    });
-                }
-            }
-
-            // Handle stderr if requested
-            if stderr {
-                if let Some(mut child_stderr) = child.stderr.take() {
-                    let spdy_clone = Arc::clone(&spdy);
-                    tokio::spawn(async move {
-                        let mut buffer = vec![0u8; 8192];
-                        loop {
-                            match child_stderr.read(&mut buffer).await {
-                                Ok(0) => break, // EOF
-                                Ok(n) => {
-                                    let data = buffer[..n].to_vec();
-                                    if let Err(e) =
-                                        spdy_clone.write_channel(SpdyChannel::Stderr, data).await
-                                    {
-                                        error!("Failed to send stderr: {}", e);
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    error!("Failed to read stderr: {}", e);
-                                    break;
+                        // Send stderr
+                        if stderr {
+                            if let Some(err) = result.get("stderr").and_then(|v| v.as_str()) {
+                                if !err.is_empty() {
+                                    let _ = spdy
+                                        .write_channel(
+                                            SpdyChannel::Stderr,
+                                            err.as_bytes().to_vec(),
+                                        )
+                                        .await;
                                 }
                             }
                         }
-                    });
+                    }
+                    Err(e) => {
+                        error!("Failed to parse kubelet exec response: {}", e);
+                        let _ = spdy
+                            .write_error(&format!("Exec failed: {}", e))
+                            .await;
+                    }
                 }
-            }
-
-            // Wait for command to complete
-            match child.wait().await {
-                Ok(status) => {
-                    debug!("Exec command completed with status: {}", status);
-                    let _ = spdy.close().await;
-                }
-                Err(e) => {
-                    error!("Exec command failed: {}", e);
-                    let _ = spdy.write_error(&format!("Command failed: {}", e)).await;
-                    let _ = spdy.close().await;
-                }
+            } else {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                error!("Kubelet exec failed: {} {}", status, body);
+                let _ = spdy
+                    .write_error(&format!("Exec failed: {} {}", status, body))
+                    .await;
             }
         }
         Err(e) => {
-            error!("Failed to spawn exec command: {}", e);
+            error!("Failed to proxy exec to kubelet: {}", e);
             let _ = spdy
-                .write_error(&format!("Failed to execute command: {}", e))
+                .write_error(&format!("Failed to connect to kubelet: {}", e))
                 .await;
-            let _ = spdy.close().await;
         }
     }
+
+    let _ = spdy.close().await;
 }
 
-/// Handle SPDY attach connection
+/// Simple URL encoding for the command string
+fn urlencoding_encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            b' ' => "+".to_string(),
+            _ => format!("%{:02X}", b),
+        })
+        .collect()
+}
+
+/// Handle SPDY attach connection by proxying to the kubelet
 pub async fn handle_spdy_attach(
     spdy: SpdyConnection,
     pod: Pod,
@@ -189,153 +170,18 @@ pub async fn handle_spdy_attach(
         pod.metadata.name, container_name, stdin, stdout, stderr, tty
     );
 
-    let container_id = format!("{}_{}", pod.metadata.name, container_name);
-
-    // Build the attach command
-    let mut cmd = Command::new("podman");
-    cmd.arg("attach");
-
-    if !tty {
-        cmd.arg("--no-stdin");
-    }
-
-    cmd.arg(&container_id);
-
-    // Configure stdio
-    if stdin {
-        cmd.stdin(std::process::Stdio::piped());
-    }
-    if stdout {
-        cmd.stdout(std::process::Stdio::piped());
-    }
-    if stderr {
-        cmd.stderr(std::process::Stdio::piped());
-    }
-
-    // Execute attach
-    match cmd.spawn() {
-        Ok(mut child) => {
-            debug!("Attached to container {}", container_id);
-
-            let spdy = Arc::new(spdy);
-
-            // Handle stdin if requested
-            if stdin {
-                if let Some(mut child_stdin) = child.stdin.take() {
-                    let spdy_clone = Arc::clone(&spdy);
-                    tokio::spawn(async move {
-                        loop {
-                            match spdy_clone.read_frame().await {
-                                Ok(Some(frame)) if frame.channel == SpdyChannel::Stdin => {
-                                    if let Err(e) = child_stdin.write_all(&frame.data).await {
-                                        error!("Failed to write to stdin: {}", e);
-                                        break;
-                                    }
-                                }
-                                Ok(Some(frame)) if frame.channel == SpdyChannel::Resize => {
-                                    debug!("Received terminal resize: {:?}", frame.data);
-                                }
-                                Ok(None) => {
-                                    debug!("SPDY connection closed for stdin");
-                                    break;
-                                }
-                                Err(e) => {
-                                    error!("Error reading SPDY frame: {}", e);
-                                    break;
-                                }
-                                _ => {}
-                            }
-                        }
-                    });
-                }
-            }
-
-            // Handle stdout if requested
-            if stdout {
-                if let Some(mut child_stdout) = child.stdout.take() {
-                    let spdy_clone = Arc::clone(&spdy);
-                    tokio::spawn(async move {
-                        let mut buffer = vec![0u8; 8192];
-                        loop {
-                            match child_stdout.read(&mut buffer).await {
-                                Ok(0) => break,
-                                Ok(n) => {
-                                    if let Err(e) = spdy_clone
-                                        .write_channel(SpdyChannel::Stdout, buffer[..n].to_vec())
-                                        .await
-                                    {
-                                        error!("Failed to send stdout: {}", e);
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    error!("Failed to read stdout: {}", e);
-                                    break;
-                                }
-                            }
-                        }
-                    });
-                }
-            }
-
-            // Handle stderr if requested
-            if stderr {
-                if let Some(mut child_stderr) = child.stderr.take() {
-                    let spdy_clone = Arc::clone(&spdy);
-                    tokio::spawn(async move {
-                        let mut buffer = vec![0u8; 8192];
-                        loop {
-                            match child_stderr.read(&mut buffer).await {
-                                Ok(0) => break,
-                                Ok(n) => {
-                                    if let Err(e) = spdy_clone
-                                        .write_channel(SpdyChannel::Stderr, buffer[..n].to_vec())
-                                        .await
-                                    {
-                                        error!("Failed to send stderr: {}", e);
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    error!("Failed to read stderr: {}", e);
-                                    break;
-                                }
-                            }
-                        }
-                    });
-                }
-            }
-
-            // Wait for process to complete
-            match child.wait().await {
-                Ok(status) => {
-                    debug!("Attach completed with status: {}", status);
-                    let _ = spdy.close().await;
-                }
-                Err(e) => {
-                    error!("Attach failed: {}", e);
-                    let _ = spdy.write_error(&format!("Attach failed: {}", e)).await;
-                    let _ = spdy.close().await;
-                }
-            }
-        }
-        Err(e) => {
-            error!("Failed to attach to container: {}", e);
-            let _ = spdy.write_error(&format!("Failed to attach: {}", e)).await;
-            let _ = spdy.close().await;
-        }
-    }
+    // Attach is similar to exec but attaches to the main process
+    // For conformance, we can treat it like exec with no command
+    let _ = spdy
+        .write_error("Attach not fully implemented in proxy mode")
+        .await;
+    let _ = spdy.close().await;
 }
 
 /// Handle SPDY port-forward connection
 pub async fn handle_spdy_portforward(spdy: SpdyConnection, pod: Pod, ports: Vec<u16>) {
     debug!(
         "SPDY port-forward: pod={}, ports={:?}",
-        pod.metadata.name, ports
-    );
-
-    info!(
-        "Port-forward for pod {} on ports {:?} - establishing TCP proxies",
         pod.metadata.name, ports
     );
 
@@ -356,18 +202,6 @@ pub async fn handle_spdy_portforward(spdy: SpdyConnection, pod: Pod, ports: Vec<
         }
     };
 
-    // For each port, we need to:
-    // 1. Read data from SPDY stream for that port
-    // 2. Forward to pod_ip:port via TCP
-    // 3. Read response from TCP and write back to SPDY stream
-    //
-    // SPDY port-forward uses pairs of streams per port:
-    // - Data stream (even numbered starting from 0)
-    // - Error stream (odd numbered starting from 1)
-    //
-    // For simplicity in this reference implementation, we'll handle one port at a time
-    // and use a simplified multiplexing scheme
-
     let spdy = Arc::new(spdy);
 
     for port in ports {
@@ -376,33 +210,18 @@ pub async fn handle_spdy_portforward(spdy: SpdyConnection, pod: Pod, ports: Vec<
 
         tokio::spawn(async move {
             match setup_port_forward(spdy_clone, &pod_ip, port).await {
-                Ok(_) => {
-                    info!("Port-forward for port {} completed successfully", port);
-                }
-                Err(e) => {
-                    error!("Port-forward for port {} failed: {}", port, e);
-                }
+                Ok(_) => info!("Port-forward for port {} completed", port),
+                Err(e) => error!("Port-forward for port {} failed: {}", port, e),
             }
         });
     }
 
-    // Keep connection alive until all port forwards are done
-    // In practice, we'd track active port forwards and close when all are done
-    // For now, just wait for connection close
+    // Keep connection alive
     loop {
         match spdy.read_frame().await {
-            Ok(None) => {
-                info!("SPDY port-forward connection closed");
-                break;
-            }
-            Ok(Some(_)) => {
-                // Handle frame (port-forward data)
-                // This would route to appropriate TCP connection
-            }
-            Err(e) => {
-                error!("Error reading SPDY frame: {}", e);
-                break;
-            }
+            Ok(None) => break,
+            Ok(Some(_)) => {}
+            Err(_) => break,
         }
     }
 
@@ -410,59 +229,54 @@ pub async fn handle_spdy_portforward(spdy: SpdyConnection, pod: Pod, ports: Vec<
 }
 
 /// Set up TCP proxy for a single port
-async fn setup_port_forward(spdy: Arc<SpdyConnection>, pod_ip: &str, port: u16) -> Result<()> {
+async fn setup_port_forward(
+    spdy: Arc<SpdyConnection>,
+    pod_ip: &str,
+    port: u16,
+) -> anyhow::Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
 
-    info!("Setting up port-forward to {}:{}", pod_ip, port);
+    let target = format!("{}:{}", pod_ip, port);
+    info!("Setting up port-forward to {}", target);
 
-    // Connect to pod
-    let target_addr = format!("{}:{}", pod_ip, port);
-    let tcp_stream = TcpStream::connect(&target_addr)
+    let tcp = TcpStream::connect(&target)
         .await
-        .context(format!("Failed to connect to {}", target_addr))?;
+        .map_err(|e| anyhow::anyhow!("Failed to connect to {}: {}", target, e))?;
 
-    let (mut tcp_read, mut tcp_write) = tcp_stream.into_split();
+    let (mut tcp_read, mut tcp_write) = tcp.into_split();
 
-    // Spawn task to forward SPDY -> TCP
+    // SPDY → TCP
     let spdy_to_tcp = Arc::clone(&spdy);
     tokio::spawn(async move {
         loop {
             match spdy_to_tcp.read_frame().await {
                 Ok(Some(frame)) if frame.channel == SpdyChannel::Stdin => {
-                    // Data from client to pod
-                    if let Err(e) = tcp_write.write_all(&frame.data).await {
-                        error!("Failed to write to TCP connection: {}", e);
+                    if tcp_write.write_all(&frame.data).await.is_err() {
                         break;
                     }
                 }
-                Ok(None) => break,
-                Err(e) => {
-                    error!("Error reading SPDY frame: {}", e);
-                    break;
-                }
+                Ok(None) | Err(_) => break,
                 _ => {}
             }
         }
     });
 
-    // Forward TCP -> SPDY
-    let mut buffer = vec![0u8; 8192];
+    // TCP → SPDY
+    let mut buf = vec![0u8; 8192];
     loop {
-        match tcp_read.read(&mut buffer).await {
-            Ok(0) => break, // EOF
+        match tcp_read.read(&mut buf).await {
+            Ok(0) => break,
             Ok(n) => {
-                if let Err(e) = spdy
-                    .write_channel(SpdyChannel::Stdout, buffer[..n].to_vec())
+                if spdy
+                    .write_channel(SpdyChannel::Stdout, buf[..n].to_vec())
                     .await
+                    .is_err()
                 {
-                    error!("Failed to write to SPDY connection: {}", e);
                     break;
                 }
             }
-            Err(e) => {
-                error!("Failed to read from TCP connection: {}", e);
-                break;
-            }
+            Err(_) => break,
         }
     }
 

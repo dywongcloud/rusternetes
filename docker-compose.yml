@@ -45,8 +45,11 @@ services:
     volumes:
       # Mount persistent TLS certificates
       - ./.rusternetes/certs:/etc/kubernetes/pki:ro
+      # Docker socket for exec/attach via bollard (shares same daemon as kubelet)
+      - /var/run/docker.sock:/var/run/docker.sock:rw
     environment:
       - RUST_LOG=debug
+      - DOCKER_HOST=unix:///var/run/docker.sock
     command:
       - "--bind-address"
       - "0.0.0.0:6443"
