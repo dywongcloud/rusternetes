@@ -1223,6 +1223,147 @@ impl ContainerRuntime {
             }
         }
 
+        // Projected: combine multiple volume sources (configMap, secret, downwardAPI, serviceAccountToken) into one directory
+        if let Some(projected) = &volume.projected {
+            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+            std::fs::create_dir_all(&volume_dir)
+                .context("Failed to create projected volume directory")?;
+
+            if let Some(sources) = &projected.sources {
+                let storage = self.storage.as_ref();
+
+                for source in sources {
+                    // ConfigMap projection
+                    if let Some(cm_proj) = &source.config_map {
+                        if let Some(cm_name) = &cm_proj.name {
+                            let key = build_key("configmaps", Some(namespace), cm_name);
+                            if let Some(storage) = storage {
+                                match storage.get::<ConfigMap>(&key).await {
+                                    Ok(cm) => {
+                                        if let Some(data) = &cm.data {
+                                            if let Some(items) = &cm_proj.items {
+                                                for item in items {
+                                                    if let Some(value) = data.get(&item.key) {
+                                                        let file_path =
+                                                            format!("{}/{}", volume_dir, item.path);
+                                                        if let Some(parent) =
+                                                            std::path::Path::new(&file_path)
+                                                                .parent()
+                                                        {
+                                                            std::fs::create_dir_all(parent)?;
+                                                        }
+                                                        std::fs::write(&file_path, value)?;
+                                                    }
+                                                }
+                                            } else {
+                                                for (k, v) in data {
+                                                    std::fs::write(
+                                                        format!("{}/{}", volume_dir, k),
+                                                        v,
+                                                    )?;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(_) if cm_proj.optional.unwrap_or(false) => {
+                                        // Optional configmap not found, skip
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to get ConfigMap {} for projected volume: {}", cm_name, e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Secret projection
+                    if let Some(secret_proj) = &source.secret {
+                        if let Some(secret_name) = &secret_proj.name {
+                            let key = build_key("secrets", Some(namespace), secret_name);
+                            if let Some(storage) = storage {
+                                match storage.get::<Secret>(&key).await {
+                                    Ok(secret) => {
+                                        if let Some(data) = &secret.data {
+                                            if let Some(items) = &secret_proj.items {
+                                                for item in items {
+                                                    if let Some(value) = data.get(&item.key) {
+                                                        let file_path =
+                                                            format!("{}/{}", volume_dir, item.path);
+                                                        if let Some(parent) =
+                                                            std::path::Path::new(&file_path)
+                                                                .parent()
+                                                        {
+                                                            std::fs::create_dir_all(parent)?;
+                                                        }
+                                                        // Secret data is Vec<u8>, write directly
+                                                        std::fs::write(&file_path, value)?;
+                                                    }
+                                                }
+                                            } else {
+                                                for (k, v) in data {
+                                                    std::fs::write(
+                                                        format!("{}/{}", volume_dir, k),
+                                                        v,
+                                                    )?;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(_) if secret_proj.optional.unwrap_or(false) => {
+                                        // Optional secret not found, skip
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to get Secret {} for projected volume: {}", secret_name, e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // DownwardAPI projection
+                    if let Some(downward_api) = &source.downward_api {
+                        if let Some(items) = &downward_api.items {
+                            for item in items {
+                                let file_path = format!("{}/{}", volume_dir, item.path);
+                                if let Some(parent) =
+                                    std::path::Path::new(&file_path).parent()
+                                {
+                                    std::fs::create_dir_all(parent)?;
+                                }
+                                let value = if let Some(ref field_ref) = item.field_ref {
+                                    self.get_pod_field_value(pod, &field_ref.field_path)
+                                        .unwrap_or_default()
+                                } else if let Some(ref resource_ref) = item.resource_field_ref {
+                                    self.get_container_resource_value(pod, resource_ref)
+                                        .unwrap_or_default()
+                                } else {
+                                    String::new()
+                                };
+                                std::fs::write(&file_path, value)?;
+                            }
+                        }
+                    }
+
+                    // ServiceAccountToken projection
+                    if let Some(sa_token) = &source.service_account_token {
+                        let token_path = format!("{}/{}", volume_dir, sa_token.path);
+                        if let Some(parent) = std::path::Path::new(&token_path).parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
+                        // Write a placeholder JWT token
+                        let token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.placeholder";
+                        std::fs::write(&token_path, token)?;
+                    }
+                }
+            }
+
+            info!(
+                "Created projected volume {} at {}",
+                volume.name, volume_dir
+            );
+            return Ok(volume_dir);
+        }
+
         Err(anyhow::anyhow!(
             "Unknown volume type for volume {}",
             volume.name

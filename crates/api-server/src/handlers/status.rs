@@ -10,6 +10,7 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, State},
+    http::Uri,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -21,6 +22,30 @@ use serde_json::Value;
 use std::sync::Arc;
 use tracing::info;
 
+/// Extract the resource type from the request URI.
+///
+/// For namespaced resources, the URI looks like:
+///   /api/v1/namespaces/{ns}/{resource}/{name}/status
+///   /apis/{group}/{version}/namespaces/{ns}/{resource}/{name}/status
+/// The resource type is the segment before {name}, i.e. 2 segments before "status".
+///
+/// For cluster-scoped resources, the URI looks like:
+///   /api/v1/{resource}/{name}/status  (e.g. /api/v1/nodes/node1/status)
+///   /api/v1/namespaces/{name}/status  (namespaces are cluster-scoped)
+fn extract_resource_type_from_uri(uri: &Uri) -> String {
+    let path = uri.path();
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    // The resource type is always 3 segments before the end (before name and "status")
+    // e.g. ["api", "v1", "namespaces", "ns", "pods", "name", "status"] -> "pods"
+    // e.g. ["api", "v1", "namespaces", "name", "status"] -> "namespaces"
+    // e.g. ["api", "v1", "nodes", "name", "status"] -> "nodes"
+    if segments.len() >= 3 {
+        segments[segments.len() - 3].to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
 /// Generic status update handler
 ///
 /// This handler updates only the status field of a resource while preserving
@@ -29,9 +54,11 @@ use tracing::info;
 pub async fn update_status(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Path((resource_type, namespace, name)): Path<(String, String, String)>,
+    uri: Uri,
+    Path((namespace, name)): Path<(String, String)>,
     Json(new_resource): Json<Value>,
 ) -> Result<Json<Value>> {
+    let resource_type = extract_resource_type_from_uri(&uri);
     info!(
         "Updating status for {}/{}/{}",
         resource_type, namespace, name
@@ -115,9 +142,11 @@ pub async fn update_status(
 pub async fn update_cluster_status(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Path((resource_type, name)): Path<(String, String)>,
+    uri: Uri,
+    Path(name): Path<String>,
     Json(new_resource): Json<Value>,
 ) -> Result<Json<Value>> {
+    let resource_type = extract_resource_type_from_uri(&uri);
     info!("Updating status for {}/{}", resource_type, name);
 
     // Check authorization
@@ -191,8 +220,10 @@ pub async fn update_cluster_status(
 pub async fn get_status(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Path((resource_type, namespace, name)): Path<(String, String, String)>,
+    uri: Uri,
+    Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Value>> {
+    let resource_type = extract_resource_type_from_uri(&uri);
     info!(
         "Getting status for {}/{}/{}",
         resource_type, namespace, name
@@ -221,8 +252,10 @@ pub async fn get_status(
 pub async fn get_cluster_status(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Path((resource_type, name)): Path<(String, String)>,
+    uri: Uri,
+    Path(name): Path<String>,
 ) -> Result<Json<Value>> {
+    let resource_type = extract_resource_type_from_uri(&uri);
     info!("Getting status for {}/{}", resource_type, name);
 
     // Check authorization
