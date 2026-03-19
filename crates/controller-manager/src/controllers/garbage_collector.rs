@@ -33,7 +33,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self {
             storage,
-            scan_interval: Duration::from_secs(30), // Run every 30 seconds
+            scan_interval: Duration::from_secs(5), // Run every 5 seconds
             max_concurrent_deletes: 50,             // Limit concurrent operations
             delete_batch_size: 100,                 // Process up to 100 deletions per batch
             max_retries: 3,                         // Retry failed deletions up to 3 times
@@ -171,6 +171,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
             ("certificatesigningrequests", false), // cluster-scoped
             ("customresourcedefinitions", false),  // cluster-scoped
             ("deployments", true),
+            ("replicationcontrollers", true),
             ("replicasets", true),
             ("statefulsets", true),
             ("daemonsets", true),

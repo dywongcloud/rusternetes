@@ -811,6 +811,47 @@ impl ContainerRuntime {
         Ok(volume_paths)
     }
 
+    /// Expand $(VAR_NAME) references in a subPathExpr using the container's env vars.
+    /// Returns Err if a referenced variable is not defined, or if the result is an absolute path.
+    fn expand_subpath_expr(
+        expr: &str,
+        env_vars: &[(String, String)],
+    ) -> std::result::Result<String, String> {
+        let mut result = expr.to_string();
+        // Find all $(VAR_NAME) references and expand them
+        loop {
+            let start = match result.find("$(") {
+                Some(s) => s,
+                None => break,
+            };
+            let rest = &result[start + 2..];
+            let end = match rest.find(')') {
+                Some(e) => e,
+                None => break,
+            };
+            let var_name = &rest[..end];
+            if let Some((_, value)) = env_vars.iter().find(|(k, _)| k == var_name) {
+                result = format!(
+                    "{}{}{}",
+                    &result[..start],
+                    value,
+                    &result[start + 2 + end + 1..]
+                );
+            } else {
+                return Err(format!("variable {} not found", var_name));
+            }
+        }
+        // Reject absolute paths
+        if result.starts_with('/') {
+            return Err("subPath must not be an absolute path".to_string());
+        }
+        // Reject path traversal
+        if result.contains("..") {
+            return Err("subPath must not contain '..'".to_string());
+        }
+        Ok(result)
+    }
+
     /// Expand environment variables in a string (e.g., ${VAR_NAME} or $VAR_NAME)
     fn expand_env_vars(input: &str) -> String {
         let mut result = input.to_string();
@@ -1777,6 +1818,18 @@ impl ContainerRuntime {
             }
         }
 
+        // Collect resolved environment variables for subPathExpr expansion
+        // (must be done before env_list is consumed).
+        let resolved_env_pairs: Vec<(String, String)> = env_list
+            .iter()
+            .filter_map(|entry| {
+                let mut parts = entry.splitn(2, '=');
+                let name = parts.next()?.to_string();
+                let value = parts.next().unwrap_or("").to_string();
+                Some((name, value))
+            })
+            .collect();
+
         let env = if env_list.is_empty() {
             None
         } else {
@@ -1818,12 +1871,55 @@ impl ContainerRuntime {
         if let Some(volume_mounts) = &container.volume_mounts {
             for mount in volume_mounts {
                 if let Some(host_path) = volume_paths.get(&mount.name) {
+                    // Determine the effective host path, applying sub_path or sub_path_expr
+                    let effective_host_path =
+                        if let Some(ref expr) = mount.sub_path_expr {
+                            // Expand $(VAR_NAME) references using resolved env vars
+                            match Self::expand_subpath_expr(expr, &resolved_env_pairs) {
+                                Ok(expanded) => {
+                                    if expanded.is_empty() {
+                                        host_path.clone()
+                                    } else {
+                                        let sub = format!("{}/{}", host_path, expanded);
+                                        // Ensure the sub-directory exists
+                                        if let Err(e) = std::fs::create_dir_all(&sub) {
+                                            warn!("Failed to create subPathExpr dir {}: {}", sub, e);
+                                        }
+                                        sub
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "SubPathExpr expansion failed for container {}: {}",
+                                        container.name, e
+                                    );
+                                    // In Kubernetes, this would set container status to
+                                    // Waiting/CreateContainerError. For now, skip this mount.
+                                    continue;
+                                }
+                            }
+                        } else if let Some(ref sub_path) = mount.sub_path {
+                            if sub_path.is_empty() {
+                                host_path.clone()
+                            } else {
+                                let sub = format!("{}/{}", host_path, sub_path);
+                                // Ensure the sub-directory exists
+                                if let Err(e) = std::fs::create_dir_all(&sub) {
+                                    warn!("Failed to create subPath dir {}: {}", sub, e);
+                                }
+                                sub
+                            }
+                        } else {
+                            host_path.clone()
+                        };
+
                     let read_only = if mount.read_only.unwrap_or(false) {
                         ":ro"
                     } else {
                         ""
                     };
-                    let bind = format!("{}:{}{}", host_path, mount.mount_path, read_only);
+                    let bind =
+                        format!("{}:{}{}", effective_host_path, mount.mount_path, read_only);
                     binds.push(bind);
                     info!(
                         "Mounting volume {} at {} in container {}",

@@ -1,3 +1,4 @@
+use chrono::Utc;
 use rusternetes_common::{
     resources::{Node, Pod, PriorityClass},
     types::Phase,
@@ -405,19 +406,36 @@ impl Scheduler {
         None
     }
 
-    /// Evict a pod by deleting it from storage
+    /// Evict a pod by setting its deletionTimestamp (graceful delete).
+    /// The kubelet will detect the deletionTimestamp and handle graceful shutdown.
     async fn evict_pod(&self, pod_name: &str) -> rusternetes_common::Result<()> {
         // Find the pod in all namespaces
         let prefix = build_prefix("pods", None);
         let all_pods: Vec<Pod> = self.storage.list(&prefix).await?;
 
-        for pod in all_pods {
+        for mut pod in all_pods {
             if pod.metadata.name == pod_name {
                 let key = rusternetes_storage::build_key(
                     "pods",
                     pod.metadata.namespace.as_deref(),
                     pod_name,
                 );
+
+                // Set deletionTimestamp for graceful deletion
+                if pod.metadata.deletion_timestamp.is_none() {
+                    pod.metadata.deletion_timestamp = Some(Utc::now());
+                    pod.metadata.deletion_grace_period_seconds = Some(0);
+                    // Update the status phase to indicate termination
+                    if let Some(ref mut status) = pod.status {
+                        status.phase = Some(rusternetes_common::types::Phase::Failed);
+                        status.reason = Some("Preempted".to_string());
+                        status.message =
+                            Some("Pod was preempted by a higher-priority pod".to_string());
+                    }
+                    self.storage.update(&key, &pod).await?;
+                }
+
+                // Also delete the pod since grace period is 0 (force eviction)
                 self.storage.delete(&key).await?;
                 info!("Evicted pod {} for preemption", pod_name);
                 return Ok(());
