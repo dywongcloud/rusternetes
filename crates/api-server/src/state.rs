@@ -1,7 +1,7 @@
 use crate::admission_webhook::AdmissionWebhookManager;
 use crate::ip_allocator::ClusterIPAllocator;
 use crate::prometheus_client::PrometheusClient;
-use rusternetes_common::auth::TokenManager;
+use rusternetes_common::auth::{BootstrapTokenManager, TokenManager};
 use rusternetes_common::authz::Authorizer;
 use rusternetes_common::observability::MetricsRegistry;
 use rusternetes_storage::etcd::EtcdStorage;
@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub struct ApiServerState {
     pub storage: Arc<EtcdStorage>,
     pub token_manager: Arc<TokenManager>,
+    pub bootstrap_token_manager: Arc<BootstrapTokenManager>,
     pub authorizer: Arc<dyn Authorizer>,
     pub metrics: Arc<MetricsRegistry>,
     pub skip_auth: bool,
@@ -33,6 +34,7 @@ impl ApiServerState {
         Self {
             storage,
             token_manager,
+            bootstrap_token_manager: Arc::new(BootstrapTokenManager::new()),
             authorizer,
             metrics,
             skip_auth,

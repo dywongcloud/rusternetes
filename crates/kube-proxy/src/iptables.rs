@@ -63,10 +63,17 @@ impl IptablesManager {
             "kubernetes service portals",
         )?;
 
-        // Add jump rule for NodePort services
+        // Add jump rules for NodePort services (both PREROUTING and OUTPUT)
         self.ensure_jump_rule(
             "nat",
             "PREROUTING",
+            &self.nodeports_chain,
+            "kubernetes service node ports",
+        )?;
+
+        self.ensure_jump_rule(
+            "nat",
+            "OUTPUT",
             &self.nodeports_chain,
             "kubernetes service node ports",
         )?;
@@ -96,6 +103,64 @@ impl IptablesManager {
                 info!("Added hairpin MASQUERADE rule for service traffic within Docker network");
             } else {
                 warn!("Failed to add hairpin MASQUERADE: {}", String::from_utf8_lossy(&output.stderr));
+            }
+        }
+
+        // Add MASQUERADE for NodePort traffic from local sources.
+        // When a process on the node itself connects to a NodePort, the source IP
+        // is local. Without MASQUERADE the backend pod replies directly, bypassing
+        // conntrack, and the connection breaks (asymmetric routing).
+        let nodeport_masq_check = Command::new(&self.iptables_cmd)
+            .args([
+                "-t", "nat", "-C", "POSTROUTING",
+                "-m", "comment", "--comment", "rusternetes nodeport masquerade",
+                "-m", "addrtype", "--src-type", "LOCAL",
+                "-j", "MASQUERADE",
+            ])
+            .output();
+        if nodeport_masq_check.map_or(true, |o| !o.status.success()) {
+            let output = Command::new(&self.iptables_cmd)
+                .args([
+                    "-t", "nat", "-A", "POSTROUTING",
+                    "-m", "comment", "--comment", "rusternetes nodeport masquerade",
+                    "-m", "addrtype", "--src-type", "LOCAL",
+                    "-j", "MASQUERADE",
+                ])
+                .output()
+                .context("Failed to add NodePort MASQUERADE rule")?;
+            if output.status.success() {
+                info!("Added MASQUERADE rule for NodePort traffic (local source)");
+            } else {
+                warn!("Failed to add NodePort MASQUERADE: {}", String::from_utf8_lossy(&output.stderr));
+            }
+        }
+
+        // Add general MASQUERADE for all DNAT'd traffic.
+        // This covers both ClusterIP and NodePort: when traffic is DNATed to a pod
+        // the source must be rewritten so the reply comes back through the node for
+        // proper connection tracking.
+        let dnat_masq_check = Command::new(&self.iptables_cmd)
+            .args([
+                "-t", "nat", "-C", "POSTROUTING",
+                "-m", "comment", "--comment", "rusternetes DNAT traffic masquerade",
+                "-m", "conntrack", "--ctstate", "DNAT",
+                "-j", "MASQUERADE",
+            ])
+            .output();
+        if dnat_masq_check.map_or(true, |o| !o.status.success()) {
+            let output = Command::new(&self.iptables_cmd)
+                .args([
+                    "-t", "nat", "-A", "POSTROUTING",
+                    "-m", "comment", "--comment", "rusternetes DNAT traffic masquerade",
+                    "-m", "conntrack", "--ctstate", "DNAT",
+                    "-j", "MASQUERADE",
+                ])
+                .output()
+                .context("Failed to add DNAT MASQUERADE rule")?;
+            if output.status.success() {
+                info!("Added MASQUERADE rule for all DNAT'd traffic");
+            } else {
+                warn!("Failed to add DNAT MASQUERADE: {}", String::from_utf8_lossy(&output.stderr));
             }
         }
 
@@ -401,6 +466,7 @@ impl IptablesManager {
         self.remove_jump_rule("nat", "PREROUTING", &self.services_chain)?;
         self.remove_jump_rule("nat", "OUTPUT", &self.services_chain)?;
         self.remove_jump_rule("nat", "PREROUTING", &self.nodeports_chain)?;
+        self.remove_jump_rule("nat", "OUTPUT", &self.nodeports_chain)?;
 
         // Delete our chains
         self.delete_chain("nat", &self.services_chain)?;

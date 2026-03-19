@@ -138,16 +138,16 @@ async fn main() -> Result<()> {
                         info!("Discovered cluster DNS IP: {}", cluster_ip);
                         cluster_ip.clone()
                     } else {
-                        warn!("kube-dns service has no ClusterIP, DNS resolution may not work");
-                        "".to_string()
+                        warn!("kube-dns service has no ClusterIP, falling back to 10.96.0.10");
+                        "10.96.0.10".to_string()
                     }
                 }
                 Err(e) => {
                     warn!(
-                        "Failed to discover cluster DNS IP: {}. DNS resolution may not work",
+                        "Failed to discover cluster DNS IP: {}. Falling back to 10.96.0.10",
                         e
                     );
-                    "".to_string()
+                    "10.96.0.10".to_string()
                 }
             }
         }
