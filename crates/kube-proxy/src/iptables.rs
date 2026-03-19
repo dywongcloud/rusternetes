@@ -223,13 +223,15 @@ impl IptablesManager {
             _ => {}
         }
 
-        // Add the jump rule
+        // Insert the jump rule at the top of the chain so our rules are
+        // evaluated before any Docker/Podman rules that might RETURN early.
         let output = Command::new(&self.iptables_cmd)
             .args([
                 "-t",
                 table,
-                "-A",
+                "-I",
                 from_chain,
+                "1",
                 "-j",
                 to_chain,
                 "-m",

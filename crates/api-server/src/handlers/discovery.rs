@@ -68,13 +68,23 @@ pub struct GroupVersionForDiscovery {
     pub version: String,
 }
 
-/// Check if the Accept header requests aggregated discovery format
+/// Check if the Accept header SPECIFICALLY requests aggregated discovery format.
+/// Only return aggregated format if the client explicitly prefers it
+/// (i.e., the aggregated type appears BEFORE plain application/json).
+/// Some clients (like sonobuoy) send both types in Accept but expect the standard format.
 fn wants_aggregated_discovery(headers: &HeaderMap) -> bool {
     if let Some(accept) = headers.get("accept").and_then(|v| v.to_str().ok()) {
-        accept.contains("apidiscovery.k8s.io")
-    } else {
-        false
+        // Only use aggregated if it appears BEFORE plain application/json
+        if let Some(agg_pos) = accept.find("apidiscovery.k8s.io") {
+            if let Some(json_pos) = accept.find("application/json") {
+                // If plain JSON comes first, the client prefers standard format
+                return agg_pos < json_pos;
+            }
+            // Only aggregated type in Accept, use it
+            return true;
+        }
     }
+    false
 }
 
 /// GET /api
@@ -82,6 +92,7 @@ fn wants_aggregated_discovery(headers: &HeaderMap) -> bool {
 pub async fn get_core_api(headers: HeaderMap) -> Response {
     if wants_aggregated_discovery(&headers) {
         // Return aggregated discovery format for /api (core API)
+        let core_resources = get_aggregated_resources_for_group("", "v1");
         let discovery = serde_json::json!({
             "kind": "APIGroupDiscoveryList",
             "apiVersion": "apidiscovery.k8s.io/v2",
@@ -94,7 +105,7 @@ pub async fn get_core_api(headers: HeaderMap) -> Response {
                     "versions": [
                         {
                             "version": "v1",
-                            "resources": [],
+                            "resources": core_resources,
                             "freshness": "Current"
                         }
                     ]
@@ -127,10 +138,11 @@ pub async fn get_core_api(headers: HeaderMap) -> Response {
 /// Returns the list of API groups available
 pub async fn get_api_groups(headers: HeaderMap) -> Response {
     if wants_aggregated_discovery(&headers) {
-        // Return aggregated discovery format for /apis
+        // Return aggregated discovery format for /apis with inline resources
         let groups: Vec<serde_json::Value> = get_api_group_names()
             .into_iter()
             .map(|(name, version)| {
+                let resources = get_aggregated_resources_for_group(name, version);
                 serde_json::json!({
                     "metadata": {
                         "name": name
@@ -138,7 +150,7 @@ pub async fn get_api_groups(headers: HeaderMap) -> Response {
                     "versions": [
                         {
                             "version": version,
-                            "resources": [],
+                            "resources": resources,
                             "freshness": "Current"
                         }
                     ]
@@ -463,6 +475,194 @@ fn get_api_group_names() -> Vec<(&'static str, &'static str)> {
         ("resource.k8s.io", "v1"),
         ("events.k8s.io", "v1"),
     ]
+}
+
+/// Build aggregated discovery resource entries for a given API group.
+/// Returns a list of resource objects in the apidiscovery.k8s.io/v2 format.
+fn get_aggregated_resources_for_group(
+    group: &str,
+    version: &str,
+) -> Vec<serde_json::Value> {
+    // Helper to build a single resource entry
+    let res = |name: &str,
+               singular: &str,
+               kind: &str,
+               namespaced: bool,
+               verbs: &[&str]| {
+        let scope = if namespaced { "Namespaced" } else { "Cluster" };
+        serde_json::json!({
+            "resource": name,
+            "responseKind": {
+                "group": group,
+                "version": version,
+                "kind": kind
+            },
+            "scope": scope,
+            "singularResource": singular,
+            "verbs": verbs
+        })
+    };
+
+    let all_verbs: &[&str] = &[
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch",
+    ];
+    let status_verbs: &[&str] = &["get", "patch", "update"];
+
+    match group {
+        "" => vec![
+            res("namespaces", "namespace", "Namespace", false, all_verbs),
+            res("namespaces/status", "", "Namespace", false, status_verbs),
+            res("pods", "pod", "Pod", true, all_verbs),
+            res("pods/status", "", "Pod", true, status_verbs),
+            res("pods/log", "", "Pod", true, &["get"]),
+            res("pods/exec", "", "PodExecOptions", true, &["get", "create"]),
+            res("pods/attach", "", "PodAttachOptions", true, &["get", "create"]),
+            res("pods/portforward", "", "PodPortForwardOptions", true, &["get", "create"]),
+            res("pods/binding", "", "Binding", true, &["create"]),
+            res("pods/eviction", "", "Eviction", true, &["create"]),
+            res("pods/ephemeralcontainers", "", "Pod", true, &["get", "patch", "update"]),
+            res("services", "service", "Service", true, all_verbs),
+            res("services/status", "", "Service", true, status_verbs),
+            res("endpoints", "endpoints", "Endpoints", true, all_verbs),
+            res("nodes", "node", "Node", false, all_verbs),
+            res("nodes/status", "", "Node", false, status_verbs),
+            res("configmaps", "configmap", "ConfigMap", true, all_verbs),
+            res("secrets", "secret", "Secret", true, all_verbs),
+            res("serviceaccounts", "serviceaccount", "ServiceAccount", true, all_verbs),
+            res("persistentvolumes", "persistentvolume", "PersistentVolume", false, all_verbs),
+            res("persistentvolumes/status", "", "PersistentVolume", false, status_verbs),
+            res("persistentvolumeclaims", "persistentvolumeclaim", "PersistentVolumeClaim", true, all_verbs),
+            res("persistentvolumeclaims/status", "", "PersistentVolumeClaim", true, status_verbs),
+            res("events", "event", "Event", true, all_verbs),
+            res("resourcequotas", "resourcequota", "ResourceQuota", true, all_verbs),
+            res("resourcequotas/status", "", "ResourceQuota", true, status_verbs),
+            res("limitranges", "limitrange", "LimitRange", true, all_verbs),
+            res("replicationcontrollers", "replicationcontroller", "ReplicationController", true, all_verbs),
+            res("replicationcontrollers/status", "", "ReplicationController", true, status_verbs),
+            res("replicationcontrollers/scale", "", "Scale", true, status_verbs),
+            res("componentstatuses", "componentstatus", "ComponentStatus", false, &["get", "list"]),
+            res("podtemplates", "podtemplate", "PodTemplate", true, all_verbs),
+        ],
+        "admissionregistration.k8s.io" => vec![
+            res("validatingwebhookconfigurations", "validatingwebhookconfiguration", "ValidatingWebhookConfiguration", false, all_verbs),
+            res("mutatingwebhookconfigurations", "mutatingwebhookconfiguration", "MutatingWebhookConfiguration", false, all_verbs),
+            res("validatingadmissionpolicies", "validatingadmissionpolicy", "ValidatingAdmissionPolicy", false, all_verbs),
+            res("validatingadmissionpolicies/status", "", "ValidatingAdmissionPolicy", false, status_verbs),
+            res("validatingadmissionpolicybindings", "validatingadmissionpolicybinding", "ValidatingAdmissionPolicyBinding", false, all_verbs),
+        ],
+        "apps" => vec![
+            res("deployments", "deployment", "Deployment", true, all_verbs),
+            res("deployments/status", "", "Deployment", true, status_verbs),
+            res("deployments/scale", "", "Scale", true, status_verbs),
+            res("replicasets", "replicaset", "ReplicaSet", true, all_verbs),
+            res("replicasets/status", "", "ReplicaSet", true, status_verbs),
+            res("replicasets/scale", "", "Scale", true, status_verbs),
+            res("daemonsets", "daemonset", "DaemonSet", true, all_verbs),
+            res("daemonsets/status", "", "DaemonSet", true, status_verbs),
+            res("statefulsets", "statefulset", "StatefulSet", true, all_verbs),
+            res("statefulsets/status", "", "StatefulSet", true, status_verbs),
+            res("statefulsets/scale", "", "Scale", true, status_verbs),
+            res("controllerrevisions", "controllerrevision", "ControllerRevision", true, all_verbs),
+        ],
+        "batch" => vec![
+            res("jobs", "job", "Job", true, all_verbs),
+            res("jobs/status", "", "Job", true, status_verbs),
+            res("cronjobs", "cronjob", "CronJob", true, all_verbs),
+            res("cronjobs/status", "", "CronJob", true, status_verbs),
+        ],
+        "networking.k8s.io" => vec![
+            res("networkpolicies", "networkpolicy", "NetworkPolicy", true, all_verbs),
+            res("ingresses", "ingress", "Ingress", true, all_verbs),
+            res("ingresses/status", "", "Ingress", true, status_verbs),
+            res("ingressclasses", "ingressclass", "IngressClass", false, all_verbs),
+        ],
+        "rbac.authorization.k8s.io" => vec![
+            res("roles", "role", "Role", true, all_verbs),
+            res("rolebindings", "rolebinding", "RoleBinding", true, all_verbs),
+            res("clusterroles", "clusterrole", "ClusterRole", false, all_verbs),
+            res("clusterrolebindings", "clusterrolebinding", "ClusterRoleBinding", false, all_verbs),
+        ],
+        "storage.k8s.io" => vec![
+            res("storageclasses", "storageclass", "StorageClass", false, all_verbs),
+            res("volumeattachments", "volumeattachment", "VolumeAttachment", false, all_verbs),
+            res("volumeattachments/status", "", "VolumeAttachment", false, status_verbs),
+            res("csinodes", "csinode", "CSINode", false, all_verbs),
+            res("csidrivers", "csidriver", "CSIDriver", false, all_verbs),
+            res("csistoragecapacities", "csistoragecapacity", "CSIStorageCapacity", true, all_verbs),
+        ],
+        "scheduling.k8s.io" => vec![
+            res("priorityclasses", "priorityclass", "PriorityClass", false, all_verbs),
+        ],
+        "apiextensions.k8s.io" => vec![
+            res("customresourcedefinitions", "customresourcedefinition", "CustomResourceDefinition", false, all_verbs),
+            res("customresourcedefinitions/status", "", "CustomResourceDefinition", false, status_verbs),
+        ],
+        "coordination.k8s.io" => vec![
+            res("leases", "lease", "Lease", true, all_verbs),
+        ],
+        "certificates.k8s.io" => vec![
+            res("certificatesigningrequests", "certificatesigningrequest", "CertificateSigningRequest", false, all_verbs),
+            res("certificatesigningrequests/status", "", "CertificateSigningRequest", false, status_verbs),
+            res("certificatesigningrequests/approval", "", "CertificateSigningRequest", false, &["get", "patch", "update"]),
+        ],
+        "discovery.k8s.io" => vec![
+            res("endpointslices", "endpointslice", "EndpointSlice", true, all_verbs),
+        ],
+        "node.k8s.io" => vec![
+            res("runtimeclasses", "runtimeclass", "RuntimeClass", false, all_verbs),
+        ],
+        "authentication.k8s.io" => vec![
+            res("tokenreviews", "tokenreview", "TokenReview", false, &["create"]),
+        ],
+        "authorization.k8s.io" => vec![
+            res("subjectaccessreviews", "subjectaccessreview", "SubjectAccessReview", false, &["create"]),
+            res("localsubjectaccessreviews", "localsubjectaccessreview", "LocalSubjectAccessReview", true, &["create"]),
+            res("selfsubjectaccessreviews", "selfsubjectaccessreview", "SelfSubjectAccessReview", false, &["create"]),
+            res("selfsubjectrulesreviews", "selfsubjectrulesreview", "SelfSubjectRulesReview", false, &["create"]),
+        ],
+        "autoscaling" => vec![
+            res("horizontalpodautoscalers", "horizontalpodautoscaler", "HorizontalPodAutoscaler", true, all_verbs),
+            res("horizontalpodautoscalers/status", "", "HorizontalPodAutoscaler", true, status_verbs),
+        ],
+        "policy" => vec![
+            res("poddisruptionbudgets", "poddisruptionbudget", "PodDisruptionBudget", true, all_verbs),
+            res("poddisruptionbudgets/status", "", "PodDisruptionBudget", true, status_verbs),
+        ],
+        "flowcontrol.apiserver.k8s.io" => vec![
+            res("flowschemas", "flowschema", "FlowSchema", false, all_verbs),
+            res("flowschemas/status", "", "FlowSchema", false, status_verbs),
+            res("prioritylevelconfigurations", "prioritylevelconfiguration", "PriorityLevelConfiguration", false, all_verbs),
+            res("prioritylevelconfigurations/status", "", "PriorityLevelConfiguration", false, status_verbs),
+        ],
+        "events.k8s.io" => vec![
+            res("events", "event", "Event", true, all_verbs),
+        ],
+        "snapshot.storage.k8s.io" => vec![
+            res("volumesnapshots", "volumesnapshot", "VolumeSnapshot", true, all_verbs),
+            res("volumesnapshotclasses", "volumesnapshotclass", "VolumeSnapshotClass", false, all_verbs),
+            res("volumesnapshotcontents", "volumesnapshotcontent", "VolumeSnapshotContent", false, all_verbs),
+        ],
+        "metrics.k8s.io" => vec![
+            res("nodes", "node", "NodeMetrics", false, &["get", "list"]),
+            res("pods", "pod", "PodMetrics", true, &["get", "list"]),
+        ],
+        "custom.metrics.k8s.io" => vec![],
+        "resource.k8s.io" => vec![
+            res("resourceclaims", "resourceclaim", "ResourceClaim", true, all_verbs),
+            res("resourceclaims/status", "", "ResourceClaim", true, status_verbs),
+            res("resourceclaimtemplates", "resourceclaimtemplate", "ResourceClaimTemplate", true, all_verbs),
+            res("resourceslices", "resourceslice", "ResourceSlice", false, all_verbs),
+            res("deviceclasses", "deviceclass", "DeviceClass", false, all_verbs),
+        ],
+        _ => vec![],
+    }
 }
 
 /// GET /version
