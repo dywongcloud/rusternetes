@@ -2747,19 +2747,49 @@ impl ContainerRuntime {
         "127.0.0.1".to_string()
     }
 
+    /// Get the effective IP for a container, resolving through pause containers
+    /// when the app container uses NetworkMode=container:pause.
+    async fn get_effective_container_ip(&self, container_name: &str) -> String {
+        let inspect = match self
+            .docker
+            .inspect_container(container_name, None::<InspectContainerOptions>)
+            .await
+        {
+            Ok(i) => i,
+            Err(_) => return "127.0.0.1".to_string(),
+        };
+
+        // Check if this container uses another container's network
+        if let Some(ref hc) = inspect.host_config {
+            if let Some(ref net_mode) = hc.network_mode {
+                if net_mode.starts_with("container:") {
+                    // Get the pause container's IP instead
+                    let pause_id = net_mode.trim_start_matches("container:");
+                    if let Ok(pause_inspect) = self
+                        .docker
+                        .inspect_container(pause_id, None::<InspectContainerOptions>)
+                        .await
+                    {
+                        let ip = self.extract_container_ip(pause_inspect.network_settings);
+                        if ip != "127.0.0.1" {
+                            return ip;
+                        }
+                    }
+                }
+            }
+        }
+
+        self.extract_container_ip(inspect.network_settings)
+    }
+
     async fn check_http_probe(
         &self,
         container_name: &str,
         http_get: &HTTPGetAction,
         timeout: Duration,
     ) -> Result<bool> {
-        // Get container IP
-        let inspect = self
-            .docker
-            .inspect_container(container_name, None::<InspectContainerOptions>)
-            .await?;
-
-        let ip = self.extract_container_ip(inspect.network_settings);
+        // Get container IP (resolving through pause container if needed)
+        let ip = self.get_effective_container_ip(container_name).await;
 
         let scheme = http_get.scheme.as_deref().unwrap_or("http");
         let path = http_get.path.as_deref().unwrap_or("/");
@@ -2787,13 +2817,8 @@ impl ContainerRuntime {
         tcp_socket: &TCPSocketAction,
         timeout: Duration,
     ) -> Result<bool> {
-        // Get container IP
-        let inspect = self
-            .docker
-            .inspect_container(container_name, None::<InspectContainerOptions>)
-            .await?;
-
-        let ip = self.extract_container_ip(inspect.network_settings);
+        // Get container IP (resolving through pause container if needed)
+        let ip = self.get_effective_container_ip(container_name).await;
 
         let addr = format!("{}:{}", ip, tcp_socket.port);
         debug!("TCP probe: {}", addr);

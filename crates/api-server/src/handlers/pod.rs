@@ -263,6 +263,19 @@ pub async fn create(
     pod.metadata.ensure_creation_timestamp();
     crate::handlers::lifecycle::set_initial_generation(&mut pod.metadata);
 
+    // Set initial status to Pending (Kubernetes always sets this on creation)
+    if pod.status.is_none()
+        || pod
+            .status
+            .as_ref()
+            .and_then(|s| s.phase.as_ref())
+            .is_none()
+    {
+        let mut status = pod.status.take().unwrap_or_default();
+        status.phase = Some(rusternetes_common::types::Phase::Pending);
+        pod.status = Some(status);
+    }
+
     let key = build_key("pods", Some(&namespace), &pod.metadata.name);
 
     // If dry-run, skip storage operation but return the validated resource

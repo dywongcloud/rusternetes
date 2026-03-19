@@ -1153,7 +1153,7 @@ pub struct PodCondition {
 }
 
 /// PodStatus represents the current state of a pod
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PodStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
