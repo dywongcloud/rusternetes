@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -177,7 +178,23 @@ pub async fn list(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<List<Node>>> {
+) -> Result<axum::response::Response> {
+    // Check if this is a watch request
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: params.get("resourceVersion").map(|s| s.clone()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").map(|s| s.clone()),
+            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_cluster_scoped::<Node>(
+            state, auth_ctx, "nodes", "", watch_params,
+        ).await;
+    }
+
     info!("Listing nodes");
 
     // Check authorization
@@ -191,13 +208,13 @@ pub async fn list(
     }
 
     let prefix = build_prefix("nodes", None);
-    let mut nodes = state.storage.list(&prefix).await?;
+    let mut nodes: Vec<Node> = state.storage.list(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut nodes, &params)?;
 
     let list = List::new("NodeList", "v1", nodes);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Use the macro to create a PATCH handler
