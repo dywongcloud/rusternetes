@@ -300,18 +300,10 @@ impl Kubelet {
                 .and_then(|s| s.termination_grace_period_seconds)
                 .unwrap_or(30);
 
-            // Stop the pod containers gracefully
-            if self.runtime.is_pod_running(pod_name).await.unwrap_or(false) {
-                if let Err(e) = self
-                    .runtime
-                    .stop_pod_with_grace_period(pod_name, grace_period)
-                    .await
-                {
-                    warn!("Error stopping pod {}/{}: {}", namespace, pod_name, e);
-                }
-            }
-
-            // Delete the pod from storage (final removal)
+            // Delete the pod from storage first (triggers watch DELETED event)
+            // then stop containers asynchronously. This matches Kubernetes behavior
+            // where the API server removes the pod from etcd and the watch stream
+            // delivers the DELETED event while the kubelet is still cleaning up.
             let key = build_key("pods", Some(namespace), pod_name);
             if let Err(e) = self.storage.delete(&key).await {
                 warn!(
@@ -319,7 +311,21 @@ impl Kubelet {
                     namespace, pod_name, e
                 );
             } else {
-                info!("Pod {}/{} deleted from storage after graceful stop", namespace, pod_name);
+                info!("Pod {}/{} deleted from storage", namespace, pod_name);
+            }
+
+            // Stop the pod containers with a short timeout (5s) since the pod
+            // is already removed from storage. Use a short timeout to avoid blocking
+            // the reconcile loop — the container will be force-killed after the timeout.
+            if self.runtime.is_pod_running(pod_name).await.unwrap_or(false) {
+                let stop_timeout = std::cmp::min(grace_period, 5);
+                if let Err(e) = self
+                    .runtime
+                    .stop_pod_with_grace_period(pod_name, stop_timeout)
+                    .await
+                {
+                    warn!("Error stopping pod {}/{}: {}", namespace, pod_name, e);
+                }
             }
             return Ok(());
         }
