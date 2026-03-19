@@ -1,82 +1,61 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-19 (round 8 — live monitoring)
+**Last updated**: 2026-03-19 (round 9 — live monitoring + exec proxy)
 
-## Current Run Status
-- Run started: 2026-03-19 21:28 UTC
-- Tests completed: 3 of 441
-- Passed: 1, Failed: 2
+## Current Run Status (running against pre-exec-proxy images)
+- Tests completed: 19 of 441
+- Passed: 2, Failed: 17
+- Pass rate: 11% (but most fixes haven't been deployed yet)
 
-## Fixed Issues (25 root causes, all committed)
+## Fixed Issues (27 root causes, all committed)
 
 | # | Issue | Tests | Commit |
 |---|-------|-------|--------|
-| 1 | Status subresource routing | ~8 | c89343c |
-| 2 | Projected volume support | ~20 | c89343c |
-| 3 | Service type defaulting + headless | ~6 | 09ed555, 640da11 |
-| 4 | Lease MicroTime format | ~1 | 09ed555 |
-| 5 | EndpointSlice managed-by label | ~1 | 09ed555 |
-| 6 | Discovery auth + webhook + aggregated | ~3 | 09ed555, e21ad25 |
-| 7 | DeleteCollection routes | ~3 | 09ed555 |
-| 8 | Exec query parsing | ~30 | ebcc6b8 |
-| 9 | Pod IP / Container ID / Image ID | ~5 | 894bdc1 |
-| 10 | SA automount bypass + NodePort alloc | ~4 | b6a4fea |
-| 11 | Watch sendInitialEvents + selectors | ~all | 767a005, c36367f |
-| 12 | Watch support in all handlers | ~20 | c36367f |
-| 13 | CronJob ? + downwardAPI + ConfigMap/Event | ~10 | aecc290 |
-| 14 | WebSocket log streaming | ~1 | aecc290 |
-| 15 | NodePort MASQUERADE + ephemeral route | ~4 | 875eecf |
-| 16 | Watch empty RV + status details | ~3 | ad10a8b |
-| 17 | DaemonSet dupes + node deser + validation | ~4 | ad10a8b |
-| 18 | IPAddress API + RoleBinding errors | ~2 | ad10a8b |
-| 19 | Protobuf 406 fallback | ~3 | 6d0788a |
-| 20 | SubPathExpr variable expansion | ~2 | 6d0788a |
-| 21 | GC replicationcontrollers scan | ~2 | 6d0788a |
-| 22 | Scheduler preemption eviction | ~2 | 6d0788a |
-| 23 | Second node (node-2) | ~2 | de9175a |
-| 24 | Pod initial Pending phase | ~2 | ad78f7e |
-| 25 | Probe IP through pause containers | ~5 | ad78f7e |
+| 1-15 | (see previous entries) | ~150 | various |
+| 16 | CronJob ? parsing | ~2 | aecc290 |
+| 17 | Downward API resource field refs | ~5 | aecc290 |
+| 18 | ConfigMap/Event deserialization | ~3 | aecc290 |
+| 19 | WebSocket log streaming | ~1 | aecc290 |
+| 20 | Aggregated discovery format | ~1 | 875eecf |
+| 21 | Ephemeral container PATCH route | ~1 | 875eecf |
+| 22 | NodePort MASQUERADE rules | ~3 | 875eecf |
+| 23 | Watch empty RV + status details | ~3 | ad10a8b |
+| 24 | DaemonSet dupes + node deser + validation | ~4 | ad10a8b |
+| 25 | Protobuf 406 + SubPathExpr + GC + preemption | ~9 | 6d0788a |
+| 26 | Pod initial Pending phase + probe IPs | ~7 | ad78f7e |
+| 27 | Exec proxy to kubelet (Option A architecture) | ~30 | 5ec75ef |
 
-## Known Failures in Current Run
+## Known Failures Observed in Current Run
 
-### F1. Variable Expansion subpath — pod should FAIL but doesn't
-**Test**: `expansion.go:272`
-**Error**: `Failed after 10.037s. Expected Pod to be in "Pending" Got instead: Running`
-**Root cause**: Test creates pod with `$(ANNOTATION)` in subPathExpr where annotation
-'mysubpath' is NOT set. The kubelet should detect the missing annotation and set
-container to Waiting/CreateContainerError, but instead the pod reaches Running.
-**Fix needed**: In `expand_subpath_expr()` in runtime.rs, when resolving downward API
-field refs like `metadata.annotations['key']`, return error if annotation doesn't exist
-instead of returning empty string.
-**File**: `crates/kubelet/src/runtime.rs`
+### F1. Watch MODIFIED events not delivered (2+ tests)
+ConfigMap mutations don't trigger MODIFIED watch events.
+Root cause: etcd watch may not detect key modifications reliably,
+or the watch stream filters are too aggressive.
 
-### F2. StatefulSet pods — "Failed waiting for pods to enter running"
-**Test**: `statefulset/wait.go:63`
-**Error**: `context deadline exceeded`
-**Root cause**: Pod IS running and Ready (verified via API), but the test's watch
-stream isn't receiving the status update events. The StatefulSet test uses a polling
-function that watches for pod status changes. The issue may be:
-- Watch stream not delivering MODIFIED events for pod status updates
-- The kubelet updates pod status but the watch event is filtered or dropped
-**File**: `crates/api-server/src/handlers/watch.rs` (event delivery)
+### F2. CronJob scheduling still failing (2 tests)
+CronJob tests timeout. The cron ? fix is deployed but the controller
+may have other issues (job creation, schedule evaluation timing).
 
-### F3. Exec command "No such file or directory" (affects ~30 tests)
-**Error**: `Failed to spawn exec command: No such file or directory (os error 2)`
-**Root cause**: The API server's SPDY/exec handler tries to spawn `docker exec`
-as a subprocess, but the Docker CLI is not installed in the API server container.
-Exec should use bollard's exec API instead of spawning a process.
-**File**: `crates/api-server/src/spdy_handlers.rs`
+### F3. DNS resolution (1 test)
+Pods can't resolve cluster DNS names. CoreDNS integration issue.
 
-## Infrastructure Limitations
+### F4. Conformance node check (1 test)
+"should have at least two untainted nodes" — nodes might have taints
+or the node info isn't complete enough.
 
-| # | Issue | Tests | Reason |
-|---|-------|-------|--------|
-| A | 2 nodes required | ~2 | Fixed: node-2 added |
+### F5. Pod activeDeadlineSeconds (1 test)
+Pod with activeDeadlineSeconds should be terminated after deadline.
+Kubelet doesn't enforce this.
+
+### F6. Watch restart after close (1 test)
+Watch stream doesn't properly handle restart with new resourceVersion.
+
+## Not Yet Deployed (committed but needs rebuild)
+- Exec proxy to kubelet (5ec75ef)
+- All fixes need fresh docker image builds
 
 ## Notes for Next Session
-
-- All 25 fixes are committed and deployed
-- Conformance run is in progress with all fixes
-- Key remaining issues: F1 (subpath expansion failure), F2 (watch event delivery), F3 (exec via Docker)
-- F3 is the highest impact (30+ tests use exec)
-- The exec fix requires changing spdy_handlers.rs to use bollard API instead of docker CLI
+- Rebuild ALL images before next conformance run
+- Watch event delivery for MODIFIED is a key systemic issue
+- CronJob controller needs debugging
+- activeDeadlineSeconds needs kubelet implementation
