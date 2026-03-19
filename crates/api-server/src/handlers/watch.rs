@@ -150,16 +150,23 @@ where
             }
         }
 
-        // When sendInitialEvents=true or bookmarks enabled, send an initial
-        // BOOKMARK after the ADDED events to signal "initial list is complete".
-        // Required by Kubernetes 1.30+ consistent reads from cache.
-        if send_initial_events || allow_bookmarks {
+        // When sendInitialEvents=true, send an initial BOOKMARK after the ADDED
+        // events to signal "initial list is complete". The bookmark must have the
+        // annotation "k8s.io/initial-events-end": "true" — client-go checks for
+        // this specific annotation to know initial sync is done.
+        if send_initial_events {
             if let Some(ref rv) = latest_resource_version {
+                let mut annotations = std::collections::HashMap::new();
+                annotations.insert(
+                    "k8s.io/initial-events-end".to_string(),
+                    "true".to_string(),
+                );
                 let bookmark = BookmarkObject {
                     kind: Some(bookmark_kind.clone()),
                     api_version: Some(bookmark_api_version.clone()),
                     metadata: ObjectMeta {
                         resource_version: Some(rv.clone()),
+                        annotations: Some(annotations),
                         ..Default::default()
                     },
                 };
@@ -170,7 +177,7 @@ where
                 if let Ok(json) = serde_json::to_string(&k8s_event) {
                     let _ = tx.send(Ok(format!("{}\n", json)));
                 }
-                debug!("Sent initial sync bookmark with resourceVersion: {}", rv);
+                debug!("Sent initial-events-end bookmark with resourceVersion: {}", rv);
             }
         }
 
@@ -419,16 +426,23 @@ where
             }
         }
 
-        // When sendInitialEvents=true or bookmarks enabled, send an initial
-        // BOOKMARK after the ADDED events to signal "initial list is complete".
-        // Required by Kubernetes 1.30+ consistent reads from cache.
-        if send_initial_events || allow_bookmarks {
+        // When sendInitialEvents=true, send an initial BOOKMARK after the ADDED
+        // events to signal "initial list is complete". The bookmark must have the
+        // annotation "k8s.io/initial-events-end": "true" — client-go checks for
+        // this specific annotation to know initial sync is done.
+        if send_initial_events {
             if let Some(ref rv) = latest_resource_version {
+                let mut annotations = std::collections::HashMap::new();
+                annotations.insert(
+                    "k8s.io/initial-events-end".to_string(),
+                    "true".to_string(),
+                );
                 let bookmark = BookmarkObject {
                     kind: Some(bookmark_kind.clone()),
                     api_version: Some(bookmark_api_version.clone()),
                     metadata: ObjectMeta {
                         resource_version: Some(rv.clone()),
+                        annotations: Some(annotations),
                         ..Default::default()
                     },
                 };
@@ -439,7 +453,7 @@ where
                 if let Ok(json) = serde_json::to_string(&k8s_event) {
                     let _ = tx.send(Ok(format!("{}\n", json)));
                 }
-                debug!("Sent initial sync bookmark with resourceVersion: {}", rv);
+                debug!("Sent initial-events-end bookmark with resourceVersion: {}", rv);
             }
         }
 
