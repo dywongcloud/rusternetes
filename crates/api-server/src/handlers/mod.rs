@@ -69,5 +69,6 @@ pub mod volumeattachment;
 pub mod volumeattributesclass;
 pub mod volumesnapshot;
 pub mod volumesnapshotclass;
+pub mod validation;
 pub mod volumesnapshotcontent;
 pub mod watch;

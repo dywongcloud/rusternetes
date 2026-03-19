@@ -67,35 +67,94 @@ impl axum::response::IntoResponse for Error {
         use axum::http::StatusCode;
         use axum::Json;
 
-        let (status, message) = match self {
-            Error::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
-            Error::AlreadyExists(msg) => (StatusCode::CONFLICT, msg),
-            Error::InvalidResource(msg) => (StatusCode::BAD_REQUEST, msg),
-            Error::Authentication(msg) => (StatusCode::UNAUTHORIZED, msg),
-            Error::Authorization(msg) => (StatusCode::FORBIDDEN, msg),
-            Error::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
-            Error::Conflict(msg) => (StatusCode::CONFLICT, msg),
-            Error::TooManyRequests(msg) => (StatusCode::TOO_MANY_REQUESTS, msg),
-            Error::Storage(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            Error::Network(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
-            Error::Serialization(e) => (StatusCode::BAD_REQUEST, e.to_string()),
-            Error::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+        // Extract resource name from error message for StatusDetails
+        let (status, message, reason, details) = match self {
+            Error::NotFound(msg) => {
+                let details = extract_resource_details(&msg);
+                (StatusCode::NOT_FOUND, msg, "NotFound", details)
+            }
+            Error::AlreadyExists(msg) => {
+                let details = extract_resource_details(&msg);
+                (StatusCode::CONFLICT, msg, "AlreadyExists", details)
+            }
+            Error::InvalidResource(msg) => {
+                let details = extract_resource_details_for_invalid(&msg);
+                (StatusCode::BAD_REQUEST, msg, "Invalid", details)
+            }
+            Error::Authentication(msg) => (StatusCode::UNAUTHORIZED, msg, "Unauthorized", None),
+            Error::Authorization(msg) => (StatusCode::FORBIDDEN, msg, "Forbidden", None),
+            Error::Forbidden(msg) => (StatusCode::FORBIDDEN, msg, "Forbidden", None),
+            Error::Conflict(msg) => {
+                let details = extract_resource_details(&msg);
+                (StatusCode::CONFLICT, msg, "Conflict", details)
+            }
+            Error::TooManyRequests(msg) => {
+                (StatusCode::TOO_MANY_REQUESTS, msg, "TooManyRequests", None)
+            }
+            Error::Storage(msg) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, msg, "InternalError", None)
+            }
+            Error::Network(msg) => {
+                (StatusCode::SERVICE_UNAVAILABLE, msg, "ServiceUnavailable", None)
+            }
+            Error::Serialization(e) => {
+                (StatusCode::BAD_REQUEST, e.to_string(), "BadRequest", None)
+            }
+            Error::Internal(msg) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, msg, "InternalError", None)
+            }
         };
 
-        // Reconstruct reason from the status code (we consumed self above)
-        let reason = match status {
-            StatusCode::NOT_FOUND => "NotFound",
-            StatusCode::CONFLICT => "Conflict",
-            StatusCode::BAD_REQUEST => "Invalid",
-            StatusCode::UNAUTHORIZED => "Unauthorized",
-            StatusCode::FORBIDDEN => "Forbidden",
-            StatusCode::TOO_MANY_REQUESTS => "TooManyRequests",
-            StatusCode::SERVICE_UNAVAILABLE => "ServiceUnavailable",
-            _ => "InternalError",
+        let status_obj = if let Some(details) = details {
+            crate::types::Status::failure_with_details(&message, reason, status.as_u16(), details)
+        } else {
+            crate::types::Status::failure(&message, reason, status.as_u16())
         };
-
-        let status_obj = crate::types::Status::failure(&message, reason, status.as_u16());
 
         (status, Json(status_obj)).into_response()
     }
+}
+
+/// Extract resource name from error messages and return StatusDetails.
+#[cfg(feature = "axum-support")]
+fn extract_resource_details(msg: &str) -> Option<crate::types::StatusDetails> {
+    let name = if let Some(path) = msg.split(": ").last() {
+        if path.starts_with("/registry/") {
+            path.rsplit('/').next().unwrap_or(path).to_string()
+        } else {
+            path.to_string()
+        }
+    } else {
+        return None;
+    };
+
+    if name.is_empty() {
+        return None;
+    }
+
+    Some(crate::types::StatusDetails {
+        name: Some(name),
+        group: None,
+        kind: None,
+        uid: None,
+        causes: None,
+        retry_after_seconds: None,
+    })
+}
+
+/// Extract resource details for Invalid errors, including causes.
+#[cfg(feature = "axum-support")]
+fn extract_resource_details_for_invalid(msg: &str) -> Option<crate::types::StatusDetails> {
+    Some(crate::types::StatusDetails {
+        name: None,
+        group: None,
+        kind: None,
+        uid: None,
+        causes: Some(vec![crate::types::StatusCause {
+            reason: Some("FieldValueInvalid".to_string()),
+            message: Some(msg.to_string()),
+            field: Some("metadata.name".to_string()),
+        }]),
+        retry_after_seconds: None,
+    })
 }

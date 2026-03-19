@@ -27,6 +27,9 @@ pub async fn create(
         secret.metadata.name, namespace
     );
 
+    // Validate resource name
+    crate::handlers::validation::validate_resource_name(&secret.metadata.name)?;
+
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
@@ -203,7 +206,7 @@ pub async fn list(
     // Check if this is a watch request
     if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: params.get("resourceVersion").map(|s| s.clone()),
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
             timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
@@ -249,7 +252,7 @@ pub async fn list_all_secrets(
     // Check if this is a watch request
     if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: params.get("resourceVersion").map(|s| s.clone()),
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
             timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),

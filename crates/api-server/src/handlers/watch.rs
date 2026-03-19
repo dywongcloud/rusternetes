@@ -45,7 +45,11 @@ pub struct K8sWatchEvent<T> {
 #[derive(Debug, Deserialize)]
 pub struct WatchParams {
     /// Resource version to watch from
-    #[serde(rename = "resourceVersion")]
+    #[serde(
+        rename = "resourceVersion",
+        deserialize_with = "deserialize_empty_string_as_none",
+        default
+    )]
     pub resource_version: Option<String>,
 
     /// Timeout in seconds
@@ -72,6 +76,22 @@ pub struct WatchParams {
     /// a BOOKMARK to signal initial list is complete.
     #[serde(rename = "sendInitialEvents")]
     pub send_initial_events: Option<bool>,
+}
+
+/// Deserialize empty strings as None for resourceVersion
+fn deserialize_empty_string_as_none<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    Ok(opt.filter(|s| !s.is_empty()))
+}
+
+/// Normalize a resourceVersion value: treat empty string as None (= "start from current")
+pub fn normalize_resource_version(rv: Option<String>) -> Option<String> {
+    rv.filter(|s| !s.is_empty())
 }
 
 /// Generic watch handler for namespaced resources
@@ -790,6 +810,7 @@ fn resource_type_to_kind_and_version(resource_type: &str, api_group: &str) -> (S
         "storageclasses" => "StorageClass",
         "customresourcedefinitions" => "CustomResourceDefinition",
         "poddisruptionbudgets" => "PodDisruptionBudget",
+        "ipaddresses" => "IPAddress",
         other => {
             // CamelCase heuristic: capitalize first letter, remove trailing 's'
             let s = other.strip_suffix('s').unwrap_or(other);
@@ -869,7 +890,8 @@ impl_has_metadata!(
     rusternetes_common::resources::Lease,
     rusternetes_common::resources::Ingress,
     rusternetes_common::resources::NetworkPolicy,
-    rusternetes_common::resources::PodDisruptionBudget
+    rusternetes_common::resources::PodDisruptionBudget,
+    rusternetes_common::resources::IPAddress
 );
 
 // Concrete handler functions for specific resources

@@ -354,7 +354,7 @@ pub async fn list(
         info!("Watching namespaces");
         // Parse WatchParams from the query parameters
         let watch_params = watch::WatchParams {
-            resource_version: params.get("resourceVersion").map(|s| s.clone()),
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
             timeout_seconds: params
                 .get("timeoutSeconds")
                 .and_then(|v| v.parse::<u64>().ok()),

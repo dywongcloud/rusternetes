@@ -552,7 +552,7 @@ pub async fn list(
         info!("Starting watch for pods in namespace: {}", namespace);
         // Parse WatchParams from the query parameters
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: params.get("resourceVersion").map(|s| s.clone()),
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
             timeout_seconds: params
                 .get("timeoutSeconds")
                 .and_then(|v| v.parse::<u64>().ok()),
@@ -645,7 +645,7 @@ pub async fn list_all_pods(
         info!("Watch request for all pods");
         // Parse WatchParams from the query parameters
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: params.get("resourceVersion").map(|s| s.clone()),
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
             timeout_seconds: params
                 .get("timeoutSeconds")
                 .and_then(|v| v.parse::<u64>().ok()),

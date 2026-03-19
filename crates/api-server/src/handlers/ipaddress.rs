@@ -165,7 +165,41 @@ pub async fn delete_ipaddress(
 pub async fn list_ipaddresses(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<Response> {
+    // Check if this is a watch request
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
+            watch: Some(true),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_cluster_scoped::<IPAddress>(
+            state,
+            auth_ctx,
+            "ipaddresses",
+            "networking.k8s.io",
+            watch_params,
+        )
+        .await;
+    }
+
     info!("Listing IPAddresses");
 
     // Check authorization
@@ -180,7 +214,10 @@ pub async fn list_ipaddresses(
     }
 
     let prefix = build_prefix("ipaddresses", None);
-    let ipaddresses = state.storage.list::<IPAddress>(&prefix).await?;
+    let mut ipaddresses = state.storage.list::<IPAddress>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut ipaddresses, &params)?;
 
     let list = List::new("IPAddressList", "networking.k8s.io/v1", ipaddresses);
     Ok(Json(list).into_response())

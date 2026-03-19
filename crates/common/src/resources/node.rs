@@ -59,8 +59,10 @@ fn is_unschedulable_none(value: &Option<bool>) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Taint {
+    #[serde(default)]
     pub key: String,
     pub value: Option<String>,
+    #[serde(default)]
     pub effect: String, // NoSchedule, PreferNoSchedule, NoExecute
 }
 
@@ -126,9 +128,11 @@ pub struct ContainerImage {
 #[serde(rename_all = "camelCase")]
 pub struct AttachedVolume {
     /// Name of the attached volume
+    #[serde(default)]
     pub name: String,
 
     /// DevicePath is the path where the volume is attached on the host
+    #[serde(default)]
     pub device_path: String,
 }
 
@@ -146,16 +150,17 @@ pub struct NodeDaemonEndpoints {
 #[serde(rename_all = "camelCase")]
 pub struct DaemonEndpoint {
     /// Port number of the given endpoint
-    #[serde(rename = "Port")]
+    #[serde(rename = "Port", default)]
     pub port: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeCondition {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     pub condition_type: String, // Ready, MemoryPressure, DiskPressure, PIDPressure, NetworkUnavailable
 
+    #[serde(default)]
     pub status: String, // True, False, Unknown
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -174,24 +179,35 @@ pub struct NodeCondition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeAddress {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     pub address_type: String, // Hostname, ExternalIP, InternalIP
 
+    #[serde(default)]
     pub address: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeSystemInfo {
+    #[serde(default)]
     pub machine_id: String,
+    #[serde(default)]
     pub system_uuid: String,
+    #[serde(default)]
     pub boot_id: String,
+    #[serde(default)]
     pub kernel_version: String,
+    #[serde(default)]
     pub os_image: String,
+    #[serde(default)]
     pub container_runtime_version: String,
+    #[serde(default)]
     pub kubelet_version: String,
+    #[serde(default)]
     pub kube_proxy_version: String,
+    #[serde(default)]
     pub operating_system: String,
+    #[serde(default)]
     pub architecture: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]

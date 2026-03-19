@@ -169,9 +169,25 @@ impl<S: Storage> DaemonSetController<S> {
             let node_name = &node.metadata.name;
 
             if !pods_by_node.contains_key(node_name) {
-                // Create pod for this node
-                self.create_pod(daemonset, node_name, namespace).await?;
-                info!("Created DaemonSet pod on node {}", node_name);
+                // Create pod for this node, ignore AlreadyExists (race / re-reconcile)
+                match self.create_pod(daemonset, node_name, namespace).await {
+                    Ok(_) => {
+                        info!("Created DaemonSet pod on node {}", node_name);
+                    }
+                    Err(e) => {
+                        let err_str = format!("{}", e);
+                        if err_str.contains("already exists")
+                            || err_str.contains("AlreadyExists")
+                        {
+                            info!(
+                                "DaemonSet pod on node {} already exists, skipping",
+                                node_name
+                            );
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                }
             }
         }
 

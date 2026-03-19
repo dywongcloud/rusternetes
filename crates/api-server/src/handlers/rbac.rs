@@ -50,9 +50,16 @@ pub async fn create_role(
     }
 
     let key = build_key("roles", Some(&namespace), &role.metadata.name);
-    let created = state.storage.create(&key, &role).await?;
-
-    Ok((StatusCode::CREATED, Json(created)))
+    match state.storage.create(&key, &role).await {
+        Ok(created) => Ok((StatusCode::CREATED, Json(created))),
+        Err(rusternetes_common::Error::AlreadyExists(_)) => Err(
+            rusternetes_common::Error::AlreadyExists(format!(
+                "roles \"{}\" already exists",
+                role.metadata.name
+            )),
+        ),
+        Err(e) => Err(e),
+    }
 }
 
 pub async fn get_role(
@@ -264,9 +271,16 @@ pub async fn create_rolebinding(
     }
 
     let key = build_key("rolebindings", Some(&namespace), &rolebinding.metadata.name);
-    let created = state.storage.create(&key, &rolebinding).await?;
-
-    Ok((StatusCode::CREATED, Json(created)))
+    match state.storage.create(&key, &rolebinding).await {
+        Ok(created) => Ok((StatusCode::CREATED, Json(created))),
+        Err(rusternetes_common::Error::AlreadyExists(_)) => Err(
+            rusternetes_common::Error::AlreadyExists(format!(
+                "rolebindings \"{}\" already exists",
+                rolebinding.metadata.name
+            )),
+        ),
+        Err(e) => Err(e),
+    }
 }
 
 pub async fn get_rolebinding(
