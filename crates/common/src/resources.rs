@@ -147,7 +147,7 @@ pub use pod::{
     ImageVolumeSource, KeyToPath, Lifecycle, LifecycleHandler, NodeAffinity, NodeSelector,
     NodeSelectorRequirement, NodeSelectorTerm, ObjectFieldSelector, PersistentVolumeClaimTemplate,
     PersistentVolumeClaimVolumeSource, Pod, PodAffinity, PodAffinityTerm, PodAntiAffinity,
-    PodCondition, PodSpec, PodStatus, PreferredSchedulingTerm, Probe, ProjectedVolumeSource,
+    PodCondition, PodIP, PodSpec, PodStatus, PreferredSchedulingTerm, Probe, ProjectedVolumeSource,
     ResourceFieldSelector, ResourceHealth, ResourceStatus, SeccompProfile, SecretEnvSource,
     SecretKeySelector, SecretProjection, SecretVolumeSource, SecurityContext,
     ServiceAccountTokenProjection, SleepAction, TCPSocketAction, Toleration,

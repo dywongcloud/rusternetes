@@ -2195,7 +2195,7 @@ impl ContainerRuntime {
                             message: None,
                             started_at: None,
                             finished_at: state.finished_at,
-                            container_id: inspect.id.clone(),
+                            container_id: inspect.id.clone().map(|id| format!("docker://{}", id)),
                         })
                     } else {
                         Some(ContainerState::Waiting {
@@ -2272,8 +2272,14 @@ impl ContainerRuntime {
                         state: container_state,
                         last_state: None,
                         image: Some(container.image.clone()),
-                        image_id: None,
-                        container_id: inspect.id,
+                        image_id: inspect.image.clone().map(|img| {
+                            if img.starts_with("sha256:") {
+                                format!("docker-pullable://{}", img)
+                            } else {
+                                img
+                            }
+                        }),
+                        container_id: inspect.id.map(|id| format!("docker://{}", id)),
                         started: Some(startup_passed),
                         allocated_resources: None,
                         allocated_resources_status: None,
@@ -2469,6 +2475,41 @@ impl ContainerRuntime {
         debug!("Cleared probe states for pod {}", pod_name);
     }
 
+    /// Extract the best available IP from container network settings.
+    /// Tries the specific network first, then default ip_address, then 127.0.0.1.
+    fn extract_container_ip(
+        &self,
+        network_settings: Option<bollard::secret::NetworkSettings>,
+    ) -> String {
+        if let Some(ns) = network_settings {
+            // First try the specific network we're using
+            if let Some(networks) = &ns.networks {
+                if let Some(net_info) = networks.get(&self.network) {
+                    if let Some(ip) = &net_info.ip_address {
+                        if !ip.is_empty() && ip != "0.0.0.0" {
+                            return ip.clone();
+                        }
+                    }
+                }
+                // Try any network with a valid IP
+                for net_info in networks.values() {
+                    if let Some(ip) = &net_info.ip_address {
+                        if !ip.is_empty() && ip != "0.0.0.0" {
+                            return ip.clone();
+                        }
+                    }
+                }
+            }
+            // Fallback to top-level ip_address
+            if let Some(ip) = ns.ip_address {
+                if !ip.is_empty() && ip != "0.0.0.0" {
+                    return ip;
+                }
+            }
+        }
+        "127.0.0.1".to_string()
+    }
+
     async fn check_http_probe(
         &self,
         container_name: &str,
@@ -2481,10 +2522,7 @@ impl ContainerRuntime {
             .inspect_container(container_name, None::<InspectContainerOptions>)
             .await?;
 
-        let ip = inspect
-            .network_settings
-            .and_then(|ns| ns.ip_address)
-            .unwrap_or_else(|| "127.0.0.1".to_string());
+        let ip = self.extract_container_ip(inspect.network_settings);
 
         let scheme = http_get.scheme.as_deref().unwrap_or("http");
         let path = http_get.path.as_deref().unwrap_or("/");
@@ -2518,10 +2556,7 @@ impl ContainerRuntime {
             .inspect_container(container_name, None::<InspectContainerOptions>)
             .await?;
 
-        let ip = inspect
-            .network_settings
-            .and_then(|ns| ns.ip_address)
-            .unwrap_or_else(|| "127.0.0.1".to_string());
+        let ip = self.extract_container_ip(inspect.network_settings);
 
         let addr = format!("{}:{}", ip, tcp_socket.port);
         debug!("TCP probe: {}", addr);

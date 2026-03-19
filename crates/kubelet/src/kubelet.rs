@@ -4,7 +4,7 @@ use anyhow::Result;
 use rusternetes_common::{
     resources::{
         ContainerState, ContainerStatus, Node, NodeAddress, NodeCondition, NodeSpec, NodeStatus,
-        Pod, PodCondition, PodStatus,
+        Pod, PodCondition, PodIP, PodStatus,
     },
     types::Phase,
 };
@@ -371,6 +371,7 @@ impl Kubelet {
                         let container_statuses =
                             self.runtime.get_container_statuses(&fresh_pod).await.ok();
                         let pod_ip = self.runtime.get_pod_ip(pod_name).await.ok().flatten();
+                        let pod_i_ps = pod_ip.as_ref().map(|ip| vec![PodIP { ip: ip.clone() }]);
 
                         // Write Running status using the fresh resourceVersion
                         let mut new_pod = fresh_pod;
@@ -390,7 +391,7 @@ impl Kubelet {
                             resource_claim_statuses: None,
                             observed_generation: None,
                             host_i_ps: None,
-                            pod_i_ps: None,
+                            pod_i_ps,
                             nominated_node_name: None,
                             qos_class: Some(qos),
                             start_time: Some(chrono::Utc::now()),
@@ -435,6 +436,7 @@ impl Kubelet {
 
                 // Get pod IP
                 let pod_ip = self.runtime.get_pod_ip(pod_name).await.ok().flatten();
+                let pod_i_ps = pod_ip.as_ref().map(|ip| vec![PodIP { ip: ip.clone() }]);
 
                 // Update status to Running
                 let mut new_pod = fresh_pod;
@@ -454,7 +456,7 @@ impl Kubelet {
                     resource_claim_statuses: None,
                     observed_generation: None,
                     host_i_ps: None,
-                    pod_i_ps: None,
+                    pod_i_ps,
                     nominated_node_name: None,
                     qos_class: Some(qos),
                     start_time: Some(chrono::Utc::now()),
@@ -539,6 +541,7 @@ impl Kubelet {
                                 status.container_statuses = Some(container_statuses);
                                 // Update pod IP if we got one and it's different
                                 if pod_ip.is_some() && status.pod_ip != pod_ip {
+                                    status.pod_i_ps = pod_ip.as_ref().map(|ip| vec![PodIP { ip: ip.clone() }]);
                                     status.pod_ip = pod_ip;
                                 }
                                 if all_ready {
