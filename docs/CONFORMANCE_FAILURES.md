@@ -1,40 +1,39 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-19 (all fixable issues addressed)
+**Last updated**: 2026-03-19 (round 6 — protobuf, subpath, GC, preemption)
 
-## Fixed Issues
+## Fixed Issues (25 root causes)
 
 | # | Issue | Tests | Commit |
 |---|-------|-------|--------|
 | 1 | Status subresource routing | ~8 | c89343c |
 | 2 | Projected volume support | ~20 | c89343c |
-| 3 | Service type defaulting | ~3 | 09ed555 |
-| 4 | Headless service (ClusterIP=None) | ~3 | 640da11 |
-| 5 | Lease MicroTime format | ~1 | 09ed555 |
-| 6 | EndpointSlice managed-by label | ~1 | 09ed555 |
-| 7 | Discovery auth + webhook resources | ~2 | 09ed555 |
-| 8 | DeleteCollection routes | ~3 | 09ed555 |
-| 9 | Exec query parsing (repeated command=) | ~30 | ebcc6b8 |
-| 10 | Pod IP / Container ID / Image ID | ~5 | 894bdc1 |
-| 11 | SA automount bypass | ~2 | b6a4fea |
-| 12 | NodePort auto-allocation | ~2 | b6a4fea |
-| 13 | Watch sendInitialEvents + bookmark | ~all | 767a005 |
-| 14 | Watch label/field selector filtering | ~10 | c36367f |
-| 15 | Watch support in all handlers | ~20 | c36367f |
-| 16 | CronJob ? character in cron schedule | ~2 | aecc290 |
-| 17 | Downward API resource field refs | ~5 | aecc290 |
-| 18 | ConfigMap/Event deserialization compat | ~3 | aecc290 |
-| 19 | WebSocket log streaming | ~1 | aecc290 |
-| 20 | Aggregated discovery with resources | ~1 | e21ad25 |
-| 21 | iptables jump rule ordering (NodePort+DNS) | ~5 | e21ad25 |
+| 3 | Service type defaulting + headless | ~6 | 09ed555, 640da11 |
+| 4 | Lease MicroTime format | ~1 | 09ed555 |
+| 5 | EndpointSlice managed-by label | ~1 | 09ed555 |
+| 6 | Discovery auth + webhook + aggregated | ~3 | 09ed555, e21ad25 |
+| 7 | DeleteCollection routes | ~3 | 09ed555 |
+| 8 | Exec query parsing | ~30 | ebcc6b8 |
+| 9 | Pod IP / Container ID / Image ID | ~5 | 894bdc1 |
+| 10 | SA automount bypass + NodePort alloc | ~4 | b6a4fea |
+| 11 | Watch sendInitialEvents + selectors | ~all | 767a005, c36367f |
+| 12 | Watch support in all handlers | ~20 | c36367f |
+| 13 | CronJob ? + downwardAPI + ConfigMap/Event | ~10 | aecc290 |
+| 14 | WebSocket log streaming | ~1 | aecc290 |
+| 15 | NodePort MASQUERADE + ephemeral route | ~4 | 875eecf |
+| 16 | Watch empty RV + status details | ~3 | ad10a8b |
+| 17 | DaemonSet dupes + node deser + validation | ~4 | ad10a8b |
+| 18 | IPAddress API + RoleBinding errors | ~2 | ad10a8b |
+| 19 | Protobuf 406 fallback (CRD tests) | ~3 | 6d0788a |
+| 20 | SubPathExpr variable expansion | ~2 | 6d0788a |
+| 21 | GC replicationcontrollers scan | ~2 | 6d0788a |
+| 22 | Scheduler preemption eviction | ~2 | 6d0788a |
 
-## Cannot Fix (infrastructure/design limitations)
+## Remaining (infrastructure only)
 
 | # | Issue | Tests | Reason |
 |---|-------|-------|--------|
-| A | CRD protobuf creation | ~3 | Requires protobuf codec |
-| B | Variable Expansion subpath | ~2 | Complex kubelet feature |
-| C | 2 nodes required | ~2 | Single-node cluster |
+| A | 2 nodes required | ~2 | Single-node cluster |
 
 ## Test Results
 
@@ -42,4 +41,4 @@
 |-----|------|--------|--------|-------|------|
 | Quick mode | 2026-03-18 | 1 | 0 | 1 | 100% |
 | Full run 1 | 2026-03-19 | 11 | 75 | 86 | 13% |
-| Full run 4 | 2026-03-19 | pending (all fixes deployed) | | 441 | |
+| Full run 5 | pending | — | — | 441 | — |
