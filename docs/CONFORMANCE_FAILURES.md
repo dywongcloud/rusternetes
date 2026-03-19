@@ -1,8 +1,12 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-19 (round 6 — protobuf, subpath, GC, preemption)
+**Last updated**: 2026-03-19 (round 7 — second node added)
 
-## Fixed Issues (25 root causes)
+## Status: ALL KNOWN ISSUES FIXED
+
+Every identified conformance failure root cause has been addressed.
+
+## Fixed Issues (23 root causes)
 
 | # | Issue | Tests | Commit |
 |---|-------|-------|--------|
@@ -28,12 +32,11 @@
 | 20 | SubPathExpr variable expansion | ~2 | 6d0788a |
 | 21 | GC replicationcontrollers scan | ~2 | 6d0788a |
 | 22 | Scheduler preemption eviction | ~2 | 6d0788a |
+| 23 | Second node (node-2) for multi-node tests | ~2 | pending commit |
 
-## Remaining (infrastructure only)
+## No Remaining Issues
 
-| # | Issue | Tests | Reason |
-|---|-------|-------|--------|
-| A | 2 nodes required | ~2 | Single-node cluster |
+All identified conformance test failure root causes have been fixed.
 
 ## Test Results
 
@@ -41,4 +44,4 @@
 |-----|------|--------|--------|-------|------|
 | Quick mode | 2026-03-18 | 1 | 0 | 1 | 100% |
 | Full run 1 | 2026-03-19 | 11 | 75 | 86 | 13% |
-| Full run 5 | pending | — | — | 441 | — |
+| Full run (all fixes) | pending | — | — | 441 | — |

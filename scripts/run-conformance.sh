@@ -23,11 +23,14 @@ echo "[2/5] Cleaning up sonobuoy resources..."
 sonobuoy delete --wait 2>/dev/null || true
 sleep 2
 
-# Step 3: Add required labels to node (required for sonobuoy e2e tests)
-echo "[3/5] Adding required labels to node..."
+# Step 3: Add required labels to nodes (required for sonobuoy e2e tests)
+echo "[3/5] Adding required labels to nodes..."
 curl -sk -X PATCH https://localhost:6443/api/v1/nodes/node-1 \
     -H "Content-Type: application/merge-patch+json" \
-    -d '{"metadata":{"labels":{"kubernetes.io/os":"linux","kubernetes.io/arch":"amd64","kubernetes.io/hostname":"node-1"}}}' >/dev/null 2>&1 || echo "Warning: Could not label node"
+    -d '{"metadata":{"labels":{"kubernetes.io/os":"linux","kubernetes.io/arch":"amd64","kubernetes.io/hostname":"node-1"}}}' >/dev/null 2>&1 || echo "Warning: Could not label node-1"
+curl -sk -X PATCH https://localhost:6443/api/v1/nodes/node-2 \
+    -H "Content-Type: application/merge-patch+json" \
+    -d '{"metadata":{"labels":{"kubernetes.io/os":"linux","kubernetes.io/arch":"amd64","kubernetes.io/hostname":"node-2"}}}' >/dev/null 2>&1 || echo "Warning: Could not label node-2"
 
 # Step 4: Ensure CoreDNS is running
 echo "[4/5] Checking CoreDNS status..."
