@@ -46,6 +46,14 @@ pub async fn create_endpointslice(
     endpointslice.metadata.ensure_uid();
     endpointslice.metadata.ensure_creation_timestamp();
 
+    // Ensure managed-by label is set
+    endpointslice
+        .metadata
+        .labels
+        .get_or_insert_with(Default::default)
+        .entry("endpointslice.kubernetes.io/managed-by".to_string())
+        .or_insert_with(|| "endpointslice-controller.k8s.io".to_string());
+
     // Check for dry-run
     if crate::handlers::dryrun::is_dry_run(&params) {
         return Ok((StatusCode::OK, Json(endpointslice)));

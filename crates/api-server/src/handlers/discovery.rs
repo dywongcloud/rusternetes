@@ -336,6 +336,18 @@ pub async fn get_api_groups() -> (StatusCode, Json<APIGroupList>) {
                 version: "v1".to_string(),
             },
         },
+        // events.k8s.io API group
+        APIGroup {
+            name: "events.k8s.io".to_string(),
+            versions: vec![GroupVersionForDiscovery {
+                group_version: "events.k8s.io/v1".to_string(),
+                version: "v1".to_string(),
+            }],
+            preferred_version: GroupVersionForDiscovery {
+                group_version: "events.k8s.io/v1".to_string(),
+                version: "v1".to_string(),
+            },
+        },
     ];
 
     let api_group_list = APIGroupList {
@@ -2349,6 +2361,43 @@ pub async fn get_policy_v1_resources() -> (StatusCode, Json<APIResourceList>) {
         kind: "APIResourceList".to_string(),
         api_version: "v1".to_string(),
         group_version: "policy/v1".to_string(),
+        resources,
+    };
+
+    (StatusCode::OK, Json(resource_list))
+}
+
+/// GET /apis/events.k8s.io/v1
+/// Returns the list of resources available in the events.k8s.io/v1 API group
+pub async fn get_events_v1_resources() -> (StatusCode, Json<APIResourceList>) {
+    let resources = vec![
+        APIResource {
+            name: "events".to_string(),
+            singular_name: "event".to_string(),
+            namespaced: true,
+            kind: "Event".to_string(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+            short_names: Some(vec!["ev".to_string()]),
+            categories: None,
+        },
+    ];
+
+    let resource_list = APIResourceList {
+        kind: "APIResourceList".to_string(),
+        api_version: "v1".to_string(),
+        group_version: "events.k8s.io/v1".to_string(),
         resources,
     };
 

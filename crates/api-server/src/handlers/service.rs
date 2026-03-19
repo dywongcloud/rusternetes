@@ -57,6 +57,32 @@ pub async fn create(
     service.metadata.ensure_creation_timestamp();
     crate::handlers::lifecycle::set_initial_generation(&mut service.metadata);
 
+    // Default service type to ClusterIP if not set
+    if service.spec.service_type.is_none() {
+        service.spec.service_type = Some(ServiceType::ClusterIP);
+    }
+
+    // Default target_port to port value if not set
+    for port in &mut service.spec.ports {
+        if port.target_port.is_none() {
+            port.target_port = Some(rusternetes_common::resources::IntOrString::Int(port.port as i32));
+        }
+        // Default protocol to TCP if not set
+        if port.protocol.is_none() {
+            port.protocol = Some("TCP".to_string());
+        }
+    }
+
+    // Default ip_families and ip_family_policy for non-ExternalName services
+    if !matches!(service.spec.service_type, Some(ServiceType::ExternalName)) {
+        if service.spec.ip_families.is_none() {
+            service.spec.ip_families = Some(vec![rusternetes_common::resources::IPFamily::IPv4]);
+        }
+        if service.spec.ip_family_policy.is_none() {
+            service.spec.ip_family_policy = Some(rusternetes_common::resources::IPFamilyPolicy::SingleStack);
+        }
+    }
+
     // Allocate ClusterIP if needed
     let service_type = service
         .spec
@@ -73,23 +99,25 @@ pub async fn create(
             ));
         }
         // ExternalName services cannot have a ClusterIP
-        if service.spec.cluster_ip.is_some() && service.spec.cluster_ip.as_deref() != Some("None") {
+        if service.spec.cluster_ip.is_some()
+            && service.spec.cluster_ip.as_deref() != Some("None")
+            && service.spec.cluster_ip.as_deref() != Some("")
+        {
             return Err(rusternetes_common::Error::InvalidResource(
                 "ExternalName service cannot have a ClusterIP".to_string(),
             ));
         }
-        // ExternalName services don't need ClusterIP allocation
-        service.spec.cluster_ip = Some("None".to_string());
+        // ExternalName services don't need ClusterIP allocation - use empty string per K8s API convention
+        service.spec.cluster_ip = Some("".to_string());
     } else {
         // Only allocate ClusterIP for ClusterIP, NodePort, and LoadBalancer services
         if matches!(
             service_type,
             ServiceType::ClusterIP | ServiceType::NodePort | ServiceType::LoadBalancer
         ) {
-            // If ClusterIP is not specified or is "None", allocate one
-            if service.spec.cluster_ip.is_none()
-                || service.spec.cluster_ip.as_deref() == Some("None")
-            {
+            // If ClusterIP is not specified, allocate one
+            // "None" means headless service - don't allocate
+            if service.spec.cluster_ip.is_none() {
                 if let Some(allocated_ip) = state.ip_allocator.allocate() {
                     info!(
                         "Allocated ClusterIP {} for service {}/{}",

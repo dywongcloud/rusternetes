@@ -518,6 +518,10 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/resource.k8s.io/v1",
             get(handlers::discovery::get_resource_v1_resources),
         )
+        .route(
+            "/apis/events.k8s.io/v1",
+            get(handlers::discovery::get_events_v1_resources),
+        )
         .route("/version", get(handlers::discovery::get_version))
         // OpenAPI spec endpoints
         .route("/openapi/v2", get(handlers::openapi::get_swagger_spec))
@@ -600,6 +604,12 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/api/v1/namespaces/:namespace/pods/:name/eviction",
             post(handlers::pod_subresources::create_eviction),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/pods/:name/ephemeralcontainers",
+            get(handlers::pod::get)
+                .put(handlers::pod::update)
+                .patch(handlers::pod::patch),
         )
         .route(
             "/api/v1/namespaces/:namespace/pods/:name/proxy/*path",
@@ -1180,6 +1190,22 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/watch/namespaces/:namespace/events",
             get(handlers::watch::watch_events),
         )
+        // Events via events.k8s.io/v1 API group (delegates to same handlers as core/v1 events)
+        .route(
+            "/apis/events.k8s.io/v1/namespaces/:namespace/events",
+            get(handlers::event::list).post(handlers::event::create).delete(handlers::event::deletecollection_events),
+        )
+        .route(
+            "/apis/events.k8s.io/v1/namespaces/:namespace/events/:name",
+            get(handlers::event::get)
+                .put(handlers::event::update)
+                .patch(handlers::event::patch)
+                .delete(handlers::event::delete),
+        )
+        .route(
+            "/apis/events.k8s.io/v1/events",
+            get(handlers::event::list_all),
+        )
         // ResourceQuotas (namespace-scoped)
         .route(
             "/api/v1/namespaces/:namespace/resourcequotas",
@@ -1382,7 +1408,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/policy/v1/namespaces/:namespace/poddisruptionbudgets",
             get(handlers::poddisruptionbudget::list)
-                .post(handlers::poddisruptionbudget::create),
+                .post(handlers::poddisruptionbudget::create)
+                .delete(handlers::poddisruptionbudget::deletecollection_poddisruptionbudgets),
         )
         .route(
             "/apis/policy/v1/namespaces/:namespace/poddisruptionbudgets/:name",
@@ -1622,7 +1649,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/api/v1/namespaces/:namespace/podtemplates",
             get(handlers::podtemplate::list_podtemplates)
-                .post(handlers::podtemplate::create_podtemplate),
+                .post(handlers::podtemplate::create_podtemplate)
+                .delete(handlers::podtemplate::deletecollection_podtemplates),
         )
         .route(
             "/api/v1/namespaces/:namespace/podtemplates/:name",

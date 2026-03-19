@@ -58,14 +58,18 @@ impl EndpointSlice {
             }
 
             // Add label to link back to the service
-            slice
+            let labels = slice
                 .metadata
                 .labels
-                .get_or_insert_with(Default::default)
-                .insert(
-                    "kubernetes.io/service-name".to_string(),
-                    endpoints.metadata.name.clone(),
-                );
+                .get_or_insert_with(Default::default);
+            labels.insert(
+                "kubernetes.io/service-name".to_string(),
+                endpoints.metadata.name.clone(),
+            );
+            labels.insert(
+                "endpointslice.kubernetes.io/managed-by".to_string(),
+                "endpointslice-controller.k8s.io".to_string(),
+            );
 
             // Convert ports
             if let Some(endpoint_ports) = &subset.ports {
@@ -145,14 +149,18 @@ impl EndpointSlice {
             if let Some(ns) = &endpoints.metadata.namespace {
                 slice.metadata.namespace = Some(ns.clone());
             }
-            slice
+            let labels = slice
                 .metadata
                 .labels
-                .get_or_insert_with(Default::default)
-                .insert(
-                    "kubernetes.io/service-name".to_string(),
-                    endpoints.metadata.name.clone(),
-                );
+                .get_or_insert_with(Default::default);
+            labels.insert(
+                "kubernetes.io/service-name".to_string(),
+                endpoints.metadata.name.clone(),
+            );
+            labels.insert(
+                "endpointslice.kubernetes.io/managed-by".to_string(),
+                "endpointslice-controller.k8s.io".to_string(),
+            );
             slices.push(slice);
         }
 
