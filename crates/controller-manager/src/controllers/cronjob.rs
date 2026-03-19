@@ -168,8 +168,12 @@ impl<S: Storage> CronJobController<S> {
             other => other,
         };
 
+        // Kubernetes supports `?` in cron expressions (Quartz-style "no specific value").
+        // Replace with `*` since the `cron` crate doesn't support `?`.
+        let cron_schedule = &cron_schedule.replace('?', "*");
+
         // Parse cron expression using the `cron` crate
-        let schedule_parsed = match cron::Schedule::try_from(cron_schedule) {
+        let schedule_parsed = match cron::Schedule::try_from(cron_schedule.as_str()) {
             Ok(s) => s,
             Err(e) => {
                 warn!("Failed to parse cron schedule '{}': {}", cron_schedule, e);

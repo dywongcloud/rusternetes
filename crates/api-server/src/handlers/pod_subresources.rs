@@ -120,12 +120,13 @@ pub struct PortForwardQuery {
 }
 
 /// GET /api/v1/namespaces/{namespace}/pods/{name}/log
-/// Stream logs from a pod
+/// Stream logs from a pod (supports both HTTP and WebSocket)
 pub async fn get_logs(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(query): Query<LogsQuery>,
+    ws: Option<WebSocketUpgrade>,
 ) -> Result<Response> {
     info!("Getting logs for pod {}/{}", namespace, name);
 
@@ -182,11 +183,25 @@ pub async fn get_logs(
         }
     };
 
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", "text/plain; charset=utf-8")
-        .body(Body::from(logs))
-        .unwrap())
+    // If WebSocket upgrade requested, send logs over WebSocket
+    if let Some(ws) = ws {
+        let logs_clone = logs.clone();
+        Ok(ws.on_upgrade(move |mut socket| async move {
+            use axum::extract::ws::Message;
+            // Send logs as a text message
+            if let Err(e) = socket.send(Message::Text(logs_clone.into())).await {
+                info!("Failed to send logs over WebSocket: {}", e);
+            }
+            // Close the WebSocket
+            let _ = socket.close().await;
+        }))
+    } else {
+        Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .body(Body::from(logs))
+            .unwrap())
+    }
 }
 
 /// Get real logs from the container runtime

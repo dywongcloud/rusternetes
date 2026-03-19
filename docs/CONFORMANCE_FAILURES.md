@@ -1,124 +1,88 @@
 # Full Conformance Failure Analysis
 
-86 tests completed, 75 failed, 11 passed (13% pass rate).
-Analysis from conformance run on 2026-03-19.
+**Last updated**: 2026-03-19 (after fixes round 3)
 
-## Root Cause Categories
+## Fixed Issues (deployed or committed)
 
-### 1. STATUS SUBRESOURCE PATH ROUTING (affects ~8 tests)
-**Error**: `Wrong number of path arguments for 'Path'. Expected 3 but got 2`
-**Examples**:
-- PATCH pods/status: `patch pods pod-8tb8l`
-- GET statefulset/status: `fetch NamespaceStatus namespaces-2752`
-- PATCH nodes/status: `patch nodes node-1`
-- PATCH jobs.batch/status: `patch jobs.batch suspend-false-to-true`
+| # | Issue | Tests | Status |
+|---|-------|-------|--------|
+| 1 | Status subresource routing (Path args) | ~8 | ✅ FIXED (c89343c) |
+| 2 | Projected volume support | ~20 | ✅ FIXED (c89343c) |
+| 3 | Service type defaulting (ClusterIP) | ~3 | ✅ FIXED (09ed555) |
+| 4 | Headless service (ClusterIP=None) rejection | ~3 | ✅ FIXED (640da11) |
+| 5 | Lease MicroTime format | ~1 | ✅ FIXED (09ed555) |
+| 6 | EndpointSlice managed-by label | ~1 | ✅ FIXED (09ed555) |
+| 7 | Discovery /api auth + webhook resources | ~2 | ✅ FIXED (09ed555) |
+| 8 | DeleteCollection routes for PDB/podtemplates | ~3 | ✅ FIXED (09ed555) |
+| 9 | Exec query parameter parsing (repeated command=) | ~30 | ✅ FIXED (ebcc6b8) |
+| 10 | Pod IP / Container ID / Image ID reporting | ~5 | ✅ FIXED (894bdc1) |
+| 11 | SA automount bypass | ~2 | ✅ FIXED (b6a4fea) |
+| 12 | NodePort auto-allocation | ~2 | ✅ FIXED (b6a4fea) |
+| 13 | Watch sendInitialEvents + bookmark annotation | ~all | ✅ FIXED (767a005, 8f4a926) |
+| 14 | Watch label/field selector filtering | ~10 | ✅ FIXED (c36367f) |
+| 15 | Watch support in all resource handlers | ~20 | ✅ FIXED (ad84a5f, c36367f) |
 
-**Root cause**: Status subresource routes like `/api/v1/namespaces/{ns}/pods/{name}/status`
-are not properly routing. The path parser expects different arg counts.
-**Fix**: Check router for `/status` suffix routes.
+## Remaining Issues (need fixing)
 
-### 2. POD TIMEOUT — Pods not starting/running (affects ~20+ tests)
-**Error**: `expected pod "..." success: Timed out after 300.003s`
-**Examples**: configmap pods, secret pods, projected pods, downwardAPI pods
-**Root cause**: Pods that mount configMap/secret volumes are created but never reach
-Running phase. The kubelet is likely failing to mount volumes or the pods crash.
-**Fix**: Investigate kubelet volume mounting for configMap and secret volumes.
+### HIGH PRIORITY
 
-### 3. MISSING AUTH CONTEXT (affects ~3 tests)
-**Error**: `Missing request extension: Extension of type 'api_server::middleware::AuthContext' was not found`
-**Root cause**: Some API endpoints don't go through the auth middleware. The
-`/api` discovery endpoint and ephemeral container PATCH are missing it.
-**Fix**: Ensure all API routes go through the auth middleware.
+#### 18. CronJob cron schedule parsing — `?` character (affects ~2 tests)
+**Error**: `Failed to parse cron schedule '*/1 * * * ?': Invalid expression`
+**Root cause**: Our cron parser doesn't support `?` (Quartz-style "no specific value").
+Kubernetes cron supports `?` as equivalent to `*` for day-of-week.
+**File**: `crates/controller-manager/src/controllers/cronjob.rs` (cron parsing)
+**Fix**: Replace `?` with `*` before parsing, or use a cron library that supports it.
 
-### 4. SERVICE TYPE DEFAULTING (affects ~3 tests)
-**Error**: `unexpected Spec.Type () for service, expected ClusterIP`
-**Error**: `unexpected Spec.ClusterIP (None) for ExternalName service, expected empty`
-**Root cause**: Service type not defaulted to "ClusterIP" on creation.
-ExternalName services should have empty ClusterIP (""), not "None".
-**Fix**: Default service type to "ClusterIP". Set ClusterIP to "" for ExternalName.
+#### 19. Pod volume mounting — resource field refs (affects ~5 tests)
+**Error**: Pods with downward API volume mounts for resource limits/requests timeout
+**Root cause**: `resolve_resource_field_ref` may not handle cpu/memory correctly,
+or the file mode isn't being set properly.
+**File**: `crates/kubelet/src/runtime.rs`
 
-### 5. DELETE COLLECTION NOT IMPLEMENTED (affects ~3 tests)
-**Error**: `the server does not allow this method on the requested resource (delete podtemplates)`
-**Error**: `Deleting PDB set: the server does not allow this method (delete poddisruptionbudgets.policy)`
-**Root cause**: DeleteCollection endpoint returns 405 for some resources.
-**Fix**: Implement DELETE on collection endpoints for podtemplates, poddisruptionbudgets.
-
-### 6. CRD PROTOBUF CREATION (affects ~3 tests)
-**Error**: `the body of the request was in an unknown format - accepted media types include: application/json`
-**Root cause**: CRD test framework sends protobuf, our API rejects it.
-**Fix**: This is hard to fix without protobuf support. Need JSON-only client config.
-
-### 7. DESERIALIZATION FAILURES (affects ~3 tests)
-**Error**: `the server rejected our request due to an error in our request (post configmaps/replicasets/events)`
-**Root cause**: Some request bodies have fields our structs don't handle.
-**Fix**: Make structs more permissive (deny_unknown_fields not set, all fields Optional).
-
-### 8. DNS RESOLUTION FAILURES (affects ~2 tests)
-**Error**: `Unable to read agnhost_udp@kubernetes.default.svc.cluster.local`
-**Root cause**: DNS queries inside pods don't resolve cluster services.
-**Fix**: CoreDNS integration and pod DNS configuration.
-
-### 9. SERVICE REACHABILITY (affects ~3 tests)
+#### 20. Service reachability via NodePort (affects ~3 tests)
 **Error**: `service is not reachable within 2m0s timeout on endpoint nodeport-test:80`
-**Root cause**: NodePort services not reachable. kube-proxy iptables may not work for NodePort.
-**Fix**: Verify kube-proxy NodePort rules.
+**Root cause**: NodePort services not reachable from inside pods.
+kube-proxy NodePort iptables rules may not be in the right namespace.
 
-### 10. CONFORMANCE REQUIRES 2 NODES (affects 2 tests)
+#### 21. DNS resolution failures (affects ~2 tests)
+**Error**: `Unable to read agnhost_udp@kubernetes.default.svc.cluster.local`
+**Root cause**: DNS queries from pods don't resolve cluster services.
+CoreDNS may need proper service/endpoint data.
+
+### MEDIUM PRIORITY
+
+#### 22. CRD protobuf creation (affects ~3 tests)
+**Error**: `the body of the request was in an unknown format`
+**Root cause**: CRD test framework sends protobuf. Can't fix without protobuf support.
+
+#### 23. Deserialization failures (affects ~3 tests)
+**Error**: `the server rejected our request due to an error in our request`
+**Root cause**: ConfigMap, ReplicaSet, Event creation failing due to
+missing/incompatible fields in our structs.
+
+#### 24. Variable Expansion subpath (affects ~2 tests)
+**Error**: Pod creation immediate failure at expansion.go:272
+**Root cause**: kubelet doesn't handle subPathExpr expansion failure properly.
+
+#### 25. Conformance requires 2 nodes (affects 2 tests)
 **Error**: `Conformance requires at least two nodes`
-**Root cause**: Some tests require 2+ nodes, we only have 1.
-**Fix**: Cannot fix without adding a second node to the cluster.
+**Root cause**: Cannot fix without adding a second node.
 
-### 11. LEASE TIMESTAMP PARSING (affects 1 test)
-**Error**: `parsing time "0001-01-01T00:00:02Z" as "2006-01-02T15:04:05.000000Z07:00": cannot parse "Z"`
-**Root cause**: Lease acquireTime/renewTime serialized with wrong format (missing microseconds).
-**Fix**: Use chrono's proper format or MicroTime format.
+#### 26. WebSocket log streaming (affects 1 test)
+**Error**: `Failed to open websocket to .../log: bad status`
 
-### 12. WEBSOCKET LOGS (affects 1 test)
-**Error**: `Failed to open websocket to .../log?container=main: bad status`
-**Root cause**: WebSocket log streaming endpoint returns error.
-**Fix**: Check log streaming via WebSocket.
+#### 27. Aggregated discovery format (affects 1 test)
+**Error**: Missing aggregated discovery endpoint format
 
-### 13. ENDPOINTSLICE LABELS (affects 1 test)
-**Error**: `Expected EndpointSlice to have endpointslice.kubernetes.io/managed-by label`
-**Root cause**: EndpointSlice controller doesn't set the managed-by label.
-**Fix**: Set label when creating EndpointSlices.
+#### 28. Ephemeral container PATCH auth (affects 1 test)
+**Error**: `Missing request extension: AuthContext`
+**Root cause**: Ephemeral container PATCH route missing auth middleware.
 
-### 14. WATCH WITH INITIAL RV "" (affects 1 test)
-**Error**: `initial RV "" is not supported due to issues with underlying WATCH`
-**Root cause**: Watch with empty resourceVersion not handled properly.
-**Fix**: Handle empty resourceVersion in watch handler.
+## Test Results Summary
 
-### 15. EPHEMERAL CONTAINERS PATCH (affects 1 test)
-**Error**: `Missing request extension: AuthContext` on ephemeral container patch
-**Root cause**: Ephemeral container subresource PATCH not routed through auth middleware.
-**Fix**: Add auth middleware to ephemeral container routes.
-
-### 16. DISCOVERY ENDPOINT (affects 1 test)
-**Error**: `Expected gvr admissionregistration.k8s.io v1 validatingwebhookconfigurations to exist in discovery`
-**Root cause**: Discovery endpoint missing validatingwebhookconfigurations resource.
-**Fix**: Add to discovery handler.
-
-### 17. AGGREGATED DISCOVERY (affects 1 test)
-**Error**: Missing aggregated discovery endpoint
-**Root cause**: /apis endpoint format doesn't match aggregated discovery expectations.
-**Fix**: Implement aggregated discovery format.
-
-## Priority Order for Fixes
-
-### HIGH IMPACT (fix these first — affects many tests):
-1. Pod volume mounting timeouts (20+ tests) — configmap/secret volumes not working
-2. Status subresource routing (8 tests) — /status path parsing broken
-3. Missing AuthContext on routes (3 tests) — middleware not applied to all routes
-
-### MEDIUM IMPACT:
-4. Service type defaulting (3 tests)
-5. DeleteCollection for podtemplates/PDB (3 tests)
-6. Deserialization failures (3 tests) — make structs more permissive
-
-### LOW IMPACT (1-2 tests each):
-7. CRD protobuf (3 tests)
-8. DNS resolution (2 tests)
-9. Lease timestamp format (1 test)
-10. EndpointSlice managed-by label (1 test)
-11. WebSocket log streaming (1 test)
-12. Conformance 2-node requirement (2 tests — can't fix)
+| Run | Date | Passed | Failed | Total | Rate |
+|-----|------|--------|--------|-------|------|
+| Quick mode | 2026-03-18 | 1 | 0 | 1 | 100% |
+| Full run 1 | 2026-03-19 | 11 | 75 | 86 | 13% |
+| Full run 2 (partial) | 2026-03-19 | 1 | 5 | 6 | 17% |
+| Full run 3 | 2026-03-19 | in progress | | | |

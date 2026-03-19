@@ -15,8 +15,13 @@ pub struct ConfigMap {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<HashMap<String, String>>,
 
-    /// BinaryData contains binary data
-    #[serde(skip_serializing_if = "Option::is_none", alias = "binaryData")]
+    /// BinaryData contains binary data (base64-encoded in JSON)
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_configmap_binary_data",
+        deserialize_with = "deserialize_configmap_binary_data"
+    )]
     pub binary_data: Option<HashMap<String, Vec<u8>>>,
 
     /// Immutable, if set, ensures that data stored in the ConfigMap cannot be updated
@@ -46,6 +51,58 @@ impl ConfigMap {
     pub fn with_immutable(mut self, immutable: bool) -> Self {
         self.immutable = Some(immutable);
         self
+    }
+}
+
+/// Custom serializer for ConfigMap binaryData field that encodes Vec<u8> as base64 strings
+fn serialize_configmap_binary_data<S>(
+    data: &Option<HashMap<String, Vec<u8>>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match data {
+        None => serializer.serialize_none(),
+        Some(map) => {
+            let mut string_map = HashMap::new();
+            for (k, v) in map {
+                let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, v);
+                string_map.insert(k.clone(), encoded);
+            }
+            serializer.collect_map(string_map)
+        }
+    }
+}
+
+/// Custom deserializer for ConfigMap binaryData field that handles base64-encoded strings
+fn deserialize_configmap_binary_data<'de, D>(
+    deserializer: D,
+) -> Result<Option<HashMap<String, Vec<u8>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<HashMap<String, String>> = Option::deserialize(deserializer)?;
+
+    match opt {
+        None => Ok(None),
+        Some(map) => {
+            if map.is_empty() {
+                return Ok(Some(HashMap::new()));
+            }
+            let mut result = HashMap::new();
+            for (k, v) in map {
+                match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &v) {
+                    Ok(decoded) => {
+                        result.insert(k, decoded);
+                    }
+                    Err(_) => {
+                        result.insert(k, v.into_bytes());
+                    }
+                }
+            }
+            Ok(Some(result))
+        }
     }
 }
 

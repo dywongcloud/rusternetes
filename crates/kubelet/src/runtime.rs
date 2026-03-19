@@ -3147,6 +3147,12 @@ impl ContainerRuntime {
     }
 
     /// Get a container resource value for DownwardAPI
+    ///
+    /// Returns the resource value formatted according to the divisor.
+    /// For memory: returns bytes (or bytes/divisor) as a string.
+    /// For CPU: returns millicores (or cores with divisor "1") as a string.
+    /// When divisor is "0" or absent, default units are used (bytes for memory, whole-number
+    /// representation for CPU).
     fn get_container_resource_value(
         &self,
         pod: &Pod,
@@ -3154,48 +3160,60 @@ impl ContainerRuntime {
     ) -> Result<String> {
         let spec = pod.spec.as_ref().context("Pod has no spec")?;
 
-        // Find the container
-        let container_name = resource_ref
-            .container_name
-            .as_ref()
-            .context("Container name is required for resource field selector")?;
+        // Find the container — if containerName is not set, default to the first container
+        let container = if let Some(ref container_name) = resource_ref.container_name {
+            spec.containers
+                .iter()
+                .find(|c| &c.name == container_name)
+                .with_context(|| format!("Container {} not found", container_name))?
+        } else {
+            spec.containers
+                .first()
+                .context("Pod has no containers")?
+        };
 
-        let container = spec
-            .containers
-            .iter()
-            .find(|c| &c.name == container_name)
-            .with_context(|| format!("Container {} not found", container_name))?;
+        let is_cpu = resource_ref.resource.contains("cpu")
+            || resource_ref.resource.contains("hugepages");
+        let is_memory = resource_ref.resource.contains("memory")
+            || resource_ref.resource.contains("ephemeral-storage");
 
-        let resources = container
-            .resources
-            .as_ref()
-            .context("Container has no resources specified")?;
-
-        let value = match resource_ref.resource.as_str() {
-            "limits.cpu" => resources
-                .limits
+        let raw_value = match resource_ref.resource.as_str() {
+            "limits.cpu" => container
+                .resources
                 .as_ref()
+                .and_then(|r| r.limits.as_ref())
                 .and_then(|l| l.get("cpu"))
-                .cloned()
-                .unwrap_or("0".to_string()),
-            "limits.memory" => resources
-                .limits
+                .cloned(),
+            "limits.memory" => container
+                .resources
                 .as_ref()
+                .and_then(|r| r.limits.as_ref())
                 .and_then(|l| l.get("memory"))
-                .cloned()
-                .unwrap_or("0".to_string()),
-            "requests.cpu" => resources
-                .requests
+                .cloned(),
+            "limits.ephemeral-storage" => container
+                .resources
                 .as_ref()
-                .and_then(|r| r.get("cpu"))
-                .cloned()
-                .unwrap_or("0".to_string()),
-            "requests.memory" => resources
-                .requests
+                .and_then(|r| r.limits.as_ref())
+                .and_then(|l| l.get("ephemeral-storage"))
+                .cloned(),
+            "requests.cpu" => container
+                .resources
                 .as_ref()
-                .and_then(|r| r.get("memory"))
-                .cloned()
-                .unwrap_or("0".to_string()),
+                .and_then(|r| r.requests.as_ref())
+                .and_then(|l| l.get("cpu"))
+                .cloned(),
+            "requests.memory" => container
+                .resources
+                .as_ref()
+                .and_then(|r| r.requests.as_ref())
+                .and_then(|l| l.get("memory"))
+                .cloned(),
+            "requests.ephemeral-storage" => container
+                .resources
+                .as_ref()
+                .and_then(|r| r.requests.as_ref())
+                .and_then(|l| l.get("ephemeral-storage"))
+                .cloned(),
             _ => {
                 return Err(anyhow::anyhow!(
                     "Unsupported resource field: {}",
@@ -3204,7 +3222,43 @@ impl ContainerRuntime {
             }
         };
 
-        Ok(value)
+        // Parse the divisor (default: "1" meaning base units — bytes for memory, cores for cpu)
+        let divisor_str = resource_ref.divisor.as_deref().unwrap_or("0");
+        // A divisor of "0" means use default units (same as "1")
+
+        if is_cpu {
+            // Convert CPU value to millicores, then apply divisor
+            let millicores = raw_value
+                .as_deref()
+                .map(parse_cpu_quantity)
+                .unwrap_or(0);
+            let divisor_millicores = if divisor_str == "0" || divisor_str == "1" {
+                // Default divisor for CPU: return value in whole-number format (millicores)
+                // Kubernetes default is to return in "1" (cores) when divisor is absent,
+                // but the downward API typically uses "1m" or "1" divisor.
+                1 // return millicores
+            } else {
+                parse_cpu_quantity(divisor_str).max(1)
+            };
+            let result = millicores / divisor_millicores;
+            Ok(result.to_string())
+        } else if is_memory {
+            // Convert memory value to bytes, then apply divisor
+            let bytes = raw_value
+                .as_deref()
+                .map(parse_memory_quantity)
+                .unwrap_or(0);
+            let divisor_bytes = if divisor_str == "0" || divisor_str == "1" {
+                1 // return bytes
+            } else {
+                parse_memory_quantity(divisor_str).max(1)
+            };
+            let result = bytes / divisor_bytes;
+            Ok(result.to_string())
+        } else {
+            // Unknown resource type, return raw value
+            Ok(raw_value.unwrap_or_else(|| "0".to_string()))
+        }
     }
 
     /// List all running pod names from the container runtime

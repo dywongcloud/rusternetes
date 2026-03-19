@@ -38,7 +38,7 @@ impl ServiceAccount {
 }
 
 /// ObjectReference contains enough information to let you inspect or modify the referred object
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ObjectReference {
     #[serde(skip_serializing_if = "Option::is_none")]

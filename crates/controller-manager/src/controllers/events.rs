@@ -222,7 +222,7 @@ impl<S: Storage> EventsController<S> {
             // Update count and last timestamp
             let mut updated_event = existing_event;
             updated_event.count += 1;
-            updated_event.last_timestamp = Utc::now();
+            updated_event.last_timestamp = Some(Utc::now());
             self.storage.update(&key, &updated_event).await?;
             return Ok(());
         }
@@ -259,7 +259,7 @@ impl<S: Storage> EventsController<S> {
         let one_hour_ago = Utc::now() - chrono::Duration::hours(1);
 
         for event in all_events {
-            if event.last_timestamp < one_hour_ago {
+            if event.last_timestamp.map_or(true, |t| t < one_hour_ago) {
                 let namespace = event.metadata.namespace.as_deref().unwrap_or("default");
                 let name = &event.metadata.name;
                 let key = format!("/registry/events/{}/{}", namespace, name);

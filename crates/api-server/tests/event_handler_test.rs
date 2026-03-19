@@ -33,8 +33,8 @@ fn create_test_event(name: &str, namespace: &str) -> Event {
             component: "kubelet".to_string(),
             host: Some("node-1".to_string()),
         },
-        first_timestamp: chrono::Utc::now(),
-        last_timestamp: chrono::Utc::now(),
+        first_timestamp: Some(chrono::Utc::now()),
+        last_timestamp: Some(chrono::Utc::now()),
         count: 1,
         event_type: EventType::Normal,
         action: Some("Started".to_string()),
@@ -43,6 +43,9 @@ fn create_test_event(name: &str, namespace: &str) -> Event {
         event_time: None,
         reporting_component: None,
         reporting_instance: None,
+        note: None,
+        regarding: None,
+        extra: None,
     }
 }
 
@@ -84,7 +87,7 @@ async fn test_event_update() {
     // Update event count (simulating repeated event)
     event.count = 5;
     event.message = "Pod started successfully (repeated 5 times)".to_string();
-    event.last_timestamp = chrono::Utc::now();
+    event.last_timestamp = Some(chrono::Utc::now());
 
     let updated: Event = storage.update(&key, &event).await.unwrap();
     assert_eq!(updated.count, 5);
@@ -319,14 +322,14 @@ async fn test_event_count_aggregation() {
 
     // Create initial event
     event.count = 1;
-    event.first_timestamp = chrono::Utc::now();
-    event.last_timestamp = chrono::Utc::now();
+    event.first_timestamp = Some(chrono::Utc::now());
+    event.last_timestamp = Some(chrono::Utc::now());
     storage.create(&key, &event).await.unwrap();
 
     // Simulate event aggregation (count increases over time)
     for count in 2..=10 {
         event.count = count;
-        event.last_timestamp = chrono::Utc::now();
+        event.last_timestamp = Some(chrono::Utc::now());
         storage.update(&key, &event).await.unwrap();
     }
 

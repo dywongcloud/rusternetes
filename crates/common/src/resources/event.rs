@@ -4,6 +4,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Event represents a single event in the system
+///
+/// Many fields are optional to tolerate varied event formats from conformance tests
+/// and different Kubernetes client implementations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Event {
@@ -16,28 +19,35 @@ pub struct Event {
     pub metadata: ObjectMeta,
 
     /// InvolvedObject is the object this event is about
+    #[serde(default)]
     pub involved_object: ObjectReference,
 
     /// Reason is a short, machine understandable string that gives the reason for this event
+    #[serde(default)]
     pub reason: String,
 
     /// Message is a human-readable description of the status of this operation
+    #[serde(default)]
     pub message: String,
 
     /// Source component generating the event
+    #[serde(default)]
     pub source: EventSource,
 
     /// Type of this event (Normal, Warning), new types could be added in the future
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     pub event_type: EventType,
 
     /// The time at which the event was first recorded
-    pub first_timestamp: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_timestamp: Option<DateTime<Utc>>,
 
     /// The time at which the most recent occurrence of this event was recorded
-    pub last_timestamp: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_timestamp: Option<DateTime<Utc>>,
 
     /// The number of times this event has occurred
+    #[serde(default)]
     pub count: i32,
 
     /// Optional action that was taken/failed regarding the Regarding object
@@ -63,6 +73,18 @@ pub struct Event {
     /// ID of the controller instance (e.g., "kubelet-xyzf")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reporting_instance: Option<String>,
+
+    /// Note is a human-readable description (used by events.k8s.io/v1 format)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+
+    /// Regarding contains the object this Event is about (events.k8s.io/v1 format)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub regarding: Option<ObjectReference>,
+
+    /// Catch-all for any additional fields not explicitly defined
+    #[serde(flatten)]
+    pub extra: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
 impl Event {
@@ -88,8 +110,8 @@ impl Event {
                 host: None,
             },
             event_type,
-            first_timestamp: now,
-            last_timestamp: now,
+            first_timestamp: Some(now),
+            last_timestamp: Some(now),
             count: 1,
             action: None,
             related: None,
@@ -97,6 +119,9 @@ impl Event {
             event_time: None,
             reporting_component: None,
             reporting_instance: None,
+            note: None,
+            regarding: None,
+            extra: None,
         }
     }
 
@@ -116,10 +141,11 @@ impl Event {
 }
 
 /// EventSource contains information for an event
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct EventSource {
     /// Component from which the event is generated
+    #[serde(default)]
     pub component: String,
 
     /// Node name on which the event is generated (optional)
