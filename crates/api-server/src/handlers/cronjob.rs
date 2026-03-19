@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -171,7 +172,23 @@ pub async fn list(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<List<CronJob>>> {
+) -> Result<axum::response::Response> {
+    // Check if this is a watch request
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: params.get("resourceVersion").map(|s| s.clone()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").map(|s| s.clone()),
+            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_namespaced::<CronJob>(
+            state, auth_ctx, namespace, "cronjobs", "batch", watch_params,
+        ).await;
+    }
+
     info!("Listing cronjobs in namespace: {}", namespace);
 
     // Check authorization
@@ -187,13 +204,13 @@ pub async fn list(
     }
 
     let prefix = build_prefix("cronjobs", Some(&namespace));
-    let mut cronjobs = state.storage.list(&prefix).await?;
+    let mut cronjobs: Vec<CronJob> = state.storage.list(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut cronjobs, &params)?;
 
     let list = List::new("CronJobList", "batch/v1", cronjobs);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 /// List all cronjobs across all namespaces
@@ -201,7 +218,23 @@ pub async fn list_all_cronjobs(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<List<CronJob>>> {
+) -> Result<axum::response::Response> {
+    // Check if this is a watch request
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: params.get("resourceVersion").map(|s| s.clone()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").map(|s| s.clone()),
+            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_cluster_scoped::<CronJob>(
+            state, auth_ctx, "cronjobs", "batch", watch_params,
+        ).await;
+    }
+
     info!("Listing all cronjobs");
 
     // Check authorization (cluster-wide list)
@@ -221,7 +254,7 @@ pub async fn list_all_cronjobs(
     crate::handlers::filtering::apply_selectors(&mut cronjobs, &params)?;
 
     let list = List::new("CronJobList", "batch/v1", cronjobs);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Use the macro to create a PATCH handler

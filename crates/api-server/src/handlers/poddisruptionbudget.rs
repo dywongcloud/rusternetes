@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -193,7 +194,23 @@ pub async fn list(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<PodDisruptionBudget>>> {
+) -> Result<axum::response::Response> {
+    // Check if this is a watch request
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: params.get("resourceVersion").map(|s| s.clone()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").map(|s| s.clone()),
+            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_namespaced::<PodDisruptionBudget>(
+            state, auth_ctx, namespace, "poddisruptionbudgets", "policy", watch_params,
+        ).await;
+    }
+
     info!("Listing poddisruptionbudgets in namespace: {}", namespace);
 
     // Check authorization
@@ -209,20 +226,36 @@ pub async fn list(
     }
 
     let prefix = build_prefix("poddisruptionbudgets", Some(&namespace));
-    let mut pdbs = state.storage.list(&prefix).await?;
+    let mut pdbs: Vec<PodDisruptionBudget> = state.storage.list(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut pdbs, &params)?;
 
     let list = List::new("PodDisruptionBudgetList", "policy/v1", pdbs);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 pub async fn list_all(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<PodDisruptionBudget>>> {
+) -> Result<axum::response::Response> {
+    // Check if this is a watch request
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: params.get("resourceVersion").map(|s| s.clone()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").map(|s| s.clone()),
+            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_cluster_scoped::<PodDisruptionBudget>(
+            state, auth_ctx, "poddisruptionbudgets", "policy", watch_params,
+        ).await;
+    }
+
     info!("Listing all poddisruptionbudgets");
 
     // Check authorization
@@ -237,13 +270,13 @@ pub async fn list_all(
     }
 
     let prefix = build_prefix("poddisruptionbudgets", None);
-    let mut pdbs = state.storage.list(&prefix).await?;
+    let mut pdbs: Vec<PodDisruptionBudget> = state.storage.list(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut pdbs, &params)?;
 
     let list = List::new("PodDisruptionBudgetList", "policy/v1", pdbs);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Status subresource handlers

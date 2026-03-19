@@ -122,6 +122,8 @@ where
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
     let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
+    let label_selector = params.label_selector.clone();
+    let field_selector = params.field_selector.clone();
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
@@ -137,6 +139,13 @@ where
             // Update latest resourceVersion
             if let Some(rv) = object.metadata().resource_version.as_ref() {
                 latest_resource_version = Some(rv.clone());
+            }
+
+            // Filter by label and field selectors
+            if !matches_label_selector(object.metadata(), &label_selector)
+                || !matches_field_selector(object.metadata(), &field_selector)
+            {
+                continue;
             }
 
             let k8s_event = K8sWatchEvent {
@@ -206,6 +215,13 @@ where
                                         latest_resource_version = Some(rv.clone());
                                     }
 
+                                    // Filter by label and field selectors
+                                    if !matches_label_selector(object.metadata(), &label_selector)
+                                        || !matches_field_selector(object.metadata(), &field_selector)
+                                    {
+                                        continue;
+                                    }
+
                                     let k8s_event = K8sWatchEvent {
                                         event_type: WatchEventType::Added,
                                         object,
@@ -223,6 +239,13 @@ where
                                     // Update latest resourceVersion
                                     if let Some(rv) = object.metadata().resource_version.as_ref() {
                                         latest_resource_version = Some(rv.clone());
+                                    }
+
+                                    // Filter by label and field selectors
+                                    if !matches_label_selector(object.metadata(), &label_selector)
+                                        || !matches_field_selector(object.metadata(), &field_selector)
+                                    {
+                                        continue;
                                     }
 
                                     let k8s_event = K8sWatchEvent {
@@ -243,6 +266,13 @@ where
                                     // Update latest resourceVersion
                                     if let Some(rv) = object.metadata().resource_version.as_ref() {
                                         latest_resource_version = Some(rv.clone());
+                                    }
+
+                                    // Filter by label and field selectors
+                                    if !matches_label_selector(object.metadata(), &label_selector)
+                                        || !matches_field_selector(object.metadata(), &field_selector)
+                                    {
+                                        continue;
                                     }
 
                                     let k8s_event = K8sWatchEvent {
@@ -398,6 +428,8 @@ where
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
     let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
+    let label_selector = params.label_selector.clone();
+    let field_selector = params.field_selector.clone();
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
@@ -413,6 +445,13 @@ where
             // Update latest resourceVersion
             if let Some(rv) = object.metadata().resource_version.as_ref() {
                 latest_resource_version = Some(rv.clone());
+            }
+
+            // Filter by label and field selectors
+            if !matches_label_selector(object.metadata(), &label_selector)
+                || !matches_field_selector(object.metadata(), &field_selector)
+            {
+                continue;
             }
 
             let k8s_event = K8sWatchEvent {
@@ -482,6 +521,13 @@ where
                                         latest_resource_version = Some(rv.clone());
                                     }
 
+                                    // Filter by label and field selectors
+                                    if !matches_label_selector(object.metadata(), &label_selector)
+                                        || !matches_field_selector(object.metadata(), &field_selector)
+                                    {
+                                        continue;
+                                    }
+
                                     let k8s_event = K8sWatchEvent {
                                         event_type: WatchEventType::Added,
                                         object,
@@ -499,6 +545,13 @@ where
                                     // Update latest resourceVersion
                                     if let Some(rv) = object.metadata().resource_version.as_ref() {
                                         latest_resource_version = Some(rv.clone());
+                                    }
+
+                                    // Filter by label and field selectors
+                                    if !matches_label_selector(object.metadata(), &label_selector)
+                                        || !matches_field_selector(object.metadata(), &field_selector)
+                                    {
+                                        continue;
                                     }
 
                                     let k8s_event = K8sWatchEvent {
@@ -519,6 +572,13 @@ where
                                     // Update latest resourceVersion
                                     if let Some(rv) = object.metadata().resource_version.as_ref() {
                                         latest_resource_version = Some(rv.clone());
+                                    }
+
+                                    // Filter by label and field selectors
+                                    if !matches_label_selector(object.metadata(), &label_selector)
+                                        || !matches_field_selector(object.metadata(), &field_selector)
+                                    {
+                                        continue;
                                     }
 
                                     let k8s_event = K8sWatchEvent {
@@ -629,6 +689,76 @@ where
     Ok(response)
 }
 
+/// Check if an object matches a label selector
+fn matches_label_selector(metadata: &ObjectMeta, selector: &Option<String>) -> bool {
+    let selector = match selector {
+        Some(s) if !s.is_empty() => s,
+        _ => return true, // No selector = match all
+    };
+
+    let labels = match &metadata.labels {
+        Some(l) => l,
+        None => return false, // No labels but selector exists = no match
+    };
+
+    // Parse selector: "key=value,key2=value2" or "key!=value"
+    for requirement in selector.split(',') {
+        let requirement = requirement.trim();
+        if requirement.is_empty() {
+            continue;
+        }
+
+        if let Some((key, value)) = requirement.split_once('=') {
+            // Handle != (key!=value)
+            if key.ends_with('!') {
+                let key = key.trim_end_matches('!');
+                if labels.get(key).map_or(false, |v| v == value) {
+                    return false; // Must NOT equal
+                }
+            } else {
+                // key=value: must match
+                if labels.get(key).map_or(true, |v| v != value) {
+                    return false;
+                }
+            }
+        } else {
+            // Just a key with no value — check existence
+            if !labels.contains_key(requirement) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Check if an object matches a field selector (common: metadata.name, metadata.namespace)
+fn matches_field_selector(metadata: &ObjectMeta, selector: &Option<String>) -> bool {
+    let selector = match selector {
+        Some(s) if !s.is_empty() => s,
+        _ => return true,
+    };
+
+    for requirement in selector.split(',') {
+        let requirement = requirement.trim();
+        if let Some((field, value)) = requirement.split_once('=') {
+            match field {
+                "metadata.name" => {
+                    if metadata.name != value {
+                        return false;
+                    }
+                }
+                "metadata.namespace" => {
+                    if metadata.namespace.as_deref() != Some(value) {
+                        return false;
+                    }
+                }
+                _ => {} // Unknown fields pass through
+            }
+        }
+    }
+    true
+}
+
 /// Derive the Kind and apiVersion from resource_type and api_group
 fn resource_type_to_kind_and_version(resource_type: &str, api_group: &str) -> (String, String) {
     let kind = match resource_type {
@@ -659,6 +789,7 @@ fn resource_type_to_kind_and_version(resource_type: &str, api_group: &str) -> (S
         "rolebindings" => "RoleBinding",
         "storageclasses" => "StorageClass",
         "customresourcedefinitions" => "CustomResourceDefinition",
+        "poddisruptionbudgets" => "PodDisruptionBudget",
         other => {
             // CamelCase heuristic: capitalize first letter, remove trailing 's'
             let s = other.strip_suffix('s').unwrap_or(other);
@@ -734,7 +865,11 @@ impl_has_metadata!(
     rusternetes_common::resources::Event,
     rusternetes_common::resources::ServiceAccount,
     rusternetes_common::resources::PersistentVolume,
-    rusternetes_common::resources::PersistentVolumeClaim
+    rusternetes_common::resources::PersistentVolumeClaim,
+    rusternetes_common::resources::Lease,
+    rusternetes_common::resources::Ingress,
+    rusternetes_common::resources::NetworkPolicy,
+    rusternetes_common::resources::PodDisruptionBudget
 );
 
 // Concrete handler functions for specific resources
