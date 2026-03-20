@@ -597,6 +597,10 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         // Check all owners of this resource (dependents -> owners)
         if let Some(owners) = dependent_map.get(uid) {
             for owner_uid in owners {
+                // Skip self-references — a resource owning itself is not a cycle
+                if owner_uid == uid {
+                    continue;
+                }
                 if !visited.contains(owner_uid) {
                     if let Some(cycle) = self.detect_cycle_dfs(
                         owner_uid,

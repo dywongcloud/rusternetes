@@ -25,9 +25,17 @@ pub async fn create(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-    Json(mut pod): Json<Pod>,
+    body: Bytes,
 ) -> Result<(StatusCode, Json<Pod>)> {
+    // Parse the body manually so we can do strict field validation against the raw bytes
+    let mut pod: Pod = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
+
     info!("Creating pod: {}/{}", namespace, pod.metadata.name);
+
+    // Strict field validation: reject unknown fields when requested
+    crate::handlers::validation::validate_strict_fields(&params, &body, &pod)?;
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -336,8 +344,15 @@ pub async fn update(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-    Json(mut pod): Json<Pod>,
+    body: Bytes,
 ) -> Result<Json<Pod>> {
+    // Parse the body manually for better error handling — axum's Json extractor
+    // returns 422 Unprocessable Entity on failure, but Kubernetes expects a proper
+    // Status object. Manual parsing also tolerates unknown fields gracefully.
+    let mut pod: Pod = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
+
     info!("Updating pod: {}/{}", namespace, name);
 
     // Check if this is a dry-run request

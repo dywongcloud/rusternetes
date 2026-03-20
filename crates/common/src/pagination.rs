@@ -30,6 +30,9 @@ struct ContinuationToken {
     resource_version: String,
     /// Optional filter parameters to ensure consistency
     filters: HashMap<String, String>,
+    /// Unique nonce to ensure tokens differ across requests
+    #[serde(default)]
+    nonce: u64,
 }
 
 impl ContinuationToken {
@@ -73,11 +76,9 @@ pub fn paginate<T>(
     let start = if let Some(token) = &params.continue_token {
         let cont = ContinuationToken::decode(token)?;
 
-        // Verify resource version hasn't changed
-        if cont.resource_version != resource_version {
-            return Err("Resource version has changed. The list has been modified. Please retry the request without a continue token.".to_string());
-        }
-
+        // Accept tokens regardless of resource version changes.
+        // Kubernetes compacts resource versions but continue tokens remain valid
+        // as long as the underlying data set hasn't drastically changed.
         cont.start
     } else {
         0
@@ -125,10 +126,16 @@ pub fn paginate<T>(
 
     // Check if there are more items
     let (continue_token, remaining_count) = if end < total {
+        // Include a nonce so tokens are always unique, even for the same offset
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0);
         let next_token = ContinuationToken {
             start: end,
             resource_version: resource_version.to_string(),
             filters: HashMap::new(),
+            nonce,
         };
 
         let token = next_token
@@ -213,6 +220,7 @@ mod tests {
             start: 4,
             resource_version: "v1".to_string(),
             filters: HashMap::new(),
+            nonce: 0,
         }
         .encode()
         .unwrap();
@@ -244,13 +252,14 @@ mod tests {
     }
 
     #[test]
-    fn test_resource_version_mismatch() {
+    fn test_resource_version_mismatch_is_tolerated() {
         let items = vec![1, 2, 3, 4, 5];
 
         let token = ContinuationToken {
             start: 2,
             resource_version: "v1".to_string(),
             filters: HashMap::new(),
+            nonce: 0,
         }
         .encode()
         .unwrap();
@@ -260,10 +269,11 @@ mod tests {
             continue_token: Some(token),
         };
 
-        // Try to use the token with a different resource version
+        // Resource version change should be tolerated (Kubernetes compacts versions)
         let result = paginate(items, params, "v2");
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Resource version has changed"));
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result.items, vec![3, 4]);
     }
 }

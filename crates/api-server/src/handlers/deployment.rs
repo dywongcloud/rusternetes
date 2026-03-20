@@ -1,5 +1,6 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
@@ -20,12 +21,20 @@ pub async fn create(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-    Json(mut deployment): Json<Deployment>,
+    body: Bytes,
 ) -> Result<(StatusCode, Json<Deployment>)> {
+    // Parse the body manually so we can do strict field validation against the raw bytes
+    let mut deployment: Deployment = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
+
     info!(
         "Creating deployment: {}/{}",
         namespace, deployment.metadata.name
     );
+
+    // Strict field validation: reject unknown fields when requested
+    crate::handlers::validation::validate_strict_fields(&params, &body, &deployment)?;
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);

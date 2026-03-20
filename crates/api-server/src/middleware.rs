@@ -114,27 +114,20 @@ pub async fn normalize_content_type_middleware(
             .unwrap_or("")
             .to_string();
 
-        // Reject protobuf — rusternetes only supports JSON encoding.
-        // Return 406 Not Acceptable so that client-go retries with JSON.
-        // (415 Unsupported Media Type does not trigger client-go fallback.)
+        // Silently rewrite protobuf Content-Type to JSON.
+        // client-go sometimes sends protobuf bodies but they are actually JSON
+        // when the server previously responded with JSON. If the body truly is
+        // binary protobuf the JSON parser will return a 400, which is acceptable.
+        // Returning 406 did NOT cause client-go to retry with JSON in practice.
         if content_type.starts_with("application/vnd.kubernetes.protobuf") {
-            warn!(
-                "Rejecting protobuf request: {} {} (returning 406 so client retries with JSON)",
+            debug!(
+                "Rewriting protobuf Content-Type to JSON for: {} {}",
                 request.method(), request.uri()
             );
-            let status_body = serde_json::json!({
-                "kind": "Status",
-                "apiVersion": "v1",
-                "status": "Failure",
-                "message": "only the following media types are accepted: application/json",
-                "reason": "NotAcceptable",
-                "code": 406
-            });
-            return Ok(axum::response::Response::builder()
-                .status(StatusCode::NOT_ACCEPTABLE)
-                .header(axum::http::header::CONTENT_TYPE, "application/json")
-                .body(Body::from(serde_json::to_vec(&status_body).unwrap()))
-                .unwrap());
+            request.headers_mut().insert(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::HeaderValue::from_static("application/json"),
+            );
         }
 
         // If not already a JSON content type, normalize to application/json

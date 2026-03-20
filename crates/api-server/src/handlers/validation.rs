@@ -5,6 +5,80 @@
 //! - DNS label names: lowercase alphanumeric, '-', max 63 chars
 
 use rusternetes_common::Error;
+use std::collections::HashMap;
+
+/// Recursively find fields in `original` that are not present in `canonical`.
+/// Returns a list of dotted field paths for unknown fields.
+fn find_unknown_fields_recursive(
+    original: &serde_json::Value,
+    canonical: &serde_json::Value,
+    prefix: &str,
+    unknown: &mut Vec<String>,
+) {
+    match (original, canonical) {
+        (serde_json::Value::Object(orig_map), serde_json::Value::Object(canon_map)) => {
+            for (key, orig_val) in orig_map {
+                let field_path = if prefix.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{}.{}", prefix, key)
+                };
+                if let Some(canon_val) = canon_map.get(key) {
+                    // Recurse into nested objects
+                    find_unknown_fields_recursive(orig_val, canon_val, &field_path, unknown);
+                } else {
+                    unknown.push(field_path);
+                }
+            }
+        }
+        (serde_json::Value::Array(orig_arr), serde_json::Value::Array(canon_arr)) => {
+            // For arrays, check element-by-element if both have the same length
+            for (i, (orig_elem, canon_elem)) in
+                orig_arr.iter().zip(canon_arr.iter()).enumerate()
+            {
+                let field_path = format!("{}[{}]", prefix, i);
+                find_unknown_fields_recursive(orig_elem, canon_elem, &field_path, unknown);
+            }
+        }
+        _ => {
+            // Scalar values — nothing to check
+        }
+    }
+}
+
+/// When `fieldValidation=Strict` is set, validate that the request body does not
+/// contain unknown fields by comparing the original JSON against a re-serialized
+/// version of the parsed struct.
+pub fn validate_strict_fields(
+    params: &HashMap<String, String>,
+    original_body: &[u8],
+    parsed_resource: &impl serde::Serialize,
+) -> Result<(), Error> {
+    if params.get("fieldValidation").map(|v| v.as_str()) != Some("Strict") {
+        return Ok(());
+    }
+
+    // Parse original as generic JSON
+    let original: serde_json::Value = serde_json::from_slice(original_body)
+        .map_err(|e| Error::InvalidResource(e.to_string()))?;
+
+    // Re-serialize the parsed struct to get canonical JSON
+    let canonical = serde_json::to_value(parsed_resource)
+        .map_err(|e| Error::Internal(e.to_string()))?;
+
+    // Find unknown fields recursively
+    let mut unknown = Vec::new();
+    find_unknown_fields_recursive(&original, &canonical, "", &mut unknown);
+
+    if !unknown.is_empty() {
+        return Err(Error::InvalidResource(format!(
+            "strict decoding error: unknown field \"{}\"",
+            unknown[0]
+        )));
+    }
+
+    Ok(())
+}
 
 /// Validate that a resource name is a valid DNS subdomain name (RFC 1123).
 ///

@@ -256,42 +256,104 @@ impl Storage for EtcdStorage {
     {
         let mut client = self.client.lock().await;
 
-        let get_options = GetOptions::new().with_prefix();
-        let resp = client
-            .get(prefix, Some(get_options))
-            .await
-            .map_err(|e| Error::Storage(format!("Failed to list resources: {}", e)))?;
-
+        // Paginate etcd list calls to avoid hitting the default 4MB gRPC
+        // message size limit. Fetch up to 500 keys per request.
+        const PAGE_SIZE: i64 = 500;
         let mut results = Vec::new();
-        for kv in resp.kvs() {
-            let json = kv
-                .value_str()
-                .map_err(|e| Error::Storage(format!("Invalid UTF-8 in value: {}", e)))?;
-            let mod_revision = kv.mod_revision();
+        let mut last_key: Option<Vec<u8>> = None;
 
-            // Add resourceVersion from etcd mod_revision
-            let mut resource: serde_json::Value = match serde_json::from_str(json) {
-                Ok(value) => value,
-                Err(e) => {
-                    error!("Failed to deserialize value: {}", e);
-                    continue;
+        loop {
+            let get_options = match &last_key {
+                None => {
+                    // First page: use prefix scan
+                    GetOptions::new().with_prefix().with_limit(PAGE_SIZE)
+                }
+                Some(key) => {
+                    // Subsequent pages: start from last_key (exclusive) with prefix
+                    GetOptions::new()
+                        .with_prefix()
+                        .with_from_key()
+                        .with_limit(PAGE_SIZE + 1) // +1 because from_key is inclusive
                 }
             };
 
-            if let Some(metadata) = resource.get_mut("metadata") {
-                metadata["resourceVersion"] = serde_json::json!(
-                    crate::concurrency::mod_revision_to_resource_version(mod_revision)
-                );
+            let query_key: Vec<u8> = match &last_key {
+                None => prefix.as_bytes().to_vec(),
+                Some(key) => key.clone(),
+            };
+
+            let resp = client
+                .get(query_key, Some(get_options))
+                .await
+                .map_err(|e| Error::Storage(format!("Failed to list resources: {}", e)))?;
+
+            let kvs = resp.kvs();
+            for kv in kvs {
+                // Skip the last_key itself (from_key is inclusive)
+                if let Some(ref lk) = last_key {
+                    if kv.key() == lk.as_slice() {
+                        continue;
+                    }
+                }
+
+                // Ensure key still has the prefix (from_key may go beyond prefix)
+                let key_str = kv
+                    .key_str()
+                    .map_err(|e| Error::Storage(format!("Invalid UTF-8 in key: {}", e)))?;
+                if !key_str.starts_with(prefix) {
+                    // We've gone past the prefix range, stop
+                    debug!("Listed {} resources with prefix: {}", results.len(), prefix);
+                    return Ok(results);
+                }
+
+                let json = kv
+                    .value_str()
+                    .map_err(|e| Error::Storage(format!("Invalid UTF-8 in value: {}", e)))?;
+                let mod_revision = kv.mod_revision();
+
+                // Add resourceVersion from etcd mod_revision
+                let mut resource: serde_json::Value = match serde_json::from_str(json) {
+                    Ok(value) => value,
+                    Err(e) => {
+                        error!("Failed to deserialize value: {}", e);
+                        continue;
+                    }
+                };
+
+                if let Some(metadata) = resource.get_mut("metadata") {
+                    metadata["resourceVersion"] = serde_json::json!(
+                        crate::concurrency::mod_revision_to_resource_version(mod_revision)
+                    );
+                }
+
+                match serde_json::from_value::<T>(resource) {
+                    Ok(value) => {
+                        results.push(value);
+                    }
+                    Err(e) => {
+                        error!("Failed to deserialize enhanced value: {}", e);
+                        continue;
+                    }
+                }
+
             }
 
-            match serde_json::from_value::<T>(resource) {
-                Ok(value) => {
-                    results.push(value);
-                }
-                Err(e) => {
-                    error!("Failed to deserialize enhanced value: {}", e);
-                    continue;
-                }
+            // If we got fewer results than PAGE_SIZE, we've reached the end
+            let total_kvs = kvs.len() as i64;
+            let expected = if last_key.is_some() {
+                PAGE_SIZE + 1
+            } else {
+                PAGE_SIZE
+            };
+            if total_kvs < expected {
+                break;
+            }
+
+            // Set last_key to the last key we received for the next page
+            if let Some(last_kv) = kvs.last() {
+                last_key = Some(last_kv.key().to_vec());
+            } else {
+                break;
             }
         }
 
