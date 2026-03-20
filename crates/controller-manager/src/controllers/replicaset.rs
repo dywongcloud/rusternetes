@@ -169,6 +169,31 @@ impl<S: Storage> ReplicaSetController<S> {
     }
 
     fn matches_selector(&self, pod: &Pod, replicaset: &ReplicaSet) -> bool {
+        // Skip pods that are terminated (Failed or Succeeded) — they don't count toward replicas
+        if let Some(ref status) = pod.status {
+            if let Some(ref phase) = status.phase {
+                if matches!(phase, Phase::Failed | Phase::Succeeded) {
+                    return false;
+                }
+            }
+        }
+
+        // Check owner reference — only count pods owned by this ReplicaSet
+        let owned = pod
+            .metadata
+            .owner_references
+            .as_ref()
+            .map(|refs| {
+                refs.iter().any(|r| {
+                    r.kind == "ReplicaSet" && r.name == replicaset.metadata.name
+                })
+            })
+            .unwrap_or(false);
+
+        if !owned {
+            return false;
+        }
+
         if let Some(match_labels) = &replicaset.spec.selector.match_labels {
             if let Some(pod_labels) = &pod.metadata.labels {
                 for (key, value) in match_labels {

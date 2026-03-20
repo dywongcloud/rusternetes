@@ -1779,7 +1779,9 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/custom.metrics.k8s.io/v1beta2/:resource/:name/:metric",
             get(handlers::custom_metrics::get_cluster_metric),
-        );
+        )
+        // CRD fallback — must be inside protected_routes so auth middleware applies
+        .fallback(custom_resource_fallback);
 
     // Conditionally apply authentication middleware
     if skip_auth {
@@ -1810,7 +1812,6 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
     Router::new()
         .merge(public_routes)
         .merge(protected_routes)
-        .fallback(custom_resource_fallback)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

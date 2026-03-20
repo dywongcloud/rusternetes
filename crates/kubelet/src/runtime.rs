@@ -936,27 +936,68 @@ impl ContainerRuntime {
                 .as_ref()
                 .context("ConfigMap volume must specify name")?;
 
+            let is_optional = configmap_source.optional.unwrap_or(false);
+
             let key = build_key("configmaps", Some(namespace), configmap_name);
-            let configmap: ConfigMap = storage.get(&key).await.with_context(|| {
-                format!(
-                    "ConfigMap {} not found in namespace {}",
-                    configmap_name, namespace
-                )
-            })?;
+            let configmap_result: Result<ConfigMap, _> = storage.get(&key).await;
 
             // Create volume directory
             let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
             std::fs::create_dir_all(&volume_dir)
                 .context("Failed to create ConfigMap volume directory")?;
 
-            // Write each key as a file
-            if let Some(data) = &configmap.data {
-                for (key, value) in data {
-                    let file_path = format!("{}/{}", volume_dir, key);
-                    std::fs::write(&file_path, value).with_context(|| {
-                        format!("Failed to write ConfigMap key {} to file", key)
-                    })?;
-                    info!("Wrote ConfigMap key {} to {}", key, file_path);
+            match configmap_result {
+                Ok(configmap) => {
+                    // Check if specific items are requested
+                    if let Some(ref items) = configmap_source.items {
+                        // Only mount the specified keys
+                        if let Some(data) = &configmap.data {
+                            for item in items {
+                                if let Some(value) = data.get(&item.key) {
+                                    let target_path = &item.path;
+                                    let file_path = format!("{}/{}", volume_dir, target_path);
+                                    // Create parent directories if needed
+                                    if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                                        std::fs::create_dir_all(parent).with_context(|| {
+                                            format!("Failed to create directory for ConfigMap item {}", target_path)
+                                        })?;
+                                    }
+                                    std::fs::write(&file_path, value).with_context(|| {
+                                        format!("Failed to write ConfigMap key {} to file", item.key)
+                                    })?;
+                                    info!("Wrote ConfigMap key {} to {}", item.key, file_path);
+                                } else if !is_optional {
+                                    warn!("ConfigMap {} missing key {}", configmap_name, item.key);
+                                }
+                            }
+                        }
+                    } else {
+                        // Mount all keys
+                        if let Some(data) = &configmap.data {
+                            for (key, value) in data {
+                                let file_path = format!("{}/{}", volume_dir, key);
+                                std::fs::write(&file_path, value).with_context(|| {
+                                    format!("Failed to write ConfigMap key {} to file", key)
+                                })?;
+                                info!("Wrote ConfigMap key {} to {}", key, file_path);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    if is_optional {
+                        info!(
+                            "Optional ConfigMap {} not found in namespace {}, creating empty volume",
+                            configmap_name, namespace
+                        );
+                    } else {
+                        return Err(e).with_context(|| {
+                            format!(
+                                "ConfigMap {} not found in namespace {}",
+                                configmap_name, namespace
+                            )
+                        });
+                    }
                 }
             }
 

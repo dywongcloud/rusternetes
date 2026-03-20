@@ -330,6 +330,46 @@ impl Kubelet {
             return Ok(());
         }
 
+        // Check activeDeadlineSeconds — terminate pod if it has been running too long
+        if let Some(ref spec) = pod.spec {
+            if let Some(deadline) = spec.active_deadline_seconds {
+                if let Some(ref status) = pod.status {
+                    if let Some(start_time) = status.start_time {
+                        let elapsed = chrono::Utc::now()
+                            .signed_duration_since(start_time)
+                            .num_seconds();
+                        if elapsed > deadline {
+                            info!(
+                                "Pod {}/{} exceeded activeDeadlineSeconds ({}s > {}s)",
+                                namespace, pod_name, elapsed, deadline
+                            );
+                            let key = build_key("pods", Some(namespace), pod_name);
+                            let mut failed_pod = pod.clone();
+                            if let Some(ref mut s) = failed_pod.status {
+                                s.phase = Some(Phase::Failed);
+                                s.reason = Some("DeadlineExceeded".to_string());
+                                s.message = Some(format!(
+                                    "Pod was active on the node longer than the specified deadline ({}s)",
+                                    deadline
+                                ));
+                            }
+                            let _ = self.storage.update(&key, &failed_pod).await;
+                            // Stop the pod
+                            if self
+                                .runtime
+                                .is_pod_running(pod_name)
+                                .await
+                                .unwrap_or(false)
+                            {
+                                let _ = self.runtime.stop_pod_with_grace_period(pod_name, 0).await;
+                            }
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+
         // Check current runtime status
         let is_running = self.runtime.is_pod_running(pod_name).await?;
 

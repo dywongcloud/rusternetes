@@ -67,11 +67,33 @@ pub struct DeploymentStrategy {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RollingUpdateDeployment {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_int_or_string_opt",
+        default
+    )]
     pub max_unavailable: Option<String>, // Can be int or percentage
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_int_or_string_opt",
+        default
+    )]
     pub max_surge: Option<String>, // Can be int or percentage
+}
+
+/// Deserialize a value that can be either an integer or a string into Option<String>
+pub fn deserialize_int_or_string_opt<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    match value {
+        None => Ok(None),
+        Some(serde_json::Value::String(s)) => Ok(Some(s)),
+        Some(serde_json::Value::Number(n)) => Ok(Some(n.to_string())),
+        Some(other) => Ok(Some(other.to_string())),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

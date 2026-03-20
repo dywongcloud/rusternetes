@@ -158,7 +158,7 @@ impl<S: Storage> CronJobController<S> {
         // Get last schedule time
         let last_schedule = cronjob.status.as_ref().and_then(|s| s.last_schedule_time);
 
-        // Handle special schedules
+        // Handle special schedules (Kubernetes 5-field format)
         let cron_schedule = match schedule {
             "@yearly" | "@annually" => "0 0 1 1 *",
             "@monthly" => "0 0 1 * *",
@@ -170,7 +170,19 @@ impl<S: Storage> CronJobController<S> {
 
         // Kubernetes supports `?` in cron expressions (Quartz-style "no specific value").
         // Replace with `*` since the `cron` crate doesn't support `?`.
-        let cron_schedule = &cron_schedule.replace('?', "*");
+        let cron_schedule = cron_schedule.replace('?', "*");
+
+        // The `cron` crate expects 7 fields (sec min hour dom month dow year),
+        // but Kubernetes uses 5 fields (min hour dom month dow).
+        // Convert by prepending "0" for seconds and appending "*" for year.
+        let field_count = cron_schedule.split_whitespace().count();
+        let cron_schedule = if field_count == 5 {
+            format!("0 {} *", cron_schedule)
+        } else if field_count == 6 {
+            format!("0 {}", cron_schedule)
+        } else {
+            cron_schedule.to_string()
+        };
 
         // Parse cron expression using the `cron` crate
         let schedule_parsed = match cron::Schedule::try_from(cron_schedule.as_str()) {
