@@ -144,8 +144,17 @@ where
     let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
     let label_selector = params.label_selector.clone();
     let field_selector = params.field_selector.clone();
+    let requested_rv = params.resource_version.clone();
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
+
+    // Determine whether to send initial ADDED events:
+    // - If sendInitialEvents=true: always send
+    // - If resourceVersion is "0" or absent: send initial events
+    // - If resourceVersion is a specific value (non-zero): skip initial events
+    let should_send_initial = send_initial_events
+        || requested_rv.as_deref() == Some("0")
+        || requested_rv.is_none();
 
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
@@ -154,7 +163,8 @@ where
             chrono::Utc::now().timestamp().to_string(),
         );
 
-        // Send initial state as ADDED events
+        // Send initial state as ADDED events (only when appropriate)
+        if should_send_initial {
         for object in existing_resources {
             // Update latest resourceVersion
             if let Some(rv) = object.metadata().resource_version.as_ref() {
@@ -178,6 +188,7 @@ where
                 }
             }
         }
+        } // end should_send_initial
 
         // When sendInitialEvents=true, send an initial BOOKMARK after the ADDED
         // events to signal "initial list is complete". The bookmark must have the
@@ -450,8 +461,14 @@ where
     let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
     let label_selector = params.label_selector.clone();
     let field_selector = params.field_selector.clone();
+    let requested_rv = params.resource_version.clone();
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
+
+    // Determine whether to send initial ADDED events
+    let should_send_initial = send_initial_events
+        || requested_rv.as_deref() == Some("0")
+        || requested_rv.is_none();
 
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
@@ -460,7 +477,8 @@ where
             chrono::Utc::now().timestamp().to_string(),
         );
 
-        // Send initial state as ADDED events
+        // Send initial state as ADDED events (only when appropriate)
+        if should_send_initial {
         for object in existing_resources {
             // Update latest resourceVersion
             if let Some(rv) = object.metadata().resource_version.as_ref() {
@@ -484,6 +502,7 @@ where
                 }
             }
         }
+        } // end should_send_initial
 
         // When sendInitialEvents=true, send an initial BOOKMARK after the ADDED
         // events to signal "initial list is complete". The bookmark must have the

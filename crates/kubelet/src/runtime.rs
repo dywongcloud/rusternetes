@@ -991,12 +991,10 @@ impl ContainerRuntime {
                             configmap_name, namespace
                         );
                     } else {
-                        return Err(e).with_context(|| {
-                            format!(
-                                "ConfigMap {} not found in namespace {}",
-                                configmap_name, namespace
-                            )
-                        });
+                        warn!(
+                            "ConfigMap {} not found in namespace {}: {}. Creating empty volume (will retry on next sync).",
+                            configmap_name, namespace, e
+                        );
                     }
                 }
             }
@@ -1017,21 +1015,36 @@ impl ContainerRuntime {
                 .as_ref()
                 .context("Secret volume must specify secret_name")?;
 
+            let is_optional = secret_source.optional.unwrap_or(false);
+
             let key = build_key("secrets", Some(namespace), secret_name);
-            let secret: Secret = storage.get(&key).await.with_context(|| {
-                format!(
-                    "Secret {} not found in namespace {}",
-                    secret_name, namespace
-                )
-            })?;
+            let secret_result: Result<Secret, _> = storage.get(&key).await;
 
             // Create volume directory
             let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
             std::fs::create_dir_all(&volume_dir)
                 .context("Failed to create Secret volume directory")?;
 
+            let secret = match secret_result {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    if is_optional {
+                        info!(
+                            "Optional Secret {} not found in namespace {}, creating empty volume",
+                            secret_name, namespace
+                        );
+                    } else {
+                        warn!(
+                            "Secret {} not found in namespace {}: {}. Creating empty volume (will retry on next sync).",
+                            secret_name, namespace, e
+                        );
+                    }
+                    None
+                }
+            };
+
             // Write each key as a file
-            if let Some(data) = &secret.data {
+            if let Some(data) = secret.as_ref().and_then(|s| s.data.as_ref()) {
                 for (key, value) in data {
                     let file_path = format!("{}/{}", volume_dir, key);
                     std::fs::write(&file_path, value)
@@ -1052,8 +1065,8 @@ impl ContainerRuntime {
             // Special handling for service account token secrets - add ca.crt
             // Service account secrets are identified by having a "token" key or by name pattern
             let is_service_account_secret = secret
-                .data
                 .as_ref()
+                .and_then(|s| s.data.as_ref())
                 .map(|data| data.contains_key("token"))
                 .unwrap_or(false)
                 || secret_name.ends_with("-token");
@@ -1061,8 +1074,8 @@ impl ContainerRuntime {
             if is_service_account_secret {
                 // Check if ca.crt already exists in the secret data
                 let has_ca_cert = secret
-                    .data
                     .as_ref()
+                    .and_then(|s| s.data.as_ref())
                     .map(|data| data.contains_key("ca.crt"))
                     .unwrap_or(false);
 
@@ -1351,7 +1364,7 @@ impl ContainerRuntime {
                                         // Optional configmap not found, skip
                                     }
                                     Err(e) => {
-                                        warn!("Failed to get ConfigMap {} for projected volume: {}", cm_name, e);
+                                        warn!("Failed to get ConfigMap {} for projected volume: {}. Skipping.", cm_name, e);
                                     }
                                 }
                             }
@@ -1395,7 +1408,7 @@ impl ContainerRuntime {
                                         // Optional secret not found, skip
                                     }
                                     Err(e) => {
-                                        warn!("Failed to get Secret {} for projected volume: {}", secret_name, e);
+                                        warn!("Failed to get Secret {} for projected volume: {}. Skipping.", secret_name, e);
                                     }
                                 }
                             }
@@ -2517,6 +2530,27 @@ impl ContainerRuntime {
                     // required to become not ready.
                     let ready = if running && startup_passed {
                         if let Some(probe) = &container.readiness_probe {
+                            // Respect initialDelaySeconds before running readiness probe
+                            let initial_delay = probe.initial_delay_seconds.unwrap_or(0);
+                            let past_initial_delay = if initial_delay > 0 {
+                                // Check container start time from Docker state
+                                if let Some(ContainerState::Running { started_at: Some(ref started_at_str) }) = container_state {
+                                    if let Ok(started) = chrono::DateTime::parse_from_rfc3339(started_at_str) {
+                                        let elapsed = Utc::now().signed_duration_since(started);
+                                        elapsed.num_seconds() >= initial_delay as i64
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                true
+                            };
+
+                            if !past_initial_delay {
+                                false // Not ready yet, still within initial delay
+                            } else {
                             let raw = self
                                 .check_probe(&container_name, probe)
                                 .await
@@ -2536,6 +2570,7 @@ impl ContainerRuntime {
                                 // Not ready until success threshold is met
                                 false
                             }
+                            } // end else past_initial_delay
                         } else {
                             true // No probe means ready
                         }

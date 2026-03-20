@@ -147,6 +147,7 @@ impl ReplicaSet {
 #[serde(rename_all = "camelCase")]
 pub struct ReplicaSetSpec {
     /// Number of desired pods
+    #[serde(default = "default_one_replica")]
     pub replicas: i32,
 
     /// Selector for pods
@@ -158,6 +159,10 @@ pub struct ReplicaSetSpec {
     /// Minimum number of seconds for which a newly created pod should be ready
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_ready_seconds: Option<i32>,
+}
+
+fn default_one_replica() -> i32 {
+    1
 }
 
 /// ReplicaSetStatus represents the current state of a ReplicaSet

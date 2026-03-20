@@ -91,6 +91,7 @@ pub struct CSINode {
 #[serde(rename_all = "camelCase")]
 pub struct CSINodeSpec {
     /// drivers is a list of information of all CSI Drivers existing on a node
+    #[serde(default)]
     pub drivers: Vec<CSINodeDriver>,
 }
 
@@ -98,10 +99,11 @@ pub struct CSINodeSpec {
 #[serde(rename_all = "camelCase")]
 pub struct CSINodeDriver {
     /// name represents the name of the CSI driver
+    #[serde(default)]
     pub name: String,
 
     /// nodeID of the node from the driver point of view
-    #[serde(rename = "nodeID")]
+    #[serde(rename = "nodeID", default)]
     pub node_id: String,
 
     /// topologyKeys is the list of keys supported by the driver

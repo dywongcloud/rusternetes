@@ -57,11 +57,15 @@ pub struct DeploymentSpec {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeploymentStrategy {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default = "default_rolling_update_strategy")]
     pub strategy_type: String, // Recreate or RollingUpdate
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rolling_update: Option<RollingUpdateDeployment>,
+}
+
+fn default_rolling_update_strategy() -> String {
+    "RollingUpdate".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

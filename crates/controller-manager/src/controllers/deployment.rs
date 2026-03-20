@@ -4,6 +4,8 @@ use rusternetes_common::{
     types::{ObjectMeta, TypeMeta},
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info};
 
@@ -339,6 +341,16 @@ impl<S: Storage> DeploymentController<S> {
             .await
     }
 
+    /// Generate a pod-template-hash from the pod template spec.
+    fn compute_pod_template_hash(deployment: &Deployment) -> String {
+        let template_json = serde_json::to_string(&deployment.spec.template)
+            .unwrap_or_default();
+        let mut hasher = DefaultHasher::new();
+        template_json.hash(&mut hasher);
+        let hash = hasher.finish();
+        format!("{:x}", hash as u32 & 0xFFFFFFFF)
+    }
+
     async fn create_replicaset_with_replicas(
         &self,
         deployment: &Deployment,
@@ -350,21 +362,29 @@ impl<S: Storage> DeploymentController<S> {
             .as_deref()
             .unwrap_or("default");
 
-        // Generate ReplicaSet name with hash suffix (simplified - just use UUID)
+        // Generate pod-template-hash from pod template
+        let pod_template_hash = Self::compute_pod_template_hash(deployment);
+
+        // Generate ReplicaSet name using the pod-template-hash
         let rs_name = format!(
             "{}-{}",
             deployment.metadata.name,
-            uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
+            &pod_template_hash
         );
 
         let mut metadata = ObjectMeta::new(&rs_name);
         metadata.namespace = Some(namespace.to_string());
-        metadata.labels = deployment
+
+        // Start with template labels, then add pod-template-hash
+        let mut labels = deployment
             .spec
             .template
             .metadata
             .as_ref()
-            .and_then(|m| m.labels.clone());
+            .and_then(|m| m.labels.clone())
+            .unwrap_or_default();
+        labels.insert("pod-template-hash".to_string(), pod_template_hash.clone());
+        metadata.labels = Some(labels);
 
         // Set owner reference to the deployment
         metadata.owner_references = Some(vec![rusternetes_common::types::OwnerReference {
@@ -376,6 +396,20 @@ impl<S: Storage> DeploymentController<S> {
             block_owner_deletion: Some(true),
         }]);
 
+        // Add pod-template-hash to the pod template labels
+        let mut template = deployment.spec.template.clone();
+        let template_labels = template
+            .metadata
+            .get_or_insert_with(|| ObjectMeta::new(""))
+            .labels
+            .get_or_insert_with(Default::default);
+        template_labels.insert("pod-template-hash".to_string(), pod_template_hash.clone());
+
+        // Add pod-template-hash to the selector matchLabels
+        let mut selector = deployment.spec.selector.clone();
+        let match_labels = selector.match_labels.get_or_insert_with(Default::default);
+        match_labels.insert("pod-template-hash".to_string(), pod_template_hash.clone());
+
         let replicaset = ReplicaSet {
             type_meta: TypeMeta {
                 kind: "ReplicaSet".to_string(),
@@ -384,8 +418,8 @@ impl<S: Storage> DeploymentController<S> {
             metadata,
             spec: ReplicaSetSpec {
                 replicas,
-                selector: deployment.spec.selector.clone(),
-                template: deployment.spec.template.clone(),
+                selector,
+                template,
                 min_ready_seconds: deployment.spec.min_ready_seconds,
             },
             status: None,
