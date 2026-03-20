@@ -2567,11 +2567,18 @@ impl ContainerRuntime {
                         Some(ContainerState::Running {
                             started_at: state.started_at,
                         })
-                    } else if exit_code != 0 {
+                    } else if matches!(state.status, Some(bollard::secret::ContainerStateStatusEnum::EXITED))
+                        || state.finished_at.is_some()
+                    {
+                        // Container has exited (any exit code, including 0)
                         Some(ContainerState::Terminated {
                             exit_code: exit_code as i32,
                             signal: None,
-                            reason: state.error,
+                            reason: if exit_code == 0 {
+                                Some("Completed".to_string())
+                            } else {
+                                state.error
+                            },
                             message: None,
                             started_at: None,
                             finished_at: state.finished_at,
