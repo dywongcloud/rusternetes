@@ -638,7 +638,7 @@ pub async fn list(
 
     // Apply pagination
     let paginated = rusternetes_common::paginate(pods, pagination_params, &resource_version)
-        .map_err(|e| rusternetes_common::Error::InvalidResource(e))?;
+        .map_err(|e| if e.contains("410 Gone") { rusternetes_common::Error::Gone(e) } else { rusternetes_common::Error::InvalidResource(e) })?;
 
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());
@@ -727,7 +727,7 @@ pub async fn list_all_pods(
 
     // Apply pagination
     let paginated = rusternetes_common::paginate(pods, pagination_params, &resource_version)
-        .map_err(|e| rusternetes_common::Error::InvalidResource(e))?;
+        .map_err(|e| if e.contains("410 Gone") { rusternetes_common::Error::Gone(e) } else { rusternetes_common::Error::InvalidResource(e) })?;
 
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());

@@ -33,6 +33,9 @@ struct ContinuationToken {
     /// Unique nonce to ensure tokens differ across requests
     #[serde(default)]
     nonce: u64,
+    /// Total item count at time of token creation (for staleness detection)
+    #[serde(default)]
+    total_at_creation: usize,
 }
 
 impl ContinuationToken {
@@ -76,9 +79,13 @@ pub fn paginate<T>(
     let start = if let Some(token) = &params.continue_token {
         let cont = ContinuationToken::decode(token)?;
 
-        // Accept tokens regardless of resource version changes.
-        // Kubernetes compacts resource versions but continue tokens remain valid
-        // as long as the underlying data set hasn't drastically changed.
+        // Check if the data set has changed significantly since the token was created.
+        // If the total item count changed, the token is stale (resources were
+        // deleted/recreated). Return 410 Gone so the client restarts the list.
+        if cont.total_at_creation > 0 && cont.total_at_creation != items.len() {
+            return Err("410 Gone: the resource version in the continue token is too old; the client must restart the list without a continue token".to_string());
+        }
+
         cont.start
     } else {
         0
@@ -133,6 +140,7 @@ pub fn paginate<T>(
             .unwrap_or(0);
         let next_token = ContinuationToken {
             start: end,
+            total_at_creation: total,
             resource_version: resource_version.to_string(),
             filters: HashMap::new(),
             nonce,

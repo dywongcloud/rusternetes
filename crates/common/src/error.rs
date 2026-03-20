@@ -35,6 +35,9 @@ pub enum Error {
     #[error("Too many requests: {0}")]
     TooManyRequests(String),
 
+    #[error("Gone: {0}")]
+    Gone(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -54,6 +57,7 @@ impl Error {
             Error::Forbidden(_) => "Forbidden",
             Error::Conflict(_) => "Conflict",
             Error::TooManyRequests(_) => "TooManyRequests",
+            Error::Gone(_) => "Gone",
             Error::Internal(_) => "InternalError",
         }
     }
@@ -91,6 +95,7 @@ impl axum::response::IntoResponse for Error {
             Error::TooManyRequests(msg) => {
                 (StatusCode::TOO_MANY_REQUESTS, msg, "TooManyRequests", None)
             }
+            Error::Gone(msg) => (StatusCode::GONE, msg, "Gone", None),
             Error::Storage(msg) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, msg, "InternalError", None)
             }
