@@ -458,14 +458,86 @@ impl Kubelet {
                         }
                     }
                     Err(e) => {
-                        error!("Failed to start pod {}/{}: {}", namespace, pod_name, e);
-                        self.update_pod_status(
-                            pod,
-                            Phase::Failed,
-                            Some("FailedToStart"),
-                            Some(&e.to_string()),
-                        )
-                        .await?;
+                        let err_msg = e.to_string();
+                        error!("Failed to start pod {}/{}: {}", namespace, pod_name, err_msg);
+
+                        if err_msg.starts_with("CreateContainerError:") {
+                            // Container creation error — pod stays Pending with
+                            // container in Waiting/CreateContainerError state.
+                            let key = build_key("pods", Some(namespace), pod_name);
+                            let fresh_pod: Pod = match self.storage.get(&key).await {
+                                Ok(Some(p)) => p,
+                                _ => pod.clone(),
+                            };
+                            let mut new_pod = fresh_pod;
+
+                            // Build container statuses with the failed container
+                            // set to Waiting/CreateContainerError
+                            let container_statuses: Option<Vec<ContainerStatus>> =
+                                new_pod.spec.as_ref().map(|spec| {
+                                    spec.containers
+                                        .iter()
+                                        .map(|c| ContainerStatus {
+                                            name: c.name.clone(),
+                                            ready: false,
+                                            restart_count: 0,
+                                            state: Some(ContainerState::Waiting {
+                                                reason: Some(
+                                                    "CreateContainerError".to_string(),
+                                                ),
+                                                message: Some(err_msg.clone()),
+                                            }),
+                                            last_state: None,
+                                            image: Some(c.image.clone()),
+                                            image_id: None,
+                                            container_id: None,
+                                            started: Some(false),
+                                            allocated_resources: None,
+                                            allocated_resources_status: None,
+                                            resources: None,
+                                            user: None,
+                                            volume_mounts: None,
+                                            stop_signal: None,
+                                        })
+                                        .collect()
+                                });
+
+                            let qos = Self::compute_qos_class(&new_pod);
+                            new_pod.status = Some(PodStatus {
+                                phase: Some(Phase::Pending),
+                                message: Some(err_msg),
+                                reason: Some("CreateContainerError".to_string()),
+                                host_ip: Some("127.0.0.1".to_string()),
+                                pod_ip: None,
+                                conditions: None,
+                                container_statuses,
+                                init_container_statuses: None,
+                                ephemeral_container_statuses: None,
+                                resize: None,
+                                resource_claim_statuses: None,
+                                observed_generation: None,
+                                host_i_ps: None,
+                                pod_i_ps: None,
+                                nominated_node_name: None,
+                                qos_class: Some(qos),
+                                start_time: Some(chrono::Utc::now()),
+                            });
+
+                            if let Err(e) = self.storage.update(&key, &new_pod).await {
+                                warn!(
+                                    "Failed to update pod {}/{} status to CreateContainerError: {}",
+                                    namespace, pod_name, e
+                                );
+                            }
+                        } else {
+                            self.update_pod_status(
+                                pod,
+                                Phase::Failed,
+                                Some("FailedToStart"),
+                                Some(&err_msg),
+                            )
+                            .await?;
+                        }
                     }
                 }
             }

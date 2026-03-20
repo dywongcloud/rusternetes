@@ -8,7 +8,7 @@ use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 pub struct StatefulSetController<S: Storage> {
     storage: Arc<S>,
@@ -109,24 +109,59 @@ impl<S: Storage> StatefulSetController<S> {
 
         // Scale up or down
         if current_replicas < desired_replicas {
+            let is_ordered_ready = statefulset
+                .spec
+                .pod_management_policy
+                .as_ref()
+                .map(|p| p == "OrderedReady")
+                .unwrap_or(true);
+
             // Scale up: create pods in order
             for i in current_replicas..desired_replicas {
+                // For OrderedReady policy, check that the previous pod is Ready before
+                // creating the next one. If it's not ready, halt scaling.
+                if is_ordered_ready && i > 0 {
+                    let prev_pod_name = format!("{}-{}", name, i - 1);
+                    let prev_pod_key =
+                        build_key("pods", Some(namespace), &prev_pod_name);
+                    match self.storage.get::<Pod>(&prev_pod_key).await {
+                        Ok(prev_pod) => {
+                            let is_ready = prev_pod
+                                .status
+                                .as_ref()
+                                .and_then(|s| s.conditions.as_ref())
+                                .map(|conditions| {
+                                    conditions.iter().any(|c| {
+                                        c.condition_type == "Ready"
+                                            && c.status == "True"
+                                    })
+                                })
+                                .unwrap_or(false);
+
+                            if !is_ready {
+                                debug!(
+                                    "StatefulSet {}: pod {} not ready, halting scale-up",
+                                    name, prev_pod_name
+                                );
+                                break;
+                            }
+                        }
+                        Err(_) => {
+                            // Previous pod doesn't exist yet
+                            debug!(
+                                "StatefulSet {}: pod {} not found, halting scale-up",
+                                name, prev_pod_name
+                            );
+                            break;
+                        }
+                    }
+                }
+
                 // Ensure PVCs exist for this ordinal before creating the pod
                 self.ensure_pvcs_for_ordinal(statefulset, i, namespace)
                     .await?;
                 self.create_pod(statefulset, i, namespace).await?;
                 info!("Created pod {}-{}", name, i);
-
-                // Wait for pod to be ready before creating next one (ordered deployment)
-                if statefulset
-                    .spec
-                    .pod_management_policy
-                    .as_ref()
-                    .map(|p| p == "OrderedReady")
-                    .unwrap_or(true)
-                {
-                    time::sleep(Duration::from_secs(2)).await;
-                }
             }
         } else if current_replicas > desired_replicas {
             // Scale down: delete pods in reverse order

@@ -1932,7 +1932,13 @@ impl ContainerRuntime {
                             match Self::expand_subpath_expr(expr, &resolved_env_pairs) {
                                 Ok(expanded) => {
                                     if expanded.is_empty() {
-                                        host_path.clone()
+                                        // Empty expanded subPathExpr is invalid — the
+                                        // referenced variable resolved to an empty string
+                                        // (e.g. missing annotation via Downward API).
+                                        return Err(anyhow::anyhow!(
+                                            "CreateContainerError: subPathExpr '{}' expanded to empty string in container {}",
+                                            expr, container.name
+                                        ));
                                     } else {
                                         let sub = format!("{}/{}", host_path, expanded);
                                         // Ensure the sub-directory exists
@@ -1943,13 +1949,10 @@ impl ContainerRuntime {
                                     }
                                 }
                                 Err(e) => {
-                                    warn!(
-                                        "SubPathExpr expansion failed for container {}: {}",
+                                    return Err(anyhow::anyhow!(
+                                        "CreateContainerError: subPathExpr expansion failed for container {}: {}",
                                         container.name, e
-                                    );
-                                    // In Kubernetes, this would set container status to
-                                    // Waiting/CreateContainerError. For now, skip this mount.
-                                    continue;
+                                    ));
                                 }
                             }
                         } else if let Some(ref sub_path) = mount.sub_path {
@@ -2602,25 +2605,50 @@ impl ContainerRuntime {
                         stop_signal: None,
                     }
                 }
-                Err(_) => ContainerStatus {
-                    name: container.name.clone(),
-                    ready: false,
-                    restart_count: 0,
-                    state: Some(ContainerState::Waiting {
-                        reason: Some("ContainerCreating".to_string()),
-                        message: None,
-                    }),
-                    last_state: None,
-                    image: Some(container.image.clone()),
-                    image_id: None,
-                    container_id: None,
-                    started: Some(false),
-                    allocated_resources: None,
-                    allocated_resources_status: None,
-                    resources: None,
-                    user: None,
-                    volume_mounts: None,
-                    stop_signal: None,
+                Err(_) => {
+                    // If pod already has CreateContainerError for this container,
+                    // preserve that status instead of defaulting to ContainerCreating.
+                    let existing_reason = pod
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.container_statuses.as_ref())
+                        .and_then(|statuses| {
+                            statuses.iter().find(|cs| cs.name == container.name)
+                        })
+                        .and_then(|cs| match &cs.state {
+                            Some(ContainerState::Waiting {
+                                reason: Some(r), message,
+                            }) if r == "CreateContainerError" => {
+                                Some((r.clone(), message.clone()))
+                            }
+                            _ => None,
+                        });
+
+                    let (reason, message) = match existing_reason {
+                        Some((r, m)) => (r, m),
+                        None => ("ContainerCreating".to_string(), None),
+                    };
+
+                    ContainerStatus {
+                        name: container.name.clone(),
+                        ready: false,
+                        restart_count: 0,
+                        state: Some(ContainerState::Waiting {
+                            reason: Some(reason),
+                            message,
+                        }),
+                        last_state: None,
+                        image: Some(container.image.clone()),
+                        image_id: None,
+                        container_id: None,
+                        started: Some(false),
+                        allocated_resources: None,
+                        allocated_resources_status: None,
+                        resources: None,
+                        user: None,
+                        volume_mounts: None,
+                        stop_signal: None,
+                    }
                 },
             };
 
