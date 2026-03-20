@@ -398,7 +398,17 @@ impl Kubelet {
                 info!("Starting pod: {}/{}", namespace, pod_name);
 
                 // Update status to indicate we're starting
-                self.update_pod_status(pod, Phase::Pending, Some("ContainerCreating"), None)
+                let has_init_containers = pod
+                    .spec
+                    .as_ref()
+                    .and_then(|s| s.init_containers.as_ref())
+                    .map_or(false, |ic| !ic.is_empty());
+                let reason = if has_init_containers {
+                    "PodInitializing"
+                } else {
+                    "ContainerCreating"
+                };
+                self.update_pod_status(pod, Phase::Pending, Some(reason), None)
                     .await?;
 
                 // Start the pod

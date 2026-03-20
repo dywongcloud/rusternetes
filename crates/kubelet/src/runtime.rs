@@ -2626,7 +2626,16 @@ impl ContainerRuntime {
 
                     let (reason, message) = match existing_reason {
                         Some((r, m)) => (r, m),
-                        None => ("ContainerCreating".to_string(), None),
+                        None => {
+                            let has_init = pod.spec.as_ref()
+                                .and_then(|s| s.init_containers.as_ref())
+                                .map_or(false, |ic| !ic.is_empty());
+                            if has_init {
+                                ("PodInitializing".to_string(), None)
+                            } else {
+                                ("ContainerCreating".to_string(), None)
+                            }
+                        }
                     };
 
                     ContainerStatus {

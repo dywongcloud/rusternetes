@@ -1,25 +1,24 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-20 (round 16 — 9 tests, 2 passed, 7 failed)
+**Last updated**: 2026-03-20 (round 17 — 40 tests, 6 passed, 34 failed)
 
-## New Failures Found
+## Current run on partially-updated images
+Many failures are from undeployed fixes. Need full rebuild.
 
-### N13. Liveness probe not triggering container restarts (~2 tests)
-Error: `expected number of restarts: 5, found restarts: 0`
-Container has failing liveness probe but is never restarted.
-RestartCount stays at 0. The kubelet's liveness probe handler
-must detect threshold exceeded and restart the container.
-File: `crates/kubelet/src/kubelet.rs` (liveness check logic)
+## New Issue Found
 
-### N14. ConfigMap list by label selector (~1 test)
-Error: `failed to find ConfigMap by label selector`
-The configmap list handler doesn't filter by labelSelector.
-File: `crates/api-server/src/handlers/configmap.rs`
+### N15. Init container waiting reason "PodInitializing" vs "ContainerCreating"
+Error: `container should have reason PodInitializing, got ContainerCreating`
+When init containers are running, regular containers should show
+Waiting reason "PodInitializing" not "ContainerCreating".
+File: `crates/kubelet/src/kubelet.rs` or `runtime.rs`
 
-## Recurring (from previous runs, still present)
-- R1: StatefulSet OrderedReady — rate limiter timeout
-- R2: Variable Expansion subpath — pod starts instead of failing
-- R3: CronJob scheduling — timeout
-- R4: Chunking continue tokens
+## All 49 fixes committed. Need rebuild + redeploy.
 
-## All 48+ root causes committed. Needs rebuild for latest fixes.
+## Recurring (mostly from undeployed fixes)
+- StatefulSet rate limiter — fixed with qps/burst increase
+- Variable Expansion subpath — R2 fix committed
+- Chunking continue tokens — complex, skip for now
+- CronJob scheduling — timing issue
+- Pod volume timeouts — fixes committed but not deployed
+- Liveness restart count — fix committed but not deployed
