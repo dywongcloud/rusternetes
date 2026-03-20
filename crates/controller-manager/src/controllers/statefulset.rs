@@ -26,7 +26,7 @@ impl<S: Storage> StatefulSetController<S> {
             if let Err(e) = self.reconcile_all().await {
                 error!("Error in StatefulSet reconciliation loop: {}", e);
             }
-            time::sleep(Duration::from_secs(5)).await;
+            time::sleep(Duration::from_secs(1)).await;
         }
     }
 

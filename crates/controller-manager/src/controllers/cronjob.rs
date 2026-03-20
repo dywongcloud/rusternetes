@@ -23,7 +23,7 @@ impl<S: Storage> CronJobController<S> {
             if let Err(e) = self.reconcile_all().await {
                 error!("Error in CronJob reconciliation loop: {}", e);
             }
-            time::sleep(Duration::from_secs(10)).await; // Check every 10 seconds
+            time::sleep(Duration::from_secs(1)).await; // Check every second for fast scheduling
         }
     }
 

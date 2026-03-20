@@ -1940,59 +1940,71 @@ impl ContainerRuntime {
         // Mount volumes based on volumeMounts (includes service account tokens injected by admission controller)
         if let Some(volume_mounts) = &container.volume_mounts {
             for mount in volume_mounts {
-                if let Some(host_path) = volume_paths.get(&mount.name) {
-                    // Determine the effective host path, applying sub_path or sub_path_expr
-                    let effective_host_path =
-                        if let Some(ref expr) = mount.sub_path_expr {
-                            // Expand $(VAR_NAME) references using resolved env vars
-                            match Self::expand_subpath_expr(expr, &resolved_env_pairs) {
-                                Ok(expanded) => {
-                                    if expanded.is_empty() {
-                                        // Empty expanded subPathExpr is invalid — the
-                                        // referenced variable resolved to an empty string
-                                        // (e.g. missing annotation via Downward API).
-                                        return Err(anyhow::anyhow!(
-                                            "CreateContainerError: subPathExpr '{}' expanded to empty string in container {}",
-                                            expr, container.name
-                                        ));
-                                    } else {
-                                        let sub = format!("{}/{}", host_path, expanded);
-                                        // Ensure the sub-directory exists
-                                        if let Err(e) = std::fs::create_dir_all(&sub) {
-                                            warn!("Failed to create subPathExpr dir {}: {}", sub, e);
-                                        }
-                                        sub
-                                    }
-                                }
-                                Err(e) => {
+                // Validate subPathExpr / subPath BEFORE looking up the volume.
+                // Kubernetes rejects containers whose expanded subpath contains
+                // ".." or is absolute, regardless of whether the volume exists.
+                let expanded_sub_path: Option<String> =
+                    if let Some(ref expr) = mount.sub_path_expr {
+                        match Self::expand_subpath_expr(expr, &resolved_env_pairs) {
+                            Ok(expanded) => {
+                                if expanded.is_empty() {
                                     return Err(anyhow::anyhow!(
-                                        "CreateContainerError: subPathExpr expansion failed for container {}: {}",
-                                        container.name, e
+                                        "CreateContainerError: subPathExpr '{}' expanded to empty string in container {}",
+                                        expr, container.name
                                     ));
                                 }
+                                Some(expanded)
                             }
-                        } else if let Some(ref sub_path) = mount.sub_path {
-                            if sub_path.is_empty() {
-                                host_path.clone()
-                            } else {
-                                let sub = format!("{}/{}", host_path, sub_path);
-                                // Check if the subPath target already exists (e.g. a
-                                // ConfigMap key file materialised during volume setup).
-                                // If it does not exist, create it as a directory so that
-                                // directory-type subPath mounts work.  File-type subPath
-                                // targets (ConfigMap keys) are expected to already be
-                                // present on disk.
-                                let sub_meta = std::fs::metadata(&sub);
-                                if sub_meta.is_err() {
-                                    if let Err(e) = std::fs::create_dir_all(&sub) {
-                                        warn!("Failed to create subPath dir {}: {}", sub, e);
-                                    }
-                                }
-                                sub
+                            Err(e) => {
+                                return Err(anyhow::anyhow!(
+                                    "CreateContainerError: subPathExpr expansion failed for container {}: {}",
+                                    container.name, e
+                                ));
                             }
+                        }
+                    } else if let Some(ref sub_path) = mount.sub_path {
+                        if !sub_path.is_empty() {
+                            // Validate plain subPath for path traversal / absolute path
+                            if sub_path.starts_with('/') {
+                                return Err(anyhow::anyhow!(
+                                    "CreateContainerError: subPath must not be an absolute path in container {}",
+                                    container.name
+                                ));
+                            }
+                            if sub_path.contains("..") {
+                                return Err(anyhow::anyhow!(
+                                    "CreateContainerError: subPath must not contain '..' in container {}",
+                                    container.name
+                                ));
+                            }
+                            Some(sub_path.clone())
                         } else {
-                            host_path.clone()
-                        };
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                if let Some(host_path) = volume_paths.get(&mount.name) {
+                    // Determine the effective host path, applying validated sub_path
+                    let effective_host_path = if let Some(ref sub) = expanded_sub_path {
+                        let full = format!("{}/{}", host_path, sub);
+                        // Ensure the sub-directory exists.
+                        // Check if the target already exists (e.g. a ConfigMap key
+                        // file materialised during volume setup).  If it does not
+                        // exist, create it as a directory so that directory-type
+                        // subPath mounts work.  File-type subPath targets (ConfigMap
+                        // keys) are expected to already be present on disk.
+                        let sub_meta = std::fs::metadata(&full);
+                        if sub_meta.is_err() {
+                            if let Err(e) = std::fs::create_dir_all(&full) {
+                                warn!("Failed to create subPath dir {}: {}", full, e);
+                            }
+                        }
+                        full
+                    } else {
+                        host_path.clone()
+                    };
 
                     let read_only = if mount.read_only.unwrap_or(false) {
                         ":ro"

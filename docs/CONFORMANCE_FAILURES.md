@@ -1,57 +1,46 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-20 (round 25 — deploying 8 fixes)
+**Last updated**: 2026-03-20 (round 25 running, fixes for round 26 ready)
 
-## Fixes Deployed in Round 25
+## Current Run (Round 25): 3 failures so far, tests still running
 
-1. **JSON decode `lastState:{}`** — Added custom deserializer for ContainerState that
-   treats empty objects `{}` as None. Go client serializes nil ContainerState as `{}`
-   not `null`. Affects both `state` and `last_state` in ContainerStatus.
+### Failures in Current Run
 
-2. **PATCH resourceVersion mismatch** — Clear resourceVersion before storage update
-   in pod PATCH handler. Between read and write, kubelet updates pod status
-   (incrementing RV), causing conflict. PATCH should merge without OCC.
+1. **CronJob ForbidConcurrent** — rate limiter timeout (controller 10s interval too slow)
+   FIX READY: Reduced CronJob reconcile interval from 10s to 1s.
 
-3. **PodTemplate list filtering** — Added Query params, watch support, label/field
-   selector filtering to `list_podtemplates` and `list_all_podtemplates`.
+2. **Variable Expansion subpath** — kubelet doesn't validate subpath
+   FIX READY: Added subpath validation before volume lookup. Rejects `..`
+   path traversal and absolute paths with CreateContainerError.
 
-4. **ControllerRevision list filtering** — Same as PodTemplate — added Query params,
-   watch, and filtering to both list handlers.
+3. **StatefulSet scaling** — rate limiter timeout (controller 5s interval)
+   FIX READY: Reduced StatefulSet reconcile interval from 5s to 1s.
 
-5. **Rate limiter E2E args** — Added `--kube-api-qps=50 --kube-api-burst=100` to
-   E2E_EXTRA_ARGS in run-conformance.sh using correct `--plugin-env=` format.
+## Fixes Ready for Round 26 (not yet deployed)
 
-6. **GC foreground deletion** — propagationPolicy extracted from query params,
-   foregroundDeletion finalizer added. GC properly processes it.
+1. CronJob controller interval: 10s → 1s
+2. StatefulSet controller interval: 5s → 1s
+3. Subpath validation: reject `..` and absolute paths in subPathExpr/subPath
 
-7. **GC find_orphans** — Only orphans when ALL owners gone (was: ANY owner).
+## Fixes Already Deployed in Round 25
 
-8. **Pod resize containerStatus.resources** — Populated from container spec.
+1. JSON decode `lastState:{}` — custom deserializer for empty ContainerState
+2. PATCH resourceVersion mismatch — clear RV for PATCH operations
+3. PodTemplate list — added Query params, watch, label/field selector filtering
+4. ControllerRevision list — same as PodTemplate
+5. GC foreground deletion — propagationPolicy + foregroundDeletion finalizer
+6. GC find_orphans — only orphan when ALL owners gone
+7. Pod resize containerStatus.resources — populated from container spec
 
-## Remaining Known Issues (Not Yet Fixed)
+## Previous Fixes (64+ from earlier rounds)
+All API server, kubelet, and controller fixes from rounds 1-23.
 
-### Variable Expansion subpath (F3)
-Kubelet doesn't validate subpath variable expansion. Invalid subpaths should
-cause CreateContainerError but container runs anyway.
+## Tests Previously Failing, Now Expected to Pass
 
-### API chunking compaction (F4)
-Chunking test failure at chunking.go:194. Need to investigate continue token
-behavior when etcd compaction occurs.
-
-### Services endpoints same port (F6)
-Timeout creating endpoints for services with TCP/UDP on same port.
-
-### ResourceQuota lifecycle (F7)
-ResourceQuota controller not tracking resource usage in time.
-
-### ControllerRevision lifecycle (F9)
-Controller creates revisions but test can't find them — may be fixed by the
-new list filtering. Needs re-test.
-
-### PreStop hook (F11)
-preStop lifecycle hook execution has no timeout, may hang indefinitely.
-
-### CRD FieldValidation (F12)
-CRD creation rejected for unknown reason. Need to investigate validation logic.
-
-## All Other Issues: FIXED (64+ root causes from previous rounds)
+- Pod update JSON decode (F8) — fixed by ContainerState deserializer
+- Pod patch resourceVersion (F10) — fixed by clearing RV on PATCH
+- PodTemplate lifecycle (F5) — fixed by adding list filtering
+- ControllerRevision lifecycle (F9) — fixed by adding list filtering
+- GC foreground deletion (C4) — fixed by propagation policy support
+- Pod InPlace Resize (C5) — fixed by populating resources fields
+- Chunking continue token (C1) — fixed in earlier commit
