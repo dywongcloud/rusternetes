@@ -2442,6 +2442,68 @@ impl ContainerRuntime {
         Ok(!containers.is_empty())
     }
 
+    /// Get detailed status of init containers by inspecting actual Docker container state.
+    pub async fn get_init_container_statuses(&self, pod: &Pod) -> Option<Vec<ContainerStatus>> {
+        let init_containers = pod.spec.as_ref()?.init_containers.as_ref()?;
+        if init_containers.is_empty() {
+            return None;
+        }
+
+        let pod_name = &pod.metadata.name;
+        let mut statuses = Vec::new();
+
+        for ic in init_containers {
+            let container_name = format!("{}_{}", pod_name, ic.name);
+
+            let (exit_code, reason, finished_at, container_id) = match self
+                .docker
+                .inspect_container(&container_name, None::<InspectContainerOptions>)
+                .await
+            {
+                Ok(inspect) => {
+                    let state = inspect.state.unwrap_or_default();
+                    let code = state.exit_code.unwrap_or(0) as i32;
+                    let r = if code == 0 {
+                        "Completed".to_string()
+                    } else {
+                        state.error.unwrap_or_else(|| "Error".to_string())
+                    };
+                    let cid = inspect.id.map(|id| format!("docker://{}", id));
+                    (code, r, state.finished_at, cid)
+                }
+                Err(_) => (0, "Completed".to_string(), None, None),
+            };
+
+            statuses.push(ContainerStatus {
+                name: ic.name.clone(),
+                ready: exit_code == 0,
+                restart_count: 0,
+                state: Some(ContainerState::Terminated {
+                    exit_code,
+                    signal: None,
+                    reason: Some(reason),
+                    message: None,
+                    started_at: None,
+                    finished_at,
+                    container_id: container_id.clone(),
+                }),
+                last_state: None,
+                image: Some(ic.image.clone()),
+                image_id: None,
+                container_id,
+                started: Some(false),
+                allocated_resources: None,
+                allocated_resources_status: None,
+                resources: None,
+                user: None,
+                volume_mounts: None,
+                stop_signal: None,
+            });
+        }
+
+        Some(statuses)
+    }
+
     /// Get detailed status of all containers in a pod
     pub async fn get_container_statuses(&self, pod: &Pod) -> Result<Vec<ContainerStatus>> {
         let mut statuses = Vec::new();

@@ -3,6 +3,49 @@ use crate::types::ObjectMeta;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Module for serializing/deserializing MicroTime format (with microsecond precision).
+/// Kubernetes MicroTime requires the format: "2006-01-02T15:04:05.000000Z"
+/// but must also accept plain RFC3339 timestamps without fractional seconds.
+mod micro_time {
+    use chrono::{DateTime, Utc};
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(date: &Option<DateTime<Utc>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match date {
+            Some(dt) => {
+                let s = dt.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
+                serializer.serialize_str(&s)
+            }
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt: Option<String> = Option::deserialize(deserializer)?;
+        match opt {
+            Some(s) => {
+                // Try parsing with microseconds first, then plain RFC3339
+                if let Ok(dt) = DateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.6fZ") {
+                    return Ok(Some(dt.with_timezone(&Utc)));
+                }
+                if let Ok(dt) = DateTime::parse_from_rfc3339(&s) {
+                    return Ok(Some(dt.with_timezone(&Utc)));
+                }
+                s.parse::<DateTime<Utc>>()
+                    .map(Some)
+                    .map_err(serde::de::Error::custom)
+            }
+            None => Ok(None),
+        }
+    }
+}
+
 /// Event represents a single event in the system
 ///
 /// Many fields are optional to tolerate varied event formats from conformance tests
@@ -63,7 +106,12 @@ pub struct Event {
     pub series: Option<EventSeries>,
 
     /// Time when this Event was first observed (MicroTime precision)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        serialize_with = "micro_time::serialize",
+        deserialize_with = "micro_time::deserialize"
+    )]
     pub event_time: Option<DateTime<Utc>>,
 
     /// Name of the controller that emitted this Event (e.g., "kubernetes.io/kubelet")

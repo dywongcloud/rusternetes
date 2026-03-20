@@ -97,6 +97,25 @@ impl<S: Storage> DeploymentController<S> {
             namespace, deployment.metadata.name
         );
 
+        // Ensure the deployment has a revision annotation
+        {
+            let annotations = deployment.metadata.annotations.clone().unwrap_or_default();
+            if !annotations.contains_key("deployment.kubernetes.io/revision") {
+                let mut updated = deployment.clone();
+                updated
+                    .metadata
+                    .annotations
+                    .get_or_insert_with(std::collections::HashMap::new)
+                    .insert(
+                        "deployment.kubernetes.io/revision".to_string(),
+                        "1".to_string(),
+                    );
+                let key =
+                    build_key("deployments", Some(namespace), &deployment.metadata.name);
+                let _ = self.storage.update(&key, &updated).await;
+            }
+        }
+
         // Get all ReplicaSets owned by this deployment
         let rs_prefix = build_prefix("replicasets", Some(namespace));
         let all_replicasets: Vec<ReplicaSet> = self.storage.list(&rs_prefix).await?;
@@ -385,6 +404,22 @@ impl<S: Storage> DeploymentController<S> {
             .unwrap_or_default();
         labels.insert("pod-template-hash".to_string(), pod_template_hash.clone());
         metadata.labels = Some(labels);
+
+        // Set revision annotation on the ReplicaSet
+        let revision = deployment
+            .metadata
+            .annotations
+            .as_ref()
+            .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+            .cloned()
+            .unwrap_or_else(|| "1".to_string());
+        metadata
+            .annotations
+            .get_or_insert_with(std::collections::HashMap::new)
+            .insert(
+                "deployment.kubernetes.io/revision".to_string(),
+                revision,
+            );
 
         // Set owner reference to the deployment
         metadata.owner_references = Some(vec![rusternetes_common::types::OwnerReference {

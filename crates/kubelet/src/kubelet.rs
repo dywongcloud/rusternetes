@@ -438,7 +438,7 @@ impl Kubelet {
                         // Write Running status using the fresh resourceVersion
                         let mut new_pod = fresh_pod;
                         let qos = Self::compute_qos_class(&new_pod);
-                        let init_container_statuses = Self::build_init_container_statuses(&new_pod);
+                        let init_container_statuses = self.runtime.get_init_container_statuses(&new_pod).await;
                         new_pod.status = Some(PodStatus {
                             phase: Some(Phase::Running),
                             message: Some("All containers started".to_string()),
@@ -575,7 +575,7 @@ impl Kubelet {
                 // Update status to Running
                 let mut new_pod = fresh_pod;
                 let qos = Self::compute_qos_class(&new_pod);
-                let init_container_statuses = Self::build_init_container_statuses(&new_pod);
+                let init_container_statuses = self.runtime.get_init_container_statuses(&new_pod).await;
                 new_pod.status = Some(PodStatus {
                     phase: Some(Phase::Running),
                     message: Some("All containers started".to_string()),
@@ -837,8 +837,9 @@ impl Kubelet {
         ]
     }
 
-    /// Build init container statuses for a running pod.
-    /// When a pod is running, all init containers have completed successfully.
+    /// Build init container statuses for a running pod (static fallback).
+    /// Prefer `runtime.get_init_container_statuses()` which inspects actual Docker state.
+    #[allow(dead_code)]
     fn build_init_container_statuses(pod: &Pod) -> Option<Vec<ContainerStatus>> {
         let init_containers = pod.spec.as_ref()?.init_containers.as_ref()?;
         if init_containers.is_empty() {

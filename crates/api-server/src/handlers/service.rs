@@ -235,6 +235,11 @@ pub async fn update(
     service.metadata.name = name.clone();
     service.metadata.namespace = Some(namespace.clone());
 
+    // When service type changes to ExternalName, clear the ClusterIP
+    if matches!(service.spec.service_type, Some(ServiceType::ExternalName)) {
+        service.spec.cluster_ip = Some("".to_string());
+    }
+
     let key = build_key("services", Some(&namespace), &name);
 
     // Get the old service for concurrency control and generation tracking

@@ -844,7 +844,7 @@ pub struct Volume {
     pub persistent_volume_claim: Option<PersistentVolumeClaimVolumeSource>,
 
     /// Downward API volume source
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "downwardAPI", skip_serializing_if = "Option::is_none")]
     pub downward_api: Option<DownwardAPIVolumeSource>,
 
     /// CSI (Container Storage Interface) ephemeral inline volume
@@ -892,7 +892,7 @@ pub struct VolumeProjection {
     pub config_map: Option<ConfigMapProjection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_account_token: Option<ServiceAccountTokenProjection>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "downwardAPI", skip_serializing_if = "Option::is_none")]
     pub downward_api: Option<DownwardAPIProjection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cluster_trust_bundle: Option<ClusterTrustBundleProjection>,

@@ -7,6 +7,7 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, State},
+    http::Uri,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -52,19 +53,43 @@ pub struct ScaleStatus {
     pub selector: Option<String>,
 }
 
+/// Extract group, version, and resource type from a scale subresource URI.
+/// e.g. "/apis/apps/v1/namespaces/default/deployments/foo/scale" -> ("apps", "v1", "deployments")
+/// e.g. "/api/v1/namespaces/default/replicationcontrollers/foo/scale" -> ("", "v1", "replicationcontrollers")
+fn parse_scale_uri(uri: &Uri) -> (String, String, String) {
+    let path = uri.path();
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    // Resource is 3 segments from the end (before name and "scale")
+    let resource = if segments.len() >= 3 {
+        segments[segments.len() - 3].to_string()
+    } else {
+        "unknown".to_string()
+    };
+
+    // Detect group and version from path prefix
+    if segments.first() == Some(&"apis") && segments.len() >= 3 {
+        // /apis/{group}/{version}/...
+        (segments[1].to_string(), segments[2].to_string(), resource)
+    } else {
+        // /api/{version}/... (core group)
+        let version = if segments.len() >= 2 {
+            segments[1].to_string()
+        } else {
+            "v1".to_string()
+        };
+        ("".to_string(), version, resource)
+    }
+}
+
 /// GET /apis/{group}/{version}/namespaces/{namespace}/{resource}/{name}/scale
 /// Returns the scale subresource for a resource
 pub async fn get_scale(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Path((group, version, namespace, resource, name)): Path<(
-        String,
-        String,
-        String,
-        String,
-        String,
-    )>,
+    uri: Uri,
+    Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Scale>> {
+    let (group, version, resource) = parse_scale_uri(&uri);
     info!(
         "Getting scale for {}/{}/{}/{}",
         group, resource, namespace, name
@@ -99,15 +124,11 @@ pub async fn get_scale(
 pub async fn update_scale(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Path((group, version, namespace, resource, name)): Path<(
-        String,
-        String,
-        String,
-        String,
-        String,
-    )>,
+    uri: Uri,
+    Path((namespace, name)): Path<(String, String)>,
     Json(scale): Json<Scale>,
 ) -> Result<Json<Scale>> {
+    let (group, version, resource) = parse_scale_uri(&uri);
     info!(
         "Updating scale for {}/{}/{}/{}",
         group, resource, namespace, name
@@ -160,20 +181,16 @@ pub async fn update_scale(
 pub async fn patch_scale(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-    Path((group, version, namespace, resource, name)): Path<(
-        String,
-        String,
-        String,
-        String,
-        String,
-    )>,
+    uri: Uri,
+    Path((namespace, name)): Path<(String, String)>,
     Json(scale): Json<Scale>,
 ) -> Result<Json<Scale>> {
     // For scale, patch is the same as update
     update_scale(
         State(state),
         Extension(auth_ctx),
-        Path((group, version, namespace, resource, name)),
+        uri,
+        Path((namespace, name)),
         Json(scale),
     )
     .await
