@@ -607,6 +607,19 @@ impl Kubelet {
                                     namespace, pod_name
                                 );
 
+                                // Capture current restart counts before stopping
+                                let current_restart_counts: HashMap<String, u32> = pod
+                                    .status
+                                    .as_ref()
+                                    .and_then(|s| s.container_statuses.as_ref())
+                                    .map(|statuses| {
+                                        statuses
+                                            .iter()
+                                            .map(|cs| (cs.name.clone(), cs.restart_count))
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+
                                 // Stop and restart the pod
                                 let grace = pod
                                     .spec
@@ -616,17 +629,79 @@ impl Kubelet {
                                 if let Err(e) = self.runtime.stop_pod_for(pod, grace).await {
                                     error!("Failed to stop pod for restart: {}", e);
                                 } else {
-                                    // Update status
-                                    self.update_pod_status(
-                                        pod,
-                                        Phase::Pending,
-                                        Some("Restarting"),
-                                        Some("Liveness probe failed"),
-                                    )
-                                    .await?;
+                                    // Build container statuses with incremented restart counts
+                                    let restarting_statuses: Vec<ContainerStatus> = pod
+                                        .spec
+                                        .as_ref()
+                                        .map(|s| &s.containers)
+                                        .unwrap_or(&vec![])
+                                        .iter()
+                                        .map(|c| {
+                                            let prev_count = current_restart_counts
+                                                .get(&c.name)
+                                                .copied()
+                                                .unwrap_or(0);
+                                            ContainerStatus {
+                                                name: c.name.clone(),
+                                                ready: false,
+                                                restart_count: prev_count + 1,
+                                                state: Some(ContainerState::Waiting {
+                                                    reason: Some("CrashLoopBackOff".to_string()),
+                                                    message: Some("Liveness probe failed".to_string()),
+                                                }),
+                                                last_state: None,
+                                                image: Some(c.image.clone()),
+                                                image_id: None,
+                                                container_id: None,
+                                                started: Some(false),
+                                                allocated_resources: None,
+                                                allocated_resources_status: None,
+                                                resources: None,
+                                                user: None,
+                                                volume_mounts: None,
+                                                stop_signal: None,
+                                            }
+                                        })
+                                        .collect();
+
+                                    // Update status with incremented restart counts
+                                    let mut new_pod = pod.clone();
+                                    if let Some(ref mut status) = new_pod.status {
+                                        status.phase = Some(Phase::Running);
+                                        status.message = Some("Liveness probe failed".to_string());
+                                        status.reason = Some("Restarting".to_string());
+                                        status.container_statuses = Some(restarting_statuses);
+                                    } else {
+                                        new_pod.status = Some(PodStatus {
+                                            phase: Some(Phase::Running),
+                                            message: Some("Liveness probe failed".to_string()),
+                                            reason: Some("Restarting".to_string()),
+                                            host_ip: Some("127.0.0.1".to_string()),
+                                            pod_ip: None,
+                                            conditions: None,
+                                            container_statuses: None,
+                                            init_container_statuses: None,
+                                            ephemeral_container_statuses: None,
+                                            resize: None,
+                                            resource_claim_statuses: None,
+                                            observed_generation: None,
+                                            host_i_ps: None,
+                                            pod_i_ps: None,
+                                            nominated_node_name: None,
+                                            qos_class: None,
+                                            start_time: None,
+                                        });
+                                    }
+
+                                    let key = build_key(
+                                        "pods",
+                                        new_pod.metadata.namespace.as_deref(),
+                                        &new_pod.metadata.name,
+                                    );
+                                    self.storage.update(&key, &new_pod).await?;
 
                                     // Start again
-                                    if let Err(e) = self.runtime.start_pod(pod).await {
+                                    if let Err(e) = self.runtime.start_pod(&new_pod).await {
                                         error!("Failed to restart pod: {}", e);
                                         self.update_pod_status(
                                             pod,
