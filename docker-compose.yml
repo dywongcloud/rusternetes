@@ -12,6 +12,8 @@ services:
       - --listen-client-urls=http://0.0.0.0:2379
       - --advertise-client-urls=http://etcd:2379
       - --listen-peer-urls=http://0.0.0.0:2380
+      - --auto-compaction-retention=5m
+      - --auto-compaction-mode=periodic
     ports:
       - "2379:2379"
       - "2380:2380"

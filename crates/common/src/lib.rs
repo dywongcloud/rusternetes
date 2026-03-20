@@ -22,5 +22,5 @@ pub mod types;
 
 pub use cel::{CELContext, CELEvaluator};
 pub use error::{Error, Result};
-pub use pagination::{paginate, PaginationParams};
+pub use pagination::{paginate, PaginationError, PaginationParams};
 pub use types::{List, ListMeta, Status, StatusCause, StatusDetails};

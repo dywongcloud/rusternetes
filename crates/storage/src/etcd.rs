@@ -417,6 +417,34 @@ impl Storage for EtcdStorage {
 
         Ok(Box::pin(watch_stream))
     }
+
+    async fn current_revision(&self) -> Result<i64> {
+        let mut client = self.client.lock().await;
+        // Get status to find current revision
+        let resp = client
+            .get("/", None)
+            .await
+            .map_err(|e| Error::Storage(format!("Failed to get current revision: {}", e)))?;
+        Ok(resp.header().unwrap().revision())
+    }
+
+    async fn is_revision_compacted(&self, revision: i64) -> Result<bool> {
+        let mut client = self.client.lock().await;
+        // Try to get a key at the given revision; if compacted, etcd returns an error
+        let opts = GetOptions::new().with_revision(revision);
+        match client.get("/registry/", Some(opts)).await {
+            Ok(_) => Ok(false), // revision still available
+            Err(e) => {
+                let err_msg = format!("{}", e);
+                if err_msg.contains("compacted") || err_msg.contains("required revision has been compacted") {
+                    Ok(true) // revision has been compacted
+                } else {
+                    // Other error — not a compaction issue
+                    Ok(false)
+                }
+            }
+        }
+    }
 }
 
 // Implement AuthzStorage for EtcdStorage

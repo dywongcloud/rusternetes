@@ -40,6 +40,12 @@ pub trait Storage: Send + Sync {
 
     /// Watch for changes to resources with a given prefix
     async fn watch(&self, prefix: &str) -> Result<WatchStream>;
+
+    /// Get the current storage revision (etcd mod_revision)
+    async fn current_revision(&self) -> Result<i64>;
+
+    /// Check if a revision has been compacted (no longer available)
+    async fn is_revision_compacted(&self, revision: i64) -> Result<bool>;
 }
 
 /// Event types for watch operations

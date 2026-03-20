@@ -637,8 +637,23 @@ pub async fn list(
     let resource_version = chrono::Utc::now().timestamp().to_string();
 
     // Apply pagination
-    let paginated = rusternetes_common::paginate(pods, pagination_params, &resource_version)
-        .map_err(|e| if e.contains("410 Gone") { rusternetes_common::Error::Gone(e) } else { rusternetes_common::Error::InvalidResource(e) })?;
+    let paginated = match rusternetes_common::paginate(pods, pagination_params, &resource_version) {
+        Ok(p) => p,
+        Err(e) => {
+            if e.message.contains("410 Gone") {
+                let mut status = rusternetes_common::Status::failure(&e.message, "Gone", 410);
+                if let Some(token) = e.fresh_continue_token {
+                    status.metadata = Some(rusternetes_common::ListMeta {
+                        resource_version: Some(resource_version),
+                        continue_token: Some(token),
+                        remaining_item_count: None,
+                    });
+                }
+                return Ok((axum::http::StatusCode::GONE, axum::Json(status)).into_response());
+            }
+            return Err(rusternetes_common::Error::InvalidResource(e.message));
+        }
+    };
 
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());
@@ -726,8 +741,23 @@ pub async fn list_all_pods(
     let resource_version = chrono::Utc::now().timestamp().to_string();
 
     // Apply pagination
-    let paginated = rusternetes_common::paginate(pods, pagination_params, &resource_version)
-        .map_err(|e| if e.contains("410 Gone") { rusternetes_common::Error::Gone(e) } else { rusternetes_common::Error::InvalidResource(e) })?;
+    let paginated = match rusternetes_common::paginate(pods, pagination_params, &resource_version) {
+        Ok(p) => p,
+        Err(e) => {
+            if e.message.contains("410 Gone") {
+                let mut status = rusternetes_common::Status::failure(&e.message, "Gone", 410);
+                if let Some(token) = e.fresh_continue_token {
+                    status.metadata = Some(rusternetes_common::ListMeta {
+                        resource_version: Some(resource_version),
+                        continue_token: Some(token),
+                        remaining_item_count: None,
+                    });
+                }
+                return Ok((axum::http::StatusCode::GONE, axum::Json(status)).into_response());
+            }
+            return Err(rusternetes_common::Error::InvalidResource(e.message));
+        }
+    };
 
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());

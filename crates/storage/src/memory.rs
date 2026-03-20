@@ -208,6 +208,14 @@ impl Storage for MemoryStorage {
 
         Ok(Box::pin(stream))
     }
+
+    async fn current_revision(&self) -> Result<i64> {
+        Ok(chrono::Utc::now().timestamp())
+    }
+
+    async fn is_revision_compacted(&self, _revision: i64) -> Result<bool> {
+        Ok(false) // Memory storage never compacts
+    }
 }
 
 #[cfg(test)]

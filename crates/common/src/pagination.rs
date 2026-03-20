@@ -36,6 +36,9 @@ struct ContinuationToken {
     /// Total item count at time of token creation (for staleness detection)
     #[serde(default)]
     total_at_creation: usize,
+    /// Unix timestamp when the token was created (for expiry detection)
+    #[serde(default)]
+    created_at: u64,
 }
 
 impl ContinuationToken {
@@ -69,21 +72,61 @@ pub struct PaginatedResult<T> {
     pub remaining_item_count: Option<i64>,
 }
 
+/// Error returned when pagination fails
+#[derive(Debug)]
+pub struct PaginationError {
+    pub message: String,
+    /// A fresh continue token the client can use to restart the list
+    pub fresh_continue_token: Option<String>,
+}
+
 /// Paginate a list of items according to Kubernetes API conventions
 pub fn paginate<T>(
     mut items: Vec<T>,
     params: PaginationParams,
     resource_version: &str,
-) -> Result<PaginatedResult<T>, String> {
+) -> Result<PaginatedResult<T>, PaginationError> {
     // Parse continue token if provided
     let start = if let Some(token) = &params.continue_token {
-        let cont = ContinuationToken::decode(token)?;
+        let cont = ContinuationToken::decode(token).map_err(|e| PaginationError {
+            message: e,
+            fresh_continue_token: None,
+        })?;
 
-        // Check if the data set has changed significantly since the token was created.
-        // If the total item count changed, the token is stale (resources were
-        // deleted/recreated). Return 410 Gone so the client restarts the list.
-        if cont.total_at_creation > 0 && cont.total_at_creation != items.len() {
-            return Err("410 Gone: the resource version in the continue token is too old; the client must restart the list without a continue token".to_string());
+        let is_stale =
+            // Check if total item count changed
+            (cont.total_at_creation > 0 && cont.total_at_creation != items.len())
+            // Check if token expired (etcd compaction, 5 min)
+            || (cont.created_at > 0 && {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                now.saturating_sub(cont.created_at) > 300
+            });
+
+        if is_stale {
+            // Generate a fresh continue token starting from the same offset
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0);
+            let fresh = ContinuationToken {
+                start: cont.start.min(items.len()),
+                total_at_creation: items.len(),
+                resource_version: resource_version.to_string(),
+                filters: HashMap::new(),
+                nonce,
+                created_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+            };
+            let fresh_token = fresh.encode().ok();
+            return Err(PaginationError {
+                message: "410 Gone: the resource version in the continue token is too old; the client must restart the list without a continue token".to_string(),
+                fresh_continue_token: fresh_token,
+            });
         }
 
         cont.start
@@ -138,17 +181,25 @@ pub fn paginate<T>(
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0);
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let next_token = ContinuationToken {
             start: end,
             total_at_creation: total,
             resource_version: resource_version.to_string(),
             filters: HashMap::new(),
             nonce,
+            created_at,
         };
 
         let token = next_token
             .encode()
-            .map_err(|e| format!("Failed to encode continue token: {}", e))?;
+            .map_err(|e| PaginationError {
+                message: format!("Failed to encode continue token: {}", e),
+                fresh_continue_token: None,
+            })?;
 
         (Some(token), Some((total - end) as i64))
     } else {
