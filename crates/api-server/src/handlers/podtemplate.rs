@@ -221,7 +221,34 @@ pub async fn list_podtemplates(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut podtemplates, &params)?;
 
-    let list = List::new("PodTemplateList", "v1", podtemplates);
+    // Apply pagination
+    let limit = params.get("limit").and_then(|l| l.parse::<i64>().ok());
+    let continue_token = params.get("continue").cloned();
+    let pagination_params = rusternetes_common::PaginationParams { limit, continue_token };
+    let resource_version = chrono::Utc::now().timestamp().to_string();
+
+    let paginated = match rusternetes_common::paginate(podtemplates, pagination_params, &resource_version) {
+        Ok(p) => p,
+        Err(e) => {
+            if e.message.contains("410 Gone") {
+                let mut status = rusternetes_common::Status::failure(&e.message, "Gone", 410);
+                if let Some(token) = e.fresh_continue_token {
+                    status.metadata = Some(rusternetes_common::ListMeta {
+                        resource_version: Some(resource_version),
+                        continue_token: Some(token),
+                        remaining_item_count: None,
+                    });
+                }
+                return Ok((axum::http::StatusCode::GONE, Json(status)).into_response());
+            }
+            return Err(rusternetes_common::Error::InvalidResource(e.message));
+        }
+    };
+
+    let mut list = List::new("PodTemplateList", "v1", paginated.items);
+    list.metadata.continue_token = paginated.continue_token;
+    list.metadata.remaining_item_count = paginated.remaining_item_count;
+    list.metadata.resource_version = Some(resource_version);
     Ok(Json(list).into_response())
 }
 
@@ -267,7 +294,34 @@ pub async fn list_all_podtemplates(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut podtemplates, &params)?;
 
-    let list = List::new("PodTemplateList", "v1", podtemplates);
+    // Apply pagination
+    let limit = params.get("limit").and_then(|l| l.parse::<i64>().ok());
+    let continue_token = params.get("continue").cloned();
+    let pagination_params = rusternetes_common::PaginationParams { limit, continue_token };
+    let resource_version = chrono::Utc::now().timestamp().to_string();
+
+    let paginated = match rusternetes_common::paginate(podtemplates, pagination_params, &resource_version) {
+        Ok(p) => p,
+        Err(e) => {
+            if e.message.contains("410 Gone") {
+                let mut status = rusternetes_common::Status::failure(&e.message, "Gone", 410);
+                if let Some(token) = e.fresh_continue_token {
+                    status.metadata = Some(rusternetes_common::ListMeta {
+                        resource_version: Some(resource_version),
+                        continue_token: Some(token),
+                        remaining_item_count: None,
+                    });
+                }
+                return Ok((axum::http::StatusCode::GONE, Json(status)).into_response());
+            }
+            return Err(rusternetes_common::Error::InvalidResource(e.message));
+        }
+    };
+
+    let mut list = List::new("PodTemplateList", "v1", paginated.items);
+    list.metadata.continue_token = paginated.continue_token;
+    list.metadata.remaining_item_count = paginated.remaining_item_count;
+    list.metadata.resource_version = Some(resource_version);
     Ok(Json(list).into_response())
 }
 
