@@ -1,33 +1,42 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-20 (round 28 starting — all fixes deployed)
+**Last updated**: 2026-03-20 (round 29 starting)
 
-## Round 28: All Known Fixes Deployed
+## Round 28 Results: Only 1 failure (chunking, now fixed)
 
-### Fixes in this round:
-1. GC foreground deletion + find_orphans (round 25)
-2. Pod resize containerStatus.resources (round 25)
-3. JSON decode ContainerState `{}` → None (round 25)
-4. PATCH resourceVersion mismatch (round 25)
-5. PodTemplate list: Query params, watch, label/field selector filtering (round 25)
-6. ControllerRevision list: Query params, watch, filtering (round 25)
-7. Subpath validation: reject `..` and absolute paths (round 26)
-8. CronJob controller: 10s → 1s reconcile interval (round 26)
-9. StatefulSet controller: 5s → 1s reconcile interval (round 26)
-10. Chunking compaction: 5-minute token expiry with fresh token in 410 (round 27)
-11. etcd auto-compaction: 5m periodic (round 27)
-12. CreateContainerError preserved: sync loop no longer overrides with Running (round 28)
+Round 28 had only 1 failure out of all tests that ran before we killed it:
+- Chunking compaction: PodTemplate list handler lacked pagination, so continue
+  token was never issued. FIXED — added full pagination support.
 
-### Known remaining issues (may or may not be fixed):
-- PreStop hook timeout (kubelet doesn't enforce timeout on lifecycle handlers)
-- CRD FieldValidation (creation rejected for unknown reason)
-- ResourceQuota tracking (controller may be slow)
+All other previously-failing tests PASSED:
+- CronJob ForbidConcurrent: PASSED (1s reconcile interval)
+- StatefulSet scaling: didn't appear (may not have run yet, or passed)
+- Variable Expansion subpath: PASSED (CreateContainerError preserved)
+- Pod update JSON decode: PASSED
+- Pod patch resourceVersion: PASSED
+- PodTemplate lifecycle: PASSED (list filtering)
+- ControllerRevision lifecycle: PASSED (list filtering)
+- GC foreground deletion: PASSED
+
+## Round 29: All 13 fixes deployed
+
+### Complete fix list:
+1. GC foreground deletion + find_orphans
+2. Pod resize containerStatus.resources
+3. JSON decode ContainerState `{}` → None
+4. PATCH resourceVersion clear for optimistic concurrency
+5. PodTemplate list: Query params, watch, filtering, pagination
+6. ControllerRevision list: Query params, watch, filtering
+7. Subpath validation: reject `..` and absolute paths
+8. CronJob controller: 10s → 1s reconcile
+9. StatefulSet controller: 5s → 1s reconcile
+10. Chunking compaction: 5-minute token expiry with fresh 410 token
+11. etcd auto-compaction: 5m periodic
+12. CreateContainerError preserved by sync loop
+13. PodTemplate pagination with limit/continue/410 Gone
+
+### Remaining known issues (no fix yet):
+- PreStop hook timeout enforcement
+- CRD FieldValidation rejection
+- ResourceQuota tracking speed
 - Services endpoints same port/different protocol
-
-## Previous Rounds Summary
-- Round 25: 12 failures (down from 15)
-- Round 26: 4 failures (only known issues, all with fixes committed)
-- Round 27: 2 failures so far (chunking + variable expansion, fixes committed)
-- Round 28: deploying all fixes
-
-## All historical fixes: 64+ from rounds 1-23, plus 12 new fixes above
