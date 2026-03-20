@@ -68,10 +68,79 @@ pub async fn handle_delete_with_finalizers<T>(
 where
     T: HasMetadata + Serialize + DeserializeOwned + Clone + Send + Sync,
 {
+    handle_delete_with_finalizers_and_propagation(storage, key, resource, None).await
+}
+
+/// Handle deletion with propagation policy support.
+/// When propagation_policy is "Foreground", adds the "foregroundDeletion" finalizer
+/// so the garbage collector knows to delete dependents before the owner.
+/// When propagation_policy is "Orphan", adds the "orphan" finalizer so dependents
+/// are not deleted.
+pub async fn handle_delete_with_finalizers_and_propagation<T>(
+    storage: &EtcdStorage,
+    key: &str,
+    resource: &T,
+    propagation_policy: Option<&str>,
+) -> Result<bool>
+where
+    T: HasMetadata + Serialize + DeserializeOwned + Clone + Send + Sync,
+{
     let metadata = resource.metadata();
 
-    // Check if the resource has finalizers
-    let has_finalizers = metadata
+    // If already marked for deletion, handle as before
+    if metadata.deletion_timestamp.is_some() {
+        let has_finalizers = metadata
+            .finalizers
+            .as_ref()
+            .map_or(false, |f| !f.is_empty());
+
+        if has_finalizers {
+            debug!(
+                "Resource {} already marked for deletion at {:?}, waiting for finalizers to be removed",
+                key, metadata.deletion_timestamp
+            );
+            info!(
+                "Resource {} has {} finalizers remaining: {:?}",
+                key,
+                metadata.finalizers.as_ref().unwrap().len(),
+                metadata.finalizers.as_ref().unwrap()
+            );
+            return Ok(true);
+        } else {
+            // No finalizers left, delete now
+            debug!("Resource {} has no finalizers remaining, deleting", key);
+            storage.delete(key).await?;
+            return Ok(false);
+        }
+    }
+
+    // Not yet marked for deletion — apply propagation policy finalizers first
+    let mut updated_resource = resource.clone();
+    let meta = updated_resource.metadata_mut();
+
+    // Add propagation policy finalizer if needed
+    match propagation_policy {
+        Some("Foreground") => {
+            let finalizers = meta.finalizers.get_or_insert_with(Vec::new);
+            if !finalizers.contains(&"foregroundDeletion".to_string()) {
+                finalizers.push("foregroundDeletion".to_string());
+                info!("Added foregroundDeletion finalizer to {}", key);
+            }
+        }
+        Some("Orphan") => {
+            let finalizers = meta.finalizers.get_or_insert_with(Vec::new);
+            if !finalizers.contains(&"orphan".to_string()) {
+                finalizers.push("orphan".to_string());
+                info!("Added orphan finalizer to {}", key);
+            }
+        }
+        _ => {
+            // Background or unspecified — no extra finalizer
+        }
+    }
+
+    // Check if the resource has finalizers (including any we just added)
+    let has_finalizers = meta
         .finalizers
         .as_ref()
         .map_or(false, |f| !f.is_empty());
@@ -83,30 +152,12 @@ where
         return Ok(false);
     }
 
-    // Resource has finalizers - check if already marked for deletion
-    if metadata.deletion_timestamp.is_some() {
-        // Already marked for deletion, just return success
-        debug!(
-            "Resource {} already marked for deletion at {:?}, waiting for finalizers to be removed",
-            key, metadata.deletion_timestamp
-        );
-        info!(
-            "Resource {} has {} finalizers remaining: {:?}",
-            key,
-            metadata.finalizers.as_ref().unwrap().len(),
-            metadata.finalizers.as_ref().unwrap()
-        );
-        return Ok(true);
-    }
-
-    // Resource has finalizers but not yet marked for deletion
-    // Set deletionTimestamp and update in storage
-    let mut updated_resource = resource.clone();
-    updated_resource.metadata_mut().deletion_timestamp = Some(Utc::now());
+    // Resource has finalizers — set deletionTimestamp and update in storage
+    meta.deletion_timestamp = Some(Utc::now());
 
     info!(
-        "Resource {} has finalizers, marking for deletion: {:?}",
-        key, metadata.finalizers
+        "Resource {} marked for deletion with finalizers: {:?}",
+        key, meta.finalizers
     );
 
     storage.update(key, &updated_resource).await?;

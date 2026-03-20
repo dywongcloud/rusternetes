@@ -283,7 +283,8 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         (owner_map, dependent_map)
     }
 
-    /// Find orphaned resources
+    /// Find orphaned resources — resources where ALL owner references point to
+    /// non-existent owners. A resource with at least one valid owner is NOT an orphan.
     fn find_orphans(
         &self,
         resources: &[ResourceInfo],
@@ -294,12 +295,15 @@ impl<S: Storage + 'static> GarbageCollector<S> {
 
         for resource in resources {
             if let Some(owner_refs) = &resource.metadata.owner_references {
-                // Check if any owner references point to non-existent owners
-                let has_missing_owner = owner_refs
+                if owner_refs.is_empty() {
+                    continue;
+                }
+                // Only orphan if ALL owners are gone
+                let all_owners_missing = owner_refs
                     .iter()
-                    .any(|owner_ref| !existing_uids.contains(owner_ref.uid.as_str()));
+                    .all(|owner_ref| !existing_uids.contains(owner_ref.uid.as_str()));
 
-                if has_missing_owner {
+                if all_owners_missing {
                     orphans.push(resource.clone());
                 }
             }
@@ -323,40 +327,83 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         resource: &ResourceInfo,
         dependent_map: &HashMap<String, Vec<String>>,
     ) -> rusternetes_common::Result<()> {
-        // If resource has finalizers, we can't delete it yet
-        if resource.metadata.has_finalizers() {
-            debug!(
-                "Resource {} has finalizers, skipping deletion",
-                resource.key
-            );
-            return Ok(());
-        }
-
         // Check deletion propagation policy from finalizers
         let propagation_policy = self.determine_propagation_policy(&resource.metadata);
 
         match propagation_policy {
             DeletionPropagation::Foreground => {
-                // In foreground deletion, we must delete all dependents first
+                // In foreground deletion, we must delete all dependents first,
+                // then remove the foregroundDeletion finalizer
                 self.delete_dependents_foreground(resource, dependent_map)
                     .await?;
+
+                // Remove the foregroundDeletion finalizer from the resource
+                self.remove_finalizer(resource, "foregroundDeletion").await?;
+            }
+            DeletionPropagation::Orphan => {
+                // In orphan mode, we remove owner references from dependents,
+                // then remove the orphan finalizer
+                self.orphan_dependents(resource, dependent_map).await?;
+
+                // Remove the orphan finalizer from the resource
+                self.remove_finalizer(resource, "orphan").await?;
             }
             DeletionPropagation::Background => {
                 // In background deletion, we delete the owner and let GC clean up dependents
-                // This is handled by the orphan detection in the next scan
-            }
-            DeletionPropagation::Orphan => {
-                // In orphan mode, we remove owner references from dependents
-                self.orphan_dependents(resource, dependent_map).await?;
+                // via the orphan detection in the next scan
             }
         }
 
-        // If no more finalizers and all dependents handled, delete the resource
-        if !resource.metadata.has_finalizers() {
-            info!("Deleting resource: {}", resource.key);
-            self.storage.delete(&resource.key).await?;
+        // Re-read the resource to see if it still has finalizers
+        let current: rusternetes_common::Result<Value> = self.storage.get(&resource.key).await;
+        match current {
+            Ok(value) => {
+                if let Ok(meta) = self.extract_metadata(&value) {
+                    if !meta.has_finalizers() {
+                        info!("Deleting resource (no finalizers remaining): {}", resource.key);
+                        self.storage.delete(&resource.key).await?;
+                    } else {
+                        debug!(
+                            "Resource {} still has finalizers {:?}, waiting",
+                            resource.key, meta.finalizers
+                        );
+                    }
+                }
+            }
+            Err(_) => {
+                // Resource already deleted
+                debug!("Resource {} already deleted", resource.key);
+            }
         }
 
+        Ok(())
+    }
+
+    /// Remove a specific finalizer from a resource in storage
+    async fn remove_finalizer(
+        &self,
+        resource: &ResourceInfo,
+        finalizer: &str,
+    ) -> rusternetes_common::Result<()> {
+        // Re-read the resource to get the latest version
+        let current: Value = self.storage.get(&resource.key).await?;
+        let mut updated = current;
+
+        if let Some(metadata) = updated.get_mut("metadata") {
+            if let Some(finalizers) = metadata.get_mut("finalizers") {
+                if let Some(arr) = finalizers.as_array_mut() {
+                    arr.retain(|f| f.as_str() != Some(finalizer));
+                    if arr.is_empty() {
+                        if let Some(obj) = metadata.as_object_mut() {
+                            obj.remove("finalizers");
+                        }
+                    }
+                }
+            }
+        }
+
+        info!("Removing {} finalizer from {}", finalizer, resource.key);
+        self.storage.update_raw(&resource.key, &updated).await?;
         Ok(())
     }
 
@@ -374,56 +421,82 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         DeletionPropagation::Background
     }
 
-    /// Delete dependents in foreground mode
+    /// Delete dependents in foreground mode.
+    /// Deletes dependents whose ONLY owner is the resource being deleted.
+    /// Dependents with other valid owners are not deleted — instead, the
+    /// owner reference to the deleted resource is removed from them.
     async fn delete_dependents_foreground(
         &self,
         resource: &ResourceInfo,
-        dependent_map: &HashMap<String, Vec<String>>,
+        _dependent_map: &HashMap<String, Vec<String>>,
     ) -> rusternetes_common::Result<()> {
         let resource_uid = &resource.metadata.uid;
 
-        // Get all UIDs of dependents for this resource
-        if let Some(dependent_uids) = dependent_map.get(resource_uid) {
-            if dependent_uids.is_empty() {
-                debug!("No dependents to delete for resource {}", resource.key);
-                return Ok(());
-            }
+        // Find all resources that have this resource as an owner
+        let all_resources = self.get_all_resources().await?;
+        let dependents: Vec<_> = all_resources
+            .iter()
+            .filter(|r| {
+                r.metadata.owner_references.as_ref().map_or(false, |refs| {
+                    refs.iter().any(|oref| oref.uid == *resource_uid)
+                })
+            })
+            .collect();
 
-            info!(
-                "Foreground deletion: deleting {} dependents of {}",
-                dependent_uids.len(),
-                resource.key
-            );
+        if dependents.is_empty() {
+            debug!("No dependents to delete for resource {}", resource.key);
+            return Ok(());
+        }
 
-            // Find all resources and filter to our dependents
-            let all_resources = self.get_all_resources().await?;
-            let dependents: Vec<_> = all_resources
-                .iter()
-                .filter(|r| dependent_uids.contains(&r.metadata.uid))
-                .collect();
+        info!(
+            "Foreground deletion: processing {} dependents of {}",
+            dependents.len(),
+            resource.key
+        );
 
-            // Delete each dependent
-            for dependent in dependents {
-                // Check if dependent has controller owner reference blocking deletion
-                if let Some(owner_refs) = &dependent.metadata.owner_references {
-                    for owner_ref in owner_refs {
-                        if owner_ref.uid == *resource_uid
-                            && owner_ref.block_owner_deletion.unwrap_or(false)
-                        {
-                            info!(
-                                "Deleting dependent {} (blocked owner deletion)",
-                                dependent.key
-                            );
-                            // Recursively delete dependents if they have any
-                            let (_, dependent_map) = self.build_relationship_maps(&all_resources);
-                            Box::pin(self.delete_dependents_foreground(dependent, &dependent_map))
-                                .await?;
+        let existing_uids: HashSet<_> = all_resources.iter().map(|r| r.metadata.uid.as_str()).collect();
 
-                            // Delete the dependent
-                            if let Err(e) = self.storage.delete(&dependent.key).await {
-                                error!("Failed to delete dependent {}: {}", dependent.key, e);
+        for dependent in dependents {
+            if let Some(owner_refs) = &dependent.metadata.owner_references {
+                // Check if this dependent has other VALID owners (besides the one being deleted)
+                let has_other_valid_owner = owner_refs.iter().any(|oref| {
+                    oref.uid != *resource_uid && existing_uids.contains(oref.uid.as_str())
+                });
+
+                if has_other_valid_owner {
+                    // Dependent has another valid owner — just remove the reference
+                    // to the owner being deleted
+                    info!(
+                        "Dependent {} has other valid owners, removing reference to {}",
+                        dependent.key, resource.key
+                    );
+                    let mut dependent_value = dependent.value.clone();
+                    if let Some(metadata) = dependent_value.get_mut("metadata") {
+                        if let Some(owner_refs_val) = metadata.get_mut("ownerReferences") {
+                            if let Some(arr) = owner_refs_val.as_array_mut() {
+                                arr.retain(|oref| {
+                                    oref.get("uid")
+                                        .and_then(|u| u.as_str())
+                                        .map(|u| u != resource_uid)
+                                        .unwrap_or(true)
+                                });
                             }
                         }
+                    }
+                    if let Err(e) = self.storage.update_raw(&dependent.key, &dependent_value).await {
+                        error!("Failed to update dependent {}: {}", dependent.key, e);
+                    }
+                } else {
+                    // Dependent's only owner is the one being deleted — delete it
+                    info!("Deleting dependent {} (sole owner being deleted)", dependent.key);
+
+                    // Recursively handle foreground deletion for this dependent's dependents
+                    let (_, sub_dependent_map) = self.build_relationship_maps(&all_resources);
+                    Box::pin(self.delete_dependents_foreground(dependent, &sub_dependent_map))
+                        .await?;
+
+                    if let Err(e) = self.storage.delete(&dependent.key).await {
+                        error!("Failed to delete dependent {}: {}", dependent.key, e);
                     }
                 }
             }

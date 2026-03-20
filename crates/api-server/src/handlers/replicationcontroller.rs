@@ -159,9 +159,11 @@ pub async fn delete_replicationcontroller(
         return Ok(Json(rc));
     }
 
+    let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str());
     let has_finalizers =
-        crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &rc)
-            .await?;
+        crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
+            &*state.storage, &key, &rc, propagation_policy,
+        ).await?;
 
     if has_finalizers {
         // Resource has finalizers, re-read to get updated version with deletionTimestamp

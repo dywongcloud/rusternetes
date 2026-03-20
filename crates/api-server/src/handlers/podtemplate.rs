@@ -181,7 +181,26 @@ pub async fn list_podtemplates(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
-) -> Result<Json<List<PodTemplate>>> {
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<axum::response::Response> {
+    use axum::response::IntoResponse;
+
+    // Check if this is a watch request
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_namespaced::<PodTemplate>(
+            state, auth_ctx, namespace, "podtemplates", "", watch_params,
+        ).await;
+    }
+
     info!("Listing podtemplates in namespace: {}", namespace);
 
     // Check authorization
@@ -197,17 +216,39 @@ pub async fn list_podtemplates(
     }
 
     let prefix = build_prefix("podtemplates", Some(&namespace));
-    let podtemplates = state.storage.list(&prefix).await?;
+    let mut podtemplates: Vec<PodTemplate> = state.storage.list(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut podtemplates, &params)?;
 
     let list = List::new("PodTemplateList", "v1", podtemplates);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 /// List all podtemplates across all namespaces
 pub async fn list_all_podtemplates(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<List<PodTemplate>>> {
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<axum::response::Response> {
+    use axum::response::IntoResponse;
+
+    // Check if this is a watch request
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_cluster_scoped::<PodTemplate>(
+            state, auth_ctx, "podtemplates", "", watch_params,
+        ).await;
+    }
+
     info!("Listing all podtemplates");
 
     // Check authorization (cluster-wide list)
@@ -221,10 +262,13 @@ pub async fn list_all_podtemplates(
     }
 
     let prefix = build_prefix("podtemplates", None);
-    let podtemplates = state.storage.list::<PodTemplate>(&prefix).await?;
+    let mut podtemplates: Vec<PodTemplate> = state.storage.list(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut podtemplates, &params)?;
 
     let list = List::new("PodTemplateList", "v1", podtemplates);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Use the macro to create a PATCH handler

@@ -154,9 +154,11 @@ pub async fn delete_cronjob(
         return Ok(Json(cronjob));
     }
 
+    let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str());
     let has_finalizers =
-        crate::handlers::finalizers::handle_delete_with_finalizers(&*state.storage, &key, &cronjob)
-            .await?;
+        crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
+            &*state.storage, &key, &cronjob, propagation_policy,
+        ).await?;
 
     if has_finalizers {
         // Resource has finalizers, re-read to get updated version with deletionTimestamp

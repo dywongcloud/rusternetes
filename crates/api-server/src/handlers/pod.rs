@@ -887,6 +887,12 @@ pub async fn patch(
     patched_pod.metadata.name = name.clone();
     patched_pod.metadata.namespace = Some(namespace.clone());
 
+    // For PATCH operations, clear resourceVersion to skip optimistic concurrency.
+    // PATCH is a read-modify-write operation, and between our read and write the
+    // kubelet may update the pod status (incrementing resourceVersion). The patch
+    // semantics merge fields, so this is safe.
+    patched_pod.metadata.resource_version = None;
+
     // Update in storage
     let updated = state.storage.update(&key, &patched_pod).await?;
 

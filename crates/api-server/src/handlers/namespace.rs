@@ -229,13 +229,13 @@ pub async fn delete_ns(
     info!("Cascade deleting all resources in namespace: {}", name);
     cascade_delete_namespace_resources(&*state.storage, &name).await?;
 
-    // Handle deletion with finalizers
-    // If the namespace has finalizers, it will be marked for deletion (deletionTimestamp set)
-    // and remain in storage until controllers remove the finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+    // Handle deletion with finalizers and propagation policy
+    let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str());
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
         &state.storage,
         &key,
         &namespace,
+        propagation_policy,
     )
     .await?;
 

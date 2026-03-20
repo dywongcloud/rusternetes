@@ -187,11 +187,13 @@ pub async fn delete_replicaset(
         return Ok(Json(replicaset));
     }
 
-    // Handle deletion with finalizers
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers(
+    // Handle deletion with finalizers and propagation policy
+    let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str());
+    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
         &state.storage,
         &key,
         &replicaset,
+        propagation_policy,
     )
     .await?;
 

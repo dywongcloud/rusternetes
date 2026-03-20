@@ -1,6 +1,26 @@
 use crate::types::{ObjectMeta, Phase, ResourceRequirements, TypeMeta};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
+
+/// Deserialize an Option<ContainerState> that tolerates empty objects `{}`.
+/// Go's Kubernetes client serializes nil ContainerState as `{}` instead of `null`,
+/// which would fail to parse as the tagged enum. This treats `{}` as `None`.
+fn deserialize_container_state_option<'de, D>(
+    deserializer: D,
+) -> Result<Option<ContainerState>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    match value {
+        None => Ok(None),
+        Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::Object(ref map)) if map.is_empty() => Ok(None),
+        Some(v) => serde_json::from_value(v)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
 
 /// Macro to create a skip_serializing_if function for Option<T> where T has all optional fields.
 /// This prevents serializing empty structs as {} when all fields are None.
@@ -1226,10 +1246,18 @@ pub struct ContainerStatus {
     pub ready: bool,
     pub restart_count: u32,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "deserialize_container_state_option"
+    )]
     pub state: Option<ContainerState>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "deserialize_container_state_option"
+    )]
     pub last_state: Option<ContainerState>,
 
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -910,7 +910,9 @@ impl_has_metadata!(
     rusternetes_common::resources::Ingress,
     rusternetes_common::resources::NetworkPolicy,
     rusternetes_common::resources::PodDisruptionBudget,
-    rusternetes_common::resources::IPAddress
+    rusternetes_common::resources::IPAddress,
+    rusternetes_common::resources::PodTemplate,
+    rusternetes_common::resources::ControllerRevision
 );
 
 // Concrete handler functions for specific resources

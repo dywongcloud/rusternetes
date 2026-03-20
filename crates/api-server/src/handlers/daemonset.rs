@@ -176,10 +176,12 @@ pub async fn delete_daemonset(
         return Ok(Json(daemonset));
     }
 
-    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers(
+    let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str());
+    let has_finalizers = crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
         &*state.storage,
         &key,
         &daemonset,
+        propagation_policy,
     )
     .await?;
 
