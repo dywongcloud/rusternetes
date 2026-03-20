@@ -540,13 +540,44 @@ impl Kubelet {
                                 );
                             }
                         } else {
-                            self.update_pod_status(
-                                pod,
-                                Phase::Failed,
-                                Some("FailedToStart"),
-                                Some(&err_msg),
-                            )
-                            .await?;
+                            // Get init container statuses from Docker to capture
+                            // actual exit codes for failed init containers
+                            let key = build_key("pods", Some(namespace), pod_name);
+                            let fresh_pod: Pod = match self.storage.get(&key).await {
+                                Ok(Some(p)) => p,
+                                _ => pod.clone(),
+                            };
+                            let init_container_statuses =
+                                self.runtime.get_init_container_statuses(&fresh_pod).await;
+                            let qos = Self::compute_qos_class(&fresh_pod);
+
+                            let mut new_pod = fresh_pod;
+                            new_pod.status = Some(PodStatus {
+                                phase: Some(Phase::Failed),
+                                message: Some(err_msg),
+                                reason: Some("FailedToStart".to_string()),
+                                host_ip: Some("127.0.0.1".to_string()),
+                                pod_ip: None,
+                                conditions: None,
+                                container_statuses: None,
+                                init_container_statuses,
+                                ephemeral_container_statuses: None,
+                                resize: None,
+                                resource_claim_statuses: None,
+                                observed_generation: None,
+                                host_i_ps: None,
+                                pod_i_ps: None,
+                                nominated_node_name: None,
+                                qos_class: Some(qos),
+                                start_time: Some(chrono::Utc::now()),
+                            });
+
+                            if let Err(e) = self.storage.update(&key, &new_pod).await {
+                                warn!(
+                                    "Failed to update pod {}/{} status to Failed: {}",
+                                    namespace, pod_name, e
+                                );
+                            }
                         }
                     }
                 }
@@ -742,6 +773,80 @@ impl Kubelet {
                         {
                             let all_ready = container_statuses.iter().all(|s| s.ready);
 
+                            // Check if all containers have terminated (for Never/OnFailure restart policies)
+                            let restart_policy = pod
+                                .spec
+                                .as_ref()
+                                .and_then(|s| s.restart_policy.as_deref())
+                                .unwrap_or("Always");
+
+                            let all_terminated = !container_statuses.is_empty()
+                                && container_statuses.iter().all(|cs| {
+                                    matches!(cs.state, Some(ContainerState::Terminated { .. }))
+                                });
+
+                            if all_terminated && restart_policy == "Never" {
+                                let any_failed = container_statuses.iter().any(|cs| {
+                                    matches!(cs.state, Some(ContainerState::Terminated { exit_code, .. }) if exit_code != 0)
+                                });
+                                let terminal_phase = if any_failed { Phase::Failed } else { Phase::Succeeded };
+                                let message = if any_failed {
+                                    "Pod failed".to_string()
+                                } else {
+                                    "Pod completed successfully".to_string()
+                                };
+
+                                let mut new_pod = pod.clone();
+                                if let Some(ref mut status) = new_pod.status {
+                                    status.phase = Some(terminal_phase);
+                                    status.message = Some(message);
+                                    status.container_statuses = Some(container_statuses);
+                                }
+                                let key = build_key("pods", Some(namespace), pod_name);
+                                let _ = self.storage.update(&key, &new_pod).await;
+                                return Ok(());
+                            }
+
+                            if all_terminated && restart_policy == "OnFailure" {
+                                let any_failed = container_statuses.iter().any(|cs| {
+                                    matches!(cs.state, Some(ContainerState::Terminated { exit_code, .. }) if exit_code != 0)
+                                });
+
+                                if any_failed {
+                                    // Restart only the failed containers
+                                    warn!("Restarting failed containers for pod {}/{} (OnFailure)", namespace, pod_name);
+                                    let grace = pod
+                                        .spec
+                                        .as_ref()
+                                        .and_then(|s| s.termination_grace_period_seconds)
+                                        .unwrap_or(30);
+                                    if let Err(e) = self.runtime.stop_pod_for(pod, grace).await {
+                                        error!("Failed to stop pod for restart: {}", e);
+                                    } else if let Err(e) = self.runtime.start_pod(pod).await {
+                                        error!("Failed to restart pod: {}", e);
+                                        self.update_pod_status(
+                                            pod,
+                                            Phase::Failed,
+                                            Some("FailedToRestart"),
+                                            Some(&e.to_string()),
+                                        )
+                                        .await?;
+                                    }
+                                    return Ok(());
+                                } else {
+                                    // All containers exited 0 — transition to Succeeded
+                                    let mut new_pod = pod.clone();
+                                    if let Some(ref mut status) = new_pod.status {
+                                        status.phase = Some(Phase::Succeeded);
+                                        status.message = Some("Pod completed successfully".to_string());
+                                        status.container_statuses = Some(container_statuses);
+                                    }
+                                    let key = build_key("pods", Some(namespace), pod_name);
+                                    let _ = self.storage.update(&key, &new_pod).await;
+                                    return Ok(());
+                                }
+                            }
+
                             // Get pod IP (important for pods started by docker-compose)
                             let pod_ip = self.runtime.get_pod_ip(pod_name).await.ok().flatten();
 
@@ -772,6 +877,87 @@ impl Kubelet {
                             }
                         }
                     }
+                }
+            }
+            Phase::Running if !is_running => {
+                // Containers have stopped — decide based on restart policy
+                let restart_policy = pod
+                    .spec
+                    .as_ref()
+                    .and_then(|s| s.restart_policy.as_deref())
+                    .unwrap_or("Always");
+
+                let container_statuses = self.runtime.get_container_statuses(pod).await.ok();
+                let any_failed = container_statuses
+                    .as_ref()
+                    .map(|statuses| {
+                        statuses.iter().any(|cs| {
+                            matches!(cs.state, Some(ContainerState::Terminated { exit_code, .. }) if exit_code != 0)
+                        })
+                    })
+                    .unwrap_or(false);
+
+                match restart_policy {
+                    "Always" => {
+                        info!("Restarting pod {}/{} (restartPolicy=Always)", namespace, pod_name);
+                        if let Err(e) = self.runtime.start_pod(pod).await {
+                            error!("Failed to restart pod: {}", e);
+                            self.update_pod_status(
+                                pod,
+                                Phase::Failed,
+                                Some("FailedToRestart"),
+                                Some(&e.to_string()),
+                            )
+                            .await?;
+                        }
+                    }
+                    "OnFailure" => {
+                        if any_failed {
+                            info!("Restarting pod {}/{} (restartPolicy=OnFailure, container failed)", namespace, pod_name);
+                            if let Err(e) = self.runtime.start_pod(pod).await {
+                                error!("Failed to restart pod: {}", e);
+                                self.update_pod_status(
+                                    pod,
+                                    Phase::Failed,
+                                    Some("FailedToRestart"),
+                                    Some(&e.to_string()),
+                                )
+                                .await?;
+                            }
+                        } else {
+                            info!("Pod {}/{} completed successfully (restartPolicy=OnFailure)", namespace, pod_name);
+                            let mut new_pod = pod.clone();
+                            if let Some(ref mut status) = new_pod.status {
+                                status.phase = Some(Phase::Succeeded);
+                                status.message = Some("Pod completed successfully".to_string());
+                                if let Some(ref cs) = container_statuses {
+                                    status.container_statuses = Some(cs.clone());
+                                }
+                            }
+                            let key = build_key("pods", Some(namespace), pod_name);
+                            let _ = self.storage.update(&key, &new_pod).await;
+                        }
+                    }
+                    "Never" => {
+                        let terminal_phase = if any_failed { Phase::Failed } else { Phase::Succeeded };
+                        let message = if any_failed {
+                            "Pod failed".to_string()
+                        } else {
+                            "Pod completed successfully".to_string()
+                        };
+                        info!("Pod {}/{} terminated (restartPolicy=Never, phase={:?})", namespace, pod_name, terminal_phase);
+                        let mut new_pod = pod.clone();
+                        if let Some(ref mut status) = new_pod.status {
+                            status.phase = Some(terminal_phase);
+                            status.message = Some(message);
+                            if let Some(ref cs) = container_statuses {
+                                status.container_statuses = Some(cs.clone());
+                            }
+                        }
+                        let key = build_key("pods", Some(namespace), pod_name);
+                        let _ = self.storage.update(&key, &new_pod).await;
+                    }
+                    _ => {}
                 }
             }
             Phase::Succeeded | Phase::Failed => {

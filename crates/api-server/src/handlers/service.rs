@@ -238,6 +238,7 @@ pub async fn update(
     // When service type changes to ExternalName, clear the ClusterIP
     if matches!(service.spec.service_type, Some(ServiceType::ExternalName)) {
         service.spec.cluster_ip = Some("".to_string());
+        service.spec.cluster_ips = None;
     }
 
     let key = build_key("services", Some(&namespace), &name);
@@ -462,8 +463,43 @@ pub async fn list_all_services(
     Ok(Json(list).into_response())
 }
 
-// Use the macro to create a PATCH handler
-crate::patch_handler_namespaced!(patch, Service, "services", "");
+/// Custom PATCH handler for services that applies ExternalName ClusterIP clearing
+/// after the generic patch logic.
+pub async fn patch(
+    state: axum::extract::State<std::sync::Arc<crate::state::ApiServerState>>,
+    auth_ctx: axum::Extension<crate::middleware::AuthContext>,
+    path: axum::extract::Path<(String, String)>,
+    query: axum::extract::Query<std::collections::HashMap<String, String>>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> rusternetes_common::Result<Json<Service>> {
+    let (namespace, name) = path.0.clone();
+    let result = crate::handlers::generic_patch::patch_namespaced_resource::<Service>(
+        state.clone(),
+        auth_ctx,
+        axum::extract::Path((namespace.clone(), name.clone())),
+        query,
+        headers,
+        body,
+        "services",
+        "",
+    )
+    .await?;
+
+    // Post-patch: clear ClusterIP if service type changed to ExternalName
+    let service = result.0;
+    if matches!(service.spec.service_type, Some(ServiceType::ExternalName)) {
+        if service.spec.cluster_ip.as_deref() != Some("") && service.spec.cluster_ip.is_some() {
+            let key = rusternetes_storage::build_key("services", Some(&namespace), &name);
+            let mut updated_service = service;
+            updated_service.spec.cluster_ip = Some("".to_string());
+            updated_service.spec.cluster_ips = None;
+            let saved: Service = state.storage.update(&key, &updated_service).await?;
+            return Ok(Json(saved));
+        }
+    }
+    Ok(Json(service))
+}
 
 pub async fn deletecollection_services(
     State(state): State<Arc<ApiServerState>>,

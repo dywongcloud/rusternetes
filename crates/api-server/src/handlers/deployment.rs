@@ -47,6 +47,15 @@ pub async fn create(
     deployment.metadata.ensure_creation_timestamp();
     crate::handlers::lifecycle::set_initial_generation(&mut deployment.metadata);
 
+    // Set initial revision annotation if not already present
+    let annotations = deployment
+        .metadata
+        .annotations
+        .get_or_insert_with(std::collections::HashMap::new);
+    annotations
+        .entry("deployment.kubernetes.io/revision".to_string())
+        .or_insert_with(|| "1".to_string());
+
     let key = build_key("deployments", Some(&namespace), &deployment.metadata.name);
 
     // If dry-run, skip storage operation but return the validated resource

@@ -201,8 +201,8 @@ fn extract_scale(
     resource: &Value,
     namespace: &str,
     name: &str,
-    group: &str,
-    version: &str,
+    _group: &str,
+    _version: &str,
 ) -> Result<Scale> {
     let metadata = resource
         .get("metadata")
@@ -238,7 +238,7 @@ fn extract_scale(
     });
 
     Ok(Scale {
-        api_version: format!("{}/{}", group, version),
+        api_version: "autoscaling/v1".to_string(),
         kind: "Scale".to_string(),
         metadata: ScaleMetadata {
             name: name.to_string(),
@@ -289,7 +289,7 @@ mod tests {
         let scale = extract_scale(&resource, "default", "test-deployment", "apps", "v1").unwrap();
 
         assert_eq!(scale.kind, "Scale");
-        assert_eq!(scale.api_version, "apps/v1");
+        assert_eq!(scale.api_version, "autoscaling/v1");
         assert_eq!(scale.metadata.name, "test-deployment");
         assert_eq!(scale.metadata.namespace, "default");
         assert_eq!(scale.spec.replicas, 3);

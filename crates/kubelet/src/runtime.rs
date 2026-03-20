@@ -1459,10 +1459,26 @@ impl ContainerRuntime {
             return Ok(volume_dir);
         }
 
-        Err(anyhow::anyhow!(
-            "Unknown volume type for volume {}",
-            volume.name
-        ))
+        // Fallback: create an empty directory for unrecognized volume types
+        // (e.g. nfs, iscsi, image, or any future types)
+        // This prevents pod startup failures for volumes we don't natively handle.
+        warn!(
+            "Unknown volume type for volume {}, creating empty directory as fallback (volume debug: downward_api={}, empty_dir={}, host_path={}, config_map={}, secret={}, projected={}, pvc={}, csi={}, ephemeral={})",
+            volume.name,
+            volume.downward_api.is_some(),
+            volume.empty_dir.is_some(),
+            volume.host_path.is_some(),
+            volume.config_map.is_some(),
+            volume.secret.is_some(),
+            volume.projected.is_some(),
+            volume.persistent_volume_claim.is_some(),
+            volume.csi.is_some(),
+            volume.ephemeral.is_some(),
+        );
+        let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+        std::fs::create_dir_all(&volume_dir)
+            .context("Failed to create fallback volume directory")?;
+        Ok(volume_dir)
     }
 
     /// Create ServiceAccount token volume for in-cluster authentication
@@ -1960,9 +1976,17 @@ impl ContainerRuntime {
                                 host_path.clone()
                             } else {
                                 let sub = format!("{}/{}", host_path, sub_path);
-                                // Ensure the sub-directory exists
-                                if let Err(e) = std::fs::create_dir_all(&sub) {
-                                    warn!("Failed to create subPath dir {}: {}", sub, e);
+                                // Check if the subPath target already exists (e.g. a
+                                // ConfigMap key file materialised during volume setup).
+                                // If it does not exist, create it as a directory so that
+                                // directory-type subPath mounts work.  File-type subPath
+                                // targets (ConfigMap keys) are expected to already be
+                                // present on disk.
+                                let sub_meta = std::fs::metadata(&sub);
+                                if sub_meta.is_err() {
+                                    if let Err(e) = std::fs::create_dir_all(&sub) {
+                                        warn!("Failed to create subPath dir {}: {}", sub, e);
+                                    }
                                 }
                                 sub
                             }

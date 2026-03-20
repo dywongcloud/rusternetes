@@ -844,7 +844,7 @@ pub struct Volume {
     pub persistent_volume_claim: Option<PersistentVolumeClaimVolumeSource>,
 
     /// Downward API volume source
-    #[serde(rename = "downwardAPI", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "downwardAPI", alias = "downwardApi", skip_serializing_if = "Option::is_none")]
     pub downward_api: Option<DownwardAPIVolumeSource>,
 
     /// CSI (Container Storage Interface) ephemeral inline volume
@@ -892,7 +892,7 @@ pub struct VolumeProjection {
     pub config_map: Option<ConfigMapProjection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_account_token: Option<ServiceAccountTokenProjection>,
-    #[serde(rename = "downwardAPI", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "downwardAPI", alias = "downwardApi", skip_serializing_if = "Option::is_none")]
     pub downward_api: Option<DownwardAPIProjection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cluster_trust_bundle: Option<ClusterTrustBundleProjection>,
@@ -2257,5 +2257,44 @@ mod tests {
             json2.contains("my-template"),
             "Should contain the template name"
         );
+    }
+
+    #[test]
+    fn test_downward_api_volume_roundtrip() {
+        let json = r#"{
+            "name": "podinfo",
+            "downwardAPI": {
+                "items": [
+                    {
+                        "path": "labels",
+                        "fieldRef": {
+                            "fieldPath": "metadata.labels"
+                        },
+                        "mode": 256
+                    }
+                ]
+            }
+        }"#;
+
+        let vol: Volume = serde_json::from_str(json).expect("Failed to deserialize Volume");
+        assert_eq!(vol.name, "podinfo");
+        assert!(vol.downward_api.is_some(), "downward_api should be Some but was None");
+        let da = vol.downward_api.as_ref().unwrap();
+        assert!(da.items.is_some(), "items should be Some");
+        let items = da.items.as_ref().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path, "labels");
+        assert_eq!(items[0].mode, Some(256));
+
+        // Verify serialization preserves the field name as "downwardAPI"
+        let serialized = serde_json::to_value(&vol).expect("Failed to serialize");
+        assert!(serialized.get("downwardAPI").is_some(),
+            "Serialized JSON should have 'downwardAPI' key, got: {}",
+            serde_json::to_string_pretty(&serialized).unwrap()
+        );
+
+        // Verify round-trip through serde_json::Value
+        let vol2: Volume = serde_json::from_value(serialized).expect("Failed round-trip");
+        assert!(vol2.downward_api.is_some(), "downward_api should survive round-trip");
     }
 }

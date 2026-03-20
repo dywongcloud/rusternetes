@@ -3,6 +3,47 @@ use crate::types::ObjectMeta;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Module for serializing/deserializing Kubernetes Time format (without fractional seconds).
+/// Kubernetes Time uses the format: "2006-01-02T15:04:05Z"
+/// but must also accept timestamps with fractional seconds.
+mod k8s_time {
+    use chrono::{DateTime, Utc};
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(date: &Option<DateTime<Utc>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match date {
+            Some(dt) => {
+                // Kubernetes Time format: no fractional seconds
+                let s = dt.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+                serializer.serialize_str(&s)
+            }
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt: Option<String> = Option::deserialize(deserializer)?;
+        match opt {
+            Some(s) => {
+                // Accept RFC3339 with or without fractional seconds
+                if let Ok(dt) = DateTime::parse_from_rfc3339(&s) {
+                    return Ok(Some(dt.with_timezone(&Utc)));
+                }
+                s.parse::<DateTime<Utc>>()
+                    .map(Some)
+                    .map_err(serde::de::Error::custom)
+            }
+            None => Ok(None),
+        }
+    }
+}
+
 /// Module for serializing/deserializing MicroTime format (with microsecond precision).
 /// Kubernetes MicroTime requires the format: "2006-01-02T15:04:05.000000Z"
 /// but must also accept plain RFC3339 timestamps without fractional seconds.
@@ -82,11 +123,21 @@ pub struct Event {
     pub event_type: EventType,
 
     /// The time at which the event was first recorded
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        serialize_with = "k8s_time::serialize",
+        deserialize_with = "k8s_time::deserialize"
+    )]
     pub first_timestamp: Option<DateTime<Utc>>,
 
     /// The time at which the most recent occurrence of this event was recorded
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        serialize_with = "k8s_time::serialize",
+        deserialize_with = "k8s_time::deserialize"
+    )]
     pub last_timestamp: Option<DateTime<Utc>>,
 
     /// The number of times this event has occurred
