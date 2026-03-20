@@ -583,8 +583,20 @@ impl Kubelet {
                 }
             }
             // If pod is Pending but containers are already running, update to Running.
-            // Re-fetch to get the latest resourceVersion before writing.
+            // Skip if the pod has a container in CreateContainerError state — this means
+            // a container failed to start and we should NOT override that status.
             Phase::Pending if is_running => {
+                // Check if any container is in CreateContainerError
+                let has_create_error = pod.status.as_ref()
+                    .and_then(|s| s.container_statuses.as_ref())
+                    .map_or(false, |statuses| {
+                        statuses.iter().any(|cs| {
+                            matches!(&cs.state, Some(ContainerState::Waiting { reason: Some(r), .. }) if r == "CreateContainerError")
+                        })
+                    });
+                if has_create_error {
+                    debug!("Pod {}/{} has CreateContainerError, not overriding with Running", namespace, pod_name);
+                } else {
                 info!(
                     "Pod {}/{} containers are running, updating status to Running",
                     namespace, pod_name
@@ -628,6 +640,7 @@ impl Kubelet {
                 });
 
                 self.storage.update(&key, &new_pod).await?;
+                } // end else (no CreateContainerError)
             }
             Phase::Running if is_running => {
                 debug!("Pod {}/{} is running, checking health", namespace, pod_name);
