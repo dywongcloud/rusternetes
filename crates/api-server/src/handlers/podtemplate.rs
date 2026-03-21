@@ -231,7 +231,7 @@ pub async fn list_podtemplates(
         Ok(p) => p,
         Err(e) => {
             if e.message.contains("410 Gone") {
-                let mut status = rusternetes_common::Status::failure(&e.message, "Gone", 410);
+                let mut status = rusternetes_common::Status::failure(&e.message, "Expired", 410);
                 if let Some(token) = e.fresh_continue_token {
                     status.metadata = Some(rusternetes_common::ListMeta {
                         resource_version: Some(resource_version),
@@ -304,7 +304,7 @@ pub async fn list_all_podtemplates(
         Ok(p) => p,
         Err(e) => {
             if e.message.contains("410 Gone") {
-                let mut status = rusternetes_common::Status::failure(&e.message, "Gone", 410);
+                let mut status = rusternetes_common::Status::failure(&e.message, "Expired", 410);
                 if let Some(token) = e.fresh_continue_token {
                     status.metadata = Some(rusternetes_common::ListMeta {
                         resource_version: Some(resource_version),
