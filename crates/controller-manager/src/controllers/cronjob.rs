@@ -113,6 +113,26 @@ impl<S: Storage> CronJobController<S> {
                     name,
                     active_jobs.len()
                 );
+                // Still update status with active jobs list
+                let active_refs: Vec<rusternetes_common::resources::service_account::ObjectReference> = active_jobs
+                    .iter()
+                    .map(|job| rusternetes_common::resources::service_account::ObjectReference {
+                        kind: Some("Job".to_string()),
+                        namespace: Some(namespace.to_string()),
+                        name: Some(job.metadata.name.clone()),
+                        uid: Some(job.metadata.uid.clone()),
+                        api_version: Some("batch/v1".to_string()),
+                        resource_version: job.metadata.resource_version.clone(),
+                        field_path: None,
+                    })
+                    .collect();
+                cronjob.status = Some(CronJobStatus {
+                    active: Some(active_refs),
+                    last_schedule_time: cronjob.status.as_ref().and_then(|s| s.last_schedule_time),
+                    last_successful_time: cronjob.status.as_ref().and_then(|s| s.last_successful_time),
+                });
+                let key = format!("/registry/cronjobs/{}/{}", namespace, name);
+                let _ = self.storage.update(&key, cronjob).await;
                 return Ok(());
             }
             "Replace" if !active_jobs.is_empty() => {
@@ -132,9 +152,37 @@ impl<S: Storage> CronJobController<S> {
         // Create new Job
         self.create_job(cronjob, namespace).await?;
 
-        // Update last schedule time
+        // Build active job references from all active jobs for this cronjob
+        let active_refs: Vec<rusternetes_common::resources::service_account::ObjectReference> = {
+            let job_prefix = format!("/registry/jobs/{}/", namespace);
+            let current_jobs: Vec<Job> = self.storage.list(&job_prefix).await.unwrap_or_default();
+            current_jobs
+                .iter()
+                .filter(|job| {
+                    job.metadata.labels.as_ref()
+                        .and_then(|l| l.get("cronjob-name"))
+                        .map(|cj| cj == name)
+                        .unwrap_or(false)
+                        && !job.status.as_ref()
+                            .and_then(|s| s.conditions.as_ref())
+                            .map(|conds| conds.iter().any(|c| c.condition_type == "Complete" && c.status == "True"))
+                            .unwrap_or(false)
+                })
+                .map(|job| rusternetes_common::resources::service_account::ObjectReference {
+                    kind: Some("Job".to_string()),
+                    namespace: Some(namespace.to_string()),
+                    name: Some(job.metadata.name.clone()),
+                    uid: Some(job.metadata.uid.clone()),
+                    api_version: Some("batch/v1".to_string()),
+                    resource_version: job.metadata.resource_version.clone(),
+                    field_path: None,
+                })
+                .collect()
+        };
+
+        // Update status with active refs and last schedule time
         cronjob.status = Some(CronJobStatus {
-            active: None, // Will be set with actual ObjectReferences in production
+            active: if active_refs.is_empty() { None } else { Some(active_refs) },
             last_schedule_time: Some(now),
             last_successful_time: cronjob.status.as_ref().and_then(|s| s.last_successful_time),
         });
