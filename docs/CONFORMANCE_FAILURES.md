@@ -1,27 +1,22 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-21 (round 42 — CRITICAL: exec hanging blocks all tests)
+**Last updated**: 2026-03-21 (round 43 — exec timeout fix deployed)
 
-## CRITICAL BLOCKER: kubectl exec hangs
+## Critical Issue Found: kubectl exec hanging
+The kubelet exec handler's output stream collection hung indefinitely
+because bollard's Docker exec stream didn't close after command completion.
+FIX DEPLOYED: Added 30-second timeout to exec output collection.
 
-The e2e test suite is stuck because `kubectl exec` hangs indefinitely.
-The API server upgrades to SPDY and proxies to the kubelet at
-`http://rusternetes-kubelet:10250/exec/...` but the response never comes.
+The exec hang was causing the entire test suite to stall on any test
+that uses kubectl exec (StatefulSet probe manipulation, etc.).
 
-This blocks ALL tests that use `kubectl exec`, which includes:
-- StatefulSet tests (exec to break/restore HTTP probes)
-- Many pod lifecycle tests
-- Any test that verifies container output via exec
-
-The SPDY proxy from API server to kubelet needs debugging.
-The kubelet IS listening on 10250 but the exec handler may not
-be responding correctly to the SPDY protocol.
-
-## 31 fixes deployed (all working for non-exec tests)
-See previous entries for full list.
-
-## Test results so far
-The sonobuoy progress counter shows 0/0/441 because the progress
-reporting doesn't work (cosmetic issue). Tests ARE running but get
-stuck when they hit `kubectl exec`. Only the first StatefulSet
-test ran before getting stuck.
+## 33 fixes deployed in round 43:
+1-31: Previous fixes (GC, pod resize, JSON decode, PATCH RV, list filtering,
+      subpath, controller intervals, chunking, CreateContainerError retry,
+      pagination, CronJob status, 410 Expired, kubelet 2s sync, RV consistency,
+      remainingItemCount nil, Ready=False conditions, readOnlyRootFs,
+      observedGeneration, StatefulSet readyReplicas, CSIDriver delete,
+      DaemonSet status RV, container CMD/Entrypoint, CRD body parsing,
+      status sub-routes, watch transient errors, CRD serde, ephemeral containers)
+32. Kubelet exec: always use attached mode for start_exec
+33. Kubelet exec: 30s timeout on output collection to prevent hanging
