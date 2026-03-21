@@ -1,32 +1,33 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-21 (round 32 starting)
+**Last updated**: 2026-03-21 (round 36 in progress)
 
-## Round 31 Results: 2 failures
-1. StatefulSet scaling — rate limiter timeout (15+ min test)
-2. Chunking compaction — 410 reason was "Gone" not "Expired" (FIXED)
+## Round 36: 2 failures so far (both StatefulSet), tests still running
 
-## Round 32: 16 fixes deployed
+### F1. StatefulSet burst scaling — HTTP PROBE CONNECTIVITY
+"Failed waiting for pods to enter running: client rate limiter"
+Root cause: HTTP readiness probes aren't being executed. The kubelet
+never checks probes for StatefulSet pods. Without readiness probe
+passing, pods stay not-Ready, StatefulSet controller won't scale up
+(OrderedReady), test times out.
+Investigation: check_probe/check_http_probe functions exist but
+are never called during the sync loop for these pods. May be a
+network connectivity issue (kubelet can't reach pod IP) or probe
+execution is being skipped.
 
-### Fix list:
-1. GC foreground deletion + propagation policy
-2. GC find_orphans (ALL owners gone)
-3. Pod resize containerStatus.resources
-4. JSON decode ContainerState `{}` → None
-5. PATCH resourceVersion clear
-6. PodTemplate list: Query params, watch, filtering
-7. ControllerRevision list: Query params, watch, filtering
-8. Subpath validation: reject `..` and absolute paths
-9. CronJob controller: 10s → 1s reconcile
-10. StatefulSet controller: 5s → 1s reconcile
-11. Chunking token expiry (5 min) with fresh token in 410
-12. etcd auto-compaction (5m periodic)
-13. CreateContainerError preserved + retry on sync loop
-14. PodTemplate pagination (limit/continue/410 Gone)
-15. CronJob status.active with ObjectReferences
-16. 410 reason: "Expired" not "Gone" (for IsResourceExpired)
+### F2. StatefulSet predictable scaling — SAME ROOT CAUSE
+Same HTTP probe issue as F1.
 
-### Remaining known issues:
-- StatefulSet scaling test times out (15+ min, may be test-client rate limit)
-- PreStop hook timeout enforcement
-- CRD FieldValidation
+## Fixes deployed in round 36:
+1-16: All previous fixes
+17. Kubelet sync interval: 10s → 2s
+18. Pagination: consistent resourceVersion across pages
+19. Last page remainingItemCount: nil not 0
+
+## Tests now PASSING (confirmed in round 36):
+- All non-StatefulSet tests that have run
+- Chunking test hasn't run yet in this round
+
+## Known remaining issues to investigate:
+- HTTP probe execution for pods (may affect many tests)
+- Chunking compaction (may be fixed by RV + nil fixes)

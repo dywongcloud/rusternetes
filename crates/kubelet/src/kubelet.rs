@@ -891,6 +891,8 @@ impl Kubelet {
                                     status.conditions = Some(Self::running_pod_conditions());
                                 } else {
                                     status.message = Some("Some containers not ready".to_string());
+                                    // Update conditions to reflect not-ready
+                                    status.conditions = Some(Self::not_ready_pod_conditions());
                                 }
                             }
 
@@ -1045,6 +1047,44 @@ impl Kubelet {
                 status: "True".to_string(),
                 reason: None,
                 message: None,
+                last_transition_time: now,
+                observed_generation: None,
+            },
+        ]
+    }
+
+    fn not_ready_pod_conditions() -> Vec<PodCondition> {
+        let now = Some(chrono::Utc::now());
+        vec![
+            PodCondition {
+                condition_type: "Initialized".to_string(),
+                status: "True".to_string(),
+                reason: None,
+                message: None,
+                last_transition_time: now,
+                observed_generation: None,
+            },
+            PodCondition {
+                condition_type: "PodScheduled".to_string(),
+                status: "True".to_string(),
+                reason: None,
+                message: None,
+                last_transition_time: now,
+                observed_generation: None,
+            },
+            PodCondition {
+                condition_type: "ContainersReady".to_string(),
+                status: "False".to_string(),
+                reason: Some("ContainersNotReady".to_string()),
+                message: Some("Not all containers are ready".to_string()),
+                last_transition_time: now,
+                observed_generation: None,
+            },
+            PodCondition {
+                condition_type: "Ready".to_string(),
+                status: "False".to_string(),
+                reason: Some("ContainersNotReady".to_string()),
+                message: Some("Not all containers are ready".to_string()),
                 last_transition_time: now,
                 observed_generation: None,
             },
