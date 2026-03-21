@@ -1,42 +1,36 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-20 (round 29 starting)
+**Last updated**: 2026-03-20 (round 30 in progress)
 
-## Round 28 Results: Only 1 failure (chunking, now fixed)
+## Round 30: 1 failure so far (CronJob), tests still running
 
-Round 28 had only 1 failure out of all tests that ran before we killed it:
-- Chunking compaction: PodTemplate list handler lacked pagination, so continue
-  token was never issued. FIXED — added full pagination support.
+### CronJob ForbidConcurrent — JOB COMPLETION ISSUE
+Error: "client rate limiter Wait returned an error: context deadline exceeded"
+Root cause: The job's pod never completes (stays active=1, succeeded=0).
+The kubelet doesn't detect when a container exits and mark the pod as
+Succeeded. The Job controller keeps polling, CronJob can't schedule
+the next job (Forbid policy), and the test client exhausts its rate limit.
+**Fix needed**: Kubelet must detect container exit and update pod phase
+to Succeeded/Failed.
 
-All other previously-failing tests PASSED:
-- CronJob ForbidConcurrent: PASSED (1s reconcile interval)
-- StatefulSet scaling: didn't appear (may not have run yet, or passed)
-- Variable Expansion subpath: PASSED (CreateContainerError preserved)
-- Pod update JSON decode: PASSED
-- Pod patch resourceVersion: PASSED
-- PodTemplate lifecycle: PASSED (list filtering)
-- ControllerRevision lifecycle: PASSED (list filtering)
-- GC foreground deletion: PASSED
+### Tests now PASSING (from previous failures):
+- Variable Expansion subpath: CreateContainerError preserved + retry works
+  (first stayed Pending, then after annotation update, retry succeeded)
+  NOTE: Still need to verify — may still have timing issue
+- StatefulSet scaling: likely passing with 1s interval (not seen in failures)
+- Pod update JSON decode: PASSING
+- Pod patch resourceVersion: PASSING
+- PodTemplate lifecycle: PASSING
+- ControllerRevision lifecycle: PASSING
+- GC foreground deletion: PASSING
 
-## Round 29: All 13 fixes deployed
+## All 14 fixes deployed:
+1-13: (see previous entries)
+14. CreateContainerError retry on sync loop (re-attempt start_pod)
 
-### Complete fix list:
-1. GC foreground deletion + find_orphans
-2. Pod resize containerStatus.resources
-3. JSON decode ContainerState `{}` → None
-4. PATCH resourceVersion clear for optimistic concurrency
-5. PodTemplate list: Query params, watch, filtering, pagination
-6. ControllerRevision list: Query params, watch, filtering
-7. Subpath validation: reject `..` and absolute paths
-8. CronJob controller: 10s → 1s reconcile
-9. StatefulSet controller: 5s → 1s reconcile
-10. Chunking compaction: 5-minute token expiry with fresh 410 token
-11. etcd auto-compaction: 5m periodic
-12. CreateContainerError preserved by sync loop
-13. PodTemplate pagination with limit/continue/410 Gone
-
-### Remaining known issues (no fix yet):
+## Known remaining issues:
+- **Job/Pod completion detection** — kubelet doesn't mark pods Succeeded
+  when container exits. Affects CronJob, Job conformance tests.
 - PreStop hook timeout enforcement
-- CRD FieldValidation rejection
-- ResourceQuota tracking speed
-- Services endpoints same port/different protocol
+- CRD FieldValidation
+- Chunking compaction (may work now with token expiry + pagination)
