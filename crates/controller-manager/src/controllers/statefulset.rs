@@ -220,7 +220,10 @@ impl<S: Storage> StatefulSetController<S> {
             .filter(|pod| {
                 pod.status
                     .as_ref()
-                    .map(|s| s.phase == Some(Phase::Running))
+                    .and_then(|s| s.conditions.as_ref())
+                    .map(|conditions| {
+                        conditions.iter().any(|c| c.condition_type == "Ready" && c.status == "True")
+                    })
                     .unwrap_or(false)
             })
             .count() as i32;
