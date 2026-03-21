@@ -318,8 +318,10 @@ where
                                 }
                             }
                             Some(Err(e)) => {
-                                error!("Watch stream error: {}", e);
-                                break;
+                                // Empty watch responses and transient errors are normal —
+                                // etcd sends keep-alive responses with no events. Don't break.
+                                debug!("Watch stream transient error (continuing): {}", e);
+                                continue;
                             }
                             None => {
                                 debug!("Watch stream ended");
@@ -632,8 +634,10 @@ where
                                 }
                             }
                             Some(Err(e)) => {
-                                error!("Watch stream error: {}", e);
-                                break;
+                                // Empty watch responses and transient errors are normal —
+                                // etcd sends keep-alive responses with no events. Don't break.
+                                debug!("Watch stream transient error (continuing): {}", e);
+                                continue;
                             }
                             None => {
                                 debug!("Watch stream ended");
