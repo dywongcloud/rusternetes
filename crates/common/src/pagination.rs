@@ -210,7 +210,9 @@ pub fn paginate<T>(
 
         (Some(token), Some((total - end) as i64))
     } else {
-        (None, Some(0))
+        // Last page: no continue token, no remainingItemCount
+        // Kubernetes expects remainingItemCount to be nil when continue is empty
+        (None, None)
     };
 
     Ok(PaginatedResult {
