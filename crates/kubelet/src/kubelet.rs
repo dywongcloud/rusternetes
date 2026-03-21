@@ -438,6 +438,7 @@ impl Kubelet {
                         // Write Running status using the fresh resourceVersion
                         let mut new_pod = fresh_pod;
                         let qos = Self::compute_qos_class(&new_pod);
+                        let observed_gen = new_pod.metadata.generation;
                         let init_container_statuses = self.runtime.get_init_container_statuses(&new_pod).await;
                         new_pod.status = Some(PodStatus {
                             phase: Some(Phase::Running),
@@ -451,7 +452,7 @@ impl Kubelet {
                             ephemeral_container_statuses: None,
                             resize: None,
                             resource_claim_statuses: None,
-                            observed_generation: None,
+                            observed_generation: observed_gen,
                             host_i_ps: None,
                             pod_i_ps,
                             nominated_node_name: None,
@@ -513,6 +514,7 @@ impl Kubelet {
                                 });
 
                             let qos = Self::compute_qos_class(&new_pod);
+                            let observed_gen = new_pod.metadata.generation;
                             new_pod.status = Some(PodStatus {
                                 phase: Some(Phase::Pending),
                                 message: Some(err_msg),
@@ -525,7 +527,7 @@ impl Kubelet {
                                 ephemeral_container_statuses: None,
                                 resize: None,
                                 resource_claim_statuses: None,
-                                observed_generation: None,
+                                observed_generation: observed_gen,
                                 host_i_ps: None,
                                 pod_i_ps: None,
                                 nominated_node_name: None,
@@ -550,6 +552,7 @@ impl Kubelet {
                             let init_container_statuses =
                                 self.runtime.get_init_container_statuses(&fresh_pod).await;
                             let qos = Self::compute_qos_class(&fresh_pod);
+                            let observed_gen = fresh_pod.metadata.generation;
 
                             let mut new_pod = fresh_pod;
                             new_pod.status = Some(PodStatus {
@@ -564,7 +567,7 @@ impl Kubelet {
                                 ephemeral_container_statuses: None,
                                 resize: None,
                                 resource_claim_statuses: None,
-                                observed_generation: None,
+                                observed_generation: observed_gen,
                                 host_i_ps: None,
                                 pod_i_ps: None,
                                 nominated_node_name: None,
@@ -633,6 +636,7 @@ impl Kubelet {
                 // Update status to Running
                 let mut new_pod = fresh_pod;
                 let qos = Self::compute_qos_class(&new_pod);
+                let observed_gen = new_pod.metadata.generation;
                 let init_container_statuses = self.runtime.get_init_container_statuses(&new_pod).await;
                 new_pod.status = Some(PodStatus {
                     phase: Some(Phase::Running),
@@ -646,7 +650,7 @@ impl Kubelet {
                     ephemeral_container_statuses: None,
                     resize: None,
                     resource_claim_statuses: None,
-                    observed_generation: None,
+                    observed_generation: observed_gen,
                     host_i_ps: None,
                     pod_i_ps,
                     nominated_node_name: None,
@@ -753,7 +757,7 @@ impl Kubelet {
                                             ephemeral_container_statuses: None,
                                             resize: None,
                                             resource_claim_statuses: None,
-                                            observed_generation: None,
+                                            observed_generation: new_pod.metadata.generation,
                                             host_i_ps: None,
                                             pod_i_ps: None,
                                             nominated_node_name: None,
@@ -881,6 +885,7 @@ impl Kubelet {
                             let mut new_pod = pod.clone();
                             if let Some(ref mut status) = new_pod.status {
                                 status.container_statuses = Some(container_statuses);
+                                status.observed_generation = new_pod.metadata.generation;
                                 // Update pod IP if we got one and it's different
                                 if pod_ip.is_some() && status.pod_ip != pod_ip {
                                     status.pod_i_ps = pod_ip.as_ref().map(|ip| vec![PodIP { ip: ip.clone() }]);
@@ -891,7 +896,6 @@ impl Kubelet {
                                     status.conditions = Some(Self::running_pod_conditions());
                                 } else {
                                     status.message = Some("Some containers not ready".to_string());
-                                    // Update conditions to reflect not-ready
                                     status.conditions = Some(Self::not_ready_pod_conditions());
                                 }
                             }

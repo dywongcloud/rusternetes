@@ -2302,6 +2302,11 @@ impl ContainerRuntime {
                 memory: memory_limit,
                 cpu_period,
                 cpu_quota,
+                // Read-only root filesystem from security context
+                readonly_rootfs: container
+                    .security_context
+                    .as_ref()
+                    .and_then(|sc| sc.read_only_root_filesystem),
                 ..Default::default()
             }),
             ..Default::default()
