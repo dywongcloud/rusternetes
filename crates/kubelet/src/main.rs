@@ -260,15 +260,11 @@ async fn handle_exec(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // If stdin data was provided, write it to the exec's stdin
-    let start_config = if stdin_data.is_some() {
-        Some(bollard::exec::StartExecOptions {
-            detach: false,
-            ..Default::default()
-        })
-    } else {
-        None::<bollard::exec::StartExecOptions>
-    };
+    // Always use attached mode to collect output
+    let start_config = Some(bollard::exec::StartExecOptions {
+        detach: false,
+        ..Default::default()
+    });
 
     let output = docker
         .start_exec(&exec.id, start_config)
