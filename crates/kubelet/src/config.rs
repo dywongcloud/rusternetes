@@ -277,7 +277,7 @@ impl RuntimeConfig {
         // Determine sync frequency
         let sync_frequency = cli_sync_frequency
             .or_else(|| config_file.as_ref().and_then(|c| c.sync_frequency))
-            .unwrap_or(10);
+            .unwrap_or(2);
 
         // Determine metrics port
         let metrics_bind_port = cli_metrics_port
