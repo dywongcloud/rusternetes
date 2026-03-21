@@ -248,7 +248,7 @@ pub async fn list_podtemplates(
     let mut list = List::new("PodTemplateList", "v1", paginated.items);
     list.metadata.continue_token = paginated.continue_token;
     list.metadata.remaining_item_count = paginated.remaining_item_count;
-    list.metadata.resource_version = Some(resource_version);
+    list.metadata.resource_version = Some(paginated.resource_version);
     Ok(Json(list).into_response())
 }
 
@@ -321,7 +321,7 @@ pub async fn list_all_podtemplates(
     let mut list = List::new("PodTemplateList", "v1", paginated.items);
     list.metadata.continue_token = paginated.continue_token;
     list.metadata.remaining_item_count = paginated.remaining_item_count;
-    list.metadata.resource_version = Some(resource_version);
+    list.metadata.resource_version = Some(paginated.resource_version);
     Ok(Json(list).into_response())
 }
 

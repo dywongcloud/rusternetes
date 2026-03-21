@@ -70,6 +70,8 @@ pub struct PaginatedResult<T> {
     pub continue_token: Option<String>,
     /// Number of remaining items after this page
     pub remaining_item_count: Option<i64>,
+    /// The resource version to use in the response (consistent across pages)
+    pub resource_version: String,
 }
 
 /// Error returned when pagination fails
@@ -87,7 +89,8 @@ pub fn paginate<T>(
     resource_version: &str,
 ) -> Result<PaginatedResult<T>, PaginationError> {
     // Parse continue token if provided
-    let start = if let Some(token) = &params.continue_token {
+    // Use the token's resource_version for consistency across pages
+    let (start, effective_rv) = if let Some(token) = &params.continue_token {
         let cont = ContinuationToken::decode(token).map_err(|e| PaginationError {
             message: e,
             fresh_continue_token: None,
@@ -129,9 +132,10 @@ pub fn paginate<T>(
             });
         }
 
-        cont.start
+        // Use the token's resource_version for consistent pagination
+        (cont.start, cont.resource_version.clone())
     } else {
-        0
+        (0, resource_version.to_string())
     };
 
     // If no limit is specified, return all items
@@ -144,6 +148,7 @@ pub fn paginate<T>(
                 items: vec![],
                 continue_token: None,
                 remaining_item_count: Some(items.len() as i64),
+                resource_version: effective_rv,
             });
         }
         _ => {
@@ -153,6 +158,7 @@ pub fn paginate<T>(
                 items: result_items,
                 continue_token: None,
                 remaining_item_count: None,
+                resource_version: effective_rv,
             });
         }
     };
@@ -165,6 +171,7 @@ pub fn paginate<T>(
             items: vec![],
             continue_token: None,
             remaining_item_count: Some(0),
+            resource_version: effective_rv,
         });
     }
 
@@ -188,7 +195,7 @@ pub fn paginate<T>(
         let next_token = ContinuationToken {
             start: end,
             total_at_creation: total,
-            resource_version: resource_version.to_string(),
+            resource_version: effective_rv.clone(),
             filters: HashMap::new(),
             nonce,
             created_at,
@@ -210,6 +217,7 @@ pub fn paginate<T>(
         items: page_items,
         continue_token,
         remaining_item_count: remaining_count,
+        resource_version: effective_rv,
     })
 }
 

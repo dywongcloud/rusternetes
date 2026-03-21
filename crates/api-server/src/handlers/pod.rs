@@ -667,7 +667,7 @@ pub async fn list(
     let mut list = List::new("PodList", "v1", paginated.items);
     list.metadata.continue_token = paginated.continue_token;
     list.metadata.remaining_item_count = paginated.remaining_item_count;
-    list.metadata.resource_version = Some(resource_version);
+    list.metadata.resource_version = Some(paginated.resource_version);
 
     Ok(axum::Json(list).into_response())
 }
@@ -771,7 +771,7 @@ pub async fn list_all_pods(
     let mut list = List::new("PodList", "v1", paginated.items);
     list.metadata.continue_token = paginated.continue_token;
     list.metadata.remaining_item_count = paginated.remaining_item_count;
-    list.metadata.resource_version = Some(resource_version);
+    list.metadata.resource_version = Some(paginated.resource_version);
 
     Ok(axum::Json(list).into_response())
 }
