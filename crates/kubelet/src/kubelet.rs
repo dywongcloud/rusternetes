@@ -664,6 +664,53 @@ impl Kubelet {
             Phase::Running if is_running => {
                 debug!("Pod {}/{} is running, checking health", namespace, pod_name);
 
+                // Start any ephemeral containers that aren't running yet
+                if let Some(spec) = &pod.spec {
+                    if let Some(ecs) = &spec.ephemeral_containers {
+                        for ec in ecs {
+                            let ec_container_name = format!("{}_{}", pod_name, ec.name);
+                            // Check if this ephemeral container is already running
+                            if self.runtime.is_container_running(&ec_container_name).await.unwrap_or(false) {
+                                continue;
+                            }
+                            info!("Starting ephemeral container {} for pod {}/{}", ec.name, namespace, pod_name);
+                            // Convert EphemeralContainer to Container for start_container
+                            let container = rusternetes_common::resources::Container {
+                                name: ec.name.clone(),
+                                image: ec.image.clone(),
+                                command: ec.command.clone(),
+                                args: ec.args.clone(),
+                                env: ec.env.clone(),
+                                volume_mounts: ec.volume_mounts.clone(),
+                                resources: ec.resources.clone(),
+                                image_pull_policy: ec.image_pull_policy.clone(),
+                                security_context: ec.security_context.clone(),
+                                stdin: ec.stdin,
+                                tty: ec.tty,
+                                working_dir: ec.working_dir.clone(),
+                                ports: None,
+                                env_from: None,
+                                liveness_probe: None,
+                                readiness_probe: None,
+                                startup_probe: None,
+                                lifecycle: None,
+                                termination_message_path: ec.termination_message_path.clone(),
+                                termination_message_policy: ec.termination_message_policy.clone(),
+                                stdin_once: ec.stdin_once,
+                                restart_policy: None,
+                                resize_policy: None,
+                                volume_devices: None,
+                            };
+                            let volume_paths = self.runtime.create_pod_volumes(pod).await.unwrap_or_default();
+                            if let Err(e) = self.runtime.start_container(
+                                pod, &container, &volume_paths, None, None, None,
+                            ).await {
+                                warn!("Failed to start ephemeral container {}: {}", ec.name, e);
+                            }
+                        }
+                    }
+                }
+
                 // Check liveness probes
                 if let Ok(needs_restart) = self.runtime.check_liveness(pod).await {
                     if needs_restart {

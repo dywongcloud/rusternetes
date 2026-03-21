@@ -798,7 +798,7 @@ impl ContainerRuntime {
     }
 
     /// Create volumes for a pod and return volume bindings for containers
-    async fn create_pod_volumes(&self, pod: &Pod) -> Result<HashMap<String, String>> {
+    pub async fn create_pod_volumes(&self, pod: &Pod) -> Result<HashMap<String, String>> {
         let mut volume_paths = HashMap::new();
 
         if let Some(volumes) = &pod.spec.as_ref().unwrap().volumes {
@@ -1587,7 +1587,7 @@ impl ContainerRuntime {
         Ok(volume_dir)
     }
 
-    async fn start_container(
+    pub async fn start_container(
         &self,
         pod: &Pod,
         container: &Container,
@@ -2465,6 +2465,16 @@ impl ContainerRuntime {
         }
 
         Ok(())
+    }
+
+    /// Check if a specific container is running
+    pub async fn is_container_running(&self, container_name: &str) -> Result<bool> {
+        match self.docker.inspect_container(container_name, None::<InspectContainerOptions>).await {
+            Ok(inspect) => {
+                Ok(inspect.state.as_ref().and_then(|s| s.running).unwrap_or(false))
+            }
+            Err(_) => Ok(false),
+        }
     }
 
     /// Check if a pod's containers are running
