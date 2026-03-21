@@ -271,27 +271,41 @@ async fn handle_exec(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Collect output with timeout to prevent hanging
+    // Collect output with short timeout per read to prevent hanging
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
+    let exec_id = exec.id.clone();
     if let StartExecResults::Attached {
         output: mut stream, ..
     } = output
     {
-        let collect_future = async {
-            while let Some(Ok(msg)) = stream.next().await {
-                match msg {
-                    LogOutput::StdOut { message } => stdout.extend_from_slice(&message),
-                    LogOutput::StdErr { message } => stderr.extend_from_slice(&message),
-                    _ => {}
+        loop {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                stream.next(),
+            ).await {
+                Ok(Some(Ok(msg))) => {
+                    match msg {
+                        LogOutput::StdOut { message } => stdout.extend_from_slice(&message),
+                        LogOutput::StdErr { message } => stderr.extend_from_slice(&message),
+                        _ => {}
+                    }
+                }
+                Ok(Some(Err(_))) | Ok(None) => break, // stream ended or error
+                Err(_) => {
+                    // Timeout — check if exec is still running
+                    match docker.inspect_exec(&exec_id).await {
+                        Ok(info) => {
+                            if !info.running.unwrap_or(false) {
+                                break; // exec finished, stream just didn't close
+                            }
+                            // still running, continue waiting
+                        }
+                        Err(_) => break,
+                    }
                 }
             }
-        };
-        // Timeout after 30 seconds to prevent infinite hangs
-        let _ = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            collect_future,
-        ).await;
+        }
     }
 
     info!("Exec completed: container={}, stdout_len={}, stderr_len={}",
