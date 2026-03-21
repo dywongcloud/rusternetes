@@ -583,8 +583,7 @@ impl Kubelet {
                 }
             }
             // If pod is Pending but containers are already running, update to Running.
-            // Skip if the pod has a container in CreateContainerError state — this means
-            // a container failed to start and we should NOT override that status.
+            // If a container has CreateContainerError, retry starting it first.
             Phase::Pending if is_running => {
                 // Check if any container is in CreateContainerError
                 let has_create_error = pod.status.as_ref()
@@ -594,9 +593,25 @@ impl Kubelet {
                             matches!(&cs.state, Some(ContainerState::Waiting { reason: Some(r), .. }) if r == "CreateContainerError")
                         })
                     });
-                if has_create_error {
-                    debug!("Pod {}/{} has CreateContainerError, not overriding with Running", namespace, pod_name);
+
+                let should_update_running = if has_create_error {
+                    // Retry starting — spec/annotations may have changed
+                    info!("Pod {}/{} has CreateContainerError, retrying start", namespace, pod_name);
+                    match self.runtime.start_pod(pod).await {
+                        Ok(_) => {
+                            info!("Pod {}/{} retry succeeded", namespace, pod_name);
+                            true // Now update to Running
+                        }
+                        Err(e) => {
+                            debug!("Pod {}/{} retry still failing: {}", namespace, pod_name, e);
+                            false // Stay in CreateContainerError
+                        }
+                    }
                 } else {
+                    true // No error, proceed to Running
+                };
+
+                if should_update_running {
                 info!(
                     "Pod {}/{} containers are running, updating status to Running",
                     namespace, pod_name
@@ -640,7 +655,7 @@ impl Kubelet {
                 });
 
                 self.storage.update(&key, &new_pod).await?;
-                } // end else (no CreateContainerError)
+                } // end if should_update_running
             }
             Phase::Running if is_running => {
                 debug!("Pod {}/{} is running, checking health", namespace, pod_name);
