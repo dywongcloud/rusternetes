@@ -271,21 +271,31 @@ async fn handle_exec(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Collect output
+    // Collect output with timeout to prevent hanging
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     if let StartExecResults::Attached {
         output: mut stream, ..
     } = output
     {
-        while let Some(Ok(msg)) = stream.next().await {
-            match msg {
-                LogOutput::StdOut { message } => stdout.extend_from_slice(&message),
-                LogOutput::StdErr { message } => stderr.extend_from_slice(&message),
-                _ => {}
+        let collect_future = async {
+            while let Some(Ok(msg)) = stream.next().await {
+                match msg {
+                    LogOutput::StdOut { message } => stdout.extend_from_slice(&message),
+                    LogOutput::StdErr { message } => stderr.extend_from_slice(&message),
+                    _ => {}
+                }
             }
-        }
+        };
+        // Timeout after 30 seconds to prevent infinite hangs
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            collect_future,
+        ).await;
     }
+
+    info!("Exec completed: container={}, stdout_len={}, stderr_len={}",
+        container_id, stdout.len(), stderr.len());
 
     Ok(Json(serde_json::json!({
         "stdout": String::from_utf8_lossy(&stdout),
