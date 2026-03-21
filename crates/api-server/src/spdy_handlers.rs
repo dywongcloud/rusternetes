@@ -45,98 +45,81 @@ pub async fn handle_spdy_exec(
     );
 
     let container_id = format!("{}_{}", pod.metadata.name, container_name);
-    let kubelet_url = get_kubelet_url(&pod);
 
-    // Build query string for the kubelet exec endpoint
-    let command_str = command.join(",");
-    let url = format!(
-        "{}/exec/{}?command={}&tty={}",
-        kubelet_url,
-        container_id,
-        urlencoding_encode(&command_str),
-        tty
-    );
+    debug!("Direct Docker exec for container: {}", container_id);
 
-    debug!("Proxying exec to kubelet: {}", url);
+    // Execute directly via Docker (API server has Docker socket mounted)
+    use bollard::Docker;
+    use bollard::exec::{CreateExecOptions, StartExecResults};
+    use futures::StreamExt;
 
-    // Send stdin data if provided (collect from SPDY)
-    let stdin_data: Vec<u8> = if stdin {
-        // Try to read one frame of stdin (non-interactive for conformance tests)
-        match tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            spdy.read_frame(),
-        )
-        .await
-        {
-            Ok(Ok(Some(frame))) if frame.channel == SpdyChannel::Stdin => {
-                frame.data.to_vec()
-            }
-            _ => Vec::new(),
+    let docker = match Docker::connect_with_local_defaults() {
+        Ok(d) => d,
+        Err(e) => {
+            error!("Failed to connect to Docker: {}", e);
+            let _ = spdy.write_error(&format!("Failed to connect to Docker: {}", e)).await;
+            return;
         }
-    } else {
-        Vec::new()
     };
 
-    // Make HTTP request to kubelet
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_default();
+    let exec_config = CreateExecOptions {
+        cmd: Some(command.iter().map(|s| s.as_str()).collect()),
+        attach_stdout: Some(true),
+        attach_stderr: Some(true),
+        attach_stdin: Some(false),
+        tty: Some(tty),
+        ..Default::default()
+    };
 
-    match client.post(&url).body(stdin_data).send().await {
-        Ok(response) => {
-            if response.status().is_success() {
-                match response.json::<serde_json::Value>().await {
-                    Ok(result) => {
-                        // Send stdout
-                        if stdout {
-                            if let Some(out) = result.get("stdout").and_then(|v| v.as_str()) {
-                                if !out.is_empty() {
-                                    let _ = spdy
-                                        .write_channel(
-                                            SpdyChannel::Stdout,
-                                            out.as_bytes().to_vec(),
-                                        )
-                                        .await;
-                                }
-                            }
-                        }
-                        // Send stderr
-                        if stderr {
-                            if let Some(err) = result.get("stderr").and_then(|v| v.as_str()) {
-                                if !err.is_empty() {
-                                    let _ = spdy
-                                        .write_channel(
-                                            SpdyChannel::Stderr,
-                                            err.as_bytes().to_vec(),
-                                        )
-                                        .await;
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to parse kubelet exec response: {}", e);
-                        let _ = spdy
-                            .write_error(&format!("Exec failed: {}", e))
-                            .await;
+    let exec = match docker.create_exec(&container_id, exec_config).await {
+        Ok(e) => e,
+        Err(e) => {
+            error!("Failed to create exec: {}", e);
+            let _ = spdy.write_error(&format!("Exec failed: {}", e)).await;
+            return;
+        }
+    };
+
+    let output = match docker.start_exec(&exec.id, Some(bollard::exec::StartExecOptions { detach: false, ..Default::default() })).await {
+        Ok(o) => o,
+        Err(e) => {
+            error!("Failed to start exec: {}", e);
+            let _ = spdy.write_error(&format!("Exec failed: {}", e)).await;
+            return;
+        }
+    };
+
+    // Collect output with timeout
+    let mut stdout_data = Vec::new();
+    let mut stderr_data = Vec::new();
+    if let StartExecResults::Attached { output: mut stream, .. } = output {
+        loop {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), stream.next()).await {
+                Ok(Some(Ok(msg))) => {
+                    match msg {
+                        bollard::container::LogOutput::StdOut { message } => stdout_data.extend_from_slice(&message),
+                        bollard::container::LogOutput::StdErr { message } => stderr_data.extend_from_slice(&message),
+                        _ => {}
                     }
                 }
-            } else {
-                let status = response.status();
-                let body = response.text().await.unwrap_or_default();
-                error!("Kubelet exec failed: {} {}", status, body);
-                let _ = spdy
-                    .write_error(&format!("Exec failed: {} {}", status, body))
-                    .await;
+                Ok(Some(Err(_))) | Ok(None) => break,
+                Err(_) => {
+                    // Timeout — check if exec finished
+                    match docker.inspect_exec(&exec.id).await {
+                        Ok(info) if !info.running.unwrap_or(false) => break,
+                        _ => continue,
+                    }
+                }
             }
         }
-        Err(e) => {
-            error!("Failed to proxy exec to kubelet: {}", e);
-            let _ = spdy
-                .write_error(&format!("Failed to connect to kubelet: {}", e))
-                .await;
-        }
+    }
+
+    // Send results back via SPDY
+    if stdout && !stdout_data.is_empty() {
+        let _ = spdy.write_channel(SpdyChannel::Stdout, stdout_data).await;
+    }
+    if stderr && !stderr_data.is_empty() {
+        let _ = spdy.write_channel(SpdyChannel::Stderr, stderr_data).await;
     }
 
     let _ = spdy.close().await;
