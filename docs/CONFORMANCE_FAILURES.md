@@ -1,22 +1,30 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-21 (round 43 — exec timeout fix deployed)
+**Last updated**: 2026-03-21 (round 45 — SPDY exec issue identified)
 
-## Critical Issue Found: kubectl exec hanging
-The kubelet exec handler's output stream collection hung indefinitely
-because bollard's Docker exec stream didn't close after command completion.
-FIX DEPLOYED: Added 30-second timeout to exec output collection.
+## Current Blocker: SPDY exec response framing
+kubectl exec uses SPDY protocol. Our Docker exec runs successfully and
+collects output, but the SPDY channel write doesn't deliver data back
+to kubectl. kubectl times out after ~30s per attempt.
 
-The exec hang was causing the entire test suite to stall on any test
-that uses kubectl exec (StatefulSet probe manipulation, etc.).
+The exec handler:
+1. Receives SPDY upgrade ✓
+2. Creates Docker exec ✓
+3. Starts exec, collects stdout/stderr ✓
+4. Writes to SPDY channels via spdy.write_channel() ✗ (data doesn't reach client)
 
-## 33 fixes deployed in round 43:
-1-31: Previous fixes (GC, pod resize, JSON decode, PATCH RV, list filtering,
-      subpath, controller intervals, chunking, CreateContainerError retry,
-      pagination, CronJob status, 410 Expired, kubelet 2s sync, RV consistency,
-      remainingItemCount nil, Ready=False conditions, readOnlyRootFs,
-      observedGeneration, StatefulSet readyReplicas, CSIDriver delete,
-      DaemonSet status RV, container CMD/Entrypoint, CRD body parsing,
-      status sub-routes, watch transient errors, CRD serde, ephemeral containers)
-32. Kubelet exec: always use attached mode for start_exec
-33. Kubelet exec: 30s timeout on output collection to prevent hanging
+Tests using exec (StatefulSet probe manipulation, etc.) are very slow
+because each exec attempt times out and retries.
+
+Impact: Tests progress but very slowly (~40s per exec attempt).
+
+## 35 fixes deployed (all working for non-exec tests)
+1-31: Previous fixes
+32. Kubelet exec: always attached mode
+33. Kubelet exec: 5s per-read timeout + inspect_exec
+34. SPDY exec: direct Docker execution (bypass kubelet proxy)
+35. Updated doc tracking
+
+## Next steps:
+- Fix SPDY write_channel to properly frame and send data
+- Or implement Kubernetes exec v5 protocol over WebSocket
