@@ -109,20 +109,12 @@ pub async fn update_status(
         // Update status
         obj.insert("status".to_string(), new_status);
 
-        // Preserve metadata but update resourceVersion
+        // Preserve metadata but clear resourceVersion to avoid conflicts
+        // with concurrent updates (e.g., kubelet updating pod status).
+        // The storage layer will assign a new resourceVersion on write.
         if let Some(metadata_obj) = current_metadata.as_object() {
             let mut new_metadata = metadata_obj.clone();
-
-            // Increment resource version
-            if let Some(version) = new_metadata.get("resourceVersion") {
-                if let Some(version_num) = version.as_str().and_then(|s| s.parse::<i64>().ok()) {
-                    new_metadata.insert(
-                        "resourceVersion".to_string(),
-                        Value::String((version_num + 1).to_string()),
-                    );
-                }
-            }
-
+            new_metadata.remove("resourceVersion");
             obj.insert("metadata".to_string(), Value::Object(new_metadata));
         }
     }
@@ -190,20 +182,11 @@ pub async fn update_cluster_status(
         // Update status
         obj.insert("status".to_string(), new_status);
 
-        // Preserve metadata but update resourceVersion
+        // Preserve metadata but clear resourceVersion to avoid conflicts
+        // with concurrent updates. The storage layer assigns a new version.
         if let Some(metadata_obj) = current_metadata.as_object() {
             let mut new_metadata = metadata_obj.clone();
-
-            // Increment resource version
-            if let Some(version) = new_metadata.get("resourceVersion") {
-                if let Some(version_num) = version.as_str().and_then(|s| s.parse::<i64>().ok()) {
-                    new_metadata.insert(
-                        "resourceVersion".to_string(),
-                        Value::String((version_num + 1).to_string()),
-                    );
-                }
-            }
-
+            new_metadata.remove("resourceVersion");
             obj.insert("metadata".to_string(), Value::Object(new_metadata));
         }
     }

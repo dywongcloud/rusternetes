@@ -2313,29 +2313,28 @@ impl ContainerRuntime {
         };
 
         // Set command and args
-        // In Kubernetes: command replaces ENTRYPOINT, args replaces CMD
-        // When both are present, combine them
+        // In Kubernetes: command overrides Docker ENTRYPOINT, args overrides Docker CMD
         if let Some(command) = &container.command {
             if let Some(args) = &container.args {
-                // Both command and args present - combine them
-                let mut full_cmd = command.clone();
-                full_cmd.extend(args.clone());
+                // Both command and args present
                 info!(
-                    "Container {} - combining command {:?} and args {:?} into {:?}",
-                    container.name, command, args, full_cmd
+                    "Container {} - setting entrypoint {:?} and cmd {:?}",
+                    container.name, command, args
                 );
-                config.cmd = Some(full_cmd);
+                config.entrypoint = Some(command.clone());
+                config.cmd = Some(args.clone());
             } else {
-                // Only command present
+                // Only command present - overrides entrypoint, clears cmd
                 info!(
-                    "Container {} - using command: {:?}",
+                    "Container {} - setting entrypoint: {:?}",
                     container.name, command
                 );
-                config.cmd = Some(command.clone());
+                config.entrypoint = Some(command.clone());
+                config.cmd = Some(vec![]);
             }
         } else if let Some(args) = &container.args {
-            // Only args present - use container's default entrypoint + args
-            info!("Container {} - using args: {:?}", container.name, args);
+            // Only args present - use container's default entrypoint + override cmd
+            info!("Container {} - setting cmd (args): {:?}", container.name, args);
             config.cmd = Some(args.clone());
         }
 

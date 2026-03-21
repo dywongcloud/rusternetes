@@ -258,23 +258,47 @@ pub struct JSONSchemaProps {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nullable: Option<bool>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "x-kubernetes-preserve-unknown-fields"
+    )]
     pub x_kubernetes_preserve_unknown_fields: Option<bool>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "x-kubernetes-embedded-resource"
+    )]
     pub x_kubernetes_embedded_resource: Option<bool>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "x-kubernetes-int-or-string"
+    )]
     pub x_kubernetes_int_or_string: Option<bool>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "x-kubernetes-list-map-keys"
+    )]
     pub x_kubernetes_list_map_keys: Option<Vec<String>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "x-kubernetes-list-type"
+    )]
     pub x_kubernetes_list_type: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "x-kubernetes-map-type"
+    )]
     pub x_kubernetes_map_type: Option<String>,
+
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "x-kubernetes-validations"
+    )]
+    pub x_kubernetes_validations: Option<Vec<serde_json::Value>>,
 }
 
 /// JSONSchemaPropsOrArray represents a value that can be either a JSONSchemaProps or an array of them
@@ -606,6 +630,7 @@ impl Default for JSONSchemaProps {
             x_kubernetes_list_map_keys: None,
             x_kubernetes_list_type: None,
             x_kubernetes_map_type: None,
+            x_kubernetes_validations: None,
         }
     }
 }

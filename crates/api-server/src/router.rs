@@ -1264,6 +1264,12 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::crd::patch_crd)
                 .delete(handlers::crd::delete_crd),
         )
+        .route(
+            "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/:name/status",
+            get(handlers::status::get_cluster_status)
+                .put(handlers::status::update_cluster_status)
+                .patch(handlers::status::update_cluster_status),
+        )
         // ValidatingWebhookConfiguration (cluster-scoped)
         .route(
             "/apis/admissionregistration.k8s.io/v1/validatingwebhookconfigurations",
@@ -1320,6 +1326,12 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::flowcontrol::patch_priority_level_configuration)
                 .delete(handlers::flowcontrol::delete_priority_level_configuration),
         )
+        .route(
+            "/apis/flowcontrol.apiserver.k8s.io/v1/prioritylevelconfigurations/:name/status",
+            get(handlers::status::get_cluster_status)
+                .put(handlers::status::update_cluster_status)
+                .patch(handlers::status::update_cluster_status),
+        )
         // FlowControl API - FlowSchemas (cluster-scoped)
         .route(
             "/apis/flowcontrol.apiserver.k8s.io/v1/flowschemas",
@@ -1332,6 +1344,12 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::flowcontrol::update_flow_schema)
                 .patch(handlers::flowcontrol::patch_flow_schema)
                 .delete(handlers::flowcontrol::delete_flow_schema),
+        )
+        .route(
+            "/apis/flowcontrol.apiserver.k8s.io/v1/flowschemas/:name/status",
+            get(handlers::status::get_cluster_status)
+                .put(handlers::status::update_cluster_status)
+                .patch(handlers::status::update_cluster_status),
         )
         // Certificates API - CertificateSigningRequests (cluster-scoped)
         .route(
@@ -1519,7 +1537,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/storage.k8s.io/v1/csidrivers",
             get(handlers::csidriver::list_csidrivers)
-                .post(handlers::csidriver::create_csidriver),
+                .post(handlers::csidriver::create_csidriver)
+                .delete(handlers::csidriver::deletecollection_csidrivers),
         )
         .route(
             "/apis/storage.k8s.io/v1/csidrivers/:name",

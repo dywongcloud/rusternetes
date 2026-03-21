@@ -2,6 +2,7 @@
 
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
     http::StatusCode,
     Extension, Json,
@@ -21,8 +22,14 @@ pub async fn create_crd(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
-    Json(mut crd): Json<CustomResourceDefinition>,
+    body: Bytes,
 ) -> Result<(StatusCode, Json<CustomResourceDefinition>)> {
+    // Parse the body manually for better error handling — axum's Json extractor
+    // returns 422 Unprocessable Entity on failure, but Kubernetes expects a proper
+    // Status object. Manual parsing also tolerates unknown fields gracefully.
+    let mut crd: CustomResourceDefinition = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
     let crd_name = crd.metadata.name.clone();
     info!("Creating CustomResourceDefinition: {}", crd_name);
 
@@ -142,8 +149,12 @@ pub async fn update_crd(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-    Json(mut crd): Json<CustomResourceDefinition>,
+    body: Bytes,
 ) -> Result<Json<CustomResourceDefinition>> {
+    // Parse the body manually for better error handling
+    let mut crd: CustomResourceDefinition = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
     info!("Updating CustomResourceDefinition: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "customresourcedefinitions")
