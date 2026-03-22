@@ -387,9 +387,13 @@ pub async fn exec(
         }
     };
 
+    // Log request headers for debugging exec protocol
+    let upgrade_header = req.headers().get("upgrade").and_then(|v| v.to_str().ok()).unwrap_or("none");
+    let connection_header = req.headers().get("connection").and_then(|v| v.to_str().ok()).unwrap_or("none");
+    let sec_ws_protocol = req.headers().get("sec-websocket-protocol").and_then(|v| v.to_str().ok()).unwrap_or("none");
     info!(
-        "Executing command in pod {}/{}: {:?}",
-        namespace, name, query.command
+        "Exec {}/{}: cmd={:?} upgrade={} connection={} ws-protocol={}",
+        namespace, name, query.command, upgrade_header, connection_header, sec_ws_protocol
     );
 
     // Check authorization
