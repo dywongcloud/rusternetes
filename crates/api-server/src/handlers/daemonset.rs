@@ -1,5 +1,6 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
@@ -20,8 +21,11 @@ pub async fn create(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-    Json(mut daemonset): Json<DaemonSet>,
+    body: Bytes,
 ) -> Result<(StatusCode, Json<DaemonSet>)> {
+    let mut daemonset: DaemonSet = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
     info!(
         "Creating daemonset: {}/{}",
         namespace, daemonset.metadata.name
@@ -92,8 +96,11 @@ pub async fn update(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-    Json(mut daemonset): Json<DaemonSet>,
+    body: Bytes,
 ) -> Result<Json<DaemonSet>> {
+    let mut daemonset: DaemonSet = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
     info!("Updating daemonset: {}/{}", namespace, name);
 
     // Check if this is a dry-run request

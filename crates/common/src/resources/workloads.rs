@@ -312,9 +312,18 @@ pub struct StatefulSetUpdateStrategy {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RollingUpdateStatefulSetStrategy {
-    /// The maximum number of pods that can be unavailable during the update
+    /// Partition indicates the ordinal at which the StatefulSet should be partitioned
     #[serde(skip_serializing_if = "Option::is_none")]
     pub partition: Option<i32>,
+
+    /// The maximum number of pods that can be unavailable during the update.
+    /// Value can be an absolute number (ex: 5) or a percentage (ex: 10%).
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::resources::deployment::deserialize_int_or_string_opt",
+        default
+    )]
+    pub max_unavailable: Option<String>,
 }
 
 /// StatefulSetPersistentVolumeClaimRetentionPolicy describes the policy for PVC lifecycle

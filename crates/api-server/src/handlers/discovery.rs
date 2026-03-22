@@ -438,6 +438,18 @@ pub async fn get_api_groups(headers: HeaderMap) -> Response {
                 version: "v1".to_string(),
             },
         },
+        // apiregistration.k8s.io API group
+        APIGroup {
+            name: "apiregistration.k8s.io".to_string(),
+            versions: vec![GroupVersionForDiscovery {
+                group_version: "apiregistration.k8s.io/v1".to_string(),
+                version: "v1".to_string(),
+            }],
+            preferred_version: GroupVersionForDiscovery {
+                group_version: "apiregistration.k8s.io/v1".to_string(),
+                version: "v1".to_string(),
+            },
+        },
     ];
 
     let api_group_list = APIGroupList {
@@ -474,6 +486,7 @@ fn get_api_group_names() -> Vec<(&'static str, &'static str)> {
         ("custom.metrics.k8s.io", "v1beta2"),
         ("resource.k8s.io", "v1"),
         ("events.k8s.io", "v1"),
+        ("apiregistration.k8s.io", "v1"),
     ]
 }
 
@@ -660,6 +673,10 @@ fn get_aggregated_resources_for_group(
             res("resourceclaimtemplates", "resourceclaimtemplate", "ResourceClaimTemplate", true, all_verbs),
             res("resourceslices", "resourceslice", "ResourceSlice", false, all_verbs),
             res("deviceclasses", "deviceclass", "DeviceClass", false, all_verbs),
+        ],
+        "apiregistration.k8s.io" => vec![
+            res("apiservices", "apiservice", "APIService", false, all_verbs),
+            res("apiservices/status", "", "APIService", false, status_verbs),
         ],
         _ => vec![],
     }
@@ -2824,6 +2841,57 @@ pub async fn get_events_v1_resources() -> (StatusCode, Json<APIResourceList>) {
         kind: "APIResourceList".to_string(),
         api_version: "v1".to_string(),
         group_version: "events.k8s.io/v1".to_string(),
+        resources,
+    };
+
+    (StatusCode::OK, Json(resource_list))
+}
+
+/// GET /apis/apiregistration.k8s.io/v1
+/// Returns the list of resources available in the apiregistration.k8s.io/v1 API group
+pub async fn get_apiregistration_v1_resources() -> (StatusCode, Json<APIResourceList>) {
+    let resources = vec![
+        APIResource {
+            name: "apiservices".to_string(),
+            singular_name: "apiservice".to_string(),
+            namespaced: false,
+            kind: "APIService".to_string(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+            short_names: None,
+            categories: None,
+            storage_version_hash: None,
+        },
+        APIResource {
+            name: "apiservices/status".to_string(),
+            singular_name: "".to_string(),
+            namespaced: false,
+            kind: "APIService".to_string(),
+            verbs: vec!["get", "patch", "update"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            short_names: None,
+            categories: None,
+            storage_version_hash: None,
+        },
+    ];
+
+    let resource_list = APIResourceList {
+        kind: "APIResourceList".to_string(),
+        api_version: "v1".to_string(),
+        group_version: "apiregistration.k8s.io/v1".to_string(),
         resources,
     };
 

@@ -1,5 +1,6 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
@@ -20,8 +21,11 @@ pub async fn create(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-    Json(mut replicaset): Json<ReplicaSet>,
+    body: Bytes,
 ) -> Result<(StatusCode, Json<ReplicaSet>)> {
+    let mut replicaset: ReplicaSet = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
     info!(
         "Creating replicaset: {}/{}",
         namespace, replicaset.metadata.name
@@ -105,8 +109,11 @@ pub async fn update(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-    Json(mut replicaset): Json<ReplicaSet>,
+    body: Bytes,
 ) -> Result<Json<ReplicaSet>> {
+    let mut replicaset: ReplicaSet = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
     info!("Updating replicaset: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
@@ -248,7 +255,9 @@ pub async fn list(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut replicasets, &params)?;
 
-    let list = List::new("ReplicaSetList", "apps/v1", replicasets);
+    let mut list = List::new("ReplicaSetList", "apps/v1", replicasets);
+    let rv = state.storage.current_revision().await.unwrap_or(0);
+    list.metadata.resource_version = Some(rv.to_string());
     Ok(Json(list).into_response())
 }
 
@@ -292,7 +301,9 @@ pub async fn list_all_replicasets(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut replicasets, &params)?;
 
-    let list = List::new("ReplicaSetList", "apps/v1", replicasets);
+    let mut list = List::new("ReplicaSetList", "apps/v1", replicasets);
+    let rv = state.storage.current_revision().await.unwrap_or(0);
+    list.metadata.resource_version = Some(rv.to_string());
     Ok(Json(list).into_response())
 }
 

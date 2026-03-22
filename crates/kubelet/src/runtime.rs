@@ -598,10 +598,13 @@ impl ContainerRuntime {
         }
 
         // Add entries from spec.hostAliases
+        // Kubernetes groups all hostnames for the same IP on a single line
         if let Some(host_aliases) = &spec.host_aliases {
             for alias in host_aliases {
-                for hostname in alias.hostnames.as_deref().unwrap_or(&[]) {
-                    content.push_str(&format!("{}\t{}\n", alias.ip, hostname));
+                if let Some(hostnames) = &alias.hostnames {
+                    if !hostnames.is_empty() {
+                        content.push_str(&format!("{}\t{}\n", alias.ip, hostnames.join("\t")));
+                    }
                 }
             }
         }
@@ -949,40 +952,69 @@ impl ContainerRuntime {
             std::fs::create_dir_all(&volume_dir)
                 .context("Failed to create ConfigMap volume directory")?;
 
+            // Determine the default file mode: spec defaultMode, or 0644 (Kubernetes default)
+            let cm_default_mode = configmap_source.default_mode.unwrap_or(0o644);
+
             match configmap_result {
                 Ok(configmap) => {
+                    // Helper closure to write a file and set permissions
+                    let write_cm_file = |file_path: &str, content: &[u8], mode: i32| -> Result<()> {
+                        if let Some(parent) = std::path::Path::new(file_path).parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
+                        std::fs::write(file_path, content)?;
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            std::fs::set_permissions(
+                                file_path,
+                                std::fs::Permissions::from_mode(mode as u32),
+                            )?;
+                        }
+                        Ok(())
+                    };
+
                     // Check if specific items are requested
                     if let Some(ref items) = configmap_source.items {
-                        // Only mount the specified keys
-                        if let Some(data) = &configmap.data {
-                            for item in items {
-                                if let Some(value) = data.get(&item.key) {
-                                    let target_path = &item.path;
-                                    let file_path = format!("{}/{}", volume_dir, target_path);
-                                    // Create parent directories if needed
-                                    if let Some(parent) = std::path::Path::new(&file_path).parent() {
-                                        std::fs::create_dir_all(parent).with_context(|| {
-                                            format!("Failed to create directory for ConfigMap item {}", target_path)
-                                        })?;
-                                    }
-                                    std::fs::write(&file_path, value).with_context(|| {
-                                        format!("Failed to write ConfigMap key {} to file", item.key)
-                                    })?;
-                                    info!("Wrote ConfigMap key {} to {}", item.key, file_path);
-                                } else if !is_optional {
-                                    warn!("ConfigMap {} missing key {}", configmap_name, item.key);
-                                }
+                        // Only mount the specified keys (look in both data and binaryData)
+                        for item in items {
+                            let mode = item.mode.unwrap_or(cm_default_mode);
+                            let file_path = format!("{}/{}", volume_dir, item.path);
+
+                            // Try data first, then binary_data
+                            if let Some(value) = configmap.data.as_ref().and_then(|d| d.get(&item.key)) {
+                                write_cm_file(&file_path, value.as_bytes(), mode).with_context(|| {
+                                    format!("Failed to write ConfigMap key {} to file", item.key)
+                                })?;
+                                info!("Wrote ConfigMap key {} to {}", item.key, file_path);
+                            } else if let Some(value) = configmap.binary_data.as_ref().and_then(|d| d.get(&item.key)) {
+                                write_cm_file(&file_path, value, mode).with_context(|| {
+                                    format!("Failed to write ConfigMap binaryData key {} to file", item.key)
+                                })?;
+                                info!("Wrote ConfigMap binaryData key {} to {}", item.key, file_path);
+                            } else if !is_optional {
+                                warn!("ConfigMap {} missing key {}", configmap_name, item.key);
                             }
                         }
                     } else {
-                        // Mount all keys
+                        // Mount all keys from data
                         if let Some(data) = &configmap.data {
                             for (key, value) in data {
                                 let file_path = format!("{}/{}", volume_dir, key);
-                                std::fs::write(&file_path, value).with_context(|| {
+                                write_cm_file(&file_path, value.as_bytes(), cm_default_mode).with_context(|| {
                                     format!("Failed to write ConfigMap key {} to file", key)
                                 })?;
                                 info!("Wrote ConfigMap key {} to {}", key, file_path);
+                            }
+                        }
+                        // Mount all keys from binaryData
+                        if let Some(binary_data) = &configmap.binary_data {
+                            for (key, value) in binary_data {
+                                let file_path = format!("{}/{}", volume_dir, key);
+                                write_cm_file(&file_path, value, cm_default_mode).with_context(|| {
+                                    format!("Failed to write ConfigMap binaryData key {} to file", key)
+                                })?;
+                                info!("Wrote ConfigMap binaryData key {} to {}", key, file_path);
                             }
                         }
                     }
@@ -1046,22 +1078,52 @@ impl ContainerRuntime {
                 }
             };
 
-            // Write each key as a file
+            // Determine the default file mode: spec defaultMode, or 0644 (Kubernetes default)
+            let secret_default_mode = secret_source.default_mode.unwrap_or(0o644);
+
+            // Write secret data as files
             if let Some(data) = secret.as_ref().and_then(|s| s.data.as_ref()) {
-                for (key, value) in data {
-                    let file_path = format!("{}/{}", volume_dir, key);
-                    std::fs::write(&file_path, value)
-                        .with_context(|| format!("Failed to write Secret key {} to file", key))?;
-                    // Set restrictive permissions on secret files
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        std::fs::set_permissions(
-                            &file_path,
-                            std::fs::Permissions::from_mode(0o600),
-                        )?;
+                if let Some(ref items) = secret_source.items {
+                    // Only mount the specified keys
+                    for item in items {
+                        if let Some(value) = data.get(&item.key) {
+                            let file_path = format!("{}/{}", volume_dir, item.path);
+                            // Create parent directories if needed
+                            if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                                std::fs::create_dir_all(parent).with_context(|| {
+                                    format!("Failed to create directory for Secret item {}", item.path)
+                                })?;
+                            }
+                            std::fs::write(&file_path, value)
+                                .with_context(|| format!("Failed to write Secret key {} to file", item.key))?;
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                let mode = item.mode.unwrap_or(secret_default_mode) as u32;
+                                std::fs::set_permissions(
+                                    &file_path,
+                                    std::fs::Permissions::from_mode(mode),
+                                )?;
+                            }
+                            info!("Wrote Secret key {} to {}", item.key, file_path);
+                        }
                     }
-                    info!("Wrote Secret key {} to {}", key, file_path);
+                } else {
+                    // Mount all keys
+                    for (key, value) in data {
+                        let file_path = format!("{}/{}", volume_dir, key);
+                        std::fs::write(&file_path, value)
+                            .with_context(|| format!("Failed to write Secret key {} to file", key))?;
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            std::fs::set_permissions(
+                                &file_path,
+                                std::fs::Permissions::from_mode(secret_default_mode as u32),
+                            )?;
+                        }
+                        info!("Wrote Secret key {} to {}", key, file_path);
+                    }
                 }
             }
 
@@ -1168,6 +1230,9 @@ impl ContainerRuntime {
             std::fs::create_dir_all(&volume_dir)
                 .context("Failed to create DownwardAPI volume directory")?;
 
+            // Determine the default file mode: spec defaultMode, or 0644 (Kubernetes default)
+            let da_default_mode = downward_api.default_mode.unwrap_or(0o644);
+
             if let Some(items) = &downward_api.items {
                 for item in items {
                     let file_path = format!("{}/{}", volume_dir, item.path);
@@ -1192,13 +1257,14 @@ impl ContainerRuntime {
                         format!("Failed to write DownwardAPI file {}", file_path)
                     })?;
 
-                    // Set file permissions if specified
+                    // Set file permissions: per-item mode overrides defaultMode
                     #[cfg(unix)]
-                    if let Some(mode) = item.mode {
+                    {
                         use std::os::unix::fs::PermissionsExt;
+                        let mode = item.mode.unwrap_or(da_default_mode) as u32;
                         std::fs::set_permissions(
                             &file_path,
-                            std::fs::Permissions::from_mode(mode as u32),
+                            std::fs::Permissions::from_mode(mode),
                         )?;
                     }
 
@@ -1327,6 +1393,9 @@ impl ContainerRuntime {
             std::fs::create_dir_all(&volume_dir)
                 .context("Failed to create projected volume directory")?;
 
+            // Determine the default file mode: spec defaultMode, or 0644 (Kubernetes default)
+            let proj_default_mode = projected.default_mode.unwrap_or(0o644);
+
             if let Some(sources) = &projected.sources {
                 let storage = self.storage.as_ref();
 
@@ -1338,27 +1407,47 @@ impl ContainerRuntime {
                             if let Some(storage) = storage {
                                 match storage.get::<ConfigMap>(&key).await {
                                     Ok(cm) => {
-                                        if let Some(data) = &cm.data {
-                                            if let Some(items) = &cm_proj.items {
-                                                for item in items {
-                                                    if let Some(value) = data.get(&item.key) {
-                                                        let file_path =
-                                                            format!("{}/{}", volume_dir, item.path);
-                                                        if let Some(parent) =
-                                                            std::path::Path::new(&file_path)
-                                                                .parent()
-                                                        {
-                                                            std::fs::create_dir_all(parent)?;
-                                                        }
-                                                        std::fs::write(&file_path, value)?;
-                                                    }
+                                        // Helper to write a projected file with permissions
+                                        let write_proj_file = |path: &str, content: &[u8], mode: i32| -> Result<()> {
+                                            if let Some(parent) = std::path::Path::new(path).parent() {
+                                                std::fs::create_dir_all(parent)?;
+                                            }
+                                            std::fs::write(path, content)?;
+                                            #[cfg(unix)]
+                                            {
+                                                use std::os::unix::fs::PermissionsExt;
+                                                std::fs::set_permissions(
+                                                    path,
+                                                    std::fs::Permissions::from_mode(mode as u32),
+                                                )?;
+                                            }
+                                            Ok(())
+                                        };
+
+                                        if let Some(items) = &cm_proj.items {
+                                            for item in items {
+                                                let mode = item.mode.unwrap_or(proj_default_mode);
+                                                let file_path = format!("{}/{}", volume_dir, item.path);
+                                                // Try data first, then binaryData
+                                                if let Some(value) = cm.data.as_ref().and_then(|d| d.get(&item.key)) {
+                                                    write_proj_file(&file_path, value.as_bytes(), mode)?;
+                                                } else if let Some(value) = cm.binary_data.as_ref().and_then(|d| d.get(&item.key)) {
+                                                    write_proj_file(&file_path, value, mode)?;
                                                 }
-                                            } else {
+                                            }
+                                        } else {
+                                            // Mount all keys from data
+                                            if let Some(data) = &cm.data {
                                                 for (k, v) in data {
-                                                    std::fs::write(
-                                                        format!("{}/{}", volume_dir, k),
-                                                        v,
-                                                    )?;
+                                                    let file_path = format!("{}/{}", volume_dir, k);
+                                                    write_proj_file(&file_path, v.as_bytes(), proj_default_mode)?;
+                                                }
+                                            }
+                                            // Mount all keys from binaryData
+                                            if let Some(binary_data) = &cm.binary_data {
+                                                for (k, v) in binary_data {
+                                                    let file_path = format!("{}/{}", volume_dir, k);
+                                                    write_proj_file(&file_path, v, proj_default_mode)?;
                                                 }
                                             }
                                         }
@@ -1393,16 +1482,30 @@ impl ContainerRuntime {
                                                         {
                                                             std::fs::create_dir_all(parent)?;
                                                         }
-                                                        // Secret data is Vec<u8>, write directly
                                                         std::fs::write(&file_path, value)?;
+                                                        #[cfg(unix)]
+                                                        {
+                                                            use std::os::unix::fs::PermissionsExt;
+                                                            let mode = item.mode.unwrap_or(proj_default_mode) as u32;
+                                                            std::fs::set_permissions(
+                                                                &file_path,
+                                                                std::fs::Permissions::from_mode(mode),
+                                                            )?;
+                                                        }
                                                     }
                                                 }
                                             } else {
                                                 for (k, v) in data {
-                                                    std::fs::write(
-                                                        format!("{}/{}", volume_dir, k),
-                                                        v,
-                                                    )?;
+                                                    let file_path = format!("{}/{}", volume_dir, k);
+                                                    std::fs::write(&file_path, v)?;
+                                                    #[cfg(unix)]
+                                                    {
+                                                        use std::os::unix::fs::PermissionsExt;
+                                                        std::fs::set_permissions(
+                                                            &file_path,
+                                                            std::fs::Permissions::from_mode(proj_default_mode as u32),
+                                                        )?;
+                                                    }
                                                 }
                                             }
                                         }
@@ -1437,7 +1540,16 @@ impl ContainerRuntime {
                                 } else {
                                     String::new()
                                 };
-                                std::fs::write(&file_path, value)?;
+                                std::fs::write(&file_path, &value)?;
+                                #[cfg(unix)]
+                                {
+                                    use std::os::unix::fs::PermissionsExt;
+                                    let mode = item.mode.unwrap_or(proj_default_mode) as u32;
+                                    std::fs::set_permissions(
+                                        &file_path,
+                                        std::fs::Permissions::from_mode(mode),
+                                    )?;
+                                }
                             }
                         }
                     }
@@ -1451,6 +1563,14 @@ impl ContainerRuntime {
                         // Write a placeholder JWT token
                         let token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.placeholder";
                         std::fs::write(&token_path, token)?;
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            std::fs::set_permissions(
+                                &token_path,
+                                std::fs::Permissions::from_mode(proj_default_mode as u32),
+                            )?;
+                        }
                     }
                 }
             }
@@ -3805,10 +3925,13 @@ mod tests {
         }
 
         // Add entries from spec.hostAliases
+        // Kubernetes groups all hostnames for the same IP on a single line
         if let Some(host_aliases) = &spec.host_aliases {
             for alias in host_aliases {
-                for ha_hostname in alias.hostnames.as_deref().unwrap_or(&[]) {
-                    content.push_str(&format!("{}\t{}\n", alias.ip, ha_hostname));
+                if let Some(hostnames) = &alias.hostnames {
+                    if !hostnames.is_empty() {
+                        content.push_str(&format!("{}\t{}\n", alias.ip, hostnames.join("\t")));
+                    }
                 }
             }
         }

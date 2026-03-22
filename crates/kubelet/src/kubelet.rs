@@ -114,7 +114,7 @@ impl Kubelet {
             addresses: Some(vec![
                 NodeAddress {
                     address_type: "InternalIP".to_string(),
-                    address: "127.0.0.1".to_string(),
+                    address: Self::detect_internal_ip(),
                 },
                 NodeAddress {
                     address_type: "Hostname".to_string(),
@@ -161,6 +161,34 @@ impl Kubelet {
         }
 
         Ok(())
+    }
+
+    /// Detect the node's internal IP address.
+    /// In Docker, resolves the container hostname to get the network IP.
+    /// Falls back to 127.0.0.1 if detection fails.
+    fn detect_internal_ip() -> String {
+        // Try to resolve our own hostname to get the Docker network IP
+        if let Ok(hostname) = std::env::var("HOSTNAME") {
+            if let Ok(addrs) = std::net::ToSocketAddrs::to_socket_addrs(
+                &(hostname.as_str(), 0u16),
+            ) {
+                for addr in addrs {
+                    if let std::net::IpAddr::V4(ip) = addr.ip() {
+                        if !ip.is_loopback() {
+                            return ip.to_string();
+                        }
+                    }
+                }
+            }
+        }
+        // Fallback: try to find a non-loopback IP from network interfaces
+        if let Ok(output) = std::process::Command::new("hostname").arg("-i").output() {
+            let ip_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !ip_str.is_empty() && ip_str != "127.0.0.1" {
+                return ip_str;
+            }
+        }
+        "127.0.0.1".to_string()
     }
 
     async fn update_node_status(&self) -> Result<()> {

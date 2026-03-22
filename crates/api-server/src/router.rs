@@ -522,6 +522,10 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/events.k8s.io/v1",
             get(handlers::discovery::get_events_v1_resources),
         )
+        .route(
+            "/apis/apiregistration.k8s.io/v1",
+            get(handlers::discovery::get_apiregistration_v1_resources),
+        )
         .route("/version", get(handlers::discovery::get_version))
         // OpenAPI spec endpoints
         .route("/openapi/v2", get(handlers::openapi::get_swagger_spec))

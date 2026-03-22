@@ -112,8 +112,11 @@ pub async fn update(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-    Json(mut deployment): Json<Deployment>,
+    body: Bytes,
 ) -> Result<Json<Deployment>> {
+    let mut deployment: Deployment = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
     info!("Updating deployment: {}/{}", namespace, name);
 
     // Check if this is a dry-run request
