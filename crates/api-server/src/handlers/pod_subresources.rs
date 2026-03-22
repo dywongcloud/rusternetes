@@ -510,33 +510,7 @@ pub async fn exec(
     // Return as Kubernetes-compatible exec response
     // For SPDY clients: return 101 Switching Protocols with the output
     // This isn't proper SPDY but gives kubectl something to parse
-    if spdy::is_spdy_request(&req) {
-        // For SPDY: upgrade the connection and write raw output
-        let response = spdy::create_spdy_upgrade_response().map_err(|e| {
-            Error::Internal(format!("SPDY upgrade: {}", e))
-        })?;
-
-        let stdout_clone = stdout_data.clone();
-        let stderr_clone = stderr_data.clone();
-        tokio::spawn(async move {
-            match spdy::upgrade_to_spdy(req).await {
-                Ok(spdy_conn) => {
-                    if !stdout_clone.is_empty() {
-                        let _ = spdy_conn.write_channel(crate::spdy::SpdyChannel::Stdout, stdout_clone).await;
-                    }
-                    if !stderr_clone.is_empty() {
-                        let _ = spdy_conn.write_channel(crate::spdy::SpdyChannel::Stderr, stderr_clone).await;
-                    }
-                    let _ = spdy_conn.close().await;
-                }
-                Err(e) => tracing::error!("SPDY upgrade failed: {}", e),
-            }
-        });
-
-        return Ok(response.into_response());
-    }
-
-    // Plain HTTP response
+    // Return exec output as plain HTTP response
     let mut output_str = String::from_utf8_lossy(&stdout_data).to_string();
     if !stderr_data.is_empty() {
         output_str.push_str(&String::from_utf8_lossy(&stderr_data));
