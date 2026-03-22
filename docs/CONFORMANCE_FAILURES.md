@@ -1,30 +1,30 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-21 (round 45 — SPDY exec issue identified)
+**Last updated**: 2026-03-22 (round 51 — exec working, tests progressing)
 
-## Current Blocker: SPDY exec response framing
-kubectl exec uses SPDY protocol. Our Docker exec runs successfully and
-collects output, but the SPDY channel write doesn't deliver data back
-to kubectl. kubectl times out after ~30s per attempt.
+## BREAKTHROUGH: Exec now works!
+WebSocket v5.channel.k8s.io exec with direct Docker execution works.
+Tests are progressing past StatefulSet exec operations.
 
-The exec handler:
-1. Receives SPDY upgrade ✓
-2. Creates Docker exec ✓
-3. Starts exec, collects stdout/stderr ✓
-4. Writes to SPDY channels via spdy.write_channel() ✗ (data doesn't reach client)
+## Round 51 Failures So Far (14 of ~441):
 
-Tests using exec (StatefulSet probe manipulation, etc.) are very slow
-because each exec attempt times out and retries.
+1. StatefulSet scaling — watch closed (transient error handling)
+2. Variable Expansion backticks — FIX READY (reject backticks in subpath)
+3. Downward API hostIPs — HOST_IP env var not set correctly
+4. Secrets env var names — secret data not accessible as env var
+5. Aggregator API Server — deployment not becoming available
+6. VolumeAttachment lifecycle — delete collection not allowed + status missing
+7. Endpoints lifecycle — initial RV not supported in watch
+8. DeviceClass creation — Kind missing from response
+9. Job failure detection — timeout
+10. HostAliases — hosts file not containing aliases
+11-14. Various timeouts and watch issues
 
-Impact: Tests progress but very slowly (~40s per exec attempt).
+## Key issues to fix next:
+- VolumeAttachment: deletecollection route + status subresource
+- Endpoints: watch with empty RV
+- HostAliases in /etc/hosts
+- HOST_IP downward API env var
+- Secret env var injection
 
-## 35 fixes deployed (all working for non-exec tests)
-1-31: Previous fixes
-32. Kubelet exec: always attached mode
-33. Kubelet exec: 5s per-read timeout + inspect_exec
-34. SPDY exec: direct Docker execution (bypass kubelet proxy)
-35. Updated doc tracking
-
-## Next steps:
-- Fix SPDY write_channel to properly frame and send data
-- Or implement Kubernetes exec v5 protocol over WebSocket
+## 37+ fixes deployed including exec breakthrough
