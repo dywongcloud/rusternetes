@@ -1,36 +1,44 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-22 (round 53 in progress — 35 failures at 90 min mark)
+**Last updated**: 2026-03-22 (round 53 completed — ~155 failures out of 441 tests)
 
-## Progress: 54 → 35 failures between rounds 52 and 53
-Exec working, many fixes deployed. Down from 54 to 35 failures.
+## Round 53 Final: ~155/441 failures (~65% pass rate)
 
-## Round 53 Failure Categories:
+The full test suite completed for the first time! Previous rounds never
+finished (exec hanging). With exec working via WebSocket v5, all 441
+tests ran. ~286 tests passed.
 
-### Container exec output (many tests):
-- Tests can't read configmap/secret content via exec
-- Service account token not in expected format
-- This may be an exec output capture issue in the test framework
+## Key remaining failure categories:
 
-### Networking:
-- DNS resolution failing (UDP)
-- NodePort endpoints not found
-- Node internal IP = 127.0.0.1 (not proper IP)
+### 1. Container exec output (many tests)
+Tests read file content via exec and check output. The output may not
+be captured correctly by kubectl because our WebSocket exec implementation
+may not be fully compatible with client-go's expectations.
 
-### Kubelet:
-- Cgroup CPU weight not set correctly
-- File permissions on volumes
-- Subpath configmap pod not starting
-- HOST_IP env var format
+### 2. Volume content/permissions
+ConfigMap/Secret/Projected volumes not serving correct content or permissions.
 
-### API:
-- IntOrString parsing
-- Watch closed
+### 3. Networking
+DNS resolution, NodePort endpoints, node-to-pod HTTP connectivity.
 
-### Controller:
-- Job timeouts
-- Various deployment availability issues
+### 4. Controller lifecycle
+Job completion detection, deployment readiness, DaemonSet pod management.
 
-## 42+ fixes deployed
-Tests ARE progressing. We went from being stuck on 1 test (exec hanging)
-to running through most of the 441 tests.
+### 5. API gaps
+Various missing endpoints, discovery issues, response format issues.
+
+### 6. Watch reliability
+Watch streams closing unexpectedly.
+
+### 7. Cgroup/Resource management
+CPU weight not set in cgroups.
+
+## 42+ fixes deployed (from this session alone)
+Total fixes across all sessions: 100+
+
+## Next steps:
+Focus on the most impactful fix categories:
+1. Fix exec output so container output tests pass
+2. Fix volume content serving
+3. Fix networking (DNS, NodePort)
+4. Fix remaining API gaps
