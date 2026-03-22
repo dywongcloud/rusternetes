@@ -324,11 +324,8 @@ where
                                 continue;
                             }
                             None => {
-                                // Stream ended — sleep and continue to let
-                                // the timeout handle cleanup. Don't break early.
-                                debug!("Watch stream ended, sleeping");
-                                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                                continue;
+                                debug!("Watch stream ended");
+                                break;
                             }
                         }
                     }
@@ -643,11 +640,8 @@ where
                                 continue;
                             }
                             None => {
-                                // Stream ended — sleep and continue to let
-                                // the timeout handle cleanup. Don't break early.
-                                debug!("Watch stream ended, sleeping");
-                                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                                continue;
+                                debug!("Watch stream ended");
+                                break;
                             }
                         }
                     }
