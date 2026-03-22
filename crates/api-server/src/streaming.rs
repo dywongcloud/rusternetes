@@ -73,7 +73,7 @@ pub async fn handle_ws_exec(
     // Channel prefix: 0=stdin, 1=stdout, 2=stderr, 3=error
     if let StartExecResults::Attached { output: mut stream, .. } = output {
         loop {
-            match tokio::time::timeout(std::time::Duration::from_secs(5), stream.next()).await {
+            match tokio::time::timeout(std::time::Duration::from_secs(1), stream.next()).await {
                 Ok(Some(Ok(msg))) => {
                     match msg {
                         bollard::container::LogOutput::StdOut { message } => {
@@ -91,6 +91,7 @@ pub async fn handle_ws_exec(
                 }
                 Ok(Some(Err(_))) | Ok(None) => break,
                 Err(_) => {
+                    // 1s timeout hit — check if command finished
                     if let Ok(info) = docker.inspect_exec(&exec.id).await {
                         if !info.running.unwrap_or(false) { break; }
                     } else { break; }

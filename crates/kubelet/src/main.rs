@@ -281,7 +281,7 @@ async fn handle_exec(
     {
         loop {
             match tokio::time::timeout(
-                std::time::Duration::from_secs(5),
+                std::time::Duration::from_secs(1),
                 stream.next(),
             ).await {
                 Ok(Some(Ok(msg))) => {

@@ -94,7 +94,7 @@ pub async fn handle_spdy_exec(
     let mut stderr_data = Vec::new();
     if let StartExecResults::Attached { output: mut stream, .. } = output {
         loop {
-            match tokio::time::timeout(std::time::Duration::from_secs(5), stream.next()).await {
+            match tokio::time::timeout(std::time::Duration::from_secs(1), stream.next()).await {
                 Ok(Some(Ok(msg))) => {
                     match msg {
                         bollard::container::LogOutput::StdOut { message } => stdout_data.extend_from_slice(&message),
