@@ -1,32 +1,39 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-22 (round 52 in progress — 16 failures so far)
+**Last updated**: 2026-03-22 (round 53 starting — 54 failures in round 52)
 
-## Round 52 Failures (16 so far, tests still running):
+## Round 52 Results: 54 failures out of 441 tests (~88% pass rate)
 
-### Quick fixes (router/API issues):
-1. DeviceClass: Kind missing from response — need to add kind/apiVersion
-2. CRD decode error — empty response body
-3. Webhook discovery — validatingwebhookconfigurations not in discovery
-4. ReplicaSet creation rejected — request parsing error
+### Container output / exec issues (many tests):
+- configmap/secret/projected volume content not visible via exec
+- File permissions wrong on mounted volumes
+- HOST_IP downward API env var — FIX DEPLOYED (hostIPs set)
+- These may be exec-related: output is collected but not displayed
 
-### Kubelet/Runtime issues:
-5. Secret file permissions — wrong mode (expected rw-r--r--)
-6. Volume file permissions (2 tests) — wrong perms
-7. Node-to-pod HTTP dialing — networking issue
-
-### Controller/Timeout issues:
-8. Job SuccessCriteriaMet — 15-min timeout (job completion detection)
-9. Job completion — 15-min timeout
-10. Webhook deployment — not becoming available (ReadyReplicas=0)
+### API/Router issues:
+- DeviceClass Kind missing — FIX DEPLOYED
+- CRD decode error (empty response body on creation)
+- apiregistration.k8s.io/v1 not found
+- /api output parse error
+- Webhook discovery
 
 ### Watch/Protocol:
-11. StatefulSet watch closed — transient errors
+- watch closed before timeout
+- initial RV "" not supported
 
-### Test infrastructure:
-12. kubectl create — command failing
-13. Pod rejection — wrong error type
-14. Context deadline exceeded
+### Controller/Timeout:
+- Webhook deployments not becoming ready (ReadyReplicas=0)
+- Job completion timeouts (15 min)
+- DaemonSet pod deletion rate limit
 
-## All 40+ fixes deployed
-Tests ARE progressing — exec works, most tests pass.
+### Subpath:
+- Backtick rejection — FIX DEPLOYED
+
+## 42+ fixes deployed including:
+- WebSocket exec with v5.channel.k8s.io
+- Direct Docker execution (bypass kubelet proxy)
+- 1s exec stream timeout
+- DeviceClass kind/apiVersion
+- hostIPs in pod status
+- Backtick subpath validation
+- All 35 previous fixes
