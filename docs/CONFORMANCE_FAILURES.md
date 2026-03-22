@@ -1,30 +1,32 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-22 (round 51 — exec working, tests progressing)
+**Last updated**: 2026-03-22 (round 52 in progress — 16 failures so far)
 
-## BREAKTHROUGH: Exec now works!
-WebSocket v5.channel.k8s.io exec with direct Docker execution works.
-Tests are progressing past StatefulSet exec operations.
+## Round 52 Failures (16 so far, tests still running):
 
-## Round 51 Failures So Far (14 of ~441):
+### Quick fixes (router/API issues):
+1. DeviceClass: Kind missing from response — need to add kind/apiVersion
+2. CRD decode error — empty response body
+3. Webhook discovery — validatingwebhookconfigurations not in discovery
+4. ReplicaSet creation rejected — request parsing error
 
-1. StatefulSet scaling — watch closed (transient error handling)
-2. Variable Expansion backticks — FIX READY (reject backticks in subpath)
-3. Downward API hostIPs — HOST_IP env var not set correctly
-4. Secrets env var names — secret data not accessible as env var
-5. Aggregator API Server — deployment not becoming available
-6. VolumeAttachment lifecycle — delete collection not allowed + status missing
-7. Endpoints lifecycle — initial RV not supported in watch
-8. DeviceClass creation — Kind missing from response
-9. Job failure detection — timeout
-10. HostAliases — hosts file not containing aliases
-11-14. Various timeouts and watch issues
+### Kubelet/Runtime issues:
+5. Secret file permissions — wrong mode (expected rw-r--r--)
+6. Volume file permissions (2 tests) — wrong perms
+7. Node-to-pod HTTP dialing — networking issue
 
-## Key issues to fix next:
-- VolumeAttachment: deletecollection route + status subresource
-- Endpoints: watch with empty RV
-- HostAliases in /etc/hosts
-- HOST_IP downward API env var
-- Secret env var injection
+### Controller/Timeout issues:
+8. Job SuccessCriteriaMet — 15-min timeout (job completion detection)
+9. Job completion — 15-min timeout
+10. Webhook deployment — not becoming available (ReadyReplicas=0)
 
-## 37+ fixes deployed including exec breakthrough
+### Watch/Protocol:
+11. StatefulSet watch closed — transient errors
+
+### Test infrastructure:
+12. kubectl create — command failing
+13. Pod rejection — wrong error type
+14. Context deadline exceeded
+
+## All 40+ fixes deployed
+Tests ARE progressing — exec works, most tests pass.
