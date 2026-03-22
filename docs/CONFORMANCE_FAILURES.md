@@ -1,24 +1,57 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-22 (round 56 in progress — 113 failures at 5.5 hours)
+**Last updated**: 2026-03-22 (round 56 completed — est. ~150/441 failures)
 
-## Round 56 Top Failure Patterns:
+## Session Summary
 
-1. **No ready schedulable nodes** (4 tests) — node status issue
-2. **Context deadline exceeded** (4+ tests) — various timeouts
-3. **CRD creation** (6 tests) — decode error or timeout
-4. **Container output** (~20 tests) — volume content not readable via exec
-5. **File permissions** (4+ tests) — wrong modes on volume files
-6. **ReplicaSet creation** (2 tests) — request rejected
-7. **Webhook deployment** (2+ tests) — not becoming ready
-8. **Watch closed** (1 test) — etcd stream issue
-9. **Resource values** (2+ tests) — cgroup/resource limits not set
+Started this session with tests unable to complete (exec hanging).
+Deployed 43+ conformance fixes across 53 commits. The full 441-test
+conformance suite now runs to completion.
 
-## Session Summary:
-- Started: 12+ failures in first 50 tests (round 25)
-- Exec fixed: WebSocket v5 with direct Docker execution
-- Full suite completed: rounds 53+ run all 441 tests
-- Best partial result: 7 failures at 30 min mark (round 56)
-- Current: ~113 failures at 5.5 hours, tests still running
+### Key fixes deployed:
+1. GC foreground deletion + propagation policy
+2. Pod resize containerStatus.resources
+3. JSON decode ContainerState `{}` → None
+4. PATCH resourceVersion clear
+5. PodTemplate/ControllerRevision list filtering + watch + pagination
+6. Subpath validation (reject `..`, absolute, backticks)
+7. CronJob/StatefulSet controller 1s intervals
+8. Chunking token expiry (5min) with fresh token + Expired reason
+9. etcd auto-compaction
+10. CreateContainerError preserved + retry
+11. CronJob status.active ObjectReferences
+12. Kubelet sync 2s interval
+13. Pagination consistent resourceVersion + nil remainingItemCount
+14. Pod conditions Ready=False when probes fail
+15. readOnlyRootFilesystem
+16. observedGeneration
+17. StatefulSet readyReplicas check Ready condition
+18. CSIDriver deletecollection + VolumeAttachment status routes
+19. DaemonSet status clear RV
+20. Container command→Entrypoint, args→Cmd
+21. CRD manual body parsing + x-kubernetes-* serde
+22. PLC/FlowSchema/CRD status sub-resource routes
+23. Watch transient error handling
+24. Ephemeral container support
+25. **WebSocket exec with v5.channel.k8s.io** (breakthrough fix)
+26. Direct Docker execution (bypass kubelet proxy)
+27. Exec stream 1s timeout + inspect_exec
+28. DeviceClass kind/apiVersion
+29. hostIPs in pod status
 
-## 50+ commits this session with 43+ conformance fixes
+### Remaining failure categories:
+- Container exec output (volume content not visible via exec)
+- File permissions on mounted volumes
+- CRD creation (decode errors)
+- Watch stream reliability
+- Webhook deployment readiness
+- Resource limits in cgroups
+- Node schedulability during tests
+
+### Progress track:
+- Round 25: 12 failures in first 50 tests
+- Round 28: 1 failure (chunking)
+- Round 39: 13 failures (API/controller gaps)
+- Round 52: 54 failures (first full run attempt)
+- Round 53: ~155 failures (first completed run)
+- Round 56: ~150 failures (completed, ~66% pass rate)
