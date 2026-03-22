@@ -1,22 +1,24 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-22 (round 56 in progress — 7 failures at 30 min mark)
+**Last updated**: 2026-03-22 (round 56 in progress — 113 failures at 5.5 hours)
 
-## MAJOR PROGRESS: Round 56 shows 7 failures at 30 min
-Down from 155 failures in round 53. Previous rounds never completed
-or had 50+ failures. Tests are progressing well.
+## Round 56 Top Failure Patterns:
 
-## Current failures (7 so far):
-1. Watch closed (known — etcd watch stream issue)
-2. Resource limit values in container output (134217728, 33554432)
-3. Projected secret volume content
-4. File mode on downward API files
-5. Webhook deployment not ready
-6. 300s timeout
+1. **No ready schedulable nodes** (4 tests) — node status issue
+2. **Context deadline exceeded** (4+ tests) — various timeouts
+3. **CRD creation** (6 tests) — decode error or timeout
+4. **Container output** (~20 tests) — volume content not readable via exec
+5. **File permissions** (4+ tests) — wrong modes on volume files
+6. **ReplicaSet creation** (2 tests) — request rejected
+7. **Webhook deployment** (2+ tests) — not becoming ready
+8. **Watch closed** (1 test) — etcd stream issue
+9. **Resource values** (2+ tests) — cgroup/resource limits not set
 
-## 43+ fixes deployed in this session
-Total commits this session: 50+
+## Session Summary:
+- Started: 12+ failures in first 50 tests (round 25)
+- Exec fixed: WebSocket v5 with direct Docker execution
+- Full suite completed: rounds 53+ run all 441 tests
+- Best partial result: 7 failures at 30 min mark (round 56)
+- Current: ~113 failures at 5.5 hours, tests still running
 
-## Key fix that changed everything:
-WebSocket exec with v5.channel.k8s.io protocol — direct Docker execution
-instead of SPDY proxy. This unblocked the entire test suite.
+## 50+ commits this session with 43+ conformance fixes
