@@ -124,6 +124,7 @@ pub async fn delete_replicationcontroller(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
+    body: axum::body::Bytes,
 ) -> Result<Json<ReplicationController>> {
     info!(
         "Deleting replicationcontroller: {} in namespace: {}",
@@ -159,7 +160,16 @@ pub async fn delete_replicationcontroller(
         return Ok(Json(rc));
     }
 
-    let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str());
+    // Extract propagation policy from query params or request body (DeleteOptions)
+    let body_propagation: Option<String> = if !body.is_empty() {
+        serde_json::from_slice::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("propagationPolicy").and_then(|p| p.as_str()).map(|s| s.to_string()))
+    } else {
+        None
+    };
+    let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str())
+        .or(body_propagation.as_deref());
     let has_finalizers =
         crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
             &*state.storage, &key, &rc, propagation_policy,

@@ -344,7 +344,14 @@ pub struct ListMeta {
 impl Default for ListMeta {
     fn default() -> Self {
         Self {
-            resource_version: None,
+            // Always include a resourceVersion so clients can use it for watches.
+            // Using current timestamp as a simple version identifier.
+            resource_version: Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs().to_string())
+                    .unwrap_or_else(|_| "1".to_string()),
+            ),
             continue_token: None,
             remaining_item_count: None,
         }
