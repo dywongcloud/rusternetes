@@ -435,47 +435,10 @@ pub async fn exec(
         )));
     }
 
-    // Check if this is a SPDY upgrade request (kubectl uses SPDY)
-    if spdy::is_spdy_request(&req) {
-        info!(
-            "Upgrading exec to SPDY for pod {}/{} (kubectl compatibility)",
-            namespace, name
-        );
-
-        // Create SPDY upgrade response
-        let response = spdy::create_spdy_upgrade_response().map_err(|e| {
-            Error::Internal(format!("Failed to create SPDY upgrade response: {}", e))
-        })?;
-
-        // Spawn task to handle SPDY connection after upgrade
-        tokio::spawn(async move {
-            match spdy::upgrade_to_spdy(req).await {
-                Ok(spdy_conn) => {
-                    spdy_handlers::handle_spdy_exec(
-                        spdy_conn,
-                        pod,
-                        container_name,
-                        query.command,
-                        query.stdin,
-                        query.stdout,
-                        query.stderr,
-                        query.tty,
-                    )
-                    .await;
-                }
-                Err(e) => {
-                    tracing::error!("Failed to upgrade to SPDY: {}", e);
-                }
-            }
-        });
-
-        return Ok(response.into_response());
-    }
-
     // Handle WebSocket upgrade if requested
     if let Some(ws) = ws {
         info!("Upgrading exec to WebSocket for pod {}/{}", namespace, name);
-        Ok(ws
+        return Ok(ws
             .on_upgrade(move |socket| {
                 streaming::handle_exec_websocket(
                     socket,
@@ -488,19 +451,101 @@ pub async fn exec(
                     query.tty,
                 )
             })
-            .into_response())
-    } else {
-        // No upgrade requested - return error
-        Ok(Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .header("Content-Type", "text/plain")
-            .body(Body::from(
-                "Exec requires protocol upgrade (SPDY or WebSocket). Use:\n\
-                - kubectl (uses SPDY automatically)\n\
-                - WebSocket protocol for custom clients\n",
-            ))
-            .unwrap())
+            .into_response());
     }
+
+    // For SPDY requests and plain HTTP: execute directly and return output
+    // kubectl will receive the output as the HTTP response body
+    info!("Direct exec for pod {}/{}: {:?}", namespace, name, query.command);
+
+    use bollard::Docker;
+    use bollard::exec::{CreateExecOptions, StartExecResults};
+    use futures::StreamExt;
+
+    let docker = Docker::connect_with_local_defaults()
+        .map_err(|e| Error::Internal(format!("Docker: {}", e)))?;
+
+    let container_id = format!("{}_{}", pod.metadata.name, container_name);
+    let exec_config = CreateExecOptions {
+        cmd: Some(query.command.iter().map(|s| s.as_str()).collect()),
+        attach_stdout: Some(true),
+        attach_stderr: Some(true),
+        attach_stdin: Some(false),
+        tty: Some(query.tty),
+        ..Default::default()
+    };
+
+    let exec = docker.create_exec(&container_id, exec_config).await
+        .map_err(|e| Error::Internal(format!("Create exec: {}", e)))?;
+
+    let output = docker.start_exec(&exec.id, Some(bollard::exec::StartExecOptions { detach: false, ..Default::default() })).await
+        .map_err(|e| Error::Internal(format!("Start exec: {}", e)))?;
+
+    let mut stdout_data = Vec::new();
+    let mut stderr_data = Vec::new();
+    if let StartExecResults::Attached { output: mut stream, .. } = output {
+        loop {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), stream.next()).await {
+                Ok(Some(Ok(msg))) => match msg {
+                    bollard::container::LogOutput::StdOut { message } => stdout_data.extend_from_slice(&message),
+                    bollard::container::LogOutput::StdErr { message } => stderr_data.extend_from_slice(&message),
+                    _ => {}
+                },
+                Ok(Some(Err(_))) | Ok(None) => break,
+                Err(_) => {
+                    if let Ok(info) = docker.inspect_exec(&exec.id).await {
+                        if !info.running.unwrap_or(false) { break; }
+                    } else { break; }
+                }
+            }
+        }
+    }
+
+    // Get exit code
+    let exit_code = docker.inspect_exec(&exec.id).await
+        .ok()
+        .and_then(|info| info.exit_code)
+        .unwrap_or(0);
+
+    // Return as Kubernetes-compatible exec response
+    // For SPDY clients: return 101 Switching Protocols with the output
+    // This isn't proper SPDY but gives kubectl something to parse
+    if spdy::is_spdy_request(&req) {
+        // For SPDY: upgrade the connection and write raw output
+        let response = spdy::create_spdy_upgrade_response().map_err(|e| {
+            Error::Internal(format!("SPDY upgrade: {}", e))
+        })?;
+
+        let stdout_clone = stdout_data.clone();
+        let stderr_clone = stderr_data.clone();
+        tokio::spawn(async move {
+            match spdy::upgrade_to_spdy(req).await {
+                Ok(spdy_conn) => {
+                    if !stdout_clone.is_empty() {
+                        let _ = spdy_conn.write_channel(crate::spdy::SpdyChannel::Stdout, stdout_clone).await;
+                    }
+                    if !stderr_clone.is_empty() {
+                        let _ = spdy_conn.write_channel(crate::spdy::SpdyChannel::Stderr, stderr_clone).await;
+                    }
+                    let _ = spdy_conn.close().await;
+                }
+                Err(e) => tracing::error!("SPDY upgrade failed: {}", e),
+            }
+        });
+
+        return Ok(response.into_response());
+    }
+
+    // Plain HTTP response
+    let mut output_str = String::from_utf8_lossy(&stdout_data).to_string();
+    if !stderr_data.is_empty() {
+        output_str.push_str(&String::from_utf8_lossy(&stderr_data));
+    }
+    Ok(Response::builder()
+        .status(if exit_code == 0 { StatusCode::OK } else { StatusCode::INTERNAL_SERVER_ERROR })
+        .header("Content-Type", "text/plain")
+        .body(Body::from(output_str))
+        .unwrap())
 }
 
 /// GET/POST /api/v1/namespaces/{namespace}/pods/{name}/attach
