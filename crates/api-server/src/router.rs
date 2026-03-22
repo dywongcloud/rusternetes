@@ -1564,7 +1564,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/storage.k8s.io/v1/volumeattachments",
             get(handlers::volumeattachment::list_volumeattachments)
-                .post(handlers::volumeattachment::create_volumeattachment),
+                .post(handlers::volumeattachment::create_volumeattachment)
+                .delete(handlers::volumeattachment::deletecollection_volumeattachments),
         )
         .route(
             "/apis/storage.k8s.io/v1/volumeattachments/:name",
@@ -1572,6 +1573,11 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::volumeattachment::update_volumeattachment)
                 .patch(handlers::volumeattachment::patch_volumeattachment)
                 .delete(handlers::volumeattachment::delete_volumeattachment),
+        )
+        .route(
+            "/apis/storage.k8s.io/v1/volumeattachments/:name/status",
+            get(handlers::status::get_cluster_status)
+                .put(handlers::status::update_cluster_status),
         )
         // Storage v1 API - VolumeAttributesClasses (cluster-scoped)
         .route(
