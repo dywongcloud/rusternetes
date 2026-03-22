@@ -39,6 +39,10 @@ pub async fn create_deviceclass(
         }
     }
 
+    // Set kind and apiVersion
+    dc.kind = "DeviceClass".to_string();
+    dc.api_version = "resource.k8s.io/v1beta1".to_string();
+
     // Ensure metadata exists and set defaults
     let metadata = dc.metadata.get_or_insert_with(Default::default);
 
