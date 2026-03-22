@@ -849,6 +849,9 @@ impl ContainerRuntime {
         if result.contains("..") {
             return Err("subPath must not contain '..'".to_string());
         }
+        if result.contains('`') {
+            return Err("subPath must not contain backticks".to_string());
+        }
         Ok(result)
     }
 
@@ -1968,6 +1971,12 @@ impl ContainerRuntime {
                             if sub_path.starts_with('/') {
                                 return Err(anyhow::anyhow!(
                                     "CreateContainerError: subPath must not be an absolute path in container {}",
+                                    container.name
+                                ));
+                            }
+                            if sub_path.contains('`') {
+                                return Err(anyhow::anyhow!(
+                                    "CreateContainerError: subPath must not contain backticks in container {}",
                                     container.name
                                 ));
                             }
