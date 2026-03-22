@@ -21,99 +21,102 @@ pub async fn handle_ws_exec(
 ) {
     let container_id = format!("{}_{}", pod.metadata.name, container_name);
 
-    let node_name = pod
-        .spec
-        .as_ref()
-        .and_then(|s| s.node_name.as_deref())
-        .unwrap_or("node-1");
+    debug!("WS exec direct Docker for container: {}", container_id);
 
-    let (host, port) = match node_name {
-        "node-1" => ("rusternetes-kubelet", 10250),
-        "node-2" => ("rusternetes-kubelet2", 10251),
-        _ => ("rusternetes-kubelet", 10250),
+    // Execute directly via Docker (API server has Docker socket mounted)
+    use bollard::Docker;
+    use bollard::exec::{CreateExecOptions, StartExecResults};
+
+    let docker = match Docker::connect_with_local_defaults() {
+        Ok(d) => d,
+        Err(e) => {
+            let _ = socket.send(Message::Binary(
+                std::iter::once(3u8).chain(format!("Docker error: {}", e).bytes()).collect()
+            )).await;
+            let _ = socket.close().await;
+            return;
+        }
     };
 
-    let command_str = command.join(",");
-    let url = format!(
-        "http://{}:{}/exec/{}?command={}&tty={}",
-        host, port, container_id,
-        urlencoding_encode(&command_str),
-        tty
-    );
-
-    debug!("WS exec proxying to kubelet: {}", url);
-
-    // Collect stdin from WebSocket (first message if any)
-    let stdin_data = match tokio::time::timeout(
-        std::time::Duration::from_millis(100),
-        socket.next(),
-    )
-    .await
-    {
-        Ok(Some(Ok(Message::Binary(data)))) => data.to_vec(),
-        Ok(Some(Ok(Message::Text(text)))) => text.into_bytes(),
-        _ => Vec::new(),
+    let exec_config = CreateExecOptions {
+        cmd: Some(command.iter().map(|s| s.as_str()).collect()),
+        attach_stdout: Some(true),
+        attach_stderr: Some(true),
+        attach_stdin: Some(false),
+        tty: Some(tty),
+        ..Default::default()
     };
 
-    // Proxy to kubelet
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_default();
+    let exec = match docker.create_exec(&container_id, exec_config).await {
+        Ok(e) => e,
+        Err(e) => {
+            let _ = socket.send(Message::Binary(
+                std::iter::once(3u8).chain(format!("Exec error: {}", e).bytes()).collect()
+            )).await;
+            let _ = socket.close().await;
+            return;
+        }
+    };
 
-    match client.post(&url).body(stdin_data).send().await {
-        Ok(response) => {
-            if response.status().is_success() {
-                match response.json::<serde_json::Value>().await {
-                    Ok(result) => {
-                        if let Some(out) = result.get("stdout").and_then(|v| v.as_str()) {
-                            if !out.is_empty() {
-                                let _ = socket
-                                    .send(Message::Binary(
-                                        std::iter::once(1u8) // stdout channel prefix
-                                            .chain(out.bytes())
-                                            .collect(),
-                                    ))
-                                    .await;
-                            }
+    let output = match docker.start_exec(&exec.id, Some(bollard::exec::StartExecOptions { detach: false, ..Default::default() })).await {
+        Ok(o) => o,
+        Err(e) => {
+            let _ = socket.send(Message::Binary(
+                std::iter::once(3u8).chain(format!("Start exec error: {}", e).bytes()).collect()
+            )).await;
+            let _ = socket.close().await;
+            return;
+        }
+    };
+
+    // Stream output to WebSocket using v5.channel.k8s.io protocol
+    // Channel prefix: 0=stdin, 1=stdout, 2=stderr, 3=error
+    if let StartExecResults::Attached { output: mut stream, .. } = output {
+        loop {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), stream.next()).await {
+                Ok(Some(Ok(msg))) => {
+                    match msg {
+                        bollard::container::LogOutput::StdOut { message } => {
+                            let mut data = vec![1u8]; // stdout channel
+                            data.extend_from_slice(&message);
+                            if socket.send(Message::Binary(data.into())).await.is_err() { break; }
                         }
-                        if let Some(err) = result.get("stderr").and_then(|v| v.as_str()) {
-                            if !err.is_empty() {
-                                let _ = socket
-                                    .send(Message::Binary(
-                                        std::iter::once(2u8) // stderr channel prefix
-                                            .chain(err.bytes())
-                                            .collect(),
-                                    ))
-                                    .await;
-                            }
+                        bollard::container::LogOutput::StdErr { message } => {
+                            let mut data = vec![2u8]; // stderr channel
+                            data.extend_from_slice(&message);
+                            if socket.send(Message::Binary(data.into())).await.is_err() { break; }
                         }
-                    }
-                    Err(e) => {
-                        error!("Failed to parse kubelet exec response: {}", e);
-                        let _ = socket
-                            .send(Message::Text(format!("Exec failed: {}", e).into()))
-                            .await;
+                        _ => {}
                     }
                 }
-            } else {
-                let body = response.text().await.unwrap_or_default();
-                let _ = socket
-                    .send(Message::Text(format!("Exec failed: {}", body).into()))
-                    .await;
+                Ok(Some(Err(_))) | Ok(None) => break,
+                Err(_) => {
+                    if let Ok(info) = docker.inspect_exec(&exec.id).await {
+                        if !info.running.unwrap_or(false) { break; }
+                    } else { break; }
+                }
             }
-        }
-        Err(e) => {
-            error!("Failed to proxy exec to kubelet: {}", e);
-            let _ = socket
-                .send(Message::Text(
-                    format!("Failed to connect to kubelet: {}", e).into(),
-                ))
-                .await;
         }
     }
 
+    // Send exit code as status on error channel (channel 3)
+    let exit_code = docker.inspect_exec(&exec.id).await
+        .ok()
+        .and_then(|info| info.exit_code)
+        .unwrap_or(0);
+
+    // Kubernetes v5 protocol: send JSON status on error channel
+    let status_json = if exit_code == 0 {
+        r#"{"status":"Success"}"#
+    } else {
+        &format!(r#"{{"status":"Failure","message":"command terminated with exit code {}","reason":"NonZeroExitCode","details":{{"causes":[{{"reason":"ExitCode","message":"{}"}}]}}}}"#, exit_code, exit_code)
+    };
+    let mut status_data = vec![3u8]; // error/status channel
+    status_data.extend_from_slice(status_json.as_bytes());
+    let _ = socket.send(Message::Binary(status_data.into())).await;
+
     let _ = socket.close().await;
+    debug!("WS exec completed for {}", container_id);
 }
 
 /// Handle WebSocket attach

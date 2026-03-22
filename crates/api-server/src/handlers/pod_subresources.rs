@@ -442,7 +442,9 @@ pub async fn exec(
     // Handle WebSocket upgrade if requested
     if let Some(ws) = ws {
         info!("Upgrading exec to WebSocket for pod {}/{}", namespace, name);
+        // Accept the v5.channel.k8s.io subprotocol for Kubernetes exec
         return Ok(ws
+            .protocols(["v5.channel.k8s.io", "v4.channel.k8s.io", "channel.k8s.io"])
             .on_upgrade(move |socket| {
                 streaming::handle_exec_websocket(
                     socket,
