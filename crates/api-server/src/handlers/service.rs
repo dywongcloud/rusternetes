@@ -119,7 +119,9 @@ pub async fn create(
             // "None" means headless service - don't allocate
             if service.spec.cluster_ip.as_deref() == Some("None") {
                 // Headless service — keep ClusterIP as "None", no allocation
-            } else if service.spec.cluster_ip.is_none() {
+            } else if service.spec.cluster_ip.is_none()
+                || service.spec.cluster_ip.as_deref() == Some("")
+            {
                 if let Some(allocated_ip) = state.ip_allocator.allocate() {
                     info!(
                         "Allocated ClusterIP {} for service {}/{}",

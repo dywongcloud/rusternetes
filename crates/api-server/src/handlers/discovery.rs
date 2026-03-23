@@ -369,10 +369,16 @@ pub async fn get_api_groups(headers: HeaderMap) -> Response {
         // autoscaling API group
         APIGroup {
             name: "autoscaling".to_string(),
-            versions: vec![GroupVersionForDiscovery {
-                group_version: "autoscaling/v2".to_string(),
-                version: "v2".to_string(),
-            }],
+            versions: vec![
+                GroupVersionForDiscovery {
+                    group_version: "autoscaling/v1".to_string(),
+                    version: "v1".to_string(),
+                },
+                GroupVersionForDiscovery {
+                    group_version: "autoscaling/v2".to_string(),
+                    version: "v2".to_string(),
+                },
+            ],
             preferred_version: GroupVersionForDiscovery {
                 group_version: "autoscaling/v2".to_string(),
                 version: "v2".to_string(),
@@ -2701,6 +2707,57 @@ pub async fn get_resource_v1_resources() -> (StatusCode, Json<APIResourceList>) 
         kind: "APIResourceList".to_string(),
         api_version: "v1".to_string(),
         group_version: "resource.k8s.io/v1".to_string(),
+        resources,
+    };
+
+    (StatusCode::OK, Json(resource_list))
+}
+
+/// GET /apis/autoscaling/v1
+/// Returns the list of resources available in the autoscaling/v1 API
+pub async fn get_autoscaling_v1_resources() -> (StatusCode, Json<APIResourceList>) {
+    let resources = vec![
+        APIResource {
+            name: "horizontalpodautoscalers".to_string(),
+            singular_name: "horizontalpodautoscaler".to_string(),
+            namespaced: true,
+            kind: "HorizontalPodAutoscaler".to_string(),
+            verbs: vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+            short_names: Some(vec!["hpa".to_string()]),
+            categories: Some(vec!["all".to_string()]),
+            storage_version_hash: None,
+        },
+        APIResource {
+            name: "horizontalpodautoscalers/status".to_string(),
+            singular_name: "".to_string(),
+            namespaced: true,
+            kind: "HorizontalPodAutoscaler".to_string(),
+            verbs: vec!["get", "patch", "update"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            short_names: None,
+            categories: None,
+            storage_version_hash: None,
+        },
+    ];
+
+    let resource_list = APIResourceList {
+        kind: "APIResourceList".to_string(),
+        api_version: "v1".to_string(),
+        group_version: "autoscaling/v1".to_string(),
         resources,
     };
 

@@ -2445,10 +2445,24 @@ impl ContainerRuntime {
             }
         }
 
+        // Resolve runAsUser from container security context or pod security context
+        let run_as_user: Option<String> = container
+            .security_context
+            .as_ref()
+            .and_then(|sc| sc.run_as_user)
+            .or_else(|| {
+                pod.spec
+                    .as_ref()
+                    .and_then(|s| s.security_context.as_ref())
+                    .and_then(|sc| sc.run_as_user)
+            })
+            .map(|uid| uid.to_string());
+
         let mut config = Config {
             image: Some(container.image.clone()),
             env,
             working_dir: container.working_dir.clone(),
+            user: run_as_user,
             exposed_ports: if exposed_ports.is_empty() {
                 None
             } else {

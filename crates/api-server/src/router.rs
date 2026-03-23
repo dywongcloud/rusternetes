@@ -487,6 +487,10 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             get(handlers::discovery::get_discovery_v1_resources),
         )
         .route(
+            "/apis/autoscaling/v1",
+            get(handlers::discovery::get_autoscaling_v1_resources),
+        )
+        .route(
             "/apis/autoscaling/v2",
             get(handlers::discovery::get_autoscaling_v2_resources),
         )
@@ -1401,6 +1405,29 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/discovery.k8s.io/v1/watch/namespaces/:namespace/endpointslices",
             get(handlers::watch::watch_endpointslices),
+        )
+        // Autoscaling v1 API - HorizontalPodAutoscalers (namespace-scoped)
+        .route(
+            "/apis/autoscaling/v1/namespaces/:namespace/horizontalpodautoscalers",
+            get(handlers::horizontalpodautoscaler::list)
+                .post(handlers::horizontalpodautoscaler::create),
+        )
+        .route(
+            "/apis/autoscaling/v1/namespaces/:namespace/horizontalpodautoscalers/:name",
+            get(handlers::horizontalpodautoscaler::get)
+                .put(handlers::horizontalpodautoscaler::update)
+                .patch(handlers::horizontalpodautoscaler::patch)
+                .delete(handlers::horizontalpodautoscaler::delete),
+        )
+        .route(
+            "/apis/autoscaling/v1/namespaces/:namespace/horizontalpodautoscalers/:name/status",
+            get(handlers::horizontalpodautoscaler::get_status)
+                .put(handlers::horizontalpodautoscaler::update_status)
+                .patch(handlers::horizontalpodautoscaler::update_status),
+        )
+        .route(
+            "/apis/autoscaling/v1/horizontalpodautoscalers",
+            get(handlers::horizontalpodautoscaler::list_all),
         )
         // Autoscaling v2 API - HorizontalPodAutoscalers (namespace-scoped)
         .route(

@@ -177,9 +177,11 @@ pub struct ReplicaSetStatus {
     pub fully_labeled_replicas: Option<i32>,
 
     /// Number of ready replicas
+    #[serde(default)]
     pub ready_replicas: i32,
 
     /// Number of available replicas
+    #[serde(default)]
     pub available_replicas: i32,
 
     /// ObservedGeneration reflects the generation of the most recently observed ReplicaSet
