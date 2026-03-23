@@ -352,6 +352,12 @@ impl<S: Storage> StatefulSetController<S> {
             "statefulset.kubernetes.io/pod-name".to_string(),
             pod_name.clone(),
         );
+        // Set the controller-revision-hash label so tests can verify pod revision
+        let revision = Self::compute_revision(&statefulset.spec.template);
+        labels.insert(
+            "controller-revision-hash".to_string(),
+            revision,
+        );
 
         let mut metadata = rusternetes_common::types::ObjectMeta::new(pod_name.clone())
             .with_namespace(namespace.to_string())
