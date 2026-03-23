@@ -57,6 +57,7 @@ environment — not an upstream bug.
 | Init container status: report Waiting for unstarted containers | ~1 test | `b54d541` |
 | StatefulSet: add controller-revision-hash label to pods | ~1 test | `7f5c9bc` |
 | ServiceAccount token request: use correct storage key | ~1 test | `9238eb4` |
+| Proxy handlers: use correct storage keys (nodes, services, pods) | ~1 test | `b4b745c` |
 
 ## Round 64 early results (13/441 done, 0 passed, 13 failed)
 
