@@ -283,15 +283,19 @@ pub enum IntOrString {
 #[serde(rename_all = "camelCase")]
 pub struct PodDisruptionBudgetStatus {
     /// Current number of healthy pods
+    #[serde(default)]
     pub current_healthy: i32,
 
     /// Minimum desired healthy pods
+    #[serde(default)]
     pub desired_healthy: i32,
 
     /// Number of pod disruptions that are currently allowed
+    #[serde(default)]
     pub disruptions_allowed: i32,
 
     /// Total number of pods counted by this disruption budget
+    #[serde(default)]
     pub expected_pods: i32,
 
     /// Most recent generation observed when updating this PDB status

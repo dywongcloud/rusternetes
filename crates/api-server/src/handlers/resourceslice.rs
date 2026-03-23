@@ -40,6 +40,14 @@ pub async fn create_resourceslice(
         }
     }
 
+    // Ensure kind and apiVersion are set
+    if slice.api_version.is_empty() {
+        slice.api_version = "resource.k8s.io/v1".to_string();
+    }
+    if slice.kind.is_empty() {
+        slice.kind = "ResourceSlice".to_string();
+    }
+
     // Ensure metadata exists and set defaults
     let metadata = slice.metadata.get_or_insert_with(Default::default);
 
