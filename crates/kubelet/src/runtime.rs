@@ -2728,6 +2728,35 @@ impl ContainerRuntime {
         self.stop_pod_with_grace_period(pod_name, 30).await
     }
 
+    /// Stop and force-remove all containers for a pod.
+    /// Used for orphaned container cleanup where logs are no longer needed.
+    pub async fn stop_and_remove_pod(&self, pod_name: &str) -> Result<()> {
+        self.clear_probe_states_for_pod(pod_name);
+
+        let mut filters = HashMap::new();
+        filters.insert("name".to_string(), vec![format!("{}_", pod_name)]);
+        let options = ListContainersOptions {
+            all: true,
+            filters,
+            ..Default::default()
+        };
+        let containers = self.docker.list_containers(Some(options)).await?;
+
+        for container in containers {
+            if let Some(id) = container.id {
+                let _ = self.docker.stop_container(&id, Some(StopContainerOptions { t: 0 })).await;
+                let remove_options = RemoveContainerOptions { force: true, ..Default::default() };
+                let _ = self.docker.remove_container(&id, Some(remove_options)).await;
+            }
+        }
+
+        if self.use_cni {
+            let _ = self.teardown_pod_network(pod_name).await;
+        }
+        self.cleanup_pod_volumes(pod_name).await?;
+        Ok(())
+    }
+
     /// Stop all containers for a pod with a specific grace period in seconds
     pub async fn stop_pod_with_grace_period(
         &self,
@@ -2763,19 +2792,11 @@ impl ContainerRuntime {
                     warn!("Failed to stop container {}: {}", id, e);
                 }
 
-                // Remove the container
-                let remove_options = RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                };
-
-                if let Err(e) = self
-                    .docker
-                    .remove_container(&id, Some(remove_options))
-                    .await
-                {
-                    warn!("Failed to remove container {}: {}", id, e);
-                }
+                // Do NOT remove containers here — keep them stopped for log
+                // retrieval. Conformance tests read logs from completed/deleted
+                // pods after the pod has been deleted from the API. The orphaned
+                // container cleanup will remove them on the next cycle.
+                debug!("Container {} stopped, keeping for log access", id);
             }
         }
 
@@ -2787,7 +2808,7 @@ impl ContainerRuntime {
             }
         }
 
-        // Clean up emptyDir volumes
+        // Clean up emptyDir volumes (but keep container data for logs)
         self.cleanup_pod_volumes(pod_name).await?;
 
         Ok(())
@@ -3732,19 +3753,8 @@ impl ContainerRuntime {
                     warn!("Failed to stop container {}: {}", id, e);
                 }
 
-                // Remove the container
-                let remove_options = RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                };
-
-                if let Err(e) = self
-                    .docker
-                    .remove_container(&id, Some(remove_options))
-                    .await
-                {
-                    warn!("Failed to remove container {}: {}", id, e);
-                }
+                // Do NOT remove containers — keep them stopped for log retrieval.
+                debug!("Container {} stopped, keeping for log access", id);
             }
         }
 
@@ -3755,7 +3765,7 @@ impl ContainerRuntime {
             }
         }
 
-        // Clean up emptyDir volumes
+        // Clean up emptyDir volumes (but keep container data for logs)
         self.cleanup_pod_volumes(pod_name).await?;
 
         Ok(())

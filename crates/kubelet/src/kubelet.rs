@@ -310,11 +310,12 @@ impl Kubelet {
         for running_pod_name in running_pods {
             if !existing_pod_names.contains(&running_pod_name) {
                 info!(
-                    "Found orphaned pod {} - not in etcd, stopping containers",
+                    "Found orphaned pod {} - not in etcd, stopping and removing containers",
                     running_pod_name
                 );
-                if let Err(e) = self.runtime.stop_pod(&running_pod_name).await {
-                    warn!("Failed to stop orphaned pod {}: {}", running_pod_name, e);
+                // For orphans, stop and then force-remove since the pod is gone
+                if let Err(e) = self.runtime.stop_and_remove_pod(&running_pod_name).await {
+                    warn!("Failed to clean up orphaned pod {}: {}", running_pod_name, e);
                 }
             }
         }
