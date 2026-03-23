@@ -2886,6 +2886,9 @@ impl ContainerRuntime {
                 Err(_) => (0, "Completed".to_string(), None, None),
             };
 
+            // Read termination message for init container
+            let init_term_msg = self.read_termination_message(&container_name, ic).await;
+
             statuses.push(ContainerStatus {
                 name: ic.name.clone(),
                 ready: exit_code == 0,
@@ -2894,7 +2897,7 @@ impl ContainerRuntime {
                     exit_code,
                     signal: None,
                     reason: Some(reason),
-                    message: None,
+                    message: init_term_msg,
                     started_at: None,
                     finished_at,
                     container_id: container_id.clone(),
@@ -2958,6 +2961,9 @@ impl ContainerRuntime {
                     } else if matches!(state.status, Some(bollard::secret::ContainerStateStatusEnum::EXITED))
                         || state.finished_at.is_some()
                     {
+                        // Read termination message from /dev/termination-log
+                        let termination_msg = self.read_termination_message(&container_name, container).await;
+
                         // Container has exited (any exit code, including 0)
                         Some(ContainerState::Terminated {
                             exit_code: exit_code as i32,
@@ -2967,7 +2973,7 @@ impl ContainerRuntime {
                             } else {
                                 state.error
                             },
-                            message: None,
+                            message: termination_msg,
                             started_at: None,
                             finished_at: state.finished_at,
                             container_id: inspect.id.clone().map(|id| format!("docker://{}", id)),
@@ -3309,6 +3315,51 @@ impl ContainerRuntime {
         let mut states = self.probe_states.lock().unwrap();
         states.retain(|key, _| !key.starts_with(&prefix));
         debug!("Cleared probe states for pod {}", pod_name);
+    }
+
+    /// Read the termination message from a stopped container.
+    /// Reads /dev/termination-log (or custom path) from the container filesystem.
+    async fn read_termination_message(
+        &self,
+        container_name: &str,
+        container: &Container,
+    ) -> Option<String> {
+        let msg_path = container
+            .termination_message_path
+            .as_deref()
+            .unwrap_or("/dev/termination-log");
+
+        // Use docker cp to read the file from the stopped container
+        let mut stream = self
+            .docker
+            .download_from_container(container_name, Some(bollard::container::DownloadFromContainerOptions { path: msg_path.to_string() }));
+        let mut all_bytes = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(bytes) => all_bytes.extend_from_slice(&bytes),
+                Err(_) => return None,
+            }
+        }
+
+        if all_bytes.is_empty() {
+            return None;
+        }
+
+        // Docker returns a tar archive; extract the file content
+        let mut archive = tar::Archive::new(&all_bytes[..]);
+        if let Ok(mut entries) = archive.entries() {
+            while let Some(Ok(mut entry)) = entries.next() {
+                let mut content = String::new();
+                if std::io::Read::read_to_string(&mut entry, &mut content).is_ok() && !content.is_empty() {
+                    // Trim to 4KB (Kubernetes limit for termination messages)
+                    if content.len() > 4096 {
+                        content.truncate(4096);
+                    }
+                    return Some(content);
+                }
+            }
+        }
+        None
     }
 
     /// Extract the best available IP from container network settings.
