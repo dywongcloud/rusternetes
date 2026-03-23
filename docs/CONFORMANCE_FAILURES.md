@@ -56,6 +56,7 @@ environment — not an upstream bug.
 | Container termination message reading from /dev/termination-log | ~2 tests | `c804e57` |
 | Init container status: report Waiting for unstarted containers | ~1 test | `b54d541` |
 | StatefulSet: add controller-revision-hash label to pods | ~1 test | `7f5c9bc` |
+| ServiceAccount token request: use correct storage key | ~1 test | `9238eb4` |
 
 ## Round 64 early results (13/441 done, 0 passed, 13 failed)
 
