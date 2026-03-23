@@ -2075,14 +2075,14 @@ impl ContainerRuntime {
                                         value
                                     };
 
+                                // Always set the env var — even empty values are valid.
+                                // Kubernetes never skips a fieldRef env var.
+                                env_list.push(format!("{}={}", env_var.name, resolved));
                                 if !resolved.is_empty() {
-                                    env_list.push(format!("{}={}", env_var.name, resolved));
                                     info!(
                                         "Set env var {} from field {}: {}",
                                         env_var.name, field_ref.field_path, resolved
                                     );
-                                } else {
-                                    debug!("Skipping env var {} - field {} is empty (may not be available yet)", env_var.name, field_ref.field_path);
                                 }
                             }
                             Err(e) => {
