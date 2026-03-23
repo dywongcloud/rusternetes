@@ -2159,6 +2159,21 @@ impl ContainerRuntime {
 
         // Build volume bindings
         let mut binds = Vec::new();
+        let mut tmpfs_mounts: HashMap<String, String> = HashMap::new();
+
+        // Identify which volumes are emptyDir (should use tmpfs)
+        let empty_dir_volumes: std::collections::HashSet<String> = pod
+            .spec
+            .as_ref()
+            .and_then(|s| s.volumes.as_ref())
+            .map(|volumes| {
+                volumes
+                    .iter()
+                    .filter(|v| v.empty_dir.is_some())
+                    .map(|v| v.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
 
         // Mount volumes based on volumeMounts (includes service account tokens injected by admission controller)
         if let Some(volume_mounts) = &container.volume_mounts {
@@ -2235,14 +2250,17 @@ impl ContainerRuntime {
                         host_path.clone()
                     };
 
-                    let read_only = if mount.read_only.unwrap_or(false) {
-                        ":ro"
+                    let read_only = mount.read_only.unwrap_or(false);
+                    if empty_dir_volumes.contains(&mount.name) && expanded_sub_path.is_none() {
+                        // Use tmpfs for emptyDir volumes (matches Kubernetes behavior)
+                        let opts = if read_only { "ro".to_string() } else { String::new() };
+                        tmpfs_mounts.insert(mount.mount_path.clone(), opts);
                     } else {
-                        ""
-                    };
-                    let bind =
-                        format!("{}:{}{}", effective_host_path, mount.mount_path, read_only);
-                    binds.push(bind);
+                        let ro_suffix = if read_only { ":ro" } else { "" };
+                        let bind =
+                            format!("{}:{}{}", effective_host_path, mount.mount_path, ro_suffix);
+                        binds.push(bind);
+                    }
                     info!(
                         "Mounting volume {} at {} in container {}",
                         mount.name, mount.mount_path, container.name
@@ -2526,6 +2544,7 @@ impl ContainerRuntime {
                     Some(port_bindings)
                 },
                 binds: if binds.is_empty() { None } else { Some(binds) },
+                tmpfs: if tmpfs_mounts.is_empty() { None } else { Some(tmpfs_mounts) },
                 // Configure DNS to use kube-dns service
                 // CoreDNS uses default/host DNS to avoid circular dependency
                 dns: dns_servers,
