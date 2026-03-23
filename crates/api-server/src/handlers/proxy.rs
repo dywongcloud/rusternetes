@@ -49,7 +49,7 @@ pub async fn proxy_node(
     }
 
     // Get the node to find its address
-    let node_key = format!("/api/v1/nodes/{}", node_name);
+    let node_key = rusternetes_storage::build_key("nodes", None, &node_name);
     let node: rusternetes_common::resources::Node = state.storage.get(&node_key).await?;
 
     // Extract node address (prefer InternalIP, fallback to ExternalIP)
@@ -107,7 +107,7 @@ pub async fn proxy_service(
     }
 
     // Get the service to find its ClusterIP and port
-    let service_key = format!("/api/v1/namespaces/{}/services/{}", namespace, service_name);
+    let service_key = rusternetes_storage::build_key("services", Some(&namespace), &service_name);
     let service: rusternetes_common::resources::Service = state.storage.get(&service_key).await?;
 
     // Get ClusterIP and first port
@@ -158,7 +158,7 @@ pub async fn proxy_pod(
     }
 
     // Get the pod to find its IP
-    let pod_key = format!("/api/v1/namespaces/{}/pods/{}", namespace, pod_name);
+    let pod_key = rusternetes_storage::build_key("pods", Some(&namespace), &pod_name);
     let pod: rusternetes_common::resources::Pod = state.storage.get(&pod_key).await?;
 
     // Get pod IP
