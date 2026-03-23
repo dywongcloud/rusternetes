@@ -5,6 +5,8 @@ use rusternetes_common::resources::{
 };
 use rusternetes_common::types::{ObjectMeta, OwnerReference, Phase, TypeMeta};
 use rusternetes_storage::{build_key, Storage};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
@@ -228,6 +230,9 @@ impl<S: Storage> StatefulSetController<S> {
             })
             .count() as i32;
 
+        // Generate a revision hash from the pod template spec
+        let revision = Self::compute_revision(&statefulset.spec.template);
+
         // Update status with accurate counts
         statefulset.status = Some(StatefulSetStatus {
             replicas: final_current_replicas.min(desired_replicas),
@@ -237,8 +242,8 @@ impl<S: Storage> StatefulSetController<S> {
             available_replicas: None,
             collision_count: None,
             observed_generation: statefulset.metadata.generation,
-            current_revision: None,
-            update_revision: None,
+            current_revision: Some(revision.clone()),
+            update_revision: Some(revision),
             conditions: None,
         });
 
@@ -313,6 +318,17 @@ impl<S: Storage> StatefulSetController<S> {
             }
         }
         Ok(())
+    }
+
+    /// Compute a revision string from the pod template spec.
+    /// This produces a deterministic hash like "controller-revision-hash-<hash>".
+    fn compute_revision(template: &rusternetes_common::resources::PodTemplateSpec) -> String {
+        let serialized = serde_json::to_string(&template.spec).unwrap_or_default();
+        let mut hasher = DefaultHasher::new();
+        serialized.hash(&mut hasher);
+        let hash = hasher.finish();
+        // Format as a 10-char hex string, similar to Kubernetes controller revision hashes
+        format!("{:010x}", hash)
     }
 
     async fn create_pod(

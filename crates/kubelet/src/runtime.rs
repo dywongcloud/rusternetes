@@ -912,6 +912,14 @@ impl ContainerRuntime {
         if volume.empty_dir.is_some() {
             let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
             std::fs::create_dir_all(&volume_dir).context("Failed to create emptyDir volume")?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    &volume_dir,
+                    std::fs::Permissions::from_mode(0o777),
+                )?;
+            }
             info!("Created emptyDir volume {} at {}", volume.name, volume_dir);
             return Ok(volume_dir);
         }
@@ -954,6 +962,16 @@ impl ContainerRuntime {
 
             // Determine the default file mode: spec defaultMode, or 0644 (Kubernetes default)
             let cm_default_mode = configmap_source.default_mode.unwrap_or(0o644);
+
+            // Set directory permissions to match defaultMode
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    &volume_dir,
+                    std::fs::Permissions::from_mode(cm_default_mode as u32 | 0o111),
+                )?;
+            }
 
             match configmap_result {
                 Ok(configmap) => {
@@ -1059,6 +1077,17 @@ impl ContainerRuntime {
             let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
             std::fs::create_dir_all(&volume_dir)
                 .context("Failed to create Secret volume directory")?;
+
+            // Set directory permissions to match defaultMode
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let secret_dir_mode = secret_source.default_mode.unwrap_or(0o644) as u32 | 0o111;
+                std::fs::set_permissions(
+                    &volume_dir,
+                    std::fs::Permissions::from_mode(secret_dir_mode),
+                )?;
+            }
 
             let secret = match secret_result {
                 Ok(s) => Some(s),
@@ -1233,6 +1262,16 @@ impl ContainerRuntime {
             // Determine the default file mode: spec defaultMode, or 0644 (Kubernetes default)
             let da_default_mode = downward_api.default_mode.unwrap_or(0o644);
 
+            // Set directory permissions to match defaultMode
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    &volume_dir,
+                    std::fs::Permissions::from_mode(da_default_mode as u32 | 0o111),
+                )?;
+            }
+
             if let Some(items) = &downward_api.items {
                 for item in items {
                     let file_path = format!("{}/{}", volume_dir, item.path);
@@ -1395,6 +1434,16 @@ impl ContainerRuntime {
 
             // Determine the default file mode: spec defaultMode, or 0644 (Kubernetes default)
             let proj_default_mode = projected.default_mode.unwrap_or(0o644);
+
+            // Set directory permissions to match defaultMode
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    &volume_dir,
+                    std::fs::Permissions::from_mode(proj_default_mode as u32 | 0o111),
+                )?;
+            }
 
             if let Some(sources) = &projected.sources {
                 let storage = self.storage.as_ref();

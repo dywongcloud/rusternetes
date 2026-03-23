@@ -692,6 +692,68 @@ impl Kubelet {
             Phase::Running if is_running => {
                 debug!("Pod {}/{} is running, checking health", namespace, pod_name);
 
+                // Check if all spec containers have terminated (pause container may still be running).
+                // This must happen before liveness probes, which may error on exited containers.
+                {
+                    let restart_policy = pod
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.restart_policy.as_deref())
+                        .unwrap_or("Always");
+
+                    if restart_policy == "Never" || restart_policy == "OnFailure" {
+                        if let Ok(container_statuses) =
+                            self.runtime.get_container_statuses(pod).await
+                        {
+                            let all_terminated = !container_statuses.is_empty()
+                                && container_statuses.iter().all(|cs| {
+                                    matches!(cs.state, Some(ContainerState::Terminated { .. }))
+                                });
+
+                            if all_terminated && restart_policy == "Never" {
+                                let any_failed = container_statuses.iter().any(|cs| {
+                                    matches!(cs.state, Some(ContainerState::Terminated { exit_code, .. }) if exit_code != 0)
+                                });
+                                let terminal_phase = if any_failed { Phase::Failed } else { Phase::Succeeded };
+                                let message = if any_failed {
+                                    "Pod failed".to_string()
+                                } else {
+                                    "Pod completed successfully".to_string()
+                                };
+
+                                let mut new_pod = pod.clone();
+                                if let Some(ref mut status) = new_pod.status {
+                                    status.phase = Some(terminal_phase);
+                                    status.message = Some(message);
+                                    status.container_statuses = Some(container_statuses);
+                                }
+                                let key = build_key("pods", Some(namespace), pod_name);
+                                let _ = self.storage.update(&key, &new_pod).await;
+                                return Ok(());
+                            }
+
+                            if all_terminated && restart_policy == "OnFailure" {
+                                let any_failed = container_statuses.iter().any(|cs| {
+                                    matches!(cs.state, Some(ContainerState::Terminated { exit_code, .. }) if exit_code != 0)
+                                });
+
+                                if !any_failed {
+                                    // All containers exited successfully
+                                    let mut new_pod = pod.clone();
+                                    if let Some(ref mut status) = new_pod.status {
+                                        status.phase = Some(Phase::Succeeded);
+                                        status.message = Some("Pod completed successfully".to_string());
+                                        status.container_statuses = Some(container_statuses);
+                                    }
+                                    let key = build_key("pods", Some(namespace), pod_name);
+                                    let _ = self.storage.update(&key, &new_pod).await;
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Start any ephemeral containers that aren't running yet
                 if let Some(spec) = &pod.spec {
                     if let Some(ecs) = &spec.ephemeral_containers {
