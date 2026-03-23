@@ -21,24 +21,45 @@ logs directly.
 - The sonobuoy-worker sidecar IS running and listening on port 8099 in the e2e pod
 - Pod networking IS working — manual POSTs to `localhost:8099/progress` successfully
   update `sonobuoy status` (verified by sending test JSON and seeing counts update)
+- The entire pipeline works: POST → sonobuoy-worker → aggregator → pod annotation → sonobuoy status
 - The e2e binary has `--progress-report-url=http://localhost:8099/progress` in its args
-- The Kubernetes `ProgressReporter` (test/e2e/reporters/progress.go) sends 2 initial
-  progress updates (test count + start message) that ARE received by the aggregator
+  (verified via `/proc/PID/cmdline`)
+- `flag.Parse()` runs in `TestMain` before `RunE2ETests` creates the `ProgressReporter`
+- The Kubernetes `ProgressReporter` sends 2 initial progress updates (`SetTestsTotal`
+  and `SetStartMsg`) that ARE received by the aggregator
 - After that, `ProcessSpecReport()` should POST after each test via `ReportAfterEach`,
-  but zero additional POSTs are received by the sonobuoy-worker
-- No error logs from the e2e binary about failed progress POSTs
-- This appears to be an issue with how the K8s v1.35 conformance image's ginkgo
-  test runner handles the `-progress-report-url` flag — the `ReportAfterEach` callback
-  that should trigger `SendUpdates()` after each spec is not firing
+  but zero additional POSTs are received by the aggregator
+- No klog error output about failed progress POSTs (checked both container stdout and
+  e2e.log results file)
+- The e2e binary uses CGO (confirmed via GLIBC symbols), so DNS uses getaddrinfo
+- `/etc/resolv.conf` has `ndots:5` with search domains — but Go's CGO resolver checks
+  `/etc/hosts` first per nsswitch.conf (`hosts: files dns`), so localhost should resolve
+  instantly from /etc/hosts
+- ginkgo v2.27.2 `ReportAfterEach` is registered properly (confirmed via binary symbols)
+- Container network: all containers share pause container network via
+  `container:<pause_id>`, loopback works, port 8099 is reachable on both IPv4 and IPv6
+- This is NOT an upstream conformance image bug — sonobuoy progress works on real
+  Kubernetes clusters with the same image version. Something in our environment is
+  preventing the e2e binary's HTTP POST to localhost:8099 from succeeding after suite
+  setup completes.
 
-**What needs to happen to fix this**:
-- Option A: Debug why `ReportAfterEach` → `ProcessSpecReport` → `SendUpdates` chain
-  breaks after suite setup. May require building a custom conformance image with
-  additional logging in the progress reporter.
-- Option B: Build a sonobuoy plugin or sidecar that tails the e2e container logs and
-  POSTs parsed progress to the aggregator, replacing the broken in-binary reporter.
-- Option C: If this is a known upstream issue with v1.35, try a different conformance
-  image version or check for upstream fixes.
+**Suspected root cause**: The Go HTTP client in the e2e binary may be failing to POST
+after tests start running. Possible causes:
+- Our API server's watch connections or TLS behavior could be affecting Go's network
+  runtime in the same process (thread pool exhaustion, file descriptor limits, etc.)
+- The /etc/resolv.conf with ndots:5 could cause DNS lookup delays that interact with
+  the HTTP client timeout in subtle ways
+- Go's CGO resolver getaddrinfo calls might be blocking in a way that prevents the
+  fire-and-forget goroutine from completing
+
+**Next steps to fix**:
+1. Build a debug conformance image with additional logging in `ProcessSpecReport` and
+   `SendUpdates` to determine exactly where the chain breaks
+2. Add tcpdump or strace capability to the e2e pod to trace actual network activity
+3. Test with `ndots:2` or `ndots:0` in resolv.conf to rule out DNS-related issues
+4. Test with a simplified /etc/resolv.conf (nameserver 127.0.0.11 only, Docker default)
+   by not mounting our custom resolv.conf for sonobuoy pods
+5. Check if reducing watch connections or API server load improves progress reporting
 
 ## Fixes deployed this session (not yet in running cluster)
 
