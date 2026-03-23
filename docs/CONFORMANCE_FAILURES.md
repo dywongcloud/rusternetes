@@ -4,14 +4,41 @@
 
 ## How to monitor progress
 ```bash
-bash scripts/conformance-progress.sh     # real-time pass/fail from e2e logs
-KUBECONFIG=~/.kube/rusternetes-config sonobuoy status  # sonobuoy status (counts won't update — see note below)
+bash scripts/conformance-progress.sh     # real-time pass/fail from e2e logs (WORKAROUND)
+KUBECONFIG=~/.kube/rusternetes-config sonobuoy status  # sonobuoy status (BROKEN — see below)
 ```
 
-**Note**: Sonobuoy's built-in progress reporting (Passed/Failed/Remaining) doesn't work
-with the K8s v1.35 conformance image. This is NOT a rusternetes bug — the e2e binary's
-ProgressReporter fails to post updates after the initial test count. Use our custom
-`conformance-progress.sh` script instead.
+## OPEN ISSUE: Sonobuoy progress reporting is broken
+
+**Impact**: Anyone running conformance tests sees `Passed: 0, Failed: 0, Remaining: 441`
+in `sonobuoy status` for the entire run, even though tests ARE completing. This makes it
+impossible to monitor test progress through the standard sonobuoy interface.
+
+**Workaround**: Use `bash scripts/conformance-progress.sh` which parses e2e container
+logs directly.
+
+**Root cause investigation**:
+- The sonobuoy-worker sidecar IS running and listening on port 8099 in the e2e pod
+- Pod networking IS working — manual POSTs to `localhost:8099/progress` successfully
+  update `sonobuoy status` (verified by sending test JSON and seeing counts update)
+- The e2e binary has `--progress-report-url=http://localhost:8099/progress` in its args
+- The Kubernetes `ProgressReporter` (test/e2e/reporters/progress.go) sends 2 initial
+  progress updates (test count + start message) that ARE received by the aggregator
+- After that, `ProcessSpecReport()` should POST after each test via `ReportAfterEach`,
+  but zero additional POSTs are received by the sonobuoy-worker
+- No error logs from the e2e binary about failed progress POSTs
+- This appears to be an issue with how the K8s v1.35 conformance image's ginkgo
+  test runner handles the `-progress-report-url` flag — the `ReportAfterEach` callback
+  that should trigger `SendUpdates()` after each spec is not firing
+
+**What needs to happen to fix this**:
+- Option A: Debug why `ReportAfterEach` → `ProcessSpecReport` → `SendUpdates` chain
+  breaks after suite setup. May require building a custom conformance image with
+  additional logging in the progress reporter.
+- Option B: Build a sonobuoy plugin or sidecar that tails the e2e container logs and
+  POSTs parsed progress to the aggregator, replacing the broken in-binary reporter.
+- Option C: If this is a known upstream issue with v1.35, try a different conformance
+  image version or check for upstream fixes.
 
 ## Fixes deployed this session (not yet in running cluster)
 
