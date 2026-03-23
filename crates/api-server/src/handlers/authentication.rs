@@ -96,10 +96,7 @@ pub async fn create_token_request(
     }
 
     // Verify the service account exists
-    let sa_key = format!(
-        "/api/v1/namespaces/{}/serviceaccounts/{}",
-        namespace, service_account_name
-    );
+    let sa_key = rusternetes_storage::build_key("serviceaccounts", Some(&namespace), &service_account_name);
     let sa: rusternetes_common::resources::ServiceAccount = state.storage.get(&sa_key).await?;
 
     // Calculate expiration time
