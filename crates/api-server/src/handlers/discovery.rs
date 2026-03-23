@@ -1,5 +1,6 @@
 use axum::{
-    http::{HeaderMap, StatusCode},
+    body::Body,
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -131,7 +132,12 @@ pub async fn get_core_api(headers: HeaderMap) -> Response {
         }],
     };
 
-    (StatusCode::OK, Json(api_versions)).into_response()
+    let json_bytes = serde_json::to_vec(&api_versions).unwrap_or_default();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json_bytes))
+        .unwrap()
 }
 
 /// GET /apis

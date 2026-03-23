@@ -91,7 +91,7 @@ pub struct CSINode {
 #[serde(rename_all = "camelCase")]
 pub struct CSINodeSpec {
     /// drivers is a list of information of all CSI Drivers existing on a node
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::deserialize_null_default")]
     pub drivers: Vec<CSINodeDriver>,
 }
 

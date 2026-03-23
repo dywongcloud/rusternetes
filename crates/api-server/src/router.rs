@@ -1228,6 +1228,11 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::resourcequota::patch)
                 .delete(handlers::resourcequota::delete),
         )
+        .route(
+            "/api/v1/namespaces/:namespace/resourcequotas/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::status::update_status),
+        )
         // ResourceQuotas (all namespaces)
         .route(
             "/api/v1/resourcequotas",

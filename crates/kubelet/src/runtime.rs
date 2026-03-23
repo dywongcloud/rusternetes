@@ -2484,6 +2484,7 @@ impl ContainerRuntime {
         let mut memory_limit: Option<i64> = None;
         let mut cpu_period: Option<i64> = None;
         let mut cpu_quota: Option<i64> = None;
+        let mut cpu_shares: Option<i64> = None;
 
         if let Some(ref resources) = container.resources {
             if let Some(ref limits) = resources.limits {
@@ -2510,6 +2511,27 @@ impl ContainerRuntime {
                             cpu_period.unwrap()
                         );
                     }
+                }
+            }
+            // Compute cpu_shares from CPU requests (cgroup cpu.weight via Docker).
+            // Kubernetes formula: shares = max(2, milliCPU * 1024 / 1000)
+            // Docker converts shares to cgroup2 cpu.weight automatically.
+            // If requests.cpu is not set, fall back to limits.cpu (Kubernetes defaults
+            // requests to limits when only limits are specified).
+            let cpu_request = resources
+                .requests
+                .as_ref()
+                .and_then(|r| r.get("cpu"))
+                .or_else(|| resources.limits.as_ref().and_then(|l| l.get("cpu")));
+            if let Some(cpu) = cpu_request {
+                let cpu_millicores = parse_cpu_quantity(cpu);
+                if cpu_millicores > 0 {
+                    let shares = std::cmp::max(2, (cpu_millicores * 1024) / 1000);
+                    cpu_shares = Some(shares);
+                    info!(
+                        "Setting CPU shares for container {}: {}m -> {} shares",
+                        container.name, cpu_millicores, shares
+                    );
                 }
             }
         }
@@ -2564,6 +2586,7 @@ impl ContainerRuntime {
                 memory: memory_limit,
                 cpu_period,
                 cpu_quota,
+                cpu_shares,
                 // Read-only root filesystem from security context
                 readonly_rootfs: container
                     .security_context

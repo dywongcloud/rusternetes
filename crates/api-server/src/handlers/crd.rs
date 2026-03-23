@@ -4,7 +4,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     body::Bytes,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Extension, Json,
 };
 use rusternetes_common::{
@@ -22,13 +22,32 @@ pub async fn create_crd(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
     body: Bytes,
-) -> Result<(StatusCode, Json<CustomResourceDefinition>)> {
+) -> Result<(StatusCode, Json<serde_json::Value>)> {
+    // Reject empty request bodies with a clear error message.
+    if body.is_empty() {
+        return Err(rusternetes_common::Error::InvalidResource(
+            "request body must not be empty".to_string(),
+        ));
+    }
+
+    // Reject protobuf-encoded requests — we only support JSON.
+    // The normalize_content_type_middleware rewrites Content-Type to JSON, so we
+    // also detect binary protobuf by checking if the body starts with a non-JSON byte.
+    // Valid JSON starts with '{', '[', '"', a digit, 't', 'f', or 'n'.
+    let first_byte = body[0];
+    if !matches!(first_byte, b'{' | b'[' | b'"' | b'0'..=b'9' | b't' | b'f' | b'n' | b' ' | b'\t' | b'\n' | b'\r') {
+        return Err(rusternetes_common::Error::UnsupportedMediaType(
+            "request body is not valid JSON; protobuf content type is not supported".to_string(),
+        ));
+    }
+
     // Parse the body manually for better error handling — axum's Json extractor
     // returns 422 Unprocessable Entity on failure, but Kubernetes expects a proper
     // Status object. Manual parsing also tolerates unknown fields gracefully.
     let mut crd: CustomResourceDefinition = serde_json::from_slice(&body).map_err(|e| {
-        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+        rusternetes_common::Error::InvalidResource(format!("failed to decode CRD: {}", e))
     })?;
     let crd_name = crd.metadata.name.clone();
     info!("Creating CustomResourceDefinition: {}", crd_name);
@@ -73,11 +92,19 @@ pub async fn create_crd(
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: CustomResourceDefinition validated successfully (not created)");
-        return Ok((StatusCode::CREATED, Json(crd)));
+        let value = serde_json::to_value(&crd)
+            .map_err(|e| rusternetes_common::Error::Internal(format!("serialize: {}", e)))?;
+        return Ok((StatusCode::CREATED, Json(value)));
     }
 
     let key = build_key("customresourcedefinitions", None, &crd_name);
-    let created = state.storage.create(&key, &crd).await?;
+    // Serialize the CRD to a serde_json::Value, store it, and return the stored
+    // value directly. This avoids a Serialize→store→Deserialize round-trip through
+    // the strongly-typed struct, which can fail if the storage layer enriches
+    // the JSON with fields (uid, resourceVersion) that cause type mismatches.
+    let crd_value = serde_json::to_value(&crd)
+        .map_err(|e| rusternetes_common::Error::Internal(format!("serialize: {}", e)))?;
+    let created: serde_json::Value = state.storage.create(&key, &crd_value).await?;
 
     // Notify the dynamic route manager about new CRD
     // This will be implemented in the dynamic routing section
@@ -149,8 +176,18 @@ pub async fn update_crd(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<CustomResourceDefinition>> {
+    // Reject protobuf-encoded requests
+    if let Some(ct) = headers.get("content-type").and_then(|v| v.to_str().ok()) {
+        if ct.contains("protobuf") {
+            return Err(rusternetes_common::Error::UnsupportedMediaType(
+                "protobuf content type is not supported; please use application/json".to_string(),
+            ));
+        }
+    }
+
     // Parse the body manually for better error handling
     let mut crd: CustomResourceDefinition = serde_json::from_slice(&body).map_err(|e| {
         rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))

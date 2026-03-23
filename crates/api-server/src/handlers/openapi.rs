@@ -1,25 +1,44 @@
 /// OpenAPI specification handler
 use crate::openapi::generate_openapi_spec;
-use axum::Json;
+use axum::{
+    body::Body,
+    http::{HeaderMap, StatusCode, header},
+    response::{IntoResponse, Response},
+};
 
 /// GET /openapi/v3
 /// Get the OpenAPI v3 specification
-pub async fn get_openapi_spec() -> Json<openapiv3::OpenAPI> {
-    Json(generate_openapi_spec())
+/// Explicitly returns application/json to prevent kubectl from attempting protobuf decode.
+pub async fn get_openapi_spec() -> Response {
+    let spec = generate_openapi_spec();
+    let json_bytes = serde_json::to_vec(&spec).unwrap_or_default();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json_bytes))
+        .unwrap()
 }
 
-/// GET /swagger.json (v2 compatibility)
-/// Get the OpenAPI v2 (Swagger) specification
-/// This is a placeholder - Kubernetes still supports v2 for some clients
-pub async fn get_swagger_spec() -> Json<serde_json::Value> {
-    // For now, return a minimal v2 spec
-    // In a complete implementation, this would convert the v3 spec to v2
-    Json(serde_json::json!({
+/// GET /openapi/v2 and /swagger.json
+/// Returns an OpenAPI v2 (Swagger) specification.
+/// kubectl --validate fetches this to validate resources; the response MUST be
+/// valid JSON with an explicit Content-Type so kubectl does not fall back to protobuf.
+/// kubectl may send Accept: application/com.github.proto-openapi.spec.v2@v1.0+protobuf
+/// but we always respond with JSON.
+pub async fn get_swagger_spec(_headers: HeaderMap) -> Response {
+    let spec = serde_json::json!({
         "swagger": "2.0",
         "info": {
             "title": "Rusternetes Kubernetes API",
             "version": "v1.35.0"
         },
-        "paths": {}
-    }))
+        "paths": {},
+        "definitions": {}
+    });
+    let json_bytes = serde_json::to_vec(&spec).unwrap_or_default();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json_bytes))
+        .unwrap()
 }
