@@ -56,6 +56,7 @@ not an upstream ginkgo or conformance image bug.
 | CRD openAPIV3Schema field name (camelCase mismatch) | ~3 tests | `abd2137` |
 | ResourceSlice: set Kind/apiVersion before storing | ~1 test | `9b21a89` |
 | PDB status fields: add serde defaults for required counters | ~1 test | `9b21a89` |
+| PV create: initialize status with default phase | ~1 test | `710eee1` |
 
 ## Failure analysis from round 63
 
