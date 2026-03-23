@@ -1,45 +1,54 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-23 (round 62 — 25 failures at ~60 min mark)
+**Last updated**: 2026-03-23 (round 63 in progress — 65 tests completed: 4 passed, 61 failed)
 
-## Progress: 115 → 25 failures (round 61 → round 62)
-Pod IP fix was the critical breakthrough.
+## Progress tracking
+- Round 62: 25 failures (estimated from ~60 min partial run)
+- Round 63: In progress. Use `bash scripts/conformance-progress.sh` to monitor.
+- Note: sonobuoy's built-in progress (Passed/Failed/Remaining) doesn't work with
+  K8s v1.35 conformance image — this is NOT a rusternetes bug. The e2e binary's
+  ProgressReporter doesn't post updates after each test. Use our custom script.
 
-## Current failures (25, round 62):
+## Fixes deployed this session
 
-### Container logs returning fake output (~8 tests)
-Docker 404 "No such container" when getting logs. The pod shows
-Running in API but the Docker container doesn't exist or exited.
-Root cause: Container may have exited quickly (one-shot commands)
-or kubelet didn't start it. Log handler falls back to fake text.
-FIX NEEDED: Check if container exists before starting pod status
-as Running. Also look at exited containers for logs.
+### Container logs fix (COMMITTED)
+Log handler now searches exited containers by name when the container doesn't
+exist by exact name. Previously returned fake log output causing ~8 test failures.
+
+### EventList metadata fix (COMMITTED)
+EventList struct was missing the `metadata: ListMeta` field. All Kubernetes list
+responses must include metadata with resourceVersion.
+
+### gRPC probe support (COMMITTED)
+Implemented gRPC health probe checking using tonic. Previously the probe was
+defined in PodSpec but `check_probe()` had no gRPC branch.
+
+### Previously committed fixes
+- CSINode null Vec field
+- ResourceQuota /status route
+- PV phase Default trait + serde default
+
+## Remaining known failures
+
+### Container logs still failing (~5-8 tests)
+Even with the exited container search, some tests may fail because:
+- Container never started (image pull failure, scheduling issue)
+- Container name format mismatch in multi-container pods
+- Kubelet reports pod as Running before container actually starts
 
 ### Watch/timeout issues (~5 tests)
 Watch closed, watch notification timeout, rate limiter exceeded.
-Partially fixed with watch reconnect but StatefulSet test still fails.
+StatefulSet scaling test still fails due to watch reconnect timing.
 
-### API gaps (~4 tests)
-- CSINode null Vec field — FIX COMMITTED
-- ResourceQuota /status route — FIX COMMITTED
-- StatefulSet patch rejected
-- Event list metadata
+### API gaps (~2 tests)
+- StatefulSet patch rejected (possibly strategic merge patch issue)
 
 ### Webhook/CRD deployments (~3 tests)
-Deployment pods never become ready.
+Deployment pods never become ready. These tests deploy webhook servers
+that need to serve HTTPS. May need admission webhook infrastructure.
 
 ### Other (~5 tests)
-- gRPC probe not implemented
-- Connection failures
-- Pod timeout
-- DaemonSet pod deletion
-- Cgroup CPU weight
-
-## 70+ fixes across 69 commits this session
-
-## CRITICAL ROOT CAUSE IDENTIFIED:
-Many "container output" failures are because the Docker container
-doesn't exist when the log API tries to read it. The kubelet reports
-the pod as Running but the actual container may have already exited.
-Need to fix pod status to reflect actual container state AND fix
-the log handler to look at exited containers.
+- Connection failures (pod-to-pod networking issues)
+- Pod timeout (pods stuck in Pending or not completing)
+- DaemonSet pod deletion (GC or controller timing)
+- Cgroup CPU weight (needs cgroup v2 CPU weight support)
