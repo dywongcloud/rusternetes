@@ -49,6 +49,9 @@ environment — not an upstream bug.
 | PDB status fields: add serde defaults for required counters | ~1 test | `9b21a89` |
 | PV create: initialize status with default phase | ~1 test | `710eee1` |
 | Missing metadata.namespace in create handlers (secret, configmap, controllerrevision, replicationcontroller, podtemplate) | CRITICAL ~10+ tests | `db40409` |
+| Fix camelCase abbreviation renames: podIP, hostIP, containerID, imageID, clusterIPs, externalIPs, loadBalancerIP, machineID, systemUUID, bootID, podCIDR, providerID, resourceID | CRITICAL ~10+ tests | `bde38ef` |
+| VolumeAttributesClass: add deletecollection route | ~1 test | `bde38ef` |
+| OpenAPI /v2: return 406 for protobuf Accept headers | ~2 tests | `bde38ef` |
 
 ## Round 64 early results (13/441 done, 0 passed, 13 failed)
 
