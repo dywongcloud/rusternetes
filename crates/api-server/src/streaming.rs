@@ -112,17 +112,18 @@ pub async fn handle_ws_exec(
     } else {
         &format!(r#"{{"status":"Failure","message":"command terminated with exit code {}","reason":"NonZeroExitCode","details":{{"causes":[{{"reason":"ExitCode","message":"{}"}}]}}}}"#, exit_code, exit_code)
     };
-    // v5 protocol: send status as close frame with JSON reason
-    let close_frame = axum::extract::ws::CloseFrame {
-        code: 1000,
-        reason: status_json.to_string().into(),
-    };
-    let _ = socket.send(Message::Close(Some(close_frame))).await;
-
-    // Also send on channel 3 for v4 compatibility
+    // Send status on channel 3 first (v4/v5 compatible)
     let mut status_data = vec![3u8];
     status_data.extend_from_slice(status_json.as_bytes());
     let _ = socket.send(Message::Binary(status_data.into())).await;
+
+    // Close with a short reason (WebSocket close frames max 125 bytes)
+    let short_reason = if exit_code == 0 { "Success" } else { "NonZeroExitCode" };
+    let close_frame = axum::extract::ws::CloseFrame {
+        code: 1000,
+        reason: short_reason.to_string().into(),
+    };
+    let _ = socket.send(Message::Close(Some(close_frame))).await;
     debug!("WS exec completed for {}", container_id);
 }
 
