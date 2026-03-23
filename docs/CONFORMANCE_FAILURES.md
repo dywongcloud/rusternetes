@@ -48,6 +48,16 @@ environment — not an upstream bug.
 | ResourceSlice: set Kind/apiVersion before storing | ~1 test | `9b21a89` |
 | PDB status fields: add serde defaults for required counters | ~1 test | `9b21a89` |
 | PV create: initialize status with default phase | ~1 test | `710eee1` |
+| Missing metadata.namespace in create handlers (secret, configmap, controllerrevision, replicationcontroller, podtemplate) | CRITICAL ~10+ tests | `db40409` |
+
+## Round 64 early results (13/441 done, 0 passed, 13 failed)
+
+Round 64 deployed all fixes from this session EXCEPT the namespace fix above.
+Early failures revealed that secret/configmap create handlers did not set
+`metadata.namespace` from the URL path. Resources stored without namespace
+metadata are invisible when listed across all namespaces, causing "unable to
+find secret by name" and related failures. This is a critical bug that likely
+affects many tests. Rebuilding with the namespace fix now.
 
 ## Round 63 failure analysis (61 failures, BEFORE fixes deployed)
 
