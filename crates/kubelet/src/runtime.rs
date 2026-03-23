@@ -1097,10 +1097,12 @@ impl ContainerRuntime {
                             configmap_name, namespace
                         );
                     } else {
-                        warn!(
-                            "ConfigMap {} not found in namespace {}: {}. Creating empty volume (will retry on next sync).",
+                        // Required ConfigMap not found — abort pod start so kubelet
+                        // retries on next reconciliation (when the ConfigMap exists).
+                        return Err(anyhow::anyhow!(
+                            "ConfigMap {} not found in namespace {}: {}",
                             configmap_name, namespace, e
-                        );
+                        ));
                     }
                 }
             }
@@ -1150,13 +1152,15 @@ impl ContainerRuntime {
                             "Optional Secret {} not found in namespace {}, creating empty volume",
                             secret_name, namespace
                         );
+                        None
                     } else {
-                        warn!(
-                            "Secret {} not found in namespace {}: {}. Creating empty volume (will retry on next sync).",
+                        // Required secret not found — abort pod start so kubelet
+                        // retries on next reconciliation (when the secret exists).
+                        return Err(anyhow::anyhow!(
+                            "Secret {} not found in namespace {}: {}",
                             secret_name, namespace, e
-                        );
+                        ));
                     }
-                    None
                 }
             };
 
