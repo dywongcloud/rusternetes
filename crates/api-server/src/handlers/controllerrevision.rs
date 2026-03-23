@@ -38,6 +38,9 @@ pub async fn create_controllerrevision(
         }
     }
 
+    // Ensure namespace is set from the URL path
+    cr.metadata.namespace = Some(namespace.clone());
+
     // Enrich metadata with system fields
     cr.metadata.ensure_uid();
     cr.metadata.ensure_creation_timestamp();

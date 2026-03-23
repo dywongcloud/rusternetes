@@ -38,6 +38,9 @@ pub async fn create_podtemplate(
         }
     }
 
+    // Ensure namespace is set from the URL path
+    podtemplate.metadata.namespace = Some(namespace.clone());
+
     // Enrich metadata with system fields
     podtemplate.metadata.ensure_uid();
     podtemplate.metadata.ensure_creation_timestamp();

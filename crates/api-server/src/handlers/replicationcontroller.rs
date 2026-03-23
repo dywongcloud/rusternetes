@@ -37,6 +37,9 @@ pub async fn create_replicationcontroller(
         }
     }
 
+    // Ensure namespace is set from the URL path
+    rc.metadata.namespace = Some(namespace.clone());
+
     // Enrich metadata with system fields
     rc.metadata.ensure_uid();
     rc.metadata.ensure_creation_timestamp();

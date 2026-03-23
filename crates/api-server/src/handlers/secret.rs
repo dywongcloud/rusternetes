@@ -45,6 +45,9 @@ pub async fn create(
         }
     }
 
+    // Ensure namespace is set from the URL path
+    secret.metadata.namespace = Some(namespace.clone());
+
     // Enrich metadata with system fields
     secret.metadata.ensure_uid();
     secret.metadata.ensure_creation_timestamp();

@@ -45,6 +45,9 @@ pub async fn create(
         }
     }
 
+    // Ensure namespace is set from the URL path
+    configmap.metadata.namespace = Some(namespace.clone());
+
     // Enrich metadata with system fields
     configmap.metadata.ensure_uid();
     configmap.metadata.ensure_creation_timestamp();
