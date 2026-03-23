@@ -3613,8 +3613,10 @@ impl ContainerRuntime {
         }
 
         // Fallback to Docker/Podman network inspection
+        // Look specifically for the pause container which owns the network namespace
+        let pause_name = format!("{}_pause", pod_name);
         let mut filters = HashMap::new();
-        filters.insert("name".to_string(), vec![format!("{}_", pod_name)]);
+        filters.insert("name".to_string(), vec![pause_name.clone()]);
 
         let options = ListContainersOptions {
             all: false, // Only running containers
@@ -3622,9 +3624,21 @@ impl ContainerRuntime {
             ..Default::default()
         };
 
-        let containers = self.docker.list_containers(Some(options)).await?;
+        let mut containers = self.docker.list_containers(Some(options)).await?;
 
-        // Get the IP from the first running container
+        // If no pause container, try any container matching the pod name
+        if containers.is_empty() {
+            let mut filters2 = HashMap::new();
+            filters2.insert("name".to_string(), vec![format!("{}_", pod_name)]);
+            let options2 = ListContainersOptions {
+                all: false,
+                filters: filters2,
+                ..Default::default()
+            };
+            containers = self.docker.list_containers(Some(options2)).await?;
+        }
+
+        // Get the IP from the pause container (or first matching)
         if let Some(container) = containers.first() {
             if let Some(id) = &container.id {
                 let inspect = self
