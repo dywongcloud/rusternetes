@@ -60,6 +60,7 @@ environment — not an upstream bug.
 | Proxy handlers: use correct storage keys (nodes, services, pods) | ~1 test | `b4b745c` |
 | nonResourceURLs camelCase rename (RBAC, FlowControl, Authorization) | ~1 test | `98f0eac` |
 | Deployment revision: increment on new ReplicaSet creation | ~2 tests | `565c216` |
+| EndpointSlice: clean up orphans when Endpoints deleted | ~1 test | `6f79efa` |
 
 ## Round 64 early results (13/441 done, 0 passed, 13 failed)
 
