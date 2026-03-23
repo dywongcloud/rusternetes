@@ -228,8 +228,8 @@ where
             None
         };
 
-        // Pin the watch stream for select!
-        futures::pin_mut!(watch_stream);
+        // Box-pin the watch stream so it can be replaced on reconnect
+        let mut watch_stream: std::pin::Pin<Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>> = Box::pin(watch_stream);
 
         // Watch loop with timeout support
         let watch_future = async {
@@ -324,8 +324,19 @@ where
                                 continue;
                             }
                             None => {
-                                debug!("Watch stream ended");
-                                break;
+                                // Watch stream ended — reconnect with new stream
+                                debug!("Watch stream ended, reconnecting");
+                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                                match state.storage.watch(&prefix).await {
+                                    Ok(new_stream) => {
+                                        watch_stream = Box::pin(new_stream);
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        debug!("Watch reconnect failed: {}", e);
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
@@ -544,8 +555,8 @@ where
             None
         };
 
-        // Pin the watch stream for select!
-        futures::pin_mut!(watch_stream);
+        // Box-pin the watch stream so it can be replaced on reconnect
+        let mut watch_stream: std::pin::Pin<Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>> = Box::pin(watch_stream);
 
         // Watch loop with timeout support
         let watch_future = async {
@@ -640,8 +651,19 @@ where
                                 continue;
                             }
                             None => {
-                                debug!("Watch stream ended");
-                                break;
+                                // Watch stream ended — reconnect with new stream
+                                debug!("Watch stream ended, reconnecting");
+                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                                match state.storage.watch(&prefix).await {
+                                    Ok(new_stream) => {
+                                        watch_stream = Box::pin(new_stream);
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        debug!("Watch reconnect failed: {}", e);
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
