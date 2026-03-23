@@ -54,6 +54,8 @@ environment — not an upstream bug.
 | OpenAPI /v2: return 406 for protobuf Accept headers | ~2 tests | `bde38ef` |
 | Keep stopped containers for log retrieval (don't remove on pod delete) | ~9 tests | `2c8e1fd` |
 | Container termination message reading from /dev/termination-log | ~2 tests | `c804e57` |
+| Init container status: report Waiting for unstarted containers | ~1 test | `b54d541` |
+| StatefulSet: add controller-revision-hash label to pods | ~1 test | `7f5c9bc` |
 
 ## Round 64 early results (13/441 done, 0 passed, 13 failed)
 
