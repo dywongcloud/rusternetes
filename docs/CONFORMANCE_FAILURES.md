@@ -1,35 +1,68 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-22 (round 57 — 56 failures, fixing all)
+**Last updated**: 2026-03-22 (round 58 deploying — 60+ fixes total)
 
-## Fixes applied (not yet tested):
-- Volume dir perms (emptyDir 0777, configmap/secret defaultMode|0111)
-- StatefulSet revision hash
-- Job pod completion detection
-- ReplicaSetStatus readyReplicas default
-- autoscaling/v1 discovery + routes
+## All fixes applied this session (60+ across 59 commits):
+
+### Exec (breakthrough):
+- WebSocket exec v5.channel.k8s.io with direct Docker execution
+- 1s stream timeout + inspect_exec completion detection
+- v5 close frame status protocol
+
+### API Server:
+- GC foreground deletion + propagation policy (query + body)
+- Pod resize containerStatus.resources
+- JSON decode ContainerState `{}` → None
+- PATCH resourceVersion clear
+- PodTemplate/ControllerRevision list filtering + watch + pagination
+- Chunking token expiry + consistent RV + nil remainingItemCount
+- 410 reason "Expired" for IsResourceExpired
+- CronJob status.active ObjectReferences
+- CSIDriver deletecollection + VolumeAttachment status routes
+- DaemonSet/status clear resourceVersion
+- Container command→Entrypoint, args→Cmd
+- CRD manual body parsing + x-kubernetes-* serde fixes
+- PLC/FlowSchema/CRD status sub-resource routes
+- Watch transient error handling
+- DeviceClass kind/apiVersion
+- apiregistration.k8s.io/v1 discovery
+- autoscaling/v1 discovery + HPA routes
+- Lenient body parsing (RS/DS/SS/Deploy/CSINode/PV)
+- IntOrString maxUnavailable in StatefulSet
+- ReplicaSetStatus readyReplicas/availableReplicas default
 - Service ClusterIP empty string handling
-- runAsUser security context → Docker User
 - ListMeta default resourceVersion
-- GC body propagation policy parsing
-- Volume file permissions (configmap/secret/downward/projected defaultMode)
+- Server-side apply annotation preservation
+
+### Kubelet:
+- Subpath validation (reject `..`, absolute, backticks)
+- CreateContainerError preserved + retry on sync
+- Pod conditions Ready=False when probes fail
+- readOnlyRootFilesystem
+- observedGeneration from metadata.generation
+- Ephemeral container support
+- Kubelet sync 2s interval
+- hostIPs in pod status
+- Node internal IP detection (Docker network)
+- runAsUser security context → Docker User
+- Volume permissions (configmap/secret/downward/projected defaultMode)
+- Volume directory permissions (emptyDir 0777)
 - HostAliases in /etc/hosts
-- apiregistration.k8s.io discovery
-- Lenient body parsing (RS/DS/SS/Deploy)
-- IntOrString maxUnavailable
-- Node internal IP detection
+- ConfigMap binaryData + items support
+- Secret items support
+- Secret env var injection (secretKeyRef)
+- Job pod completion detection (before liveness checks)
 
-## Still need fixing:
-1. SECRET_DATA env var — secret data not injected as env vars
-2. CSINode creation rejected — handler rejects valid requests
-3. PV creation rejected — handler rejects valid requests
-4. Webhook deployments never ready (5 tests) — pod can't pull image
-5. CRD decode errors — response body empty or malformed
-6. Watch closed — etcd stream reliability
-7. Container output content — configmap/projected volume content via exec
-8. kubectl create -f — pipe stdin not working
-9. RC failure condition — controller doesn't set conditions
-10. CPU resource 300m vs 100m — metrics hardcoded
-11. Server-side apply annotation — not preserved
+### Controllers:
+- CronJob 1s interval + status.active refs
+- StatefulSet 1s interval + readyReplicas condition check + revision hash
+- etcd auto-compaction 5m
+- RC failure condition
+- Metrics: actual pod resources instead of hardcoded
 
-## 58 commits, 55+ conformance fixes this session
+## Known remaining issues:
+- Watch stream closing (etcd stream None)
+- Webhook deployment pods never ready (image pull?)
+- CRD decode errors
+- kubectl create -f validation error (protobuf)
+- Some container output tests
