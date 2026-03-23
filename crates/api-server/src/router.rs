@@ -1200,21 +1200,21 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/api/v1/watch/namespaces/:namespace/events",
             get(handlers::watch::watch_events),
         )
-        // Events via events.k8s.io/v1 API group (delegates to same handlers as core/v1 events)
+        // Events via events.k8s.io/v1 API group (separate handlers for correct apiVersion)
         .route(
             "/apis/events.k8s.io/v1/namespaces/:namespace/events",
-            get(handlers::event::list).post(handlers::event::create).delete(handlers::event::deletecollection_events),
+            get(handlers::event::list_events_v1).post(handlers::event::create_events_v1).delete(handlers::event::deletecollection_events),
         )
         .route(
             "/apis/events.k8s.io/v1/namespaces/:namespace/events/:name",
-            get(handlers::event::get)
-                .put(handlers::event::update)
-                .patch(handlers::event::patch)
-                .delete(handlers::event::delete),
+            get(handlers::event::get_events_v1)
+                .put(handlers::event::update_events_v1)
+                .patch(handlers::event::patch_events_v1)
+                .delete(handlers::event::delete_events_v1),
         )
         .route(
             "/apis/events.k8s.io/v1/events",
-            get(handlers::event::list_all),
+            get(handlers::event::list_all_events_v1),
         )
         // ResourceQuotas (namespace-scoped)
         .route(

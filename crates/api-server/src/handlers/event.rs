@@ -391,3 +391,256 @@ pub async fn deletecollection_events(
     );
     Ok(StatusCode::OK)
 }
+
+// ---- events.k8s.io/v1 API group handlers ----
+// These return apiVersion "events.k8s.io/v1" instead of "v1"
+// and use api_group "events.k8s.io" for authorization.
+
+/// List events via events.k8s.io/v1 (namespaced)
+pub async fn list_events_v1(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<axum::response::Response> {
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").map(|s| s.clone()),
+            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_namespaced::<Event>(
+            state, auth_ctx, namespace, "events", "events.k8s.io", watch_params,
+        ).await;
+    }
+
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "events")
+        .with_namespace(&namespace)
+        .with_api_group("events.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    let prefix = build_prefix("events", Some(&namespace));
+    let mut events: Vec<Event> = state.storage.list(&prefix).await?;
+    crate::handlers::filtering::apply_selectors(&mut events, &params)?;
+
+    // Set apiVersion to events.k8s.io/v1 for each event
+    for event in &mut events {
+        event.api_version = "events.k8s.io/v1".to_string();
+    }
+
+    Ok(Json(EventList {
+        api_version: "events.k8s.io/v1".to_string(),
+        kind: "EventList".to_string(),
+        metadata: rusternetes_common::types::ListMeta::default(),
+        items: events,
+    }).into_response())
+}
+
+/// List all events via events.k8s.io/v1 (cluster-scoped)
+pub async fn list_all_events_v1(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<axum::response::Response> {
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").map(|s| s.clone()),
+            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_cluster_scoped::<Event>(
+            state, auth_ctx, "events", "events.k8s.io", watch_params,
+        ).await;
+    }
+
+    let attrs = RequestAttributes::new(auth_ctx.user, "list", "events")
+        .with_api_group("events.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    let prefix = build_prefix("events", None);
+    let events: Vec<Event> = state.storage.list(&prefix).await?;
+
+    let mut events_v1: Vec<Event> = events;
+    for event in &mut events_v1 {
+        event.api_version = "events.k8s.io/v1".to_string();
+    }
+
+    Ok(Json(EventList {
+        api_version: "events.k8s.io/v1".to_string(),
+        kind: "EventList".to_string(),
+        metadata: rusternetes_common::types::ListMeta::default(),
+        items: events_v1,
+    }).into_response())
+}
+
+/// Get a single event via events.k8s.io/v1
+pub async fn get_events_v1(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((namespace, name)): Path<(String, String)>,
+) -> Result<Json<Event>> {
+    let attrs = RequestAttributes::new(auth_ctx.user, "get", "events")
+        .with_namespace(&namespace)
+        .with_api_group("events.k8s.io")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    let key = build_key("events", Some(&namespace), &name);
+    let mut event: Event = state.storage.get(&key).await?;
+    event.api_version = "events.k8s.io/v1".to_string();
+
+    Ok(Json(event))
+}
+
+/// Create an event via events.k8s.io/v1
+pub async fn create_events_v1(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(mut event): Json<Event>,
+) -> Result<(StatusCode, Json<Event>)> {
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+
+    let attrs = RequestAttributes::new(auth_ctx.user, "create", "events")
+        .with_namespace(&namespace)
+        .with_api_group("events.k8s.io");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    event.metadata.namespace = Some(namespace.clone());
+    event.metadata.ensure_uid();
+    event.api_version = "events.k8s.io/v1".to_string();
+
+    if event.metadata.name.is_empty() {
+        let name = Event::generate_name(&event.involved_object, &event.reason);
+        event.metadata.name = name;
+    }
+
+    event.metadata.ensure_creation_timestamp();
+
+    let key = build_key("events", Some(&namespace), &event.metadata.name);
+
+    if is_dry_run {
+        return Ok((StatusCode::CREATED, Json(event)));
+    }
+
+    let mut created: Event = state.storage.create(&key, &event).await?;
+    created.api_version = "events.k8s.io/v1".to_string();
+
+    Ok((StatusCode::CREATED, Json(created)))
+}
+
+/// Update an event via events.k8s.io/v1
+pub async fn update_events_v1(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(mut event): Json<Event>,
+) -> Result<Json<Event>> {
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+
+    let attrs = RequestAttributes::new(auth_ctx.user, "update", "events")
+        .with_namespace(&namespace)
+        .with_api_group("events.k8s.io")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    event.metadata.namespace = Some(namespace.clone());
+    event.metadata.name = name.clone();
+    event.api_version = "events.k8s.io/v1".to_string();
+
+    let key = build_key("events", Some(&namespace), &name);
+
+    if is_dry_run {
+        return Ok(Json(event));
+    }
+
+    let mut updated: Event = state.storage.update(&key, &event).await?;
+    updated.api_version = "events.k8s.io/v1".to_string();
+
+    Ok(Json(updated))
+}
+
+/// Delete an event via events.k8s.io/v1
+pub async fn delete_events_v1(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((namespace, name)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<Event>> {
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+
+    let attrs = RequestAttributes::new(auth_ctx.user, "delete", "events")
+        .with_namespace(&namespace)
+        .with_api_group("events.k8s.io")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    let key = build_key("events", Some(&namespace), &name);
+    let mut event: Event = state.storage.get(&key).await?;
+    event.api_version = "events.k8s.io/v1".to_string();
+
+    if is_dry_run {
+        return Ok(Json(event));
+    }
+
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers(&state.storage, &key, &event)
+            .await?;
+
+    if deleted_immediately {
+        Ok(Json(event))
+    } else {
+        let mut updated: Event = state.storage.get(&key).await?;
+        updated.api_version = "events.k8s.io/v1".to_string();
+        Ok(Json(updated))
+    }
+}
+
+// PATCH handler for events.k8s.io/v1
+crate::patch_handler_namespaced!(patch_events_v1, Event, "events", "events.k8s.io");
