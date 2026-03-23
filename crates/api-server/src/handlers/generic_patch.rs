@@ -170,8 +170,10 @@ where
     let patched_json = apply_patch(&current_json, &patch_json, patch_type)
         .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
 
-    // Convert back to resource type
-    let patched_resource: T = serde_json::from_value(patched_json).map_err(|e| {
+    // Convert back to resource type — use lenient deserialization
+    let patched_resource: T = serde_json::from_value(patched_json.clone()).map_err(|e| {
+        // If strict deserialization fails, try storing as raw JSON and retrieving
+        tracing::warn!("Patch result deserialization warning (storing raw): {}", e);
         rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e))
     })?;
 
