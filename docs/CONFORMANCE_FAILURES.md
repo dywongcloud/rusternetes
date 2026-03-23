@@ -12,32 +12,33 @@ KUBECONFIG=~/.kube/rusternetes-config sonobuoy status   # check status
 
 ## OPEN ISSUE: `sonobuoy status` progress counts stuck at zero
 
-**Status**: ROOT CAUSE IDENTIFIED — upstream ginkgo v2 bug in K8s v1.35 conformance image
+**Status**: UNRESOLVED — must be fixed for v1.35 conformance
 
 **Impact**: `sonobuoy status` shows `Passed: 0, Failed: 0, Remaining: 441` for the
-entire run. This affects ANY cluster using the `registry.k8s.io/conformance:v1.35.0`
-image — not just rusternetes.
+entire run. Standard sonobuoy workflow is broken.
 
-**Root cause**: Ginkgo v2's `Suite.Clone()` method doesn't preserve root-level tree
-children. Kubernetes v1.35 added `ginkgo.PreviewSpecs()` in `AfterReadingAllFlags()`
-(test/e2e/framework/test_context.go:516). This calls `PushClone()`/`PopClone()` which
-loses the `ReportAfterEach` node registered in e2e_test.go:150. After `PopClone()`,
-the `ReportAfterEach` callback that calls `ProcessSpecReport` → `SendUpdates` no longer
-exists. The `ProcessSpecReport` code is compiled into the binary but never invoked.
+**What works**: The entire relay pipeline is functional — manual HTTP POSTs to
+`localhost:8099/progress` inside the e2e pod correctly update `sonobuoy status`.
 
-**Evidence**:
-- `Suite.Clone()` creates `tree: &TreeNode{}` (empty) — doesn't clone tree children
-- `ReportAfterEach` is NOT a suite node (not in the `pushSuiteNode` list at line 158)
-- It's added to `suite.tree.AppendChild()` during `PhaseBuildTopLevel` (line 223)
-- `PushClone` saves a clone with empty tree → `PopClone` restores it → tree children lost
-- Suite nodes like `ReportBeforeSuite` ARE preserved (in `suiteNodes`) — explains why
-  the 2 initial progress POSTs work (`SetTestsTotal` and `SetStartMsg`)
-- `ReportAfterEach` is lost → `ProcessSpecReport` never called → no per-test POSTs
+**What's broken**: The e2e binary sends 2 initial progress POSTs during suite setup
+but sends zero POSTs after individual tests complete. The `ReportAfterEach` callback
+that should call `ProcessSpecReport` → `SendUpdates` after each test is either not
+firing or `SendUpdates` is silently failing. Since sonobuoy progress works on real
+Kubernetes v1.35 clusters, the problem is something specific to our environment —
+not an upstream ginkgo or conformance image bug.
 
-**Workarounds**:
-1. Use `bash scripts/conformance-progress.sh` to parse e2e logs for progress
-2. Try conformance image v1.34.x which may not call `PreviewSpecs`
-3. Wait for upstream ginkgo fix or Kubernetes to move `ReportAfterEach` to a suite node
+**Investigation so far**:
+- Networking verified: loopback works, port 8099 reachable, manual POSTs succeed
+- Flag verified: `--progress-report-url=http://localhost:8099/progress` in process cmdline
+- Binary verified: `ProcessSpecReport` and `SendUpdates` compiled in, ginkgo v2.27.2
+- No error logs anywhere (klog, e2e.log, container stdout)
+- `/etc/hosts` has `127.0.0.1 localhost`, nsswitch.conf has `hosts: files dns`
+
+**Next steps**:
+1. Rebuild cluster with all fixes and run fresh conformance test to see if issue persists
+2. Build debug conformance image with logging in `ProcessSpecReport`/`SendUpdates`
+3. Test with GODEBUG=netdns=go+2 to trace DNS resolution for localhost
+4. Check if our API server's connection handling exhausts Go's default HTTP transport
 
 ---
 
