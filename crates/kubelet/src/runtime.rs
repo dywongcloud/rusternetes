@@ -2484,7 +2484,10 @@ impl ContainerRuntime {
         let mut memory_limit: Option<i64> = None;
         let mut cpu_period: Option<i64> = None;
         let mut cpu_quota: Option<i64> = None;
-        let mut cpu_shares: Option<i64> = None;
+        // Default cpu_shares to 2 (Kubernetes minimum, maps to cgroup2 weight ~1).
+        // Docker's default of 1024 (weight 100) is too high for conformance tests
+        // that check cpu.weight matches the pod's CPU request.
+        let mut cpu_shares: Option<i64> = Some(2);
 
         if let Some(ref resources) = container.resources {
             if let Some(ref limits) = resources.limits {

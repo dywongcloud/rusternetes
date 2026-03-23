@@ -179,18 +179,21 @@ pub async fn update_crd(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<CustomResourceDefinition>> {
-    // Reject protobuf-encoded requests
-    if let Some(ct) = headers.get("content-type").and_then(|v| v.to_str().ok()) {
-        if ct.contains("protobuf") {
-            return Err(rusternetes_common::Error::UnsupportedMediaType(
-                "protobuf content type is not supported; please use application/json".to_string(),
-            ));
-        }
+    // Reject empty or binary-protobuf request bodies
+    if body.is_empty() {
+        return Err(rusternetes_common::Error::InvalidResource(
+            "request body must not be empty".to_string(),
+        ));
+    }
+    if !matches!(body[0], b'{' | b'[' | b'"' | b'0'..=b'9' | b't' | b'f' | b'n' | b' ' | b'\t' | b'\n' | b'\r') {
+        return Err(rusternetes_common::Error::UnsupportedMediaType(
+            "request body is not valid JSON; protobuf content type is not supported".to_string(),
+        ));
     }
 
     // Parse the body manually for better error handling
     let mut crd: CustomResourceDefinition = serde_json::from_slice(&body).map_err(|e| {
-        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+        rusternetes_common::Error::InvalidResource(format!("failed to decode CRD: {}", e))
     })?;
     info!("Updating CustomResourceDefinition: {}", name);
 
