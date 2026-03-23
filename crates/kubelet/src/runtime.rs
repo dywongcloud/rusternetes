@@ -2867,41 +2867,49 @@ impl ContainerRuntime {
         for ic in init_containers {
             let container_name = format!("{}_{}", pod_name, ic.name);
 
-            let (exit_code, reason, finished_at, container_id) = match self
+            let container_state_info = self
                 .docker
                 .inspect_container(&container_name, None::<InspectContainerOptions>)
-                .await
-            {
+                .await;
+
+            let (state, container_id): (ContainerState, Option<String>) = match container_state_info {
                 Ok(inspect) => {
-                    let state = inspect.state.unwrap_or_default();
-                    let code = state.exit_code.unwrap_or(0) as i32;
-                    let r = if code == 0 {
-                        "Completed".to_string()
+                    let ds = inspect.state.unwrap_or_default();
+                    let cid = inspect.id.clone().map(|id| format!("docker://{}", id));
+                    let running = ds.running.unwrap_or(false);
+
+                    if running {
+                        (ContainerState::Running { started_at: ds.started_at }, cid)
+                    } else if ds.finished_at.is_some() || matches!(ds.status, Some(bollard::secret::ContainerStateStatusEnum::EXITED)) {
+                        let code = ds.exit_code.unwrap_or(0) as i32;
+                        let term_msg = self.read_termination_message(&container_name, ic).await;
+                        (ContainerState::Terminated {
+                            exit_code: code,
+                            signal: None,
+                            reason: Some(if code == 0 { "Completed".to_string() } else { ds.error.unwrap_or_else(|| "Error".to_string()) }),
+                            message: term_msg,
+                            started_at: ds.started_at,
+                            finished_at: ds.finished_at,
+                            container_id: cid.clone(),
+                        }, cid)
                     } else {
-                        state.error.unwrap_or_else(|| "Error".to_string())
-                    };
-                    let cid = inspect.id.map(|id| format!("docker://{}", id));
-                    (code, r, state.finished_at, cid)
+                        (ContainerState::Waiting { reason: Some("PodInitializing".to_string()), message: None }, cid)
+                    }
                 }
-                Err(_) => (0, "Completed".to_string(), None, None),
+                Err(_) => {
+                    // Container doesn't exist — it hasn't been created yet.
+                    // Report as Waiting, not Terminated.
+                    (ContainerState::Waiting { reason: Some("PodInitializing".to_string()), message: None }, None)
+                }
             };
 
-            // Read termination message for init container
-            let init_term_msg = self.read_termination_message(&container_name, ic).await;
+            let is_terminated = matches!(state, ContainerState::Terminated { .. });
 
             statuses.push(ContainerStatus {
                 name: ic.name.clone(),
-                ready: exit_code == 0,
+                ready: is_terminated && matches!(&state, ContainerState::Terminated { exit_code, .. } if *exit_code == 0),
                 restart_count: 0,
-                state: Some(ContainerState::Terminated {
-                    exit_code,
-                    signal: None,
-                    reason: Some(reason),
-                    message: init_term_msg,
-                    started_at: None,
-                    finished_at,
-                    container_id: container_id.clone(),
-                }),
+                state: Some(state),
                 last_state: None,
                 image: Some(ic.image.clone()),
                 image_id: None,
