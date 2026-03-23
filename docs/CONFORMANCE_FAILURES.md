@@ -58,6 +58,8 @@ environment — not an upstream bug.
 | StatefulSet: add controller-revision-hash label to pods | ~1 test | `7f5c9bc` |
 | ServiceAccount token request: use correct storage key | ~1 test | `9238eb4` |
 | Proxy handlers: use correct storage keys (nodes, services, pods) | ~1 test | `b4b745c` |
+| nonResourceURLs camelCase rename (RBAC, FlowControl, Authorization) | ~1 test | `98f0eac` |
+| Deployment revision: increment on new ReplicaSet creation | ~2 tests | `565c216` |
 
 ## Round 64 early results (13/441 done, 0 passed, 13 failed)
 
