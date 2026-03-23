@@ -145,6 +145,7 @@ pub struct CustomResourceDefinitionVersion {
 #[serde(rename_all = "camelCase")]
 pub struct CustomResourceValidation {
     /// OpenAPIV3Schema is the OpenAPI v3 schema to validate against
+    #[serde(rename = "openAPIV3Schema")]
     pub open_apiv3_schema: JSONSchemaProps,
 }
 
