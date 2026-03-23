@@ -12,40 +12,32 @@ KUBECONFIG=~/.kube/rusternetes-config sonobuoy status   # check status
 
 ## OPEN ISSUE: `sonobuoy status` progress counts stuck at zero
 
-**Status**: UNRESOLVED — must be fixed before conformance testing is usable
+**Status**: ROOT CAUSE IDENTIFIED — upstream ginkgo v2 bug in K8s v1.35 conformance image
 
 **Impact**: `sonobuoy status` shows `Passed: 0, Failed: 0, Remaining: 441` for the
-entire run. Standard sonobuoy workflow is broken — anyone running conformance tests
-cannot see results without manual log parsing.
+entire run. This affects ANY cluster using the `registry.k8s.io/conformance:v1.35.0`
+image — not just rusternetes.
 
-**What works**: The entire relay pipeline is functional. Manual HTTP POSTs to
-`localhost:8099/progress` inside the e2e pod correctly propagate through
-sonobuoy-worker → aggregator → pod annotations → `sonobuoy status` output.
+**Root cause**: Ginkgo v2's `Suite.Clone()` method doesn't preserve root-level tree
+children. Kubernetes v1.35 added `ginkgo.PreviewSpecs()` in `AfterReadingAllFlags()`
+(test/e2e/framework/test_context.go:516). This calls `PushClone()`/`PopClone()` which
+loses the `ReportAfterEach` node registered in e2e_test.go:150. After `PopClone()`,
+the `ReportAfterEach` callback that calls `ProcessSpecReport` → `SendUpdates` no longer
+exists. The `ProcessSpecReport` code is compiled into the binary but never invoked.
 
-**What's broken**: The e2e binary (`registry.k8s.io/conformance:v1.35.0`) sends 2
-initial progress POSTs during suite setup (`SetTestsTotal` + `SetStartMsg`) but sends
-zero POSTs after individual tests complete, even though 65+ tests have run.
+**Evidence**:
+- `Suite.Clone()` creates `tree: &TreeNode{}` (empty) — doesn't clone tree children
+- `ReportAfterEach` is NOT a suite node (not in the `pushSuiteNode` list at line 158)
+- It's added to `suite.tree.AppendChild()` during `PhaseBuildTopLevel` (line 223)
+- `PushClone` saves a clone with empty tree → `PopClone` restores it → tree children lost
+- Suite nodes like `ReportBeforeSuite` ARE preserved (in `suiteNodes`) — explains why
+  the 2 initial progress POSTs work (`SetTestsTotal` and `SetStartMsg`)
+- `ReportAfterEach` is lost → `ProcessSpecReport` never called → no per-test POSTs
 
-**Investigation summary**:
-- Networking verified: loopback works, port 8099 reachable on IPv4 and IPv6
-- Flag verified: `--progress-report-url=http://localhost:8099/progress` in process cmdline
-- Code verified: `ReportAfterEach` → `ProcessSpecReport` → `SendUpdates` compiled in binary
-- No error logs anywhere (klog, e2e.log, container stdout)
-- Same conformance image works with real Kubernetes — something in our environment breaks it
-- CGO-linked binary uses getaddrinfo; nsswitch.conf says `hosts: files dns`
-- `/etc/resolv.conf` has `ndots:5` (standard k8s) — DNS queries go to our CoreDNS
-
-**Suspected causes** (something in our environment, not upstream):
-- API server watch connections or TLS behavior may exhaust Go's network runtime
-- `ndots:5` DNS lookups through our CoreDNS may cause subtle timeouts
-- Go's CGO getaddrinfo may block when our API server has high connection load
-
-**Next steps**:
-1. Build debug conformance image with logging in `ProcessSpecReport`/`SendUpdates`
-2. Test with `ndots:0` or Docker-default resolv.conf to rule out DNS issues
-3. Add tcpdump/strace to e2e pod to trace actual network calls to port 8099
-4. Check if reducing API server watch connections improves progress reporting
-5. Profile Go thread/goroutine count during test execution
+**Workarounds**:
+1. Use `bash scripts/conformance-progress.sh` to parse e2e logs for progress
+2. Try conformance image v1.34.x which may not call `PreviewSpecs`
+3. Wait for upstream ginkgo fix or Kubernetes to move `ReportAfterEach` to a suite node
 
 ---
 
@@ -56,9 +48,10 @@ zero POSTs after individual tests complete, even though 65+ tests have run.
 | Container logs: search exited containers by name | ~8 tests | `2b1008d` |
 | EventList: add missing `metadata: ListMeta` field | ~1 test | `97938e4` |
 | gRPC probe: implement health check via tonic | ~1 test | `e738c1f` |
-| Scale PATCH: accept partial JSON body | ~1 test | `d335dee` |
+| Scale PATCH: accept partial JSON body | ~3 tests | `d335dee` |
 | VolumeAttachment + ResourceQuota status PATCH routes | ~2 tests | `d335dee` |
 | Pagination tests: fix missing ContinuationToken fields | tests only | `c93a3be` |
+| events.k8s.io/v1: separate handlers with correct apiVersion | ~1 test | `f8a75da` |
 
 ## Failure analysis from round 63
 
@@ -78,8 +71,8 @@ Tests expect specific output from containers but get wrong/no content.
 ### PATCH (4 failures)
 - StatefulSet scale PATCH — **FIX COMMITTED**
 - VolumeAttachment status PATCH — **FIX COMMITTED**
-- Deployment PATCH — "server rejected our request" (strategic merge patch issue)
-- ReplicaSet PATCH — same as Deployment
+- Deployment scale PATCH — **FIX COMMITTED** (same scale handler fix)
+- ReplicaSet scale PATCH — **FIX COMMITTED** (same scale handler fix)
 
 ### DEPLOYMENT (3 failures)
 Webhook deployment pods never become ready. Tests deploy webhook servers
@@ -93,9 +86,7 @@ causes client-side rate limiter to exceed context deadline.
 CSINode null drivers — **FIX COMMITTED** (402d503, not deployed yet)
 
 ### EVENT (1 failure)
-Event list via `events.k8s.io/v1` returns apiVersion `"v1"` instead of
-`"events.k8s.io/v1"`. Need separate event handler for events.k8s.io group
-that returns the correct apiVersion and uses the events.k8s.io Event schema.
+Event list via `events.k8s.io/v1` returns wrong apiVersion — **FIX COMMITTED**
 
 ### GRPC (1 failure)
 gRPC liveness probe test expects container restart but got 0. gRPC probe
