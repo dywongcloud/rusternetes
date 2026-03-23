@@ -286,6 +286,8 @@ pub struct EventList {
     #[serde(default = "default_kind_list")]
     pub kind: String,
 
+    pub metadata: crate::types::ListMeta,
+
     pub items: Vec<Event>,
 }
 
@@ -294,6 +296,7 @@ impl Default for EventList {
         Self {
             api_version: "v1".to_string(),
             kind: "EventList".to_string(),
+            metadata: crate::types::ListMeta::default(),
             items: Vec::new(),
         }
     }

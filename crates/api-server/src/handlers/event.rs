@@ -61,6 +61,7 @@ pub async fn list(
     Ok(Json(EventList {
         api_version: "v1".to_string(),
         kind: "EventList".to_string(),
+        metadata: rusternetes_common::types::ListMeta::default(),
         items: events,
     }).into_response())
 }
@@ -105,6 +106,7 @@ pub async fn list_all(
     Ok(Json(EventList {
         api_version: "v1".to_string(),
         kind: "EventList".to_string(),
+        metadata: rusternetes_common::types::ListMeta::default(),
         items: events,
     }).into_response())
 }
