@@ -114,11 +114,11 @@ pub async fn normalize_content_type_middleware(
             .unwrap_or("")
             .to_string();
 
-        // Silently rewrite protobuf Content-Type to JSON.
-        // client-go sometimes sends protobuf bodies but they are actually JSON
-        // when the server previously responded with JSON. If the body truly is
-        // binary protobuf the JSON parser will return a 400, which is acceptable.
-        // Returning 406 did NOT cause client-go to retry with JSON in practice.
+        // Handle protobuf Content-Type: rewrite to JSON.
+        // client-go sometimes sends JSON bodies with protobuf Content-Type header
+        // when the server previously responded with JSON. We accept this by
+        // rewriting the Content-Type and letting the JSON parser handle it.
+        // If the body is truly binary protobuf, the JSON parser returns 400.
         if content_type.starts_with("application/vnd.kubernetes.protobuf") {
             debug!(
                 "Rewriting protobuf Content-Type to JSON for: {} {}",

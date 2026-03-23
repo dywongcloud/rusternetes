@@ -32,21 +32,15 @@ pub async fn create_crd(
         ));
     }
 
-    // Reject protobuf-encoded requests — we only support JSON.
-    // The normalize_content_type_middleware rewrites Content-Type to JSON, so we
-    // also detect binary protobuf by checking if the body starts with a non-JSON byte.
-    // Valid JSON starts with '{', '[', '"', a digit, 't', 'f', or 'n'.
-    let first_byte = body[0];
-    if !matches!(first_byte, b'{' | b'[' | b'"' | b'0'..=b'9' | b't' | b'f' | b'n' | b' ' | b'\t' | b'\n' | b'\r') {
-        return Err(rusternetes_common::Error::UnsupportedMediaType(
-            "request body is not valid JSON; protobuf content type is not supported".to_string(),
-        ));
-    }
-
-    // Parse the body manually for better error handling — axum's Json extractor
-    // returns 422 Unprocessable Entity on failure, but Kubernetes expects a proper
-    // Status object. Manual parsing also tolerates unknown fields gracefully.
+    // Try to parse the body as JSON. If it fails (e.g., binary protobuf), return
+    // 415 Unsupported Media Type so the client knows to use JSON.
     let mut crd: CustomResourceDefinition = serde_json::from_slice(&body).map_err(|e| {
+        // Check if this looks like binary protobuf (non-JSON first byte)
+        if !body.is_empty() && !matches!(body[0], b'{' | b'[' | b'"' | b'0'..=b'9' | b't' | b'f' | b'n' | b' ' | b'\t' | b'\n' | b'\r') {
+            return rusternetes_common::Error::UnsupportedMediaType(
+                "only application/json is supported; send requests with Content-Type: application/json".to_string(),
+            );
+        }
         rusternetes_common::Error::InvalidResource(format!("failed to decode CRD: {}", e))
     })?;
     let crd_name = crd.metadata.name.clone();
