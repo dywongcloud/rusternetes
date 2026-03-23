@@ -1083,7 +1083,9 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // StorageClasses (cluster-scoped)
         .route(
             "/apis/storage.k8s.io/v1/storageclasses",
-            get(handlers::storageclass::list_storageclasses).post(handlers::storageclass::create_storageclass),
+            get(handlers::storageclass::list_storageclasses)
+                .post(handlers::storageclass::create_storageclass)
+                .delete(handlers::storageclass::deletecollection_storageclasses),
         )
         .route(
             "/apis/storage.k8s.io/v1/storageclasses/:name",
