@@ -187,6 +187,7 @@ pub struct NodeSelectorRequirement {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistentVolumeStatus {
+    #[serde(default)]
     pub phase: PersistentVolumePhase,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
@@ -197,8 +198,9 @@ pub struct PersistentVolumeStatus {
     pub last_phase_transition_time: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub enum PersistentVolumePhase {
+    #[default]
     Pending,
     Available,
     Bound,
