@@ -290,6 +290,8 @@ mod tests {
             resource_version: "v1".to_string(),
             filters: HashMap::new(),
             nonce: 0,
+            total_at_creation: 0,
+            created_at: 0,
         }
         .encode()
         .unwrap();
@@ -302,7 +304,8 @@ mod tests {
 
         assert_eq!(result.items, vec![5]);
         assert_eq!(result.continue_token, None);
-        assert_eq!(result.remaining_item_count, Some(0));
+        // Kubernetes convention: remainingItemCount is nil when continue is empty
+        assert_eq!(result.remaining_item_count, None);
     }
 
     #[test]
@@ -329,6 +332,8 @@ mod tests {
             resource_version: "v1".to_string(),
             filters: HashMap::new(),
             nonce: 0,
+            total_at_creation: 0,
+            created_at: 0,
         }
         .encode()
         .unwrap();
