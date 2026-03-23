@@ -62,6 +62,7 @@ environment — not an upstream bug.
 | Deployment revision: increment on new ReplicaSet creation | ~2 tests | `565c216` |
 | EndpointSlice: clean up orphans when Endpoints deleted | ~1 test | `6f79efa` |
 | Fail pod start when required Secret/ConfigMap volumes missing | ~6 tests | `5e07c6e` |
+| ClusterIP allocation: pre-allocate existing IPs at startup | CRITICAL | `4113fe9` |
 
 ## Round 64 early results (13/441 done, 0 passed, 13 failed)
 
