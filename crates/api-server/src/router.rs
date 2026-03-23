@@ -1623,7 +1623,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/storage.k8s.io/v1/volumeattributesclasses",
             get(handlers::volumeattributesclass::list_volumeattributesclasses)
-                .post(handlers::volumeattributesclass::create_volumeattributesclass),
+                .post(handlers::volumeattributesclass::create_volumeattributesclass)
+                .delete(handlers::volumeattributesclass::deletecollection_volumeattributesclasses),
         )
         .route(
             "/apis/storage.k8s.io/v1/volumeattributesclasses/:name",

@@ -44,7 +44,7 @@ pub struct ServiceSpec {
     #[serde(skip_serializing_if = "Option::is_none", rename = "clusterIP")]
     pub cluster_ip: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "externalIPs", skip_serializing_if = "Option::is_none")]
     pub external_ips: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -57,7 +57,7 @@ pub struct ServiceSpec {
 
     /// ClusterIPs is a list of IP addresses assigned to this service, and is usually assigned randomly.
     /// If specified, must be valid IPs. Used for dual-stack support.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "clusterIPs", skip_serializing_if = "Option::is_none")]
     pub cluster_ips: Option<Vec<String>>,
 
     /// IPFamilies is a list of IP families (IPv4, IPv6) assigned to this service.
@@ -90,7 +90,7 @@ pub struct ServiceSpec {
     pub load_balancer_class: Option<String>,
 
     /// LoadBalancerIP is the IP to use when creating a load balancer (deprecated, use loadBalancerClass instead)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "loadBalancerIP", skip_serializing_if = "Option::is_none")]
     pub load_balancer_ip: Option<String>,
 
     /// LoadBalancerSourceRanges restricts traffic through the cloud-provider load-balancer to these CIDRs
@@ -194,7 +194,7 @@ pub struct PortStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionAffinityConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "clientIP", skip_serializing_if = "Option::is_none")]
     pub client_ip: Option<ClientIPConfig>,
 }
 

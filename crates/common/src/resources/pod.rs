@@ -1185,18 +1185,18 @@ pub struct PodStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "hostIP", skip_serializing_if = "Option::is_none")]
     pub host_ip: Option<String>,
 
     /// All host IPs for dual-stack
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "hostIPs", skip_serializing_if = "Option::is_none")]
     pub host_i_ps: Option<Vec<HostIP>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "podIP", skip_serializing_if = "Option::is_none")]
     pub pod_ip: Option<String>,
 
     /// All pod IPs for dual-stack
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "podIPs", skip_serializing_if = "Option::is_none")]
     pub pod_i_ps: Option<Vec<PodIP>>,
 
     /// Node nominated for preemption to make room for this pod
@@ -1263,10 +1263,10 @@ pub struct ContainerStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "imageID", skip_serializing_if = "Option::is_none")]
     pub image_id: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "containerID", skip_serializing_if = "Option::is_none")]
     pub container_id: Option<String>,
 
     /// Whether the container has passed its startup probe
@@ -1315,6 +1315,7 @@ pub struct ResourceStatus {
 #[serde(rename_all = "camelCase")]
 pub struct ResourceHealth {
     /// Unique identifier of the resource (e.g., device ID)
+    #[serde(rename = "resourceID")]
     pub resource_id: String,
 
     /// Health status of the resource (Healthy, Unhealthy, Unknown)

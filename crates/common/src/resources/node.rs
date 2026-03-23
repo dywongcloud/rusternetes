@@ -32,14 +32,14 @@ impl Node {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeSpec {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "podCIDR", skip_serializing_if = "Option::is_none")]
     pub pod_cidr: Option<String>,
 
     /// PodCIDRs represents the IP ranges assigned to the node for usage by pods (supports dual-stack)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "podCIDRs", skip_serializing_if = "Option::is_none")]
     pub pod_cidrs: Option<Vec<String>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "providerID", skip_serializing_if = "Option::is_none")]
     pub provider_id: Option<String>,
 
     #[serde(skip_serializing_if = "is_unschedulable_none")]
@@ -189,11 +189,11 @@ pub struct NodeAddress {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeSystemInfo {
-    #[serde(default)]
+    #[serde(rename = "machineID", default)]
     pub machine_id: String,
-    #[serde(default)]
+    #[serde(rename = "systemUUID", default)]
     pub system_uuid: String,
-    #[serde(default)]
+    #[serde(rename = "bootID", default)]
     pub boot_id: String,
     #[serde(default)]
     pub kernel_version: String,
