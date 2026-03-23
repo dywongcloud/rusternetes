@@ -138,6 +138,9 @@ services:
     environment:
       - RUST_LOG=debug
       - DOCKER_HOST=unix:///var/run/docker.sock
+      # Use the API server's Docker DNS name so pods can reach it directly.
+      # The ClusterIP (10.96.0.1) is not routable from Docker bridge containers.
+      - KUBERNETES_SERVICE_HOST_OVERRIDE=api-server
       # Legacy environment variable - still supported for backward compatibility
       # IMPORTANT: Must be an absolute path
       - KUBELET_VOLUMES_PATH=${KUBELET_VOLUMES_PATH}
@@ -166,6 +169,7 @@ services:
     environment:
       - RUST_LOG=debug
       - DOCKER_HOST=unix:///var/run/docker.sock
+      - KUBERNETES_SERVICE_HOST_OVERRIDE=api-server
       - KUBELET_VOLUMES_PATH=${KUBELET_VOLUMES_PATH}
     command: ["--node-name", "node-2", "--etcd-servers", "http://etcd:2379", "--cluster-dns", "10.96.0.10", "--metrics-port", "10251"]
 

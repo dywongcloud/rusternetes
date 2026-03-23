@@ -298,13 +298,27 @@ impl RuntimeConfig {
             .or_else(|| std::env::var("CLUSTER_SERVICE_CIDR").ok())
             .unwrap_or_else(|| "10.96.0.0/12".to_string());
 
-        let kubernetes_service_host =
-            first_ip_from_cidr(&cluster_service_cidr).with_context(|| {
-                format!(
-                    "Failed to extract kubernetes service IP from CIDR: {}",
-                    cluster_service_cidr
-                )
-            })?;
+        // Allow overriding the kubernetes service host via env var.
+        // In Docker Desktop environments, the ClusterIP (10.96.0.1) is not
+        // routable from bridge containers because kube-proxy's iptables DNAT
+        // only applies in the host network namespace. Use the API server's
+        // direct container IP instead.
+        let kubernetes_service_host = if let Ok(override_host) = std::env::var("KUBERNETES_SERVICE_HOST_OVERRIDE") {
+            // If override is a hostname, resolve it to an IP
+            use std::net::ToSocketAddrs;
+            if let Ok(mut addrs) = format!("{}:443", override_host).to_socket_addrs() {
+                if let Some(addr) = addrs.next() {
+                    tracing::info!("Resolved KUBERNETES_SERVICE_HOST_OVERRIDE {} -> {}", override_host, addr.ip());
+                    addr.ip().to_string()
+                } else {
+                    override_host
+                }
+            } else {
+                override_host
+            }
+        } else {
+            first_ip_from_cidr(&cluster_service_cidr).unwrap_or_else(|_| "10.96.0.1".to_string())
+        };
 
         let config = Self {
             root_dir: PathBuf::from(root_dir),
