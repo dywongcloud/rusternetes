@@ -183,17 +183,68 @@ pub async fn patch_scale(
     Extension(auth_ctx): Extension<AuthContext>,
     uri: Uri,
     Path((namespace, name)): Path<(String, String)>,
-    Json(scale): Json<Scale>,
+    body: String,
 ) -> Result<Json<Scale>> {
-    // For scale, patch is the same as update
-    update_scale(
-        State(state),
-        Extension(auth_ctx),
-        uri,
-        Path((namespace, name)),
-        Json(scale),
-    )
-    .await
+    let (group, version, resource) = parse_scale_uri(&uri);
+    info!(
+        "Patching scale for {}/{}/{}/{}",
+        group, resource, namespace, name
+    );
+
+    // Check authorization
+    let resource_type = format!("{}.{}", resource, group);
+    let attrs = RequestAttributes::new(auth_ctx.user, "patch", &resource_type)
+        .with_namespace(&namespace)
+        .with_name(&name)
+        .with_subresource("scale");
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(Error::Forbidden(reason));
+        }
+    }
+
+    // Parse the patch body as JSON
+    let patch: Value = serde_json::from_str(&body)
+        .map_err(|e| Error::InvalidResource(format!("Invalid patch body: {}", e)))?;
+
+    // Get the current resource
+    let key = build_key(&resource, Some(&namespace), &name);
+    let mut resource_obj: Value = state.storage.get(&key).await?;
+
+    // Extract the new replicas from the patch
+    // Patch may be {"spec":{"replicas":N}} or a full Scale object
+    let new_replicas = patch
+        .get("spec")
+        .and_then(|s| s.get("replicas"))
+        .and_then(|r| r.as_i64())
+        .map(|r| r as i32);
+
+    if let Some(replicas) = new_replicas {
+        // Update the replicas in the resource spec
+        if let Some(spec) = resource_obj.get_mut("spec") {
+            if let Some(spec_obj) = spec.as_object_mut() {
+                spec_obj.insert(
+                    "replicas".to_string(),
+                    Value::Number(replicas.into()),
+                );
+            }
+        }
+    }
+
+    // Save the updated resource
+    let updated_resource: Value = state.storage.update(&key, &resource_obj).await?;
+
+    // Extract and return the updated scale
+    let updated_scale = extract_scale(&updated_resource, &namespace, &name, &group, &version)?;
+
+    info!(
+        "Successfully patched scale for {}/{}/{}/{}",
+        group, resource, namespace, name
+    );
+
+    Ok(Json(updated_scale))
 }
 
 /// Extract scale information from a resource object

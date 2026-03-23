@@ -1231,7 +1231,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/api/v1/namespaces/:namespace/resourcequotas/:name/status",
             get(handlers::status::get_status)
-                .put(handlers::status::update_status),
+                .put(handlers::status::update_status)
+                .patch(handlers::status::update_status),
         )
         // ResourceQuotas (all namespaces)
         .route(
@@ -1615,7 +1616,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/storage.k8s.io/v1/volumeattachments/:name/status",
             get(handlers::status::get_cluster_status)
-                .put(handlers::status::update_cluster_status),
+                .put(handlers::status::update_cluster_status)
+                .patch(handlers::status::update_cluster_status),
         )
         // Storage v1 API - VolumeAttributesClasses (cluster-scoped)
         .route(
