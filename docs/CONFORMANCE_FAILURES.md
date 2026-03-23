@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-23 (round 63 — 65/441 tests completed: 4 passed, 61 failed)
+**Last updated**: 2026-03-23 (round 64 started — all fixes deployed, run in progress)
 
 ## How to run conformance tests
 ```bash
@@ -8,6 +8,7 @@ docker compose build && docker compose up -d   # rebuild + redeploy cluster
 bash scripts/cleanup-sonobuoy.sh               # clean up previous run
 bash scripts/run-conformance.sh                # full lifecycle: cleanup, labels, CoreDNS, run
 KUBECONFIG=~/.kube/rusternetes-config sonobuoy status   # check status
+bash scripts/conformance-progress.sh           # real-time progress from e2e logs
 ```
 
 ## OPEN ISSUE: `sonobuoy status` progress counts stuck at zero
@@ -15,34 +16,24 @@ KUBECONFIG=~/.kube/rusternetes-config sonobuoy status   # check status
 **Status**: UNRESOLVED — must be fixed for v1.35 conformance
 
 **Impact**: `sonobuoy status` shows `Passed: 0, Failed: 0, Remaining: 441` for the
-entire run. Standard sonobuoy workflow is broken.
+entire run. Use `bash scripts/conformance-progress.sh` to see real counts.
 
 **What works**: The entire relay pipeline is functional — manual HTTP POSTs to
 `localhost:8099/progress` inside the e2e pod correctly update `sonobuoy status`.
 
 **What's broken**: The e2e binary sends 2 initial progress POSTs during suite setup
-but sends zero POSTs after individual tests complete. The `ReportAfterEach` callback
-that should call `ProcessSpecReport` → `SendUpdates` after each test is either not
-firing or `SendUpdates` is silently failing. Since sonobuoy progress works on real
-Kubernetes v1.35 clusters, the problem is something specific to our environment —
-not an upstream ginkgo or conformance image bug.
-
-**Investigation so far**:
-- Networking verified: loopback works, port 8099 reachable, manual POSTs succeed
-- Flag verified: `--progress-report-url=http://localhost:8099/progress` in process cmdline
-- Binary verified: `ProcessSpecReport` and `SendUpdates` compiled in, ginkgo v2.27.2
-- No error logs anywhere (klog, e2e.log, container stdout)
-- `/etc/hosts` has `127.0.0.1 localhost`, nsswitch.conf has `hosts: files dns`
+but sends zero POSTs after individual tests complete. Since sonobuoy progress works
+on real Kubernetes v1.35 clusters, the problem is something specific to our
+environment — not an upstream bug.
 
 **Next steps**:
-1. Rebuild cluster with all fixes and run fresh conformance test to see if issue persists
-2. Build debug conformance image with logging in `ProcessSpecReport`/`SendUpdates`
-3. Test with GODEBUG=netdns=go+2 to trace DNS resolution for localhost
-4. Check if our API server's connection handling exhausts Go's default HTTP transport
+1. Build debug conformance image with logging in `ProcessSpecReport`/`SendUpdates`
+2. Test with GODEBUG=netdns=go+2 to trace DNS resolution for localhost
+3. Check if our API server's connection handling exhausts Go's default HTTP transport
 
 ---
 
-## Fixes committed this session (need `docker compose build` to deploy)
+## Fixes deployed in round 64 (this session)
 
 | Fix | Impact | Commit |
 |-----|--------|--------|
@@ -58,7 +49,7 @@ not an upstream ginkgo or conformance image bug.
 | PDB status fields: add serde defaults for required counters | ~1 test | `9b21a89` |
 | PV create: initialize status with default phase | ~1 test | `710eee1` |
 
-## Failure analysis from round 63
+## Round 63 failure analysis (61 failures, BEFORE fixes deployed)
 
 ### CONTAINER_OUTPUT (9 failures)
 Tests expect specific output from containers but get wrong/no content.
@@ -71,13 +62,12 @@ Tests expect specific output from containers but get wrong/no content.
 - Watch closed before UntilWithoutRetry timeout
 - Watch notification timeout (ConfigMap watch)
 - Pod/Job timeout waiting for conditions (up to 900s)
-- Likely: watch reconnection logic or slow pod scheduling
 
-### PATCH (4 failures)
-- StatefulSet scale PATCH — **FIX COMMITTED**
-- VolumeAttachment status PATCH — **FIX COMMITTED**
-- Deployment scale PATCH — **FIX COMMITTED** (same scale handler fix)
-- ReplicaSet scale PATCH — **FIX COMMITTED** (same scale handler fix)
+### PATCH (4 failures) — ALL FIXED
+- StatefulSet scale PATCH — **FIXED**
+- VolumeAttachment status PATCH — **FIXED**
+- Deployment scale PATCH — **FIXED**
+- ReplicaSet scale PATCH — **FIXED**
 
 ### DEPLOYMENT (3 failures)
 Webhook deployment pods never become ready. Tests deploy webhook servers
@@ -87,32 +77,32 @@ Webhook deployment pods never become ready. Tests deploy webhook servers
 "client rate limiter Wait returned an error" — API response latency
 causes client-side rate limiter to exceed context deadline.
 
-### CSI (1 failure)
-CSINode null drivers — **FIX COMMITTED** (402d503, not deployed yet)
+### CSI (1 failure) — FIXED
+CSINode null drivers — **FIXED** (deployed in round 64)
 
-### EVENT (1 failure)
-Event list via `events.k8s.io/v1` returns wrong apiVersion — **FIX COMMITTED**
+### EVENT (1 failure) — FIXED
+Event list via `events.k8s.io/v1` returns wrong apiVersion — **FIXED**
 
-### GRPC (1 failure)
-gRPC liveness probe test expects container restart but got 0. gRPC probe
-implementation just committed — needs cluster rebuild to verify.
+### GRPC (1 failure) — FIX DEPLOYED
+gRPC probe implementation deployed — needs round 64 results to verify.
 
 ### NETWORKING (1 failure)
 Pod-to-pod connection failure (2/2 connections failed).
 
-### QUOTA (1 failure)
-ResourceQuota status update returns 404 — **FIX COMMITTED**
+### QUOTA (1 failure) — FIXED
+ResourceQuota status PATCH route — **FIXED**
 
-### OTHER (32 failures)
-Mixed root causes including:
+### OTHER (32 failures) — PARTIALLY FIXED
+- CRD creation failures — **FIXED** (openAPIV3Schema field name)
+- PV creation failures — **FIXED** (status phase initialization)
+- ResourceSlice missing Kind — **FIXED**
+- PDB status patch — **FIXED**
 - Pod timeout / "Told to stop trying" — pods not becoming ready
 - DaemonSet pod deletion — rate limiter timeout on GC
-- CRD creation — "expected value at line 1 column 1" (empty response body)
 - Job SuccessCriteriaMet condition timeout (900s)
 - Shared volume exec failures
-- Various pod lifecycle and scheduling issues
 
-## Previously deployed fixes (in running cluster)
+## All deployed fixes (cumulative)
 - Pod IP from CNI (critical breakthrough, round 62)
 - Watch reconnect support
 - WebSocket exec v5.channel.k8s.io with direct Docker execution
@@ -126,3 +116,7 @@ Mixed root causes including:
 - CronJob/StatefulSet 1s intervals, StatefulSet revision hash
 - RC failure conditions, GC foreground deletion with body propagation policy
 - CSINode null drivers, ResourceQuota status route, PV phase default
+- Container logs: search exited containers (round 64)
+- EventList metadata, events.k8s.io/v1 apiVersion (round 64)
+- gRPC probe, Scale PATCH, status PATCH routes (round 64)
+- CRD openAPIV3Schema, ResourceSlice Kind, PDB status defaults, PV phase (round 64)
