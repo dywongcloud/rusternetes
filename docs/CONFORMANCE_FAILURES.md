@@ -53,6 +53,9 @@ not an upstream ginkgo or conformance image bug.
 | VolumeAttachment + ResourceQuota status PATCH routes | ~2 tests | `d335dee` |
 | Pagination tests: fix missing ContinuationToken fields | tests only | `c93a3be` |
 | events.k8s.io/v1: separate handlers with correct apiVersion | ~1 test | `f8a75da` |
+| CRD openAPIV3Schema field name (camelCase mismatch) | ~3 tests | `abd2137` |
+| ResourceSlice: set Kind/apiVersion before storing | ~1 test | `9b21a89` |
+| PDB status fields: add serde defaults for required counters | ~1 test | `9b21a89` |
 
 ## Failure analysis from round 63
 
