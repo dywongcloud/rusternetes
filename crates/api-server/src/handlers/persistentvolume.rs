@@ -44,6 +44,16 @@ pub async fn create_pv(
     pv.metadata.ensure_uid();
     pv.metadata.ensure_creation_timestamp();
 
+    // Ensure status exists with a default phase so Go clients can deserialize it
+    if pv.status.is_none() {
+        pv.status = Some(rusternetes_common::resources::PersistentVolumeStatus {
+            phase: rusternetes_common::resources::PersistentVolumePhase::Pending,
+            message: None,
+            reason: None,
+            last_phase_transition_time: None,
+        });
+    }
+
     let key = build_key("persistentvolumes", None, &pv.metadata.name);
 
     // If dry-run, skip storage operation but return the validated resource

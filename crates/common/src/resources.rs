@@ -181,7 +181,8 @@ pub use validating_admission_policy::{
 pub use volume::{
     DeletionPolicy, ISCSIVolumeSource, NFSVolumeSource, PersistentVolume,
     PersistentVolumeAccessMode, PersistentVolumeClaim, PersistentVolumeClaimSpec,
-    PersistentVolumeClaimStatus, PersistentVolumeSpec, PersistentVolumeStatus, StorageClass,
+    PersistentVolumeClaimStatus, PersistentVolumePhase, PersistentVolumeSpec,
+    PersistentVolumeStatus, StorageClass,
     TypedObjectReference, VolumeBindingMode, VolumeSnapshot, VolumeSnapshotClass,
     VolumeSnapshotContent, VolumeSnapshotContentSpec, VolumeSnapshotContentStatus,
     VolumeSnapshotSource, VolumeSnapshotSpec, VolumeSnapshotStatus,
