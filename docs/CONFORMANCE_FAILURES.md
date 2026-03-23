@@ -53,6 +53,7 @@ environment — not an upstream bug.
 | VolumeAttributesClass: add deletecollection route | ~1 test | `bde38ef` |
 | OpenAPI /v2: return 406 for protobuf Accept headers | ~2 tests | `bde38ef` |
 | Keep stopped containers for log retrieval (don't remove on pod delete) | ~9 tests | `2c8e1fd` |
+| Container termination message reading from /dev/termination-log | ~2 tests | `c804e57` |
 
 ## Round 64 early results (13/441 done, 0 passed, 13 failed)
 
