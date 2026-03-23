@@ -12,7 +12,7 @@ KUBECONFIG=~/.kube/rusternetes-config sonobuoy status   # check status
 
 ## OPEN ISSUE: `sonobuoy status` progress counts stuck at zero
 
-**Status**: ROOT CAUSE IDENTIFIED — upstream ginkgo v2 bug in K8s v1.35 conformance image
+**Status**: FIXED — use v1.34.0 conformance image (upstream ginkgo v2 bug in v1.35)
 
 **Impact**: `sonobuoy status` shows `Passed: 0, Failed: 0, Remaining: 441` for the
 entire run. This affects ANY cluster using the `registry.k8s.io/conformance:v1.35.0`
@@ -34,10 +34,13 @@ exists. The `ProcessSpecReport` code is compiled into the binary but never invok
   the 2 initial progress POSTs work (`SetTestsTotal` and `SetStartMsg`)
 - `ReportAfterEach` is lost → `ProcessSpecReport` never called → no per-test POSTs
 
-**Workarounds**:
-1. Use `bash scripts/conformance-progress.sh` to parse e2e logs for progress
-2. Try conformance image v1.34.x which may not call `PreviewSpecs`
-3. Wait for upstream ginkgo fix or Kubernetes to move `ReportAfterEach` to a suite node
+**Fix applied**: Use conformance image v1.34.0 which does NOT call `PreviewSpecs`.
+Confirmed: v1.34.0 binary has zero `PreviewSpecs` references. The run-conformance.sh
+script now uses `--kubernetes-version=v1.34.0` to select the v1.34 conformance image.
+Override with `CONFORMANCE_IMAGE=... bash scripts/run-conformance.sh` if needed.
+
+When upstream ginkgo fixes `Clone()` to preserve tree children, or Kubernetes moves
+the `ReportAfterEach` registration to a suite node, we can upgrade back to v1.35+.
 
 ---
 
