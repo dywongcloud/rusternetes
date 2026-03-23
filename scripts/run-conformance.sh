@@ -50,20 +50,14 @@ fi
 # Step 5: Run conformance tests
 # Accept an optional mode argument (default: certified-conformance)
 SONOBUOY_MODE="${1:-certified-conformance}"
-# Use K8s v1.34 conformance image — v1.35 has a ginkgo bug where PreviewSpecs()
-# loses the ReportAfterEach callback, breaking sonobuoy progress reporting.
-# See docs/CONFORMANCE_FAILURES.md for details.
-CONFORMANCE_IMAGE="${CONFORMANCE_IMAGE:-registry.k8s.io/conformance:v1.34.0}"
 echo "[5/6] Starting conformance tests (this will take several minutes)..."
-echo "Running: sonobuoy run --mode=${SONOBUOY_MODE} --kubernetes-version=v1.34.0"
-echo "Conformance image: ${CONFORMANCE_IMAGE}"
+echo "Running: sonobuoy run --mode=${SONOBUOY_MODE} --wait"
 echo ""
 
 # Run sonobuoy and capture output
 # Force JSON encoding (rusternetes doesn't support protobuf, which is client-go's default)
 # The --kube-api-content-type flag tells the e2e test binary to use JSON for all API requests
 if sonobuoy run --mode="${SONOBUOY_MODE}" \
-    --kubernetes-version=v1.34.0 \
     --plugin-env "e2e.E2E_EXTRA_ARGS=--progress-report-url=http://localhost:8099/progress --kube-api-content-type=application/json" \
     --wait 2>&1 | tee /tmp/sonobuoy-latest.log; then
     TEST_RESULT="PASSED"
