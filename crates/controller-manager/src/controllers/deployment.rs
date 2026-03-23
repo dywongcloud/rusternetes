@@ -405,21 +405,47 @@ impl<S: Storage> DeploymentController<S> {
         labels.insert("pod-template-hash".to_string(), pod_template_hash.clone());
         metadata.labels = Some(labels);
 
-        // Set revision annotation on the ReplicaSet
-        let revision = deployment
-            .metadata
-            .annotations
-            .as_ref()
-            .and_then(|a| a.get("deployment.kubernetes.io/revision"))
-            .cloned()
-            .unwrap_or_else(|| "1".to_string());
+        // Set revision annotation on the ReplicaSet.
+        // Compute the next revision by finding the max among existing ReplicaSets + 1.
+        let rs_prefix = build_prefix("replicasets", Some(namespace));
+        let all_rs: Vec<ReplicaSet> = self.storage.list(&rs_prefix).await.unwrap_or_default();
+        let max_existing_revision = all_rs.iter()
+            .filter(|rs| {
+                rs.metadata.owner_references.as_ref()
+                    .map(|refs| refs.iter().any(|r| r.name == deployment.metadata.name))
+                    .unwrap_or(false)
+            })
+            .filter_map(|rs| {
+                rs.metadata.annotations.as_ref()
+                    .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+                    .and_then(|v| v.parse::<i64>().ok())
+            })
+            .max()
+            .unwrap_or(0);
+        let new_revision = (max_existing_revision + 1).to_string();
+
         metadata
             .annotations
             .get_or_insert_with(std::collections::HashMap::new)
             .insert(
                 "deployment.kubernetes.io/revision".to_string(),
-                revision,
+                new_revision.clone(),
             );
+
+        // Also update the deployment's revision annotation
+        {
+            let mut updated_deployment = deployment.clone();
+            updated_deployment
+                .metadata
+                .annotations
+                .get_or_insert_with(std::collections::HashMap::new)
+                .insert(
+                    "deployment.kubernetes.io/revision".to_string(),
+                    new_revision,
+                );
+            let dep_key = build_key("deployments", Some(namespace), &deployment.metadata.name);
+            let _ = self.storage.update(&dep_key, &updated_deployment).await;
+        }
 
         // Set owner reference to the deployment
         metadata.owner_references = Some(vec![rusternetes_common::types::OwnerReference {
