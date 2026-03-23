@@ -9,7 +9,7 @@ use bollard::Docker;
 use chrono::Utc;
 use futures_util::StreamExt;
 use rusternetes_common::resources::{
-    ConfigMap, Container, ContainerState, ContainerStatus, ExecAction, HTTPGetAction,
+    ConfigMap, Container, ContainerState, ContainerStatus, ExecAction, GRPCAction, HTTPGetAction,
     LifecycleHandler, PersistentVolume, PersistentVolumeClaim, Pod, Probe, Secret, TCPSocketAction,
 };
 use rusternetes_storage::{build_key, Storage};
@@ -21,6 +21,59 @@ use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 use crate::cni::CniRuntime;
+
+/// Wrapper for pre-encoded protobuf bytes (gRPC health check request).
+#[derive(Clone, Debug, Default)]
+struct EncodedBytes(Vec<u8>);
+
+impl prost::Message for EncodedBytes {
+    fn encode_raw(&self, buf: &mut impl prost::bytes::BufMut) {
+        buf.put_slice(&self.0);
+    }
+    fn merge_field(
+        &mut self,
+        _tag: u32,
+        _wire_type: prost::encoding::WireType,
+        _buf: &mut impl prost::bytes::Buf,
+        _ctx: prost::encoding::DecodeContext,
+    ) -> std::result::Result<(), prost::DecodeError> {
+        Ok(())
+    }
+    fn encoded_len(&self) -> usize {
+        self.0.len()
+    }
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
+/// Decoded gRPC health check response — extracts the status field (field 1, varint).
+#[derive(Clone, Debug, Default)]
+struct DecodedStatus(i32);
+
+impl prost::Message for DecodedStatus {
+    fn encode_raw(&self, _buf: &mut impl prost::bytes::BufMut) {}
+    fn merge_field(
+        &mut self,
+        tag: u32,
+        wire_type: prost::encoding::WireType,
+        buf: &mut impl prost::bytes::Buf,
+        ctx: prost::encoding::DecodeContext,
+    ) -> std::result::Result<(), prost::DecodeError> {
+        if tag == 1 {
+            // status field is an enum (varint)
+            prost::encoding::int32::merge(wire_type, &mut self.0, buf, ctx)
+        } else {
+            prost::encoding::skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+    fn encoded_len(&self) -> usize {
+        0
+    }
+    fn clear(&mut self) {
+        self.0 = 0;
+    }
+}
 
 /// Tracks consecutive probe successes/failures for threshold-based probe evaluation.
 #[derive(Debug, Clone, Default)]
@@ -3221,6 +3274,11 @@ impl ContainerRuntime {
             return self.check_exec_probe(container_name, exec, timeout).await;
         }
 
+        // gRPC probe
+        if let Some(grpc) = &probe.grpc {
+            return self.check_grpc_probe(container_name, grpc, timeout).await;
+        }
+
         Ok(true) // No probe configured
     }
 
@@ -3384,6 +3442,83 @@ impl ContainerRuntime {
         let exit_code = inspect.exit_code.unwrap_or(1);
 
         Ok(exit_code == 0)
+    }
+
+    /// Check a gRPC health probe by connecting to the gRPC health service.
+    /// Sends a raw grpc.health.v1.Health/Check request over HTTP/2 via tonic Channel.
+    async fn check_grpc_probe(
+        &self,
+        container_name: &str,
+        grpc: &GRPCAction,
+        timeout: Duration,
+    ) -> Result<bool> {
+        let ip = self.get_effective_container_ip(container_name).await;
+        let addr = format!("http://{}:{}", ip, grpc.port);
+        debug!("gRPC probe: {} service={:?}", addr, grpc.service);
+
+        let endpoint = match tonic::transport::Endpoint::from_shared(addr.clone()) {
+            Ok(ep) => ep.timeout(timeout).connect_timeout(timeout),
+            Err(e) => {
+                debug!("gRPC probe invalid endpoint {}: {}", addr, e);
+                return Ok(false);
+            }
+        };
+
+        let mut client = match tokio::time::timeout(timeout, endpoint.connect()).await {
+            Ok(Ok(ch)) => tonic::client::Grpc::new(ch),
+            Ok(Err(e)) => {
+                debug!("gRPC probe connect failed: {}", e);
+                return Ok(false);
+            }
+            Err(_) => {
+                debug!("gRPC probe connect timed out");
+                return Ok(false);
+            }
+        };
+
+        if client.ready().await.is_err() {
+            debug!("gRPC probe: client not ready");
+            return Ok(false);
+        }
+
+        // Construct the HealthCheckRequest protobuf manually
+        let service_name = grpc.service.as_deref().unwrap_or("");
+        let mut request_bytes = Vec::new();
+        if !service_name.is_empty() {
+            // field 1, wire type 2 (length-delimited string)
+            request_bytes.push(0x0a);
+            // varint encode the length
+            let len = service_name.len();
+            if len < 128 {
+                request_bytes.push(len as u8);
+            } else {
+                request_bytes.push((len & 0x7f | 0x80) as u8);
+                request_bytes.push((len >> 7) as u8);
+            }
+            request_bytes.extend_from_slice(service_name.as_bytes());
+        }
+
+        let codec = tonic::codec::ProstCodec::default();
+        let path = http::uri::PathAndQuery::from_static("/grpc.health.v1.Health/Check");
+
+        // Use EncodedBytes to wrap our pre-encoded protobuf message
+        let request = tonic::Request::new(EncodedBytes(request_bytes));
+        let result: std::result::Result<tonic::Response<DecodedStatus>, tonic::Status> =
+            client.unary(request, path, codec).await;
+
+        match result {
+            Ok(response) => {
+                let status_val = response.into_inner().0;
+                // HealthCheckResponse.ServingStatus: SERVING = 1
+                let serving = status_val == 1;
+                debug!("gRPC probe result: serving={}", serving);
+                Ok(serving)
+            }
+            Err(status) => {
+                debug!("gRPC probe failed with gRPC status: {:?}", status);
+                Ok(false)
+            }
+        }
     }
 
     /// Execute a lifecycle handler (postStart/preStop) inside a container.

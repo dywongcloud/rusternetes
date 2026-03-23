@@ -30,6 +30,9 @@ chrono.workspace = true
 axum.workspace = true
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tonic.workspace = true
+prost.workspace = true
+http = "1"
 sysinfo = "0.32"
 
 [dev-dependencies]

@@ -143,7 +143,7 @@ pub use pod::{
     ConfigMapProjection, ConfigMapVolumeSource, Container, ContainerPort, ContainerState,
     ContainerStatus, DownwardAPIProjection, DownwardAPIVolumeFile, DownwardAPIVolumeSource,
     EmptyDirVolumeSource, EnvFromSource, EnvVar, EnvVarSource, EphemeralContainer,
-    EphemeralVolumeSource, ExecAction, HTTPGetAction, HTTPHeader, HostPathVolumeSource,
+    EphemeralVolumeSource, ExecAction, GRPCAction, HTTPGetAction, HTTPHeader, HostPathVolumeSource,
     ImageVolumeSource, KeyToPath, Lifecycle, LifecycleHandler, NodeAffinity, NodeSelector,
     NodeSelectorRequirement, NodeSelectorTerm, ObjectFieldSelector, PersistentVolumeClaimTemplate,
     PersistentVolumeClaimVolumeSource, Pod, PodAffinity, PodAffinityTerm, PodAntiAffinity,
