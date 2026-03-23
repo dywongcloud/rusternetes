@@ -238,8 +238,35 @@ async fn get_container_logs(
         options.since = since;
     }
 
-    // Get logs stream
-    let mut log_stream = docker.logs(&full_container_name, Some(options));
+    // Try to get logs - first by exact name, then search all containers
+    // (the container might have a slightly different name or be stopped)
+    let container_exists = docker
+        .inspect_container(&full_container_name, None::<bollard::container::InspectContainerOptions>)
+        .await
+        .is_ok();
+
+    let effective_name = if container_exists {
+        full_container_name.clone()
+    } else {
+        // Search for the container by listing all (including exited)
+        let mut filters = std::collections::HashMap::new();
+        filters.insert("name".to_string(), vec![full_container_name.clone()]);
+        let list_opts = bollard::container::ListContainersOptions {
+            all: true,
+            filters,
+            ..Default::default()
+        };
+        if let Ok(containers) = docker.list_containers(Some(list_opts)).await {
+            containers
+                .first()
+                .and_then(|c| c.id.clone())
+                .unwrap_or(full_container_name.clone())
+        } else {
+            full_container_name.clone()
+        }
+    };
+
+    let mut log_stream = docker.logs(&effective_name, Some(options));
 
     let mut log_output = String::new();
     let mut total_bytes = 0usize;
