@@ -1,5 +1,6 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
     http::StatusCode,
     Extension, Json,
@@ -18,8 +19,11 @@ pub async fn create_csinode(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
-    Json(mut node): Json<CSINode>,
+    body: Bytes,
 ) -> Result<(StatusCode, Json<CSINode>)> {
+    let mut node: CSINode = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
     info!("Creating CSINode: {}", node.metadata.name);
 
     // Check authorization (cluster-scoped)

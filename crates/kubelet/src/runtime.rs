@@ -1966,6 +1966,57 @@ impl ContainerRuntime {
             }
         }
 
+        // Add envFrom: inject all keys from referenced ConfigMaps/Secrets
+        if let Some(env_from_sources) = &container.env_from {
+            for source in env_from_sources {
+                let prefix = source.prefix.as_deref().unwrap_or("");
+                // ConfigMap envFrom
+                if let Some(cm_ref) = &source.config_map_ref {
+                    if let Some(storage) = &self.storage {
+                        let cm_key = build_key("configmaps", Some(namespace), &cm_ref.name);
+                        match storage.get::<ConfigMap>(&cm_key).await {
+                            Ok(cm) => {
+                                if let Some(data) = &cm.data {
+                                    for (k, v) in data {
+                                        env_list.push(format!("{}{}={}", prefix, k, v));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let optional = cm_ref.optional.unwrap_or(false);
+                                if !optional {
+                                    warn!("Failed to get ConfigMap {} for envFrom: {}", cm_ref.name, e);
+                                }
+                            }
+                        }
+                    }
+                }
+                // Secret envFrom
+                if let Some(secret_ref) = &source.secret_ref {
+                    if let Some(storage) = &self.storage {
+                        let secret_key = build_key("secrets", Some(namespace), &secret_ref.name);
+                        match storage.get::<Secret>(&secret_key).await {
+                            Ok(secret) => {
+                                if let Some(data) = &secret.data {
+                                    for (k, v) in data {
+                                        if let Ok(val) = String::from_utf8(v.clone()) {
+                                            env_list.push(format!("{}{}={}", prefix, k, val));
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let optional = secret_ref.optional.unwrap_or(false);
+                                if !optional {
+                                    warn!("Failed to get Secret {} for envFrom: {}", secret_ref.name, e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Add user-defined environment variables
         if let Some(env_vars) = &container.env {
             for env_var in env_vars {

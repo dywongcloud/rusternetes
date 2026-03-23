@@ -1,5 +1,6 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
@@ -19,8 +20,11 @@ pub async fn create_pv(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
-    Json(mut pv): Json<PersistentVolume>,
+    body: Bytes,
 ) -> Result<(StatusCode, Json<PersistentVolume>)> {
+    let mut pv: PersistentVolume = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
     info!("Creating PersistentVolume: {}", pv.metadata.name);
 
     // Check if this is a dry-run request

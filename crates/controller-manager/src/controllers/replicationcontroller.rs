@@ -1,5 +1,6 @@
+use chrono::Utc;
 use rusternetes_common::{
-    resources::{Pod, PodStatus, ReplicationController},
+    resources::{Pod, PodStatus, ReplicationController, ReplicationControllerCondition},
     types::{ObjectMeta, Phase},
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
@@ -98,11 +99,15 @@ impl<S: Storage> ReplicationControllerController<S> {
             rc_pods.len()
         );
 
+        let mut create_failure: Option<String> = None;
         if current_replicas < desired_replicas {
             // Need to create more pods
             let to_create = desired_replicas - current_replicas;
             for i in 0..to_create {
-                self.create_pod(rc, i).await?;
+                if let Err(e) = self.create_pod(rc, i).await {
+                    error!("Failed to create pod for RC {}: {}", rc.metadata.name, e);
+                    create_failure = Some(e.to_string());
+                }
             }
         } else if current_replicas > desired_replicas {
             // Need to delete excess pods
@@ -124,8 +129,16 @@ impl<S: Storage> ReplicationControllerController<S> {
         let final_current_replicas = rc_pods_after.len() as i32;
         let final_ready_replicas = rc_pods_after.len() as i32; // All matched pods
 
+        // If we still don't have enough replicas after creation attempts, record failure
+        if create_failure.is_none() && final_current_replicas < desired_replicas {
+            create_failure = Some(format!(
+                "unable to create pods: only {} of {} desired replicas are available",
+                final_current_replicas, desired_replicas
+            ));
+        }
+
         // Update status with accurate counts
-        self.update_status(rc, final_current_replicas, final_ready_replicas)
+        self.update_status(rc, final_current_replicas, final_ready_replicas, create_failure.as_deref())
             .await?;
 
         Ok(())
@@ -217,9 +230,26 @@ impl<S: Storage> ReplicationControllerController<S> {
         rc: &ReplicationController,
         current_replicas: i32,
         ready_replicas: i32,
+        failure_message: Option<&str>,
     ) -> rusternetes_common::Result<()> {
         let namespace = rc.metadata.namespace.as_deref().unwrap_or("default");
         let key = build_key("replicationcontrollers", Some(namespace), &rc.metadata.name);
+
+        let desired_replicas = rc.spec.replicas.unwrap_or(1);
+        let conditions = if current_replicas < desired_replicas {
+            let msg = failure_message
+                .unwrap_or("unable to create pods")
+                .to_string();
+            Some(vec![ReplicationControllerCondition {
+                condition_type: "ReplicaFailure".to_string(),
+                status: "True".to_string(),
+                last_transition_time: Some(Utc::now()),
+                reason: Some("FailedCreate".to_string()),
+                message: Some(msg),
+            }])
+        } else {
+            None
+        };
 
         let mut updated_rc = rc.clone();
         updated_rc.status = Some(rusternetes_common::resources::ReplicationControllerStatus {
@@ -227,8 +257,8 @@ impl<S: Storage> ReplicationControllerController<S> {
             fully_labeled_replicas: Some(current_replicas),
             ready_replicas: Some(ready_replicas),
             available_replicas: Some(ready_replicas),
-            observed_generation: None, // TODO: Add generation tracking to ObjectMeta
-            conditions: None,
+            observed_generation: None,
+            conditions,
         });
 
         self.storage.update(&key, &updated_rc).await?;
