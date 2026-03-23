@@ -222,6 +222,7 @@ pub struct ResourcePolicyRule {
 #[serde(rename_all = "camelCase")]
 pub struct NonResourcePolicyRule {
     pub verbs: Vec<String>,
+    #[serde(rename = "nonResourceURLs")]
     pub non_resource_urls: Vec<String>,
 }
 

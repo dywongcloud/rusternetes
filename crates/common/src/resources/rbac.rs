@@ -92,7 +92,7 @@ pub struct PolicyRule {
 
     /// NonResourceURLs is a set of partial urls that a user should have access to
     /// *s are allowed, but only as the full, final step in the path
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "nonResourceURLs", skip_serializing_if = "Option::is_none")]
     pub non_resource_urls: Option<Vec<String>>,
 }
 

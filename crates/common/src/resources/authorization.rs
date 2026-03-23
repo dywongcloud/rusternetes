@@ -312,7 +312,7 @@ pub struct SubjectRulesReviewStatus {
 #[serde(rename_all = "camelCase")]
 pub struct NonResourceRule {
     /// NonResourceURLs is a set of partial urls that a user should have access to.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "nonResourceURLs", skip_serializing_if = "Option::is_none")]
     pub non_resource_urls: Option<Vec<String>>,
 
     /// Verb is a list of kubernetes non-resource API verbs.
