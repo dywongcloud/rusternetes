@@ -28,6 +28,13 @@ impl<S: Storage> EndpointSliceController<S> {
         // List all endpoints across all namespaces
         let endpoints_list: Vec<Endpoints> = self.storage.list("/registry/endpoints/").await?;
 
+        // Build a set of existing endpoints names for orphan detection
+        let mut endpoints_names: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+        for ep in &endpoints_list {
+            let ns = ep.metadata.namespace.as_deref().unwrap_or("default").to_string();
+            endpoints_names.insert((ns, ep.metadata.name.clone()));
+        }
+
         for endpoints in endpoints_list {
             if let Err(e) = self.reconcile_endpoints(&endpoints).await {
                 error!(
@@ -40,6 +47,29 @@ impl<S: Storage> EndpointSliceController<S> {
                     &endpoints.metadata.name,
                     e
                 );
+            }
+        }
+
+        // Clean up orphaned EndpointSlices (whose source Endpoints no longer exist)
+        let all_slices: Vec<EndpointSlice> = self.storage.list("/registry/endpointslices/").await.unwrap_or_default();
+        for slice in all_slices {
+            let ns = slice.metadata.namespace.as_deref().unwrap_or("default");
+            let name = &slice.metadata.name;
+            // EndpointSlice names match their source Endpoints name (or name-suffix)
+            let base_name = name.split('-').take(name.matches('-').count()).collect::<Vec<&str>>().join("-");
+            let source_name = if base_name.is_empty() { name.clone() } else { base_name };
+            if !endpoints_names.contains(&(ns.to_string(), source_name.clone()))
+                && !endpoints_names.contains(&(ns.to_string(), name.clone()))
+            {
+                // Check if this slice was auto-generated (has kubernetes.io/service-name label)
+                let is_mirrored = slice.metadata.labels.as_ref()
+                    .map(|l| l.contains_key("kubernetes.io/service-name") || l.contains_key("endpointslice.kubernetes.io/managed-by"))
+                    .unwrap_or(false);
+                if is_mirrored {
+                    let key = rusternetes_storage::build_key("endpointslices", Some(ns), name);
+                    debug!("Deleting orphaned EndpointSlice {}/{}", ns, name);
+                    let _ = self.storage.delete(&key).await;
+                }
             }
         }
 
