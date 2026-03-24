@@ -1,46 +1,31 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 82 building/deploying — 47 fixes)
+**Last updated**: 2026-03-24 (48 fixes, rebuilding for round 83)
 
-## Key root causes fixed
+## Critical root causes fixed
 
-| # | Root Cause | Fix | Commit |
-|---|-----------|-----|--------|
-| 1 | Field selector: missing fields ≠ false | Treat missing as false | `646a407` |
-| 2 | Service CIDR: no route for 10.96.0.0/12 | Add route in kube-proxy | `b4f31c2` |
-| 3 | API connectivity: ClusterIP not routable | Direct IP + TLS SANs | `b224387`+ |
-| 4 | Watch architecture: N×N etcd watches | Watch cache (1 per prefix) | `73c3514` |
-| 5 | Protobuf: client sends binary, we reject | Extract JSON from envelope | `2571b32` |
-| 6 | Controller interval: 10s too slow | Reduced to 2s | `2ea4199` |
-| 7 | Namespace cascade: pods deleted before controllers | Reorder deletion | `1270649` |
-| 8 | Watch race: list before subscribe | Subscribe first | `d2e306c` |
+| # | Root Cause | Impact | Fix |
+|---|-----------|--------|-----|
+| 1 | **Container restart storm** | Containers recreated every 2s, flooding watches | `e99730b` |
+| 2 | Field selector: missing ≠ false | All tests blocked | `646a407` |
+| 3 | Protobuf: client sends binary | CRD/EndpointSlice creation fails | `2571b32` |
+| 4 | Service CIDR: no route | Pod-to-service fails | `b4f31c2` |
+| 5 | API connectivity: ClusterIP | Pods can't reach API | `b224387`+ |
+| 6 | Watch cache: N×N watches | etcd overwhelmed | `73c3514` |
+| 7 | Controller interval: 10s | Tests time out | `2ea4199` |
+| 8 | Namespace cascade: wrong order | Orphaned pods | `1270649` |
+| 9 | Status PATCH: metadata lost | Annotations not merged | `38b44f2` |
 
-## Round 79-81 failures analyzed
-
-| Failure | Count | Root Cause | Fix Status |
-|---------|-------|-----------|------------|
-| Watch closed (StatefulSet) | 1 | 10s controller interval | **Fixed** (2s) |
-| CRD/EndpointSlice protobuf | 3-4 | Binary protobuf body | **Fixed** (extraction) |
-| CPU_LIMIT container output | 2 | Divisor returned millicores | **Fixed** |
-| Webhook deployment | 1 | TLS + service routing | Partially fixed |
-| kubectl exec service | 1 | ClusterIP routing | **Fixed** |
-| RS conditions wiped | 1 | Controller overwrites | **Fixed** |
-| Status PATCH annotations | 1 | Metadata not merged | **Fixed** |
-| Pod resize 404 | 2 | Timing issue | Improved (2s interval) |
-| RC rate limiter | 1 | API latency | Improved (2s interval) |
-| Lifecycle hook timeout | 1 | Hook execution | Needs investigation |
-| Session affinity | 1 | Kube-proxy feature | Not implemented |
-
-## All 47 fixes
+## All 48 fixes
 
 | Fix | Commit |
 |-----|--------|
-| Container logs: search exited | `2b1008d` |
+| Container logs search | `2b1008d` |
 | EventList ListMeta | `97938e4` |
 | gRPC probe | `e738c1f` |
 | Scale PATCH | `d335dee` |
 | Status PATCH routes | `d335dee` |
-| events.k8s.io/v1 apiVersion | `f8a75da` |
+| events.k8s.io/v1 | `f8a75da` |
 | CRD openAPIV3Schema | `abd2137` |
 | ResourceSlice Kind | `9b21a89` |
 | PDB status defaults | `9b21a89` |
@@ -52,7 +37,7 @@
 | Container retention | `2c8e1fd` |
 | Termination message | `c804e57` |
 | Init container Waiting | `b54d541` |
-| StatefulSet revision hash | `7f5c9bc` |
+| StatefulSet revision | `7f5c9bc` |
 | SA token key | `9238eb4` |
 | Proxy handler keys | `b4b745c` |
 | nonResourceURLs | `98f0eac` |
@@ -76,8 +61,9 @@
 | Watch bookmark resilience | `0eb215d` |
 | Watch cache | `73c3514` |
 | Watch subscribe-before-list | `d2e306c` |
-| Namespace cascade order | `1270649` |
+| Namespace cascade | `1270649` |
 | Protobuf extraction | `2571b32` |
 | RS conditions preserve | `58317e6` |
-| Controller interval 2s | `2ea4199`+`ea1b800` |
-| Status PATCH metadata merge | `38b44f2` |
+| Controller interval 2s | `ea1b800` |
+| Status PATCH metadata | `38b44f2` |
+| **Container restart fix** | **`e99730b`** |
