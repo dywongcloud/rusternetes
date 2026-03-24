@@ -3513,8 +3513,12 @@ impl ContainerRuntime {
         http_get: &HTTPGetAction,
         timeout: Duration,
     ) -> Result<bool> {
-        // Get container IP (resolving through pause container if needed)
-        let ip = self.get_effective_container_ip(container_name).await;
+        // Use host field if specified, otherwise resolve container IP
+        let ip = if let Some(ref host) = http_get.host {
+            host.clone()
+        } else {
+            self.get_effective_container_ip(container_name).await
+        };
 
         let scheme = http_get.scheme.as_deref().unwrap_or("http");
         let path = http_get.path.as_deref().unwrap_or("/");
@@ -3726,16 +3730,19 @@ impl ContainerRuntime {
                 ));
             }
         } else if let Some(ref http_get) = handler.http_get {
-            // Execute HTTP GET request against the container
-            let inspect = self
-                .docker
-                .inspect_container(container_name, None::<InspectContainerOptions>)
-                .await?;
-
-            let ip = inspect
-                .network_settings
-                .and_then(|ns| ns.ip_address)
-                .unwrap_or_else(|| "127.0.0.1".to_string());
+            // Execute HTTP GET request — use host field if specified, otherwise container IP
+            let ip = if let Some(ref host) = http_get.host {
+                host.clone()
+            } else {
+                let inspect = self
+                    .docker
+                    .inspect_container(container_name, None::<InspectContainerOptions>)
+                    .await?;
+                inspect
+                    .network_settings
+                    .and_then(|ns| ns.ip_address)
+                    .unwrap_or_else(|| "127.0.0.1".to_string())
+            };
 
             let scheme = http_get.scheme.as_deref().unwrap_or("http");
             let path = http_get.path.as_deref().unwrap_or("/");
@@ -3745,6 +3752,7 @@ impl ContainerRuntime {
 
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
+                .danger_accept_invalid_certs(true)
                 .build()?;
 
             match client.get(&url).send().await {
