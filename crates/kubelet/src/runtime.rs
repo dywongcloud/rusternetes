@@ -1889,6 +1889,13 @@ impl ContainerRuntime {
             self.kubernetes_service_host
         ));
 
+        // Inject JOB_COMPLETION_INDEX for indexed Jobs
+        if let Some(annotations) = &pod.metadata.annotations {
+            if let Some(index) = annotations.get("batch.kubernetes.io/job-completion-index") {
+                env_list.push(format!("JOB_COMPLETION_INDEX={}", index));
+            }
+        }
+
         // Inject service link environment variables (Kubernetes convention).
         // When enableServiceLinks is true (default), inject env vars for every
         // Service in the pod's namespace: {SVC}_SERVICE_HOST, {SVC}_SERVICE_PORT, etc.
