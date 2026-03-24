@@ -469,13 +469,25 @@ impl Kubelet {
                         let qos = Self::compute_qos_class(&new_pod);
                         let observed_gen = new_pod.metadata.generation;
                         let init_container_statuses = self.runtime.get_init_container_statuses(&new_pod).await;
+
+                        // If any container has a readiness probe, start as not-ready
+                        // and let the probe check in the sync loop update Ready to True.
+                        let has_readiness_probe = new_pod.spec.as_ref()
+                            .map(|s| s.containers.iter().any(|c| c.readiness_probe.is_some()))
+                            .unwrap_or(false);
+                        let conditions = if has_readiness_probe {
+                            Self::not_ready_pod_conditions()
+                        } else {
+                            Self::running_pod_conditions()
+                        };
+
                         new_pod.status = Some(PodStatus {
                             phase: Some(Phase::Running),
                             message: Some("All containers started".to_string()),
                             reason: None,
                             host_ip: Some("127.0.0.1".to_string()),
                             pod_ip,
-                            conditions: Some(Self::running_pod_conditions()),
+                            conditions: Some(conditions),
                             container_statuses,
                             init_container_statuses,
                             ephemeral_container_statuses: None,
@@ -667,13 +679,23 @@ impl Kubelet {
                 let qos = Self::compute_qos_class(&new_pod);
                 let observed_gen = new_pod.metadata.generation;
                 let init_container_statuses = self.runtime.get_init_container_statuses(&new_pod).await;
+
+                let has_readiness_probe = new_pod.spec.as_ref()
+                    .map(|s| s.containers.iter().any(|c| c.readiness_probe.is_some()))
+                    .unwrap_or(false);
+                let conditions = if has_readiness_probe {
+                    Self::not_ready_pod_conditions()
+                } else {
+                    Self::running_pod_conditions()
+                };
+
                 new_pod.status = Some(PodStatus {
                     phase: Some(Phase::Running),
                     message: Some("All containers started".to_string()),
                     reason: None,
                     host_ip: Some("127.0.0.1".to_string()),
                     pod_ip,
-                    conditions: Some(Self::running_pod_conditions()),
+                    conditions: Some(conditions),
                     container_statuses,
                     init_container_statuses,
                     ephemeral_container_statuses: None,

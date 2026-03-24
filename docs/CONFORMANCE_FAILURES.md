@@ -125,7 +125,7 @@
 - **Root cause**: CPU resource value computation or divisor handling is wrong.
 - **Status**: Carried from round 86.
 
-## All 73 fixes committed (22 pending deploy)
+## All 74 fixes committed (23 pending deploy)
 
 | Fix | Commit |
 |-----|--------|
@@ -202,3 +202,4 @@
 | DeviceClass watch interception | pending |
 | Service proxy port name parsing | pending |
 | Service proxy direct endpoint routing | pending |
+| Readiness probe initial not-ready state | pending |
