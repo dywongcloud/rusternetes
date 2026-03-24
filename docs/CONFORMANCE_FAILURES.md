@@ -1,39 +1,37 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (rebuilding with 45 fixes for round 81)
+**Last updated**: 2026-03-24 (round 82 building/deploying — 47 fixes)
 
 ## Key root causes fixed
 
-1. **Field selector** (`646a407`): Missing fields = false
-2. **Service CIDR routing** (`b4f31c2`): Route for 10.96.0.0/12
-3. **API connectivity** (`b224387`+`f9c9691`): Direct IP + TLS SANs
-4. **Watch cache** (`73c3514`): One etcd watch per prefix
-5. **Protobuf extraction** (`2571b32`): JSON from K8s protobuf envelope
-6. **Controller interval** (`2ea4199`): Reduced from 10s to 1s
-7. **Namespace cascade** (`1270649`): Delete controllers before pods
+| # | Root Cause | Fix | Commit |
+|---|-----------|-----|--------|
+| 1 | Field selector: missing fields ≠ false | Treat missing as false | `646a407` |
+| 2 | Service CIDR: no route for 10.96.0.0/12 | Add route in kube-proxy | `b4f31c2` |
+| 3 | API connectivity: ClusterIP not routable | Direct IP + TLS SANs | `b224387`+ |
+| 4 | Watch architecture: N×N etcd watches | Watch cache (1 per prefix) | `73c3514` |
+| 5 | Protobuf: client sends binary, we reject | Extract JSON from envelope | `2571b32` |
+| 6 | Controller interval: 10s too slow | Reduced to 2s | `2ea4199` |
+| 7 | Namespace cascade: pods deleted before controllers | Reorder deletion | `1270649` |
+| 8 | Watch race: list before subscribe | Subscribe first | `d2e306c` |
 
-## Round 79 failure analysis (18 failures, 1 pass)
+## Round 79-81 failures analyzed
 
-| # | Failure | Fix | Status |
-|---|---------|-----|--------|
-| 1 | Watch closed (StatefulSet) | Controller 10s→1s | Fixed, not deployed |
-| 2 | CRD protobuf (×2) | Protobuf extraction | Fixed, not deployed |
-| 3 | EndpointSlice protobuf | Protobuf extraction | Fixed, not deployed |
-| 4 | CPU_LIMIT=2 env var | CPU divisor fix | Fixed, not deployed |
-| 5 | cpu_limit file = 1 | CPU divisor fix | Fixed, not deployed |
-| 6 | Webhook deployment | Volume + service routing | Partially fixed |
-| 7 | kubectl exec curl | Service CIDR route | Deployed |
-| 8 | RS conditions wiped | Preserve conditions | Fixed, not deployed |
-| 9 | Pod resize 404 (×2) | Timing — 1s interval helps | Fixed, not deployed |
-| 10 | RC rate limiter | 1s interval helps | Fixed, not deployed |
-| 11 | Lifecycle hook 30s | Implementation exists | Needs investigation |
-| 12 | Session affinity | Kube-proxy feature | Not yet implemented |
-| 13 | CRD deadline | Protobuf extraction | Fixed, not deployed |
+| Failure | Count | Root Cause | Fix Status |
+|---------|-------|-----------|------------|
+| Watch closed (StatefulSet) | 1 | 10s controller interval | **Fixed** (2s) |
+| CRD/EndpointSlice protobuf | 3-4 | Binary protobuf body | **Fixed** (extraction) |
+| CPU_LIMIT container output | 2 | Divisor returned millicores | **Fixed** |
+| Webhook deployment | 1 | TLS + service routing | Partially fixed |
+| kubectl exec service | 1 | ClusterIP routing | **Fixed** |
+| RS conditions wiped | 1 | Controller overwrites | **Fixed** |
+| Status PATCH annotations | 1 | Metadata not merged | **Fixed** |
+| Pod resize 404 | 2 | Timing issue | Improved (2s interval) |
+| RC rate limiter | 1 | API latency | Improved (2s interval) |
+| Lifecycle hook timeout | 1 | Hook execution | Needs investigation |
+| Session affinity | 1 | Kube-proxy feature | Not implemented |
 
-**Expected improvement**: 10 of 13 failure types have committed fixes.
-With 1s controller interval, tests should complete ~10x faster.
-
-## All 45 fixes
+## All 47 fixes
 
 | Fix | Commit |
 |-----|--------|
@@ -81,5 +79,5 @@ With 1s controller interval, tests should complete ~10x faster.
 | Namespace cascade order | `1270649` |
 | Protobuf extraction | `2571b32` |
 | RS conditions preserve | `58317e6` |
-| Controller interval 10s→2s | `2ea4199`+`ea1b800` |
+| Controller interval 2s | `2ea4199`+`ea1b800` |
 | Status PATCH metadata merge | `38b44f2` |
