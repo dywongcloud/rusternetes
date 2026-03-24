@@ -260,33 +260,41 @@ async fn cascade_delete_namespace_resources(
 
     // List of resource types that are namespace-scoped and should be deleted
     // Order matters: delete child resources before parent resources
+    // Delete controllers FIRST so they don't recreate pods during cleanup.
+    // Then delete pods last.
     let resource_types = vec![
-        "events",
+        // 1. Delete controllers first (they recreate pods if deleted after pods)
+        "cronjobs",
+        "jobs",
+        "deployments",
+        "statefulsets",
+        "daemonsets",
+        "replicasets",
+        "replicationcontrollers",
+        // 2. Delete pods (now safe since controllers are gone)
+        "pods",
+        // 3. Delete supporting resources
+        "services",
         "endpoints",
         "endpointslices",
         "configmaps",
         "secrets",
         "serviceaccounts",
         "persistentvolumeclaims",
-        "pods",
-        "replicationcontrollers",
-        "services",
-        "daemonsets",
-        "deployments",
-        "replicasets",
-        "statefulsets",
-        "jobs",
-        "cronjobs",
         "ingresses",
         "networkpolicies",
         "poddisruptionbudgets",
         "resourcequotas",
         "limitranges",
         "horizontalpodautoscalers",
+        "controllerrevisions",
+        "podtemplates",
+        "resourceclaims",
         "volumesnapshots",
         "leases",
         "rolebindings",
         "roles",
+        "events",
     ];
 
     let mut total_deleted = 0;
