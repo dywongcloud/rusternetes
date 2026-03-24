@@ -185,6 +185,11 @@ impl Storage for MemoryStorage {
         Ok(results)
     }
 
+    async fn watch_from_revision(&self, prefix: &str, _revision: i64) -> Result<WatchStream> {
+        // Memory storage doesn't support revisions, just delegate to watch
+        self.watch(prefix).await
+    }
+
     async fn watch(&self, prefix: &str) -> Result<WatchStream> {
         use futures::stream::StreamExt;
 

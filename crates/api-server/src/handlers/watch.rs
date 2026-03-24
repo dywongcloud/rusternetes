@@ -324,17 +324,31 @@ where
                                 continue;
                             }
                             None => {
-                                // Watch stream ended — reconnect with new stream
-                                debug!("Watch stream ended, reconnecting");
-                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                                match state.storage.watch(&prefix).await {
+                                // Watch stream ended — reconnect from last revision
+                                // to avoid losing events during the gap.
+                                let reconnect_rev = latest_resource_version
+                                    .as_ref()
+                                    .and_then(|rv| rv.parse::<i64>().ok())
+                                    .unwrap_or(0);
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                let reconnect_result = if reconnect_rev > 0 {
+                                    state.storage.watch_from_revision(&prefix, reconnect_rev + 1).await
+                                } else {
+                                    state.storage.watch(&prefix).await
+                                };
+                                match reconnect_result {
                                     Ok(new_stream) => {
                                         watch_stream = Box::pin(new_stream);
                                         continue;
                                     }
-                                    Err(e) => {
-                                        debug!("Watch reconnect failed: {}", e);
-                                        break;
+                                    Err(_) => {
+                                        match state.storage.watch(&prefix).await {
+                                            Ok(new_stream) => {
+                                                watch_stream = Box::pin(new_stream);
+                                                continue;
+                                            }
+                                            Err(_) => break,
+                                        }
                                     }
                                 }
                             }
@@ -651,17 +665,31 @@ where
                                 continue;
                             }
                             None => {
-                                // Watch stream ended — reconnect with new stream
-                                debug!("Watch stream ended, reconnecting");
-                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                                match state.storage.watch(&prefix).await {
+                                // Watch stream ended — reconnect from last revision
+                                // to avoid losing events during the gap.
+                                let reconnect_rev = latest_resource_version
+                                    .as_ref()
+                                    .and_then(|rv| rv.parse::<i64>().ok())
+                                    .unwrap_or(0);
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                let reconnect_result = if reconnect_rev > 0 {
+                                    state.storage.watch_from_revision(&prefix, reconnect_rev + 1).await
+                                } else {
+                                    state.storage.watch(&prefix).await
+                                };
+                                match reconnect_result {
                                     Ok(new_stream) => {
                                         watch_stream = Box::pin(new_stream);
                                         continue;
                                     }
-                                    Err(e) => {
-                                        debug!("Watch reconnect failed: {}", e);
-                                        break;
+                                    Err(_) => {
+                                        match state.storage.watch(&prefix).await {
+                                            Ok(new_stream) => {
+                                                watch_stream = Box::pin(new_stream);
+                                                continue;
+                                            }
+                                            Err(_) => break,
+                                        }
                                     }
                                 }
                             }

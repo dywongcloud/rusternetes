@@ -361,6 +361,52 @@ impl Storage for EtcdStorage {
         Ok(results)
     }
 
+    async fn watch_from_revision(&self, prefix: &str, revision: i64) -> Result<WatchStream> {
+        let mut client = self.client.lock().await;
+        let watch_options = WatchOptions::new()
+            .with_prefix()
+            .with_prev_key()
+            .with_start_revision(revision);
+        let (_watcher, stream) = client
+            .watch(prefix, Some(watch_options))
+            .await
+            .map_err(|e| Error::Storage(format!("Failed to create watch from revision {}: {}", revision, e)))?;
+        info!("Started watching prefix: {} from revision {}", prefix, revision);
+        let watch_stream = stream.map(move |watch_resp| {
+            match watch_resp {
+                Ok(resp) => {
+                    for event in resp.events() {
+                        let key = event
+                            .kv()
+                            .map(|kv| kv.key_str().unwrap_or("").to_string())
+                            .unwrap_or_default();
+                        return match event.event_type() {
+                            etcd_client::EventType::Put => {
+                                let value = event
+                                    .kv()
+                                    .map(|kv| String::from_utf8_lossy(kv.value()).to_string())
+                                    .unwrap_or_default();
+                                Ok(WatchEvent::Modified(key, value))
+                            }
+                            etcd_client::EventType::Delete => {
+                                let prev_value = event
+                                    .prev_kv()
+                                    .map(|kv| String::from_utf8_lossy(kv.value()).to_string())
+                                    .unwrap_or_default();
+                                Ok(WatchEvent::Deleted(key, prev_value))
+                            }
+                        };
+                    }
+                    // No events in this response — return a dummy Added event
+                    // that the watch handler will ignore
+                    Err(Error::Storage("empty watch response".to_string()))
+                }
+                Err(e) => Err(Error::Storage(format!("Watch error: {}", e))),
+            }
+        });
+        Ok(Box::pin(watch_stream))
+    }
+
     async fn watch(&self, prefix: &str) -> Result<WatchStream> {
         let mut client = self.client.lock().await;
 

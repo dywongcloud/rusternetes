@@ -41,6 +41,9 @@ pub trait Storage: Send + Sync {
     /// Watch for changes to resources with a given prefix
     async fn watch(&self, prefix: &str) -> Result<WatchStream>;
 
+    /// Watch for changes starting from a specific revision
+    async fn watch_from_revision(&self, prefix: &str, revision: i64) -> Result<WatchStream>;
+
     /// Get the current storage revision (etcd mod_revision)
     async fn current_revision(&self) -> Result<i64>;
 
