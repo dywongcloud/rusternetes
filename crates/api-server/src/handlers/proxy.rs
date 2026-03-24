@@ -106,22 +106,75 @@ pub async fn proxy_service(
         }
     }
 
+    // Parse service name — format may be "name" or "name:portname"
+    let (actual_service_name, port_name) = if let Some(idx) = service_name.find(':') {
+        (&service_name[..idx], Some(&service_name[idx + 1..]))
+    } else {
+        (service_name.as_str(), None)
+    };
+
     // Get the service to find its ClusterIP and port
-    let service_key = rusternetes_storage::build_key("services", Some(&namespace), &service_name);
+    let service_key = rusternetes_storage::build_key("services", Some(&namespace), actual_service_name);
     let service: rusternetes_common::resources::Service = state.storage.get(&service_key).await?;
 
-    // Get ClusterIP and first port
+    // Get ClusterIP
     let cluster_ip = service.spec.cluster_ip.ok_or_else(|| {
         rusternetes_common::Error::InvalidResource(format!(
             "Service {}/{} has no ClusterIP",
-            namespace, service_name
+            namespace, actual_service_name
         ))
     })?;
 
-    let port = service.spec.ports.first().map(|p| p.port).unwrap_or(80);
+    // Find the port — by name if specified, otherwise first port
+    let port = if let Some(pn) = port_name {
+        service.spec.ports.iter()
+            .find(|p| p.name.as_deref() == Some(pn))
+            .map(|p| p.port)
+            .or_else(|| pn.parse::<u16>().ok())
+            .unwrap_or_else(|| service.spec.ports.first().map(|p| p.port).unwrap_or(80))
+    } else {
+        service.spec.ports.first().map(|p| p.port).unwrap_or(80)
+    };
 
-    // Build target URL
-    let target_url = format!("http://{}:{}/{}", cluster_ip, port, path);
+    // Try to find a pod endpoint IP for direct proxying (more reliable than ClusterIP DNAT)
+    let target_port = match service.spec.ports.iter().find(|p| {
+        port_name.map_or(true, |pn| p.name.as_deref() == Some(pn))
+    }) {
+        Some(sp) => match &sp.target_port {
+            Some(rusternetes_common::resources::IntOrString::Int(p)) => *p as u16,
+            Some(rusternetes_common::resources::IntOrString::String(s)) => s.parse::<u16>().unwrap_or(port),
+            None => port,
+        },
+        None => port,
+    };
+
+    // Look up endpoint IPs from EndpointSlices
+    let es_prefix = rusternetes_storage::build_prefix("endpointslices", Some(&namespace));
+    let endpoint_slices: Vec<rusternetes_common::resources::EndpointSlice> =
+        state.storage.list(&es_prefix).await.unwrap_or_default();
+    let mut endpoint_ip = None;
+    for es in &endpoint_slices {
+        let svc = es.metadata.labels.as_ref()
+            .and_then(|l| l.get("kubernetes.io/service-name"));
+        if svc.map(|s| s == actual_service_name).unwrap_or(false) {
+            for ep in &es.endpoints {
+                if ep.conditions.as_ref().and_then(|c| c.ready).unwrap_or(true) {
+                    if let Some(addr) = ep.addresses.first() {
+                        endpoint_ip = Some(addr.clone());
+                        break;
+                    }
+                }
+            }
+            if endpoint_ip.is_some() { break; }
+        }
+    }
+
+    // Use endpoint IP if available, otherwise fall back to ClusterIP
+    let target_url = if let Some(ep_ip) = endpoint_ip {
+        format!("http://{}:{}/{}", ep_ip, target_port, path)
+    } else {
+        format!("http://{}:{}/{}", cluster_ip, port, path)
+    };
 
     // Forward the request
     proxy_request(target_url, method, headers, params, body).await

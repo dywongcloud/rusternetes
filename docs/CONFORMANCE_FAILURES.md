@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 88: 30 PASS, 16 FAIL with 62 fixes; round 89 pending with 70 fixes)
+**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes; round 89 pending with 73 fixes)
 
 ## Critical root causes fixed
 
@@ -83,7 +83,25 @@
 - **Root cause**: Pod may not be transitioning to Ready state due to probe issues or status update timing.
 - **Status**: Seen in round 87, needs investigation.
 
-### 11. Aggregated discovery missing GVRs
+### 11. DeviceClass watch — FIXED
+- **Test**: `conformance.go:824` — DRA DeviceClass CRUD lifecycle
+- **Symptom**: `no kind "DeviceClassList" is registered for version "resource.k8s.io/v1"`
+- **Root cause**: DeviceClass list handler didn't intercept `?watch=true`, returning a list JSON instead of a watch stream.
+- **Fix**: Added watch interception to `list_deviceclasses` using `watch_cluster_scoped_json`.
+
+### 12. Service proxy port name — FIXED
+- **Test**: `proxy.go:271` — Service proxy
+- **Symptom**: `Unable to reach service through proxy` — 404 on `/services/name:portname/proxy/`
+- **Root cause**: Service proxy handler didn't parse the `name:portname` format. Also didn't resolve endpoint IPs for direct proxying.
+- **Fix**: Parse `:portname` from service name, look up named port, resolve endpoint IPs from EndpointSlices for direct routing.
+
+### 13. File permissions mismatch
+- **Test**: `output.go:263` — Volume file permissions
+- **Symptom**: Got `-rw-r--r--` (0644) expected `-rw-rw-rw-` (0666)
+- **Root cause**: Docker Desktop VirtioFS may not preserve exact Unix permissions on bind mounts. Host file permissions are set correctly but Docker may apply umask.
+- **Status**: Docker Desktop limitation, may not be fixable.
+
+### 14. Aggregated discovery missing GVRs
 - **Test**: `aggregated_discovery.go:165` — API discovery v2 format
 - **Symptom**: `Expected gvr admissionregistration.k8s.io v1 validatingwebhookconfigurations to exist in discovery`
 - **Root cause**: API server doesn't implement aggregated discovery v2 format (APIGroupDiscoveryList).
@@ -107,7 +125,7 @@
 - **Root cause**: CPU resource value computation or divisor handling is wrong.
 - **Status**: Carried from round 86.
 
-## All 70 fixes committed (19 pending deploy)
+## All 73 fixes committed (22 pending deploy)
 
 | Fix | Commit |
 |-----|--------|
@@ -181,3 +199,6 @@
 | Watch cache history replay (ring buffer) | pending |
 | DRA ResourceClaim Kind (agent fix) | pending |
 | ResourceSlice Kind (agent fix) | pending |
+| DeviceClass watch interception | pending |
+| Service proxy port name parsing | pending |
+| Service proxy direct endpoint routing | pending |
