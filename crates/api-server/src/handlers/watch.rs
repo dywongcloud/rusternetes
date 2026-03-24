@@ -226,7 +226,7 @@ where
 
         // Create bookmark interval (60 seconds) if bookmarks are enabled
         let mut bookmark_interval = if allow_bookmarks || send_initial_events {
-            Some(interval(Duration::from_secs(60)))
+            Some(interval(Duration::from_secs(15)))
         } else {
             None
         };
@@ -548,7 +548,7 @@ where
 
         // Create bookmark interval (60 seconds) if bookmarks are enabled
         let mut bookmark_interval = if allow_bookmarks || send_initial_events {
-            Some(interval(Duration::from_secs(60)))
+            Some(interval(Duration::from_secs(15)))
         } else {
             None
         };
