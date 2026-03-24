@@ -1,22 +1,82 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (48 fixes, rebuilding for round 83)
+**Last updated**: 2026-03-24 (round 84 — 11/441 done, 0 passed, 49 fixes committed)
 
 ## Critical root causes fixed
 
-| # | Root Cause | Impact | Fix |
-|---|-----------|--------|-----|
-| 1 | **Container restart storm** | Containers recreated every 2s, flooding watches | `e99730b` |
-| 2 | Field selector: missing ≠ false | All tests blocked | `646a407` |
-| 3 | Protobuf: client sends binary | CRD/EndpointSlice creation fails | `2571b32` |
-| 4 | Service CIDR: no route | Pod-to-service fails | `b4f31c2` |
-| 5 | API connectivity: ClusterIP | Pods can't reach API | `b224387`+ |
-| 6 | Watch cache: N×N watches | etcd overwhelmed | `73c3514` |
-| 7 | Controller interval: 10s | Tests time out | `2ea4199` |
-| 8 | Namespace cascade: wrong order | Orphaned pods | `1270649` |
-| 9 | Status PATCH: metadata lost | Annotations not merged | `38b44f2` |
+| # | Root Cause | Impact | Fix | Commit |
+|---|-----------|--------|-----|--------|
+| 1 | Container restart storm | Containers recreated every 2s, floods watches | Check state before recreating | `e99730b` |
+| 2 | Watch Added vs Modified | All Put events sent as MODIFIED | Check prev_kv for new keys | `00db87c` |
+| 3 | Field selector missing=false | All tests blocked | Treat missing as false | `646a407` |
+| 4 | Protobuf body rejection | CRD/EndpointSlice creation fails | Extract JSON from envelope | `2571b32` |
+| 5 | Service CIDR no route | Pod-to-service fails | Add route in kube-proxy | `b4f31c2` |
+| 6 | API ClusterIP not routable | Pods can't reach API | Direct IP + TLS SANs | `b224387`+ |
+| 7 | Watch N×N explosion | etcd overwhelmed | Watch cache (1 per prefix) | `73c3514` |
+| 8 | Controller 10s interval | Tests time out waiting | Reduced to 2s | `ea1b800` |
+| 9 | Namespace cascade order | Orphaned pods block cleanup | Delete controllers first | `1270649` |
 
-## All 48 fixes
+## Round 84 active failures (11 tests, 10 unique types)
+
+### 1. Watch closed before timeout (StatefulSet)
+- **Test**: StatefulSet scaling order verification
+- **Symptom**: Watch for pod events closes before test verifies scaling order
+- **Root cause**: Still investigating. Container restart fix reduced churn from 25/test to 3. Added vs Modified fix deployed. Watches still close.
+- **Research needed**: Check if the 3 remaining container recreations generate enough MODIFIED events to close the watch. May need to fix kubelet reconciliation to not call start_pod for Running pods.
+
+### 2. IntOrString serialization (Deployment)
+- **Test**: Deployment rollback/scaling with percentage maxUnavailable/maxSurge
+- **Symptom**: `invalid value for IntOrString: invalid type: string is not a percentage`
+- **Root cause**: `maxUnavailable` stored as `Option<String>`. Integer value `1` stored as string `"1"`, serialized back as `"maxUnavailable": "1"`. Go client sees string "1" which isn't a percentage and fails.
+- **Fix needed**: Change `maxUnavailable`/`maxSurge` to `Option<serde_json::Value>` to preserve original int/string type. In progress — build error in controller-manager needs fixing.
+
+### 3. Service not reachable (EndpointSlice test)
+- **Test**: Service endpoint connectivity
+- **Symptom**: `nc: connect to endpoint-test2 (10.96.0.3) port 80 (tcp) failed: Connection refused`
+- **Root cause**: Service ClusterIP routing works (route added) but no backend pod is listening on port 80. The pod may not have started, or the service→endpoint mapping is wrong.
+- **Research needed**: Check if endpoints controller creates proper endpoints for the service. Check if pods are actually running and listening.
+
+### 4. Watch condition timeout (ReplicationController lifecycle)
+- **Test**: RC lifecycle — watch for status updates
+- **Symptom**: `Wait until condition with watch events should not return an error: timed out`
+- **Root cause**: Likely same as #1 — watch events being dropped or not delivered properly. May also be affected by Added vs Modified fix.
+- **Research needed**: Check if RC status updates generate proper watch events.
+
+### 5. Container output "[1-9]" (Downward API projected volume)
+- **Test**: Projected volume with memory/CPU limits
+- **Symptom**: Expected a number like "134217728" (memory in bytes) but got wrong value
+- **Root cause**: Downward API volume resource field handling. CPU divisor fix (`095b407`) deployed but memory divisor may also need fixing.
+- **Research needed**: Check `get_container_resource_value` for memory resource fields. Verify divisor handling for memory (should return bytes with divisor "1").
+
+### 6. Container output "1" (Downward API volume)
+- **Test**: CPU request downward API volume
+- **Symptom**: Expected "1" (1 core) in cpu_request file but got wrong value
+- **Root cause**: Same as #5. The CPU divisor fix changes default to return cores, but volume path may use different logic.
+- **Research needed**: Verify projected volume and downward API volume both use `get_container_resource_value`.
+
+### 7. CSINode deletecollection (fixed, not deployed)
+- **Fix**: Added `.delete()` route for CSINode collection endpoint
+- **Commit**: `a9cdc55`
+
+### 8. Webhook configuration denied
+- **Test**: ValidatingWebhookConfiguration admission
+- **Symptom**: "create validatingwebhookconfiguration should have been denied by the api-server"
+- **Root cause**: Our API server doesn't enforce validating admission webhooks. When a webhook is configured to deny certain requests, our server allows them anyway.
+- **Research needed**: Check if `admission_webhook.rs` validates incoming requests against configured ValidatingWebhookConfigurations.
+
+### 9. Context deadline exceeded (Scheduler predicate, ×2)
+- **Test**: Scheduler predicate tests
+- **Symptom**: Pod scheduling times out
+- **Root cause**: Scheduler may be too slow to schedule pods, or the node affinity/anti-affinity predicates aren't implemented properly.
+- **Research needed**: Check scheduler implementation for predicate evaluation.
+
+### 10. Watch "context canceled" spam
+- **Observed**: `retrywatcher.go:169] "Watch failed" err="context canceled"` every second
+- **Impact**: Causes watch-dependent tests to fail (deployments, RC, etc.)
+- **Root cause**: Client-go's retry watcher keeps restarting because our watch stream closes. This may be caused by HTTP/2 stream management issues.
+- **Research needed**: Check if our streaming response properly handles HTTP/2 flow control. May need to send periodic data to keep the stream alive.
+
+## All 49 fixes committed
 
 | Fix | Commit |
 |-----|--------|
@@ -67,4 +127,5 @@
 | Controller interval 2s | `ea1b800` |
 | Status PATCH metadata | `38b44f2` |
 | Container restart fix | `e99730b` |
-| **Watch event: Added vs Modified** | **`00db87c`** |
+| Watch Added vs Modified | `00db87c` |
+| CSINode deletecollection | `a9cdc55` |
