@@ -120,8 +120,23 @@ impl FieldRequirement {
         let field_value = extract_field_value(resource, &self.field);
 
         match &self.operator {
-            FieldOperator::Equals => field_value.as_deref() == Some(self.value.as_str()),
-            FieldOperator::NotEquals => field_value.as_deref() != Some(self.value.as_str()),
+            FieldOperator::Equals => {
+                if let Some(ref fv) = field_value {
+                    fv == &self.value
+                } else {
+                    // Field is missing/null. In Kubernetes, missing boolean fields
+                    // default to false, missing string fields default to "".
+                    self.value == "false" || self.value.is_empty()
+                }
+            }
+            FieldOperator::NotEquals => {
+                if let Some(ref fv) = field_value {
+                    fv != &self.value
+                } else {
+                    // Missing field: treat as "false" or "" for comparison
+                    self.value != "false" && !self.value.is_empty()
+                }
+            }
         }
     }
 
