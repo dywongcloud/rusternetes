@@ -165,6 +165,9 @@ impl KubeProxy {
             debug!("Service {}/{} has no ready endpoints", namespace, name);
         }
 
+        // Check session affinity
+        let use_session_affinity = service.spec.session_affinity.as_deref() == Some("ClientIP");
+
         // Process each service port
         for service_port in &service.spec.ports {
             let protocol = service_port.protocol.as_deref().unwrap_or("TCP");
@@ -189,6 +192,7 @@ impl KubeProxy {
                     service_port.port,
                     &endpoints_with_port,
                     protocol,
+                    use_session_affinity,
                 )?;
             }
 

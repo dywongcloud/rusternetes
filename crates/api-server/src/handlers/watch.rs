@@ -129,18 +129,6 @@ where
     // Create watch stream via the shared watch cache (one etcd watch per prefix)
     let prefix = build_prefix(resource_type, Some(&namespace));
 
-    // Subscribe to watch FIRST, then list. This ensures we don't miss events
-    // that happen between the list and the watch start (race condition fix).
-    let watch_rx = state.watch_cache.subscribe(&prefix).await;
-    let watch_stream = crate::watch_cache::broadcast_to_stream(watch_rx);
-
-    // List existing resources to send as initial ADDED events
-    let existing_resources = state.storage.list::<T>(&prefix).await?;
-
-    // Create channel for sending events to client
-    let (tx, rx) =
-        tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
-
     // Extract parameters
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
@@ -150,6 +138,36 @@ where
     let requested_rv = params.resource_version.clone();
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
+
+    // Determine if we have a specific non-zero resourceVersion to replay from
+    let replay_revision = requested_rv
+        .as_deref()
+        .filter(|rv| !rv.is_empty() && *rv != "0")
+        .and_then(|rv| rv.parse::<i64>().ok());
+
+    // Subscribe to watch FIRST, then list. This ensures we don't miss events
+    // that happen between the list and the watch start (race condition fix).
+    // If a specific resourceVersion was given, use subscribe_from to replay history.
+    let watch_stream = if let Some(since_rev) = replay_revision {
+        let (history, rx) = state.watch_cache.subscribe_from(&prefix, since_rev).await;
+        debug!(
+            "Replaying {} historical events since revision {} for prefix {}",
+            history.len(),
+            since_rev,
+            prefix
+        );
+        crate::watch_cache::broadcast_to_stream_with_history(history, rx)
+    } else {
+        let rx = state.watch_cache.subscribe(&prefix).await;
+        crate::watch_cache::broadcast_to_stream(rx)
+    };
+
+    // List existing resources to send as initial ADDED events
+    let existing_resources = state.storage.list::<T>(&prefix).await?;
+
+    // Create channel for sending events to client
+    let (tx, rx) =
+        tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
 
     // Determine whether to send initial ADDED events:
     // - If sendInitialEvents=true: always send
@@ -455,17 +473,6 @@ where
     // Create watch stream via the shared watch cache
     let prefix = build_prefix(resource_type, None);
 
-    // Subscribe FIRST, then list (avoid race condition)
-    let watch_rx = state.watch_cache.subscribe(&prefix).await;
-    let watch_stream = crate::watch_cache::broadcast_to_stream(watch_rx);
-
-    // List existing resources to send as initial ADDED events
-    let existing_resources = state.storage.list::<T>(&prefix).await?;
-
-    // Create channel for sending events to client
-    let (tx, rx) =
-        tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
-
     // Extract parameters
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
@@ -475,6 +482,35 @@ where
     let requested_rv = params.resource_version.clone();
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
+
+    // Determine if we have a specific non-zero resourceVersion to replay from
+    let replay_revision = requested_rv
+        .as_deref()
+        .filter(|rv| !rv.is_empty() && *rv != "0")
+        .and_then(|rv| rv.parse::<i64>().ok());
+
+    // Subscribe FIRST, then list (avoid race condition)
+    // If a specific resourceVersion was given, use subscribe_from to replay history.
+    let watch_stream = if let Some(since_rev) = replay_revision {
+        let (history, rx) = state.watch_cache.subscribe_from(&prefix, since_rev).await;
+        debug!(
+            "Replaying {} historical events since revision {} for prefix {}",
+            history.len(),
+            since_rev,
+            prefix
+        );
+        crate::watch_cache::broadcast_to_stream_with_history(history, rx)
+    } else {
+        let rx = state.watch_cache.subscribe(&prefix).await;
+        crate::watch_cache::broadcast_to_stream(rx)
+    };
+
+    // List existing resources to send as initial ADDED events
+    let existing_resources = state.storage.list::<T>(&prefix).await?;
+
+    // Create channel for sending events to client
+    let (tx, rx) =
+        tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
 
     // Determine whether to send initial ADDED events
     let should_send_initial = send_initial_events

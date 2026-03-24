@@ -98,16 +98,20 @@ For local development, we provide a complete container-based development environ
 # Set the volumes path (required)
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
 
+# Set up kubeconfig (one-time)
+cp kubeconfig.example.yaml ~/.kube/rusternetes-config
+export KUBECONFIG=~/.kube/rusternetes-config
+
 # Build and start the cluster
 docker-compose build
 docker-compose up -d
 
 # Apply bootstrap resources (CoreDNS, services)
 cat bootstrap-cluster.yaml | envsubst > /tmp/bootstrap-expanded.yaml
-KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify apply -f /tmp/bootstrap-expanded.yaml
+kubectl apply -f /tmp/bootstrap-expanded.yaml
 
 # Verify the cluster
-KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify get pods -A
+kubectl get pods -A
 ```
 
 **Why Docker Desktop on macOS?**

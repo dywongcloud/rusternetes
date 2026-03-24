@@ -45,12 +45,8 @@ pub async fn create_resourceclaimtemplate(
     }
 
     // Ensure kind and apiVersion are set
-    if template.kind.is_empty() {
-        template.kind = "ResourceClaimTemplate".to_string();
-    }
-    if template.api_version.is_empty() {
-        template.api_version = "resource.k8s.io/v1".to_string();
-    }
+    template.kind = "ResourceClaimTemplate".to_string();
+    template.api_version = "resource.k8s.io/v1".to_string();
 
     // Ensure metadata exists and set defaults
     let metadata = template.metadata.get_or_insert_with(Default::default);
@@ -104,12 +100,8 @@ pub async fn get_resourceclaimtemplate(
     let mut template: ResourceClaimTemplate = state.storage.get(&key).await?;
 
     // Ensure kind and apiVersion are set in the response
-    if template.kind.is_empty() {
-        template.kind = "ResourceClaimTemplate".to_string();
-    }
-    if template.api_version.is_empty() {
-        template.api_version = "resource.k8s.io/v1".to_string();
-    }
+    template.kind = "ResourceClaimTemplate".to_string();
+    template.api_version = "resource.k8s.io/v1".to_string();
 
     Ok(Json(template))
 }
@@ -222,12 +214,8 @@ pub async fn update_resourceclaimtemplate(
     }
 
     // Ensure kind and apiVersion are set
-    if template.kind.is_empty() {
-        template.kind = "ResourceClaimTemplate".to_string();
-    }
-    if template.api_version.is_empty() {
-        template.api_version = "resource.k8s.io/v1".to_string();
-    }
+    template.kind = "ResourceClaimTemplate".to_string();
+    template.api_version = "resource.k8s.io/v1".to_string();
 
     // Ensure metadata and set namespace/name
     let metadata = template.metadata.get_or_insert_with(Default::default);

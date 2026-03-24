@@ -324,6 +324,7 @@ impl IptablesManager {
         port: u16,
         endpoints: &[(String, u16)],
         protocol: &str,
+        session_affinity: bool,
     ) -> Result<()> {
         if endpoints.is_empty() {
             debug!(
@@ -334,20 +335,28 @@ impl IptablesManager {
         }
 
         info!(
-            "Adding ClusterIP rules for {}:{} ({}) with {} endpoints",
+            "Adding ClusterIP rules for {}:{} ({}) with {} endpoints (affinity={})",
             service_ip,
             port,
             protocol,
-            endpoints.len()
+            endpoints.len(),
+            session_affinity
         );
 
         let proto = protocol.to_lowercase();
 
-        // For each endpoint, add a DNAT rule with probability for load balancing
-        let probability = 1.0 / endpoints.len() as f64;
+        // With session affinity (ClientIP), route all traffic to the first endpoint.
+        // Without affinity, use random probability-based load balancing.
+        let effective_endpoints = if session_affinity {
+            &endpoints[..1] // Only use the first endpoint for affinity
+        } else {
+            endpoints
+        };
 
-        for (idx, (endpoint_ip, endpoint_port)) in endpoints.iter().enumerate() {
-            let is_last = idx == endpoints.len() - 1;
+        let probability = 1.0 / effective_endpoints.len() as f64;
+
+        for (idx, (endpoint_ip, endpoint_port)) in effective_endpoints.iter().enumerate() {
+            let is_last = idx == effective_endpoints.len() - 1;
 
             let port_str = port.to_string();
             let mut args = vec![

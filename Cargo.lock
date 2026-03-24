@@ -3153,6 +3153,7 @@ name = "rusternetes-api-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "axum 0.7.9",
  "axum-server",
  "base64 0.22.1",
@@ -3321,6 +3322,8 @@ dependencies = [
  "clap",
  "futures",
  "futures-util",
+ "http 1.4.0",
+ "prost 0.13.5",
  "reqwest",
  "rusternetes-common",
  "rusternetes-storage",
@@ -3328,8 +3331,10 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sysinfo",
+ "tar",
  "tempfile",
  "tokio",
+ "tonic 0.12.3",
  "tracing",
  "tracing-subscriber",
 ]

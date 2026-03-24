@@ -42,12 +42,8 @@ pub async fn create_resourceslice(
     }
 
     // Ensure kind and apiVersion are set
-    if slice.api_version.is_empty() {
-        slice.api_version = "resource.k8s.io/v1".to_string();
-    }
-    if slice.kind.is_empty() {
-        slice.kind = "ResourceSlice".to_string();
-    }
+    slice.kind = "ResourceSlice".to_string();
+    slice.api_version = "resource.k8s.io/v1".to_string();
 
     // Ensure metadata exists and set defaults
     let metadata = slice.metadata.get_or_insert_with(Default::default);
@@ -96,7 +92,11 @@ pub async fn get_resourceslice(
     }
 
     let key = build_key("resourceslices", None, &name);
-    let slice = state.storage.get(&key).await?;
+    let mut slice: ResourceSlice = state.storage.get(&key).await?;
+
+    // Ensure kind and apiVersion are set in the response
+    slice.kind = "ResourceSlice".to_string();
+    slice.api_version = "resource.k8s.io/v1".to_string();
 
     Ok(Json(slice))
 }

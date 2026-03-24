@@ -97,7 +97,11 @@ pub async fn get_resourceclaim(
     }
 
     let key = build_key("resourceclaims", Some(&namespace), &name);
-    let claim = state.storage.get(&key).await?;
+    let mut claim: ResourceClaim = state.storage.get(&key).await?;
+
+    // Ensure kind and apiVersion are set in the response
+    claim.kind = "ResourceClaim".to_string();
+    claim.api_version = "resource.k8s.io/v1".to_string();
 
     Ok(Json(claim))
 }
@@ -272,6 +276,10 @@ pub async fn update_resourceclaim_status(
 
     // Get existing claim to preserve spec
     let mut existing: ResourceClaim = state.storage.get(&key).await?;
+
+    // Ensure kind and apiVersion are set
+    existing.kind = "ResourceClaim".to_string();
+    existing.api_version = "resource.k8s.io/v1".to_string();
 
     // Only update status
     existing.status = claim.status;

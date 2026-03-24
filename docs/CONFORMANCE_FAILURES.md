@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 88 in progress — 30 PASS, 16 FAIL so far, 62 fixes deployed, 65% pass rate)
+**Last updated**: 2026-03-24 (round 88: 30 PASS, 16 FAIL with 62 fixes; round 89 pending with 70 fixes)
 
 ## Critical root causes fixed
 
@@ -107,7 +107,7 @@
 - **Root cause**: CPU resource value computation or divisor handling is wrong.
 - **Status**: Carried from round 86.
 
-## All 62 fixes committed (11 pending deploy)
+## All 70 fixes committed (19 pending deploy)
 
 | Fix | Commit |
 |-----|--------|
@@ -173,3 +173,11 @@
 | HTTPS probe TLS skip verify | pending |
 | Pause container reuse (stop restart storm) | pending |
 | kube-proxy EndpointSlice support | pending |
+| Lifecycle hook HTTP host field | pending |
+| HTTP probe host field | pending |
+| Endpoints separate ready/not-ready subsets | pending |
+| Session affinity (ClientIP) in kube-proxy | pending |
+| Protobuf field 3 extraction | pending |
+| Watch cache history replay (ring buffer) | pending |
+| DRA ResourceClaim Kind (agent fix) | pending |
+| ResourceSlice Kind (agent fix) | pending |

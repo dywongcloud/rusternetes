@@ -6,10 +6,13 @@
 
 use rusternetes_storage::{WatchEvent, WatchStream, Storage};
 use rusternetes_storage::etcd::EtcdStorage;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, error, info};
+
+/// Maximum number of events to retain in the history ring buffer per prefix
+const HISTORY_CAPACITY: usize = 1000;
 
 /// A cached watch event with metadata
 #[derive(Debug, Clone)]
@@ -35,6 +38,8 @@ pub struct WatchCache {
     storage: Arc<EtcdStorage>,
     /// Current revision counter (approximation based on timestamp)
     revision: RwLock<i64>,
+    /// Ring buffer of recent events per prefix for history replay
+    history: Arc<RwLock<HashMap<String, VecDeque<CachedWatchEvent>>>>,
 }
 
 impl WatchCache {
@@ -44,6 +49,7 @@ impl WatchCache {
             watchers: RwLock::new(HashMap::new()),
             storage,
             revision: RwLock::new(rev),
+            history: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -74,6 +80,7 @@ impl WatchCache {
         let storage = self.storage.clone();
         let prefix_owned = prefix.to_string();
         let tx_clone = tx.clone();
+        let history_ref = self.history.clone();
 
         tokio::spawn(async move {
             info!("WatchCache: starting shared watch for prefix {}", prefix_owned);
@@ -82,34 +89,43 @@ impl WatchCache {
                     Ok(mut stream) => {
                         use futures::StreamExt;
                         while let Some(event_result) = stream.next().await {
-                            match event_result {
+                            let cached = match event_result {
                                 Ok(WatchEvent::Added(key, value)) => {
-                                    let cached = CachedWatchEvent {
+                                    CachedWatchEvent {
                                         event: WatchEventData::Added(key, value),
                                         revision: chrono::Utc::now().timestamp(),
-                                    };
-                                    // If no receivers, the send returns Err but that's OK
-                                    let _ = tx_clone.send(cached);
+                                    }
                                 }
                                 Ok(WatchEvent::Modified(key, value)) => {
-                                    let cached = CachedWatchEvent {
+                                    CachedWatchEvent {
                                         event: WatchEventData::Modified(key, value),
                                         revision: chrono::Utc::now().timestamp(),
-                                    };
-                                    let _ = tx_clone.send(cached);
+                                    }
                                 }
                                 Ok(WatchEvent::Deleted(key, prev_value)) => {
-                                    let cached = CachedWatchEvent {
+                                    CachedWatchEvent {
                                         event: WatchEventData::Deleted(key, prev_value),
                                         revision: chrono::Utc::now().timestamp(),
-                                    };
-                                    let _ = tx_clone.send(cached);
+                                    }
                                 }
                                 Err(_) => {
                                     // Transient error, continue
                                     continue;
                                 }
+                            };
+
+                            // Append to history ring buffer
+                            {
+                                let mut hist: tokio::sync::RwLockWriteGuard<'_, HashMap<String, VecDeque<CachedWatchEvent>>> = history_ref.write().await;
+                                let buf = hist.entry(prefix_owned.clone()).or_insert_with(VecDeque::new);
+                                buf.push_back(cached.clone());
+                                while buf.len() > HISTORY_CAPACITY {
+                                    buf.pop_front();
+                                }
                             }
+
+                            // Broadcast to live subscribers (Err is OK if no receivers)
+                            let _ = tx_clone.send(cached);
                         }
                         // Stream ended, reconnect
                         debug!("WatchCache: stream ended for {}, reconnecting", prefix_owned);
@@ -130,6 +146,34 @@ impl WatchCache {
     pub async fn current_revision(&self) -> i64 {
         *self.revision.read().await
     }
+
+    /// Get all cached events for a prefix with revision > the given revision.
+    pub async fn get_events_since(&self, prefix: &str, revision: i64) -> Vec<CachedWatchEvent> {
+        let hist = self.history.read().await;
+        match hist.get(prefix) {
+            Some(buf) => buf
+                .iter()
+                .filter(|e| e.revision > revision)
+                .cloned()
+                .collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// Subscribe to watch events and replay any historical events since the
+    /// given resourceVersion. Returns (historical_events, live_receiver).
+    /// The caller should send historical events first, then consume the receiver.
+    pub async fn subscribe_from(
+        &self,
+        prefix: &str,
+        since_revision: i64,
+    ) -> (Vec<CachedWatchEvent>, broadcast::Receiver<CachedWatchEvent>) {
+        // Subscribe first to avoid missing events between history query and subscribe
+        let rx = self.subscribe(prefix).await;
+        // Then get historical events
+        let history = self.get_events_since(prefix, since_revision).await;
+        (history, rx)
+    }
 }
 
 /// Convert a broadcast receiver into a WatchStream compatible with existing handlers.
@@ -140,6 +184,54 @@ pub fn broadcast_to_stream(
         loop {
             match rx.recv().await {
                 Ok(cached) => {
+                    let event = match cached.event {
+                        WatchEventData::Added(key, value) => WatchEvent::Added(key, value),
+                        WatchEventData::Modified(key, value) => WatchEvent::Modified(key, value),
+                        WatchEventData::Deleted(key, prev) => WatchEvent::Deleted(key, prev),
+                    };
+                    yield Ok(event);
+                }
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    debug!("Watch stream lagged by {} events, continuing", n);
+                    continue;
+                }
+                Err(broadcast::error::RecvError::Closed) => {
+                    break;
+                }
+            }
+        }
+    };
+    Box::pin(stream)
+}
+
+/// Convert historical events + a broadcast receiver into a WatchStream.
+/// Historical events are replayed first (in order), then live events follow.
+pub fn broadcast_to_stream_with_history(
+    history: Vec<CachedWatchEvent>,
+    mut rx: broadcast::Receiver<CachedWatchEvent>,
+) -> WatchStream {
+    // Track the highest revision we replayed so we can deduplicate
+    let max_history_rev = history.iter().map(|e| e.revision).max().unwrap_or(0);
+
+    let stream = async_stream::stream! {
+        // Replay historical events first
+        for cached in history {
+            let event = match cached.event {
+                WatchEventData::Added(key, value) => WatchEvent::Added(key, value),
+                WatchEventData::Modified(key, value) => WatchEvent::Modified(key, value),
+                WatchEventData::Deleted(key, prev) => WatchEvent::Deleted(key, prev),
+            };
+            yield Ok(event);
+        }
+
+        // Then stream live events, skipping any that overlap with history
+        loop {
+            match rx.recv().await {
+                Ok(cached) => {
+                    // Skip events we already replayed from history
+                    if cached.revision <= max_history_rev {
+                        continue;
+                    }
                     let event = match cached.event {
                         WatchEventData::Added(key, value) => WatchEvent::Added(key, value),
                         WatchEventData::Modified(key, value) => WatchEvent::Modified(key, value),

@@ -41,7 +41,7 @@ pub async fn create_deviceclass(
 
     // Set kind and apiVersion
     dc.kind = "DeviceClass".to_string();
-    dc.api_version = "resource.k8s.io/v1beta1".to_string();
+    dc.api_version = "resource.k8s.io/v1".to_string();
 
     // Ensure metadata exists and set defaults
     let metadata = dc.metadata.get_or_insert_with(Default::default);
@@ -90,7 +90,11 @@ pub async fn get_deviceclass(
     }
 
     let key = build_key("deviceclasses", None, &name);
-    let dc = state.storage.get(&key).await?;
+    let mut dc: DeviceClass = state.storage.get(&key).await?;
+
+    // Ensure kind and apiVersion are set in the response
+    dc.kind = "DeviceClass".to_string();
+    dc.api_version = "resource.k8s.io/v1".to_string();
 
     Ok(Json(dc))
 }
@@ -141,6 +145,10 @@ pub async fn update_deviceclass(
             return Err(rusternetes_common::Error::Forbidden(reason));
         }
     }
+
+    // Ensure kind and apiVersion are set
+    dc.kind = "DeviceClass".to_string();
+    dc.api_version = "resource.k8s.io/v1".to_string();
 
     // Ensure metadata and set name
     let metadata = dc.metadata.get_or_insert_with(Default::default);
