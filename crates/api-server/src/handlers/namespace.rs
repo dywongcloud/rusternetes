@@ -44,6 +44,18 @@ pub async fn create(
     namespace.metadata.ensure_uid();
     namespace.metadata.ensure_creation_timestamp();
 
+    // Ensure namespace has Active status
+    if namespace.status.is_none() {
+        namespace.status = Some(rusternetes_common::resources::NamespaceStatus {
+            phase: Some(rusternetes_common::types::Phase::Active),
+            conditions: None,
+        });
+    }
+
+    // Ensure kind/apiVersion
+    namespace.type_meta.kind = "Namespace".to_string();
+    namespace.type_meta.api_version = "v1".to_string();
+
     let key = build_key("namespaces", None, &namespace.metadata.name);
 
     // If dry-run, skip storage operation but return the validated resource
@@ -134,7 +146,17 @@ pub async fn get(
     }
 
     let key = build_key("namespaces", None, &name);
-    let namespace = state.storage.get(&key).await?;
+    let mut namespace: Namespace = state.storage.get(&key).await?;
+
+    // Ensure status is present (old namespaces may not have it)
+    if namespace.status.is_none() {
+        namespace.status = Some(rusternetes_common::resources::NamespaceStatus {
+            phase: Some(rusternetes_common::types::Phase::Active),
+            conditions: None,
+        });
+    }
+    namespace.type_meta.kind = "Namespace".to_string();
+    namespace.type_meta.api_version = "v1".to_string();
 
     Ok(Json(namespace))
 }

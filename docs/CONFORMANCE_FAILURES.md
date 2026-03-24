@@ -125,7 +125,7 @@
 - **Root cause**: CPU resource value computation or divisor handling is wrong.
 - **Status**: Carried from round 86.
 
-## All 74 fixes committed (23 pending deploy)
+## All 75 fixes committed (24 pending deploy)
 
 | Fix | Commit |
 |-----|--------|
@@ -203,3 +203,4 @@
 | Service proxy port name parsing | pending |
 | Service proxy direct endpoint routing | pending |
 | Readiness probe initial not-ready state | pending |
+| Namespace status.phase Active | pending |
