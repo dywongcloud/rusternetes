@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes; round 89 pending with 73 fixes)
+**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes deployed; round 89 pending with 75 fixes total)
 
 ## Critical root causes fixed
 
@@ -124,6 +124,120 @@
 - **Symptom**: Expected container output doesn't match, got "2\n"
 - **Root cause**: CPU resource value computation or divisor handling is wrong.
 - **Status**: Carried from round 86.
+
+## Round 88 new failures (not yet fixed)
+
+### StatefulSet locate timeout
+- **Test**: `statefulset.go:1205` — "failed to locate Statefulset ss"
+- **Symptom**: StatefulSet created at 23:02, test times out at 23:12 (10 min) trying to watch for conditions
+- **Root cause**: Watch stream closure — the watch that's waiting for the StatefulSet to meet conditions gets disconnected. Watch cache history fix may help.
+- **Status**: Pending deploy of watch history fix.
+
+### Security context runAsUser
+- **Test**: `security_context.go:802` — "Effective uid: 0" instead of "Effective uid: 1000"
+- **Symptom**: Container runs as root despite `runAsUser: 1000` in pod spec
+- **Root cause**: Our kubelet sets Docker `user` field from securityContext.runAsUser, but Docker Desktop may not enforce it for some image types. Need investigation.
+- **Status**: Needs investigation.
+
+### Container probe initial delay
+- **Test**: `container_probe.go:94` — "should not be ready before initial delay"
+- **Symptom**: Pod marked Ready immediately despite readiness probe with initialDelaySeconds
+- **Root cause**: `start_pod` always set Ready=True conditions. Pods with readiness probes should start not-ready.
+- **Fix**: Pods with readiness probes now start with Ready=False. Probe check in sync loop updates to True.
+- **Status**: Fix committed, pending deploy.
+
+### Resource quota not found
+- **Tests**: `resource_quota.go:422`, `resource_quota.go:1152`
+- **Symptom**: ResourceQuota status not calculated, quota not found
+- **Root cause**: No ResourceQuota controller implemented. Quota status requires tracking resource usage across all pods in a namespace.
+- **Status**: Feature gap — needs ResourceQuota controller.
+
+### Service accounts timeout
+- **Test**: `service_accounts.go:792` — Timed out waiting for condition
+- **Root cause**: SA token validation or SA controller timing issue.
+- **Status**: Needs investigation.
+
+### Service session affinity
+- **Test**: `service.go:1565` — Service test failure
+- **Root cause**: Likely related to session affinity or service routing.
+- **Status**: Session affinity fix committed, pending deploy.
+
+### Flow control
+- **Test**: `flowcontrol.go:661` — Flow control / priority level
+- **Root cause**: Flow control (priority and fairness) not implemented.
+- **Status**: Feature gap.
+
+### File permissions on volumes
+- **Test**: `output.go:263` — File permissions `-rw-r--r--` vs `-rw-rw-rw-`
+- **Symptom**: Volume file created with 0644 but test expects 0666
+- **Root cause**: Docker Desktop VirtioFS may not preserve exact Unix permissions on bind mounts.
+- **Status**: Docker Desktop limitation.
+
+### Garbage collector
+- **Test**: `garbage_collector.go:711` — GC cascade deletion
+- **Root cause**: GC controller may not handle owner reference cascading correctly.
+- **Status**: Needs investigation.
+
+### Service proxy unreachable
+- **Test**: `proxy.go:271` — "Unable to reach service through proxy"
+- **Symptom**: `/services/name:portname/proxy/` returns 404
+- **Root cause**: Service proxy handler didn't parse `name:portname` format or resolve endpoints.
+- **Fix**: Parse port name, resolve endpoint IPs from EndpointSlices.
+- **Status**: Fix committed, pending deploy.
+
+### ConfigMap volume via proxy
+- **Test**: `configmap_volume.go:525` — "context deadline exceeded" reaching service
+- **Root cause**: Same as service proxy issue above.
+- **Status**: Fix committed, pending deploy.
+
+### Namespace status
+- **Test**: `namespace.go:321` — "Read namespace status"
+- **Symptom**: Namespace has no `status.phase` field
+- **Root cause**: Namespace create handler didn't set `status.phase: Active`
+- **Fix**: Create and get handlers now ensure `status.phase: Active`.
+- **Status**: Fix committed, pending deploy.
+
+### Webhook readiness
+- **Test**: `webhook.go:1194` — Webhook configuration not ready
+- **Root cause**: Webhook deployment pod never becomes ready (HTTPS probe issue)
+- **Fix**: HTTPS probe TLS skip verification fix should help.
+- **Status**: Fix committed, pending deploy.
+
+### ReplicationController timeout
+- **Test**: `rc.go:670` — Timed out waiting for RC
+- **Root cause**: RC controller may be too slow or status updates missing.
+- **Status**: Needs investigation.
+
+### Kubectl builder delete
+- **Test**: `builder.go:97` — "error when deleting STDIN: /registry/replicationcontrollers/..."
+- **Symptom**: Delete returns raw etcd key path instead of proper API error
+- **Root cause**: Error message leaks internal storage key format.
+- **Status**: Needs investigation.
+
+### API aggregation
+- **Test**: `aggregator.go:377` — API aggregation
+- **Root cause**: API aggregation (APIService) not implemented.
+- **Status**: Feature gap.
+
+### Aggregated discovery v2
+- **Test**: `aggregated_discovery.go:336` — Discovery v2 format
+- **Root cause**: API server doesn't implement `APIGroupDiscoveryList` response format.
+- **Status**: Feature gap.
+
+### Sysctl support
+- **Test**: `sysctl.go:153` — Sysctl configuration
+- **Root cause**: Kubelet doesn't apply sysctl settings to containers.
+- **Status**: Feature gap.
+
+### Kubelet behavior
+- **Test**: `kubelet.go:127` — Kubelet behavior test
+- **Root cause**: Unknown — needs investigation.
+- **Status**: Needs investigation.
+
+### StatefulSet burst scaling
+- **Test**: `statefulset.go:2253` — StatefulSet behavior
+- **Root cause**: Likely watch stream closure or scaling timing.
+- **Status**: Needs investigation.
 
 ## All 75 fixes committed (24 pending deploy)
 
