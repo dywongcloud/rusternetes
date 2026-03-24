@@ -1840,20 +1840,34 @@ impl ContainerRuntime {
             .inspect_container(&container_name, None::<InspectContainerOptions>)
             .await
         {
-            if inspect.state.and_then(|s| s.running).unwrap_or(false) {
-                info!("Container {} is already running", container_name);
+            let state = inspect.state.as_ref();
+            let is_running = state.and_then(|s| s.running).unwrap_or(false);
+            let status = state.and_then(|s| s.status.as_ref());
+
+            // Skip if container is running or just created (about to start)
+            if is_running {
+                return Ok(());
+            }
+            if matches!(status, Some(bollard::secret::ContainerStateStatusEnum::CREATED)) {
+                debug!("Container {} is in created state, waiting for it to start", container_name);
                 return Ok(());
             }
 
-            // Remove stopped container
-            info!("Removing stopped container: {}", container_name);
-            let remove_options = RemoveContainerOptions {
-                force: true,
-                ..Default::default()
-            };
-            self.docker
-                .remove_container(&container_name, Some(remove_options))
-                .await?;
+            // Only remove if container has actually exited
+            if matches!(status, Some(bollard::secret::ContainerStateStatusEnum::EXITED) | Some(bollard::secret::ContainerStateStatusEnum::DEAD)) {
+                debug!("Removing exited container: {}", container_name);
+                let remove_options = RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                };
+                self.docker
+                    .remove_container(&container_name, Some(remove_options))
+                    .await?;
+            } else {
+                // Unknown state — don't remove, don't recreate
+                debug!("Container {} in state {:?}, skipping", container_name, status);
+                return Ok(());
+            }
         }
 
         // Build environment variables
