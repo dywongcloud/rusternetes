@@ -114,20 +114,47 @@ pub async fn normalize_content_type_middleware(
             .unwrap_or("")
             .to_string();
 
-        // Handle protobuf Content-Type: rewrite to JSON.
-        // client-go sometimes sends JSON bodies with protobuf Content-Type header
-        // when the server previously responded with JSON. We accept this by
-        // rewriting the Content-Type and letting the JSON parser handle it.
-        // If the body is truly binary protobuf, the JSON parser returns 400.
+        // Handle protobuf Content-Type: extract JSON from K8s protobuf envelope.
+        // The K8s protobuf format wraps JSON in a simple envelope:
+        //   magic: "k8s\0" (4 bytes)
+        //   protobuf Unknown message with `raw` field containing JSON
         if content_type.starts_with("application/vnd.kubernetes.protobuf") {
             debug!(
-                "Rewriting protobuf Content-Type to JSON for: {} {}",
+                "Converting protobuf to JSON for: {} {}",
                 request.method(), request.uri()
             );
-            request.headers_mut().insert(
+
+            // Read the body
+            let (parts, body) = request.into_parts();
+            let body_bytes = match axum::body::to_bytes(body, 10 * 1024 * 1024).await {
+                Ok(b) => b,
+                Err(_) => {
+                    return Err(axum::response::Response::builder()
+                        .status(axum::http::StatusCode::BAD_REQUEST)
+                        .body(axum::body::Body::from("failed to read request body"))
+                        .unwrap());
+                }
+            };
+
+            let json_body = if body_bytes.starts_with(b"k8s\0") {
+                // K8s protobuf envelope — extract the JSON from the `raw` field.
+                // The protobuf Unknown message has field 2 (raw bytes) as length-delimited.
+                // Simple extraction: find the JSON object within the protobuf bytes.
+                extract_json_from_k8s_protobuf(&body_bytes)
+                    .unwrap_or_else(|| body_bytes.to_vec())
+            } else if body_bytes.starts_with(b"{") || body_bytes.starts_with(b"[") {
+                // Already JSON despite protobuf Content-Type
+                body_bytes.to_vec()
+            } else {
+                body_bytes.to_vec()
+            };
+
+            let mut new_request = Request::from_parts(parts, axum::body::Body::from(json_body));
+            new_request.headers_mut().insert(
                 axum::http::header::CONTENT_TYPE,
                 axum::http::HeaderValue::from_static("application/json"),
             );
+            request = new_request;
         }
 
         // If not already a JSON content type, normalize to application/json
@@ -211,4 +238,58 @@ pub async fn log_request_body_middleware(
         let request = Request::from_parts(parts, body);
         Ok(next.run(request).await)
     }
+}
+
+/// Extract JSON from a Kubernetes protobuf envelope.
+/// K8s protobuf format: "k8s\0" + protobuf Unknown { raw: bytes, contentType: string }
+/// The `raw` field (protobuf field 2, wire type 2 = length-delimited) contains the JSON.
+fn extract_json_from_k8s_protobuf(data: &[u8]) -> Option<Vec<u8>> {
+    // Skip the 4-byte magic "k8s\0"
+    if data.len() < 5 || &data[0..4] != b"k8s\0" {
+        return None;
+    }
+    let data = &data[4..];
+
+    // Parse the protobuf Unknown message looking for field 2 (raw bytes)
+    // Field 2, wire type 2 (length-delimited) = tag byte 0x12
+    let mut pos = 0;
+    while pos < data.len() {
+        let tag = data[pos];
+        pos += 1;
+        let field_number = tag >> 3;
+        let wire_type = tag & 0x07;
+
+        match wire_type {
+            0 => {
+                // Varint — skip
+                while pos < data.len() && data[pos] & 0x80 != 0 { pos += 1; }
+                pos += 1;
+            }
+            2 => {
+                // Length-delimited — read length then data
+                let mut len: usize = 0;
+                let mut shift = 0;
+                while pos < data.len() {
+                    let b = data[pos] as usize;
+                    pos += 1;
+                    len |= (b & 0x7f) << shift;
+                    if b & 0x80 == 0 { break; }
+                    shift += 7;
+                }
+                if field_number == 2 && pos + len <= data.len() {
+                    // This is the raw field — should contain JSON
+                    let raw = &data[pos..pos + len];
+                    if !raw.is_empty() && (raw[0] == b'{' || raw[0] == b'[') {
+                        return Some(raw.to_vec());
+                    }
+                }
+                pos += len;
+            }
+            _ => {
+                // Unknown wire type — can't parse further
+                return None;
+            }
+        }
+    }
+    None
 }
