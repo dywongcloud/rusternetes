@@ -63,6 +63,11 @@ environment — not an upstream bug.
 | EndpointSlice: clean up orphans when Endpoints deleted | ~1 test | `6f79efa` |
 | Fail pod start when required Secret/ConfigMap volumes missing | ~6 tests | `5e07c6e` |
 | ClusterIP allocation: pre-allocate existing IPs at startup | CRITICAL | `4113fe9` |
+| KUBERNETES_SERVICE_HOST: use API server direct IP | CRITICAL | `b224387` |
+| KUBERNETES_SERVICE_PORT: use 6443 for direct access | CRITICAL | `862c286` |
+| TLS cert SANs: add Docker bridge IPs | CRITICAL | `f9c9691` |
+| ClusterIP re-allocation for existing services | infra | `cd6ab64` |
+| Field selector: treat missing fields as false/empty | **ROOT CAUSE** | `646a407` |
 
 ## Round 64 early results (13/441 done, 0 passed, 13 failed)
 
