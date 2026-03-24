@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rusternetes_common::resources::{Endpoints, Service, ServiceType};
+use rusternetes_common::resources::{EndpointSlice, Endpoints, Service, ServiceType};
 use rusternetes_storage::{etcd::EtcdStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -35,7 +35,7 @@ impl KubeProxy {
             .await
             .context("Failed to list services")?;
 
-        // Get all endpoints
+        // Get all endpoints (old-style)
         let all_endpoints: Vec<Endpoints> = self
             .storage
             .list("/registry/endpoints/")
@@ -52,9 +52,45 @@ impl KubeProxy {
             })
             .collect();
 
+        // Get all EndpointSlices (new API) as fallback
+        let all_endpointslices: Vec<EndpointSlice> = self
+            .storage
+            .list("/registry/endpointslices/")
+            .await
+            .unwrap_or_default();
+
+        // Build EndpointSlice map: key = "namespace/service-name" -> list of endpoint IPs
+        let mut endpointslice_map: HashMap<String, Vec<String>> = HashMap::new();
+        for es in &all_endpointslices {
+            let namespace = es.metadata.namespace.as_deref().unwrap_or("default");
+            // EndpointSlice's label kubernetes.io/service-name tells us which service it belongs to
+            let service_name = es
+                .metadata
+                .labels
+                .as_ref()
+                .and_then(|l| l.get("kubernetes.io/service-name"))
+                .cloned()
+                .unwrap_or_else(|| {
+                    // Fall back: strip the random suffix from the EndpointSlice name
+                    es.metadata.name.rsplit_once('-').map(|(prefix, _)| prefix.to_string())
+                        .unwrap_or_else(|| es.metadata.name.clone())
+                });
+            let key = format!("{}/{}", namespace, service_name);
+            for endpoint in &es.endpoints {
+                if let Some(conditions) = &endpoint.conditions {
+                    if conditions.ready == Some(false) {
+                        continue; // Skip not-ready endpoints
+                    }
+                }
+                for addr in &endpoint.addresses {
+                    endpointslice_map.entry(key.clone()).or_default().push(addr.clone());
+                }
+            }
+        }
+
         // Process each service
         for service in services {
-            if let Err(e) = self.sync_service(&service, &endpoints_map).await {
+            if let Err(e) = self.sync_service(&service, &endpoints_map, &endpointslice_map).await {
                 let namespace = service.metadata.namespace.as_deref().unwrap_or("unknown");
                 let name = &service.metadata.name;
                 error!("Failed to sync service {}/{}: {}", namespace, name, e);
@@ -70,6 +106,7 @@ impl KubeProxy {
         &mut self,
         service: &Service,
         endpoints_map: &HashMap<String, Endpoints>,
+        endpointslice_map: &HashMap<String, Vec<String>>,
     ) -> Result<()> {
         let namespace = service
             .metadata
@@ -109,12 +146,20 @@ impl KubeProxy {
             return Ok(());
         }
 
-        // Get endpoints for this service
+        // Get endpoints for this service (try old-style Endpoints first, then EndpointSlices)
         let endpoint_key = format!("{}/{}", namespace, name);
         let endpoints = endpoints_map.get(&endpoint_key);
 
         // Extract endpoint addresses
-        let endpoint_addresses = self.extract_endpoint_addresses(endpoints);
+        let mut endpoint_addresses = self.extract_endpoint_addresses(endpoints);
+
+        // Fall back to EndpointSlices if no old-style endpoints found
+        if endpoint_addresses.is_empty() {
+            if let Some(slice_addrs) = endpointslice_map.get(&endpoint_key) {
+                endpoint_addresses = slice_addrs.clone();
+                debug!("Using EndpointSlice addresses for {}/{}: {:?}", namespace, name, endpoint_addresses);
+            }
+        }
 
         if endpoint_addresses.is_empty() {
             debug!("Service {}/{} has no ready endpoints", namespace, name);

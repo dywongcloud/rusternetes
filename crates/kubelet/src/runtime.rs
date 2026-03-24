@@ -679,12 +679,33 @@ impl ContainerRuntime {
     async fn start_pause_container(&self, pod_name: &str, pod: &Pod) -> Result<String> {
         let pause_name = format!("{}_pause", pod_name);
 
-        // Remove any existing pause container for this pod
-        if let Ok(_) = self
+        // Check if pause container already exists and is running — if so, just return its IP.
+        // Recreating the pause container would destroy all containers sharing its network namespace.
+        if let Ok(inspect) = self
             .docker
             .inspect_container(&pause_name, None::<InspectContainerOptions>)
             .await
         {
+            let state = inspect.state.as_ref();
+            let is_running = state.and_then(|s| s.running).unwrap_or(false);
+
+            if is_running {
+                // Pause container is already running — return its IP
+                if let Some(network_settings) = inspect.network_settings {
+                    if let Some(networks) = network_settings.networks {
+                        if let Some(network_info) = networks.get(&self.network) {
+                            if let Some(ip) = &network_info.ip_address {
+                                if !ip.is_empty() {
+                                    debug!("Pause container {} already running with IP {}", pause_name, ip);
+                                    return Ok(ip.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Pause container exists but is not running — remove it
             let remove_options = RemoveContainerOptions {
                 force: true,
                 ..Default::default()

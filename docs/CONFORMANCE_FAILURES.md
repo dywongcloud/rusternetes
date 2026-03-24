@@ -18,11 +18,12 @@
 
 ## Round 87 active failures (in progress)
 
-### 1. Watch closed before timeout (StatefulSet) — PERSISTENT
+### 1. Watch closed before timeout (StatefulSet) — FIXED (pause container)
 - **Test**: `statefulset.go:786` — StatefulSet scaling order verification
-- **Symptom**: Watch for pod events closes before test verifies scaling order. Container restart storm still occurs (25+ restarts in 50 seconds despite fix).
-- **Root cause**: Despite `start_container` fix checking container state, the events show containers still being recreated every 2s. The `sync_pod()` loop calls `start_pod()` which calls `start_container()` — but containers may be in a transient EXITED state due to readiness probe failures or brief container lifecycle events. The readiness probe has `#failure=1` meaning one failed check triggers not-ready.
-- **Status**: Seen in round 87. Needs investigation into why containers exit between sync cycles.
+- **Symptom**: Container restart storm (25+ restarts in 50 seconds). Watch closes.
+- **Root cause**: `start_pause_container` always force-removed and recreated the pause container, even if it was already running. Since all pod containers share the pause container's network namespace, recreating the pause container killed all other containers. Every `start_pod` call (e.g., during `Pending if is_running` path) would trigger this cascade.
+- **Fix**: `start_pause_container` now checks if the pause container is already running and returns its IP immediately without recreation. Only recreates if the pause container is stopped/dead.
+- **Status**: Code fix written, needs deploy.
 
 ### 2. Scheduling predicates timeout (Taint tolerance)
 - **Test**: `predicates.go:1102` — Pod scheduling with taints/tolerations
@@ -63,10 +64,12 @@
 - **Fix**: Added `danger_accept_invalid_certs(true)` to the reqwest client builder for HTTP probes.
 - **Status**: Code fix written, needs deploy.
 
-### 8. Service test failure
+### 8. Service not reachable — FIXED (EndpointSlice support in kube-proxy)
 - **Test**: `service.go:768` — Service networking
-- **Symptom**: Failed (details pending — likely service routing or readiness)
-- **Status**: Seen in round 87, needs investigation.
+- **Symptom**: `service is not reachable within 2m0s timeout on endpoint endpoint-test2:80 over TCP protocol`
+- **Root cause**: kube-proxy only read old-style Endpoints from `/registry/endpoints/`, but the endpoint controller creates EndpointSlices (new API). Dynamically created test services never got iptables DNAT rules.
+- **Fix**: kube-proxy now also reads EndpointSlices from `/registry/endpointslices/` as a fallback when no old-style Endpoints are found. Extracts pod IPs from EndpointSlice addresses.
+- **Status**: Code fix written, needs deploy.
 
 ### 9. Websocket exec not supported
 - **Test**: `pods.go:600` — Remote command execution over websockets
@@ -104,7 +107,7 @@
 - **Root cause**: CPU resource value computation or divisor handling is wrong.
 - **Status**: Carried from round 86.
 
-## All 60 fixes committed (9 pending deploy)
+## All 62 fixes committed (11 pending deploy)
 
 | Fix | Commit |
 |-----|--------|
@@ -168,3 +171,5 @@
 | Job completedIndexes tracking | pending |
 | emptyDir bind mount sharing | pending |
 | HTTPS probe TLS skip verify | pending |
+| Pause container reuse (stop restart storm) | pending |
+| kube-proxy EndpointSlice support | pending |
