@@ -302,11 +302,11 @@ impl RuntimeConfig {
         // In Docker Desktop environments, the ClusterIP (10.96.0.1) is not
         // routable from bridge containers because kube-proxy's iptables DNAT
         // only applies in the host network namespace. Use the API server's
-        // direct container IP instead.
+        // direct container IP instead. The TLS cert includes Docker bridge IPs.
         let kubernetes_service_host = if let Ok(override_host) = std::env::var("KUBERNETES_SERVICE_HOST_OVERRIDE") {
-            // If override is a hostname, resolve it to an IP
+            // Resolve hostname to IP for KUBERNETES_SERVICE_HOST
             use std::net::ToSocketAddrs;
-            if let Ok(mut addrs) = format!("{}:443", override_host).to_socket_addrs() {
+            if let Ok(mut addrs) = format!("{}:6443", override_host).to_socket_addrs() {
                 if let Some(addr) = addrs.next() {
                     tracing::info!("Resolved KUBERNETES_SERVICE_HOST_OVERRIDE {} -> {}", override_host, addr.ip());
                     addr.ip().to_string()
