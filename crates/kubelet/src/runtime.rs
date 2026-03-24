@@ -2603,8 +2603,8 @@ impl ContainerRuntime {
             }
         }
 
-        // Resolve runAsUser from container security context or pod security context
-        let run_as_user: Option<String> = container
+        // Resolve runAsUser and runAsGroup from container or pod security context
+        let run_as_user_id: Option<i64> = container
             .security_context
             .as_ref()
             .and_then(|sc| sc.run_as_user)
@@ -2613,8 +2613,24 @@ impl ContainerRuntime {
                     .as_ref()
                     .and_then(|s| s.security_context.as_ref())
                     .and_then(|sc| sc.run_as_user)
-            })
-            .map(|uid| uid.to_string());
+            });
+        let run_as_group_id: Option<i64> = container
+            .security_context
+            .as_ref()
+            .and_then(|sc| sc.run_as_group)
+            .or_else(|| {
+                pod.spec
+                    .as_ref()
+                    .and_then(|s| s.security_context.as_ref())
+                    .and_then(|sc| sc.run_as_group)
+            });
+        // Docker user format: "uid" or "uid:gid"
+        let run_as_user: Option<String> = match (run_as_user_id, run_as_group_id) {
+            (Some(uid), Some(gid)) => Some(format!("{}:{}", uid, gid)),
+            (Some(uid), None) => Some(uid.to_string()),
+            (None, Some(gid)) => Some(format!("0:{}", gid)), // default uid 0 if only gid set
+            (None, None) => None,
+        };
 
         let mut config = Config {
             image: Some(container.image.clone()),
