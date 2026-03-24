@@ -129,12 +129,13 @@ where
     // Create watch stream via the shared watch cache (one etcd watch per prefix)
     let prefix = build_prefix(resource_type, Some(&namespace));
 
-    // First, list existing resources to send as initial ADDED events
-    let existing_resources = state.storage.list::<T>(&prefix).await?;
-
-    // Subscribe to the watch cache and convert to a WatchStream
+    // Subscribe to watch FIRST, then list. This ensures we don't miss events
+    // that happen between the list and the watch start (race condition fix).
     let watch_rx = state.watch_cache.subscribe(&prefix).await;
     let watch_stream = crate::watch_cache::broadcast_to_stream(watch_rx);
+
+    // List existing resources to send as initial ADDED events
+    let existing_resources = state.storage.list::<T>(&prefix).await?;
 
     // Create channel for sending events to client
     let (tx, rx) =
@@ -454,11 +455,12 @@ where
     // Create watch stream via the shared watch cache
     let prefix = build_prefix(resource_type, None);
 
-    // First, list existing resources to send as initial ADDED events
-    let existing_resources = state.storage.list::<T>(&prefix).await?;
-
+    // Subscribe FIRST, then list (avoid race condition)
     let watch_rx = state.watch_cache.subscribe(&prefix).await;
     let watch_stream = crate::watch_cache::broadcast_to_stream(watch_rx);
+
+    // List existing resources to send as initial ADDED events
+    let existing_resources = state.storage.list::<T>(&prefix).await?;
 
     // Create channel for sending events to client
     let (tx, rx) =
