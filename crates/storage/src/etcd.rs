@@ -386,7 +386,13 @@ impl Storage for EtcdStorage {
                                     .kv()
                                     .map(|kv| String::from_utf8_lossy(kv.value()).to_string())
                                     .unwrap_or_default();
-                                Ok(WatchEvent::Modified(key, value))
+                                // If there's no previous value, this is a new key (Added).
+                                // If there IS a previous value, it's an update (Modified).
+                                if event.prev_kv().is_some() {
+                                    Ok(WatchEvent::Modified(key, value))
+                                } else {
+                                    Ok(WatchEvent::Added(key, value))
+                                }
                             }
                             etcd_client::EventType::Delete => {
                                 let prev_value = event
