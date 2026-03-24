@@ -137,15 +137,33 @@ pub async fn create(
                 // User specified a ClusterIP, try to allocate it
                 let requested_ip = service.spec.cluster_ip.clone().unwrap();
                 if !state.ip_allocator.allocate_specific(requested_ip.clone()) {
-                    return Err(rusternetes_common::Error::InvalidResource(format!(
-                        "ClusterIP {} is already allocated or invalid",
-                        requested_ip
-                    )));
+                    // Check if this service already exists with the same IP
+                    // (re-creation after restart). If so, allow it.
+                    let existing_key = build_key("services", Some(&namespace), &service.metadata.name);
+                    if let Ok(existing) = state.storage.get::<Service>(&existing_key).await {
+                        if existing.spec.cluster_ip.as_deref() == Some(&requested_ip) {
+                            info!(
+                                "ClusterIP {} already allocated for existing service {}/{}, reusing",
+                                requested_ip, namespace, service.metadata.name
+                            );
+                        } else {
+                            return Err(rusternetes_common::Error::InvalidResource(format!(
+                                "ClusterIP {} is already allocated or invalid",
+                                requested_ip
+                            )));
+                        }
+                    } else {
+                        return Err(rusternetes_common::Error::InvalidResource(format!(
+                            "ClusterIP {} is already allocated or invalid",
+                            requested_ip
+                        )));
+                    }
+                } else {
+                    info!(
+                        "Allocated specific ClusterIP {} for service {}/{}",
+                        requested_ip, namespace, service.metadata.name
+                    );
                 }
-                info!(
-                    "Allocated specific ClusterIP {} for service {}/{}",
-                    requested_ip, namespace, service.metadata.name
-                );
             }
         }
     }
