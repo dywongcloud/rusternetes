@@ -71,19 +71,11 @@ fn default_rolling_update_strategy() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RollingUpdateDeployment {
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_int_or_string_opt",
-        default
-    )]
-    pub max_unavailable: Option<String>, // Can be int or percentage
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub max_unavailable: Option<serde_json::Value>, // IntOrString: int or "25%"
 
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_int_or_string_opt",
-        default
-    )]
-    pub max_surge: Option<String>, // Can be int or percentage
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub max_surge: Option<serde_json::Value>, // IntOrString: int or "25%"
 }
 
 /// Deserialize a value that can be either an integer or a string into Option<String>

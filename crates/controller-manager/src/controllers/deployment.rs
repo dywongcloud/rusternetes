@@ -154,15 +154,18 @@ impl<S: Storage> DeploymentController<S> {
             .as_ref()
             .and_then(|s| s.rolling_update.as_ref())
             .map(|ru| {
-                (
-                    ru.max_surge.as_deref().unwrap_or("25%"),
-                    ru.max_unavailable.as_deref().unwrap_or("25%"),
-                )
+                let surge = ru.max_surge.as_ref()
+                    .and_then(|v| v.as_str().map(|s| s.to_string()).or_else(|| v.as_i64().map(|n| n.to_string())))
+                    .unwrap_or_else(|| "25%".to_string());
+                let unavail = ru.max_unavailable.as_ref()
+                    .and_then(|v| v.as_str().map(|s| s.to_string()).or_else(|| v.as_i64().map(|n| n.to_string())))
+                    .unwrap_or_else(|| "25%".to_string());
+                (surge, unavail)
             })
-            .unwrap_or(("25%", "25%"));
+            .unwrap_or(("25%".to_string(), "25%".to_string()));
 
         let (max_surge, max_unavailable) =
-            compute_rolling_update_counts(desired_replicas, max_surge_str, max_unavailable_str);
+            compute_rolling_update_counts(desired_replicas, &max_surge_str, &max_unavailable_str);
 
         // Calculate total old RS replicas
         let old_rs_total: i32 = owned_replicasets
