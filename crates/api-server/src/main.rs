@@ -16,6 +16,7 @@ mod spdy;
 mod spdy_handlers;
 mod state;
 mod streaming;
+mod watch_cache;
 
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;

@@ -126,13 +126,15 @@ where
         }
     }
 
-    // Create watch stream
+    // Create watch stream via the shared watch cache (one etcd watch per prefix)
     let prefix = build_prefix(resource_type, Some(&namespace));
 
     // First, list existing resources to send as initial ADDED events
     let existing_resources = state.storage.list::<T>(&prefix).await?;
 
-    let watch_stream = state.storage.watch(&prefix).await?;
+    // Subscribe to the watch cache and convert to a WatchStream
+    let watch_rx = state.watch_cache.subscribe(&prefix).await;
+    let watch_stream = crate::watch_cache::broadcast_to_stream(watch_rx);
 
     // Create channel for sending events to client
     let (tx, rx) =
@@ -324,33 +326,11 @@ where
                                 continue;
                             }
                             None => {
-                                // Watch stream ended — reconnect from last revision
-                                // to avoid losing events during the gap.
-                                let reconnect_rev = latest_resource_version
-                                    .as_ref()
-                                    .and_then(|rv| rv.parse::<i64>().ok())
-                                    .unwrap_or(0);
-                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                                let reconnect_result = if reconnect_rev > 0 {
-                                    state.storage.watch_from_revision(&prefix, reconnect_rev + 1).await
-                                } else {
-                                    state.storage.watch(&prefix).await
-                                };
-                                match reconnect_result {
-                                    Ok(new_stream) => {
-                                        watch_stream = Box::pin(new_stream);
-                                        continue;
-                                    }
-                                    Err(_) => {
-                                        match state.storage.watch(&prefix).await {
-                                            Ok(new_stream) => {
-                                                watch_stream = Box::pin(new_stream);
-                                                continue;
-                                            }
-                                            Err(_) => break,
-                                        }
-                                    }
-                                }
+                                // Watch stream ended — resubscribe from cache.
+                                // The cache handles etcd reconnection internally.
+                                let new_rx = state.watch_cache.subscribe(&prefix).await;
+                                watch_stream = Box::pin(crate::watch_cache::broadcast_to_stream(new_rx));
+                                continue;
                             }
                         }
                     }
@@ -471,13 +451,14 @@ where
         }
     }
 
-    // Create watch stream
+    // Create watch stream via the shared watch cache
     let prefix = build_prefix(resource_type, None);
 
     // First, list existing resources to send as initial ADDED events
     let existing_resources = state.storage.list::<T>(&prefix).await?;
 
-    let watch_stream = state.storage.watch(&prefix).await?;
+    let watch_rx = state.watch_cache.subscribe(&prefix).await;
+    let watch_stream = crate::watch_cache::broadcast_to_stream(watch_rx);
 
     // Create channel for sending events to client
     let (tx, rx) =
@@ -666,33 +647,11 @@ where
                                 continue;
                             }
                             None => {
-                                // Watch stream ended — reconnect from last revision
-                                // to avoid losing events during the gap.
-                                let reconnect_rev = latest_resource_version
-                                    .as_ref()
-                                    .and_then(|rv| rv.parse::<i64>().ok())
-                                    .unwrap_or(0);
-                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                                let reconnect_result = if reconnect_rev > 0 {
-                                    state.storage.watch_from_revision(&prefix, reconnect_rev + 1).await
-                                } else {
-                                    state.storage.watch(&prefix).await
-                                };
-                                match reconnect_result {
-                                    Ok(new_stream) => {
-                                        watch_stream = Box::pin(new_stream);
-                                        continue;
-                                    }
-                                    Err(_) => {
-                                        match state.storage.watch(&prefix).await {
-                                            Ok(new_stream) => {
-                                                watch_stream = Box::pin(new_stream);
-                                                continue;
-                                            }
-                                            Err(_) => break,
-                                        }
-                                    }
-                                }
+                                // Watch stream ended — resubscribe from cache.
+                                // The cache handles etcd reconnection internally.
+                                let new_rx = state.watch_cache.subscribe(&prefix).await;
+                                watch_stream = Box::pin(crate::watch_cache::broadcast_to_stream(new_rx));
+                                continue;
                             }
                         }
                     }

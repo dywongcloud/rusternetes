@@ -12,3 +12,4 @@ pub mod spdy;
 pub mod spdy_handlers;
 pub mod state;
 pub mod streaming;
+pub mod watch_cache;

@@ -1,6 +1,7 @@
 use crate::admission_webhook::AdmissionWebhookManager;
 use crate::ip_allocator::ClusterIPAllocator;
 use crate::prometheus_client::PrometheusClient;
+use crate::watch_cache::WatchCache;
 use rusternetes_common::auth::{BootstrapTokenManager, TokenManager};
 use rusternetes_common::authz::Authorizer;
 use rusternetes_common::observability::MetricsRegistry;
@@ -17,6 +18,7 @@ pub struct ApiServerState {
     pub skip_auth: bool,
     pub ip_allocator: Arc<ClusterIPAllocator>,
     pub webhook_manager: Arc<AdmissionWebhookManager<EtcdStorage>>,
+    pub watch_cache: Arc<WatchCache>,
     pub ca_cert_pem: Option<String>,
     pub prometheus_client: Option<Arc<PrometheusClient>>,
 }
@@ -30,6 +32,7 @@ impl ApiServerState {
         skip_auth: bool,
     ) -> Self {
         let webhook_manager = Arc::new(AdmissionWebhookManager::new(storage.clone()));
+        let watch_cache = Arc::new(WatchCache::new(storage.clone()));
 
         Self {
             storage,
@@ -40,6 +43,7 @@ impl ApiServerState {
             skip_auth,
             ip_allocator: Arc::new(ClusterIPAllocator::new()),
             webhook_manager,
+            watch_cache,
             ca_cert_pem: None,
             prometheus_client: None,
         }
