@@ -58,6 +58,7 @@ echo ""
 # Force JSON encoding (rusternetes doesn't support protobuf, which is client-go's default)
 # The --kube-api-content-type flag tells the e2e test binary to use JSON for all API requests
 if sonobuoy run --mode="${SONOBUOY_MODE}" \
+    --timeout 86400 \
     --plugin-env "e2e.E2E_EXTRA_ARGS=--progress-report-url=http://localhost:8099/progress --kube-api-content-type=application/json" \
     --wait 2>&1 | tee /tmp/sonobuoy-latest.log; then
     TEST_RESULT="PASSED"
