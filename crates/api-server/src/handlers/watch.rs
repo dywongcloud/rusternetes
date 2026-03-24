@@ -379,9 +379,10 @@ where
                                     object: bookmark,
                                 };
                                 if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                    if tx.send(Ok(format!("{}\n", json))).is_err() {
-                                        break; // Client disconnected
-                                    }
+                                    let _ = tx.send(Ok(format!("{}\n", json)));
+                                    // Don't break on bookmark send failure — the client
+                                    // might have reset just the bookmark stream but the
+                                    // watch connection is still alive.
                                 }
                             }
                         }
@@ -720,9 +721,10 @@ where
                                     object: bookmark,
                                 };
                                 if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                    if tx.send(Ok(format!("{}\n", json))).is_err() {
-                                        break; // Client disconnected
-                                    }
+                                    let _ = tx.send(Ok(format!("{}\n", json)));
+                                    // Don't break on bookmark send failure — the client
+                                    // might have reset just the bookmark stream but the
+                                    // watch connection is still alive.
                                 }
                             }
                         }
