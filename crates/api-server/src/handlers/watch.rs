@@ -1217,3 +1217,357 @@ pub async fn watch_persistentvolumeclaims(
     )
     .await
 }
+
+/// Helper to extract metadata fields from a serde_json::Value
+fn json_resource_version(val: &serde_json::Value) -> Option<String> {
+    val.get("metadata")?
+        .get("resourceVersion")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+/// Watch cluster-scoped resources using serde_json::Value (for DRA types without HasMetadata)
+pub async fn watch_cluster_scoped_json(
+    state: Arc<ApiServerState>,
+    auth_ctx: AuthContext,
+    resource_type: &str,
+    api_group: &str,
+    params: WatchParams,
+) -> Result<Response> {
+    info!("Starting JSON watch for cluster-scoped {}", resource_type);
+
+    let attrs = RequestAttributes::new(auth_ctx.user.clone(), "watch", resource_type)
+        .with_api_group(api_group);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(Error::Forbidden(reason));
+        }
+    }
+
+    let prefix = build_prefix(resource_type, None);
+    let watch_rx = state.watch_cache.subscribe(&prefix).await;
+    let watch_stream = crate::watch_cache::broadcast_to_stream(watch_rx);
+    let existing_resources: Vec<serde_json::Value> = state.storage.list(&prefix).await?;
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
+
+    let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
+    let send_initial_events = params.send_initial_events.unwrap_or(false);
+    let timeout_duration = params.timeout_seconds.map(Duration::from_secs);
+    let requested_rv = params.resource_version.clone();
+    let (bookmark_kind, bookmark_api_version) =
+        resource_type_to_kind_and_version(resource_type, api_group);
+
+    let should_send_initial = send_initial_events
+        || requested_rv.as_deref() == Some("0")
+        || requested_rv.is_none();
+
+    tokio::spawn(async move {
+        let mut latest_resource_version: Option<String> = Some(
+            chrono::Utc::now().timestamp().to_string(),
+        );
+
+        if should_send_initial {
+            for object in existing_resources {
+                if let Some(rv) = json_resource_version(&object) {
+                    latest_resource_version = Some(rv);
+                }
+                let k8s_event = serde_json::json!({
+                    "type": "ADDED",
+                    "object": object
+                });
+                if let Ok(json) = serde_json::to_string(&k8s_event) {
+                    if tx.send(Ok(format!("{}\n", json))).is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+
+        if send_initial_events {
+            if let Some(ref rv) = latest_resource_version {
+                let bookmark = serde_json::json!({
+                    "type": "BOOKMARK",
+                    "object": {
+                        "kind": bookmark_kind,
+                        "apiVersion": bookmark_api_version,
+                        "metadata": {
+                            "resourceVersion": rv,
+                            "annotations": {
+                                "k8s.io/initial-events-end": "true"
+                            }
+                        }
+                    }
+                });
+                if let Ok(json) = serde_json::to_string(&bookmark) {
+                    let _ = tx.send(Ok(format!("{}\n", json)));
+                }
+            }
+        }
+
+        let mut bookmark_interval = if allow_bookmarks || send_initial_events {
+            Some(interval(Duration::from_secs(15)))
+        } else {
+            None
+        };
+
+        let mut watch_stream: std::pin::Pin<Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>> = Box::pin(watch_stream);
+
+        let watch_future = async {
+            loop {
+                tokio::select! {
+                    event_opt = watch_stream.next() => {
+                        match event_opt {
+                            Some(Ok(event)) => {
+                                let (event_type, value_str) = match event {
+                                    WatchEvent::Added(_, v) => ("ADDED", v),
+                                    WatchEvent::Modified(_, v) => ("MODIFIED", v),
+                                    WatchEvent::Deleted(_, v) => ("DELETED", v),
+                                };
+                                if let Ok(object) = serde_json::from_str::<serde_json::Value>(&value_str) {
+                                    if let Some(rv) = json_resource_version(&object) {
+                                        latest_resource_version = Some(rv);
+                                    }
+                                    let k8s_event = serde_json::json!({
+                                        "type": event_type,
+                                        "object": object
+                                    });
+                                    if let Ok(json) = serde_json::to_string(&k8s_event) {
+                                        if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                            Some(Err(e)) => {
+                                error!("Watch error: {}", e);
+                                return;
+                            }
+                            None => {
+                                debug!("Watch stream ended");
+                                return;
+                            }
+                        }
+                    }
+                    _ = async {
+                        if let Some(ref mut bi) = bookmark_interval {
+                            bi.tick().await
+                        } else {
+                            std::future::pending::<tokio::time::Instant>().await
+                        }
+                    } => {
+                        if let Some(ref rv) = latest_resource_version {
+                            let bookmark = serde_json::json!({
+                                "type": "BOOKMARK",
+                                "object": {
+                                    "kind": bookmark_kind,
+                                    "apiVersion": bookmark_api_version,
+                                    "metadata": {
+                                        "resourceVersion": rv
+                                    }
+                                }
+                            });
+                            if let Ok(json) = serde_json::to_string(&bookmark) {
+                                if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        if let Some(dur) = timeout_duration {
+            let _ = timeout(dur, watch_future).await;
+        } else {
+            watch_future.await;
+        }
+    });
+
+    let stream = UnboundedReceiverStream::new(rx);
+    let body = Body::from_stream(stream);
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::TRANSFER_ENCODING, "chunked")
+        .body(body)
+        .unwrap())
+}
+
+/// Watch namespaced resources using serde_json::Value (for DRA types without HasMetadata)
+pub async fn watch_namespaced_json(
+    state: Arc<ApiServerState>,
+    auth_ctx: AuthContext,
+    namespace: String,
+    resource_type: &str,
+    api_group: &str,
+    params: WatchParams,
+) -> Result<Response> {
+    info!("Starting JSON watch for namespaced {}/{}", namespace, resource_type);
+
+    let attrs = RequestAttributes::new(auth_ctx.user.clone(), "watch", resource_type)
+        .with_api_group(api_group)
+        .with_namespace(&namespace);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(Error::Forbidden(reason));
+        }
+    }
+
+    let prefix = build_prefix(resource_type, Some(&namespace));
+    let watch_rx = state.watch_cache.subscribe(&prefix).await;
+    let watch_stream = crate::watch_cache::broadcast_to_stream(watch_rx);
+    let existing_resources: Vec<serde_json::Value> = state.storage.list(&prefix).await?;
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
+
+    let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
+    let send_initial_events = params.send_initial_events.unwrap_or(false);
+    let timeout_duration = params.timeout_seconds.map(Duration::from_secs);
+    let requested_rv = params.resource_version.clone();
+    let (bookmark_kind, bookmark_api_version) =
+        resource_type_to_kind_and_version(resource_type, api_group);
+
+    let should_send_initial = send_initial_events
+        || requested_rv.as_deref() == Some("0")
+        || requested_rv.is_none();
+
+    tokio::spawn(async move {
+        let mut latest_resource_version: Option<String> = Some(
+            chrono::Utc::now().timestamp().to_string(),
+        );
+
+        if should_send_initial {
+            for object in existing_resources {
+                if let Some(rv) = json_resource_version(&object) {
+                    latest_resource_version = Some(rv);
+                }
+                let k8s_event = serde_json::json!({
+                    "type": "ADDED",
+                    "object": object
+                });
+                if let Ok(json) = serde_json::to_string(&k8s_event) {
+                    if tx.send(Ok(format!("{}\n", json))).is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+
+        if send_initial_events {
+            if let Some(ref rv) = latest_resource_version {
+                let bookmark = serde_json::json!({
+                    "type": "BOOKMARK",
+                    "object": {
+                        "kind": bookmark_kind,
+                        "apiVersion": bookmark_api_version,
+                        "metadata": {
+                            "resourceVersion": rv,
+                            "annotations": {
+                                "k8s.io/initial-events-end": "true"
+                            }
+                        }
+                    }
+                });
+                if let Ok(json) = serde_json::to_string(&bookmark) {
+                    let _ = tx.send(Ok(format!("{}\n", json)));
+                }
+            }
+        }
+
+        let mut bookmark_interval = if allow_bookmarks || send_initial_events {
+            Some(interval(Duration::from_secs(15)))
+        } else {
+            None
+        };
+
+        let mut watch_stream: std::pin::Pin<Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>> = Box::pin(watch_stream);
+
+        let watch_future = async {
+            loop {
+                tokio::select! {
+                    event_opt = watch_stream.next() => {
+                        match event_opt {
+                            Some(Ok(event)) => {
+                                let (event_type, value_str) = match event {
+                                    WatchEvent::Added(_, v) => ("ADDED", v),
+                                    WatchEvent::Modified(_, v) => ("MODIFIED", v),
+                                    WatchEvent::Deleted(_, v) => ("DELETED", v),
+                                };
+                                if let Ok(object) = serde_json::from_str::<serde_json::Value>(&value_str) {
+                                    if let Some(rv) = json_resource_version(&object) {
+                                        latest_resource_version = Some(rv);
+                                    }
+                                    let k8s_event = serde_json::json!({
+                                        "type": event_type,
+                                        "object": object
+                                    });
+                                    if let Ok(json) = serde_json::to_string(&k8s_event) {
+                                        if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                            Some(Err(e)) => {
+                                error!("Watch error: {}", e);
+                                return;
+                            }
+                            None => {
+                                debug!("Watch stream ended");
+                                return;
+                            }
+                        }
+                    }
+                    _ = async {
+                        if let Some(ref mut bi) = bookmark_interval {
+                            bi.tick().await
+                        } else {
+                            std::future::pending::<tokio::time::Instant>().await
+                        }
+                    } => {
+                        if let Some(ref rv) = latest_resource_version {
+                            let bookmark = serde_json::json!({
+                                "type": "BOOKMARK",
+                                "object": {
+                                    "kind": bookmark_kind,
+                                    "apiVersion": bookmark_api_version,
+                                    "metadata": {
+                                        "resourceVersion": rv
+                                    }
+                                }
+                            });
+                            if let Ok(json) = serde_json::to_string(&bookmark) {
+                                if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        if let Some(dur) = timeout_duration {
+            let _ = timeout(dur, watch_future).await;
+        } else {
+            watch_future.await;
+        }
+    });
+
+    let stream = UnboundedReceiverStream::new(rx);
+    let body = Body::from_stream(stream);
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::TRANSFER_ENCODING, "chunked")
+        .body(body)
+        .unwrap())
+}

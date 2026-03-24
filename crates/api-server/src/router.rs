@@ -638,6 +638,12 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             post(handlers::pod_subresources::create_eviction),
         )
         .route(
+            "/api/v1/namespaces/:namespace/pods/:name/resize",
+            get(handlers::pod::get)
+                .put(handlers::pod::update)
+                .patch(handlers::pod::patch),
+        )
+        .route(
             "/api/v1/namespaces/:namespace/pods/:name/ephemeralcontainers",
             get(handlers::pod::get)
                 .put(handlers::pod::update)

@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 85 — 9/441 done, **4 PASSED**, 4 failed, 51 fixes)
+**Last updated**: 2026-03-24 (round 86 in progress — 15/441 specs done, 14 failures, 57 fixes)
 
 ## Critical root causes fixed
 
@@ -16,68 +16,82 @@
 | 8 | Controller 10s interval | Tests time out waiting | Reduced to 2s | `ea1b800` |
 | 9 | Namespace cascade order | Orphaned pods block cleanup | Delete controllers first | `1270649` |
 
-## Round 84 active failures (11 tests, 10 unique types)
+## Round 86 active failures (14 tests, 12 unique types)
 
 ### 1. Watch closed before timeout (StatefulSet)
-- **Test**: StatefulSet scaling order verification
+- **Test**: `statefulset.go:786` — StatefulSet scaling order verification
 - **Symptom**: Watch for pod events closes before test verifies scaling order
-- **Root cause**: Container restart storm was a RED HERRING — events controller emits "Created container" events every 2s (incrementing count), not actual container recreations. The kubelet only starts containers 4 times total. The watch close is caused by HTTP/2 stream management — client-go sends RST_STREAM which causes tx.send() to fail.
-- **Confirmed**: Bookmark interval reduced to 15s (no more "context canceled" spam). Container restarts reduced to 4 from 25+. But watch still closes.
-- **Research needed**: HTTP/2 stream lifecycle management. May need to use a different streaming mechanism or implement server-sent events.
+- **Root cause**: HTTP/2 stream management — client-go sends RST_STREAM which causes tx.send() to fail
+- **Status**: Bookmark interval reduced to 15s. Container restarts reduced to 4 from 25+. Watch still closes.
+- **Research needed**: HTTP/2 stream lifecycle management. May need different streaming mechanism.
 
-### 2. IntOrString serialization (Deployment)
-- **Test**: Deployment rollback/scaling with percentage maxUnavailable/maxSurge
-- **Symptom**: `invalid value for IntOrString: invalid type: string is not a percentage`
-- **Root cause**: `maxUnavailable` stored as `Option<String>`. Integer value `1` stored as string `"1"`, serialized back as `"maxUnavailable": "1"`. Go client sees string "1" which isn't a percentage and fails.
-- **Fix needed**: Change `maxUnavailable`/`maxSurge` to `Option<serde_json::Value>` to preserve original int/string type. In progress — build error in controller-manager needs fixing.
+### 2. Lifecycle hook timeout (PostStart HTTP)
+- **Test**: `lifecycle_hook.go:118` — PostStart HTTP hook execution
+- **Symptom**: Timed out after 120s waiting for postStart HTTP hook
+- **Root cause**: PostStart httpGet hook needs to reach another pod via HTTP. Likely pod-to-pod networking issue — the hook URL may not be reachable from the container's network namespace.
+- **Research needed**: Check if pod-to-pod HTTP connectivity works within Docker bridge network. May need kube-proxy DNAT for pod IPs.
 
-### 3. Service not reachable (EndpointSlice test)
-- **Test**: Service endpoint connectivity
-- **Symptom**: `nc: connect to endpoint-test2 (10.96.0.3) port 80 (tcp) failed: Connection refused`
-- **Root cause**: Service ClusterIP routing works (route added) but no backend pod is listening on port 80. The pod may not have started, or the service→endpoint mapping is wrong.
-- **Research needed**: Check if endpoints controller creates proper endpoints for the service. Check if pods are actually running and listening.
+### 3. Pod resize PATCH 404 — FIXED (not deployed)
+- **Test**: `pod_resize.go:850` — In-place pod resource resize
+- **Symptom**: `the server could not find the requested resource (patch pods resize-test-c7e4d)`
+- **Root cause**: Missing `/api/v1/namespaces/:ns/pods/:name/resize` route
+- **Fix**: Added resize subresource route (GET/PUT/PATCH) mapped to pod handlers
 
-### 4. Watch condition timeout (ReplicationController lifecycle)
-- **Test**: RC lifecycle — watch for status updates
-- **Symptom**: `Wait until condition with watch events should not return an error: timed out`
-- **Root cause**: Likely same as #1 — watch events being dropped or not delivered properly. May also be affected by Added vs Modified fix.
-- **Research needed**: Check if RC status updates generate proper watch events.
+### 4. Aggregated discovery missing GVRs
+- **Test**: `aggregated_discovery.go:165` — API discovery v2 format
+- **Symptom**: `Expected gvr admissionregistration.k8s.io v1 validatingwebhookconfigurations to exist in discovery`
+- **Root cause**: API server doesn't implement aggregated discovery v2 format (APIGroupDiscoveryList). The v2 endpoint `/api` and `/apis` must return the aggregated format when `Accept: application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList` is requested.
+- **Research needed**: Implement content negotiation for discovery endpoints.
 
-### 5. Container output "[1-9]" (Downward API projected volume)
-- **Test**: Projected volume with memory/CPU limits
-- **Symptom**: Expected a number like "134217728" (memory in bytes) but got wrong value
-- **Root cause**: Downward API volume resource field handling. CPU divisor fix (`095b407`) deployed but memory divisor may also need fixing.
-- **Research needed**: Check `get_container_resource_value` for memory resource fields. Verify divisor handling for memory (should return bytes with divisor "1").
+### 5. Scheduler preemption timeout (×2)
+- **Test**: `preemption.go:181` and `preemption.go:516` — Pod preemption
+- **Symptom**: Timed out after 300s
+- **Root cause**: Scheduler doesn't implement pod preemption. When a high-priority pod can't be scheduled, it should evict lower-priority pods.
+- **Research needed**: Implement priority-based preemption in scheduler.
 
-### 6. Container output "1" (Downward API volume)
-- **Test**: CPU request downward API volume
-- **Symptom**: Expected "1" (1 core) in cpu_request file but got wrong value
-- **Root cause**: Same as #5. The CPU divisor fix changes default to return cores, but volume path may use different logic.
-- **Research needed**: Verify projected volume and downward API volume both use `get_container_resource_value`.
+### 6. DNS context deadline exceeded
+- **Test**: `dns_common.go:476` — DNS resolution
+- **Symptom**: `context deadline exceeded` after 604s
+- **Root cause**: DNS resolution for services/pods failing. Likely CoreDNS can't resolve service names because endpoint slices aren't being properly populated.
+- **Research needed**: Check CoreDNS configuration and endpoint slice controller.
 
-### 7. CSINode deletecollection (fixed, not deployed)
-- **Fix**: Added `.delete()` route for CSINode collection endpoint
-- **Commit**: `a9cdc55`
+### 7. ResourceClaim missing Kind — FIXED (not deployed)
+- **Test**: `conformance.go:686` — DRA ResourceClaim CRUD
+- **Symptom**: `Object 'Kind' is missing in '{"metadata":...'`
+- **Root cause**: ResourceClaim create/update handlers didn't set `kind` and `apiVersion` before storing
+- **Fix**: Added `claim.kind = "ResourceClaim"` and `claim.api_version = "resource.k8s.io/v1"` in create/update
 
-### 8. Webhook configuration denied
-- **Test**: ValidatingWebhookConfiguration admission
-- **Symptom**: "create validatingwebhookconfiguration should have been denied by the api-server"
-- **Root cause**: Our API server doesn't enforce validating admission webhooks. When a webhook is configured to deny certain requests, our server allows them anyway.
-- **Research needed**: Check if `admission_webhook.rs` validates incoming requests against configured ValidatingWebhookConfigurations.
+### 8. kubectl create protobuf / CRD field validation — FIXED (not deployed)
+- **Test**: `field_validation.go:428` — CRD field validation with protobuf
+- **Symptom**: `cannot create crd only application/json is supported`
+- **Root cause**: Protobuf extraction middleware only handled wire types 0 (varint) and 2 (length-delimited), failing on wire type 1 (64-bit) or 5 (32-bit). Also tag parsing assumed single-byte tags.
+- **Fix**: Added support for all wire types (0, 1, 2, 5) and multi-byte tag parsing. Added JSON fallback scan.
 
-### 9. Context deadline exceeded (Scheduler predicate, ×2)
-- **Test**: Scheduler predicate tests
-- **Symptom**: Pod scheduling times out
-- **Root cause**: Scheduler may be too slow to schedule pods, or the node affinity/anti-affinity predicates aren't implemented properly.
-- **Research needed**: Check scheduler implementation for predicate evaluation.
+### 9. Container output "2\n" (Downward API CPU)
+- **Test**: `output.go:263` — Container output verification
+- **Symptom**: Expected container output doesn't match, got "2\n"
+- **Root cause**: CPU resource value returned as "2" when test expected a different value. May be correct if pod requests 2 CPUs, or divisor handling is wrong.
+- **Research needed**: Check specific test pod spec to verify expected CPU value vs our computation.
 
-### 10. Watch "context canceled" spam
-- **Observed**: `retrywatcher.go:169] "Watch failed" err="context canceled"` every second
-- **Impact**: Causes watch-dependent tests to fail (deployments, RC, etc.)
-- **Root cause**: Client-go's retry watcher keeps restarting because our watch stream closes. This may be caused by HTTP/2 stream management issues.
-- **Research needed**: Check if our streaming response properly handles HTTP/2 flow control. May need to send periodic data to keep the stream alive.
+### 10. Job completion timeout
+- **Test**: `job.go:817` — Job completion with indexed completion
+- **Symptom**: `failed to ensure job completion: Told to stop trying after 201.487s`
+- **Root cause**: Job controller may be too slow to mark job as complete, or indexed completion tracking is broken.
+- **Research needed**: Check job controller completion detection speed.
 
-## All 49 fixes committed
+### 11. ResourceSlice watch error — FIXED (not deployed)
+- **Test**: `conformance.go:824` — DRA ResourceSlice CRUD lifecycle
+- **Symptom**: `no kind "ResourceSliceList" is registered for version "resource.k8s.io/v1"`
+- **Root cause**: ResourceSlice list handler didn't intercept `?watch=true` — returned a `ResourceSliceList` JSON instead of a watch stream. Client-go tried to decode the list as a watch event and failed.
+- **Fix**: Added watch interception to all DRA list handlers (ResourceSlice, ResourceClaim, ResourceClaimTemplate). Created `watch_cluster_scoped_json` and `watch_namespaced_json` functions for DRA types that use `serde_json::Value` instead of `HasMetadata` trait.
+
+### 12. DaemonSet retry failed pods — FIXED (not deployed)
+- **Test**: `daemon_set.go:332` — DaemonSet should retry creating failed daemon pods
+- **Symptom**: `error waiting for the failed daemon pod to be completely deleted: context deadline exceeded`
+- **Root cause**: DaemonSet controller didn't handle pods in "Failed" phase. When test set pod phase to Failed, the controller kept the pod (it was in pods_by_node map) and never recreated it.
+- **Fix**: DaemonSet controller now detects Failed/Succeeded pods, deletes them, and recreates. Also reduced controller interval from 5s to 2s.
+
+## All 57 fixes committed (6 pending deploy)
 
 | Fix | Commit |
 |-----|--------|
@@ -130,3 +144,11 @@
 | Container restart fix | `e99730b` |
 | Watch Added vs Modified | `00db87c` |
 | CSINode deletecollection | `a9cdc55` |
+| IntOrString serde_json::Value | `fbf759b`+ |
+| ResourceClaim Kind | pending |
+| Pod resize route | pending |
+| Protobuf wire types | pending |
+| DRA watch support | pending |
+| DaemonSet retry failed pods | pending |
+| ResourceSlice update Kind | pending |
+| DaemonSet 2s interval | pending |

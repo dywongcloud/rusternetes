@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -42,6 +43,10 @@ pub async fn create_resourceclaim(
             return Err(rusternetes_common::Error::Forbidden(reason));
         }
     }
+
+    // Ensure kind and apiVersion are set
+    claim.kind = "ResourceClaim".to_string();
+    claim.api_version = "resource.k8s.io/v1".to_string();
 
     // Ensure metadata exists and set defaults
     let metadata = claim.metadata.get_or_insert_with(Default::default);
@@ -102,7 +107,28 @@ pub async fn list_resourceclaims(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<ResourceClaim>>> {
+) -> Result<axum::response::Response> {
+    // Check if this is a watch request
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
+        info!("Starting watch for resourceclaims in namespace: {}", namespace);
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_namespaced_json(
+            state, auth_ctx, namespace, "resourceclaims", "resource.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing ResourceClaims in namespace: {}", namespace);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "resourceclaims")
@@ -117,20 +143,41 @@ pub async fn list_resourceclaims(
     }
 
     let prefix = build_prefix("resourceclaims", Some(&namespace));
-    let mut claims = state.storage.list(&prefix).await?;
+    let mut claims: Vec<ResourceClaim> = state.storage.list(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut claims, &params)?;
 
     let list = List::new("ResourceClaimList", "resource.k8s.io/v1", claims);
-    Ok(Json(list))
+    Ok(axum::Json(list).into_response())
 }
 
 pub async fn list_all_resourceclaims(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<ResourceClaim>>> {
+) -> Result<axum::response::Response> {
+    // Check if this is a watch request
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
+        info!("Starting watch for all resourceclaims");
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_cluster_scoped_json(
+            state, auth_ctx, "resourceclaims", "resource.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing all ResourceClaims");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "resourceclaims")
@@ -144,13 +191,13 @@ pub async fn list_all_resourceclaims(
     }
 
     let prefix = build_prefix("resourceclaims", None);
-    let mut claims = state.storage.list(&prefix).await?;
+    let mut claims: Vec<ResourceClaim> = state.storage.list(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut claims, &params)?;
 
     let list = List::new("ResourceClaimList", "resource.k8s.io/v1", claims);
-    Ok(Json(list))
+    Ok(axum::Json(list).into_response())
 }
 
 pub async fn update_resourceclaim(
@@ -173,6 +220,10 @@ pub async fn update_resourceclaim(
             return Err(rusternetes_common::Error::Forbidden(reason));
         }
     }
+
+    // Ensure kind and apiVersion are set
+    claim.kind = "ResourceClaim".to_string();
+    claim.api_version = "resource.k8s.io/v1".to_string();
 
     // Ensure metadata and set namespace/name
     let metadata = claim.metadata.get_or_insert_with(Default::default);

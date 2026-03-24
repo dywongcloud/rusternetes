@@ -254,8 +254,16 @@ fn extract_json_from_k8s_protobuf(data: &[u8]) -> Option<Vec<u8>> {
     // Field 2, wire type 2 (length-delimited) = tag byte 0x12
     let mut pos = 0;
     while pos < data.len() {
-        let tag = data[pos];
-        pos += 1;
+        // Read tag as varint (supports field numbers > 15)
+        let mut tag: u64 = 0;
+        let mut shift = 0;
+        while pos < data.len() {
+            let b = data[pos] as u64;
+            pos += 1;
+            tag |= (b & 0x7f) << shift;
+            if b & 0x80 == 0 { break; }
+            shift += 7;
+        }
         let field_number = tag >> 3;
         let wire_type = tag & 0x07;
 
@@ -263,7 +271,11 @@ fn extract_json_from_k8s_protobuf(data: &[u8]) -> Option<Vec<u8>> {
             0 => {
                 // Varint — skip
                 while pos < data.len() && data[pos] & 0x80 != 0 { pos += 1; }
-                pos += 1;
+                if pos < data.len() { pos += 1; }
+            }
+            1 => {
+                // 64-bit fixed — skip 8 bytes
+                pos += 8;
             }
             2 => {
                 // Length-delimited — read length then data
@@ -283,11 +295,44 @@ fn extract_json_from_k8s_protobuf(data: &[u8]) -> Option<Vec<u8>> {
                         return Some(raw.to_vec());
                     }
                 }
+                if pos + len > data.len() { return None; }
                 pos += len;
             }
+            5 => {
+                // 32-bit fixed — skip 4 bytes
+                pos += 4;
+            }
             _ => {
-                // Unknown wire type — can't parse further
-                return None;
+                // Unknown wire type — can't parse further, try fallback
+                break;
+            }
+        }
+    }
+
+    // Fallback: scan for the first JSON object in the data
+    for i in 0..data.len() {
+        if data[i] == b'{' {
+            // Try to find matching closing brace
+            let mut depth = 0i32;
+            let mut in_string = false;
+            let mut escape = false;
+            for j in i..data.len() {
+                if escape {
+                    escape = false;
+                    continue;
+                }
+                match data[j] {
+                    b'\\' if in_string => escape = true,
+                    b'"' => in_string = !in_string,
+                    b'{' if !in_string => depth += 1,
+                    b'}' if !in_string => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return Some(data[i..=j].to_vec());
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
     }

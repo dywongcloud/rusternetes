@@ -57,7 +57,7 @@ impl<S: Storage> DaemonSetController<S> {
             if let Err(e) = self.reconcile_all().await {
                 error!("Error in DaemonSet reconciliation loop: {}", e);
             }
-            time::sleep(Duration::from_secs(5)).await;
+            time::sleep(Duration::from_secs(2)).await;
         }
     }
 
@@ -160,7 +160,27 @@ impl<S: Storage> DaemonSetController<S> {
         let mut pods_by_node = std::collections::HashMap::new();
         for pod in daemonset_pods.iter() {
             if let Some(node_name) = pod.spec.as_ref().and_then(|s| s.node_name.as_ref()) {
-                pods_by_node.insert(node_name.clone(), pod.clone());
+                // Check if pod is in a terminal phase (Failed or Succeeded)
+                let is_terminal = pod
+                    .status
+                    .as_ref()
+                    .and_then(|s| s.phase.as_ref())
+                    .map(|phase| matches!(phase, Phase::Failed | Phase::Succeeded))
+                    .unwrap_or(false);
+
+                if is_terminal {
+                    // Delete failed/succeeded pods so they can be recreated
+                    let pod_name = &pod.metadata.name;
+                    let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
+                    if let Err(e) = self.storage.delete(&pod_key).await {
+                        warn!("Failed to delete terminal DaemonSet pod {}: {}", pod_name, e);
+                    } else {
+                        info!("Deleted terminal ({:?}) DaemonSet pod {}", pod.status.as_ref().and_then(|s| s.phase.as_ref()), pod_name);
+                    }
+                    // Don't add to pods_by_node so it gets recreated
+                } else {
+                    pods_by_node.insert(node_name.clone(), pod.clone());
+                }
             }
         }
 

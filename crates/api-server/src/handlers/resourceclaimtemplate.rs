@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -118,7 +119,23 @@ pub async fn list_resourceclaimtemplates(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<ResourceClaimTemplate>>> {
+) -> Result<axum::response::Response> {
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        info!("Starting watch for resourceclaimtemplates in namespace: {}", namespace);
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_namespaced_json(
+            state, auth_ctx, namespace, "resourceclaimtemplates", "resource.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing ResourceClaimTemplates in namespace: {}", namespace);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "resourceclaimtemplates")
@@ -133,20 +150,35 @@ pub async fn list_resourceclaimtemplates(
     }
 
     let prefix = build_prefix("resourceclaimtemplates", Some(&namespace));
-    let mut templates = state.storage.list(&prefix).await?;
+    let mut templates: Vec<ResourceClaimTemplate> = state.storage.list(&prefix).await?;
 
-    // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut templates, &params)?;
 
     let list = List::new("ResourceClaimTemplateList", "resource.k8s.io/v1", templates);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 pub async fn list_all_resourceclaimtemplates(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<ResourceClaimTemplate>>> {
+) -> Result<axum::response::Response> {
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        info!("Starting watch for all resourceclaimtemplates");
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_cluster_scoped_json(
+            state, auth_ctx, "resourceclaimtemplates", "resource.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing all ResourceClaimTemplates");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "resourceclaimtemplates")
@@ -160,13 +192,12 @@ pub async fn list_all_resourceclaimtemplates(
     }
 
     let prefix = build_prefix("resourceclaimtemplates", None);
-    let mut templates = state.storage.list(&prefix).await?;
+    let mut templates: Vec<ResourceClaimTemplate> = state.storage.list(&prefix).await?;
 
-    // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut templates, &params)?;
 
     let list = List::new("ResourceClaimTemplateList", "resource.k8s.io/v1", templates);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 pub async fn update_resourceclaimtemplate(
