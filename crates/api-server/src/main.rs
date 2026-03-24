@@ -243,11 +243,7 @@ async fn main() -> Result<()> {
         let rustls_config = RustlsConfig::from_config(tls_config.into_server_config()?);
 
         info!("HTTPS server listening on {}", args.bind_address);
-        let mut http_config = axum_server::HttpConfig::new();
-        http_config.http2_max_concurrent_streams(1000);
-        http_config.http2_keep_alive_interval(Some(std::time::Duration::from_secs(30)));
         axum_server::bind_rustls(args.bind_address.parse()?, rustls_config)
-            .http_config(http_config)
             .serve(app.into_make_service())
             .await?;
     } else {
