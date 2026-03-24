@@ -39,7 +39,7 @@ struct Args {
     log_level: String,
 
     /// Controller sync interval in seconds
-    #[arg(long, default_value = "1")]
+    #[arg(long, default_value = "2")]
     sync_interval: u64,
 
     /// Cloud provider (aws, gcp, azure, or none)
