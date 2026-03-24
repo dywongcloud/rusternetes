@@ -21,8 +21,9 @@
 ### 1. Watch closed before timeout (StatefulSet)
 - **Test**: StatefulSet scaling order verification
 - **Symptom**: Watch for pod events closes before test verifies scaling order
-- **Root cause**: Still investigating. Container restart fix reduced churn from 25/test to 3. Added vs Modified fix deployed. Watches still close.
-- **Research needed**: Check if the 3 remaining container recreations generate enough MODIFIED events to close the watch. May need to fix kubelet reconciliation to not call start_pod for Running pods.
+- **Root cause**: Container restart storm was a RED HERRING — events controller emits "Created container" events every 2s (incrementing count), not actual container recreations. The kubelet only starts containers 4 times total. The watch close is caused by HTTP/2 stream management — client-go sends RST_STREAM which causes tx.send() to fail.
+- **Confirmed**: Bookmark interval reduced to 15s (no more "context canceled" spam). Container restarts reduced to 4 from 25+. But watch still closes.
+- **Research needed**: HTTP/2 stream lifecycle management. May need to use a different streaming mechanism or implement server-sent events.
 
 ### 2. IntOrString serialization (Deployment)
 - **Test**: Deployment rollback/scaling with percentage maxUnavailable/maxSurge
