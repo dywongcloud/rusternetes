@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 88 in progress — 12 PASS, 6 FAIL so far, 62 fixes deployed)
+**Last updated**: 2026-03-24 (round 88 in progress — 30 PASS, 16 FAIL so far, 62 fixes deployed, 65% pass rate)
 
 ## Critical root causes fixed
 
