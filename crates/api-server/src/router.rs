@@ -1614,7 +1614,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/storage.k8s.io/v1/csinodes",
             get(handlers::csinode::list_csinodes)
-                .post(handlers::csinode::create_csinode),
+                .post(handlers::csinode::create_csinode)
+                .delete(handlers::csinode::deletecollection_csinodes),
         )
         .route(
             "/apis/storage.k8s.io/v1/csinodes/:name",
