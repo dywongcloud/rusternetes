@@ -97,6 +97,59 @@ impl<S: Storage> JobController<S> {
             }
         }
 
+        // For Indexed completion mode, track which indexes have completed
+        let is_indexed = job.spec.completion_mode.as_deref() == Some("Indexed");
+        let completed_indexes: Option<String> = if is_indexed {
+            let mut indexes: Vec<i32> = Vec::new();
+            for pod in job_pods.iter() {
+                if let Some(status) = &pod.status {
+                    if matches!(&status.phase, Some(Phase::Succeeded)) {
+                        // Get index from JOB_COMPLETION_INDEX env var or batch.kubernetes.io/job-completion-index annotation
+                        let index = pod
+                            .metadata
+                            .annotations
+                            .as_ref()
+                            .and_then(|a| a.get("batch.kubernetes.io/job-completion-index"))
+                            .and_then(|v| v.parse::<i32>().ok())
+                            .or_else(|| {
+                                pod.metadata
+                                    .labels
+                                    .as_ref()
+                                    .and_then(|l| l.get("batch.kubernetes.io/job-completion-index"))
+                                    .and_then(|v| v.parse::<i32>().ok())
+                            })
+                            .or_else(|| {
+                                // Check env vars on the pod spec
+                                pod.spec
+                                    .as_ref()
+                                    .and_then(|s| {
+                                        s.containers.first().and_then(|c| {
+                                            c.env.as_ref().and_then(|envs| {
+                                                envs.iter()
+                                                    .find(|e| e.name == "JOB_COMPLETION_INDEX")
+                                                    .and_then(|e| e.value.as_ref())
+                                                    .and_then(|v| v.parse::<i32>().ok())
+                                            })
+                                        })
+                                    })
+                            });
+                        if let Some(idx) = index {
+                            indexes.push(idx);
+                        }
+                    }
+                }
+            }
+            indexes.sort();
+            indexes.dedup();
+            if indexes.is_empty() {
+                None
+            } else {
+                Some(indexes.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
+            }
+        } else {
+            None
+        };
+
         info!(
             "Job {}/{}: active={}, succeeded={}, failed={}, target={}",
             namespace, name, active, succeeded, failed, completions
@@ -137,7 +190,7 @@ impl<S: Storage> JobController<S> {
                 completion_time: Some(chrono::Utc::now()),
                 ready: None,
                 terminating: None,
-                completed_indexes: None,
+                completed_indexes: completed_indexes.clone(),
                 failed_indexes: None,
                 uncounted_terminated_pods: None,
                 observed_generation: job.metadata.generation,
@@ -166,7 +219,7 @@ impl<S: Storage> JobController<S> {
                 completion_time: Some(chrono::Utc::now()),
                 ready: None,
                 terminating: None,
-                completed_indexes: None,
+                completed_indexes: completed_indexes.clone(),
                 failed_indexes: None,
                 uncounted_terminated_pods: None,
                 observed_generation: job.metadata.generation,
@@ -176,8 +229,27 @@ impl<S: Storage> JobController<S> {
             let pods_needed = std::cmp::min(parallelism - active, completions - succeeded - active);
 
             if pods_needed > 0 {
-                for i in 0..pods_needed {
-                    self.create_pod(job, namespace, job_pods.len() as i32 + i)
+                // For Indexed mode, find which indexes still need pods
+                let mut indexes_to_create: Vec<i32> = if is_indexed {
+                    let mut used_indexes: std::collections::HashSet<i32> = std::collections::HashSet::new();
+                    for pod in job_pods.iter() {
+                        if let Some(idx) = pod.metadata.annotations.as_ref()
+                            .and_then(|a| a.get("batch.kubernetes.io/job-completion-index"))
+                            .and_then(|v| v.parse::<i32>().ok())
+                        {
+                            used_indexes.insert(idx);
+                        }
+                    }
+                    (0..completions)
+                        .filter(|i| !used_indexes.contains(i))
+                        .take(pods_needed as usize)
+                        .collect()
+                } else {
+                    (0..pods_needed).collect()
+                };
+
+                for (i, idx) in indexes_to_create.iter().enumerate() {
+                    self.create_pod(job, namespace, *idx, is_indexed)
                         .await?;
                     info!(
                         "Created pod for Job {}/{} ({}/{})",
@@ -229,7 +301,7 @@ impl<S: Storage> JobController<S> {
                 completion_time: None,
                 ready: None,
                 terminating: None,
-                completed_indexes: None,
+                completed_indexes: completed_indexes.clone(),
                 failed_indexes: None,
                 uncounted_terminated_pods: None,
                 observed_generation: job.metadata.generation,
@@ -243,7 +315,7 @@ impl<S: Storage> JobController<S> {
         Ok(())
     }
 
-    async fn create_pod(&self, job: &Job, namespace: &str, _index: i32) -> Result<()> {
+    async fn create_pod(&self, job: &Job, namespace: &str, index: i32, is_indexed: bool) -> Result<()> {
         let job_name = &job.metadata.name;
         let pod_name = format!(
             "{}-{}",
@@ -260,10 +332,36 @@ impl<S: Storage> JobController<S> {
             .unwrap_or_default();
         labels.insert("job-name".to_string(), job_name.clone());
         labels.insert("controller-uid".to_string(), job.metadata.uid.clone());
+        if is_indexed {
+            labels.insert("batch.kubernetes.io/job-completion-index".to_string(), index.to_string());
+        }
+
+        let mut annotations = template
+            .metadata
+            .as_ref()
+            .and_then(|m| m.annotations.clone())
+            .unwrap_or_default();
+        if is_indexed {
+            annotations.insert("batch.kubernetes.io/job-completion-index".to_string(), index.to_string());
+        }
 
         let mut spec = template.spec.clone();
         // Jobs should not restart on failure - let the Job controller handle retries
         spec.restart_policy = Some("Never".to_string());
+
+        // For Indexed mode, inject JOB_COMPLETION_INDEX env var into all containers
+        if is_indexed {
+            for container in &mut spec.containers {
+                let env = container.env.get_or_insert_with(Vec::new);
+                if !env.iter().any(|e| e.name == "JOB_COMPLETION_INDEX") {
+                    env.push(rusternetes_common::resources::EnvVar {
+                        name: "JOB_COMPLETION_INDEX".to_string(),
+                        value: Some(index.to_string()),
+                        value_from: None,
+                    });
+                }
+            }
+        }
 
         let pod = Pod {
             type_meta: rusternetes_common::types::TypeMeta {
@@ -277,10 +375,7 @@ impl<S: Storage> JobController<S> {
                 managed_fields: None,
                 namespace: Some(namespace.to_string()),
                 labels: Some(labels),
-                annotations: template
-                    .metadata
-                    .as_ref()
-                    .and_then(|m| m.annotations.clone()),
+                annotations: Some(annotations),
                 uid: uuid::Uuid::new_v4().to_string(),
                 creation_timestamp: Some(chrono::Utc::now()),
                 deletion_timestamp: None,

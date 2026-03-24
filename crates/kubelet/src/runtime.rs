@@ -2336,16 +2336,14 @@ impl ContainerRuntime {
                     };
 
                     let read_only = mount.read_only.unwrap_or(false);
-                    if empty_dir_volumes.contains(&mount.name) && expanded_sub_path.is_none() {
-                        // Use tmpfs for emptyDir volumes (matches Kubernetes behavior)
-                        let opts = if read_only { "ro".to_string() } else { String::new() };
-                        tmpfs_mounts.insert(mount.mount_path.clone(), opts);
-                    } else {
-                        let ro_suffix = if read_only { ":ro" } else { "" };
-                        let bind =
-                            format!("{}:{}{}", effective_host_path, mount.mount_path, ro_suffix);
-                        binds.push(bind);
-                    }
+                    // Always use bind mounts for emptyDir so that data is shared
+                    // between containers in the same pod (all containers mount the
+                    // same host directory).  Previously we used tmpfs, but tmpfs is
+                    // per-container and breaks cross-container sharing.
+                    let ro_suffix = if read_only { ":ro" } else { "" };
+                    let bind =
+                        format!("{}:{}{}", effective_host_path, mount.mount_path, ro_suffix);
+                    binds.push(bind);
                     info!(
                         "Mounting volume {} at {} in container {}",
                         mount.name, mount.mount_path, container.name
@@ -3503,7 +3501,11 @@ impl ContainerRuntime {
 
         debug!("HTTP probe: {}", url);
 
-        let client = reqwest::Client::builder().timeout(timeout).build()?;
+        // Kubernetes probes skip TLS verification (accept self-signed certs)
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .danger_accept_invalid_certs(true)
+            .build()?;
 
         match client.get(&url).send().await {
             Ok(response) => {
