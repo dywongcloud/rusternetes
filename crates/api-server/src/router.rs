@@ -41,6 +41,30 @@ async fn custom_resource_fallback(
 
     let parts: Vec<&str> = path.trim_start_matches("/apis/").split('/').collect();
 
+    // Handle /apis/{group} — return APIGroup info for the group
+    if parts.len() == 1 && !parts[0].is_empty() {
+        let group_name = parts[0];
+        // Look up the group in our known groups
+        let group_info = serde_json::json!({
+            "kind": "APIGroup",
+            "apiVersion": "v1",
+            "name": group_name,
+            "versions": [{
+                "groupVersion": format!("{}/v1", group_name),
+                "version": "v1"
+            }],
+            "preferredVersion": {
+                "groupVersion": format!("{}/v1", group_name),
+                "version": "v1"
+            }
+        });
+        return Ok(axum::response::Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .body(axum::body::Body::from(group_info.to_string()))
+            .unwrap());
+    }
+
     // Parse the path components
     let (group, version, plural, namespace, name, subresource) = match parts.as_slice() {
         // Namespaced: /apis/{group}/{version}/namespaces/{namespace}/{plural}
