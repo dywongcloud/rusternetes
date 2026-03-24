@@ -1,151 +1,73 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-23 (round 64 started — all fixes deployed, run in progress)
+**Last updated**: 2026-03-24 (round 74 in progress — tests running, 6 done, 0 passed)
 
 ## How to run conformance tests
 ```bash
-docker compose build && docker compose up -d   # rebuild + redeploy cluster
-bash scripts/cleanup-sonobuoy.sh               # clean up previous run
-bash scripts/run-conformance.sh                # full lifecycle: cleanup, labels, CoreDNS, run
-KUBECONFIG=~/.kube/rusternetes-config sonobuoy status   # check status
-bash scripts/conformance-progress.sh           # real-time progress from e2e logs
+docker compose build && docker compose up -d
+bash scripts/cleanup-sonobuoy.sh
+bash scripts/run-conformance.sh
+bash scripts/conformance-progress.sh    # monitor progress
 ```
 
-## OPEN ISSUE: `sonobuoy status` progress counts stuck at zero
+## Root cause found: field selector broke all tests
 
-**Status**: UNRESOLVED — must be fixed for v1.35 conformance
+The e2e suite's `SynchronizedBeforeSuite` lists nodes with field selector
+`spec.unschedulable=false`. Our field selector treated missing JSON fields
+as non-matching, returning 0 nodes. Every test was skipped. Fixed in `646a407`.
 
-**Impact**: `sonobuoy status` shows `Passed: 0, Failed: 0, Remaining: 441` for the
-entire run. Use `bash scripts/conformance-progress.sh` to see real counts.
+## All fixes this session (29 code fixes)
 
-**What works**: The entire relay pipeline is functional — manual HTTP POSTs to
-`localhost:8099/progress` inside the e2e pod correctly update `sonobuoy status`.
+| Fix | Commit |
+|-----|--------|
+| Container logs: search exited containers | `2b1008d` |
+| EventList: add ListMeta metadata | `97938e4` |
+| gRPC probe: implement health check | `e738c1f` |
+| Scale PATCH: accept partial JSON | `d335dee` |
+| VolumeAttachment + ResourceQuota status PATCH routes | `d335dee` |
+| Pagination tests: fix ContinuationToken fields | `c93a3be` |
+| events.k8s.io/v1: correct apiVersion | `f8a75da` |
+| CRD openAPIV3Schema field name | `abd2137` |
+| ResourceSlice: set Kind/apiVersion | `9b21a89` |
+| PDB status: serde defaults | `9b21a89` |
+| PV create: init status with phase | `710eee1` |
+| metadata.namespace in create handlers | `db40409` |
+| camelCase: podIP, hostIP, containerID, etc | `bde38ef` |
+| VolumeAttributesClass deletecollection route | `bde38ef` |
+| OpenAPI /v2: 406 for protobuf | `bde38ef` |
+| Keep stopped containers for logs | `2c8e1fd` |
+| Termination message reading | `c804e57` |
+| Init container: Waiting for unstarted | `b54d541` |
+| StatefulSet: controller-revision-hash label | `7f5c9bc` |
+| ServiceAccount token: correct storage key | `9238eb4` |
+| Proxy handlers: correct storage keys | `b4b745c` |
+| nonResourceURLs camelCase | `98f0eac` |
+| Deployment revision increment | `565c216` |
+| EndpointSlice orphan cleanup | `6f79efa` |
+| Fail pod start on missing volumes | `5e07c6e` |
+| ClusterIP pre-allocation at startup | `4113fe9` |
+| KUBERNETES_SERVICE_HOST direct IP + TLS SANs | `b224387`+`862c286`+`f9c9691` |
+| ClusterIP re-allocation for existing services | `cd6ab64` |
+| **Field selector: missing fields = false** | **`646a407`** |
 
-**What's broken**: The e2e binary sends 2 initial progress POSTs during suite setup
-but sends zero POSTs after individual tests complete. Since sonobuoy progress works
-on real Kubernetes v1.35 clusters, the problem is something specific to our
-environment — not an upstream bug.
+## Round 74 failures (in progress)
 
-**Next steps**:
-1. Build debug conformance image with logging in `ProcessSpecReport`/`SendUpdates`
-2. Test with GODEBUG=netdns=go+2 to trace DNS resolution for localhost
-3. Check if our API server's connection handling exhausts Go's default HTTP transport
-
----
-
-## Fixes deployed in round 64 (this session)
-
-| Fix | Impact | Commit |
-|-----|--------|--------|
-| Container logs: search exited containers by name | ~8 tests | `2b1008d` |
-| EventList: add missing `metadata: ListMeta` field | ~1 test | `97938e4` |
-| gRPC probe: implement health check via tonic | ~1 test | `e738c1f` |
-| Scale PATCH: accept partial JSON body | ~3 tests | `d335dee` |
-| VolumeAttachment + ResourceQuota status PATCH routes | ~2 tests | `d335dee` |
-| Pagination tests: fix missing ContinuationToken fields | tests only | `c93a3be` |
-| events.k8s.io/v1: separate handlers with correct apiVersion | ~1 test | `f8a75da` |
-| CRD openAPIV3Schema field name (camelCase mismatch) | ~3 tests | `abd2137` |
-| ResourceSlice: set Kind/apiVersion before storing | ~1 test | `9b21a89` |
-| PDB status fields: add serde defaults for required counters | ~1 test | `9b21a89` |
-| PV create: initialize status with default phase | ~1 test | `710eee1` |
-| Missing metadata.namespace in create handlers (secret, configmap, controllerrevision, replicationcontroller, podtemplate) | CRITICAL ~10+ tests | `db40409` |
-| Fix camelCase abbreviation renames: podIP, hostIP, containerID, imageID, clusterIPs, externalIPs, loadBalancerIP, machineID, systemUUID, bootID, podCIDR, providerID, resourceID | CRITICAL ~10+ tests | `bde38ef` |
-| VolumeAttributesClass: add deletecollection route | ~1 test | `bde38ef` |
-| OpenAPI /v2: return 406 for protobuf Accept headers | ~2 tests | `bde38ef` |
-| Keep stopped containers for log retrieval (don't remove on pod delete) | ~9 tests | `2c8e1fd` |
-| Container termination message reading from /dev/termination-log | ~2 tests | `c804e57` |
-| Init container status: report Waiting for unstarted containers | ~1 test | `b54d541` |
-| StatefulSet: add controller-revision-hash label to pods | ~1 test | `7f5c9bc` |
-| ServiceAccount token request: use correct storage key | ~1 test | `9238eb4` |
-| Proxy handlers: use correct storage keys (nodes, services, pods) | ~1 test | `b4b745c` |
-| nonResourceURLs camelCase rename (RBAC, FlowControl, Authorization) | ~1 test | `98f0eac` |
-| Deployment revision: increment on new ReplicaSet creation | ~2 tests | `565c216` |
-| EndpointSlice: clean up orphans when Endpoints deleted | ~1 test | `6f79efa` |
-| Fail pod start when required Secret/ConfigMap volumes missing | ~6 tests | `5e07c6e` |
-| ClusterIP allocation: pre-allocate existing IPs at startup | CRITICAL | `4113fe9` |
-| KUBERNETES_SERVICE_HOST: use API server direct IP | CRITICAL | `b224387` |
-| KUBERNETES_SERVICE_PORT: use 6443 for direct access | CRITICAL | `862c286` |
-| TLS cert SANs: add Docker bridge IPs | CRITICAL | `f9c9691` |
-| ClusterIP re-allocation for existing services | infra | `cd6ab64` |
-| Field selector: treat missing fields as false/empty | **ROOT CAUSE** | `646a407` |
-
-## Round 64 early results (13/441 done, 0 passed, 13 failed)
-
-Round 64 deployed all fixes from this session EXCEPT the namespace fix above.
-Early failures revealed that secret/configmap create handlers did not set
-`metadata.namespace` from the URL path. Resources stored without namespace
-metadata are invisible when listed across all namespaces, causing "unable to
-find secret by name" and related failures. This is a critical bug that likely
-affects many tests. Rebuilding with the namespace fix now.
-
-## Round 63 failure analysis (61 failures, BEFORE fixes deployed)
-
-### CONTAINER_OUTPUT (9 failures)
-Tests expect specific output from containers but get wrong/no content.
-- ConfigMap/Secret volume content not visible in container logs
-- Downward API env vars missing from output
-- Projected volumes content mismatch
-- Root cause: containers exit before logs captured, or volume mounts broken
-
-### WATCH/TIMEOUT (6 failures)
+### Watch issues (2 failures)
 - Watch closed before UntilWithoutRetry timeout
-- Watch notification timeout (ConfigMap watch)
-- Pod/Job timeout waiting for conditions (up to 900s)
+- Timed out waiting for watch notification (ConfigMap MODIFIED)
+- Root cause: watch stream reconnection loses events during the gap
 
-### PATCH (4 failures) — ALL FIXED
-- StatefulSet scale PATCH — **FIXED**
-- VolumeAttachment status PATCH — **FIXED**
-- Deployment scale PATCH — **FIXED**
-- ReplicaSet scale PATCH — **FIXED**
+### Container output (1 failure)
+- expected "0" in container output — got empty/wrong output
+- Likely: container exits before Docker captures stdout
 
-### DEPLOYMENT (3 failures)
-Webhook deployment pods never become ready. Tests deploy webhook servers
-(sample-webhook-deployment) that need to serve HTTPS and be reachable.
+### Webhook deployment (1 failure)
+- sample-webhook-deployment never becomes ready (0 available)
+- Pod crashes or can't serve HTTPS
 
-### RATE_LIMIT (2 failures)
-"client rate limiter Wait returned an error" — API response latency
-causes client-side rate limiter to exceed context deadline.
+### Controller issues (1 failure)
+- RC FailedCreate condition never cleared after pod creation succeeds
+- "unable to create pods: only 0 of 2 desired replicas are available"
 
-### CSI (1 failure) — FIXED
-CSINode null drivers — **FIXED** (deployed in round 64)
-
-### EVENT (1 failure) — FIXED
-Event list via `events.k8s.io/v1` returns wrong apiVersion — **FIXED**
-
-### GRPC (1 failure) — FIX DEPLOYED
-gRPC probe implementation deployed — needs round 64 results to verify.
-
-### NETWORKING (1 failure)
-Pod-to-pod connection failure (2/2 connections failed).
-
-### QUOTA (1 failure) — FIXED
-ResourceQuota status PATCH route — **FIXED**
-
-### OTHER (32 failures) — PARTIALLY FIXED
-- CRD creation failures — **FIXED** (openAPIV3Schema field name)
-- PV creation failures — **FIXED** (status phase initialization)
-- ResourceSlice missing Kind — **FIXED**
-- PDB status patch — **FIXED**
-- Pod timeout / "Told to stop trying" — pods not becoming ready
-- DaemonSet pod deletion — rate limiter timeout on GC
-- Job SuccessCriteriaMet condition timeout (900s)
-- Shared volume exec failures
-
-## All deployed fixes (cumulative)
-- Pod IP from CNI (critical breakthrough, round 62)
-- Watch reconnect support
-- WebSocket exec v5.channel.k8s.io with direct Docker execution
-- Volume fixes: defaultMode, binaryData, items, tmpfs emptyDir, dir perms
-- API discovery: apiregistration.k8s.io, autoscaling groups
-- deletecollection routes for all resource types
-- Status sub-resources for all workload resources
-- readOnlyRootFs, runAsUser, hostIPs, internal IP detection
-- Pod completion detection, Ready=False conditions
-- Ephemeral containers, fieldRef env vars (never skip empty)
-- CronJob/StatefulSet 1s intervals, StatefulSet revision hash
-- RC failure conditions, GC foreground deletion with body propagation policy
-- CSINode null drivers, ResourceQuota status route, PV phase default
-- Container logs: search exited containers (round 64)
-- EventList metadata, events.k8s.io/v1 apiVersion (round 64)
-- gRPC probe, Scale PATCH, status PATCH routes (round 64)
-- CRD openAPIV3Schema, ResourceSlice Kind, PDB status defaults, PV phase (round 64)
+### kubectl/networking (1 failure)
+- kubectl exec inside pod fails — curl to service times out
