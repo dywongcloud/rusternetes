@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 84 — 11/441 done, 0 passed, 49 fixes committed)
+**Last updated**: 2026-03-24 (round 85 — 9/441 done, **4 PASSED**, 4 failed, 51 fixes)
 
 ## Critical root causes fixed
 
