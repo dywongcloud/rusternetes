@@ -1859,24 +1859,31 @@ impl ContainerRuntime {
         // Build environment variables
         let mut env_list = Vec::new();
 
-        // Inject Kubernetes service environment variables for in-cluster access
-        // Use ClusterIP instead of DNS name to avoid chicken-and-egg DNS dependency
+        // Inject Kubernetes service environment variables for in-cluster access.
+        // When using direct API server IP (KUBERNETES_SERVICE_HOST_OVERRIDE),
+        // use port 6443 (the actual API server port). When using ClusterIP,
+        // use port 443 (the service port that DNAT maps to 6443).
+        let k8s_port = if std::env::var("KUBERNETES_SERVICE_HOST_OVERRIDE").is_ok() {
+            "6443"
+        } else {
+            "443"
+        };
         env_list.push(format!(
             "KUBERNETES_SERVICE_HOST={}",
             self.kubernetes_service_host
         ));
-        env_list.push("KUBERNETES_SERVICE_PORT=443".to_string());
-        env_list.push("KUBERNETES_SERVICE_PORT_HTTPS=443".to_string());
+        env_list.push(format!("KUBERNETES_SERVICE_PORT={}", k8s_port));
+        env_list.push(format!("KUBERNETES_SERVICE_PORT_HTTPS={}", k8s_port));
         env_list.push(format!(
-            "KUBERNETES_PORT=tcp://{}:443",
-            self.kubernetes_service_host
+            "KUBERNETES_PORT=tcp://{}:{}",
+            self.kubernetes_service_host, k8s_port
         ));
         env_list.push(format!(
-            "KUBERNETES_PORT_443_TCP=tcp://{}:443",
-            self.kubernetes_service_host
+            "KUBERNETES_PORT_443_TCP=tcp://{}:{}",
+            self.kubernetes_service_host, k8s_port
         ));
         env_list.push("KUBERNETES_PORT_443_TCP_PROTO=tcp".to_string());
-        env_list.push("KUBERNETES_PORT_443_TCP_PORT=443".to_string());
+        env_list.push(format!("KUBERNETES_PORT_443_TCP_PORT={}", k8s_port));
         env_list.push(format!(
             "KUBERNETES_PORT_443_TCP_ADDR={}",
             self.kubernetes_service_host
