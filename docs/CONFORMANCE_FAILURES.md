@@ -66,4 +66,5 @@
 | RS conditions preserve | `58317e6` |
 | Controller interval 2s | `ea1b800` |
 | Status PATCH metadata | `38b44f2` |
-| **Container restart fix** | **`e99730b`** |
+| Container restart fix | `e99730b` |
+| **Watch event: Added vs Modified** | **`00db87c`** |
