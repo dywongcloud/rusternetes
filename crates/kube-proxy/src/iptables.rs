@@ -164,6 +164,44 @@ impl IptablesManager {
             }
         }
 
+        // Ensure the service CIDR (10.96.0.0/12) is routable.
+        // Without a route, packets to ClusterIPs are dropped before reaching
+        // iptables PREROUTING/DNAT. We add a route pointing to the Docker bridge
+        // so the kernel accepts the packets and lets iptables DNAT them.
+        let route_check = Command::new("ip")
+            .args(["route", "show", "10.96.0.0/12"])
+            .output();
+        if route_check.map_or(true, |o| o.stdout.is_empty()) {
+            // Find the Docker bridge interface
+            let bridge_iface = Command::new("ip")
+                .args(["route", "show", "172.18.0.0/16"])
+                .output()
+                .ok()
+                .and_then(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .split_whitespace()
+                        .nth(2) // "dev <iface>"
+                        .map(|s| s.to_string())
+                });
+            if let Some(iface) = bridge_iface {
+                let output = Command::new("ip")
+                    .args(["route", "add", "10.96.0.0/12", "dev", &iface])
+                    .output();
+                match output {
+                    Ok(o) if o.status.success() => {
+                        info!("Added route for service CIDR 10.96.0.0/12 via {}", iface);
+                    }
+                    Ok(o) => {
+                        let stderr = String::from_utf8_lossy(&o.stderr);
+                        if !stderr.contains("File exists") {
+                            warn!("Failed to add service CIDR route: {}", stderr);
+                        }
+                    }
+                    Err(e) => warn!("Failed to add service CIDR route: {}", e),
+                }
+            }
+        }
+
         info!("Iptables chains initialized successfully");
         Ok(())
     }
