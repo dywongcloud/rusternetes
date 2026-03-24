@@ -256,13 +256,19 @@ impl<S: Storage> ReplicaSetController<S> {
             .as_deref()
             .unwrap_or("default");
 
+        // Preserve existing conditions (user/test-set) instead of wiping them
+        let existing_conditions = replicaset
+            .status
+            .as_ref()
+            .and_then(|s| s.conditions.clone());
+
         let status = ReplicaSetStatus {
             replicas,
             ready_replicas,
             available_replicas,
-            fully_labeled_replicas: Some(replicas), // All pods matching selector are fully labeled
+            fully_labeled_replicas: Some(replicas),
             observed_generation: replicaset.metadata.generation,
-            conditions: None, // TODO: Add conditions for ReplicaSetReplicaFailure, etc.
+            conditions: existing_conditions,
             terminating_replicas: None,
         };
 
