@@ -81,4 +81,5 @@ With 1s controller interval, tests should complete ~10x faster.
 | Namespace cascade order | `1270649` |
 | Protobuf extraction | `2571b32` |
 | RS conditions preserve | `58317e6` |
-| **Controller interval 1s** | `2ea4199` |
+| Controller interval 10s→2s | `2ea4199`+`ea1b800` |
+| Status PATCH metadata merge | `38b44f2` |
