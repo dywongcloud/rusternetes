@@ -248,7 +248,8 @@ impl<S: Storage> ReplicationControllerController<S> {
                 message: Some(msg),
             }])
         } else {
-            None
+            // Clear failure conditions when replicas are sufficient
+            Some(vec![])
         };
 
         let mut updated_rc = rc.clone();
