@@ -4010,7 +4010,7 @@ impl ContainerRuntime {
                 .status
                 .as_ref()
                 .and_then(|s| s.host_ip.clone())
-                .unwrap_or("".to_string()),
+                .unwrap_or_else(|| "127.0.0.1".to_string()),
             _ => {
                 // Support metadata.labels['key'] and metadata.annotations['key']
                 if field_path.starts_with("metadata.labels['") && field_path.ends_with("']") {
@@ -4126,10 +4126,8 @@ impl ContainerRuntime {
                 .map(parse_cpu_quantity)
                 .unwrap_or(0);
             let divisor_millicores = if divisor_str == "0" || divisor_str == "1" {
-                // Default divisor for CPU: return value in whole-number format (millicores)
-                // Kubernetes default is to return in "1" (cores) when divisor is absent,
-                // but the downward API typically uses "1m" or "1" divisor.
-                1 // return millicores
+                // Default divisor "1" means return in cores (1 core = 1000 millicores)
+                1000
             } else {
                 parse_cpu_quantity(divisor_str).max(1)
             };
