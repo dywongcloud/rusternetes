@@ -1,27 +1,34 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 79 — 8/441 done, 1 passed, 7 failed, 43 fixes)
+**Last updated**: 2026-03-24 (round 79: 19/441 done, 1 pass, 18 fail. Rebuilding with 44 fixes.)
 
 ## Root causes identified and fixed
 
-1. **Field selector** (`646a407`): Missing fields = false. Unblocked all tests.
+1. **Field selector** (`646a407`): Missing fields treated as false.
 2. **Service CIDR routing** (`b4f31c2`): Route for 10.96.0.0/12.
-3. **API connectivity** (`b224387`+`862c286`+`f9c9691`): Direct API IP + TLS SANs.
+3. **API connectivity** (`b224387`+`862c286`+`f9c9691`): Direct IP + TLS SANs.
 4. **Watch cache** (`73c3514`): One etcd watch per prefix, broadcast to clients.
 5. **Watch race** (`d2e306c`): Subscribe before list.
 6. **Namespace cascade** (`1270649`): Delete controllers before pods.
-7. **Protobuf extraction** (`2571b32`): Extract JSON from K8s protobuf envelope.
+7. **Protobuf extraction** (`2571b32`): JSON from K8s protobuf envelope.
 
-## Round 79 failures (7 out of 8 tests)
+## Round 79 failures (18 out of 19 tests)
 
-- **Watch closed** (1): StatefulSet scaling verification watch closes prematurely
-- **CRD protobuf** (2): Fixed by protobuf extraction (not yet deployed)
-- **Container output** (1): CPU_LIMIT=2 — downward API fix committed, not deployed
-- **Webhook deployment** (1): Pod not ready (service routing + TLS)
-- **kubectl exec** (1): Service ClusterIP not reachable from pod
-- **ReplicaSet timeout** (1): RS not found in time
+| Failure | Count | Fix Status |
+|---------|-------|------------|
+| CRD/EndpointSlice protobuf | 4 | **FIXED** (protobuf extraction, not deployed) |
+| Container output (CPU_LIMIT) | 2 | **FIXED** (CPU divisor, not deployed) |
+| Watch closed | 1 | Watch cache deployed, residual issue |
+| Webhook deployment | 1 | Needs service routing + TLS |
+| kubectl exec/curl service | 1 | Needs ClusterIP routing from pods |
+| ReplicaSet status conditions | 1 | **FIXED** (preserve conditions, not deployed) |
+| Pod resize PATCH 404 | 2 | Pod deleted during resize |
+| RC rate limiter | 1 | API latency |
+| Container lifecycle hook | 1 | 30s timeout |
+| Affinity | 1 | Kube-proxy session affinity |
+| Other timeouts | 3 | Various |
 
-## All 43 fixes
+## All 44 fixes
 
 | Fix | Commit |
 |-----|--------|
@@ -67,4 +74,5 @@
 | Watch cache architecture | `73c3514` |
 | Watch race: subscribe before list | `d2e306c` |
 | Namespace cascade delete order | `1270649` |
-| **Protobuf envelope extraction** | `2571b32` |
+| Protobuf envelope extraction | `2571b32` |
+| RS conditions preservation | `58317e6` |
