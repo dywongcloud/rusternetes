@@ -580,8 +580,9 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
     // Routes that require authentication (unless skip_auth is enabled)
     let mut protected_routes = Router::new()
         // Core v1 API
-        .route("/api/v1/namespaces", get(handlers::namespace::list))
-        .route("/api/v1/namespaces", post(handlers::namespace::create))
+        .route("/api/v1/namespaces", get(handlers::namespace::list)
+            .post(handlers::namespace::create)
+            .delete(handlers::namespace::deletecollection_namespaces))
         .route(
             "/api/v1/namespaces/:name",
             get(handlers::namespace::get)
@@ -1091,7 +1092,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // Storage v1 API - PersistentVolumes (cluster-scoped)
         .route(
             "/api/v1/persistentvolumes",
-            get(handlers::persistentvolume::list_pvs).post(handlers::persistentvolume::create_pv),
+            get(handlers::persistentvolume::list_pvs).post(handlers::persistentvolume::create_pv)
+            .delete(handlers::persistentvolume::deletecollection_persistentvolumes),
         )
         .route(
             "/api/v1/persistentvolumes/:name",
@@ -1108,7 +1110,9 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // PersistentVolumeClaims (namespace-scoped)
         .route(
             "/api/v1/namespaces/:namespace/persistentvolumeclaims",
-            get(handlers::persistentvolumeclaim::list_pvcs).post(handlers::persistentvolumeclaim::create_pvc),
+            get(handlers::persistentvolumeclaim::list_pvcs)
+                .post(handlers::persistentvolumeclaim::create_pvc)
+                .delete(handlers::persistentvolumeclaim::deletecollection_persistentvolumeclaims),
         )
         .route(
             "/api/v1/namespaces/:namespace/persistentvolumeclaims/:name",
@@ -1120,7 +1124,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // PersistentVolumeClaims (all namespaces)
         .route(
             "/api/v1/persistentvolumeclaims",
-            get(handlers::persistentvolumeclaim::list_all_pvcs),
+            get(handlers::persistentvolumeclaim::list_all_pvcs)
+            .delete(handlers::persistentvolumeclaim::deletecollection_persistentvolumeclaims),
         )
         // Watch persistentvolumeclaims in a namespace
         .route(
@@ -1185,7 +1190,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses",
             get(handlers::volumesnapshotclass::list_volumesnapshotclasses)
-                .post(handlers::volumesnapshotclass::create_volumesnapshotclass),
+                .post(handlers::volumesnapshotclass::create_volumesnapshotclass)
+                .delete(handlers::volumesnapshotclass::deletecollection_volumesnapshotclasses),
         )
         .route(
             "/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses/:name",
@@ -1210,13 +1216,15 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // VolumeSnapshots (all namespaces)
         .route(
             "/apis/snapshot.storage.k8s.io/v1/volumesnapshots",
-            get(handlers::volumesnapshot::list_all_volumesnapshots),
+            get(handlers::volumesnapshot::list_all_volumesnapshots)
+            .delete(handlers::volumesnapshot::deletecollection_volumesnapshots),
         )
         // VolumeSnapshotContents (cluster-scoped)
         .route(
             "/apis/snapshot.storage.k8s.io/v1/volumesnapshotcontents",
             get(handlers::volumesnapshotcontent::list_volumesnapshotcontents)
-                .post(handlers::volumesnapshotcontent::create_volumesnapshotcontent),
+                .post(handlers::volumesnapshotcontent::create_volumesnapshotcontent)
+                .delete(handlers::volumesnapshotcontent::deletecollection_volumesnapshotcontents),
         )
         .route(
             "/apis/snapshot.storage.k8s.io/v1/volumesnapshotcontents/:name",
@@ -1318,7 +1326,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // CustomResourceDefinitions (cluster-scoped)
         .route(
             "/apis/apiextensions.k8s.io/v1/customresourcedefinitions",
-            get(handlers::crd::list_crds).post(handlers::crd::create_crd),
+            get(handlers::crd::list_crds).post(handlers::crd::create_crd)
+            .delete(handlers::crd::deletecollection_customresourcedefinitions),
         )
         .route(
             "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/:name",
@@ -1337,7 +1346,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/admissionregistration.k8s.io/v1/validatingwebhookconfigurations",
             get(handlers::admission_webhook::list_validating_webhooks)
-                .post(handlers::admission_webhook::create_validating_webhook),
+                .post(handlers::admission_webhook::create_validating_webhook)
+                .delete(handlers::admission_webhook::deletecollection_validatingwebhookconfigurations),
         )
         .route(
             "/apis/admissionregistration.k8s.io/v1/validatingwebhookconfigurations/:name",
@@ -1350,7 +1360,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/admissionregistration.k8s.io/v1/mutatingwebhookconfigurations",
             get(handlers::admission_webhook::list_mutating_webhooks)
-                .post(handlers::admission_webhook::create_mutating_webhook),
+                .post(handlers::admission_webhook::create_mutating_webhook)
+                .delete(handlers::admission_webhook::deletecollection_mutatingwebhookconfigurations),
         )
         .route(
             "/apis/admissionregistration.k8s.io/v1/mutatingwebhookconfigurations/:name",
@@ -1380,7 +1391,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/flowcontrol.apiserver.k8s.io/v1/prioritylevelconfigurations",
             get(handlers::flowcontrol::list_priority_level_configurations)
-                .post(handlers::flowcontrol::create_priority_level_configuration),
+                .post(handlers::flowcontrol::create_priority_level_configuration)
+                .delete(handlers::flowcontrol::deletecollection_prioritylevelconfigurations),
         )
         .route(
             "/apis/flowcontrol.apiserver.k8s.io/v1/prioritylevelconfigurations/:name",
@@ -1418,7 +1430,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/certificates.k8s.io/v1/certificatesigningrequests",
             get(handlers::certificates::list_certificate_signing_requests)
-                .post(handlers::certificates::create_certificate_signing_request),
+                .post(handlers::certificates::create_certificate_signing_request)
+                .delete(handlers::certificates::deletecollection_certificatesigningrequests),
         )
         .route(
             "/apis/certificates.k8s.io/v1/certificatesigningrequests/:name",
@@ -1454,7 +1467,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // EndpointSlices (all namespaces)
         .route(
             "/apis/discovery.k8s.io/v1/endpointslices",
-            get(handlers::endpointslice::list_all_endpointslices),
+            get(handlers::endpointslice::list_all_endpointslices)
+            .delete(handlers::endpointslice::deletecollection_endpointslices),
         )
         // Watch endpointslices in a namespace
         .route(
@@ -1482,7 +1496,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         )
         .route(
             "/apis/autoscaling/v1/horizontalpodautoscalers",
-            get(handlers::horizontalpodautoscaler::list_all),
+            get(handlers::horizontalpodautoscaler::list_all)
+            .delete(handlers::horizontalpodautoscaler::deletecollection_horizontalpodautoscalers),
         )
         // Autoscaling v2 API - HorizontalPodAutoscalers (namespace-scoped)
         .route(
@@ -1506,7 +1521,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // HorizontalPodAutoscalers (all namespaces)
         .route(
             "/apis/autoscaling/v2/horizontalpodautoscalers",
-            get(handlers::horizontalpodautoscaler::list_all),
+            get(handlers::horizontalpodautoscaler::list_all)
+            .delete(handlers::horizontalpodautoscaler::deletecollection_horizontalpodautoscalers),
         )
         // Policy v1 API - PodDisruptionBudgets (namespace-scoped)
         .route(
@@ -1549,7 +1565,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // CSIStorageCapacity (all namespaces)
         .route(
             "/apis/storage.k8s.io/v1/csistoragecapacities",
-            get(handlers::csistoragecapacity::list_all_csistoragecapacities),
+            get(handlers::csistoragecapacity::list_all_csistoragecapacities)
+            .delete(handlers::csistoragecapacity::deletecollection_csistoragecapacities),
         )
         // Resource v1 API - ResourceClaims (namespace-scoped)
         .route(
@@ -1573,7 +1590,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // ResourceClaims (all namespaces)
         .route(
             "/apis/resource.k8s.io/v1/resourceclaims",
-            get(handlers::resourceclaim::list_all_resourceclaims),
+            get(handlers::resourceclaim::list_all_resourceclaims)
+            .delete(handlers::resourceclaim::deletecollection_resourceclaims),
         )
         // Resource v1 API - ResourceClaimTemplates (namespace-scoped)
         .route(
@@ -1591,13 +1609,15 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // ResourceClaimTemplates (all namespaces)
         .route(
             "/apis/resource.k8s.io/v1/resourceclaimtemplates",
-            get(handlers::resourceclaimtemplate::list_all_resourceclaimtemplates),
+            get(handlers::resourceclaimtemplate::list_all_resourceclaimtemplates)
+            .delete(handlers::resourceclaimtemplate::deletecollection_resourceclaimtemplates),
         )
         // Resource v1 API - DeviceClasses (cluster-scoped)
         .route(
             "/apis/resource.k8s.io/v1/deviceclasses",
             get(handlers::deviceclass::list_deviceclasses)
-                .post(handlers::deviceclass::create_deviceclass),
+                .post(handlers::deviceclass::create_deviceclass)
+                .delete(handlers::deviceclass::deletecollection_deviceclasses),
         )
         .route(
             "/apis/resource.k8s.io/v1/deviceclasses/:name",
@@ -1610,7 +1630,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/resource.k8s.io/v1/resourceslices",
             get(handlers::resourceslice::list_resourceslices)
-                .post(handlers::resourceslice::create_resourceslice),
+                .post(handlers::resourceslice::create_resourceslice)
+                .delete(handlers::resourceslice::deletecollection_resourceslices),
         )
         .route(
             "/apis/resource.k8s.io/v1/resourceslices/:name",
@@ -1685,7 +1706,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/admissionregistration.k8s.io/v1/validatingadmissionpolicies",
             get(handlers::validating_admission_policy::list_validating_admission_policies)
-                .post(handlers::validating_admission_policy::create_validating_admission_policy),
+                .post(handlers::validating_admission_policy::create_validating_admission_policy)
+                .delete(handlers::validating_admission_policy::deletecollection_validatingadmissionpolicies),
         )
         .route(
             "/apis/admissionregistration.k8s.io/v1/validatingadmissionpolicies/:name",
@@ -1698,7 +1720,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/admissionregistration.k8s.io/v1/validatingadmissionpolicybindings",
             get(handlers::validating_admission_policy::list_validating_admission_policy_bindings)
-                .post(handlers::validating_admission_policy::create_validating_admission_policy_binding),
+                .post(handlers::validating_admission_policy::create_validating_admission_policy_binding)
+                .delete(handlers::validating_admission_policy::deletecollection_validatingadmissionpolicybindings),
         )
         .route(
             "/apis/admissionregistration.k8s.io/v1/validatingadmissionpolicybindings/:name",
@@ -1711,7 +1734,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/networking.k8s.io/v1/servicecidrs",
             get(handlers::servicecidr::list_servicecidrs)
-                .post(handlers::servicecidr::create_servicecidr),
+                .post(handlers::servicecidr::create_servicecidr)
+                .delete(handlers::servicecidr::deletecollection_servicecidrs),
         )
         .route(
             "/apis/networking.k8s.io/v1/servicecidrs/:name",
@@ -1738,7 +1762,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/networking.k8s.io/v1/ingressclasses",
             get(handlers::ingressclass::list_ingressclasses)
-                .post(handlers::ingressclass::create_ingressclass),
+                .post(handlers::ingressclass::create_ingressclass)
+                .delete(handlers::ingressclass::deletecollection_ingressclasses),
         )
         .route(
             "/apis/networking.k8s.io/v1/ingressclasses/:name",
@@ -1751,7 +1776,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/node.k8s.io/v1/runtimeclasses",
             get(handlers::runtimeclass::list_runtimeclasses)
-                .post(handlers::runtimeclass::create_runtimeclass),
+                .post(handlers::runtimeclass::create_runtimeclass)
+                .delete(handlers::runtimeclass::deletecollection_runtimeclasses),
         )
         .route(
             "/apis/node.k8s.io/v1/runtimeclasses/:name",
@@ -1807,7 +1833,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // ReplicationControllers (all namespaces)
         .route(
             "/api/v1/replicationcontrollers",
-            get(handlers::replicationcontroller::list_all_replicationcontrollers),
+            get(handlers::replicationcontroller::list_all_replicationcontrollers)
+            .delete(handlers::replicationcontroller::deletecollection_replicationcontrollers),
         )
         // Apps v1 API - ControllerRevisions (namespace-scoped)
         .route(
@@ -1825,7 +1852,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // ControllerRevisions (all namespaces)
         .route(
             "/apis/apps/v1/controllerrevisions",
-            get(handlers::controllerrevision::list_all_controllerrevisions),
+            get(handlers::controllerrevision::list_all_controllerrevisions)
+            .delete(handlers::controllerrevision::deletecollection_controllerrevisions),
         )
         // Authentication API - authentication.k8s.io/v1
         .route(
