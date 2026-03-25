@@ -87,6 +87,28 @@ impl<S: Storage> ReplicationControllerController<S> {
             })
             .collect();
 
+        // Adopt orphan pods — set ownerReference on matching pods that don't have one
+        for pod in &rc_pods {
+            let has_owner = pod.metadata.owner_references.as_ref()
+                .map(|refs| refs.iter().any(|r| r.uid == rc.metadata.uid))
+                .unwrap_or(false);
+            if !has_owner {
+                let mut adopted_pod = pod.clone();
+                let refs = adopted_pod.metadata.owner_references.get_or_insert_with(Vec::new);
+                refs.push(rusternetes_common::types::OwnerReference {
+                    api_version: "v1".to_string(),
+                    kind: "ReplicationController".to_string(),
+                    name: rc.metadata.name.clone(),
+                    uid: rc.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                });
+                let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                let _ = self.storage.update(&pod_key, &adopted_pod).await;
+                info!("Adopted orphan pod {} into RC {}", pod.metadata.name, rc.metadata.name);
+            }
+        }
+
         let current_replicas = rc_pods.len() as i32;
         let desired_replicas = rc.spec.replicas.unwrap_or(1);
 

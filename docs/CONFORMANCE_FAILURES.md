@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes deployed; round 89 pending with 80 fixes total)
+**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes deployed; round 89 pending with 82 fixes total)
 
 ## Critical root causes fixed
 
@@ -206,10 +206,12 @@
 - **Fix**: HTTPS probe TLS skip verification fix should help.
 - **Status**: Fix committed, pending deploy.
 
-### ReplicationController timeout
-- **Test**: `rc.go:670` — Timed out waiting for RC
-- **Root cause**: RC controller may be too slow or status updates missing.
-- **Status**: Needs investigation.
+### ReplicationController pod adoption — FIXED
+- **Test**: `rc.go:670` — "should adopt matching pods on creation"
+- **Symptom**: Orphan pod with matching labels not adopted by new RC
+- **Root cause**: RC controller counted matching pods but didn't set ownerReference on orphans.
+- **Fix**: Added orphan pod adoption — sets ownerReference on matching pods without one.
+- **Status**: Fix committed, pending deploy.
 
 ### Kubectl builder delete — FIXED
 - **Test**: `builder.go:97` — "error when deleting STDIN: /registry/replicationcontrollers/..."
@@ -234,17 +236,19 @@
 - **Fix**: Added sysctl validation to pod create handler. Rejects unsafe sysctls not in the safe list.
 - **Status**: Fix committed, pending deploy.
 
-### Kubelet behavior
-- **Test**: `kubelet.go:127` — Kubelet behavior test
-- **Root cause**: Unknown — needs investigation.
-- **Status**: Needs investigation.
+### Kubelet terminated reason / CrashLoopBackOff — FIXED
+- **Test**: `kubelet.go:127` — "should have a terminated reason"
+- **Symptom**: Pod runs /bin/false, test waits 300s for terminated reason. Container keeps restarting without showing CrashLoopBackOff or last_state.
+- **Root cause**: Kubelet didn't handle container restart tracking for restartPolicy=Always. Exited containers were restarted but restart count wasn't incremented, CrashLoopBackOff wasn't set, and last_state was always None.
+- **Fix**: Added container restart detection in Running phase. Tracks restart count, sets last_state to terminated state, sets Waiting/CrashLoopBackOff reason.
+- **Status**: Fix committed, pending deploy.
 
 ### StatefulSet burst scaling
 - **Test**: `statefulset.go:2253` — StatefulSet behavior
 - **Root cause**: Likely watch stream closure or scaling timing.
 - **Status**: Needs investigation.
 
-## All 80 fixes committed (29 pending deploy)
+## All 82 fixes committed (31 pending deploy)
 
 | Fix | Commit |
 |-----|--------|
@@ -328,3 +332,5 @@
 | NotFound error sanitize storage keys | pending |
 | PriorityLevelConfiguration kind/update fix | pending |
 | PLC resourceVersion check on update | pending |
+| Container restart CrashLoopBackOff + last_state | pending |
+| RC orphan pod adoption (ownerReference) | pending |

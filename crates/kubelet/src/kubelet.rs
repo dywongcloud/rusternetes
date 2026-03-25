@@ -777,6 +777,72 @@ impl Kubelet {
                     }
                 }
 
+                // For restartPolicy=Always, detect exited containers and restart them.
+                // Track restart counts and set CrashLoopBackOff when appropriate.
+                {
+                    let restart_policy = pod
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.restart_policy.as_deref())
+                        .unwrap_or("Always");
+
+                    if restart_policy == "Always" {
+                        if let Ok(container_statuses) = self.runtime.get_container_statuses(pod).await {
+                            let any_terminated = container_statuses.iter().any(|cs| {
+                                matches!(cs.state, Some(ContainerState::Terminated { .. }))
+                            });
+
+                            if any_terminated {
+                                // Get existing restart counts from pod status
+                                let prev_counts: std::collections::HashMap<String, u32> = pod
+                                    .status
+                                    .as_ref()
+                                    .and_then(|s| s.container_statuses.as_ref())
+                                    .map(|statuses| {
+                                        statuses.iter().map(|cs| (cs.name.clone(), cs.restart_count)).collect()
+                                    })
+                                    .unwrap_or_default();
+
+                                // Build updated statuses with incremented restart counts
+                                let updated_statuses: Vec<ContainerStatus> = container_statuses
+                                    .into_iter()
+                                    .map(|mut cs| {
+                                        if matches!(cs.state, Some(ContainerState::Terminated { .. })) {
+                                            let prev = prev_counts.get(&cs.name).copied().unwrap_or(0);
+                                            cs.restart_count = prev + 1;
+                                            cs.last_state = cs.state.take();
+                                            cs.state = Some(ContainerState::Waiting {
+                                                reason: Some(if cs.restart_count >= 5 {
+                                                    "CrashLoopBackOff".to_string()
+                                                } else {
+                                                    "CrashLoopBackOff".to_string()
+                                                }),
+                                                message: Some("Back-off restarting failed container".to_string()),
+                                            });
+                                            cs.ready = false;
+                                            cs.started = Some(false);
+                                        }
+                                        cs
+                                    })
+                                    .collect();
+
+                                // Update pod status
+                                let key = build_key("pods", Some(namespace), pod_name);
+                                let mut new_pod = pod.clone();
+                                if let Some(ref mut status) = new_pod.status {
+                                    status.container_statuses = Some(updated_statuses);
+                                }
+                                let _ = self.storage.update(&key, &new_pod).await;
+
+                                // Restart the exited containers
+                                if let Err(e) = self.runtime.start_pod(pod).await {
+                                    debug!("Failed to restart containers for pod {}/{}: {}", namespace, pod_name, e);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Start any ephemeral containers that aren't running yet
                 if let Some(spec) = &pod.spec {
                     if let Some(ecs) = &spec.ephemeral_containers {
