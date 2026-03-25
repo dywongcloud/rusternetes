@@ -1,6 +1,18 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-25 (round 90 in progress: 5 PASS, 2 FAIL so far; 93 fixes, VAP tests skipped)
+**Last updated**: 2026-03-25 (round 90 in progress: 9 PASS, 9 FAIL so far; 93 fixes, VAP tests skipped)
+
+## Round 90 failures
+
+- **statefulset.go:786** — watch stream closed (persistent HTTP/2 RST_STREAM issue)
+- **output.go:282** — memory_limit=0 when no limits set (FIXED in pending commit — defaults to 8Gi)
+- **preemption.go:516** — scheduler preemption not implemented
+- **endpointslice.go:798** — expects 2+ EndpointSlices per service, we create 1
+- **runtimeclass.go:153** — EndpointSlice fetch timeout (related to endpointslice issue)
+- **webhook.go:1194** — webhook container crashes (exit 255, ARM64 compatibility)
+- **output.go:176** — pod creation blocked by stale conversion webhook ("Webhook request failed: 503")
+- **aggregated_discovery.go:227** — discovery error (may be related to stale webhooks)
+- **pods.go:425** — pod creation blocked by stale webhook
 
 ## Round 89 failures
 
