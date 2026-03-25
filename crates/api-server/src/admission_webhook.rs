@@ -236,6 +236,15 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         continue;
                     }
 
+                    // Skip webhooks whose service namespace no longer exists
+                    if let Some(ref svc) = webhook.client_config.service {
+                        let ns_key = rusternetes_storage::build_key("namespaces", None, &svc.namespace);
+                        if self.storage.get::<serde_json::Value>(&ns_key).await.is_err() {
+                            warn!("Skipping validating webhook {} — service namespace {} no longer exists", webhook.name, svc.namespace);
+                            continue;
+                        }
+                    }
+
                     info!(
                         "Running validating webhook {} for {}/{}",
                         webhook.name, gvk.kind, name
@@ -321,6 +330,15 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     // Check if this webhook applies to this request
                     if !self.webhook_matches(&webhook.rules, operation, gvk, gvr, namespace) {
                         continue;
+                    }
+
+                    // Skip webhooks whose service namespace no longer exists
+                    if let Some(ref svc) = webhook.client_config.service {
+                        let ns_key = rusternetes_storage::build_key("namespaces", None, &svc.namespace);
+                        if self.storage.get::<serde_json::Value>(&ns_key).await.is_err() {
+                            warn!("Skipping webhook {} — service namespace {} no longer exists", webhook.name, svc.namespace);
+                            continue;
+                        }
                     }
 
                     info!(
