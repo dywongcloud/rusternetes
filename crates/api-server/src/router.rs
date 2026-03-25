@@ -458,6 +458,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route("/api", get(handlers::discovery::get_core_api))
         .route("/api/v1", get(handlers::discovery::get_core_resources))
         .route("/apis", get(handlers::discovery::get_api_groups))
+        .route("/apis/", get(handlers::discovery::get_api_groups))
         .route(
             "/apis/apps/v1",
             get(handlers::discovery::get_apps_v1_resources),

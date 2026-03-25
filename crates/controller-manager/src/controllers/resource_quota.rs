@@ -1,5 +1,6 @@
 use anyhow::Result;
 use rusternetes_common::resources::{Pod, ResourceQuota, ResourceQuotaStatus};
+use rusternetes_common::types::Phase;
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -81,9 +82,15 @@ impl<S: Storage> ResourceQuotaController<S> {
     async fn calculate_usage(&self, namespace: &str) -> Result<HashMap<String, String>> {
         let mut usage = HashMap::new();
 
-        // Count pods
+        // Count active pods (not Failed/Succeeded)
         let pod_prefix = format!("/registry/pods/{}/", namespace);
-        let pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
+        let all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
+        let pods: Vec<&Pod> = all_pods.iter()
+            .filter(|p| {
+                let phase = p.status.as_ref().and_then(|s| s.phase.as_ref());
+                !matches!(phase, Some(Phase::Failed) | Some(Phase::Succeeded))
+            })
+            .collect();
         usage.insert("pods".to_string(), pods.len().to_string());
 
         // Calculate CPU and memory requests
@@ -92,7 +99,7 @@ impl<S: Storage> ResourceQuotaController<S> {
         let mut total_cpu_limits = 0i64;
         let mut total_memory_limits = 0i64;
 
-        for pod in &pods {
+        for pod in pods.iter() {
             if let Some(spec) = &pod.spec {
                 for container in &spec.containers {
                     // Count CPU requests
