@@ -24,6 +24,7 @@ pub mod event;
 pub mod filtering;
 pub mod finalizers;
 pub mod flowcontrol;
+pub mod generic;
 pub mod generic_patch;
 pub mod health;
 pub mod horizontalpodautoscaler;

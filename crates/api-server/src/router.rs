@@ -554,6 +554,22 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/apiregistration.k8s.io/v1",
             get(handlers::discovery::get_apiregistration_v1_resources),
         )
+        .route(
+            "/apis/apiregistration.k8s.io/v1/apiservices",
+            get(handlers::generic::list_apiservices)
+                .post(handlers::generic::create_apiservice),
+        )
+        .route(
+            "/apis/apiregistration.k8s.io/v1/apiservices/:name",
+            get(handlers::generic::get_apiservice)
+                .put(handlers::generic::update_apiservice)
+                .delete(handlers::generic::delete_apiservice),
+        )
+        .route(
+            "/apis/apiregistration.k8s.io/v1/apiservices/:name/status",
+            get(handlers::generic::get_apiservice)
+                .put(handlers::generic::update_apiservice_status),
+        )
         .route("/version", get(handlers::discovery::get_version))
         // OpenAPI spec endpoints
         .route("/openapi/v2", get(handlers::openapi::get_swagger_spec))

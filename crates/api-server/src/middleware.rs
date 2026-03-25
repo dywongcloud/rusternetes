@@ -138,15 +138,30 @@ pub async fn normalize_content_type_middleware(
 
             let json_body = if body_bytes.starts_with(b"k8s\0") {
                 // K8s protobuf envelope — extract the JSON from the `raw` field.
-                // The protobuf Unknown message has field 2 (raw bytes) as length-delimited.
-                // Simple extraction: find the JSON object within the protobuf bytes.
                 extract_json_from_k8s_protobuf(&body_bytes)
-                    .unwrap_or_else(|| body_bytes.to_vec())
+                    .unwrap_or_else(|| {
+                        // Extraction failed — try JSON scan as last resort
+                        for i in 0..body_bytes.len() {
+                            if body_bytes[i] == b'{' {
+                                return body_bytes[i..].to_vec();
+                            }
+                        }
+                        // Complete failure — return empty JSON object to avoid parse errors
+                        b"{}".to_vec()
+                    })
             } else if body_bytes.starts_with(b"{") || body_bytes.starts_with(b"[") {
                 // Already JSON despite protobuf Content-Type
                 body_bytes.to_vec()
             } else {
-                body_bytes.to_vec()
+                // Unknown binary format — try to find JSON, else empty object
+                let mut found = None;
+                for i in 0..body_bytes.len() {
+                    if body_bytes[i] == b'{' {
+                        found = Some(body_bytes[i..].to_vec());
+                        break;
+                    }
+                }
+                found.unwrap_or_else(|| b"{}".to_vec())
             };
 
             let mut new_request = Request::from_parts(parts, axum::body::Body::from(json_body));

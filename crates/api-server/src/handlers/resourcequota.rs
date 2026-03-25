@@ -6,7 +6,7 @@ use axum::{
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
-    resources::ResourceQuota,
+    resources::{ResourceQuota, ResourceQuotaStatus},
     List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
@@ -46,6 +46,21 @@ pub async fn create(
     // Enrich metadata with system fields
     quota.metadata.ensure_uid();
     quota.metadata.ensure_creation_timestamp();
+
+    // Set kind/apiVersion
+    quota.type_meta.kind = "ResourceQuota".to_string();
+    quota.type_meta.api_version = "v1".to_string();
+
+    // Initialize status with hard limits and zero usage
+    if quota.status.is_none() {
+        let used = quota.spec.hard.as_ref().map(|hard| {
+            hard.iter().map(|(k, _)| (k.clone(), "0".to_string())).collect()
+        });
+        quota.status = Some(ResourceQuotaStatus {
+            hard: quota.spec.hard.clone(),
+            used,
+        });
+    }
 
     let key = build_key("resourcequotas", Some(&namespace), &quota.metadata.name);
 

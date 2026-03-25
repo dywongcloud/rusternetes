@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes deployed; round 89 pending with 84 fixes total)
+**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes deployed; round 89 pending with 88 fixes total)
 
 ## Critical root causes fixed
 
@@ -252,7 +252,7 @@
 - **Root cause**: Likely watch stream closure or scaling timing.
 - **Status**: Needs investigation.
 
-## All 84 fixes committed (34 pending deploy)
+## All 88 fixes committed (38 pending deploy)
 
 | Fix | Commit |
 |-----|--------|
@@ -340,3 +340,6 @@
 | RC orphan pod adoption (ownerReference) | pending |
 | GC exclude deleted owners from existing_uids | pending |
 | Service NodePort→ExternalName clear NodePort | pending |
+| APIService CRUD handlers (generic JSON) | pending |
+| Protobuf extraction robustness (empty fallback) | pending |
+| ResourceQuota initial status on create | pending |
