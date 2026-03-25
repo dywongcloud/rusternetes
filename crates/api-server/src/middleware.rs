@@ -138,35 +138,53 @@ pub async fn normalize_content_type_middleware(
 
             let json_body = if body_bytes.starts_with(b"k8s\0") {
                 // K8s protobuf envelope — extract the JSON from the `raw` field.
-                extract_json_from_k8s_protobuf(&body_bytes)
-                    .unwrap_or_else(|| {
-                        // Extraction failed — scan for JSON object with balanced braces
-                        for i in 0..body_bytes.len() {
-                            if body_bytes[i] == b'{' {
-                                let mut depth = 0i32;
-                                let mut in_string = false;
-                                let mut escape = false;
-                                for j in i..body_bytes.len() {
-                                    if escape { escape = false; continue; }
-                                    match body_bytes[j] {
-                                        b'\\' if in_string => escape = true,
-                                        b'"' => in_string = !in_string,
-                                        b'{' if !in_string => depth += 1,
-                                        b'}' if !in_string => {
-                                            depth -= 1;
-                                            if depth == 0 {
-                                                return body_bytes[i..=j].to_vec();
-                                            }
+                let extracted = extract_json_from_k8s_protobuf(&body_bytes);
+                if let Some(json) = extracted {
+                    json
+                } else {
+                    // Extraction failed — scan for JSON object with balanced braces
+                    let mut found_json = None;
+                    for i in 0..body_bytes.len() {
+                        if body_bytes[i] == b'{' {
+                            let mut depth = 0i32;
+                            let mut in_string = false;
+                            let mut escape = false;
+                            for j in i..body_bytes.len() {
+                                if escape { escape = false; continue; }
+                                match body_bytes[j] {
+                                    b'\\' if in_string => escape = true,
+                                    b'"' => in_string = !in_string,
+                                    b'{' if !in_string => depth += 1,
+                                    b'}' if !in_string => {
+                                        depth -= 1;
+                                        if depth == 0 {
+                                            found_json = Some(body_bytes[i..=j].to_vec());
+                                            break;
                                         }
-                                        _ => {}
                                     }
+                                    _ => {}
                                 }
-                                // Unbalanced — return from { to end
-                                return body_bytes[i..].to_vec();
                             }
+                            if found_json.is_some() { break; }
+                            // Unbalanced — use from { to end
+                            found_json = Some(body_bytes[i..].to_vec());
+                            break;
                         }
-                        b"{}".to_vec()
-                    })
+                    }
+                    if let Some(json) = found_json {
+                        json
+                    } else {
+                        // No JSON found — return 415 so client retries with JSON
+                        warn!("Protobuf body has no JSON payload ({} bytes), returning 415", body_bytes.len());
+                        return Err(axum::response::Response::builder()
+                            .status(axum::http::StatusCode::UNSUPPORTED_MEDIA_TYPE)
+                            .header(axum::http::header::CONTENT_TYPE, "application/json")
+                            .body(axum::body::Body::from(
+                                r#"{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"the body content type is not supported: application/vnd.kubernetes.protobuf","reason":"UnsupportedMediaType","code":415}"#
+                            ))
+                            .unwrap());
+                    }
+                }
             } else if body_bytes.starts_with(b"{") || body_bytes.starts_with(b"[") {
                 // Already JSON despite protobuf Content-Type
                 body_bytes.to_vec()
