@@ -25,21 +25,23 @@ except: pass
 parse_progress() {
     python3 -c "
 import sys
-lines = sys.stdin.read().split('\n')
+text = sys.stdin.read()
+lines = text.split('\n')
 passed = 0
 failed = 0
 completed = False
 last_test = ''
 for line in lines:
-    if line.startswith('\u2022 [FAILED]'):
-        failed += 1
-    elif line.startswith('\u2022 ['):
-        passed += 1
-    elif line.startswith('\u2022'):
-        passed += 1
-    if line.startswith('[sig-') or line.startswith('[k8s.io'):
-        last_test = line[:120]
-    if line.startswith('Ran '):
+    stripped = line.strip()
+    # Count • on progress lines (SSSS•SSS) as passes
+    if '\u2022' in stripped:
+        if '[FAILED]' in stripped:
+            failed += stripped.count('\u2022')
+        else:
+            passed += stripped.count('\u2022')
+    if stripped.startswith('[sig-') or stripped.startswith('[k8s.io'):
+        last_test = stripped[:120]
+    if stripped.startswith('Ran '):
         completed = True
 
 total = 441
