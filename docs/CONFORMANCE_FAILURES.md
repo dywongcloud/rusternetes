@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 93**: ~40 PASS, 82+ FAIL (running) | **146 fixes** | ~33% pass rate (pre-deploy)
+**Round 93**: ~40 PASS, 84+ FAIL (running) | **147 fixes** | ~33% pass rate (pre-deploy)
 
 ## Fixes pending deploy (21)
 
@@ -27,6 +27,7 @@
 | 19 | Namespace status.phase=Active default | 1 test |
 | 20 | PVC phase/fields defaults for deserialization | 1 test |
 | 21 | Protobuf 415 when no JSON extractable | 4 tests (CRD) |
+| 22 | DELETE protobuf body handling | 1+ tests (FlowControl delete) |
 
 ## Open failures by category
 
