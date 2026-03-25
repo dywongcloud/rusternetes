@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-25 (round 90: 15 PASS, 43 FAIL; 21 from stale webhook cascade; 101 fixes committed, pending deploy)
+**Last updated**: 2026-03-25 (round 90: 16 PASS, 45 FAIL; ~21 from stale webhook cascade; 101 fixes committed, pending deploy)
 
 ## Architectural Issues
 
@@ -18,10 +18,11 @@
 
 ## Round 90 failure breakdown (15 PASS, 43 FAIL)
 
-### Stale webhook cascade — 21 failures (FIXED, pending deploy)
+### Stale webhook cascade — 21+ failures (FIXED, pending deploy)
 - `output.go:176` (×6), `pods.go:425`, `pods.go:371`, `pods.go:938`, `lifecycle_hook.go:93`, `container.go:75`, `expansion.go:341`, `runtimeclass.go:64`, `kubelet.go:87`, `empty_dir_wrapper.go:151`, `dns_common.go:530` (×2), `pre_stop.go:51`, `empty_dir.go:288`, `daemon_set.go:1064`, `pod_resize.go:876`
-- **Cause**: Stale `ValidatingWebhookConfiguration` from webhook test namespace blocks ALL subsequent pod creation with "Webhook request failed: error sending request for url"
-- **Fix committed**: Conversion webhook returns unconverted on failure instead of 503
+- **Cause**: Stale `ValidatingWebhookConfiguration` / `MutatingWebhookConfiguration` from webhook test namespace blocks ALL subsequent pod creation with "Webhook request failed: error sending request for url"
+- **Fix 1 committed**: Admission webhook runner now checks if the service namespace still exists before calling. If namespace is deleted, webhook is skipped entirely.
+- **Fix 2 committed**: Conversion webhook returns unconverted on failure instead of 503.
 
 ### Watch/timeout failures — 5 failures
 - `statefulset.go:786` — watch closed (HTTP/2 RST_STREAM)
