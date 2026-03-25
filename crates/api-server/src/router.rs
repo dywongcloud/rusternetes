@@ -1405,7 +1405,6 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             get(handlers::flowcontrol::get_flow_schema)
                 .put(handlers::flowcontrol::update_flow_schema)
                 .patch(handlers::flowcontrol::patch_flow_schema)
-                .delete(handlers::flowcontrol::delete_flow_schema)
                 .delete(handlers::flowcontrol::delete_flow_schema),
         )
         .route(
