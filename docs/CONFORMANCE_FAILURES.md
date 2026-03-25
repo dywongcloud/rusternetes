@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-25 (round 90: 13 PASS, 29 FAIL; ~15 from stale webhook cascade; 98 fixes)
+**Last updated**: 2026-03-25 (round 90: 15 PASS, 32 FAIL; ~15 from stale webhook cascade; 98 fixes committed, pending deploy)
 
 ## Architectural Issues
 
