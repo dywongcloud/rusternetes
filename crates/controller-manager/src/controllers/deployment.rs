@@ -621,6 +621,20 @@ impl<S: Storage> DeploymentController<S> {
         let mut updated_deployment = deployment.clone();
         updated_deployment.status = Some(status);
 
+        // Ensure the deployment's revision annotation matches the latest ReplicaSet's revision
+        let max_revision = owned_replicasets.iter()
+            .filter_map(|rs| {
+                rs.metadata.annotations.as_ref()
+                    .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+                    .and_then(|v| v.parse::<i64>().ok())
+            })
+            .max();
+        if let Some(rev) = max_revision {
+            updated_deployment.metadata.annotations
+                .get_or_insert_with(std::collections::HashMap::new)
+                .insert("deployment.kubernetes.io/revision".to_string(), rev.to_string());
+        }
+
         let key = build_key("deployments", Some(namespace), &deployment.metadata.name);
         self.storage.update(&key, &updated_deployment).await?;
 
