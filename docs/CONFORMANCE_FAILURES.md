@@ -1,20 +1,25 @@
 # Conformance Issue Tracker
 
-**Round 92**: 15 PASS, 15 FAIL | **126 fixes** | 50% pass rate
+**Round 92**: 45 PASS, 28 FAIL | **127 fixes** | 62% pass rate
 
-## Failures
+## Fixes pending deploy
 
-| # | Test | Error | Status |
-|---|------|-------|--------|
-| 1 | statefulset.go:786 | watch closed | Watch stream investigation |
-| 2 | webhook.go:520 | webhook not ready | Container starts but probe fails initially |
-| 3 | service_cidrs.go:170 | ServiceCIDR not found | **FIXED** pending deploy |
-| 4 | init_container.go:440 | init container timeout | Needs investigation |
-| 5 | kubectl.go:1130 | pod creation failed | kubectl error |
-| 6 | runtime.go:158 | unknown | Needs investigation |
-| 7 | predicates.go:1102 | scheduling deadline | Scheduling resource check |
-| 8 | watch.go:409 | watch notification timeout | Watch history replay |
-| 9 | kubelet_etc_hosts.go:97 | duplicate /etc/hosts | **FIXED** pending deploy |
-| 10 | taints.go:489 | pods not evicted | **FIXED** pending deploy — NoExecute taint eviction |
-| 11 | aggregator.go:359 | apiserver deployment not ready | Container exits code 1 (needs local etcd) |
-| 12 | table_conversion.go:167 | unknown | Needs investigation |
+| # | Fix | Tests |
+|---|-----|-------|
+| 1 | ServiceCIDR "kubernetes" default | service_cidrs.go:170 |
+| 2 | Duplicate /etc/hosts mount skip | kubelet_etc_hosts.go:97 |
+| 3 | NoExecute taint eviction | taints.go:489 |
+| 4 | metadata.labels/annotations downward API | downwardapi_volume.go:140 |
+
+## Known remaining failures
+
+| Category | Tests | Root cause |
+|----------|-------|-----------|
+| Watch stream closure | statefulset.go:786, watch.go:409 | Watch broadcast stream ends, needs investigation |
+| Webhook/aggregator not ready | webhook.go:520, aggregator.go:359 | Container exits (missing local etcd for aggregator) |
+| Scheduling | predicates.go:1102, preemption.go:516,949 | Taint tolerance + preemption timing |
+| Pod startup | init_container.go:440, runtime.go:158,169 | Various pod startup issues |
+| kubectl | kubectl.go:1130, builder.go:97 | kubectl validation/creation errors |
+| Job | job.go:665, job.go:144 | Job completion tracking |
+| DRA | conformance.go:696 | ResourceVersion empty |
+| Other | table_conversion.go:167, field_validation.go:105, resource_quota.go:803, projected_configmap.go:166, networking.go:72, service_accounts.go:667, output.go:263, deployment.go:238 | Various |
