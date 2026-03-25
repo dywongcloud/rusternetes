@@ -88,6 +88,8 @@ pub async fn update_certificate_signing_request(
     }
 
     csr.metadata.name = name.clone();
+    csr.kind = "CertificateSigningRequest".to_string();
+    csr.api_version = "certificates.k8s.io/v1".to_string();
 
     // Check for dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -97,6 +99,20 @@ pub async fn update_certificate_signing_request(
     }
 
     let key = build_key("certificatesigningrequests", None, &name);
+
+    // Check resourceVersion for optimistic concurrency
+    if let Ok(existing) = state.storage.get::<CertificateSigningRequest>(&key).await {
+        crate::handlers::lifecycle::check_resource_version(
+            existing.metadata.resource_version.as_deref(),
+            csr.metadata.resource_version.as_deref(),
+            &name,
+        )?;
+        // Preserve status if not provided
+        if csr.status.is_none() {
+            csr.status = existing.status;
+        }
+    }
+
     let result = match state.storage.update(&key, &csr).await {
         Ok(updated) => updated,
         Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &csr).await?,

@@ -1,6 +1,6 @@
 # Conformance Failure Tracking
 
-**Last updated**: 2026-03-25 | **Round 90**: 16 PASS, 45 FAIL | **Fixes**: 102 committed, pending deploy
+**Last updated**: 2026-03-25 | **Round 90**: 16 PASS, 45 FAIL | **Fixes**: 105 committed, pending deploy
 
 ## Fixes pending deploy (will resolve on next rebuild)
 
@@ -16,6 +16,8 @@
 | Field validation duplicate format | "duplicate field" error format | Matches K8s "unknown field" format |
 | Job backoffLimitPerIndex | 900s job timeout | Tracks per-index failures |
 | Kube-proxy headless DNAT | "host/network None not found" | Validates ClusterIP before DNAT |
+| FlowSchema delete route | "method not allowed" on delete | Added .delete() to router |
+| CSR update kind/resourceVersion | CSR update fails | Added kind/apiVersion, resourceVersion check |
 
 ## Currently broken — needs code fix
 
@@ -51,9 +53,13 @@
 - CSR handler may not preserve all fields on update.
 - **Needs**: Debug CSR update handler.
 
-### FlowControl CRUD — 1 failure
-- `flowcontrol.go:433` — FlowSchema operations
-- **Needs**: Check FlowSchema handlers.
+### FlowControl CRUD — FIXED (pending deploy)
+- `flowcontrol.go:433` — FlowSchema delete route missing
+- **Fix**: Added `.delete()` method to flowschemas/:name route.
+
+### CSR CRUD — FIXED (pending deploy)
+- `certificates.go:343` — CSR update missing kind/apiVersion
+- **Fix**: Added kind/apiVersion, resourceVersion check, status preservation.
 
 ### Service test — 1 failure
 - `service.go:4408` — stale webhook (will be fixed by webhook namespace skip)
