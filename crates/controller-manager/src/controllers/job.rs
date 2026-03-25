@@ -150,6 +150,39 @@ impl<S: Storage> JobController<S> {
             None
         };
 
+        // Track failed indexes for backoffLimitPerIndex
+        let backoff_limit_per_index = job.spec.backoff_limit_per_index;
+        let failed_indexes: Option<String> = if is_indexed && backoff_limit_per_index.is_some() {
+            let per_index_limit = backoff_limit_per_index.unwrap_or(0);
+            let mut failed_idx: Vec<i32> = Vec::new();
+            // Count failures per index
+            let mut failures_per_index: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
+            for pod in job_pods.iter() {
+                if let Some(status) = &pod.status {
+                    if matches!(&status.phase, Some(Phase::Failed)) {
+                        let index = pod.metadata.annotations.as_ref()
+                            .and_then(|a| a.get("batch.kubernetes.io/job-completion-index"))
+                            .and_then(|v| v.parse::<i32>().ok())
+                            .unwrap_or(-1);
+                        if index >= 0 {
+                            *failures_per_index.entry(index).or_insert(0) += 1;
+                        }
+                    }
+                }
+            }
+            for (idx, count) in &failures_per_index {
+                if *count > per_index_limit {
+                    failed_idx.push(*idx);
+                }
+            }
+            failed_idx.sort();
+            if failed_idx.is_empty() { None } else {
+                Some(failed_idx.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
+            }
+        } else {
+            None
+        };
+
         info!(
             "Job {}/{}: active={}, succeeded={}, failed={}, target={}",
             namespace, name, active, succeeded, failed, completions
@@ -157,7 +190,14 @@ impl<S: Storage> JobController<S> {
 
         // Check if Job is complete
         let is_complete = succeeded >= completions;
-        let is_failed = failed > backoff_limit;
+        // For backoffLimitPerIndex, job fails when all indexes are either succeeded or failed
+        let is_failed = if backoff_limit_per_index.is_some() && is_indexed {
+            let completed_count = completed_indexes.as_ref().map(|s| s.split(',').count()).unwrap_or(0);
+            let failed_count = failed_indexes.as_ref().map(|s| s.split(',').count()).unwrap_or(0);
+            (completed_count + failed_count) as i32 >= completions
+        } else {
+            failed > backoff_limit
+        };
 
         // Preserve the existing start_time if the job was already started
         let existing_start_time = job
@@ -191,7 +231,7 @@ impl<S: Storage> JobController<S> {
                 ready: None,
                 terminating: None,
                 completed_indexes: completed_indexes.clone(),
-                failed_indexes: None,
+                failed_indexes: failed_indexes.clone(),
                 uncounted_terminated_pods: None,
                 observed_generation: job.metadata.generation,
             });
@@ -220,7 +260,7 @@ impl<S: Storage> JobController<S> {
                 ready: None,
                 terminating: None,
                 completed_indexes: completed_indexes.clone(),
-                failed_indexes: None,
+                failed_indexes: failed_indexes.clone(),
                 uncounted_terminated_pods: None,
                 observed_generation: job.metadata.generation,
             });
@@ -302,7 +342,7 @@ impl<S: Storage> JobController<S> {
                 ready: None,
                 terminating: None,
                 completed_indexes: completed_indexes.clone(),
-                failed_indexes: None,
+                failed_indexes: failed_indexes.clone(),
                 uncounted_terminated_pods: None,
                 observed_generation: job.metadata.generation,
             });

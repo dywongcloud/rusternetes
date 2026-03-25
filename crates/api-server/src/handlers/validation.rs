@@ -60,7 +60,18 @@ pub fn validate_strict_fields(
 
     // Parse original as generic JSON
     let original: serde_json::Value = serde_json::from_slice(original_body)
-        .map_err(|e| Error::InvalidResource(e.to_string()))?;
+        .map_err(|e| {
+            let msg = e.to_string();
+            // Reformat "duplicate field" errors to match Kubernetes strict decoding format
+            if msg.contains("duplicate field") {
+                if let Some(field) = msg.split('`').nth(1) {
+                    return Error::InvalidResource(format!(
+                        "strict decoding error: json: unknown field \"{}\"", field
+                    ));
+                }
+            }
+            Error::InvalidResource(msg)
+        })?;
 
     // Re-serialize the parsed struct to get canonical JSON
     let canonical = serde_json::to_value(parsed_resource)
