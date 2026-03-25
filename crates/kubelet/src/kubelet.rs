@@ -260,6 +260,57 @@ impl Kubelet {
             }
         }
 
+        // Check for NoExecute taints and evict pods that don't tolerate them
+        if let Some(ref spec) = node.spec {
+            if let Some(ref taints) = spec.taints {
+                let no_execute_taints: Vec<_> = taints.iter()
+                    .filter(|t| t.effect == "NoExecute")
+                    .collect();
+                if !no_execute_taints.is_empty() {
+                    let pod_prefix = build_prefix("pods", None);
+                    let all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await.unwrap_or_default();
+                    for pod in &all_pods {
+                        if pod.spec.as_ref().and_then(|s| s.node_name.as_ref()) != Some(&self.node_name) {
+                            continue;
+                        }
+                        if pod.metadata.is_being_deleted() {
+                            continue;
+                        }
+                        let tolerations = pod.spec.as_ref()
+                            .and_then(|s| s.tolerations.as_ref());
+                        for taint in &no_execute_taints {
+                            let tolerated = tolerations.map_or(false, |tols| {
+                                tols.iter().any(|t| {
+                                    let key_match = t.key.as_deref().map_or(true, |k| k == taint.key);
+                                    let effect_match = t.effect.as_deref().map_or(true, |e| e == taint.effect);
+                                    let op = t.operator.as_deref().unwrap_or("Equal");
+                                    let value_match = op == "Exists" || t.value == taint.value;
+                                    key_match && effect_match && value_match
+                                })
+                            });
+                            if !tolerated {
+                                info!("Evicting pod {}/{} due to NoExecute taint {:?}",
+                                    pod.metadata.namespace.as_deref().unwrap_or("default"),
+                                    pod.metadata.name, taint.key);
+                                let mut evicted = pod.clone();
+                                evicted.metadata.deletion_timestamp = Some(chrono::Utc::now());
+                                if let Some(ref mut status) = evicted.status {
+                                    status.phase = Some(Phase::Failed);
+                                    status.reason = Some("Evicted".to_string());
+                                    status.message = Some("Taint-based eviction".to_string());
+                                }
+                                let pod_key = build_key("pods",
+                                    evicted.metadata.namespace.as_deref(),
+                                    &evicted.metadata.name);
+                                let _ = self.storage.update(&pod_key, &evicted).await;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
