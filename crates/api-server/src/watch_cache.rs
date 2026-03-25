@@ -12,7 +12,7 @@ use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, error, info};
 
 /// Maximum number of events to retain in the history ring buffer per prefix
-const HISTORY_CAPACITY: usize = 1000;
+const HISTORY_CAPACITY: usize = 5000;
 
 /// A cached watch event with metadata
 #[derive(Debug, Clone)]
