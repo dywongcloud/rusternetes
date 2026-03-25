@@ -46,7 +46,7 @@
 
 | Category | Count | Tests | Status |
 |----------|-------|-------|--------|
-| Webhook | 10+ | webhook.go:520,675,837,904,1244,1334,1631,2338,2465 | Webhook pods can't start |
+| Webhook | 10+ | webhook.go:520,675,837,904,1244,1334,1631,2338,2465 | **Root cause found**: containers DO start and run successfully. Issue is kubelet readiness probe checking — probe fails so pod stays Ready=False → RS says readyReplicas=0 → deployment says ReadyReplicas=0 → test times out. NOT a Docker infrastructure limitation. Need to debug why HTTPS readiness probe to webhook port 8444 fails. |
 | Watch/stream | 10+ | statefulset.go:786,878, watch.go:409 (×3), runtimeclass.go:317 | **FIX COMMITTED** etcd watch_from_revision |
 | Scheduling | 4 | predicates.go:1102 (×2), preemption.go:516,949 | Preemption/resource-fit |
 | Networking | 6+ | networking.go:72,113, util.go:182 (×2), pods.go:556, proxy.go:503 | Pod-to-pod |
