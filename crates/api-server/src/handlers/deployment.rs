@@ -52,6 +52,22 @@ pub async fn create(
     }
 
     deployment.metadata.namespace = Some(namespace.clone());
+
+    // Run ValidatingAdmissionPolicy checks
+    let deploy_value = serde_json::to_value(&deployment).ok();
+    let gvk = rusternetes_common::admission::GroupVersionKind {
+        group: "apps".to_string(),
+        version: "v1".to_string(),
+        kind: "Deployment".to_string(),
+    };
+    if let Err(e) = state.webhook_manager.run_validating_admission_policies(
+        &rusternetes_common::admission::Operation::Create,
+        &gvk,
+        deploy_value.as_ref(),
+    ).await {
+        return Err(e);
+    }
+
     deployment.metadata.ensure_uid();
     deployment.metadata.ensure_creation_timestamp();
     crate::handlers::lifecycle::set_initial_generation(&mut deployment.metadata);

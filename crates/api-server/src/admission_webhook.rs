@@ -608,6 +608,131 @@ fn apply_json_pointer_remove(object: &mut Value, path: &str) -> Result<()> {
     Ok(())
 }
 
+impl<S: Storage> AdmissionWebhookManager<S> {
+    /// Run ValidatingAdmissionPolicy checks for an admission request.
+    /// Evaluates CEL expressions from matching policies and rejects if any Deny action matches.
+    pub async fn run_validating_admission_policies(
+        &self,
+        operation: &Operation,
+        gvk: &GroupVersionKind,
+        object: Option<&Value>,
+    ) -> Result<()> {
+        use rusternetes_common::CELEvaluator;
+
+        // Load all ValidatingAdmissionPolicies
+        let policies: Vec<Value> = self.storage
+            .list("/registry/validatingadmissionpolicies/")
+            .await
+            .unwrap_or_default();
+
+        if policies.is_empty() {
+            return Ok(());
+        }
+
+        // Load all ValidatingAdmissionPolicyBindings
+        let bindings: Vec<Value> = self.storage
+            .list("/registry/validatingadmissionpolicybindings/")
+            .await
+            .unwrap_or_default();
+
+        let mut evaluator = CELEvaluator::new();
+
+        for policy in &policies {
+            let policy_name = policy.get("metadata")
+                .and_then(|m| m.get("name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("");
+
+            // Check if any binding references this policy
+            let has_binding = bindings.iter().any(|b| {
+                b.get("spec")
+                    .and_then(|s| s.get("policyName"))
+                    .and_then(|n| n.as_str())
+                    == Some(policy_name)
+            });
+            if !has_binding {
+                continue;
+            }
+
+            // Check match conditions from spec.matchConstraints
+            let match_resources = policy.get("spec")
+                .and_then(|s| s.get("matchConstraints"))
+                .and_then(|m| m.get("resourceRules"));
+            if let Some(rules) = match_resources {
+                if let Some(rules_arr) = rules.as_array() {
+                    let matches = rules_arr.iter().any(|rule| {
+                        let api_groups = rule.get("apiGroups").and_then(|g| g.as_array());
+                        let resources = rule.get("resources").and_then(|r| r.as_array());
+                        let ops = rule.get("operations").and_then(|o| o.as_array());
+
+                        let group_match = api_groups.map_or(true, |groups| {
+                            groups.iter().any(|g| g.as_str() == Some("*") || g.as_str() == Some(&gvk.group))
+                        });
+                        let resource_match = resources.map_or(true, |res| {
+                            res.iter().any(|r| r.as_str() == Some("*") || r.as_str().map_or(false, |s| gvk.kind.to_lowercase().starts_with(&s.trim_end_matches('s').to_lowercase())))
+                        });
+                        let op_match = ops.map_or(true, |operations| {
+                            operations.iter().any(|o| o.as_str() == Some("*") || o.as_str() == Some(match operation {
+                                Operation::Create => "CREATE",
+                                Operation::Update => "UPDATE",
+                                Operation::Delete => "DELETE",
+                                _ => "",
+                            }))
+                        });
+                        group_match && resource_match && op_match
+                    });
+                    if !matches {
+                        continue;
+                    }
+                }
+            }
+
+            // Evaluate validations
+            if let Some(validations) = policy.get("spec").and_then(|s| s.get("validations")).and_then(|v| v.as_array()) {
+                for validation in validations {
+                    let expression = validation.get("expression").and_then(|e| e.as_str()).unwrap_or("");
+                    if expression.is_empty() {
+                        continue;
+                    }
+
+                    // Build CEL context with object variable
+                    let mut context = rusternetes_common::CELContext::new();
+                    if let Some(obj) = object {
+                        let _ = context.add_json_variable("object", obj);
+                    }
+
+                    // Evaluate
+                    match evaluator.evaluate(expression, &context) {
+                        Ok(true) => { /* Validation passed */ }
+                        Ok(false) => {
+                            // Check validation actions
+                            let actions = validation.get("validationActions")
+                                .and_then(|a| a.as_array());
+                            let has_deny = actions.map_or(true, |acts| {
+                                acts.iter().any(|a| a.as_str() == Some("Deny"))
+                            });
+                            if has_deny {
+                                let message = validation.get("message")
+                                    .and_then(|m| m.as_str())
+                                    .unwrap_or("Validation failed");
+                                return Err(rusternetes_common::Error::Forbidden(format!(
+                                    "ValidatingAdmissionPolicy {} denied: {}",
+                                    policy_name, message
+                                )));
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("CEL evaluation error for policy {}: {}", policy_name, e);
+                            // On error, check failure policy
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Apply JSON pointer replace operation
 fn apply_json_pointer_replace(object: &mut Value, path: &str, value: Value) -> Result<()> {
     let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();

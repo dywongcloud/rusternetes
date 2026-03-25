@@ -424,7 +424,67 @@ impl ContainerRuntime {
             None
         };
 
-        // Create volumes first (includes service account token volumes injected by admission controller)
+        // Ensure the pod has a kube-api-access volume for SA tokens.
+        // Controllers that create pods directly in etcd bypass the API server's
+        // admission controller, so the SA token volume may not be injected.
+        let mut pod_with_sa = pod.clone();
+        if let Some(ref mut spec) = pod_with_sa.spec {
+            let has_sa_volume = spec.volumes.as_ref()
+                .map(|vols| vols.iter().any(|v| v.name.contains("kube-api-access") || v.name.contains("token")))
+                .unwrap_or(false);
+            if !has_sa_volume {
+                // Add projected SA token volume
+                let sa_vol = rusternetes_common::resources::Volume {
+                    name: "kube-api-access".to_string(),
+                    empty_dir: None,
+                    host_path: None,
+                    config_map: None,
+                    secret: None,
+                    projected: Some(rusternetes_common::resources::ProjectedVolumeSource {
+                        sources: Some(vec![
+                            rusternetes_common::resources::VolumeProjection {
+                                service_account_token: Some(rusternetes_common::resources::ServiceAccountTokenProjection {
+                                    path: "token".to_string(),
+                                    expiration_seconds: Some(3600),
+                                    audience: None,
+                                }),
+                                config_map: None,
+                                secret: None,
+                                downward_api: None,
+                                cluster_trust_bundle: None,
+                            },
+                        ]),
+                        default_mode: Some(0o644),
+                    }),
+                    persistent_volume_claim: None,
+                    downward_api: None,
+                    csi: None,
+                    ephemeral: None,
+                    nfs: None,
+                    image: None,
+                    iscsi: None,
+                };
+                spec.volumes.get_or_insert_with(Vec::new).push(sa_vol);
+                // Add volume mount to each container
+                for container in &mut spec.containers {
+                    let mounts = container.volume_mounts.get_or_insert_with(Vec::new);
+                    if !mounts.iter().any(|m| m.name.contains("kube-api-access")) {
+                        mounts.push(rusternetes_common::resources::VolumeMount {
+                            name: "kube-api-access".to_string(),
+                            mount_path: "/var/run/secrets/kubernetes.io/serviceaccount".to_string(),
+                            read_only: Some(true),
+                            sub_path: None,
+                            sub_path_expr: None,
+                            mount_propagation: None,
+                            recursive_read_only: None,
+                        });
+                    }
+                }
+            }
+        }
+        let pod = &pod_with_sa;
+
+        // Create volumes first (includes service account token volumes)
         let volume_binds = self.create_pod_volumes(pod).await?;
 
         // Get pod IP. For CNI mode, IP is available right after network setup.

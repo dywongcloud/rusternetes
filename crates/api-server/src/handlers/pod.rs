@@ -293,6 +293,16 @@ pub async fn create(
         }
     }
 
+    // Run ValidatingAdmissionPolicy checks
+    let pod_value_for_vap = serde_json::to_value(&pod).ok();
+    if let Err(e) = state.webhook_manager.run_validating_admission_policies(
+        &Operation::Create,
+        &gvk,
+        pod_value_for_vap.as_ref(),
+    ).await {
+        return Err(e);
+    }
+
     pod.metadata.ensure_uid();
     pod.metadata.ensure_creation_timestamp();
     crate::handlers::lifecycle::set_initial_generation(&mut pod.metadata);
