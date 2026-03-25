@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-25 (round 90: 15 PASS, 32 FAIL; ~15 from stale webhook cascade; 98 fixes committed, pending deploy)
+**Last updated**: 2026-03-25 (round 90: 15 PASS, 43 FAIL; 21 from stale webhook cascade; 98 fixes committed, pending deploy)
 
 ## Architectural Issues
 
@@ -16,17 +16,48 @@
 - Kubelet sets them on registration but heartbeat may overwrite with empty
 - **Fix committed**: heartbeat now ensures capacity/allocatable are set
 
-## Round 90 failures
+## Round 90 failure breakdown (15 PASS, 43 FAIL)
 
-- **statefulset.go:786** — watch stream closed (persistent HTTP/2 RST_STREAM issue)
-- **output.go:282** — memory_limit=0 when no limits set (FIXED in pending commit — defaults to 8Gi)
-- **preemption.go:516** — scheduler preemption not implemented
-- **endpointslice.go:798** — expects 2+ EndpointSlices per service, we create 1
-- **runtimeclass.go:153** — EndpointSlice fetch timeout (related to endpointslice issue)
-- **webhook.go:1194** — webhook container crashes (exit 255, ARM64 compatibility)
-- **output.go:176** — pod creation blocked by stale conversion webhook ("Webhook request failed: 503")
-- **aggregated_discovery.go:227** — discovery error (may be related to stale webhooks)
-- **pods.go:425** — pod creation blocked by stale webhook
+### Stale webhook cascade — 21 failures (FIXED, pending deploy)
+- `output.go:176` (×6), `pods.go:425`, `pods.go:371`, `pods.go:938`, `lifecycle_hook.go:93`, `container.go:75`, `expansion.go:341`, `runtimeclass.go:64`, `kubelet.go:87`, `empty_dir_wrapper.go:151`, `dns_common.go:530` (×2), `pre_stop.go:51`, `empty_dir.go:288`, `daemon_set.go:1064`, `pod_resize.go:876`
+- **Cause**: Stale `ValidatingWebhookConfiguration` from webhook test namespace blocks ALL subsequent pod creation with "Webhook request failed: error sending request for url"
+- **Fix committed**: Conversion webhook returns unconverted on failure instead of 503
+
+### Watch/timeout failures — 5 failures
+- `statefulset.go:786` — watch closed (HTTP/2 RST_STREAM)
+- `deployment.go:585` — failed to locate deployment
+- `daemon_set.go:980` — failed to locate daemon set
+- `replica_set.go:560` — failed to see replicas scale
+- `crd_watch.go:72` — watch condition timeout
+
+### Scheduler preemption — 3 failures
+- `preemption.go:516`, `predicates.go:354`, `predicates.go:1035`
+- Scheduler doesn't implement pod preemption or taint-based scheduling
+
+### Webhook container crash — 2 failures
+- `webhook.go:1194`, `webhook.go:1631`
+- Container exits with code 255 (ARM64/AMD64 image compatibility)
+
+### Fixed, pending deploy — 3 failures
+- `output.go:282` — memory_limit=0 → FIXED (defaults to 8Gi)
+- `aggregated_discovery.go:227` — Accept header parsing → FIXED
+- `node allocatable` — empty capacity → FIXED
+
+### Other failures — 9 failures
+- `endpointslice.go:798` — expects 2+ EndpointSlices, we create 1
+- `runtimeclass.go:153` — EndpointSlice rate limiter timeout
+- `aggregated_discovery.go:282` — discovery v2 format
+- `flowcontrol.go:433` — PriorityLevelConfiguration CRUD
+- `kubectl.go:1881` — kubectl run error
+- `builder.go:97` — kubectl delete error
+- `crd_publish_openapi.go:285` — CRD protobuf decoding
+- `field_validation.go:105` — strict field validation format
+- `job.go:623` — job completion timeout (900s)
+- `resource_quota.go:258,422` — quota status
+- `certificates.go:343` — CSR approval
+- `aggregator.go:359` — APIService
+- `container_probe.go:73` — probe behavior
+- `service.go:4408` — service test
 
 ## Round 89 failures
 
