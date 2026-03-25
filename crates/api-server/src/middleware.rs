@@ -106,6 +106,7 @@ pub async fn normalize_content_type_middleware(
     if request.method() == axum::http::Method::POST
         || request.method() == axum::http::Method::PUT
         || request.method() == axum::http::Method::PATCH
+        || request.method() == axum::http::Method::DELETE
     {
         let content_type = request
             .headers()
