@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 92**: 57 PASS, 43 FAIL | **132 fixes** | 57% pass rate
+**Round 92**: 57 PASS, 45 FAIL (running, job test blocking) | **132 fixes** | 56% pass rate
 
 ## Fixes pending deploy (9)
 
