@@ -807,6 +807,8 @@ impl ContainerRuntime {
         // This holds the pod's network namespace so all real containers can
         // join it via --network container:<pause_name>.
         // The pause container owns the DNS configuration for the pod network namespace.
+        // CoreDNS pods must NOT use cluster DNS (circular dependency).
+        let is_coredns = pod_name == "coredns";
         let config = Config {
             image: Some("busybox:latest".to_string()),
             cmd: Some(vec!["sleep".to_string(), "infinity".to_string()]),
@@ -817,8 +819,8 @@ impl ContainerRuntime {
             },
             host_config: Some(bollard::models::HostConfig {
                 network_mode: Some(self.network.clone()),
-                dns: Some(vec![self.cluster_dns.clone()]),
-                dns_options: Some(vec!["ndots:5".to_string()]),
+                dns: if is_coredns { None } else { Some(vec![self.cluster_dns.clone()]) },
+                dns_options: if is_coredns { None } else { Some(vec!["ndots:5".to_string()]) },
                 port_bindings: if port_bindings.is_empty() {
                     None
                 } else {
