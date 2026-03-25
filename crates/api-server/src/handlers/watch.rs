@@ -280,7 +280,8 @@ where
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
                                         if tx.send(Ok(format!("{}\n", json))).is_err() {
-                                            break; // Client disconnected
+                                            debug!("Watch: tx.send failed, client disconnected");
+                                            break;
                                         }
                                     }
                                 }
@@ -306,7 +307,8 @@ where
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
                                         if tx.send(Ok(format!("{}\n", json))).is_err() {
-                                            break; // Client disconnected
+                                            debug!("Watch: tx.send failed, client disconnected");
+                                            break;
                                         }
                                     }
                                 }
@@ -333,7 +335,8 @@ where
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
                                         if tx.send(Ok(format!("{}\n", json))).is_err() {
-                                            break; // Client disconnected
+                                            debug!("Watch: tx.send failed, client disconnected");
+                                            break;
                                         }
                                     }
                                 }
@@ -620,7 +623,8 @@ where
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
                                         if tx.send(Ok(format!("{}\n", json))).is_err() {
-                                            break; // Client disconnected
+                                            debug!("Watch: tx.send failed, client disconnected");
+                                            break;
                                         }
                                     }
                                 }
@@ -646,7 +650,8 @@ where
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
                                         if tx.send(Ok(format!("{}\n", json))).is_err() {
-                                            break; // Client disconnected
+                                            debug!("Watch: tx.send failed, client disconnected");
+                                            break;
                                         }
                                     }
                                 }
@@ -673,7 +678,8 @@ where
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
                                         if tx.send(Ok(format!("{}\n", json))).is_err() {
-                                            break; // Client disconnected
+                                            debug!("Watch: tx.send failed, client disconnected");
+                                            break;
                                         }
                                     }
                                 }

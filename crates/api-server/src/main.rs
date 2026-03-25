@@ -176,6 +176,39 @@ async fn main() -> Result<()> {
         );
     }
 
+    // Create default ServiceCIDR "kubernetes" (required by conformance tests)
+    {
+        let cidr_key = rusternetes_storage::build_key("servicecidrs", None, "kubernetes");
+        if storage.get::<serde_json::Value>(&cidr_key).await.is_err() {
+            let service_cidr = serde_json::json!({
+                "apiVersion": "networking.k8s.io/v1",
+                "kind": "ServiceCIDR",
+                "metadata": {
+                    "name": "kubernetes",
+                    "uid": uuid::Uuid::new_v4().to_string(),
+                    "creationTimestamp": chrono::Utc::now().to_rfc3339()
+                },
+                "spec": {
+                    "cidrs": ["10.96.0.0/12"]
+                },
+                "status": {
+                    "conditions": [{
+                        "type": "Ready",
+                        "status": "True",
+                        "lastTransitionTime": chrono::Utc::now().to_rfc3339(),
+                        "reason": "NetworkReady",
+                        "message": "ServiceCIDR is ready"
+                    }]
+                }
+            });
+            if let Err(e) = storage.create(&cidr_key, &service_cidr).await {
+                warn!("Failed to create default ServiceCIDR: {}", e);
+            } else {
+                info!("Created default ServiceCIDR 'kubernetes' with CIDR 10.96.0.0/12");
+            }
+        }
+    }
+
     // Initialize Prometheus client for custom metrics (if URL provided)
     let prometheus_client = if let Some(url) = args.prometheus_url {
         info!("Initializing Prometheus client: {}", url);
