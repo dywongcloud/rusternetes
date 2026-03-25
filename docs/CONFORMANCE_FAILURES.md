@@ -1,27 +1,39 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-25 (round 89 in progress: 11 PASS, 3 FAIL after 14 specs; 92 fixes deployed; ValidatingAdmissionPolicy test blocking for 2+ hrs)
+**Last updated**: 2026-03-25 (round 89: 7 PASS, 4 FAIL after 11 specs + VAP test blocking 2+ hrs; 92 fixes deployed)
 
-## Round 89 failures (in progress)
+## Round 89 failures
 
-### statefulset.go:786 — watch closed (PERSISTENT)
-- Watch stream RST_STREAM from client causes watch to close before test verifies scaling order
-- Watch history replay is working (625+ events replayed) but HTTP/2 stream resets still occur
-- 9 RST_STREAM frames received during this run
+### 1. statefulset.go:786 — watch closed before timeout
+- **Reason**: `watch closed before UntilWithoutRetry timeout`
+- **Duration**: 60.9s
+- **Root cause**: Client-go sends HTTP/2 RST_STREAM (NO_ERROR) to cancel watches. When the watch sender fails, the watch terminates and the test can't verify StatefulSet scaling order.
+- **Fix needed**: When watch sender fails due to RST_STREAM, the test's informer should reconnect and use the watch history replay. The history replay IS working (625+ events replayed) but the informer may not be reconnecting fast enough or is using a stale resourceVersion.
+- **Action**: Increase watch cache history capacity; ensure watch reconnection delivers all missed events before the test's timeout.
 
-### proxy.go:503 — pod didn't start in time
-- "Pod didn't start within time out period"
-- Also: "Failed to process jsonResponse. unexpected end of JSON input" — proxy returns truncated JSON
-- Root cause: service proxy handler may truncate response body; also readiness probe initial-not-ready may delay pod startup
+### 2. proxy.go:503 — pod didn't start within timeout
+- **Reason**: `Pod didn't start within time out period. timed out waiting for the condition`
+- **Duration**: 68.3s
+- **Also**: `Failed to process jsonResponse. unexpected end of JSON input` — the pod's HTTP server returns truncated responses
+- **Root cause**: The test pod (agnhost) starts but either: (a) takes too long to become Ready, or (b) the kube-proxy headless service DNAT error (`host/network 'None' not found`) interferes with service routing.
+- **Action**: Fix kube-proxy headless service DNAT error (already committed, pending deploy). Investigate if the pod's readiness probe is failing.
 
-### crd_conversion_webhook.go:318 — webhook deployment not ready
-- "ReadyReplicas:0, AvailableReplicas:0"
-- Webhook pod runs but readiness probe fails
-- HTTPS probe fix deployed but may not be working for this specific cert setup
+### 3. crd_conversion_webhook.go:318 — webhook container crashes (exit 255)
+- **Reason**: `ReadyReplicas:0, AvailableReplicas:0, UnavailableReplicas:1`
+- **Duration**: 302.5s (5 min timeout)
+- **Root cause**: The webhook container (`agnhost crd-conversion-webhook`) exits immediately with code 255 (0.1 seconds after start). The binary crashes before it can serve any requests. This is NOT a readiness probe issue — the container itself fails to start. Likely a Docker Desktop ARM64 compatibility issue with the test image, or missing shared libraries.
+- **Action**: Container binary crash — not fixable from our Rust code. Would need Docker Desktop platform emulation fix or native ARM64 image.
 
-### deployment.go:585 — deployment locate timeout
-- "failed to locate Deployment: timed out waiting for the condition"
-- Watch stream closed during deployment monitoring (same HTTP/2 RST_STREAM issue)
+### 4. deployment.go:585 — failed to locate deployment
+- **Reason**: `failed to locate Deployment test-deployment-9snqm in namespace deployment-8724: timed out waiting for the condition`
+- **Duration**: 310.4s (5 min timeout)
+- **Root cause**: Same watch reliability issue as statefulset.go:786. The deployment controller watch stream gets RST_STREAM, causing the informer to lose track of the deployment.
+- **Action**: Same as #1 — improve watch stream resilience.
+
+### 5. ValidatingAdmissionPolicy test — BLOCKING (2+ hours)
+- **Test**: `validating_admission_policy.go` — creates policy, waits for enforcement
+- **Root cause**: Test loops creating/deleting deployments waiting for admission policy to reject them. We don't implement ValidatingAdmissionPolicy enforcement (CEL evaluation). Test has no per-spec timeout, uses the 24h suite timeout.
+- **Action**: Either implement basic VAP enforcement or skip VAP tests in conformance run.
 
 ## Critical root causes fixed
 
