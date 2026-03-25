@@ -78,21 +78,16 @@ fn wants_aggregated_discovery(headers: &HeaderMap) -> bool {
         if !accept.contains("apidiscovery.k8s.io") {
             return false;
         }
-        // Split on comma to get individual media types
-        // Return aggregated only if it's the FIRST (highest priority) type,
-        // or if plain application/json doesn't appear before it
-        for media_type in accept.split(',') {
-            let mt = media_type.trim();
-            if mt.contains("apidiscovery.k8s.io") {
-                // Aggregated type found before plain JSON — use aggregated
-                return true;
-            }
-            if mt == "application/json" || (mt.starts_with("application/json") && !mt.contains(';')) {
-                // Plain application/json found first — use standard format
-                return false;
-            }
+        // Only return aggregated discovery when the Accept header EXCLUSIVELY
+        // requests it (no plain application/json alternative). This prevents
+        // breaking clients like sonobuoy that list both types but can't parse aggregated.
+        let has_plain_json = accept.split(',').any(|mt| {
+            let mt = mt.trim();
+            mt == "application/json" || (mt.starts_with("application/json") && !mt.contains("apidiscovery"))
+        });
+        if has_plain_json {
+            return false; // Client also accepts plain JSON — prefer it for compatibility
         }
-        // Aggregated type found somewhere in Accept
         return true;
     }
     false
