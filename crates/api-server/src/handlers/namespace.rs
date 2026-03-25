@@ -243,7 +243,7 @@ pub async fn delete_ns(
     let key = build_key("namespaces", None, &name);
 
     // Get the namespace to check for finalizers
-    let namespace: Namespace = state.storage.get(&key).await?;
+    let mut namespace: Namespace = state.storage.get(&key).await?;
 
     // If dry-run, skip delete operation
     if is_dry_run {
@@ -254,7 +254,23 @@ pub async fn delete_ns(
         return Ok(Json(namespace));
     }
 
-    // CASCADE DELETE: Delete all resources in this namespace before deleting the namespace
+    // Set namespace phase to Terminating and add deletionTimestamp
+    // (Kubernetes sets Terminating phase before cascade-deleting resources)
+    if let Some(ref mut status) = namespace.status {
+        status.phase = Some(rusternetes_common::types::Phase::Terminating);
+    } else {
+        namespace.status = Some(rusternetes_common::resources::NamespaceStatus {
+            phase: Some(rusternetes_common::types::Phase::Terminating),
+            conditions: None,
+        });
+    }
+    if namespace.metadata.deletion_timestamp.is_none() {
+        namespace.metadata.deletion_timestamp = Some(chrono::Utc::now());
+    }
+    // Save the Terminating state
+    let _ = state.storage.update(&key, &namespace).await;
+
+    // CASCADE DELETE: Delete all resources in this namespace
     info!("Cascade deleting all resources in namespace: {}", name);
     cascade_delete_namespace_resources(&*state.storage, &name).await?;
 
