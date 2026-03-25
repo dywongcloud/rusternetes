@@ -140,13 +140,31 @@ pub async fn normalize_content_type_middleware(
                 // K8s protobuf envelope — extract the JSON from the `raw` field.
                 extract_json_from_k8s_protobuf(&body_bytes)
                     .unwrap_or_else(|| {
-                        // Extraction failed — try JSON scan as last resort
+                        // Extraction failed — scan for JSON object with balanced braces
                         for i in 0..body_bytes.len() {
                             if body_bytes[i] == b'{' {
+                                let mut depth = 0i32;
+                                let mut in_string = false;
+                                let mut escape = false;
+                                for j in i..body_bytes.len() {
+                                    if escape { escape = false; continue; }
+                                    match body_bytes[j] {
+                                        b'\\' if in_string => escape = true,
+                                        b'"' => in_string = !in_string,
+                                        b'{' if !in_string => depth += 1,
+                                        b'}' if !in_string => {
+                                            depth -= 1;
+                                            if depth == 0 {
+                                                return body_bytes[i..=j].to_vec();
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                // Unbalanced — return from { to end
                                 return body_bytes[i..].to_vec();
                             }
                         }
-                        // Complete failure — return empty JSON object to avoid parse errors
                         b"{}".to_vec()
                     })
             } else if body_bytes.starts_with(b"{") || body_bytes.starts_with(b"[") {
