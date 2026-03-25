@@ -134,17 +134,16 @@ impl<S: Storage> ResourceQuotaController<S> {
         }
 
         // Convert to Kubernetes resource format
+        // CPU: both "cpu" and "requests.cpu" should be set
         if total_cpu_requests > 0 {
-            usage.insert(
-                "requests.cpu".to_string(),
-                format!("{}m", total_cpu_requests),
-            );
+            let cpu_str = format!("{}m", total_cpu_requests);
+            usage.insert("requests.cpu".to_string(), cpu_str.clone());
+            usage.insert("cpu".to_string(), cpu_str);
         }
         if total_memory_requests > 0 {
-            usage.insert(
-                "requests.memory".to_string(),
-                self.bytes_to_memory_string(total_memory_requests),
-            );
+            let mem_str = self.bytes_to_memory_string(total_memory_requests);
+            usage.insert("requests.memory".to_string(), mem_str.clone());
+            usage.insert("memory".to_string(), mem_str);
         }
         if total_cpu_limits > 0 {
             usage.insert("limits.cpu".to_string(), format!("{}m", total_cpu_limits));
@@ -155,6 +154,31 @@ impl<S: Storage> ResourceQuotaController<S> {
                 self.bytes_to_memory_string(total_memory_limits),
             );
         }
+
+        // Count other resource types
+        let count_prefix = format!("/registry/configmaps/{}/", namespace);
+        let configmaps: Vec<serde_json::Value> = self.storage.list(&count_prefix).await.unwrap_or_default();
+        usage.insert("count/configmaps".to_string(), configmaps.len().to_string());
+        usage.insert("configmaps".to_string(), configmaps.len().to_string());
+
+        let secret_prefix = format!("/registry/secrets/{}/", namespace);
+        let secrets: Vec<serde_json::Value> = self.storage.list(&secret_prefix).await.unwrap_or_default();
+        usage.insert("count/secrets".to_string(), secrets.len().to_string());
+        usage.insert("secrets".to_string(), secrets.len().to_string());
+
+        let svc_prefix = format!("/registry/services/{}/", namespace);
+        let services: Vec<serde_json::Value> = self.storage.list(&svc_prefix).await.unwrap_or_default();
+        usage.insert("count/services".to_string(), services.len().to_string());
+        usage.insert("services".to_string(), services.len().to_string());
+
+        let rs_prefix = format!("/registry/replicasets/{}/", namespace);
+        let replicasets: Vec<serde_json::Value> = self.storage.list(&rs_prefix).await.unwrap_or_default();
+        usage.insert("count/replicasets".to_string(), replicasets.len().to_string());
+
+        let pvc_prefix = format!("/registry/persistentvolumeclaims/{}/", namespace);
+        let pvcs: Vec<serde_json::Value> = self.storage.list(&pvc_prefix).await.unwrap_or_default();
+        usage.insert("persistentvolumeclaims".to_string(), pvcs.len().to_string());
+        usage.insert("count/persistentvolumeclaims".to_string(), pvcs.len().to_string());
 
         Ok(usage)
     }
