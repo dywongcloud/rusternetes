@@ -1724,7 +1724,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/networking.k8s.io/v1/ipaddresses",
             get(handlers::ipaddress::list_ipaddresses)
-                .post(handlers::ipaddress::create_ipaddress),
+                .post(handlers::ipaddress::create_ipaddress)
+                .delete(handlers::ipaddress::deletecollection_ipaddresses),
         )
         .route(
             "/apis/networking.k8s.io/v1/ipaddresses/:name",
