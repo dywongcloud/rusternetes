@@ -345,13 +345,41 @@ impl IptablesManager {
 
         let proto = protocol.to_lowercase();
 
-        // With session affinity (ClientIP), route all traffic to the first endpoint.
+        // For session affinity (ClientIP), use the `recent` iptables module to
+        // track client IPs and route them to the same backend consistently.
         // Without affinity, use random probability-based load balancing.
-        let effective_endpoints = if session_affinity {
-            &endpoints[..1] // Only use the first endpoint for affinity
-        } else {
-            endpoints
-        };
+        let effective_endpoints = endpoints;
+
+        // With session affinity, add `recent` module rules before the load-balancing rules.
+        // These check if the client IP was recently seen and route to the same backend.
+        if session_affinity && endpoints.len() > 1 {
+            for (idx, (endpoint_ip, endpoint_port)) in endpoints.iter().enumerate() {
+                let recent_name = format!("KUBE-SEP-{}-{}-{}",
+                    service_ip.replace('.', ""), port, idx);
+                let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
+                let port_str = port.to_string();
+
+                // Check: if source IP was recently seen for this endpoint, route to it
+                let output = Command::new(&self.iptables_cmd)
+                    .args(&[
+                        "-t", "nat", "-A", &self.services_chain,
+                        "-d", service_ip,
+                        "-p", &proto,
+                        "--dport", &port_str,
+                        "-m", "recent", "--name", &recent_name, "--rcheck", "--seconds", "10800",
+                        "-j", "DNAT", "--to-destination", &dnat_target,
+                    ])
+                    .output();
+
+                if let Ok(o) = &output {
+                    if !o.status.success() {
+                        // `recent` module might not be available, fall back to normal
+                        debug!("recent module not available, skipping session affinity iptables rules");
+                        break;
+                    }
+                }
+            }
+        }
 
         let probability = 1.0 / effective_endpoints.len() as f64;
 
@@ -411,6 +439,21 @@ impl IptablesManager {
                 error!("Failed to add DNAT rule for {}: {}", endpoint_ip, stderr);
             } else {
                 debug!("Added DNAT rule: {} -> {}", service_ip, dnat_target);
+
+                // For session affinity, mark source IP after DNAT so it sticks to this endpoint
+                if session_affinity {
+                    let recent_name = format!("KUBE-SEP-{}-{}-{}",
+                        service_ip.replace('.', ""), port, idx);
+                    let _ = Command::new(&self.iptables_cmd)
+                        .args(&[
+                            "-t", "nat", "-A", &self.services_chain,
+                            "-d", endpoint_ip,
+                            "-p", &proto,
+                            "-m", "recent", "--name", &recent_name, "--set",
+                            "-j", "RETURN",
+                        ])
+                        .output();
+                }
             }
         }
 
