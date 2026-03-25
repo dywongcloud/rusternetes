@@ -28,10 +28,13 @@
 
 | # | Issue | Test(s) | Root cause | Status |
 |---|-------|---------|------------|--------|
-| 1 | Watch stream closes on HTTP/2 RST_STREAM | statefulset, deployment, daemonset, replicaset, crd_watch | Client sends RST_STREAM, watch task exits. History replay works but informer reconnection may miss events. | 5 failures — needs HTTP/2 stream improvements |
-| 2 | CRD creation timeout | crd_publish_openapi.go:285 | Protobuf body parsing may fail silently | 1 failure — needs investigation |
+| 1 | Watch stream closes on HTTP/2 RST_STREAM | statefulset, deployment, daemonset, replicaset, crd_watch | Client sends RST_STREAM, watch task exits. History replay works but informer reconnection may miss events. | 5 failures — HTTP/2 stream lifecycle issue |
 
-### Moved to fixed pending deploy:
-- **Scheduler preemption** — reduced interval from 5s to 2s for faster scheduling cycles
-- **EndpointSlice count** — now creates separate slices per port for multi-port services
-- **File permissions** — code is correct, needs deploy verification
+**Note**: CRD creation timeout (`crd_publish_openapi.go:285`) is already fixed by #6 (apiVersion injection) — same root cause.
+
+### Recently moved to fixed pending deploy:
+- **Scheduler preemption** — reduced interval from 5s to 2s
+- **EndpointSlice count** — separate slices per port for multi-port services
+- **File permissions** — code correct, needs deploy verification
+- **Webhook crash** — SA token volume auto-injection in kubelet
+- **VAP enforcement** — CEL evaluation engine implemented
