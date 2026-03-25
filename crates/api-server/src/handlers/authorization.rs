@@ -95,12 +95,23 @@ pub async fn create_subject_access_review(
 pub async fn create_self_subject_access_review(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
+    headers: axum::http::HeaderMap,
     Json(mut ssar): Json<SelfSubjectAccessReview>,
 ) -> Result<Json<SelfSubjectAccessReview>> {
     info!(
         "Creating self subject access review for user: {}",
         auth_ctx.user.username
     );
+
+    // SelfSubjectAccessReview does not support Table/PartialObjectMetadata format.
+    // Return 406 Not Acceptable when client requests it.
+    if let Some(accept) = headers.get(axum::http::header::ACCEPT).and_then(|v| v.to_str().ok()) {
+        if accept.contains("as=Table") || accept.contains("as=PartialObjectMetadata") {
+            return Err(rusternetes_common::Error::NotAcceptable(
+                "the resource does not support the requested content type".to_string(),
+            ));
+        }
+    }
 
     // Creating a SelfSubjectAccessReview is always allowed
     let attrs = RequestAttributes::new(auth_ctx.user.clone(), "create", "selfsubjectaccessreviews")

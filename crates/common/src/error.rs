@@ -41,6 +41,9 @@ pub enum Error {
     #[error("Unsupported media type: {0}")]
     UnsupportedMediaType(String),
 
+    #[error("Not acceptable: {0}")]
+    NotAcceptable(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -62,6 +65,7 @@ impl Error {
             Error::TooManyRequests(_) => "TooManyRequests",
             Error::Gone(_) => "Gone",
             Error::UnsupportedMediaType(_) => "UnsupportedMediaType",
+            Error::NotAcceptable(_) => "NotAcceptable",
             Error::Internal(_) => "InternalError",
         }
     }
@@ -123,6 +127,9 @@ impl axum::response::IntoResponse for Error {
             }
             Error::UnsupportedMediaType(msg) => {
                 (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg, "UnsupportedMediaType", None)
+            }
+            Error::NotAcceptable(msg) => {
+                (StatusCode::NOT_ACCEPTABLE, msg, "NotAcceptable", None)
             }
             Error::Internal(msg) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, msg, "InternalError", None)
