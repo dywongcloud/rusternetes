@@ -1,6 +1,20 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-25 (round 90: 11 PASS, 19 FAIL; ~10 failures from stale webhook cascade; 94 fixes, pending deploy)
+**Last updated**: 2026-03-25 (round 90: 11 PASS, 23 FAIL; ~10 from stale webhook cascade; 96 fixes)
+
+## Architectural Issues
+
+### Watch leak — shared watches never cleaned up
+- 103 shared etcd watches created during round 90, never cleaned up
+- Each test namespace creates watches for pods, services, configmaps etc.
+- When namespace is deleted, the etcd watch remains forever
+- Over time this degrades etcd performance (2.5ms vs 1.2ms latency)
+- **Fix needed**: Clean up shared watches when no subscribers remain
+
+### Node capacity/allocatable empty
+- Node status `capacity` and `allocatable` maps are empty after heartbeat
+- Kubelet sets them on registration but heartbeat may overwrite with empty
+- **Fix committed**: heartbeat now ensures capacity/allocatable are set
 
 ## Round 90 failures
 

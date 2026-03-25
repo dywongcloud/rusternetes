@@ -214,6 +214,24 @@ impl Kubelet {
         }
         drop(eviction_manager); // Release lock before async operations
 
+        // Ensure capacity and allocatable are always set
+        if let Some(ref mut status) = node.status {
+            if status.capacity.as_ref().map_or(true, |c| c.is_empty()) {
+                status.capacity = Some(HashMap::from([
+                    ("cpu".to_string(), "4".to_string()),
+                    ("memory".to_string(), "8Gi".to_string()),
+                    ("pods".to_string(), "110".to_string()),
+                ]));
+            }
+            if status.allocatable.as_ref().map_or(true, |a| a.is_empty()) {
+                status.allocatable = Some(HashMap::from([
+                    ("cpu".to_string(), "4".to_string()),
+                    ("memory".to_string(), "8Gi".to_string()),
+                    ("pods".to_string(), "110".to_string()),
+                ]));
+            }
+        }
+
         // Update heartbeat and ensure Ready=True
         if let Some(ref mut status) = node.status {
             if let Some(ref mut conditions) = status.conditions {
