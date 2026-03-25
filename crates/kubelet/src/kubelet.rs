@@ -371,11 +371,20 @@ impl Kubelet {
         // Sync all pods that should be running
         for pod in &node_pods {
             if let Err(e) = self.sync_pod(pod).await {
-                error!("Error syncing pod {}: {}", pod.metadata.name, e);
-
-                // Update pod status to reflect error
-                if let Err(update_err) = self.update_pod_status_error(pod, &e.to_string()).await {
-                    error!("Failed to update pod status: {}", update_err);
+                // Log the error but DON'T set the pod to Failed for transient errors.
+                // Only fatal errors like "Failed to create container" should set Failed.
+                // Storage conflicts, probe timeouts, and network issues are retried on the next sync.
+                let err_str = e.to_string();
+                if err_str.contains("Failed to create container")
+                    || err_str.contains("Failed to pull image")
+                    || err_str.contains("FailedToStart")
+                {
+                    error!("Fatal error syncing pod {}: {}", pod.metadata.name, err_str);
+                    if let Err(update_err) = self.update_pod_status_error(pod, &err_str).await {
+                        error!("Failed to update pod status: {}", update_err);
+                    }
+                } else {
+                    warn!("Transient error syncing pod {} (will retry): {}", pod.metadata.name, err_str);
                 }
             }
         }
@@ -812,7 +821,13 @@ impl Kubelet {
                     start_time: Some(chrono::Utc::now()),
                 });
 
-                self.storage.update(&key, &new_pod).await?;
+                // Use non-fatal update: if the write fails (e.g., concurrency conflict),
+                // the next sync will retry via the Pending+is_running path.
+                // Do NOT propagate the error — that causes update_pod_status_error to
+                // set the pod to Failed, which is unrecoverable.
+                if let Err(e) = self.storage.update(&key, &new_pod).await {
+                    warn!("Failed to update pod {}/{} to Running (will retry): {}", namespace, pod_name, e);
+                }
                 } // end if should_update_running
             }
             Phase::Running if is_running => {
@@ -1103,7 +1118,7 @@ impl Kubelet {
                                         new_pod.metadata.namespace.as_deref(),
                                         &new_pod.metadata.name,
                                     );
-                                    self.storage.update(&key, &new_pod).await?;
+                                    let _ = self.storage.update(&key, &new_pod).await;
 
                                     // Start again
                                     if let Err(e) = self.runtime.start_pod(&new_pod).await {
