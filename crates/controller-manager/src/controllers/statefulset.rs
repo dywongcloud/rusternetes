@@ -251,6 +251,44 @@ impl<S: Storage> StatefulSetController<S> {
         let key = format!("/registry/statefulsets/{}/{}", namespace, name);
         self.storage.update(&key, statefulset).await?;
 
+        // Ensure a ControllerRevision exists for the current template revision
+        let revision = Self::compute_revision(&statefulset.spec.template);
+        let cr_name = format!("{}-{}", name, &revision[..std::cmp::min(10, revision.len())]);
+        let cr_key = format!("/registry/controllerrevisions/{}/{}", namespace, cr_name);
+        if self.storage.get::<serde_json::Value>(&cr_key).await.is_err() {
+            // Create the ControllerRevision
+            let template_data = serde_json::to_value(&statefulset.spec.template).unwrap_or_default();
+            let cr = serde_json::json!({
+                "apiVersion": "apps/v1",
+                "kind": "ControllerRevision",
+                "metadata": {
+                    "name": cr_name,
+                    "namespace": namespace,
+                    "uid": uuid::Uuid::new_v4().to_string(),
+                    "creationTimestamp": chrono::Utc::now().to_rfc3339(),
+                    "labels": {
+                        "controller.kubernetes.io/hash": revision,
+                        "app": name
+                    },
+                    "ownerReferences": [{
+                        "apiVersion": "apps/v1",
+                        "kind": "StatefulSet",
+                        "name": name,
+                        "uid": statefulset.metadata.uid,
+                        "controller": true,
+                        "blockOwnerDeletion": true
+                    }]
+                },
+                "data": template_data,
+                "revision": 1
+            });
+            if let Err(e) = self.storage.create(&cr_key, &cr).await {
+                debug!("ControllerRevision {} already exists or failed: {}", cr_name, e);
+            } else {
+                info!("Created ControllerRevision {} for StatefulSet {}/{}", cr_name, namespace, name);
+            }
+        }
+
         Ok(())
     }
 

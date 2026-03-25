@@ -2715,6 +2715,30 @@ impl ContainerRuntime {
                     .security_context
                     .as_ref()
                     .and_then(|sc| sc.read_only_root_filesystem),
+                // Security options: no-new-privileges when allowPrivilegeEscalation is false
+                security_opt: {
+                    let ape = container.security_context.as_ref()
+                        .and_then(|sc| sc.allow_privilege_escalation)
+                        .or_else(|| pod.spec.as_ref()
+                            .and_then(|s| s.security_context.as_ref())
+                            .and_then(|sc| sc.run_as_non_root)
+                            .map(|_| false));
+                    if ape == Some(false) {
+                        Some(vec!["no-new-privileges".to_string()])
+                    } else {
+                        None
+                    }
+                },
+                // Capabilities
+                cap_add: container.security_context.as_ref()
+                    .and_then(|sc| sc.capabilities.as_ref())
+                    .and_then(|c| c.add.clone()),
+                cap_drop: container.security_context.as_ref()
+                    .and_then(|sc| sc.capabilities.as_ref())
+                    .and_then(|c| c.drop.clone()),
+                // Privileged mode
+                privileged: container.security_context.as_ref()
+                    .and_then(|sc| sc.privileged),
                 ..Default::default()
             }),
             ..Default::default()
