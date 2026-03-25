@@ -950,6 +950,58 @@ impl ContainerRuntime {
         Ok(volume_paths)
     }
 
+    /// Resync projected/secret/configmap volumes for a running pod.
+    /// Re-reads source data from storage and updates volume files if changed.
+    pub async fn resync_volumes<S: rusternetes_storage::Storage>(&self, pod: &Pod, storage: &S) -> Result<()> {
+        let pod_name = &pod.metadata.name;
+        let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
+
+        if let Some(volumes) = &pod.spec.as_ref().unwrap().volumes {
+            for volume in volumes {
+                // Resync secret volumes
+                if let Some(secret_source) = &volume.secret {
+                    let secret_name = match &secret_source.secret_name {
+                        Some(n) => n,
+                        None => continue,
+                    };
+                    let key = rusternetes_storage::build_key("secrets", Some(namespace), secret_name);
+                    if let Ok(secret) = storage.get::<rusternetes_common::resources::Secret>(&key).await {
+                        let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+                        if let Some(data) = &secret.data {
+                            for (k, v) in data {
+                                let file_path = format!("{}/{}", volume_dir, k);
+                                // Only write if content changed
+                                if let Ok(existing) = std::fs::read(&file_path) {
+                                    if existing == *v { continue; }
+                                }
+                                let _ = std::fs::write(&file_path, v);
+                            }
+                        }
+                    }
+                }
+                // Resync configmap volumes
+                if let Some(cm_source) = &volume.config_map {
+                    if let Some(cm_name) = &cm_source.name {
+                        let key = rusternetes_storage::build_key("configmaps", Some(namespace), cm_name);
+                        if let Ok(cm) = storage.get::<rusternetes_common::resources::ConfigMap>(&key).await {
+                            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+                            if let Some(data) = &cm.data {
+                                for (k, v) in data {
+                                    let file_path = format!("{}/{}", volume_dir, k);
+                                    if let Ok(existing) = std::fs::read_to_string(&file_path) {
+                                        if existing == *v { continue; }
+                                    }
+                                    let _ = std::fs::write(&file_path, v);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Expand $(VAR_NAME) references in a subPathExpr using the container's env vars.
     /// Returns Err if a referenced variable is not defined, or if the result is an absolute path.
     fn expand_subpath_expr(

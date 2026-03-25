@@ -1,7 +1,7 @@
 use chrono::Utc;
 use rusternetes_common::{
     resources::{Pod, PodStatus, ReplicationController, ReplicationControllerCondition},
-    types::{ObjectMeta, Phase},
+    types::{ObjectMeta, OwnerReference, Phase},
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::{sync::Arc, time::Duration};
@@ -78,12 +78,18 @@ impl<S: Storage> ReplicationControllerController<S> {
         let rc_pods: Vec<Pod> = all_pods
             .into_iter()
             .filter(|p| {
-                let matches = self.matches_selector(p, rc);
-                info!(
-                    "Pod {} matches selector: {} (labels: {:?})",
-                    p.metadata.name, matches, p.metadata.labels
-                );
-                matches
+                if !self.matches_selector(p, rc) {
+                    return false;
+                }
+                // Only count pods owned by this RC, or orphans (no controller owner)
+                let owned_by_this_rc = p.metadata.owner_references.as_ref()
+                    .map(|refs| refs.iter().any(|r| r.uid == rc.metadata.uid))
+                    .unwrap_or(false);
+                let is_orphan = p.metadata.owner_references.as_ref()
+                    .map(|refs| refs.is_empty() || !refs.iter().any(|r| r.controller == Some(true)))
+                    .unwrap_or(true);
+                // Skip pods owned by a different controller
+                owned_by_this_rc || is_orphan
             })
             .collect();
 
@@ -198,6 +204,14 @@ impl<S: Storage> ReplicationControllerController<S> {
             .metadata
             .as_ref()
             .and_then(|m| m.labels.clone());
+        metadata.owner_references = Some(vec![OwnerReference {
+            api_version: "v1".to_string(),
+            kind: "ReplicationController".to_string(),
+            name: rc.metadata.name.clone(),
+            uid: rc.metadata.uid.clone(),
+            controller: Some(true),
+            block_owner_deletion: Some(true),
+        }]);
 
         let pod = Pod {
             type_meta: rusternetes_common::types::TypeMeta {

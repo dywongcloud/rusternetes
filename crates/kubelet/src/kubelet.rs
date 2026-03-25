@@ -1046,6 +1046,11 @@ impl Kubelet {
                             _ => {}
                         }
                     } else {
+                        // Resync projected/secret/configmap volumes (data may have changed)
+                        if let Err(e) = self.runtime.resync_volumes(pod, &*self.storage).await {
+                            debug!("Volume resync error for pod {}/{}: {}", namespace, pod_name, e);
+                        }
+
                         // Update container statuses with readiness info
                         if let Ok(container_statuses) =
                             self.runtime.get_container_statuses(pod).await
