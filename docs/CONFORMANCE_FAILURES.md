@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 91**: running (441 tests) | **116 fixes deployed** | CoreDNS DNS fix deployed | Monitoring for failures
+**Round 91**: 8 PASS, 5 FAIL so far | **117 fixes (116 deployed, 1 pending)** | No webhook cascade! | Monitoring
 
 **Projected pass rate after deploy**: ~74% (45 pass, ~16 real failures)
 

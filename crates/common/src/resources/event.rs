@@ -16,8 +16,8 @@ mod k8s_time {
     {
         match date {
             Some(dt) => {
-                // Kubernetes Time format: no fractional seconds
-                let s = dt.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+                // Kubernetes MicroTime format: with microseconds
+                let s = dt.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
                 serializer.serialize_str(&s)
             }
             None => serializer.serialize_none(),
