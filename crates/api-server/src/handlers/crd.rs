@@ -46,6 +46,9 @@ pub async fn create_crd(
                 if val.get("kind").is_none() {
                     val["kind"] = serde_json::Value::String("CustomResourceDefinition".to_string());
                 }
+                if val.get("metadata").is_none() {
+                    val["metadata"] = serde_json::json!({});
+                }
                 serde_json::from_value(val).map_err(|e2| {
                     rusternetes_common::Error::InvalidResource(format!("failed to decode CRD: {}", e2))
                 })?

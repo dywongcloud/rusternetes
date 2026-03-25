@@ -119,6 +119,47 @@ pub async fn create(
         if spec.termination_grace_period_seconds.is_none() {
             spec.termination_grace_period_seconds = Some(30);
         }
+        // Apply LimitRange defaults to containers
+        let lr_prefix = rusternetes_storage::build_prefix("limitranges", Some(&namespace));
+        let limit_ranges: Vec<rusternetes_common::resources::LimitRange> =
+            state.storage.list(&lr_prefix).await.unwrap_or_default();
+        for lr in &limit_ranges {
+            {
+                let limits = &lr.spec.limits;
+                for limit in limits {
+                    if limit.item_type == "Container" {
+                        for container in &mut spec.containers {
+                            let resources = container.resources.get_or_insert_with(|| {
+                                rusternetes_common::types::ResourceRequirements {
+                                    limits: None,
+                                    requests: None,
+                                    claims: None,
+                                }
+                            });
+                            // Apply default requests
+                            if let Some(ref defaults) = limit.default_request {
+                                let requests = resources.requests.get_or_insert_with(std::collections::HashMap::new);
+                                for (k, v) in defaults {
+                                    if !requests.contains_key(k) {
+                                        requests.insert(k.clone(), v.clone());
+                                    }
+                                }
+                            }
+                            // Apply default limits
+                            if let Some(ref default_limits) = limit.default {
+                                let limits = resources.limits.get_or_insert_with(std::collections::HashMap::new);
+                                for (k, v) in default_limits {
+                                    if !limits.contains_key(k) {
+                                        limits.insert(k.clone(), v.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         for container in &mut spec.containers {
             if container.termination_message_path.is_none() {
                 container.termination_message_path = Some("/dev/termination-log".to_string());
