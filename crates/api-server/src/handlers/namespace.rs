@@ -91,8 +91,9 @@ pub async fn create(
     }
 
     // Create kube-root-ca.crt ConfigMap (required by Kubernetes conformance)
-    let ca_cert = std::fs::read_to_string("/etc/kubernetes/pki/api-server.crt")
-        .or_else(|_| std::fs::read_to_string("/root/.rusternetes/certs/api-server.crt"))
+    let ca_cert = std::fs::read_to_string("/etc/kubernetes/pki/ca.crt")
+        .or_else(|_| std::fs::read_to_string("/etc/kubernetes/pki/api-server.crt"))
+        .or_else(|_| std::fs::read_to_string("/root/.rusternetes/certs/ca.crt"))
         .unwrap_or_else(|_| "".to_string());
 
     if !ca_cert.is_empty() {

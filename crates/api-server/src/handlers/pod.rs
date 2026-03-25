@@ -82,6 +82,32 @@ pub async fn create(
         }
     }
 
+    // Validate sysctls — reject unsafe sysctls unless explicitly allowed
+    if let Some(ref spec) = pod.spec {
+        if let Some(ref security_context) = spec.security_context {
+            if let Some(ref sysctls) = security_context.sysctls {
+                let safe_sysctls = [
+                    "kernel.shm_rmid_forced",
+                    "net.ipv4.ip_local_port_range",
+                    "net.ipv4.tcp_syncookies",
+                    "net.ipv4.ping_group_range",
+                    "net.ipv4.ip_unprivileged_port_start",
+                ];
+                for sysctl in sysctls {
+                    if !safe_sysctls.contains(&sysctl.name.as_str())
+                        && !sysctl.name.starts_with("net.ipv4.conf.")
+                        && !sysctl.name.starts_with("net.ipv6.conf.")
+                    {
+                        return Err(rusternetes_common::Error::Forbidden(format!(
+                            "sysctl \"{}\" is not allowed",
+                            sysctl.name
+                        )));
+                    }
+                }
+            }
+        }
+    }
+
     // Set defaults
     if let Some(ref mut spec) = pod.spec {
         if spec.restart_policy.is_none() {

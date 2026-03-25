@@ -78,8 +78,20 @@ impl axum::response::IntoResponse for Error {
         // Extract resource name from error message for StatusDetails
         let (status, message, reason, details) = match self {
             Error::NotFound(msg) => {
-                let details = extract_resource_details(&msg);
-                (StatusCode::NOT_FOUND, msg, "NotFound", details)
+                // Sanitize internal storage paths from error messages
+                let clean_msg = if msg.starts_with("/registry/") {
+                    // Convert /registry/resources/namespace/name to "resources \"name\" not found"
+                    let parts: Vec<&str> = msg.trim_start_matches("/registry/").split('/').collect();
+                    match parts.len() {
+                        3 => format!("{} \"{}\" not found", parts[0], parts[2]),
+                        2 => format!("{} \"{}\" not found", parts[0], parts[1]),
+                        _ => format!("resource not found: {}", parts.last().unwrap_or(&"")),
+                    }
+                } else {
+                    msg.clone()
+                };
+                let details = extract_resource_details(&clean_msg);
+                (StatusCode::NOT_FOUND, clean_msg, "NotFound", details)
             }
             Error::AlreadyExists(msg) => {
                 let details = extract_resource_details(&msg);

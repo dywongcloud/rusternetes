@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes deployed; round 89 pending with 75 fixes total)
+**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes deployed; round 89 pending with 80 fixes total)
 
 ## Critical root causes fixed
 
@@ -152,20 +152,23 @@
 - **Root cause**: No ResourceQuota controller implemented. Quota status requires tracking resource usage across all pods in a namespace.
 - **Status**: Feature gap — needs ResourceQuota controller.
 
-### Service accounts timeout
-- **Test**: `service_accounts.go:792` — Timed out waiting for condition
-- **Root cause**: SA token validation or SA controller timing issue.
-- **Status**: Needs investigation.
+### Service accounts — kube-root-ca.crt not found — FIXED
+- **Test**: `service_accounts.go:792` — "root ca configmap not found"
+- **Root cause**: Namespace create handler used `api-server.crt` instead of `ca.crt` for the kube-root-ca.crt ConfigMap.
+- **Fix**: Changed cert path to prioritize `/etc/kubernetes/pki/ca.crt`.
+- **Status**: Fix committed, pending deploy.
 
 ### Service session affinity
 - **Test**: `service.go:1565` — Service test failure
 - **Root cause**: Likely related to session affinity or service routing.
 - **Status**: Session affinity fix committed, pending deploy.
 
-### Flow control
-- **Test**: `flowcontrol.go:661` — Flow control / priority level
-- **Root cause**: Flow control (priority and fairness) not implemented.
-- **Status**: Feature gap.
+### Flow control PLC update — FIXED
+- **Test**: `flowcontrol.go:661` — PriorityLevelConfiguration CRUD
+- **Symptom**: Update step fails with StatusError
+- **Root cause**: PLC update handler didn't set kind/apiVersion, didn't check resourceVersion, didn't preserve status.
+- **Fix**: Added kind/apiVersion, resourceVersion concurrency check, status preservation.
+- **Status**: Fix committed, pending deploy.
 
 ### File permissions on volumes
 - **Test**: `output.go:263` — File permissions `-rw-r--r--` vs `-rw-rw-rw-`
@@ -190,7 +193,7 @@
 - **Root cause**: Same as service proxy issue above.
 - **Status**: Fix committed, pending deploy.
 
-### Namespace status
+### Namespace status — FIXED
 - **Test**: `namespace.go:321` — "Read namespace status"
 - **Symptom**: Namespace has no `status.phase` field
 - **Root cause**: Namespace create handler didn't set `status.phase: Active`
@@ -208,11 +211,12 @@
 - **Root cause**: RC controller may be too slow or status updates missing.
 - **Status**: Needs investigation.
 
-### Kubectl builder delete
+### Kubectl builder delete — FIXED
 - **Test**: `builder.go:97` — "error when deleting STDIN: /registry/replicationcontrollers/..."
 - **Symptom**: Delete returns raw etcd key path instead of proper API error
-- **Root cause**: Error message leaks internal storage key format.
-- **Status**: Needs investigation.
+- **Root cause**: NotFound error included raw storage key `/registry/...` instead of clean resource name.
+- **Fix**: Sanitize NotFound error messages — strip `/registry/` prefix, format as `resources "name" not found`.
+- **Status**: Fix committed, pending deploy.
 
 ### API aggregation
 - **Test**: `aggregator.go:377` — API aggregation
@@ -224,10 +228,11 @@
 - **Root cause**: API server doesn't implement `APIGroupDiscoveryList` response format.
 - **Status**: Feature gap.
 
-### Sysctl support
-- **Test**: `sysctl.go:153` — Sysctl configuration
-- **Root cause**: Kubelet doesn't apply sysctl settings to containers.
-- **Status**: Feature gap.
+### Sysctl validation — FIXED
+- **Test**: `sysctl.go:153` — "should reject invalid sysctls"
+- **Root cause**: API server didn't validate sysctls. Test creates pod with unsafe sysctls and expects rejection.
+- **Fix**: Added sysctl validation to pod create handler. Rejects unsafe sysctls not in the safe list.
+- **Status**: Fix committed, pending deploy.
 
 ### Kubelet behavior
 - **Test**: `kubelet.go:127` — Kubelet behavior test
@@ -239,7 +244,7 @@
 - **Root cause**: Likely watch stream closure or scaling timing.
 - **Status**: Needs investigation.
 
-## All 75 fixes committed (24 pending deploy)
+## All 80 fixes committed (29 pending deploy)
 
 | Fix | Commit |
 |-----|--------|
@@ -318,3 +323,8 @@
 | Service proxy direct endpoint routing | pending |
 | Readiness probe initial not-ready state | pending |
 | Namespace status.phase Active | pending |
+| kube-root-ca.crt use ca.crt not server cert | pending |
+| Sysctl validation (reject unsafe) | pending |
+| NotFound error sanitize storage keys | pending |
+| PriorityLevelConfiguration kind/update fix | pending |
+| PLC resourceVersion check on update | pending |

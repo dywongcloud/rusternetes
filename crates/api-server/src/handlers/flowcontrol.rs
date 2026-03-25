@@ -90,6 +90,8 @@ pub async fn update_priority_level_configuration(
     }
 
     plc.metadata.name = name.clone();
+    plc.kind = "PriorityLevelConfiguration".to_string();
+    plc.api_version = "flowcontrol.apiserver.k8s.io/v1".to_string();
 
     // Check for dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -99,6 +101,24 @@ pub async fn update_priority_level_configuration(
     }
 
     let key = build_key("prioritylevelconfigurations", None, &name);
+
+    // Get existing for resourceVersion check
+    let existing: Option<PriorityLevelConfiguration> = state.storage.get(&key).await.ok();
+    if let Some(ref existing) = existing {
+        crate::handlers::lifecycle::check_resource_version(
+            existing.metadata.resource_version.as_deref(),
+            plc.metadata.resource_version.as_deref(),
+            &name,
+        )?;
+    }
+
+    // Preserve status from existing
+    if let Some(ref existing) = existing {
+        if plc.status.is_none() {
+            plc.status = existing.status.clone();
+        }
+    }
+
     let result = match state.storage.update(&key, &plc).await {
         Ok(updated) => updated,
         Err(rusternetes_common::Error::NotFound(_)) => state.storage.create(&key, &plc).await?,
