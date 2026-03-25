@@ -48,6 +48,28 @@ pub async fn create(
     // Ensure namespace is set from the URL path
     secret.metadata.namespace = Some(namespace.clone());
 
+    // Validate secret data keys (must be valid path segments)
+    if let Some(ref data) = secret.data {
+        for key in data.keys() {
+            if key.is_empty() || key == "." || key == ".." || key.contains('/') || key.contains('\\') {
+                return Err(rusternetes_common::Error::InvalidResource(format!(
+                    "Invalid key name \"{}\": a valid config key must consist of alphanumeric characters, '-', '_' or '.'",
+                    key
+                )));
+            }
+        }
+    }
+    if let Some(ref string_data) = secret.string_data {
+        for key in string_data.keys() {
+            if key.is_empty() || key == "." || key == ".." || key.contains('/') || key.contains('\\') {
+                return Err(rusternetes_common::Error::InvalidResource(format!(
+                    "Invalid key name \"{}\": a valid config key must consist of alphanumeric characters, '-', '_' or '.'",
+                    key
+                )));
+            }
+        }
+    }
+
     // Enrich metadata with system fields
     secret.metadata.ensure_uid();
     secret.metadata.ensure_creation_timestamp();
