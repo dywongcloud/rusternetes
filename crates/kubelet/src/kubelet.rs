@@ -909,7 +909,10 @@ impl Kubelet {
                 }
 
                 // Check liveness probes
-                if let Ok(needs_restart) = self.runtime.check_liveness(pod).await {
+                // check_liveness may error on transient probe failures — treat errors as "no restart needed"
+                // to ensure the status update branch always runs
+                let needs_restart = self.runtime.check_liveness(pod).await.unwrap_or(false);
+                {
                     if needs_restart {
                         let restart_policy = pod
                             .spec
