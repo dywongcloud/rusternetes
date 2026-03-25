@@ -4190,10 +4190,11 @@ impl ContainerRuntime {
 
         if is_cpu {
             // Convert CPU value to millicores, then apply divisor
+            // When no limit is set, use node capacity (default 4 cores = 4000m)
             let millicores = raw_value
                 .as_deref()
                 .map(parse_cpu_quantity)
-                .unwrap_or(0);
+                .unwrap_or(4000); // 4 cores default
             let divisor_millicores = if divisor_str == "0" || divisor_str == "1" {
                 // Default divisor "1" means return in cores (1 core = 1000 millicores)
                 1000
@@ -4204,10 +4205,11 @@ impl ContainerRuntime {
             Ok(result.to_string())
         } else if is_memory {
             // Convert memory value to bytes, then apply divisor
+            // When no limit is set, use node allocatable memory (default 8Gi)
             let bytes = raw_value
                 .as_deref()
                 .map(parse_memory_quantity)
-                .unwrap_or(0);
+                .unwrap_or(8 * 1024 * 1024 * 1024); // 8Gi default
             let divisor_bytes = if divisor_str == "0" || divisor_str == "1" {
                 1 // return bytes
             } else {
