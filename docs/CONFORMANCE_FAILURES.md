@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes deployed; round 89 pending with 83 fixes total)
+**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes deployed; round 89 pending with 84 fixes total)
 
 ## Critical root causes fixed
 
@@ -158,10 +158,12 @@
 - **Fix**: Changed cert path to prioritize `/etc/kubernetes/pki/ca.crt`.
 - **Status**: Fix committed, pending deploy.
 
-### Service session affinity
-- **Test**: `service.go:1565` — Service test failure
-- **Root cause**: Likely related to session affinity or service routing.
-- **Status**: Session affinity fix committed, pending deploy.
+### Service NodePort→ExternalName type change — FIXED
+- **Test**: `service.go:1565` — "unexpected Spec.Ports[0].NodePort (32172)"
+- **Symptom**: Changing service from NodePort to ExternalName kept the NodePort in the spec
+- **Root cause**: Service update handler cleared ClusterIP but not NodePort when changing to ExternalName.
+- **Fix**: Clear NodePort from all ports and healthCheckNodePort when service type is ExternalName.
+- **Status**: Fix committed, pending deploy.
 
 ### Flow control PLC update — FIXED
 - **Test**: `flowcontrol.go:661` — PriorityLevelConfiguration CRUD
@@ -250,7 +252,7 @@
 - **Root cause**: Likely watch stream closure or scaling timing.
 - **Status**: Needs investigation.
 
-## All 83 fixes committed (32 pending deploy)
+## All 84 fixes committed (33 pending deploy)
 
 | Fix | Commit |
 |-----|--------|
@@ -337,3 +339,4 @@
 | Container restart CrashLoopBackOff + last_state | pending |
 | RC orphan pod adoption (ownerReference) | pending |
 | GC exclude deleted owners from existing_uids | pending |
+| Service NodePort→ExternalName clear NodePort | pending |

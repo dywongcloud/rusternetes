@@ -255,10 +255,16 @@ pub async fn update(
     service.metadata.name = name.clone();
     service.metadata.namespace = Some(namespace.clone());
 
-    // When service type changes to ExternalName, clear the ClusterIP
+    // When service type changes to ExternalName, clear ClusterIP and NodePorts
     if matches!(service.spec.service_type, Some(ServiceType::ExternalName)) {
         service.spec.cluster_ip = Some("".to_string());
         service.spec.cluster_ips = None;
+        // Clear NodePort from all ports (ExternalName services don't use NodePort)
+        for port in &mut service.spec.ports {
+            port.node_port = None;
+        }
+        // Clear healthCheckNodePort
+        service.spec.health_check_node_port = None;
     }
 
     let key = build_key("services", Some(&namespace), &name);
