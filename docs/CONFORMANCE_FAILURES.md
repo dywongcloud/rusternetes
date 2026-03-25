@@ -252,7 +252,7 @@
 - **Root cause**: Likely watch stream closure or scaling timing.
 - **Status**: Needs investigation.
 
-## All 84 fixes committed (33 pending deploy)
+## All 84 fixes committed (34 pending deploy)
 
 | Fix | Commit |
 |-----|--------|
