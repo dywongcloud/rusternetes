@@ -60,7 +60,6 @@ echo ""
 if sonobuoy run --mode="${SONOBUOY_MODE}" \
     --timeout 86400 \
     --plugin-env "e2e.E2E_EXTRA_ARGS=--progress-report-url=http://localhost:8099/progress --kube-api-content-type=application/json" \
-    --plugin-env "e2e.E2E_SKIP=ValidatingAdmissionPolicy" \
     --wait 2>&1 | tee /tmp/sonobuoy-latest.log; then
     TEST_RESULT="PASSED"
 else
