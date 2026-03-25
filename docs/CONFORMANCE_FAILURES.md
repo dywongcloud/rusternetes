@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes deployed; round 89 pending with 91 fixes total)
+**Last updated**: 2026-03-25 (round 89 in progress with 92 fixes deployed)
 
 ## Critical root causes fixed
 
@@ -255,7 +255,7 @@
 - **Fix**: Controller now creates a ControllerRevision (stored as JSON) with template data, revision hash, and owner reference to the StatefulSet.
 - **Status**: Fix committed, pending deploy.
 
-## All 91 fixes committed (41 pending deploy)
+## All 92 fixes committed
 
 | Fix | Commit |
 |-----|--------|

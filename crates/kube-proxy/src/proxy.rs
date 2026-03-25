@@ -141,8 +141,11 @@ impl KubeProxy {
             "Service {}/{} - full spec: {:?}",
             namespace, name, service.spec
         );
-        if cluster_ip.is_none() && service_type != ServiceType::ExternalName {
-            warn!("Service {}/{} has no ClusterIP, skipping", namespace, name);
+        let has_valid_cluster_ip = cluster_ip
+            .map(|ip| !ip.is_empty() && ip != "None" && ip != "null")
+            .unwrap_or(false);
+        if !has_valid_cluster_ip && service_type != ServiceType::ExternalName {
+            warn!("Service {}/{} has no valid ClusterIP ({:?}), skipping", namespace, name, cluster_ip);
             return Ok(());
         }
 
