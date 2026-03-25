@@ -997,6 +997,46 @@ impl ContainerRuntime {
                         }
                     }
                 }
+                // Resync projected volumes (may contain configmap/secret projections)
+                if let Some(projected) = &volume.projected {
+                    if let Some(sources) = &projected.sources {
+                        let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+                        for source in sources {
+                            if let Some(cm_proj) = &source.config_map {
+                                if let Some(cm_name) = &cm_proj.name {
+                                    let key = rusternetes_storage::build_key("configmaps", Some(namespace), cm_name);
+                                    if let Ok(cm) = storage.get::<rusternetes_common::resources::ConfigMap>(&key).await {
+                                        if let Some(data) = &cm.data {
+                                            for (k, v) in data {
+                                                let file_path = format!("{}/{}", volume_dir, k);
+                                                if let Ok(existing) = std::fs::read_to_string(&file_path) {
+                                                    if existing == *v { continue; }
+                                                }
+                                                let _ = std::fs::write(&file_path, v);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if let Some(sec_proj) = &source.secret {
+                                if let Some(sec_name) = &sec_proj.name {
+                                    let key = rusternetes_storage::build_key("secrets", Some(namespace), sec_name);
+                                    if let Ok(secret) = storage.get::<rusternetes_common::resources::Secret>(&key).await {
+                                        if let Some(data) = &secret.data {
+                                            for (k, v) in data {
+                                                let file_path = format!("{}/{}", volume_dir, k);
+                                                if let Ok(existing) = std::fs::read(&file_path) {
+                                                    if existing == *v { continue; }
+                                                }
+                                                let _ = std::fs::write(&file_path, v);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         Ok(())
