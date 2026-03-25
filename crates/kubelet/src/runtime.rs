@@ -3659,6 +3659,8 @@ impl ContainerRuntime {
             .as_deref()
             .unwrap_or("/dev/termination-log");
 
+        debug!("Reading termination message from {} in container {}", msg_path, container_name);
+
         // Use docker cp to read the file from the stopped container
         let mut stream = self
             .docker
@@ -3667,11 +3669,23 @@ impl ContainerRuntime {
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(bytes) => all_bytes.extend_from_slice(&bytes),
-                Err(_) => return None,
+                Err(e) => {
+                    debug!("Error reading termination message from {}: {}", container_name, e);
+                    // Check terminationMessagePolicy for FallbackToLogsOnError
+                    if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
+                        return self.read_container_logs_tail(container_name, 80).await;
+                    }
+                    return None;
+                }
             }
         }
 
         if all_bytes.is_empty() {
+            debug!("Termination message file empty or not found in {}", container_name);
+            // FallbackToLogsOnError: use container logs when file is empty/missing
+            if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
+                return self.read_container_logs_tail(container_name, 80).await;
+            }
             return None;
         }
 
@@ -3685,11 +3699,46 @@ impl ContainerRuntime {
                     if content.len() > 4096 {
                         content.truncate(4096);
                     }
+                    debug!("Read termination message ({} bytes) from {}", content.len(), container_name);
                     return Some(content);
                 }
             }
         }
+
+        debug!("Failed to extract termination message from tar archive for {}", container_name);
+        // FallbackToLogsOnError: use container logs when extraction fails
+        if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
+            return self.read_container_logs_tail(container_name, 80).await;
+        }
         None
+    }
+
+    /// Read the last N lines of container logs (for FallbackToLogsOnError)
+    async fn read_container_logs_tail(&self, container_name: &str, lines: usize) -> Option<String> {
+        use bollard::container::LogsOptions;
+        let options = LogsOptions::<String> {
+            stdout: true,
+            stderr: true,
+            tail: lines.to_string(),
+            ..Default::default()
+        };
+        let mut stream = self.docker.logs(container_name, Some(options));
+        let mut output = String::new();
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(log) => output.push_str(&log.to_string()),
+                Err(_) => break,
+            }
+        }
+        if output.is_empty() {
+            None
+        } else {
+            // Trim to 4KB
+            if output.len() > 4096 {
+                output.truncate(4096);
+            }
+            Some(output)
+        }
     }
 
     /// Extract the best available IP from container network settings.
