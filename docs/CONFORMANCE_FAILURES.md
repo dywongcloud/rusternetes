@@ -1,6 +1,27 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-25 (round 89 in progress: 6 PASS, 2 FAIL so far; 92 fixes deployed)
+**Last updated**: 2026-03-25 (round 89 in progress: ~7 PASS, 4 FAIL so far; 92 fixes deployed)
+
+## Round 89 failures (in progress)
+
+### statefulset.go:786 — watch closed (PERSISTENT)
+- Watch stream RST_STREAM from client causes watch to close before test verifies scaling order
+- Watch history replay is working (625+ events replayed) but HTTP/2 stream resets still occur
+- 9 RST_STREAM frames received during this run
+
+### proxy.go:503 — pod didn't start in time
+- "Pod didn't start within time out period"
+- Also: "Failed to process jsonResponse. unexpected end of JSON input" — proxy returns truncated JSON
+- Root cause: service proxy handler may truncate response body; also readiness probe initial-not-ready may delay pod startup
+
+### crd_conversion_webhook.go:318 — webhook deployment not ready
+- "ReadyReplicas:0, AvailableReplicas:0"
+- Webhook pod runs but readiness probe fails
+- HTTPS probe fix deployed but may not be working for this specific cert setup
+
+### deployment.go:585 — deployment locate timeout
+- "failed to locate Deployment: timed out waiting for the condition"
+- Watch stream closed during deployment monitoring (same HTTP/2 RST_STREAM issue)
 
 ## Critical root causes fixed
 
