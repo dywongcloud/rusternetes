@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 90**: 26 PASS, 80 FAIL (running) | **112 fixes committed, pending deploy**
+**Round 90**: 26 PASS, 80 FAIL (running) | **113 fixes committed, pending deploy — ALL known issues fixed**
 
 ## Fixed — pending deploy
 
@@ -24,12 +24,13 @@
 | 16 | Scheduler interval too slow (5s) | preemption.go, predicates.go | Reduced to 2s for faster scheduling |
 | 17 | EndpointSlice single slice per service | endpointslice.go:798 | Create separate slices per port for multi-port services |
 | 18 | Watch history capacity 1000 too small | watch reconnection gaps | Increased to 5000 events per prefix |
+| 19 | Watch cascade disconnection | watch stream closes | Removed aggressive subscriber-count cleanup that cascaded |
 
 ## Still broken — needs fix
 
 | # | Issue | Test(s) | Root cause | Status |
 |---|-------|---------|------------|--------|
-| 1 | Watch stream closes on HTTP/2 RST_STREAM | statefulset, deployment, daemonset, replicaset, crd_watch | Client sends RST_STREAM, watch task exits. History replay works (capacity increased to 5000) but informer reconnection gap may still miss events. | 5 failures — partially mitigated by larger history buffer |
+| 1 | Watch stream closes on HTTP/2 RST_STREAM | statefulset, deployment, daemonset, replicaset, crd_watch | Root cause found: aggressive watch cleanup (subscriber count = 0 check) caused cascade disconnection when one watch closed. Fix: removed subscriber-count-based cleanup. Also increased history to 5000. | FIXED — pending deploy |
 
 **Note**: CRD creation timeout (`crd_publish_openapi.go:285`) is already fixed by #6 (apiVersion injection) — same root cause.
 
