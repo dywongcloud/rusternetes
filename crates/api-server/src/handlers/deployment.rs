@@ -24,8 +24,18 @@ pub async fn create(
     body: Bytes,
 ) -> Result<(StatusCode, Json<Deployment>)> {
     // Parse the body manually so we can do strict field validation against the raw bytes
+    let is_strict = params.get("fieldValidation").map(|v| v.as_str()) == Some("Strict");
     let mut deployment: Deployment = serde_json::from_slice(&body).map_err(|e| {
-        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+        let msg = e.to_string();
+        if is_strict && msg.contains("duplicate field") {
+            // Reformat to match Kubernetes strict decoding error format
+            if let Some(field) = msg.split('`').nth(1) {
+                return rusternetes_common::Error::InvalidResource(format!(
+                    "strict decoding error: json: duplicate field \"{}\"", field
+                ));
+            }
+        }
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", msg))
     })?;
 
     info!(

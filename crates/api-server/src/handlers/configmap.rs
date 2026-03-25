@@ -124,6 +124,15 @@ pub async fn update(
 
     let key = build_key("configmaps", Some(&namespace), &name);
 
+    // Check if existing configmap is immutable
+    if let Ok(existing) = state.storage.get::<ConfigMap>(&key).await {
+        if existing.immutable == Some(true) {
+            return Err(rusternetes_common::Error::InvalidResource(format!(
+                "ConfigMap \"{}/{}\" is immutable", namespace, name
+            )));
+        }
+    }
+
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
         info!(

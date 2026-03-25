@@ -145,18 +145,29 @@ where
         .filter(|rv| !rv.is_empty() && *rv != "0")
         .and_then(|rv| rv.parse::<i64>().ok());
 
-    // Subscribe to watch FIRST, then list. This ensures we don't miss events
-    // that happen between the list and the watch start (race condition fix).
-    // If a specific resourceVersion was given, use subscribe_from to replay history.
+    // Subscribe to watch events.
+    // If a specific resourceVersion was given, use etcd's watch_from_revision
+    // directly to replay ALL events since that revision from etcd's history.
+    // This is more reliable than the in-memory history buffer which only
+    // captures events while a watcher was active.
     let watch_stream = if let Some(since_rev) = replay_revision {
-        let (history, rx) = state.watch_cache.subscribe_from(&prefix, since_rev).await;
-        debug!(
-            "Replaying {} historical events since revision {} for prefix {}",
-            history.len(),
-            since_rev,
-            prefix
-        );
-        crate::watch_cache::broadcast_to_stream_with_history(history, rx)
+        // Use etcd watch_from_revision for reliable history replay.
+        // Add 1 because etcd start_revision is inclusive and we want events AFTER since_rev.
+        match state.storage.watch_from_revision(&prefix, since_rev + 1).await {
+            Ok(stream) => {
+                debug!(
+                    "Started etcd watch from revision {} for prefix {}",
+                    since_rev + 1,
+                    prefix
+                );
+                stream
+            }
+            Err(e) => {
+                error!("Failed to create watch from revision {}: {}, falling back to cache", since_rev, e);
+                let (history, rx) = state.watch_cache.subscribe_from(&prefix, since_rev).await;
+                crate::watch_cache::broadcast_to_stream_with_history(history, rx)
+            }
+        }
     } else {
         let rx = state.watch_cache.subscribe(&prefix).await;
         crate::watch_cache::broadcast_to_stream(rx)
@@ -492,17 +503,25 @@ where
         .filter(|rv| !rv.is_empty() && *rv != "0")
         .and_then(|rv| rv.parse::<i64>().ok());
 
-    // Subscribe FIRST, then list (avoid race condition)
-    // If a specific resourceVersion was given, use subscribe_from to replay history.
+    // Subscribe to watch events.
+    // If a specific resourceVersion was given, use etcd's watch_from_revision
+    // directly to replay ALL events since that revision from etcd's history.
     let watch_stream = if let Some(since_rev) = replay_revision {
-        let (history, rx) = state.watch_cache.subscribe_from(&prefix, since_rev).await;
-        debug!(
-            "Replaying {} historical events since revision {} for prefix {}",
-            history.len(),
-            since_rev,
-            prefix
-        );
-        crate::watch_cache::broadcast_to_stream_with_history(history, rx)
+        match state.storage.watch_from_revision(&prefix, since_rev + 1).await {
+            Ok(stream) => {
+                debug!(
+                    "Started etcd watch from revision {} for prefix {}",
+                    since_rev + 1,
+                    prefix
+                );
+                stream
+            }
+            Err(e) => {
+                error!("Failed to create watch from revision {}: {}, falling back to cache", since_rev, e);
+                let (history, rx) = state.watch_cache.subscribe_from(&prefix, since_rev).await;
+                crate::watch_cache::broadcast_to_stream_with_history(history, rx)
+            }
+        }
     } else {
         let rx = state.watch_cache.subscribe(&prefix).await;
         crate::watch_cache::broadcast_to_stream(rx)

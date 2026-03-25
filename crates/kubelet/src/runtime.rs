@@ -544,31 +544,61 @@ impl ContainerRuntime {
                         return Err(e);
                     }
 
-                    // Start the init container
-                    self.start_container(
-                        pod,
-                        container,
-                        &volume_binds,
-                        netns_path.as_deref(),
-                        hosts_file_path.as_deref(),
-                        pod_ip.as_deref(),
-                    )
-                    .await?;
+                    // For restartPolicy=Always pods, retry failed init containers
+                    // with exponential backoff (matching Kubernetes CrashLoopBackOff)
+                    let restart_always = pod.spec.as_ref()
+                        .and_then(|s| s.restart_policy.as_deref())
+                        .unwrap_or("Always") == "Always";
+                    let max_retries = if restart_always { 5 } else { 0 };
+                    let mut attempt = 0;
 
-                    // Resolve pod IP from first container for non-CNI mode
-                    if !resolved_ip && pod_ip.is_none() {
-                        if let Ok(Some(ip)) = self.get_pod_ip(pod_name).await {
-                            pod_ip = Some(ip);
-                            resolved_ip = true;
-                            self.create_pod_hosts_file(pod, pod_ip.as_deref())?;
-                        }
-                    }
-
-                    // Wait for init container to complete
-                    self.wait_for_container_completion(pod_name, &container.name)
+                    loop {
+                        // Start the init container
+                        self.start_container(
+                            pod,
+                            container,
+                            &volume_binds,
+                            netns_path.as_deref(),
+                            hosts_file_path.as_deref(),
+                            pod_ip.as_deref(),
+                        )
                         .await?;
 
-                    info!("Init container {} completed successfully", container.name);
+                        // Resolve pod IP from first container for non-CNI mode
+                        if !resolved_ip && pod_ip.is_none() {
+                            if let Ok(Some(ip)) = self.get_pod_ip(pod_name).await {
+                                pod_ip = Some(ip);
+                                resolved_ip = true;
+                                self.create_pod_hosts_file(pod, pod_ip.as_deref())?;
+                            }
+                        }
+
+                        // Wait for init container to complete
+                        match self.wait_for_container_completion(pod_name, &container.name).await {
+                            Ok(()) => {
+                                info!("Init container {} completed successfully", container.name);
+                                break;
+                            }
+                            Err(e) => {
+                                if attempt < max_retries && restart_always {
+                                    attempt += 1;
+                                    let backoff = std::cmp::min(2u64.pow(attempt as u32), 30);
+                                    warn!(
+                                        "Init container {} failed (attempt {}), retrying in {}s: {}",
+                                        container.name, attempt, backoff, e
+                                    );
+                                    // Remove the failed container before retrying
+                                    let full_name = format!("{}_{}", pod_name, container.name);
+                                    let _ = self.docker.remove_container(&full_name, Some(
+                                        RemoveContainerOptions { force: true, ..Default::default() }
+                                    )).await;
+                                    tokio::time::sleep(Duration::from_secs(backoff)).await;
+                                } else {
+                                    return Err(e);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2918,28 +2948,57 @@ impl ContainerRuntime {
 
         // Set command and args
         // In Kubernetes: command overrides Docker ENTRYPOINT, args overrides Docker CMD
+        // Kubernetes expands $(VAR_NAME) references in command and args using the
+        // container's own environment variables.
+        let expand_k8s_vars = |items: &[String]| -> Vec<String> {
+            items.iter().map(|item| {
+                let mut result = item.clone();
+                loop {
+                    let start = match result.find("$(") {
+                        Some(s) => s,
+                        None => break,
+                    };
+                    let end = match result[start..].find(')') {
+                        Some(e) => start + e,
+                        None => break,
+                    };
+                    let var_name = &result[start + 2..end];
+                    let value = resolved_env_pairs.iter()
+                        .find(|(k, _)| k == var_name)
+                        .map(|(_, v)| v.as_str())
+                        .unwrap_or("");
+                    result.replace_range(start..end + 1, value);
+                }
+                result
+            }).collect()
+        };
+
         if let Some(command) = &container.command {
             if let Some(args) = &container.args {
                 // Both command and args present
+                let expanded_cmd = expand_k8s_vars(command);
+                let expanded_args = expand_k8s_vars(args);
                 info!(
                     "Container {} - setting entrypoint {:?} and cmd {:?}",
-                    container.name, command, args
+                    container.name, expanded_cmd, expanded_args
                 );
-                config.entrypoint = Some(command.clone());
-                config.cmd = Some(args.clone());
+                config.entrypoint = Some(expanded_cmd);
+                config.cmd = Some(expanded_args);
             } else {
                 // Only command present - overrides entrypoint, clears cmd
+                let expanded_cmd = expand_k8s_vars(command);
                 info!(
                     "Container {} - setting entrypoint: {:?}",
-                    container.name, command
+                    container.name, expanded_cmd
                 );
-                config.entrypoint = Some(command.clone());
+                config.entrypoint = Some(expanded_cmd);
                 config.cmd = Some(vec![]);
             }
         } else if let Some(args) = &container.args {
             // Only args present - use container's default entrypoint + override cmd
-            info!("Container {} - setting cmd (args): {:?}", container.name, args);
-            config.cmd = Some(args.clone());
+            let expanded_args = expand_k8s_vars(args);
+            info!("Container {} - setting cmd (args): {:?}", container.name, expanded_args);
+            config.cmd = Some(expanded_args);
         }
 
         let options = CreateContainerOptions {
