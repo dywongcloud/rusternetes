@@ -290,7 +290,14 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         resources: &[ResourceInfo],
         _owner_map: &HashMap<String, Vec<String>>,
     ) -> Vec<ResourceInfo> {
-        let existing_uids: HashSet<_> = resources.iter().map(|r| r.metadata.uid.as_str()).collect();
+        // Only count resources that are NOT being deleted as "existing" owners.
+        // A resource with a deletion timestamp should not prevent its dependents
+        // from being garbage-collected.
+        let existing_uids: HashSet<_> = resources
+            .iter()
+            .filter(|r| !r.metadata.is_being_deleted())
+            .map(|r| r.metadata.uid.as_str())
+            .collect();
         let mut orphans = Vec::new();
 
         for resource in resources {

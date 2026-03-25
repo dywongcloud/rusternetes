@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes deployed; round 89 pending with 82 fixes total)
+**Last updated**: 2026-03-24 (round 88: 61 PASS, 29 FAIL (68%) with 62 fixes deployed; round 89 pending with 83 fixes total)
 
 ## Critical root causes fixed
 
@@ -176,10 +176,12 @@
 - **Root cause**: Docker Desktop VirtioFS may not preserve exact Unix permissions on bind mounts.
 - **Status**: Docker Desktop limitation.
 
-### Garbage collector
+### Garbage collector cascade — FIXED
 - **Test**: `garbage_collector.go:711` — GC cascade deletion
-- **Root cause**: GC controller may not handle owner reference cascading correctly.
-- **Status**: Needs investigation.
+- **Symptom**: "100 pods remaining" with "nil DeletionTimestamp" after RC deleted
+- **Root cause**: GC's `find_orphans` included deleted resources in `existing_uids` set. A deleted RC still had its UID in the set, so its pods were never considered orphans.
+- **Fix**: Exclude resources with deletionTimestamp from `existing_uids` in `find_orphans`.
+- **Status**: Fix committed, pending deploy.
 
 ### Service proxy unreachable
 - **Test**: `proxy.go:271` — "Unable to reach service through proxy"
@@ -248,7 +250,7 @@
 - **Root cause**: Likely watch stream closure or scaling timing.
 - **Status**: Needs investigation.
 
-## All 82 fixes committed (31 pending deploy)
+## All 83 fixes committed (32 pending deploy)
 
 | Fix | Commit |
 |-----|--------|
@@ -334,3 +336,4 @@
 | PLC resourceVersion check on update | pending |
 | Container restart CrashLoopBackOff + last_state | pending |
 | RC orphan pod adoption (ownerReference) | pending |
+| GC exclude deleted owners from existing_uids | pending |
