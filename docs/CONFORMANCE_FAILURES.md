@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 93**: ~1 PASS, 116+ FAIL (running) | **159 fixes** | pre-deploy run, 34 fixes pending
+**Round 93**: ~1 PASS, 116+ FAIL (running) | **160 fixes** | pre-deploy run, 35 fixes pending
 
 ## Fixes pending deploy (34)
 
@@ -40,6 +40,7 @@
 | 32 | Sysctls applied to pause container HostConfig | 1 test |
 | 33 | NodeInfo populated in heartbeat | 1+ tests |
 | 34 | OpenAPI 406 for protobuf-only requests | 3 tests |
+| 35 | Deployment revision sync in status updates | 1 test |
 
 ## Open failures by category
 
