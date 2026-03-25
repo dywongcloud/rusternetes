@@ -1,6 +1,6 @@
 # Full Conformance Failure Analysis
 
-**Last updated**: 2026-03-25 (round 89 in progress: ~7 PASS, 4 FAIL so far; 92 fixes deployed)
+**Last updated**: 2026-03-25 (round 89 in progress: 7 PASS, 4 FAIL after 11 specs; 92 fixes deployed; VAP test blocking progress for 50+ min)
 
 ## Round 89 failures (in progress)
 
