@@ -216,16 +216,44 @@ impl<S: Storage> JobController<S> {
         let success_policy_met = if let Some(ref policy) = job.spec.success_policy {
             if let Some(rules) = policy.get("rules").and_then(|r| r.as_array()) {
                 rules.iter().any(|rule| {
+                    // Check succeededIndexes (specific indexes that must succeed)
                     if let Some(succeeded_indexes) = rule.get("succeededIndexes").and_then(|s| s.as_str()) {
-                        // Check if the completed indexes include all required indexes
-                        let required: Vec<&str> = succeeded_indexes.split(',').collect();
                         let completed = completed_indexes.as_deref().unwrap_or("");
-                        required.iter().all(|req| {
-                            let req = req.trim();
-                            completed.split(',').any(|c| c.trim() == req)
-                        })
-                    } else {
-                        false
+                        let completed_set: std::collections::HashSet<i32> = completed.split(',')
+                            .filter_map(|s| s.trim().parse::<i32>().ok())
+                            .collect();
+                        // Parse required indexes (supports ranges like "0-3" and individual "0,1")
+                        let mut required_met = true;
+                        for part in succeeded_indexes.split(',') {
+                            let part = part.trim();
+                            if part.contains('-') {
+                                let bounds: Vec<&str> = part.split('-').collect();
+                                if bounds.len() == 2 {
+                                    if let (Ok(start), Ok(end)) = (bounds[0].parse::<i32>(), bounds[1].parse::<i32>()) {
+                                        for i in start..=end {
+                                            if !completed_set.contains(&i) {
+                                                required_met = false;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            } else if let Ok(idx) = part.parse::<i32>() {
+                                if !completed_set.contains(&idx) {
+                                    required_met = false;
+                                }
+                            }
+                            if !required_met { break; }
+                        }
+                        required_met
+                    }
+                    // Check succeededCount (minimum number of succeeded pods)
+                    else if let Some(count) = rule.get("succeededCount").and_then(|c| c.as_i64()) {
+                        succeeded >= count as i32
+                    }
+                    // No criteria specified — rule matches if any pod succeeded
+                    else {
+                        succeeded > 0
                     }
                 })
             } else {
