@@ -75,14 +75,18 @@ pub struct GroupVersionForDiscovery {
 /// Some clients (like sonobuoy) send both types in Accept but expect the standard format.
 fn wants_aggregated_discovery(headers: &HeaderMap) -> bool {
     if let Some(accept) = headers.get("accept").and_then(|v| v.to_str().ok()) {
-        // Only use aggregated if it appears BEFORE plain application/json
-        if let Some(agg_pos) = accept.find("apidiscovery.k8s.io") {
-            if let Some(json_pos) = accept.find("application/json") {
-                // If plain JSON comes first, the client prefers standard format
-                return agg_pos < json_pos;
+        // Check if any Accept media type contains the aggregated discovery group
+        // The format is: application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList
+        // This is a single media type with parameters, not separate types.
+        if accept.contains("apidiscovery.k8s.io") {
+            // Check it's not just a plain application/json that happens to precede
+            // the aggregated type in a multi-type Accept header
+            for media_type in accept.split(',') {
+                let mt = media_type.trim();
+                if mt.contains("apidiscovery.k8s.io") {
+                    return true;
+                }
             }
-            // Only aggregated type in Accept, use it
-            return true;
         }
     }
     false

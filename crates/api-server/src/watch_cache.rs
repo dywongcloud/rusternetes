@@ -126,8 +126,18 @@ impl WatchCache {
 
                             // Broadcast to live subscribers (Err is OK if no receivers)
                             let _ = tx_clone.send(cached);
+
+                            // Clean up if no subscribers remain
+                            if tx_clone.receiver_count() == 0 {
+                                info!("WatchCache: no subscribers for {}, stopping shared watch", prefix_owned);
+                                return; // Exit the watch loop
+                            }
                         }
-                        // Stream ended, reconnect
+                        // Stream ended, reconnect only if there are subscribers
+                        if tx_clone.receiver_count() == 0 {
+                            info!("WatchCache: no subscribers for {}, not reconnecting", prefix_owned);
+                            return;
+                        }
                         debug!("WatchCache: stream ended for {}, reconnecting", prefix_owned);
                         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     }
