@@ -272,7 +272,20 @@ impl<S: Storage> DeploymentController<S> {
                 namespace, deployment.metadata.name
             );
 
-            if is_rolling_update && old_rs_total > 0 {
+            if !is_rolling_update && old_rs_total > 0 {
+                // Recreate strategy: scale down ALL old RSs to 0 FIRST
+                for rs in owned_replicasets.iter() {
+                    if rs.spec.replicas > 0 {
+                        info!(
+                            "Recreate: scaling down old ReplicaSet {}/{} to 0",
+                            namespace, rs.metadata.name
+                        );
+                        self.update_replicaset_replicas(rs, 0).await?;
+                    }
+                }
+                // Then create new RS at full desired count
+                self.create_replicaset(deployment).await?;
+            } else if is_rolling_update && old_rs_total > 0 {
                 // Start the rolling update: create new RS with a smaller initial count
                 let max_total = desired_replicas + max_surge;
                 let initial_replicas = (max_total - old_rs_total).max(1).min(desired_replicas);
@@ -298,19 +311,8 @@ impl<S: Storage> DeploymentController<S> {
                     }
                 }
             } else {
-                // No old RSs or Recreate strategy: create at full desired count
+                // No old RSs: create at full desired count
                 self.create_replicaset(deployment).await?;
-
-                // Scale down all old ReplicaSets
-                for rs in owned_replicasets.iter() {
-                    if rs.spec.replicas > 0 {
-                        info!(
-                            "Scaling down old ReplicaSet {}/{} to 0",
-                            namespace, rs.metadata.name
-                        );
-                        self.update_replicaset_replicas(rs, 0).await?;
-                    }
-                }
             }
         }
 
