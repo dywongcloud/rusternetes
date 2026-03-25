@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 93**: ~40 PASS, 114+ FAIL (running) | **156 fixes** | pre-deploy run, 31 fixes pending
+**Round 93**: ~40 PASS, 115+ FAIL (running) | **157 fixes** | pre-deploy run, 32 fixes pending
 
 ## Fixes pending deploy (26)
 
@@ -37,6 +37,7 @@
 | 29 | Session affinity via iptables recent module | 2 tests |
 | 30 | Job successPolicy succeededCount + index ranges | 1 test |
 | 31 | Node addresses in heartbeat (fix empty addresses) | 5+ tests |
+| 32 | Sysctls applied to pause container HostConfig | 1 test |
 
 ## Open failures by category
 
