@@ -2672,10 +2672,16 @@ impl ContainerRuntime {
             }
         }
 
-        // Mount /etc/hosts if a pod-specific hosts file was created
+        // Mount /etc/hosts if a pod-specific hosts file was created,
+        // but skip if the container already has a volume mount at /etc/hosts
+        let has_hosts_mount = container.volume_mounts.as_ref()
+            .map(|mounts| mounts.iter().any(|m| m.mount_path == "/etc/hosts"))
+            .unwrap_or(false);
         if let Some(hosts_path) = hosts_file_path {
-            binds.push(format!("{}:/etc/hosts:ro", hosts_path));
-            info!("Mounted custom /etc/hosts for pod {}", pod_name);
+            if !has_hosts_mount && !binds.iter().any(|b| b.contains(":/etc/hosts")) {
+                binds.push(format!("{}:/etc/hosts:ro", hosts_path));
+                info!("Mounted custom /etc/hosts for pod {}", pod_name);
+            }
         }
 
         // Create container configuration
