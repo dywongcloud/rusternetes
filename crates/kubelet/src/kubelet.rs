@@ -214,7 +214,7 @@ impl Kubelet {
         }
         drop(eviction_manager); // Release lock before async operations
 
-        // Ensure capacity and allocatable are always set
+        // Ensure capacity, allocatable, and nodeInfo are always set
         if let Some(ref mut status) = node.status {
             if status.capacity.as_ref().map_or(true, |c| c.is_empty()) {
                 status.capacity = Some(HashMap::from([
@@ -229,6 +229,22 @@ impl Kubelet {
                     ("memory".to_string(), "8Gi".to_string()),
                     ("pods".to_string(), "110".to_string()),
                 ]));
+            }
+            // Ensure nodeInfo is populated (may have been lost during updates)
+            if status.node_info.as_ref().map_or(true, |ni| ni.machine_id.is_empty()) {
+                status.node_info = Some(rusternetes_common::resources::NodeSystemInfo {
+                    machine_id: format!("rusternetes-{}", self.node_name),
+                    system_uuid: format!("rusternetes-{}", self.node_name),
+                    boot_id: format!("rusternetes-{}", self.node_name),
+                    kernel_version: "6.1.0-rusternetes".to_string(),
+                    os_image: "Rusternetes OS".to_string(),
+                    container_runtime_version: "containerd://1.7.0".to_string(),
+                    kubelet_version: "v1.35.0-rusternetes".to_string(),
+                    kube_proxy_version: "v1.35.0-rusternetes".to_string(),
+                    operating_system: "linux".to_string(),
+                    architecture: "amd64".to_string(),
+                    swap: None,
+                });
             }
         }
 
