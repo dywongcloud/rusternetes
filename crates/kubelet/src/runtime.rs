@@ -2419,14 +2419,26 @@ impl ContainerRuntime {
                     };
 
                     let read_only = mount.read_only.unwrap_or(false);
-                    // Always use bind mounts for emptyDir so that data is shared
-                    // between containers in the same pod (all containers mount the
-                    // same host directory).  Previously we used tmpfs, but tmpfs is
-                    // per-container and breaks cross-container sharing.
-                    let ro_suffix = if read_only { ":ro" } else { "" };
-                    let bind =
-                        format!("{}:{}{}", effective_host_path, mount.mount_path, ro_suffix);
-                    binds.push(bind);
+                    // emptyDir with medium: Memory uses tmpfs (in-memory filesystem).
+                    // emptyDir without medium uses bind mounts for cross-container sharing.
+                    let is_memory_medium = pod.spec.as_ref()
+                        .and_then(|s| s.volumes.as_ref())
+                        .and_then(|vols| vols.iter().find(|v| v.name == mount.name))
+                        .and_then(|v| v.empty_dir.as_ref())
+                        .and_then(|ed| ed.medium.as_deref())
+                        .map(|m| m == "Memory")
+                        .unwrap_or(false);
+
+                    if is_memory_medium && empty_dir_volumes.contains(&mount.name) && expanded_sub_path.is_none() {
+                        // Use tmpfs for Memory-backed emptyDir
+                        let opts = if read_only { "ro".to_string() } else { String::new() };
+                        tmpfs_mounts.insert(mount.mount_path.clone(), opts);
+                    } else {
+                        let ro_suffix = if read_only { ":ro" } else { "" };
+                        let bind =
+                            format!("{}:{}{}", effective_host_path, mount.mount_path, ro_suffix);
+                        binds.push(bind);
+                    }
                     info!(
                         "Mounting volume {} at {} in container {}",
                         mount.name, mount.mount_path, container.name
