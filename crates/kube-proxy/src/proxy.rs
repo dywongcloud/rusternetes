@@ -142,10 +142,10 @@ impl KubeProxy {
             namespace, name, service.spec
         );
         let has_valid_cluster_ip = cluster_ip
-            .map(|ip| !ip.is_empty() && ip != "None" && ip != "null")
+            .map(|ip| !ip.is_empty() && ip.as_str() != "None" && ip.as_str() != "null" && ip.contains('.'))
             .unwrap_or(false);
-        if !has_valid_cluster_ip && service_type != ServiceType::ExternalName {
-            warn!("Service {}/{} has no valid ClusterIP ({:?}), skipping", namespace, name, cluster_ip);
+        if !has_valid_cluster_ip {
+            debug!("Service {}/{} has no valid ClusterIP ({:?}), skipping", namespace, name, cluster_ip);
             return Ok(());
         }
 
