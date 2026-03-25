@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 93**: ~40 PASS, 91+ FAIL (running) | **148 fixes** | ~30% pass rate (pre-deploy)
+**Round 93**: ~40 PASS, 100+ FAIL (running) | **150 fixes** | ~28% pass rate (pre-deploy, 24 fixes pending)
 
 ## Fixes pending deploy (21)
 
