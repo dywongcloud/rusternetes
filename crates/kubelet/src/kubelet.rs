@@ -232,6 +232,24 @@ impl Kubelet {
             }
         }
 
+        // Ensure node addresses are populated (may have failed during initial registration)
+        if let Some(ref mut status) = node.status {
+            let addresses = status.addresses.get_or_insert_with(Vec::new);
+            if addresses.is_empty() {
+                let ip = Self::detect_internal_ip();
+                if ip != "127.0.0.1" {
+                    addresses.push(rusternetes_common::resources::NodeAddress {
+                        address_type: "InternalIP".to_string(),
+                        address: ip,
+                    });
+                    addresses.push(rusternetes_common::resources::NodeAddress {
+                        address_type: "Hostname".to_string(),
+                        address: self.node_name.clone(),
+                    });
+                }
+            }
+        }
+
         // Update heartbeat and ensure Ready=True
         if let Some(ref mut status) = node.status {
             if let Some(ref mut conditions) = status.conditions {
