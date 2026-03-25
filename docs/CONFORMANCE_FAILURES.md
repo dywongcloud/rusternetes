@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 93**: ~40 PASS, 112+ FAIL (running) | **153 fixes** | pre-deploy run, 28 fixes pending
+**Round 93**: ~40 PASS, 113+ FAIL (running) | **155 fixes** | pre-deploy run, 30 fixes pending
 
 ## Fixes pending deploy (26)
 
@@ -34,6 +34,8 @@
 | 26 | PATCH dry-run support (don't save to storage) | 1 test |
 | 27 | Namespace deletion: Terminating phase first | 1 test |
 | 28 | Termination message FallbackToLogsOnError | 1 test |
+| 29 | Session affinity via iptables recent module | 2 tests |
+| 30 | Job successPolicy succeededCount + index ranges | 1 test |
 
 ## Open failures by category
 
