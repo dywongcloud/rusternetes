@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 92**: 13 PASS, 12 FAIL | **126 fixes** | 52% pass rate
+**Round 92**: 15 PASS, 15 FAIL | **126 fixes** | 50% pass rate
 
 ## Failures
 
