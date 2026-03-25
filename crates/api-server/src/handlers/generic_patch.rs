@@ -180,6 +180,13 @@ where
     // For resources with metadata, ensure name/namespace can't be changed via patch
     // This is handled by updating in storage with the original key
 
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: {} {}/{} patch validated (not applied)", resource_type, namespace, name);
+        return Ok(Json(patched_resource));
+    }
+
     // Update in storage
     let updated = state.storage.update(&key, &patched_resource).await?;
 
@@ -334,6 +341,13 @@ where
     let patched_resource: T = serde_json::from_value(patched_json).map_err(|e| {
         rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e))
     })?;
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: {} {} patch validated (not applied)", resource_type, name);
+        return Ok(Json(patched_resource));
+    }
 
     // Update in storage
     let updated = state.storage.update(&key, &patched_resource).await?;

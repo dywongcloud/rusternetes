@@ -994,6 +994,13 @@ pub async fn patch(
     patched_pod.metadata.name = name.clone();
     patched_pod.metadata.namespace = Some(namespace.clone());
 
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!("Dry-run: Pod {}/{} patch validated successfully (not applied)", namespace, name);
+        return Ok(Json(patched_pod));
+    }
+
     // For PATCH operations, clear resourceVersion to skip optimistic concurrency.
     // PATCH is a read-modify-write operation, and between our read and write the
     // kubelet may update the pod status (incrementing resourceVersion). The patch
