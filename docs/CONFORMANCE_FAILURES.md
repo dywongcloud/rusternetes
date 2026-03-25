@@ -9,6 +9,7 @@
 | 1 | statefulset.go:786 | watch closed before timeout | Watch stream investigation — added logging |
 | 2 | webhook.go:520 | webhook not ready | Webhook pod may not start — investigate |
 | 3 | service_cidrs.go:170 | ServiceCIDR "kubernetes" not found | **FIXED** pending deploy |
+| 9 | kubelet_etc_hosts.go:97 | Duplicate mount /etc/hosts | **FIXED** pending deploy |
 | 4 | init_container.go:440 | init container timeout | Needs investigation |
 | 5 | kubectl.go:1130 | failed creating pod | kubectl pod creation error |
 | 6 | runtime.go:158 | unknown | Needs investigation |
