@@ -839,6 +839,16 @@ impl ContainerRuntime {
         // The pause container owns the DNS configuration for the pod network namespace.
         // CoreDNS pods must NOT use cluster DNS (circular dependency).
         let is_coredns = pod_name == "coredns";
+        // Collect sysctls from pod security context
+        let sysctls_map: Option<HashMap<String, String>> = pod.spec.as_ref()
+            .and_then(|s| s.security_context.as_ref())
+            .and_then(|sc| sc.sysctls.as_ref())
+            .map(|sysctls| {
+                sysctls.iter()
+                    .map(|s| (s.name.clone(), s.value.clone()))
+                    .collect()
+            });
+
         let config = Config {
             image: Some("busybox:latest".to_string()),
             cmd: Some(vec!["sleep".to_string(), "infinity".to_string()]),
@@ -856,6 +866,7 @@ impl ContainerRuntime {
                 } else {
                     Some(port_bindings)
                 },
+                sysctls: sysctls_map,
                 ..Default::default()
             }),
             ..Default::default()
