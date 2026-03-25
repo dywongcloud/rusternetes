@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 93**: ~40 PASS, 113+ FAIL (running) | **155 fixes** | pre-deploy run, 30 fixes pending
+**Round 93**: ~40 PASS, 114+ FAIL (running) | **156 fixes** | pre-deploy run, 31 fixes pending
 
 ## Fixes pending deploy (26)
 
@@ -36,6 +36,7 @@
 | 28 | Termination message FallbackToLogsOnError | 1 test |
 | 29 | Session affinity via iptables recent module | 2 tests |
 | 30 | Job successPolicy succeededCount + index ranges | 1 test |
+| 31 | Node addresses in heartbeat (fix empty addresses) | 5+ tests |
 
 ## Open failures by category
 
