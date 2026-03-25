@@ -147,21 +147,25 @@ impl ConversionWebhookClient {
         // Call webhook
         debug!("Sending conversion request: {:?}", review);
 
-        let response = self
+        let response = match self
             .client
             .post(&url)
             .json(&review)
             .send()
             .await
-            .map_err(|e| {
-                rusternetes_common::Error::Network(format!("Webhook request failed: {}", e))
-            })?;
+        {
+            Ok(r) => r,
+            Err(e) => {
+                // Webhook unreachable — return objects unconverted
+                warn!("Conversion webhook unreachable, returning unconverted: {}", e);
+                return Ok(objects.to_vec());
+            }
+        };
 
         if !response.status().is_success() {
-            return Err(rusternetes_common::Error::Network(format!(
-                "Webhook returned status: {}",
-                response.status()
-            )));
+            // Webhook returned error — return objects unconverted
+            warn!("Conversion webhook returned {}, returning unconverted", response.status());
+            return Ok(objects.to_vec());
         }
 
         let review_response: ConversionReview =
