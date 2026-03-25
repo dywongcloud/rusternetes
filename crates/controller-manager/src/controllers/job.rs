@@ -212,6 +212,67 @@ impl<S: Storage> JobController<S> {
             existing_start_time
         };
 
+        // Check successPolicy — if defined and criteria met, mark job complete
+        let success_policy_met = if let Some(ref policy) = job.spec.success_policy {
+            if let Some(rules) = policy.get("rules").and_then(|r| r.as_array()) {
+                rules.iter().any(|rule| {
+                    if let Some(succeeded_indexes) = rule.get("succeededIndexes").and_then(|s| s.as_str()) {
+                        // Check if the completed indexes include all required indexes
+                        let required: Vec<&str> = succeeded_indexes.split(',').collect();
+                        let completed = completed_indexes.as_deref().unwrap_or("");
+                        required.iter().all(|req| {
+                            let req = req.trim();
+                            completed.split(',').any(|c| c.trim() == req)
+                        })
+                    } else {
+                        false
+                    }
+                })
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if success_policy_met {
+            info!("Job {}/{} met success policy criteria", namespace, name);
+            job.status = Some(JobStatus {
+                active: Some(0),
+                succeeded: Some(succeeded),
+                failed: Some(failed),
+                conditions: Some(vec![
+                    JobCondition {
+                        condition_type: "SuccessCriteriaMet".to_string(),
+                        status: "True".to_string(),
+                        last_probe_time: Some(chrono::Utc::now()),
+                        last_transition_time: Some(chrono::Utc::now()),
+                        reason: Some("SuccessPolicy".to_string()),
+                        message: Some("Job met success policy criteria".to_string()),
+                    },
+                    JobCondition {
+                        condition_type: "Complete".to_string(),
+                        status: "True".to_string(),
+                        last_probe_time: Some(chrono::Utc::now()),
+                        last_transition_time: Some(chrono::Utc::now()),
+                        reason: Some("SuccessPolicy".to_string()),
+                        message: Some("Job completed via success policy".to_string()),
+                    },
+                ]),
+                start_time,
+                completion_time: Some(chrono::Utc::now()),
+                ready: None,
+                terminating: None,
+                completed_indexes: completed_indexes.clone(),
+                failed_indexes: failed_indexes.clone(),
+                uncounted_terminated_pods: None,
+                observed_generation: job.metadata.generation,
+            });
+            let key = format!("/registry/jobs/{}/{}", namespace, name);
+            self.storage.update(&key, job).await?;
+            return Ok(());
+        }
+
         if is_complete {
             info!("Job {}/{} completed successfully", namespace, name);
             job.status = Some(JobStatus {
