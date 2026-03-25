@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 93**: ~40 PASS, 112+ FAIL (running) | **152 fixes** | pre-deploy run, 26+ fixes pending
+**Round 93**: ~40 PASS, 112+ FAIL (running) | **153 fixes** | pre-deploy run, 28 fixes pending
 
 ## Fixes pending deploy (26)
 
@@ -33,6 +33,7 @@
 | 25 | ALL 25 missing deletecollection routes registered | 5+ tests |
 | 26 | PATCH dry-run support (don't save to storage) | 1 test |
 | 27 | Namespace deletion: Terminating phase first | 1 test |
+| 28 | Termination message FallbackToLogsOnError | 1 test |
 
 ## Open failures by category
 
