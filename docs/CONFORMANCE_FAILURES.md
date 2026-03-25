@@ -1,6 +1,6 @@
 # Conformance Failure Tracking
 
-**Last updated**: 2026-03-25 | **Round 90**: 16 PASS, 45 FAIL | **Fixes**: 105 committed, pending deploy
+**Last updated**: 2026-03-25 | **Round 90**: 26 PASS, 80 FAIL (test still running) | **Fixes**: 105 committed, pending deploy
 
 ## Fixes pending deploy (will resolve on next rebuild)
 
