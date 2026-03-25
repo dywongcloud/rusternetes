@@ -44,12 +44,18 @@ pub async fn create(
     namespace.metadata.ensure_uid();
     namespace.metadata.ensure_creation_timestamp();
 
-    // Ensure namespace has Active status
-    if namespace.status.is_none() {
-        namespace.status = Some(rusternetes_common::resources::NamespaceStatus {
-            phase: Some(rusternetes_common::types::Phase::Active),
-            conditions: None,
-        });
+    // Ensure namespace has Active status (always set phase even if status exists but phase is None)
+    match &mut namespace.status {
+        None => {
+            namespace.status = Some(rusternetes_common::resources::NamespaceStatus {
+                phase: Some(rusternetes_common::types::Phase::Active),
+                conditions: None,
+            });
+        }
+        Some(status) if status.phase.is_none() => {
+            status.phase = Some(rusternetes_common::types::Phase::Active);
+        }
+        _ => {}
     }
 
     // Ensure kind/apiVersion

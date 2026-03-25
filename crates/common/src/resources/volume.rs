@@ -224,9 +224,11 @@ pub struct PersistentVolumeClaim {
 #[serde(rename_all = "camelCase")]
 pub struct PersistentVolumeClaimSpec {
     /// Access modes
+    #[serde(default)]
     pub access_modes: Vec<PersistentVolumeAccessMode>,
 
     /// Resource requirements
+    #[serde(default)]
     pub resources: ResourceRequirements,
 
     /// Volume name (if binding to specific PV)
@@ -258,7 +260,7 @@ pub struct PersistentVolumeClaimSpec {
     pub volume_attributes_class_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceRequirements {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -308,6 +310,7 @@ pub struct TypedObjectReference {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistentVolumeClaimStatus {
+    #[serde(default)]
     pub phase: PersistentVolumeClaimPhase,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_modes: Option<Vec<PersistentVolumeAccessMode>>,
@@ -348,8 +351,9 @@ pub struct ModifyVolumeStatus {
     pub status: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum PersistentVolumeClaimPhase {
+    #[default]
     Pending,
     Bound,
     Lost,
