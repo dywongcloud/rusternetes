@@ -1,8 +1,8 @@
 # Conformance Issue Tracker
 
-**Round 93**: ~40 PASS, 115+ FAIL (running) | **157 fixes** | pre-deploy run, 32 fixes pending
+**Round 93**: ~1 PASS, 116+ FAIL (running) | **159 fixes** | pre-deploy run, 34 fixes pending
 
-## Fixes pending deploy (26)
+## Fixes pending deploy (34)
 
 | # | Fix | Impact |
 |---|-----|--------|
@@ -38,42 +38,44 @@
 | 30 | Job successPolicy succeededCount + index ranges | 1 test |
 | 31 | Node addresses in heartbeat (fix empty addresses) | 5+ tests |
 | 32 | Sysctls applied to pause container HostConfig | 1 test |
+| 33 | NodeInfo populated in heartbeat | 1+ tests |
+| 34 | OpenAPI 406 for protobuf-only requests | 3 tests |
 
 ## Open failures by category
 
 | Category | Count | Tests | Status |
 |----------|-------|-------|--------|
 | Webhook | 10+ | webhook.go:520,675,837,904,1244,1334,1631,2338,2465 | Webhook pods can't start |
-| Watch | 5+ | statefulset.go:786, watch.go:409 (×3), runtimeclass.go:317 | **FIX COMMITTED** etcd watch_from_revision |
+| Watch/stream | 10+ | statefulset.go:786,878, watch.go:409 (×3), runtimeclass.go:317 | **FIX COMMITTED** etcd watch_from_revision |
 | Scheduling | 4 | predicates.go:1102 (×2), preemption.go:516,949 | Preemption/resource-fit |
 | Networking | 6+ | networking.go:72,113, util.go:182 (×2), pods.go:556, proxy.go:503 | Pod-to-pod |
-| Service | 4+ | service.go:251,768,3304, endpoints.go:526, service_latency.go:142 | Routing/affinity/protobuf |
-| Job | 5 | job.go:144,236,422,623,665 | Completion/failure/indexed |
+| Service | 4+ | service.go:251,768,3304, endpoints.go:526, service_latency.go:142 | Affinity (**FIX COMMITTED**), routing, protobuf |
+| Job | 6 | job.go:144,236,422,504,623,665 | SuccessPolicy (**FIX COMMITTED**), completion tracking |
 | Resource quota | 5 | resource_quota.go:127,209,258,478,803 | Counts (**FIX PENDING**) |
-| kubectl | 3 | kubectl.go:1130,1565, builder.go:97 (×2) | Dry-run (**FIX COMMITTED**), protobuf |
+| kubectl | 4 | kubectl.go:1130,1565, builder.go:97 (×3) | Dry-run (**FIX COMMITTED**), OpenAPI (**FIX COMMITTED**), protobuf |
 | CRD | 5+ | crd_publish_openapi.go:77,161,285,400,451, custom_resource_definition.go:104 | Protobuf (**FIX COMMITTED** 415) |
-| Deployment | 3 | deployment.go:238,826, statefulset.go:2253 | Recreate (**FIX COMMITTED**) |
+| Deployment | 4 | deployment.go:238,781,826, statefulset.go:2253 | Recreate (**FIX COMMITTED**), revision, watch |
 | VAP | 3 | validatingadmissionpolicy.go:120,568,814 | CEL/watch |
 | Field validation | 2 | field_validation.go:105,700 | **FIX COMMITTED** (:105), protobuf (:700) |
 | Init container | 1 | init_container.go:440 | **FIX COMMITTED** |
-| Output/volume | 5 | output.go:263 (×5) | Perms, env (**FIX COMMITTED**), cpu_request |
+| Output/volume | 5+ | output.go:263 (×5) | Perms, env (**FIX COMMITTED**), cpu_request |
+| ConfigMap volume | 2 | configmap_volume.go:415,525 | Update propagation (**FIX PENDING** resync), immutability (**FIX COMMITTED**) |
 | Events | 1 | events.go:124 | **FIX COMMITTED** |
 | DRA | 2 | conformance.go:696 (×2) | ResourceSlice protobuf |
-| FlowControl | 1 | flowcontrol.go:661 | Watch ERROR + delete (**FIX COMMITTED** delete) |
-| Secrets | 1 | secrets_volume.go:407 | **FIX COMMITTED** |
-| ConfigMap | 1 | configmap_volume.go:525 | **FIX COMMITTED** immutability |
+| FlowControl | 1 | flowcontrol.go:661 | Delete (**FIX COMMITTED**), watch |
 | Namespace | 2 | namespace.go:321,579 | **FIX COMMITTED** phase + Terminating |
 | PV/PVC | 1 | persistent_volumes.go:718 | **FIX COMMITTED** |
 | RC | 2 | rc.go:173,442 | Watch/timeout |
 | ReplicaSet | 1 | replica_set.go:232 | Watch/timing |
-| Runtime | 2 | runtime.go:158,169 | Termination message + timeout |
-| RuntimeClass | 2 | runtimeclass.go:153,184,317 | Handler + watch |
+| Runtime | 2 | runtime.go:158,169 | Termination message (**FIX COMMITTED**), timeout |
+| RuntimeClass | 3 | runtimeclass.go:153,184,317 | Handler + watch |
 | Table conversion | 1 | table_conversion.go:167 | **FIX COMMITTED** 406 |
-| Service account | 2 | service_accounts.go:132,667 | Token + Pod Failed |
+| Service account | 3 | service_accounts.go:132,667,792 | Token/pod |
 | DaemonSet | 2 | daemon_set.go:332,980 | Timing |
 | Aggregator | 1 | aggregator.go:359 | Sample API server |
 | Expansion | 2 | expansion.go:419 (×2) | subPathExpr |
 | Downward API | 2 | downwardapi_volume.go:140,171 | **FIX COMMITTED** labels |
 | Limit range | 1 | limit_range.go:162 | **FIX COMMITTED** |
-| PreStop | 1 | pre_stop.go:153 | Lifecycle hook timeout |
-| Lifecycle | 1 | lifecycle_hook.go:132 | Hook execution |
+| Sysctl | 1 | sysctl.go:99 | **FIX COMMITTED** |
+| PreStop | 1 | pre_stop.go:153 | Lifecycle hook |
+| Lifecycle | 1 | lifecycle_hook.go:132 | Watch failures |
