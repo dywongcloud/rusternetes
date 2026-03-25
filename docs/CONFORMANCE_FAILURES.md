@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 93**: ~1 PASS, 125+ FAIL (running) | **160 fixes** | pre-deploy run, 35 fixes pending
+**Round 93**: ~1 PASS, 125+ FAIL (running) | **161 fixes** | pre-deploy run, 36 fixes pending
 
 ## Fixes pending deploy (34)
 
@@ -41,12 +41,13 @@
 | 33 | NodeInfo populated in heartbeat | 1+ tests |
 | 34 | OpenAPI 406 for protobuf-only requests | 3 tests |
 | 35 | Deployment revision sync in status updates | 1 test |
+| 36 | **CRITICAL**: Kubelet don't set Failed on transient sync errors | 10+ tests (webhook, timeouts) |
 
 ## Open failures by category
 
 | Category | Count | Tests | Status |
 |----------|-------|-------|--------|
-| Webhook | 10+ | webhook.go:520,675,837,904,1244,1334,1631,2338,2465 | **Root cause found**: containers DO start and run. Kubelet starts pod and sets Running status, but deployment still shows ReadyReplicas=0. Investigation shows no kubelet errors — the pod status update may silently fail or the kubelet sync loop may not revisit. NOT a Docker limitation. Need to debug kubelet sync loop pod status persistence after deploy. |
+| Webhook | 10+ | webhook.go:520,675,837,904,1244,1334,1631,2338,2465 | **ROOT CAUSE FIXED**: kubelet set pods to Failed on transient storage concurrency errors during status update. Containers started fine but status write conflicted → error handler set Failed → unrecoverable. Fix #161 makes status update non-fatal and only sets Failed for container creation/image pull errors. |
 | Watch/stream | 10+ | statefulset.go:786,878, watch.go:409 (×3), runtimeclass.go:317 | **FIX COMMITTED** etcd watch_from_revision |
 | Scheduling | 4 | predicates.go:1102 (×2), preemption.go:516,949 | Preemption/resource-fit |
 | Networking | 6+ | networking.go:72,113, util.go:182 (×2), pods.go:556, proxy.go:503 | Pod-to-pod |
