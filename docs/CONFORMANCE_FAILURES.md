@@ -1,12 +1,13 @@
 # Conformance Issue Tracker
 
-**Round 97**: 39 FAIL, 0 PASS | **178 fixes** (12 pending deploy)
+**178 fixes** | 12 pending deploy | Build clean, all unit tests pass
 
-## Critical pending deploy fixes
+## Pending deploy fixes (since round 97)
+
 | # | Fix | Impact |
 |---|-----|--------|
 | 169 | generation=1, ClusterIP, SA token, PodScheduled | 5+ tests |
-| 170 | resourceVersion in watch event values | 12+ tests |
+| 170 | **CRITICAL** resourceVersion in watch events | 12+ tests |
 | 171 | Endpoints single subset | 1 test |
 | 172 | Ensure metadata for resourceVersion | 1 test |
 | 173 | Remove duplicate SA token route (panic) | startup |
@@ -16,34 +17,18 @@
 | 177 | Aggregated discovery responseKind.group empty | 1 test |
 | 178 | In-place pod resize via Docker update_container | 1 test |
 
-## Round 97 failures — fix status
+## Remaining issues needing post-deploy investigation
 
-### Fixed by pending deploys
-- statefulset.go (watch timeout) — #170, #174
-- rc.go (3 tests: timeout, replicas) — #170, #174, #176
-- job.go (3 tests: completion timeout) — #170, #174
-- deployment.go:238 (timeout) — #170, #174
-- watch.go:454 (ADDED event) — #170, #174
-- proxy.go:271,:503 (timeout) — #170, #174
-- controller_revision.go:156 — #176 (DaemonSet CR)
-- service.go:1483 (NodePort/ClusterIP) — #169
-- configmap_volume.go:547 (immutable) — #175
-- garbage_collector.go:436 (orphan) — #176
-- core_events.go:135 (timestamp) — already fixed, old deploy
-- service_accounts.go:132,:792 — need further investigation
-- kubectl.go:1130 (dry-run) — #169
-
-### Not yet fixed
-- crd_publish_openapi.go:244,:285 — protobuf (always failing)
-- builder.go:97 (×2) — protobuf
-- webhook.go:837,:1194,:1244 — webhook readiness
-- aggregated_discovery.go:282 — resource format
-- service.go:251 — affinity
-- runtimeclass.go:153,:297 — watch + list length
-- output.go:263 — subpath
-- runtime.go:169 — termination message
-- pod_resize.go:857 — resize (not implemented)
-- validatingadmissionpolicy.go:568 — VAP
-- resource_quota.go:102,:209 — quota
-- kubectl.go:1881 — proxy
-- service_cidrs.go:255 — IPAddress
+| Test | Error | Notes |
+|------|-------|-------|
+| output.go:263,:282 | CPU downward API value wrong | Need to check if pod spec resources are preserved through create pipeline |
+| runtime.go:169 | Termination message empty | Docker cp from stopped container may fail; fix #153 deployed |
+| webhook.go:837 | matchConditions not validated | Needs CEL expression type checker (no cel crate available) |
+| webhook.go:1194,:1244 | webhook not ready | Kubelet sync timing; fix #161 deployed |
+| service.go:251 | Affinity didn't hold | iptables recent module deployed; need to verify |
+| runtimeclass.go:153,:297 | timeout + list length | Watch timing + etcd consistency |
+| resource_quota.go:102,:209 | quota timeout | Controller interval timing |
+| service_cidrs.go:255 | IPAddress error | IPv6 address routing |
+| kubectl.go:1881 | proxy unreachable | Networking/kube-proxy |
+| validatingadmissionpolicy.go:568 | watch ERROR events | Should be fixed by #170 + #174 |
+| Protobuf CRDs (4 tests) | native protobuf encoding | K8s CRD client hardcodes protobuf |
