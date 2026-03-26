@@ -3278,22 +3278,21 @@ impl ContainerRuntime {
                     let running = state.running.unwrap_or(false);
                     let exit_code = state.exit_code.unwrap_or(0);
 
-                    // Get restart count from Docker/Podman container inspect
-                    // (tracks actual container restarts), falling back to pod status
-                    let restart_count = inspect.restart_count
-                        .map(|c| c as u32)
-                        .or_else(|| {
-                            pod.status
-                                .as_ref()
-                                .and_then(|s| s.container_statuses.as_ref())
-                                .and_then(|statuses| {
-                                    statuses
-                                        .iter()
-                                        .find(|cs| cs.name == container.name)
-                                        .map(|cs| cs.restart_count)
-                                })
+                    // Get restart count: use the MAX of Docker's count and the
+                    // previously reported count. Docker's count resets when a
+                    // container is recreated, so we must never decrease.
+                    let docker_count = inspect.restart_count.map(|c| c as u32).unwrap_or(0);
+                    let prev_count = pod.status
+                        .as_ref()
+                        .and_then(|s| s.container_statuses.as_ref())
+                        .and_then(|statuses| {
+                            statuses
+                                .iter()
+                                .find(|cs| cs.name == container.name)
+                                .map(|cs| cs.restart_count)
                         })
                         .unwrap_or(0);
+                    let restart_count = docker_count.max(prev_count);
 
                     let container_state = if running {
                         Some(ContainerState::Running {
