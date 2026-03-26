@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**187 fixes** | 21 pending deploy | Build clean, all unit tests pass
+**188 fixes** | 22 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -25,6 +25,7 @@
 | 185 | ServiceCIDR + IPAddress watch handlers + routes | 1 test |
 | 186 | CPU/memory downward API: ceiling division (not floor) | 2 tests |
 | 187 | CRD status: Established + NamesAccepted conditions on create | 4 tests |
+| 188 | Add 23 missing watch handlers + routes (CRD, webhooks, VAP, PDB, RBAC, storage, etc.) | many tests |
 
 ## Remaining issues needing post-deploy investigation
 

@@ -1005,7 +1005,24 @@ impl_has_metadata!(
     rusternetes_common::resources::ControllerRevision,
     rusternetes_common::resources::RuntimeClass,
     rusternetes_common::resources::ResourceQuota,
-    rusternetes_common::resources::ServiceCIDR
+    rusternetes_common::resources::ServiceCIDR,
+    rusternetes_common::resources::CustomResourceDefinition,
+    rusternetes_common::resources::ValidatingWebhookConfiguration,
+    rusternetes_common::resources::MutatingWebhookConfiguration,
+    rusternetes_common::resources::ValidatingAdmissionPolicy,
+    rusternetes_common::resources::ValidatingAdmissionPolicyBinding,
+    rusternetes_common::resources::LimitRange,
+    rusternetes_common::resources::ReplicationController,
+    rusternetes_common::resources::PriorityClass,
+    rusternetes_common::resources::StorageClass,
+    rusternetes_common::resources::HorizontalPodAutoscaler,
+    rusternetes_common::resources::ClusterRole,
+    rusternetes_common::resources::ClusterRoleBinding,
+    rusternetes_common::resources::Role,
+    rusternetes_common::resources::RoleBinding,
+    rusternetes_common::resources::CertificateSigningRequest,
+    rusternetes_common::resources::FlowSchema,
+    rusternetes_common::resources::PriorityLevelConfiguration
 );
 
 // Concrete handler functions for specific resources
@@ -1374,6 +1391,281 @@ pub async fn watch_ipaddresses(
         params,
     )
     .await
+}
+
+/// Watch customresourcedefinitions (cluster-scoped)
+pub async fn watch_crds(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::CustomResourceDefinition>(
+        state, auth_ctx, "customresourcedefinitions", "apiextensions.k8s.io", params,
+    ).await
+}
+
+/// Watch validatingwebhookconfigurations (cluster-scoped)
+pub async fn watch_validatingwebhookconfigurations(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::ValidatingWebhookConfiguration>(
+        state, auth_ctx, "validatingwebhookconfigurations", "admissionregistration.k8s.io", params,
+    ).await
+}
+
+/// Watch mutatingwebhookconfigurations (cluster-scoped)
+pub async fn watch_mutatingwebhookconfigurations(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::MutatingWebhookConfiguration>(
+        state, auth_ctx, "mutatingwebhookconfigurations", "admissionregistration.k8s.io", params,
+    ).await
+}
+
+/// Watch validatingadmissionpolicies (cluster-scoped)
+pub async fn watch_validatingadmissionpolicies(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::ValidatingAdmissionPolicy>(
+        state, auth_ctx, "validatingadmissionpolicies", "admissionregistration.k8s.io", params,
+    ).await
+}
+
+/// Watch validatingadmissionpolicybindings (cluster-scoped)
+pub async fn watch_validatingadmissionpolicybindings(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::ValidatingAdmissionPolicyBinding>(
+        state, auth_ctx, "validatingadmissionpolicybindings", "admissionregistration.k8s.io", params,
+    ).await
+}
+
+/// Watch poddisruptionbudgets in a namespace
+pub async fn watch_poddisruptionbudgets(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_namespaced::<rusternetes_common::resources::PodDisruptionBudget>(
+        state, auth_ctx, namespace, "poddisruptionbudgets", "policy", params,
+    ).await
+}
+
+/// Watch poddisruptionbudgets across all namespaces
+pub async fn watch_poddisruptionbudgets_all(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::PodDisruptionBudget>(
+        state, auth_ctx, "poddisruptionbudgets", "policy", params,
+    ).await
+}
+
+/// Watch limitranges in a namespace
+pub async fn watch_limitranges(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_namespaced::<rusternetes_common::resources::LimitRange>(
+        state, auth_ctx, namespace, "limitranges", "", params,
+    ).await
+}
+
+/// Watch replicationcontrollers in a namespace
+pub async fn watch_replicationcontrollers(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_namespaced::<rusternetes_common::resources::ReplicationController>(
+        state, auth_ctx, namespace, "replicationcontrollers", "", params,
+    ).await
+}
+
+/// Watch priorityclasses (cluster-scoped)
+pub async fn watch_priorityclasses(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::PriorityClass>(
+        state, auth_ctx, "priorityclasses", "scheduling.k8s.io", params,
+    ).await
+}
+
+/// Watch storageclasses (cluster-scoped)
+pub async fn watch_storageclasses(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::StorageClass>(
+        state, auth_ctx, "storageclasses", "storage.k8s.io", params,
+    ).await
+}
+
+/// Watch horizontalpodautoscalers in a namespace
+pub async fn watch_horizontalpodautoscalers(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_namespaced::<rusternetes_common::resources::HorizontalPodAutoscaler>(
+        state, auth_ctx, namespace, "horizontalpodautoscalers", "autoscaling", params,
+    ).await
+}
+
+/// Watch clusterroles (cluster-scoped)
+pub async fn watch_clusterroles(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::ClusterRole>(
+        state, auth_ctx, "clusterroles", "rbac.authorization.k8s.io", params,
+    ).await
+}
+
+/// Watch clusterrolebindings (cluster-scoped)
+pub async fn watch_clusterrolebindings(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::ClusterRoleBinding>(
+        state, auth_ctx, "clusterrolebindings", "rbac.authorization.k8s.io", params,
+    ).await
+}
+
+/// Watch roles in a namespace
+pub async fn watch_roles(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_namespaced::<rusternetes_common::resources::Role>(
+        state, auth_ctx, namespace, "roles", "rbac.authorization.k8s.io", params,
+    ).await
+}
+
+/// Watch rolebindings in a namespace
+pub async fn watch_rolebindings(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_namespaced::<rusternetes_common::resources::RoleBinding>(
+        state, auth_ctx, namespace, "rolebindings", "rbac.authorization.k8s.io", params,
+    ).await
+}
+
+/// Watch leases in a namespace
+pub async fn watch_leases(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_namespaced::<rusternetes_common::resources::Lease>(
+        state, auth_ctx, namespace, "leases", "coordination.k8s.io", params,
+    ).await
+}
+
+/// Watch ingresses in a namespace
+pub async fn watch_ingresses(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_namespaced::<rusternetes_common::resources::Ingress>(
+        state, auth_ctx, namespace, "ingresses", "networking.k8s.io", params,
+    ).await
+}
+
+/// Watch networkpolicies in a namespace
+pub async fn watch_networkpolicies(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_namespaced::<rusternetes_common::resources::NetworkPolicy>(
+        state, auth_ctx, namespace, "networkpolicies", "networking.k8s.io", params,
+    ).await
+}
+
+/// Watch certificatesigningrequests (cluster-scoped)
+pub async fn watch_certificatesigningrequests(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::CertificateSigningRequest>(
+        state, auth_ctx, "certificatesigningrequests", "certificates.k8s.io", params,
+    ).await
+}
+
+/// Watch flowschemas (cluster-scoped)
+pub async fn watch_flowschemas(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::FlowSchema>(
+        state, auth_ctx, "flowschemas", "flowcontrol.apiserver.k8s.io", params,
+    ).await
+}
+
+/// Watch prioritylevelconfigurations (cluster-scoped)
+pub async fn watch_prioritylevelconfigurations(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::PriorityLevelConfiguration>(
+        state, auth_ctx, "prioritylevelconfigurations", "flowcontrol.apiserver.k8s.io", params,
+    ).await
+}
+
+/// Watch podtemplates in a namespace
+pub async fn watch_podtemplates(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_namespaced::<rusternetes_common::resources::PodTemplate>(
+        state, auth_ctx, namespace, "podtemplates", "", params,
+    ).await
+}
+
+/// Watch controllerrevisions in a namespace
+pub async fn watch_controllerrevisions(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_namespaced::<rusternetes_common::resources::ControllerRevision>(
+        state, auth_ctx, namespace, "controllerrevisions", "apps", params,
+    ).await
 }
 
 /// Helper to extract metadata fields from a serde_json::Value
