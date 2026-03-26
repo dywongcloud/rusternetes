@@ -87,6 +87,41 @@ impl<S: Storage> DaemonSetController<S> {
 
         info!("Reconciling DaemonSet {}/{}", namespace, name);
 
+        // Ensure a ControllerRevision exists for the current template
+        let template_hash = format!("{:x}", {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            format!("{:?}", daemonset.spec.template).hash(&mut hasher);
+            hasher.finish()
+        });
+        let cr_name = format!("{}-{}", name, &template_hash[..10]);
+        let cr = serde_json::json!({
+            "apiVersion": "apps/v1",
+            "kind": "ControllerRevision",
+            "metadata": {
+                "name": cr_name,
+                "namespace": namespace,
+                "labels": {
+                    "controller-revision-hash": template_hash,
+                    "controller.kubernetes.io/hash": template_hash,
+                },
+                "ownerReferences": [{
+                    "apiVersion": "apps/v1",
+                    "kind": "DaemonSet",
+                    "name": name,
+                    "uid": daemonset.metadata.uid,
+                    "controller": true,
+                    "blockOwnerDeletion": true
+                }]
+            },
+            "revision": 1,
+            "data": {}
+        });
+        let cr_key = rusternetes_storage::build_key("controllerrevisions", Some(namespace), &cr_name);
+        if self.storage.create(&cr_key, &cr).await.is_ok() {
+            info!("Created ControllerRevision {} for DaemonSet {}/{}", cr_name, namespace, name);
+        }
+
         // Get all nodes
         let nodes: Vec<Node> = self.storage.list("/registry/nodes/").await?;
 

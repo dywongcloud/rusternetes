@@ -59,6 +59,44 @@ impl<S: Storage> ReplicationControllerController<S> {
     async fn reconcile_rc(&self, rc: &ReplicationController) -> rusternetes_common::Result<()> {
         let namespace = rc.metadata.namespace.as_deref().unwrap_or("default");
 
+        // If RC is being deleted with Orphan policy, remove ownerReferences from pods
+        // and remove the orphan finalizer, then delete the RC.
+        if rc.metadata.deletion_timestamp.is_some() {
+            let has_orphan_finalizer = rc.metadata.finalizers.as_ref()
+                .map_or(false, |f| f.contains(&"orphan".to_string()));
+            if has_orphan_finalizer {
+                info!("RC {}/{} being deleted with orphan policy, removing ownerRefs from pods", namespace, rc.metadata.name);
+                // Remove ownerReferences from all owned pods
+                let pods_prefix = build_prefix("pods", Some(namespace));
+                let all_pods: Vec<Pod> = self.storage.list(&pods_prefix).await?;
+                for pod in &all_pods {
+                    let owned = pod.metadata.owner_references.as_ref()
+                        .map_or(false, |refs| refs.iter().any(|r| r.uid == rc.metadata.uid));
+                    if owned {
+                        let mut updated_pod = pod.clone();
+                        updated_pod.metadata.owner_references = updated_pod.metadata.owner_references
+                            .map(|refs| refs.into_iter().filter(|r| r.uid != rc.metadata.uid).collect());
+                        let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                        let _ = self.storage.update(&pod_key, &updated_pod).await;
+                    }
+                }
+                // Remove orphan finalizer and delete the RC
+                let mut updated_rc = rc.clone();
+                if let Some(ref mut finalizers) = updated_rc.metadata.finalizers {
+                    finalizers.retain(|f| f != "orphan");
+                }
+                let rc_key = build_key("replicationcontrollers", Some(namespace), &rc.metadata.name);
+                if updated_rc.metadata.finalizers.as_ref().map_or(true, |f| f.is_empty()) {
+                    let _ = self.storage.delete(&rc_key).await;
+                } else {
+                    let _ = self.storage.update(&rc_key, &updated_rc).await;
+                }
+                return Ok(());
+            }
+            // If being deleted without orphan, skip reconciliation (let it terminate)
+            return Ok(());
+        }
+
         debug!(
             "Reconciling replicationcontroller: {}/{}",
             namespace, rc.metadata.name
