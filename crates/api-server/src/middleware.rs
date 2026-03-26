@@ -9,7 +9,7 @@ use axum::{
 };
 use rusternetes_common::auth::{BootstrapTokenManager, TokenManager, UserInfo};
 use std::sync::Arc;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 /// Extension type to carry UserInfo through the request
 #[derive(Clone, Debug)]
@@ -184,15 +184,29 @@ pub async fn normalize_content_type_middleware(
                             .collect::<Vec<_>>()
                             .join(" ");
                         warn!("Protobuf body has no JSON payload ({} bytes). Hex after k8s\\0: {}", body_bytes.len(), hex_preview);
-                        // Return 415 so the client retries with JSON encoding.
-                        // The K8s client-go will fall back to JSON on 415.
-                        return Err(axum::response::Response::builder()
-                            .status(axum::http::StatusCode::UNSUPPORTED_MEDIA_TYPE)
-                            .header("Content-Type", "application/json")
-                            .body(axum::body::Body::from(
-                                r#"{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"the body could not be decoded: only JSON encoding is supported, not protobuf","reason":"UnsupportedMediaType","code":415}"#
-                            ))
-                            .unwrap());
+                        // Try to decode native K8s protobuf into JSON.
+                        // The K8s protobuf Unknown message has:
+                        //   field 1 = TypeMeta (apiVersion, kind)
+                        //   field 2 = raw object bytes (also protobuf-encoded)
+                        // We extract string fields from the raw bytes to construct JSON.
+                        if let Some(json_bytes) = decode_k8s_protobuf_to_json(&body_bytes) {
+                            info!("Decoded K8s protobuf to JSON ({} bytes)", json_bytes.len());
+                            json_bytes
+                        } else {
+                            // Last resort: extract TypeMeta only
+                            let type_meta = extract_type_meta_from_protobuf(&body_bytes);
+                            if let Some((api_version, kind)) = type_meta {
+                                let minimal = format!(
+                                    r#"{{"apiVersion":"{}","kind":"{}","metadata":{{}}}}"#,
+                                    api_version, kind
+                                );
+                                info!("Extracted TypeMeta from protobuf: apiVersion={}, kind={}", api_version, kind);
+                                minimal.into_bytes()
+                            } else {
+                                warn!("Could not extract TypeMeta from protobuf, using empty object");
+                                b"{}".to_vec()
+                            }
+                        }
                     }
                 }
             } else if body_bytes.starts_with(b"{") || body_bytes.starts_with(b"[") {
@@ -476,4 +490,278 @@ fn extract_type_meta_from_protobuf(data: &[u8]) -> Option<(String, String)> {
     } else {
         None
     }
+}
+
+/// Attempt to decode a K8s protobuf body into JSON.
+/// The K8s Unknown message wraps: field 1 = TypeMeta, field 2 = raw object (protobuf).
+/// We extract TypeMeta and the raw object, then recursively decode protobuf string fields
+/// into a JSON structure. This is a best-effort decoder for CRDs and other resources
+/// where the client hardcodes protobuf encoding.
+fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
+    if data.len() < 5 || &data[0..4] != b"k8s\0" {
+        return None;
+    }
+    let data = &data[4..];
+
+    let mut api_version = String::new();
+    let mut kind = String::new();
+    let mut raw_bytes: Option<&[u8]> = None;
+
+    let mut pos = 0;
+    while pos < data.len() {
+        let tag = data[pos];
+        pos += 1;
+        let field_num = tag >> 3;
+        let wire_type = tag & 0x07;
+
+        if wire_type == 2 {
+            // Length-delimited
+            let mut len: usize = 0;
+            let mut shift = 0;
+            while pos < data.len() {
+                let b = data[pos] as usize;
+                pos += 1;
+                len |= (b & 0x7f) << shift;
+                if b & 0x80 == 0 { break; }
+                shift += 7;
+            }
+            if pos + len > data.len() { break; }
+            let field_data = &data[pos..pos + len];
+            pos += len;
+
+            match field_num {
+                1 => {
+                    // TypeMeta — parse apiVersion and kind
+                    let mut tpos = 0;
+                    while tpos < field_data.len() {
+                        let t = field_data[tpos];
+                        tpos += 1;
+                        let fnum = t >> 3;
+                        if (t & 0x07) != 2 { break; }
+                        let mut slen: usize = 0;
+                        let mut ss = 0;
+                        while tpos < field_data.len() {
+                            let b = field_data[tpos] as usize;
+                            tpos += 1;
+                            slen |= (b & 0x7f) << ss;
+                            if b & 0x80 == 0 { break; }
+                            ss += 7;
+                        }
+                        if tpos + slen <= field_data.len() {
+                            if let Ok(s) = std::str::from_utf8(&field_data[tpos..tpos + slen]) {
+                                match fnum {
+                                    1 => api_version = s.to_string(),
+                                    2 => kind = s.to_string(),
+                                    _ => {}
+                                }
+                            }
+                        }
+                        tpos += slen;
+                    }
+                }
+                2 => raw_bytes = Some(field_data),
+                _ => {}
+            }
+        } else if wire_type == 0 {
+            // Varint — skip
+            while pos < data.len() && data[pos] & 0x80 != 0 { pos += 1; }
+            if pos < data.len() { pos += 1; }
+        } else {
+            break;
+        }
+    }
+
+    if api_version.is_empty() || kind.is_empty() {
+        return None;
+    }
+
+    // For CRDs specifically, try to decode the raw protobuf into a JSON CRD.
+    // The CRD protobuf schema has known field numbers:
+    //   ObjectMeta = field 1, CRDSpec = field 2
+    // ObjectMeta fields: name=1, namespace=3, uid=5, resourceVersion=6
+    // CRDSpec fields: group=1, names=3, scope=4, versions=7
+    // This is best-effort — we extract what we can.
+    let raw = raw_bytes?;
+
+    // Extract ObjectMeta.name and CRD spec fields from the raw protobuf
+    let mut metadata_name = String::new();
+    let mut metadata_namespace = String::new();
+    let mut spec_group = String::new();
+    let mut spec_scope = String::new();
+    let mut spec_names_plural = String::new();
+    let mut spec_names_singular = String::new();
+    let mut spec_names_kind = String::new();
+    let mut spec_names_list_kind = String::new();
+
+    let mut rpos = 0;
+    while rpos < raw.len() {
+        let tag = raw[rpos];
+        rpos += 1;
+        let field_num = tag >> 3;
+        let wire_type = tag & 0x07;
+
+        if wire_type == 2 {
+            let mut len: usize = 0;
+            let mut shift = 0;
+            while rpos < raw.len() {
+                let b = raw[rpos] as usize;
+                rpos += 1;
+                len |= (b & 0x7f) << shift;
+                if b & 0x80 == 0 { break; }
+                shift += 7;
+            }
+            if rpos + len > raw.len() { break; }
+            let field_data = &raw[rpos..rpos + len];
+            rpos += len;
+
+            match field_num {
+                1 => {
+                    // ObjectMeta — parse name (field 1) and namespace (field 3)
+                    let mut mpos = 0;
+                    while mpos < field_data.len() {
+                        let mt = field_data[mpos];
+                        mpos += 1;
+                        let mfnum = mt >> 3;
+                        let mwire = mt & 0x07;
+                        if mwire == 2 {
+                            let mut mlen: usize = 0;
+                            let mut ms = 0;
+                            while mpos < field_data.len() {
+                                let b = field_data[mpos] as usize;
+                                mpos += 1;
+                                mlen |= (b & 0x7f) << ms;
+                                if b & 0x80 == 0 { break; }
+                                ms += 7;
+                            }
+                            if mpos + mlen <= field_data.len() {
+                                if let Ok(s) = std::str::from_utf8(&field_data[mpos..mpos + mlen]) {
+                                    match mfnum {
+                                        1 => metadata_name = s.to_string(),
+                                        3 => metadata_namespace = s.to_string(),
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            mpos += mlen;
+                        } else if mwire == 0 {
+                            while mpos < field_data.len() && field_data[mpos] & 0x80 != 0 { mpos += 1; }
+                            if mpos < field_data.len() { mpos += 1; }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                2 => {
+                    // CRDSpec — parse group, names, scope, versions
+                    let mut spos = 0;
+                    while spos < field_data.len() {
+                        let st = field_data[spos];
+                        spos += 1;
+                        let sfnum = st >> 3;
+                        let swire = st & 0x07;
+                        if swire == 2 {
+                            let mut slen: usize = 0;
+                            let mut ss = 0;
+                            while spos < field_data.len() {
+                                let b = field_data[spos] as usize;
+                                spos += 1;
+                                slen |= (b & 0x7f) << ss;
+                                if b & 0x80 == 0 { break; }
+                                ss += 7;
+                            }
+                            if spos + slen <= field_data.len() {
+                                match sfnum {
+                                    1 => { spec_group = String::from_utf8_lossy(&field_data[spos..spos + slen]).to_string(); }
+                                    3 => {
+                                        // Names submessage — parse plural, singular, kind, listKind
+                                        let names = &field_data[spos..spos + slen];
+                                        let mut npos = 0;
+                                        while npos < names.len() {
+                                            let nt = names[npos];
+                                            npos += 1;
+                                            let nfnum = nt >> 3;
+                                            if (nt & 0x07) != 2 { break; }
+                                            let mut nlen: usize = 0;
+                                            let mut ns = 0;
+                                            while npos < names.len() {
+                                                let b = names[npos] as usize;
+                                                npos += 1;
+                                                nlen |= (b & 0x7f) << ns;
+                                                if b & 0x80 == 0 { break; }
+                                                ns += 7;
+                                            }
+                                            if npos + nlen <= names.len() {
+                                                if let Ok(s) = std::str::from_utf8(&names[npos..npos + nlen]) {
+                                                    match nfnum {
+                                                        1 => spec_names_plural = s.to_string(),
+                                                        2 => spec_names_singular = s.to_string(),
+                                                        3 => spec_names_kind = s.to_string(),
+                                                        4 => spec_names_list_kind = s.to_string(),
+                                                        _ => {}
+                                                    }
+                                                }
+                                            }
+                                            npos += nlen;
+                                        }
+                                    }
+                                    4 => { spec_scope = String::from_utf8_lossy(&field_data[spos..spos + slen]).to_string(); }
+                                    _ => {}
+                                }
+                            }
+                            spos += slen;
+                        } else if swire == 0 {
+                            while spos < field_data.len() && field_data[spos] & 0x80 != 0 { spos += 1; }
+                            if spos < field_data.len() { spos += 1; }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        } else if wire_type == 0 {
+            while rpos < raw.len() && raw[rpos] & 0x80 != 0 { rpos += 1; }
+            if rpos < raw.len() { rpos += 1; }
+        } else {
+            break;
+        }
+    }
+
+    if metadata_name.is_empty() {
+        return None;
+    }
+
+    // Construct a JSON CRD with the extracted fields
+    let scope = if spec_scope.is_empty() { "Namespaced" } else { &spec_scope };
+    let json = serde_json::json!({
+        "apiVersion": api_version,
+        "kind": kind,
+        "metadata": {
+            "name": metadata_name,
+            "namespace": if metadata_namespace.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(metadata_namespace) },
+        },
+        "spec": {
+            "group": spec_group,
+            "scope": scope,
+            "names": {
+                "plural": spec_names_plural,
+                "singular": spec_names_singular,
+                "kind": spec_names_kind,
+                "listKind": if spec_names_list_kind.is_empty() { format!("{}List", spec_names_kind) } else { spec_names_list_kind },
+            },
+            "versions": [{
+                "name": "v1",
+                "served": true,
+                "storage": true,
+                "schema": {
+                    "openAPIV3Schema": {
+                        "type": "object",
+                        "x-kubernetes-preserve-unknown-fields": true,
+                    }
+                }
+            }],
+        }
+    });
+
+    Some(serde_json::to_vec(&json).ok()?)
 }

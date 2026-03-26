@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**198 fixes** | 32 pending deploy | Build clean, all unit tests pass
+**199 fixes** | 33 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -36,6 +36,7 @@
 | 196 | StatefulSet status: set availableReplicas = readyReplicas (was None) | 2 tests |
 | 197 | Add ?watch=true support to 21 list handlers across 12 files | many tests |
 | 198 | VAP: evaluate spec.variables before validations, add evaluate_to_value to CEL | 1+ tests |
+| 199 | Decode K8s native protobuf to JSON for CRD creation (replaces 415) | 2+ tests |
 
 ## Round 99 results (in progress)
 
