@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**202 fixes** | 36 pending deploy | Build clean, all unit tests pass
+**203 fixes** | 37 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -40,10 +40,11 @@
 | 200 | List resourceVersion: always set (fallback "1"), never "0" or empty | many tests |
 | 201 | RC controller: count ready replicas properly (not all pods) | 1 test |
 | 202 | PVC status subresource route (was missing) | 1 test |
+| 203 | StatefulSet: track currentRevision vs updateRevision separately during rolling updates | 1 test |
 
 ## Round 99 results (in progress)
 
-9 passed, 4 failed so far (13/441 done) — significant improvement over round 98 (14 fail at 25 tests)
+30 passed, 21 failed so far (51/441 done, 59% pass rate) — significant improvement over round 98
 
 ## Active failures (round 98)
 

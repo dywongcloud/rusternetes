@@ -230,20 +230,36 @@ impl<S: Storage> StatefulSetController<S> {
             })
             .count() as i32;
 
-        // Generate a revision hash from the pod template spec
-        let revision = Self::compute_revision(&statefulset.spec.template);
+        // Generate a revision hash from the current pod template spec
+        let update_revision = Self::compute_revision(&statefulset.spec.template);
+
+        // The current_revision is the revision that existing pods are running.
+        // During a rolling update, this differs from update_revision.
+        // Preserve the existing current_revision if set, otherwise use the update_revision.
+        let current_revision = statefulset.status
+            .as_ref()
+            .and_then(|s| s.current_revision.clone())
+            .unwrap_or_else(|| update_revision.clone());
+
+        // Count how many pods match the update revision (have the matching controller-revision-hash label)
+        let updated_count = statefulset_pods_after.iter().filter(|pod| {
+            pod.metadata.labels.as_ref()
+                .and_then(|l| l.get("controller-revision-hash"))
+                .map(|h| h == &update_revision)
+                .unwrap_or(false)
+        }).count() as i32;
 
         // Update status with accurate counts
         statefulset.status = Some(StatefulSetStatus {
             replicas: final_current_replicas.min(desired_replicas),
             ready_replicas: Some(final_ready_pods),
             current_replicas: Some(final_current_replicas),
-            updated_replicas: Some(final_current_replicas.min(desired_replicas)),
+            updated_replicas: Some(updated_count),
             available_replicas: Some(final_ready_pods),
             collision_count: None,
             observed_generation: statefulset.metadata.generation,
-            current_revision: Some(revision.clone()),
-            update_revision: Some(revision),
+            current_revision: Some(if updated_count >= desired_replicas { update_revision.clone() } else { current_revision }),
+            update_revision: Some(update_revision),
             conditions: None,
         });
 
