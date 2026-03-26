@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 94**: running | **162 fixes deployed** | resourceVersion mismatch fixed, kubelet sync fixed
+**Round 94**: running (slow) | **162 fixes deployed** | resourceVersion mismatch fixed, kubelet sync fixed, tests progressing
 
 ## Fixes pending deploy (34)
 
