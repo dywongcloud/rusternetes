@@ -1,6 +1,13 @@
 # Conformance Issue Tracker
 
-**Round 96**: 31 FAIL, 0 PASS (running) | **169 fixes** (166 deployed + 3 pending: generation, ClusterIP, SA token, PodScheduled, PDB, restart count)
+**Round 96**: 40 FAIL, 0 PASS (complete) | **170 fixes** pending deploy
+
+## CRITICAL FIX #170: Watch events missing resourceVersion
+
+Root cause of 0-pass regression identified and fixed. Watch events from etcd
+did NOT include metadata.resourceVersion in the JSON values. The watch cache
+fell back to chrono timestamps, creating mixed revision spaces. Now etcd's
+mod_revision is injected into every watch event value.
 
 ## ALL Round 96 Failures by Root Cause
 
