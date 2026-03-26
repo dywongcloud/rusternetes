@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 97**: 39 FAIL, 0 PASS | **176 fixes** (10 pending deploy)
+**Round 97**: 39 FAIL, 0 PASS | **177 fixes** (11 pending deploy)
 
 ## Critical pending deploy fixes
 | # | Fix | Impact |
@@ -13,6 +13,7 @@
 | 174 | **CRITICAL** List RV from items, not timestamps | ALL tests |
 | 175 | Immutable returns 403 Forbidden | 2 tests |
 | 176 | RC orphan handling + DaemonSet ControllerRevision | 2 tests |
+| 177 | Aggregated discovery responseKind.group empty | 1 test |
 
 ## Round 97 failures — fix status
 
