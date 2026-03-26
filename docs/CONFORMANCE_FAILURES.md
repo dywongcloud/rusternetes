@@ -1,6 +1,14 @@
 # Conformance Issue Tracker
 
-**Round 97**: 13 FAIL, 0 PASS (running) | **173 fixes** deployed
+**Round 97**: 13 FAIL, 0 PASS (running) | **174 fixes** (173 deployed + 1 CRITICAL pending)
+
+## CRITICAL FIX #174: List resourceVersion used timestamps
+
+List responses used SystemTime::now() as resourceVersion (e.g., 1774536472).
+Clients used this to start watches, but etcd uses mod_revisions (e.g., 2883027).
+This mismatch caused ALL watch-based operations to fail.
+
+Fix: List::new() now extracts max resourceVersion from items (real etcd RVs).
 
 ## Round 97 Failures
 
