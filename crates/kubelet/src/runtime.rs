@@ -1042,14 +1042,34 @@ impl ContainerRuntime {
                 if let Some(projected) = &volume.projected {
                     if let Some(sources) = &projected.sources {
                         let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+                        // Track expected files so we can delete stale ones
+                        let mut expected_files: std::collections::HashSet<String> = std::collections::HashSet::new();
+
                         for source in sources {
                             if let Some(cm_proj) = &source.config_map {
                                 if let Some(cm_name) = &cm_proj.name {
                                     let key = rusternetes_storage::build_key("configmaps", Some(namespace), cm_name);
                                     if let Ok(cm) = storage.get::<rusternetes_common::resources::ConfigMap>(&key).await {
-                                        if let Some(data) = &cm.data {
+                                        if let Some(items) = &cm_proj.items {
+                                            // Selective projection — only mount specified keys
+                                            for item in items {
+                                                let file_path = format!("{}/{}", volume_dir, item.path);
+                                                expected_files.insert(file_path.clone());
+                                                if let Some(value) = cm.data.as_ref().and_then(|d| d.get(&item.key)) {
+                                                    if let Ok(existing) = std::fs::read_to_string(&file_path) {
+                                                        if existing == *value { continue; }
+                                                    }
+                                                    if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                                                        let _ = std::fs::create_dir_all(parent);
+                                                    }
+                                                    let _ = std::fs::write(&file_path, value);
+                                                }
+                                            }
+                                        } else if let Some(data) = &cm.data {
+                                            // Mount all keys
                                             for (k, v) in data {
                                                 let file_path = format!("{}/{}", volume_dir, k);
+                                                expected_files.insert(file_path.clone());
                                                 if let Ok(existing) = std::fs::read_to_string(&file_path) {
                                                     if existing == *v { continue; }
                                                 }
@@ -1066,12 +1086,46 @@ impl ContainerRuntime {
                                         if let Some(data) = &secret.data {
                                             for (k, v) in data {
                                                 let file_path = format!("{}/{}", volume_dir, k);
+                                                expected_files.insert(file_path.clone());
                                                 if let Ok(existing) = std::fs::read(&file_path) {
                                                     if existing == *v { continue; }
                                                 }
                                                 let _ = std::fs::write(&file_path, v);
                                             }
                                         }
+                                    }
+                                }
+                            }
+                            // DownwardAPI projection resync
+                            if let Some(downward_api) = &source.downward_api {
+                                if let Some(items) = &downward_api.items {
+                                    for item in items {
+                                        let file_path = format!("{}/{}", volume_dir, item.path);
+                                        expected_files.insert(file_path.clone());
+                                        let value = if let Some(ref field_ref) = item.field_ref {
+                                            self.get_pod_field_value(pod, &field_ref.field_path).unwrap_or_default()
+                                        } else if let Some(ref resource_ref) = item.resource_field_ref {
+                                            self.get_container_resource_value(pod, resource_ref).unwrap_or_default()
+                                        } else {
+                                            String::new()
+                                        };
+                                        if let Ok(existing) = std::fs::read_to_string(&file_path) {
+                                            if existing == value { continue; }
+                                        }
+                                        let _ = std::fs::write(&file_path, &value);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Delete stale files that are no longer in any projection source
+                        if let Ok(entries) = std::fs::read_dir(&volume_dir) {
+                            for entry in entries.flatten() {
+                                let path = entry.path();
+                                if path.is_file() {
+                                    let path_str = path.to_string_lossy().to_string();
+                                    if !expected_files.contains(&path_str) {
+                                        let _ = std::fs::remove_file(&path);
                                     }
                                 }
                             }

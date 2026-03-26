@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**194 fixes** | 28 pending deploy | Build clean, all unit tests pass
+**195 fixes** | 29 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -32,6 +32,7 @@
 | 192 | ResourceQuota: count replicationcontrollers + resourcequotas | 1 test |
 | 193 | RuntimeClass list handler supports `?watch=true` query param | 1 test |
 | 194 | Lifecycle hook exec handler: 30s timeout (was infinite) | 1 test |
+| 195 | Projected volume resync: items field, downwardAPI, stale file deletion | 2 tests |
 
 ## Round 98 results (in progress)
 
@@ -48,8 +49,8 @@
 | runtimeclass.go:153 | timeout | **FIXED #193** — list handler now supports ?watch=true query param |
 | statefulset.go:786 | timed out scaling | StatefulSet controller timing/watch |
 | statefulset.go:2253 | timed out | StatefulSet readiness probe timing |
-| projected_configmap.go:367 | Error reading projected configmap file | Projected volume ConfigMap data not available after update |
-| projected_downwardapi.go:155 | timeout | Projected downward API volume issue |
+| projected_configmap.go:367 | Error reading projected configmap file | **FIXED #195** — resync respects items field, deletes stale files |
+| projected_downwardapi.go:155 | timeout | **FIXED #195** — resync now handles downwardAPI projections |
 | service.go:251 | affinity timeout | Session affinity iptables recent module |
 | lifecycle_hook.go:132 | Timed out after 30s | **FIXED #194** — exec handler had no timeout (blocked forever) |
 | **bookmark resourceVersion: 0** | Watch bookmarks sent with RV "0" | **FIXED #191** — initialize with current etcd revision, not "0". All 4 watch functions fixed. |
