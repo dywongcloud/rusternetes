@@ -152,10 +152,10 @@ pub async fn update(
 
     let key = build_key("secrets", Some(&namespace), &name);
 
-    // Check if existing secret is immutable
+    // Check if existing secret is immutable — K8s returns 403 Forbidden
     if let Ok(existing) = state.storage.get::<Secret>(&key).await {
         if existing.immutable == Some(true) {
-            return Err(rusternetes_common::Error::InvalidResource(format!(
+            return Err(rusternetes_common::Error::Forbidden(format!(
                 "Secret \"{}/{}\" is immutable", namespace, name
             )));
         }

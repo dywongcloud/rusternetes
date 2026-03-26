@@ -1,43 +1,53 @@
 # Conformance Issue Tracker
 
-**Round 97**: 13 FAIL, 0 PASS (running) | **174 fixes** (173 deployed + 1 CRITICAL pending)
+**Round 97**: 39 FAIL, 0 PASS | **174 fixes** (many NOT deployed in this round)
 
-## CRITICAL FIX #174: List resourceVersion used timestamps
+## ROOT CAUSE: List resourceVersion uses timestamps (fix #174)
 
 List responses used SystemTime::now() as resourceVersion (e.g., 1774536472).
-Clients used this to start watches, but etcd uses mod_revisions (e.g., 2883027).
-This mismatch caused ALL watch-based operations to fail.
+Watch events use etcd mod_revision (e.g., 2883027). When clients use the list
+RV to start a watch, the revision spaces don't match and watches fail.
 
-Fix: List::new() now extracts max resourceVersion from items (real etcd RVs).
+**Fix #174**: List::new() now extracts max RV from items' actual resourceVersions.
 
-## Round 97 Failures
+## Fixes NOT yet deployed (since round 97 build)
 
-| # | Test | Error | Root Cause | Fix Status |
-|---|------|-------|-----------|------------|
-| 1 | statefulset.go:786 | timed out | Watch timeout | Investigate |
-| 2 | statefulset.go:1092 | wrong image after patch | StatefulSet rolling update | Need fix |
-| 3 | job.go:755 | job completion timeout | Job controller timing | Investigate |
-| 4 | service.go:251 | affinity didn't hold | Session affinity | Deployed, not working |
-| 5 | webhook.go:837 | webhook denied | Webhook not expected to deny | Need fix |
-| 6 | service_accounts.go:132 | Expected failure | SA token/file content | Investigate |
-| 7 | service_accounts.go:792 | timeout | SA token timeout | Investigate |
-| 8 | proxy.go:503 | pod timeout | Pod start timeout | Watch/kubelet |
-| 9 | rc.go:442 | RC replicas timeout | Rate limiter exhausted | Watch/timing |
-| 10 | webhook.go:1194 | webhook not ready | Webhook pod readiness | Kubelet sync |
-| 11 | core_events.go:135 | datetime parse error | Event timestamp format mismatch | **NEED FIX** |
-| 12 | kubectl.go:1130 | kubectl create failure | Protobuf validation | Protobuf |
-| 13 | runtimeclass.go:153 | timeout | RuntimeClass handler | Investigate |
+| # | Fix | Impact |
+|---|-----|--------|
+| 169 | generation=1, ClusterIP alloc, SA token, PodScheduled | 5+ tests |
+| 170 | resourceVersion in watch event values | 12+ tests |
+| 171 | Endpoints single subset | 1 test |
+| 172 | Ensure metadata exists for resourceVersion | 1 test (DRA) |
+| 173 | Remove duplicate SA token route (panic fix) | startup crash |
+| 174 | **CRITICAL** List RV from items, not timestamps | ALL tests |
+| 175 | Immutable returns 403 Forbidden not 400 | 2 tests |
 
-## Key Issues to Fix NOW
+## Round 97 Failures (39 total)
 
-### 1. Event timestamp format (core_events.go:135)
-Error: `parsing time "2017-09-19T13:49:16Z" as "2006-01-02T15:04:05.000000Z07:00"`
-Go MicroTime parser expects microseconds. Our Event timestamps may not match.
+### Watch/timeout (15) — should be fixed by #170 + #174
+statefulset.go:786,:1092, rc.go:173,:442,:717, job.go:144,:623,:755,:1251,
+deployment.go:238, watch.go:454, proxy.go:271,:503, controller_revision.go:156,
+runtimeclass.go:153
 
-### 2. StatefulSet rolling update (statefulset.go:1092)
-Error: `statefulset not using ssPatchImage`
-StatefulSet controller not applying image updates during rolling update.
+### Protobuf/CRD (4) — known limitation
+crd_publish_openapi.go:244,:285, builder.go:97 (×2)
 
-### 3. Webhook deny (webhook.go:837)
-Error: `create validatingwebhookconfiguration should have been denied`
-Invalid webhook config accepted when it should be rejected.
+### Webhook/aggregator (3)
+webhook.go:837,:1194,:1244
+
+### Specific bugs with fixes pending
+- service.go:1483 — NodePort/ClusterIP alloc (**FIX #169**)
+- service.go:251 — affinity
+- service_accounts.go:132,:792 — SA token
+- core_events.go:135 — datetime format
+- output.go:263 — configmap subpath
+- runtime.go:169 — termination message
+- runtimeclass.go:297 — runtime class
+- configmap_volume.go:547 — immutable 403 (**FIX #175**)
+- aggregated_discovery.go:282 — API parse error
+- resource_quota.go:102,:209 — quota
+- garbage_collector.go:436 — 100 pods
+- kubectl.go:1130,:1881 — kubectl
+- service_cidrs.go:255 — IPAddress
+- pod_resize.go:857 — resize
+- validatingadmissionpolicy.go:568 — VAP
