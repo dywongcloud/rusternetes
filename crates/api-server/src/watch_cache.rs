@@ -44,11 +44,10 @@ pub struct WatchCache {
 
 impl WatchCache {
     pub fn new(storage: Arc<EtcdStorage>) -> Self {
-        let rev = chrono::Utc::now().timestamp();
         Self {
             watchers: RwLock::new(HashMap::new()),
             storage,
-            revision: RwLock::new(rev),
+            revision: RwLock::new(0), // Will be populated from etcd events
             history: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -89,23 +88,35 @@ impl WatchCache {
                     Ok(mut stream) => {
                         use futures::StreamExt;
                         while let Some(event_result) = stream.next().await {
+                            // Extract the resourceVersion from the event value's metadata.
+                            // This gives us the actual etcd mod_revision, NOT a timestamp.
+                            fn extract_rv(value: &str) -> i64 {
+                                serde_json::from_str::<serde_json::Value>(value).ok()
+                                    .and_then(|v| v.get("metadata")?.get("resourceVersion")?.as_str().map(String::from))
+                                    .and_then(|rv| rv.parse::<i64>().ok())
+                                    .unwrap_or_else(|| chrono::Utc::now().timestamp())
+                            }
+
                             let cached = match event_result {
                                 Ok(WatchEvent::Added(key, value)) => {
+                                    let rev = extract_rv(&value);
                                     CachedWatchEvent {
                                         event: WatchEventData::Added(key, value),
-                                        revision: chrono::Utc::now().timestamp(),
+                                        revision: rev,
                                     }
                                 }
                                 Ok(WatchEvent::Modified(key, value)) => {
+                                    let rev = extract_rv(&value);
                                     CachedWatchEvent {
                                         event: WatchEventData::Modified(key, value),
-                                        revision: chrono::Utc::now().timestamp(),
+                                        revision: rev,
                                     }
                                 }
                                 Ok(WatchEvent::Deleted(key, prev_value)) => {
+                                    let rev = extract_rv(&prev_value);
                                     CachedWatchEvent {
                                         event: WatchEventData::Deleted(key, prev_value),
-                                        revision: chrono::Utc::now().timestamp(),
+                                        revision: rev,
                                     }
                                 }
                                 Err(_) => {

@@ -192,7 +192,7 @@ where
     tokio::spawn(async move {
         // Track the latest resourceVersion for bookmarks
         let mut latest_resource_version: Option<String> = Some(
-            chrono::Utc::now().timestamp().to_string(),
+            "0".to_string(),
         );
 
         // Send initial state as ADDED events (only when appropriate)
@@ -543,7 +543,7 @@ where
     tokio::spawn(async move {
         // Track the latest resourceVersion for bookmarks
         let mut latest_resource_version: Option<String> = Some(
-            chrono::Utc::now().timestamp().to_string(),
+            "0".to_string(),
         );
 
         // Send initial state as ADDED events (only when appropriate)
@@ -1327,7 +1327,7 @@ pub async fn watch_cluster_scoped_json(
 
     tokio::spawn(async move {
         let mut latest_resource_version: Option<String> = Some(
-            chrono::Utc::now().timestamp().to_string(),
+            "0".to_string(),
         );
 
         if should_send_initial {
@@ -1501,7 +1501,7 @@ pub async fn watch_namespaced_json(
 
     tokio::spawn(async move {
         let mut latest_resource_version: Option<String> = Some(
-            chrono::Utc::now().timestamp().to_string(),
+            "0".to_string(),
         );
 
         if should_send_initial {
