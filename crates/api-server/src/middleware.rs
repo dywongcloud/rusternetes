@@ -175,15 +175,24 @@ pub async fn normalize_content_type_middleware(
                     if let Some(json) = found_json {
                         json
                     } else {
-                        // No JSON found — return 415 so client retries with JSON
-                        warn!("Protobuf body has no JSON payload ({} bytes), returning 415", body_bytes.len());
-                        return Err(axum::response::Response::builder()
-                            .status(axum::http::StatusCode::UNSUPPORTED_MEDIA_TYPE)
-                            .header(axum::http::header::CONTENT_TYPE, "application/json")
-                            .body(axum::body::Body::from(
-                                r#"{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"the body content type is not supported: application/vnd.kubernetes.protobuf","reason":"UnsupportedMediaType","code":415}"#
-                            ))
-                            .unwrap());
+                        // No JSON found in protobuf body. Try to construct minimal JSON
+                        // from the TypeMeta fields embedded in the protobuf envelope.
+                        // The K8s Unknown message has field 1 = TypeMeta (apiVersion, kind).
+                        warn!("Protobuf body has no JSON payload ({} bytes), extracting TypeMeta", body_bytes.len());
+                        let type_meta = extract_type_meta_from_protobuf(&body_bytes);
+                        if let Some((api_version, kind)) = type_meta {
+                            // Construct minimal JSON with apiVersion and kind
+                            let minimal = format!(
+                                r#"{{"apiVersion":"{}","kind":"{}","metadata":{{}}}}"#,
+                                api_version, kind
+                            );
+                            tracing::info!("Extracted TypeMeta from protobuf: apiVersion={}, kind={}", api_version, kind);
+                            minimal.into_bytes()
+                        } else {
+                            // Last resort — empty object
+                            warn!("Could not extract TypeMeta from protobuf, using empty object");
+                            b"{}".to_vec()
+                        }
                     }
                 }
             } else if body_bytes.starts_with(b"{") || body_bytes.starts_with(b"[") {
@@ -389,4 +398,74 @@ fn extract_json_from_k8s_protobuf(data: &[u8]) -> Option<Vec<u8>> {
         }
     }
     None
+}
+
+/// Extract TypeMeta (apiVersion, kind) from a K8s protobuf envelope.
+/// The Unknown message structure: field 1 = TypeMeta { field 1 = apiVersion, field 2 = kind }
+fn extract_type_meta_from_protobuf(data: &[u8]) -> Option<(String, String)> {
+    if data.len() < 5 || &data[0..4] != b"k8s\0" {
+        return None;
+    }
+    let data = &data[4..];
+
+    // Read field 1 (TypeMeta) — tag 0x0a, wire type 2
+    let mut pos = 0;
+    if pos >= data.len() || data[pos] != 0x0a { return None; }
+    pos += 1;
+
+    // Read length varint
+    let mut type_meta_len: usize = 0;
+    let mut shift = 0;
+    while pos < data.len() {
+        let b = data[pos] as usize;
+        pos += 1;
+        type_meta_len |= (b & 0x7f) << shift;
+        if b & 0x80 == 0 { break; }
+        shift += 7;
+    }
+
+    if pos + type_meta_len > data.len() { return None; }
+    let type_meta = &data[pos..pos + type_meta_len];
+
+    // Parse TypeMeta: field 1 = apiVersion, field 2 = kind
+    let mut api_version = String::new();
+    let mut kind = String::new();
+    let mut tpos = 0;
+    while tpos < type_meta.len() {
+        let tag = type_meta[tpos];
+        tpos += 1;
+        let field_num = tag >> 3;
+        let wire_type = tag & 0x07;
+
+        if wire_type == 2 {
+            // Length-delimited string
+            let mut slen: usize = 0;
+            let mut sshift = 0;
+            while tpos < type_meta.len() {
+                let b = type_meta[tpos] as usize;
+                tpos += 1;
+                slen |= (b & 0x7f) << sshift;
+                if b & 0x80 == 0 { break; }
+                sshift += 7;
+            }
+            if tpos + slen <= type_meta.len() {
+                if let Ok(s) = std::str::from_utf8(&type_meta[tpos..tpos + slen]) {
+                    match field_num {
+                        1 => api_version = s.to_string(),
+                        2 => kind = s.to_string(),
+                        _ => {}
+                    }
+                }
+            }
+            tpos += slen;
+        } else {
+            break; // Unknown wire type, stop
+        }
+    }
+
+    if !api_version.is_empty() && !kind.is_empty() {
+        Some((api_version, kind))
+    } else {
+        None
+    }
 }
