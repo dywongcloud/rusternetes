@@ -4077,10 +4077,11 @@ impl ContainerRuntime {
                 .await
                 .context("Failed to start exec for lifecycle handler")?;
 
-            // Drain output
+            // Drain output with a timeout to prevent indefinite hangs
             match start_result {
                 StartExecResults::Attached { mut output, .. } => {
-                    while let Some(_) = output.next().await {}
+                    let drain = async { while let Some(_) = output.next().await {} };
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(30), drain).await;
                 }
                 StartExecResults::Detached => {}
             }

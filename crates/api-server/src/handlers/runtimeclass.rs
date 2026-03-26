@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -187,7 +188,29 @@ pub async fn delete_runtimeclass(
 pub async fn list_runtimeclasses(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<List<RuntimeClass>>> {
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<axum::response::Response> {
+    // Check if this is a watch request
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
+        info!("Watching RuntimeClasses");
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_cluster_scoped::<RuntimeClass>(
+            state, auth_ctx, "runtimeclasses", "node.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing RuntimeClasses");
 
     // Check authorization
@@ -202,10 +225,13 @@ pub async fn list_runtimeclasses(
     }
 
     let prefix = build_prefix("runtimeclasses", None);
-    let runtime_classes = state.storage.list(&prefix).await?;
+    let mut runtime_classes: Vec<RuntimeClass> = state.storage.list(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut runtime_classes, &params)?;
 
     let list = List::new("RuntimeClassList", "node.k8s.io/v1", runtime_classes);
-    Ok(Json(list))
+    Ok(axum::Json(list).into_response())
 }
 
 // Use the macro to create a PATCH handler for cluster-scoped RuntimeClass
