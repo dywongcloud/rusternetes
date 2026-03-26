@@ -351,14 +351,10 @@ pub struct ListMeta {
 impl Default for ListMeta {
     fn default() -> Self {
         Self {
-            // Always include a resourceVersion so clients can use it for watches.
-            // Using current timestamp as a simple version identifier.
-            resource_version: Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs().to_string())
-                    .unwrap_or_else(|_| "1".to_string()),
-            ),
+            // Use "0" as default. Handlers should call with_resource_version()
+            // to set the actual value from storage. DO NOT use timestamps here
+            // as they create revision space mismatches with etcd mod_revisions.
+            resource_version: Some("0".to_string()),
             continue_token: None,
             remaining_item_count: None,
         }
@@ -383,13 +379,42 @@ pub struct List<T> {
 }
 
 impl<T> List<T> {
-    /// Create a new List with the specified kind and API version
-    pub fn new(kind: impl Into<String>, api_version: impl Into<String>, items: Vec<T>) -> Self {
-        Self {
+    /// Create a new List with the specified kind and API version.
+    /// Automatically sets resourceVersion from the highest item's resourceVersion.
+    pub fn new(kind: impl Into<String>, api_version: impl Into<String>, items: Vec<T>) -> Self
+    where
+        T: serde::Serialize,
+    {
+        let mut list = Self {
             kind: kind.into(),
             api_version: api_version.into(),
             metadata: ListMeta::default(),
             items,
+        };
+        list.set_resource_version_from_items();
+        list
+    }
+
+    /// Set the list's resourceVersion from the highest item resourceVersion.
+    /// This ensures clients get a valid revision for subsequent watches.
+    pub fn set_resource_version_from_items(&mut self)
+    where
+        T: serde::Serialize,
+    {
+        let mut max_rv: i64 = 0;
+        for item in &self.items {
+            if let Ok(v) = serde_json::to_value(item) {
+                if let Some(rv_str) = v.get("metadata").and_then(|m| m.get("resourceVersion")).and_then(|r| r.as_str()) {
+                    if let Ok(rv) = rv_str.parse::<i64>() {
+                        if rv > max_rv {
+                            max_rv = rv;
+                        }
+                    }
+                }
+            }
+        }
+        if max_rv > 0 {
+            self.metadata.resource_version = Some(max_rv.to_string());
         }
     }
 
