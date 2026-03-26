@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 93**: ~1 PASS, 125+ FAIL (running) | **161 fixes** | pre-deploy run, 36 fixes pending
+**Round 94**: running | **162 fixes deployed** | resourceVersion mismatch fixed, kubelet sync fixed
 
 ## Fixes pending deploy (34)
 
