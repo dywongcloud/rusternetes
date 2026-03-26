@@ -235,29 +235,13 @@ impl<S: Storage> EndpointsController<S> {
             })
             .collect();
 
-        // Create separate subsets for ready and not-ready addresses.
-        // Kubernetes separates these so clients can distinguish ready endpoints.
+        // Kubernetes puts ready and not-ready addresses in ONE subset
         let mut subsets = Vec::new();
-        if !ready_addresses.is_empty() {
+        if !ready_addresses.is_empty() || !not_ready_addresses.is_empty() {
             subsets.push(EndpointSubset {
-                addresses: Some(ready_addresses),
-                not_ready_addresses: None,
-                ports: if endpoint_ports.is_empty() {
-                    None
-                } else {
-                    Some(endpoint_ports.clone())
-                },
-            });
-        }
-        if !not_ready_addresses.is_empty() {
-            subsets.push(EndpointSubset {
-                addresses: None,
-                not_ready_addresses: Some(not_ready_addresses),
-                ports: if endpoint_ports.is_empty() {
-                    None
-                } else {
-                    Some(endpoint_ports)
-                },
+                addresses: if ready_addresses.is_empty() { None } else { Some(ready_addresses) },
+                not_ready_addresses: if not_ready_addresses.is_empty() { None } else { Some(not_ready_addresses) },
+                ports: if endpoint_ports.is_empty() { None } else { Some(endpoint_ports) },
             });
         }
         subsets
