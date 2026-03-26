@@ -239,7 +239,7 @@ impl<S: Storage> StatefulSetController<S> {
             ready_replicas: Some(final_ready_pods),
             current_replicas: Some(final_current_replicas),
             updated_replicas: Some(final_current_replicas.min(desired_replicas)),
-            available_replicas: None,
+            available_replicas: Some(final_ready_pods),
             collision_count: None,
             observed_generation: statefulset.metadata.generation,
             current_revision: Some(revision.clone()),
