@@ -190,10 +190,10 @@ where
 
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
-        // Track the latest resourceVersion for bookmarks
-        let mut latest_resource_version: Option<String> = Some(
-            "0".to_string(),
-        );
+        // Track the latest resourceVersion for bookmarks.
+        // Start as None — will be set from initial resources or watch events.
+        // Sending bookmarks with resourceVersion "0" confuses clients.
+        let mut latest_resource_version: Option<String> = None;
 
         // Send initial state as ADDED events (only when appropriate)
         if should_send_initial {
@@ -541,10 +541,10 @@ where
 
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
-        // Track the latest resourceVersion for bookmarks
-        let mut latest_resource_version: Option<String> = Some(
-            "0".to_string(),
-        );
+        // Track the latest resourceVersion for bookmarks.
+        // Start as None — will be set from initial resources or watch events.
+        // Sending bookmarks with resourceVersion "0" confuses clients.
+        let mut latest_resource_version: Option<String> = None;
 
         // Send initial state as ADDED events (only when appropriate)
         if should_send_initial {
