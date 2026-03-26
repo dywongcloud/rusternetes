@@ -191,9 +191,10 @@ where
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
         // Track the latest resourceVersion for bookmarks.
-        // Start as None — will be set from initial resources or watch events.
-        // Sending bookmarks with resourceVersion "0" confuses clients.
-        let mut latest_resource_version: Option<String> = None;
+        // Initialize to "0" as fallback — the initial-events-end bookmark MUST
+        // be sent even if no resources exist, otherwise the client hangs forever
+        // waiting for the "initial list complete" signal.
+        let mut latest_resource_version: Option<String> = Some("0".to_string());
 
         // Send initial state as ADDED events (only when appropriate)
         if should_send_initial {
@@ -227,29 +228,34 @@ where
         // annotation "k8s.io/initial-events-end": "true" — client-go checks for
         // this specific annotation to know initial sync is done.
         if send_initial_events {
-            if let Some(ref rv) = latest_resource_version {
-                let mut annotations = std::collections::HashMap::new();
-                annotations.insert(
-                    "k8s.io/initial-events-end".to_string(),
-                    "true".to_string(),
-                );
-                let bookmark = BookmarkObject {
-                    kind: Some(bookmark_kind.clone()),
-                    api_version: Some(bookmark_api_version.clone()),
-                    metadata: ObjectMeta {
-                        resource_version: Some(rv.clone()),
-                        annotations: Some(annotations),
-                        ..Default::default()
-                    },
-                };
-                let k8s_event = K8sWatchEvent {
-                    event_type: WatchEventType::Bookmark,
-                    object: bookmark,
-                };
-                if let Ok(json) = serde_json::to_string(&k8s_event) {
-                    let _ = tx.send(Ok(format!("{}\n", json)));
-                }
-                debug!("Sent initial-events-end bookmark with resourceVersion: {}", rv);
+            // MUST send initial-events-end bookmark — client hangs without it.
+            // Use latest resourceVersion from initial resources, or "0" as fallback.
+            let rv = latest_resource_version.clone().unwrap_or_else(|| "0".to_string());
+            let mut annotations = std::collections::HashMap::new();
+            annotations.insert(
+                "k8s.io/initial-events-end".to_string(),
+                "true".to_string(),
+            );
+            let bookmark = BookmarkObject {
+                kind: Some(bookmark_kind.clone()),
+                api_version: Some(bookmark_api_version.clone()),
+                metadata: ObjectMeta {
+                    resource_version: Some(rv.clone()),
+                    annotations: Some(annotations),
+                    ..Default::default()
+                },
+            };
+            let k8s_event = K8sWatchEvent {
+                event_type: WatchEventType::Bookmark,
+                object: bookmark,
+            };
+            if let Ok(json) = serde_json::to_string(&k8s_event) {
+                let _ = tx.send(Ok(format!("{}\n", json)));
+            }
+            debug!("Sent initial-events-end bookmark with resourceVersion: {}", rv);
+            // Ensure latest_resource_version is set so periodic bookmarks work
+            if latest_resource_version.is_none() {
+                latest_resource_version = Some(rv);
             }
         }
 
@@ -542,9 +548,10 @@ where
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
         // Track the latest resourceVersion for bookmarks.
-        // Start as None — will be set from initial resources or watch events.
-        // Sending bookmarks with resourceVersion "0" confuses clients.
-        let mut latest_resource_version: Option<String> = None;
+        // Initialize to "0" as fallback — the initial-events-end bookmark MUST
+        // be sent even if no resources exist, otherwise the client hangs forever
+        // waiting for the "initial list complete" signal.
+        let mut latest_resource_version: Option<String> = Some("0".to_string());
 
         // Send initial state as ADDED events (only when appropriate)
         if should_send_initial {
@@ -578,29 +585,34 @@ where
         // annotation "k8s.io/initial-events-end": "true" — client-go checks for
         // this specific annotation to know initial sync is done.
         if send_initial_events {
-            if let Some(ref rv) = latest_resource_version {
-                let mut annotations = std::collections::HashMap::new();
-                annotations.insert(
-                    "k8s.io/initial-events-end".to_string(),
-                    "true".to_string(),
-                );
-                let bookmark = BookmarkObject {
-                    kind: Some(bookmark_kind.clone()),
-                    api_version: Some(bookmark_api_version.clone()),
-                    metadata: ObjectMeta {
-                        resource_version: Some(rv.clone()),
-                        annotations: Some(annotations),
-                        ..Default::default()
-                    },
-                };
-                let k8s_event = K8sWatchEvent {
-                    event_type: WatchEventType::Bookmark,
-                    object: bookmark,
-                };
-                if let Ok(json) = serde_json::to_string(&k8s_event) {
-                    let _ = tx.send(Ok(format!("{}\n", json)));
-                }
-                debug!("Sent initial-events-end bookmark with resourceVersion: {}", rv);
+            // MUST send initial-events-end bookmark — client hangs without it.
+            // Use latest resourceVersion from initial resources, or "0" as fallback.
+            let rv = latest_resource_version.clone().unwrap_or_else(|| "0".to_string());
+            let mut annotations = std::collections::HashMap::new();
+            annotations.insert(
+                "k8s.io/initial-events-end".to_string(),
+                "true".to_string(),
+            );
+            let bookmark = BookmarkObject {
+                kind: Some(bookmark_kind.clone()),
+                api_version: Some(bookmark_api_version.clone()),
+                metadata: ObjectMeta {
+                    resource_version: Some(rv.clone()),
+                    annotations: Some(annotations),
+                    ..Default::default()
+                },
+            };
+            let k8s_event = K8sWatchEvent {
+                event_type: WatchEventType::Bookmark,
+                object: bookmark,
+            };
+            if let Ok(json) = serde_json::to_string(&k8s_event) {
+                let _ = tx.send(Ok(format!("{}\n", json)));
+            }
+            debug!("Sent initial-events-end bookmark with resourceVersion: {}", rv);
+            // Ensure latest_resource_version is set so periodic bookmarks work
+            if latest_resource_version.is_none() {
+                latest_resource_version = Some(rv);
             }
         }
 
