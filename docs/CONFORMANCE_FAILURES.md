@@ -39,7 +39,7 @@
 
 ## Round 99 results (in progress)
 
-5 passed, 1 failed so far (6/441 done) — significant improvement over round 98 (14 fail at 25 tests)
+9 passed, 4 failed so far (13/441 done) — significant improvement over round 98 (14 fail at 25 tests)
 
 ## Active failures (round 98)
 
@@ -59,6 +59,9 @@
 | **bookmark resourceVersion: 0** | Watch bookmarks sent with RV "0" | **FIXED #191** — initialize with current etcd revision, not "0". All 4 watch functions fixed. |
 | resource_quota.go:422 | missing replicationcontrollers, resourcequotas in status.used | **FIXED #192** — added RC + RQ counting to quota controller |
 | output.go:263 (2nd) | env var output wrong | May be fixed by #189 (env var expansion) — needs redeploy |
+| network/util.go:182 | network test failure | Needs investigation |
+| replica_set.go:738 | failed to locate replicaset via watch | Watch event delivery or RS controller timing |
+| replica_set.go:560 | replicas didn't scale to 3 | RS controller scaling or status update timing |
 
 ## Previously fixed (deployed in round 98)
 
