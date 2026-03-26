@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**190 fixes** | 24 pending deploy | Build clean, all unit tests pass
+**191 fixes** | 25 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -28,6 +28,7 @@
 | 188 | Add 23 missing watch handlers + routes (CRD, webhooks, VAP, PDB, RBAC, storage, etc.) | many tests |
 | 189 | Env var `$(VAR)` expansion in container env values | 1+ tests |
 | 190 | Return 415 for native protobuf bodies (CRD client retries with JSON) | 3+ tests |
+| 191 | **CRITICAL** Fix bookmark resourceVersion: 0 → use current etcd revision | many tests |
 
 ## Round 98 results (in progress)
 
@@ -48,6 +49,7 @@
 | projected_downwardapi.go:155 | timeout | Projected downward API volume issue |
 | service.go:251 | affinity timeout | Session affinity iptables recent module |
 | lifecycle_hook.go:132 | Timed out after 30s | Lifecycle hook (postStart/preStop) exec timing |
+| **bookmark resourceVersion: 0** | Watch bookmarks sent with RV "0" | **FIXED #191** — initialize with current etcd revision, not "0". All 4 watch functions fixed. |
 
 ## Previously fixed (deployed in round 98)
 

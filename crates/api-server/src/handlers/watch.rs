@@ -176,6 +176,11 @@ where
     // List existing resources to send as initial ADDED events
     let existing_resources = state.storage.list::<T>(&prefix).await?;
 
+    // Get the current revision from storage for bookmark fallback.
+    // This prevents sending bookmark RV "0" which confuses client-go.
+    let current_rev = state.storage.current_revision().await.unwrap_or(1);
+    let current_rev_str = current_rev.to_string();
+
     // Create channel for sending events to client
     let (tx, rx) =
         tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
@@ -191,10 +196,9 @@ where
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
         // Track the latest resourceVersion for bookmarks.
-        // Initialize to "0" as fallback — the initial-events-end bookmark MUST
-        // be sent even if no resources exist, otherwise the client hangs forever
-        // waiting for the "initial list complete" signal.
-        let mut latest_resource_version: Option<String> = Some("0".to_string());
+        // Initialize to the current storage revision so bookmarks always have
+        // a valid, non-zero resourceVersion (RV "0" confuses client-go).
+        let mut latest_resource_version: Option<String> = Some(current_rev_str);
 
         // Send initial state as ADDED events (only when appropriate)
         if should_send_initial {
@@ -230,7 +234,7 @@ where
         if send_initial_events {
             // MUST send initial-events-end bookmark — client hangs without it.
             // Use latest resourceVersion from initial resources, or "0" as fallback.
-            let rv = latest_resource_version.clone().unwrap_or_else(|| "0".to_string());
+            let rv = latest_resource_version.clone().unwrap_or_else(|| "1".to_string());
             let mut annotations = std::collections::HashMap::new();
             annotations.insert(
                 "k8s.io/initial-events-end".to_string(),
@@ -536,6 +540,10 @@ where
     // List existing resources to send as initial ADDED events
     let existing_resources = state.storage.list::<T>(&prefix).await?;
 
+    // Get the current revision from storage for bookmark fallback.
+    let current_rev = state.storage.current_revision().await.unwrap_or(1);
+    let current_rev_str = current_rev.to_string();
+
     // Create channel for sending events to client
     let (tx, rx) =
         tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
@@ -548,10 +556,9 @@ where
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
         // Track the latest resourceVersion for bookmarks.
-        // Initialize to "0" as fallback — the initial-events-end bookmark MUST
-        // be sent even if no resources exist, otherwise the client hangs forever
-        // waiting for the "initial list complete" signal.
-        let mut latest_resource_version: Option<String> = Some("0".to_string());
+        // Initialize to the current storage revision so bookmarks always have
+        // a valid, non-zero resourceVersion (RV "0" confuses client-go).
+        let mut latest_resource_version: Option<String> = Some(current_rev_str);
 
         // Send initial state as ADDED events (only when appropriate)
         if should_send_initial {
@@ -587,7 +594,7 @@ where
         if send_initial_events {
             // MUST send initial-events-end bookmark — client hangs without it.
             // Use latest resourceVersion from initial resources, or "0" as fallback.
-            let rv = latest_resource_version.clone().unwrap_or_else(|| "0".to_string());
+            let rv = latest_resource_version.clone().unwrap_or_else(|| "1".to_string());
             let mut annotations = std::collections::HashMap::new();
             annotations.insert(
                 "k8s.io/initial-events-end".to_string(),
@@ -1700,6 +1707,8 @@ pub async fn watch_cluster_scoped_json(
     let watch_rx = state.watch_cache.subscribe(&prefix).await;
     let watch_stream = crate::watch_cache::broadcast_to_stream(watch_rx);
     let existing_resources: Vec<serde_json::Value> = state.storage.list(&prefix).await?;
+    let current_rev = state.storage.current_revision().await.unwrap_or(1);
+    let current_rev_str = current_rev.to_string();
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
 
@@ -1715,9 +1724,7 @@ pub async fn watch_cluster_scoped_json(
         || requested_rv.is_none();
 
     tokio::spawn(async move {
-        let mut latest_resource_version: Option<String> = Some(
-            "0".to_string(),
-        );
+        let mut latest_resource_version: Option<String> = Some(current_rev_str);
 
         if should_send_initial {
             for object in existing_resources {
@@ -1874,6 +1881,8 @@ pub async fn watch_namespaced_json(
     let watch_rx = state.watch_cache.subscribe(&prefix).await;
     let watch_stream = crate::watch_cache::broadcast_to_stream(watch_rx);
     let existing_resources: Vec<serde_json::Value> = state.storage.list(&prefix).await?;
+    let current_rev = state.storage.current_revision().await.unwrap_or(1);
+    let current_rev_str = current_rev.to_string();
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
 
@@ -1889,9 +1898,7 @@ pub async fn watch_namespaced_json(
         || requested_rv.is_none();
 
     tokio::spawn(async move {
-        let mut latest_resource_version: Option<String> = Some(
-            "0".to_string(),
-        );
+        let mut latest_resource_version: Option<String> = Some(current_rev_str);
 
         if should_send_initial {
             for object in existing_resources {
