@@ -259,12 +259,20 @@ pub async fn update(
     if matches!(service.spec.service_type, Some(ServiceType::ExternalName)) {
         service.spec.cluster_ip = Some("".to_string());
         service.spec.cluster_ips = None;
-        // Clear NodePort from all ports (ExternalName services don't use NodePort)
         for port in &mut service.spec.ports {
             port.node_port = None;
         }
-        // Clear healthCheckNodePort
         service.spec.health_check_node_port = None;
+    }
+    // When changing FROM ExternalName TO ClusterIP/NodePort/LoadBalancer, allocate ClusterIP
+    else if !matches!(service.spec.service_type, Some(ServiceType::ExternalName)) {
+        let needs_ip = service.spec.cluster_ip.as_ref().map_or(true, |ip| ip.is_empty());
+        if needs_ip {
+            if let Some(ip) = state.ip_allocator.allocate() {
+                service.spec.cluster_ip = Some(ip.clone());
+                service.spec.cluster_ips = Some(vec![ip]);
+            }
+        }
     }
 
     let key = build_key("services", Some(&namespace), &name);

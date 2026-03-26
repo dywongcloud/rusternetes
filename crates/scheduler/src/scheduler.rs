@@ -350,10 +350,26 @@ impl Scheduler {
             spec.node_name = Some(node_name.to_string());
         }
 
-        // Update pod status to Pending (kubelet will update to Running after starting containers)
+        // Update pod status with PodScheduled condition
+        let scheduled_condition = rusternetes_common::resources::PodCondition {
+            condition_type: "PodScheduled".to_string(),
+            status: "True".to_string(),
+            last_transition_time: Some(chrono::Utc::now()),
+            reason: Some("Scheduled".to_string()),
+            message: Some(format!("Successfully assigned to {}", node_name)),
+            observed_generation: None,
+        };
+
         if let Some(ref mut status) = pod.status {
             status.phase = Some(Phase::Pending);
             status.message = Some("Pod scheduled".to_string());
+            // Add or update PodScheduled condition
+            let conditions = status.conditions.get_or_insert_with(Vec::new);
+            if let Some(existing) = conditions.iter_mut().find(|c| c.condition_type == "PodScheduled") {
+                *existing = scheduled_condition;
+            } else {
+                conditions.push(scheduled_condition);
+            }
         } else {
             pod.status = Some(rusternetes_common::resources::PodStatus {
                 phase: Some(Phase::Pending),
@@ -361,7 +377,7 @@ impl Scheduler {
                 reason: None,
                 host_ip: None,
                 pod_ip: None,
-                conditions: None,
+                conditions: Some(vec![scheduled_condition]),
                 container_statuses: None,
                 init_container_statuses: None,
                 ephemeral_container_statuses: None,

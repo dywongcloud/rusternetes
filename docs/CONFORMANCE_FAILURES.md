@@ -1,45 +1,83 @@
 # Conformance Issue Tracker
 
-**Round 96**: 28 FAIL, 0 PASS (running) | **168 fixes** (166 deployed + 2 pending: PDB status PATCH, restart count monotonic)
+**Round 96**: 31 FAIL, 0 PASS (running) | **168 fixes** (166 deployed + 2 pending)
 
-## Round 96 Failures
+## ALL Round 96 Failures by Root Cause
 
-| # | Test | Error | Category |
-|---|------|-------|----------|
-| 1 | statefulset.go:786 | timed out | Watch timeout |
-| 2 | rc.go:717 | timed out | Watch timeout |
-| 3 | output.go:282 | CPU_LIMIT=2 expected | Downward API resource ref |
-| 4 | aggregator.go:359 | ReadyReplicas=0 | Webhook pod not ready |
-| 5 | custom_resource_definition.go:104 | missing field `spec` | Protobuf: TypeMeta-only JSON lacks spec |
-| 6 | output.go:263 | pod output mismatch | Container output |
-| 7 | job.go:755 | job completion timeout | Job controller timing |
-| 8 | lifecycle_hook.go:132 | timed out 60s | Lifecycle hook/watch |
-| 9 | pod_client.go:216 | expected pod success timeout | Pod lifecycle |
-| 10 | projected_configmap.go:367 | configmap subpath timeout | Volume update |
-| 11 | webhook.go:1269 | webhook not ready | Webhook pod not ready |
+### Protobuf body decoding (7 tests) — MUST FIX
+CRD/Service created via protobuf. TypeMeta extraction gives minimal JSON missing `spec`.
+- custom_resource_definition.go:72 — `missing field spec`
+- custom_resource_definition.go:104 — `missing field spec`
+- custom_resource_definition.go:288 — `missing field spec`
+- crd_publish_openapi.go:318 — `context deadline exceeded` (CRD create timeout)
+- crd_publish_openapi.go:366 — `context deadline exceeded`
+- field_validation.go:700 — `key must be a string at line 1 column 2`
+- service_latency.go:142 — `missing field spec at line 1 column 58`
 
-## Root Causes
+### Watch timeouts (8 tests) — MUST FIX
+Watch-based waiters time out. Events exist but may not reach subscriber.
+- statefulset.go:786 — `timed out waiting for the condition`
+- rc.go:717 — `timed out waiting for the condition`
+- watch.go:409 — `Timed out waiting for expected watch notification`
+- daemon_set.go:980 — `failed to locate daemon set`
+- replica_set.go:232 — timeout
+- lifecycle_hook.go:132 — timeout
+- projected_configmap.go:367 — timeout
+- builder.go:97 — kubectl timeout (protobuf validation)
 
-### 1. Watch reliability (causes ~50% of failures)
-Watch-based waiters time out. The HTTP/2 watch streams work but events
-may not be delivered to the right subscriber at the right time.
-Events ARE being generated (2471 events seen in one test).
-The broadcast channel approach may miss events between subscribe and list.
+### Webhook/aggregator pods not ready (2 tests)
+Container starts but deployment shows ReadyReplicas=0.
+- webhook.go:1269 — `waiting for webhook configuration to be ready`
+- aggregator.go:359 — ReadyReplicas=0
 
-### 2. Protobuf (CRD failures)
-K8s client sends protobuf for CRDs. TypeMeta extraction gives
-`{"apiVersion":"...","kind":"...","metadata":{}}` but handler needs `spec`.
+### Pod generation field not set (1 test) — EASY FIX
+`metadata.generation` must be set to 1 on creation, incremented on spec change.
+- pods.go:556 — `verifying the new pod's generation is 1`
 
-### 3. Webhook/aggregator pods
-Containers start and run but deployment shows ReadyReplicas=0.
-Kubelet sync fix (#161) should help but may need further debugging.
+### Downward API resource field (2 tests)
+CPU_LIMIT env var not set correctly from resource field ref.
+- output.go:282 — `expected CPU_LIMIT=2`
+- output.go:263 — pod output mismatch
 
-### 4. Downward API CPU_LIMIT
-Container env var CPU_LIMIT not set correctly from resource field ref.
+### PDB status PATCH (1 test) — FIX #167 PENDING
+Generic PUT handler can't handle PATCH merge body.
+- disruption.go:604 — `the server rejected our request (patch poddisruptionbudgets)`
 
-## Progress
-- Framework no longer hangs (resourceVersion + initial-events-end fixes working)
-- Pods DO start (deployment became Available in 6s in round 94)
-- Events ARE being delivered
-- Tests progress but very slowly (~11 tests in 1 hour)
-- 0 passes so far — likely need to fix watch event delivery reliability
+### Service account token creation (1 test)
+- service_accounts.go:898 — `the server rejected our request (post serviceaccounts)`
+
+### Restart count monotonic (1 test) — FIX #168 PENDING
+Docker restart count resets on container recreation.
+- container_probe.go:1763 — `restart count changed from 1 to 0`
+
+### Resource quota (1 test)
+- resource_quota.go:803 — quota counting
+
+### VAP (1 test)
+- validatingadmissionpolicy.go:814 — CEL/watch
+
+### Service (2 tests)
+- service.go:251 — affinity
+- service.go:1444 — `didn't get ClusterIP for non-ExternalName service`
+
+### Scheduling (1 test)
+- predicates.go:1247 — `Did not find scheduled condition for pod`
+
+### Job (2 tests)
+- job.go:623 — timeout
+- job.go:755 — timeout
+
+### Aggregated discovery (1 test)
+- aggregated_discovery.go:227 — `failed to decode CRD: missing field spec`
+
+### Pod lifecycle (1 test)
+- pod_client.go:216 — pod success timeout
+
+## Priority Fixes
+
+1. **metadata.generation** — set to 1 on create for ALL resources (easy, high impact)
+2. **ClusterIP for services** — service.go:1444 missing ClusterIP (easy)
+3. **SA token creation** — service_accounts.go:898 rejected (route issue?)
+4. **Scheduling condition** — predicates.go:1247 pod condition not set
+5. **PDB status PATCH** — fix #167 pending deploy
+6. **Restart count** — fix #168 pending deploy

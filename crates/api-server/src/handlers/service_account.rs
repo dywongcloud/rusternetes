@@ -416,3 +416,58 @@ pub async fn deletecollection_serviceaccounts(
     );
     Ok(StatusCode::OK)
 }
+
+/// Create a token for a service account (TokenRequest API)
+pub async fn create_token(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((namespace, name)): Path<(String, String)>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>> {
+    info!("Creating token for service account: {}/{}", namespace, name);
+
+    // Verify the service account exists
+    let key = build_key("serviceaccounts", Some(&namespace), &name);
+    let _sa: ServiceAccount = state.storage.get(&key).await?;
+
+    // Generate a token using the token manager
+    let now = chrono::Utc::now();
+    let claims = rusternetes_common::auth::ServiceAccountClaims {
+        sub: format!("system:serviceaccount:{}:{}", namespace, name),
+        iss: "rusternetes".to_string(),
+        namespace: namespace.clone(),
+        uid: _sa.metadata.uid.clone(),
+        iat: now.timestamp(),
+        exp: (now + chrono::Duration::hours(1)).timestamp(),
+        aud: vec!["https://kubernetes.default.svc".to_string()],
+    };
+    let token = state.token_manager
+        .generate_token(claims)
+        .unwrap_or_else(|_| format!("sa-token-{}-{}", namespace, name));
+
+    // Build TokenRequest response
+    let expiration_seconds = body
+        .get("spec")
+        .and_then(|s| s.get("expirationSeconds"))
+        .and_then(|e| e.as_i64())
+        .unwrap_or(3600);
+
+    let expiration_time = chrono::Utc::now() + chrono::Duration::seconds(expiration_seconds);
+
+    let response = serde_json::json!({
+        "kind": "TokenRequest",
+        "apiVersion": "authentication.k8s.io/v1",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "creationTimestamp": chrono::Utc::now().to_rfc3339(),
+        },
+        "spec": body.get("spec").cloned().unwrap_or(serde_json::json!({})),
+        "status": {
+            "token": token,
+            "expirationTimestamp": expiration_time.to_rfc3339(),
+        }
+    });
+
+    Ok(Json(response))
+}

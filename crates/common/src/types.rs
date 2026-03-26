@@ -159,6 +159,13 @@ impl ObjectMeta {
         }
     }
 
+    /// Ensure generation is set (defaults to 1 for new resources)
+    pub fn ensure_generation(&mut self) {
+        if self.generation.is_none() {
+            self.generation = Some(1);
+        }
+    }
+
     /// Check if the object is being deleted (has deletion timestamp)
     pub fn is_being_deleted(&self) -> bool {
         self.deletion_timestamp.is_some()
