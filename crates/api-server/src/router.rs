@@ -1021,10 +1021,6 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::service_account::patch)
                 .delete(handlers::service_account::delete_service_account),
         )
-        .route(
-            "/api/v1/namespaces/:namespace/serviceaccounts/:name/token",
-            post(handlers::service_account::create_token),
-        )
         // ServiceAccounts (all namespaces)
         .route(
             "/api/v1/serviceaccounts",
