@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 96**: 11 FAIL, 0 PASS (running, ~1h in) | **166 fixes deployed**
+**Round 96**: 28 FAIL, 0 PASS (running) | **168 fixes** (166 deployed + 2 pending: PDB status PATCH, restart count monotonic)
 
 ## Round 96 Failures
 
