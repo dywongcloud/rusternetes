@@ -82,11 +82,27 @@ pub async fn create_crd(
     crd.metadata.ensure_uid();
     crd.metadata.ensure_creation_timestamp();
 
-    // Initialize status
+    // Initialize status with Established and NamesAccepted conditions
     if crd.status.is_none() {
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
         crd.status = Some(
             rusternetes_common::resources::CustomResourceDefinitionStatus {
-                conditions: Some(vec![]),
+                conditions: Some(vec![
+                    rusternetes_common::resources::CustomResourceDefinitionCondition {
+                        type_: "Established".to_string(),
+                        status: "True".to_string(),
+                        last_transition_time: Some(now.clone()),
+                        reason: Some("InitialNamesAccepted".to_string()),
+                        message: Some("the initial names have been accepted".to_string()),
+                    },
+                    rusternetes_common::resources::CustomResourceDefinitionCondition {
+                        type_: "NamesAccepted".to_string(),
+                        status: "True".to_string(),
+                        last_transition_time: Some(now),
+                        reason: Some("NoConflicts".to_string()),
+                        message: Some("no conflicts found".to_string()),
+                    },
+                ]),
                 accepted_names: Some(crd.spec.names.clone()),
                 stored_versions: Some(
                     crd.spec

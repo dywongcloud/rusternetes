@@ -4540,7 +4540,8 @@ impl ContainerRuntime {
             } else {
                 parse_cpu_quantity(divisor_str).max(1)
             };
-            let result = millicores / divisor_millicores;
+            // Kubernetes uses ceiling division for resource quantities
+            let result = (millicores + divisor_millicores - 1) / divisor_millicores;
             Ok(result.to_string())
         } else if is_memory {
             // Convert memory value to bytes, then apply divisor
@@ -4554,7 +4555,8 @@ impl ContainerRuntime {
             } else {
                 parse_memory_quantity(divisor_str).max(1)
             };
-            let result = bytes / divisor_bytes;
+            // Kubernetes uses ceiling division for resource quantities
+            let result = (bytes + divisor_bytes - 1) / divisor_bytes;
             Ok(result.to_string())
         } else {
             // Unknown resource type, return raw value

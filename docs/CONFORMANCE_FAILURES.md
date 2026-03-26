@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**185 fixes** | 19 pending deploy | Build clean, all unit tests pass
+**187 fixes** | 21 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -23,12 +23,14 @@
 | 183 | Termination message bind-mount + host-file read | 1 test |
 | 184 | IPAddress status route + ServiceCIDR Ready condition | 1 test |
 | 185 | ServiceCIDR + IPAddress watch handlers + routes | 1 test |
+| 186 | CPU/memory downward API: ceiling division (not floor) | 2 tests |
+| 187 | CRD status: Established + NamesAccepted conditions on create | 4 tests |
 
 ## Remaining issues needing post-deploy investigation
 
 | Test | Error | Notes |
 |------|-------|-------|
-| output.go:263,:282 | CPU downward API value wrong | Pipeline preserves resources; may be integer division or node capacity default — needs post-deploy investigation |
+| output.go:263,:282 | CPU downward API value wrong | **FIXED #186** — ceiling division instead of floor (250m/1=1 not 0) |
 | runtime.go:169 | Termination message empty | **FIXED #183** — bind-mount host file instead of docker cp from tmpfs |
 | webhook.go:837 | matchConditions not validated | **FIXED #179** — CEL validation via cel-interpreter in create handlers |
 | webhook.go:1194,:1244 | webhook not ready | Kubelet sync timing; fix #161 deployed |
@@ -38,4 +40,4 @@
 | service_cidrs.go:255 | IPAddress error | **FIXED #184-185** — IPAddress status route, ServiceCIDR Ready condition, watch handlers |
 | kubectl.go:1881 | proxy unreachable | **FIXED #182** — double-slash URL path construction |
 | validatingadmissionpolicy.go:568 | watch ERROR events | Should be fixed by #170 + #174 |
-| Protobuf CRDs (4 tests) | native protobuf encoding | Handlers hardcode Json<T>; need content negotiation or 406 for protobuf Accept |
+| Protobuf CRDs (4 tests) | native protobuf encoding | **FIXED #187** — actually CRD status conditions (not protobuf); Established+NamesAccepted now set on create |
