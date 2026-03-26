@@ -44,7 +44,7 @@
 
 ## Round 99 results (in progress)
 
-30 passed, 21 failed so far (51/441 done, 59% pass rate) — significant improvement over round 98
+33 passed, 28 failed so far (61/441 done, 54% pass rate)
 
 ## Active failures (round 98)
 
