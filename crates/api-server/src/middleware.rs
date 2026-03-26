@@ -178,7 +178,12 @@ pub async fn normalize_content_type_middleware(
                         // No JSON found in protobuf body. Try to construct minimal JSON
                         // from the TypeMeta fields embedded in the protobuf envelope.
                         // The K8s Unknown message has field 1 = TypeMeta (apiVersion, kind).
-                        warn!("Protobuf body has no JSON payload ({} bytes), extracting TypeMeta", body_bytes.len());
+                        // Log details about the protobuf body for debugging
+                        let hex_preview: String = body_bytes.iter().skip(4).take(80)
+                            .map(|b| format!("{:02x}", b))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        warn!("Protobuf body has no JSON payload ({} bytes). Hex after k8s\\0: {}", body_bytes.len(), hex_preview);
                         let type_meta = extract_type_meta_from_protobuf(&body_bytes);
                         if let Some((api_version, kind)) = type_meta {
                             // Construct minimal JSON with apiVersion and kind
@@ -354,6 +359,14 @@ fn extract_json_from_k8s_protobuf(data: &[u8]) -> Option<Vec<u8>> {
                     let raw = &data[pos..pos + len];
                     if !raw.is_empty() && (raw[0] == b'{' || raw[0] == b'[') {
                         return Some(raw.to_vec());
+                    }
+                    // Log what field 2 contains if it's not JSON
+                    if field_number == 2 && !raw.is_empty() {
+                        let preview: String = raw.iter().take(40)
+                            .map(|b| format!("{:02x}", b))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        tracing::debug!("Protobuf field 2 ({} bytes, not JSON): first bytes: {}", len, preview);
                     }
                 }
                 if pos + len > data.len() { return None; }

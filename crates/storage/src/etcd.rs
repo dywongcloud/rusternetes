@@ -394,12 +394,22 @@ impl Storage for EtcdStorage {
                             .unwrap_or_default();
                         return match event.event_type() {
                             etcd_client::EventType::Put => {
-                                let value = event
+                                let raw_value = event
                                     .kv()
                                     .map(|kv| String::from_utf8_lossy(kv.value()).to_string())
                                     .unwrap_or_default();
-                                // If there's no previous value, this is a new key (Added).
-                                // If there IS a previous value, it's an update (Modified).
+                                // Inject resourceVersion from etcd mod_revision
+                                let mod_revision = event.kv().map(|kv| kv.mod_revision()).unwrap_or(0);
+                                let value = if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&raw_value) {
+                                    if let Some(metadata) = v.get_mut("metadata") {
+                                        metadata["resourceVersion"] = serde_json::json!(
+                                            crate::concurrency::mod_revision_to_resource_version(mod_revision)
+                                        );
+                                    }
+                                    serde_json::to_string(&v).unwrap_or(raw_value)
+                                } else {
+                                    raw_value
+                                };
                                 if event.prev_kv().is_some() {
                                     Ok(WatchEvent::Modified(key, value))
                                 } else {
@@ -407,10 +417,21 @@ impl Storage for EtcdStorage {
                                 }
                             }
                             etcd_client::EventType::Delete => {
-                                let prev_value = event
+                                let raw_prev = event
                                     .prev_kv()
                                     .map(|kv| String::from_utf8_lossy(kv.value()).to_string())
                                     .unwrap_or_default();
+                                let mod_revision = event.kv().map(|kv| kv.mod_revision()).unwrap_or(0);
+                                let prev_value = if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&raw_prev) {
+                                    if let Some(metadata) = v.get_mut("metadata") {
+                                        metadata["resourceVersion"] = serde_json::json!(
+                                            crate::concurrency::mod_revision_to_resource_version(mod_revision)
+                                        );
+                                    }
+                                    serde_json::to_string(&v).unwrap_or(raw_prev)
+                                } else {
+                                    raw_prev
+                                };
                                 Ok(WatchEvent::Deleted(key, prev_value))
                             }
                         };
@@ -449,11 +470,24 @@ impl Storage for EtcdStorage {
 
                         return match event.event_type() {
                             etcd_client::EventType::Put => {
-                                let value = event
+                                let raw_value = event
                                     .kv()
                                     .and_then(|kv| kv.value_str().ok())
                                     .unwrap_or("")
                                     .to_string();
+
+                                // Inject resourceVersion from etcd mod_revision into the JSON value
+                                let mod_revision = event.kv().map(|kv| kv.mod_revision()).unwrap_or(0);
+                                let value = if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&raw_value) {
+                                    if let Some(metadata) = v.get_mut("metadata") {
+                                        metadata["resourceVersion"] = serde_json::json!(
+                                            crate::concurrency::mod_revision_to_resource_version(mod_revision)
+                                        );
+                                    }
+                                    serde_json::to_string(&v).unwrap_or(raw_value)
+                                } else {
+                                    raw_value
+                                };
 
                                 // Check if this is a new key or an update
                                 if event.kv().map(|kv| kv.version()).unwrap_or(0) == 1 {
@@ -463,12 +497,23 @@ impl Storage for EtcdStorage {
                                 }
                             }
                             etcd_client::EventType::Delete => {
-                                // Get the previous value from prev_kv (required for Kubernetes watch DELETE events)
-                                let prev_value = event
+                                // Get the previous value from prev_kv and inject resourceVersion
+                                let raw_prev = event
                                     .prev_kv()
                                     .and_then(|kv| kv.value_str().ok())
                                     .unwrap_or("")
                                     .to_string();
+                                let mod_revision = event.kv().map(|kv| kv.mod_revision()).unwrap_or(0);
+                                let prev_value = if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&raw_prev) {
+                                    if let Some(metadata) = v.get_mut("metadata") {
+                                        metadata["resourceVersion"] = serde_json::json!(
+                                            crate::concurrency::mod_revision_to_resource_version(mod_revision)
+                                        );
+                                    }
+                                    serde_json::to_string(&v).unwrap_or(raw_prev)
+                                } else {
+                                    raw_prev
+                                };
                                 Ok(WatchEvent::Deleted(key, prev_value))
                             }
                         };
