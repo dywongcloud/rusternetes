@@ -22,6 +22,11 @@ RV to start a watch, the revision spaces don't match and watches fail.
 | 174 | **CRITICAL** List RV from items, not timestamps | ALL tests |
 | 175 | Immutable returns 403 Forbidden not 400 | 2 tests |
 
+## Investigated but not yet fixed
+- core_events.go:135 — Event timestamp microseconds (pipeline normalizes but Go client still fails)
+- garbage_collector.go:436 — Orphan propagation needs GC controller
+- aggregated_discovery.go:282 — Resource format mismatch (responseKind.group field)
+
 ## Round 97 Failures (39 total)
 
 ### Watch/timeout (15) — should be fixed by #170 + #174
