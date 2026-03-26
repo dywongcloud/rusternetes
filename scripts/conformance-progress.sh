@@ -64,8 +64,15 @@ while true; do
         continue
     fi
 
-    # Get logs and parse results
-    RESULT=$(curl -sk "https://localhost:6443/api/v1/namespaces/sonobuoy/pods/${E2E_POD}/log?container=e2e" 2>/dev/null | parse_progress)
+    # Get test output from the e2e.log file inside the container
+    # (ginkgo writes to this file, not stdout, so Docker logs won't have progress)
+    E2E_CONTAINER=$(docker ps --format "{{.Names}}" | grep "e2e-job.*_e2e$" | head -1)
+    if [ -n "$E2E_CONTAINER" ]; then
+        RESULT=$(docker exec "$E2E_CONTAINER" cat /tmp/sonobuoy/results/e2e.log 2>/dev/null | parse_progress)
+    else
+        # Fallback to API logs if container not accessible directly
+        RESULT=$(curl -sk "https://localhost:6443/api/v1/namespaces/sonobuoy/pods/${E2E_POD}/log?container=e2e" 2>/dev/null | parse_progress)
+    fi
 
     if [ -z "$RESULT" ]; then
         echo "$(date +%H:%M:%S) | No logs yet. Waiting..."

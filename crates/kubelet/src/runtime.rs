@@ -2321,9 +2321,31 @@ impl ContainerRuntime {
         // Add user-defined environment variables
         if let Some(env_vars) = &container.env {
             for env_var in env_vars {
-                // Direct value
+                // Direct value — expand $(VAR) references using previously set env vars
                 if let Some(value) = &env_var.value {
-                    env_list.push(format!("{}={}", env_var.name, value));
+                    let mut expanded = value.clone();
+                    loop {
+                        let start = match expanded.find("$(") {
+                            Some(s) => s,
+                            None => break,
+                        };
+                        let end = match expanded[start..].find(')') {
+                            Some(e) => start + e,
+                            None => break,
+                        };
+                        let var_name = &expanded[start + 2..end];
+                        let replacement = env_list
+                            .iter()
+                            .find_map(|entry| {
+                                let mut parts = entry.splitn(2, '=');
+                                let k = parts.next()?;
+                                let v = parts.next()?;
+                                if k == var_name { Some(v.to_string()) } else { None }
+                            })
+                            .unwrap_or_default();
+                        expanded.replace_range(start..end + 1, &replacement);
+                    }
+                    env_list.push(format!("{}={}", env_var.name, expanded));
                     continue;
                 }
 

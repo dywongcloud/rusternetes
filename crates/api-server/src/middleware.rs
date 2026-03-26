@@ -184,20 +184,15 @@ pub async fn normalize_content_type_middleware(
                             .collect::<Vec<_>>()
                             .join(" ");
                         warn!("Protobuf body has no JSON payload ({} bytes). Hex after k8s\\0: {}", body_bytes.len(), hex_preview);
-                        let type_meta = extract_type_meta_from_protobuf(&body_bytes);
-                        if let Some((api_version, kind)) = type_meta {
-                            // Construct minimal JSON with apiVersion and kind
-                            let minimal = format!(
-                                r#"{{"apiVersion":"{}","kind":"{}","metadata":{{}}}}"#,
-                                api_version, kind
-                            );
-                            tracing::info!("Extracted TypeMeta from protobuf: apiVersion={}, kind={}", api_version, kind);
-                            minimal.into_bytes()
-                        } else {
-                            // Last resort — empty object
-                            warn!("Could not extract TypeMeta from protobuf, using empty object");
-                            b"{}".to_vec()
-                        }
+                        // Return 415 so the client retries with JSON encoding.
+                        // The K8s client-go will fall back to JSON on 415.
+                        return Err(axum::response::Response::builder()
+                            .status(axum::http::StatusCode::UNSUPPORTED_MEDIA_TYPE)
+                            .header("Content-Type", "application/json")
+                            .body(axum::body::Body::from(
+                                r#"{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"the body could not be decoded: only JSON encoding is supported, not protobuf","reason":"UnsupportedMediaType","code":415}"#
+                            ))
+                            .unwrap());
                     }
                 }
             } else if body_bytes.starts_with(b"{") || body_bytes.starts_with(b"[") {

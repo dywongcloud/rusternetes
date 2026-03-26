@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**188 fixes** | 22 pending deploy | Build clean, all unit tests pass
+**190 fixes** | 24 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -26,19 +26,35 @@
 | 186 | CPU/memory downward API: ceiling division (not floor) | 2 tests |
 | 187 | CRD status: Established + NamesAccepted conditions on create | 4 tests |
 | 188 | Add 23 missing watch handlers + routes (CRD, webhooks, VAP, PDB, RBAC, storage, etc.) | many tests |
+| 189 | Env var `$(VAR)` expansion in container env values | 1+ tests |
+| 190 | Return 415 for native protobuf bodies (CRD client retries with JSON) | 3+ tests |
 
-## Remaining issues needing post-deploy investigation
+## Round 98 results (in progress)
 
-| Test | Error | Notes |
-|------|-------|-------|
-| output.go:263,:282 | CPU downward API value wrong | **FIXED #186** — ceiling division instead of floor (250m/1=1 not 0) |
-| runtime.go:169 | Termination message empty | **FIXED #183** — bind-mount host file instead of docker cp from tmpfs |
-| webhook.go:837 | matchConditions not validated | **FIXED #179** — CEL validation via cel-interpreter in create handlers |
-| webhook.go:1194,:1244 | webhook not ready | Kubelet sync timing; fix #161 deployed |
-| service.go:251 | Affinity didn't hold | iptables recent module deployed; need to verify |
-| runtimeclass.go:153,:297 | timeout + list length | **FIXED #180** — added watch handler + route |
-| resource_quota.go:102,:209 | quota timeout | **FIXED #181** — added watch handlers + routes (ns + all) |
-| service_cidrs.go:255 | IPAddress error | **FIXED #184-185** — IPAddress status route, ServiceCIDR Ready condition, watch handlers |
-| kubectl.go:1881 | proxy unreachable | **FIXED #182** — double-slash URL path construction |
-| validatingadmissionpolicy.go:568 | watch ERROR events | Should be fixed by #170 + #174 |
-| Protobuf CRDs (4 tests) | native protobuf encoding | **FIXED #187** — actually CRD status conditions (not protobuf); Established+NamesAccepted now set on create |
+8 passed, 7 failed so far (15/441 done)
+
+## Active failures (round 98)
+
+| Test | Error | Root Cause |
+|------|-------|------------|
+| output.go:263 | `FOOBAR=$(FOO);;$(BAR)` not expanded | **FIXED #189** — expand `$(VAR)` in env values using prior env vars |
+| crd_publish_openapi.go:161 | `failed to decode CRD: missing field 'spec'` | **FIXED #190** — return 415 for native protobuf; client retries with JSON |
+| field_validation.go:570 | `key must be a string at line 1 column 2` | **FIXED #190** — same protobuf issue |
+| validatingadmissionpolicy.go:120 | wait for marker timeout | Watch events or VAP controller issue |
+| runtimeclass.go:153 | timeout | Still failing despite watch handler fix (#180) — may need kube-root-ca.crt |
+| statefulset.go:786 | timed out scaling | StatefulSet controller timing/watch |
+| statefulset.go:2253 | timed out | StatefulSet readiness probe timing |
+
+## Previously fixed (deployed in round 98)
+
+| Test | Fix |
+|------|-----|
+| output.go:263,:282 (CPU) | **#186** — ceiling division |
+| runtime.go:169 | **#183** — termination msg bind-mount |
+| webhook.go:837 | **#179** — CEL validation |
+| runtimeclass.go (watch) | **#180** — watch handler |
+| resource_quota.go | **#181** — watch handlers |
+| service_cidrs.go | **#184-185** — status route + watch |
+| kubectl.go:1881 | **#182** — proxy path fix |
+| CRD conditions | **#187** — Established+NamesAccepted |
+| 23 watch handlers | **#188** — all resource types |
