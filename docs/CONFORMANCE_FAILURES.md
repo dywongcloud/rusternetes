@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 94**: running (slow) | **162 fixes deployed** | resourceVersion mismatch fixed, kubelet sync fixed, tests progressing
+**Round 94**: 8 FAIL, 0 PASS (running slow) | **162 fixes deployed** | Protobuf 415 doesn't work — client doesn't fall back to JSON
 
 ## Fixes pending deploy (34)
 
