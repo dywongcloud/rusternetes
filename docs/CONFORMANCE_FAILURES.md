@@ -37,9 +37,9 @@
 | 197 | Add ?watch=true support to 21 list handlers across 12 files | many tests |
 | 198 | VAP: evaluate spec.variables before validations, add evaluate_to_value to CEL | 1+ tests |
 
-## Round 98 results (in progress)
+## Round 99 results (in progress)
 
-8 passed, 7 failed so far (15/441 done)
+5 passed, 1 failed so far (6/441 done) — significant improvement over round 98 (14 fail at 25 tests)
 
 ## Active failures (round 98)
 
