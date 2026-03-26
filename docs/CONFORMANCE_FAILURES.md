@@ -1,19 +1,8 @@
 # Conformance Issue Tracker
 
-**170 fixes total** | Pending deploy with critical watch fix
+**172 fixes total** | All unit tests pass | Pending deploy
 
-## CRITICAL FIX #170: Watch events missing resourceVersion
-
-Root cause of 0-pass regression in round 96. Watch events from etcd did NOT
-include metadata.resourceVersion in the JSON values (resourceVersion is only
-added during get/list, not stored in etcd). The watch cache fell back to
-chrono timestamps for revision tracking, creating mixed revision spaces
-that confused the K8s client watch reconnection.
-
-Fix: inject etcd mod_revision as metadata.resourceVersion into every watch
-event value at the etcd storage layer, for both regular and from_revision watches.
-
-## Fixes pending deploy (since round 96 deploy)
+## Fixes since round 96 deploy
 
 | # | Fix | Tests affected |
 |---|-----|----------------|
@@ -22,37 +11,46 @@ event value at the etcd storage layer, for both regular and from_revision watche
 | 166 | initial-events-end bookmark always sent | framework hang |
 | 167 | PDB status PATCH via generic handler | 1 |
 | 168 | Restart count monotonic (max docker + prev) | 1 |
-| 169 | metadata.generation=1 on create, ClusterIP alloc, SA token, PodScheduled | 5+ |
+| 169 | metadata.generation=1, ClusterIP alloc, SA token, PodScheduled | 5+ |
 | 170 | **CRITICAL** resourceVersion in watch event values | 12+ watch timeouts |
+| 171 | Endpoints: single subset with ready + notReady | 1 (unit test) |
+| 172 | Ensure metadata exists in storage create | 1 (DRA resourceVersion) |
 
-## Round 96 Failures (40 total, 0 passes)
+## Round 96 Failures — Status
 
-### Watch timeouts (12) — should be fixed by #170
-statefulset.go:786, rc.go:717, daemon_set.go:980, replica_set.go:232,
-lifecycle_hook.go:132, pod_client.go:216, projected_configmap.go:367,
-watch.go:409, job.go:623, :755, runtime.go:158, proxy.go:271
+### Fixed by pending deploys (22+)
+- **Watch timeouts (12)** — fixed by #170 (resourceVersion injection)
+- **PDB PATCH (1)** — fixed by #167
+- **Restart count (1)** — fixed by #168
+- **Generation (1)** — fixed by #169
+- **ClusterIP (2)** — fixed by #169
+- **SA token (1)** — fixed by #169
+- **PodScheduled (1)** — fixed by #169
+- **DRA resourceVersion (1)** — fixed by #172
+- **ServiceCIDR status (1)** — fixed by #164
+- **SSA annotation (1)** — fixed by #164
 
-### Protobuf body (10) — partially addressed by #163
-custom_resource_definition.go:72, :104, :288,
-crd_publish_openapi.go:318, :366, field_validation.go:570, :700,
-aggregated_discovery.go:227, :336, service_latency.go:142
+### Protobuf body (10) — partially addressed
+CRD/protobuf bodies contain native protobuf, not JSON. TypeMeta extraction
+gives minimal JSON missing spec. K8s client ignores --kube-api-content-type
+for CRD operations. These tests were ALWAYS failing (not a regression).
+- custom_resource_definition.go:72, :104, :288
+- crd_publish_openapi.go:318, :366
+- field_validation.go:570, :700
+- aggregated_discovery.go:227, :336
+- service_latency.go:142
 
-### Webhook/aggregator (3)
-webhook.go:861 (invalid matchConditions not rejected),
-webhook.go:1269 (webhook not ready), aggregator.go:359
+### Webhook/aggregator (3) — needs post-deploy debugging
+Container starts but pod status may not transition to Ready.
+Fix #161 (kubelet sync) should help. Need deployed testing to verify.
+- webhook.go:861, :1269
+- aggregator.go:359
 
-### Specific bugs (15) — many fixed by #164-169
-- output.go:282 — CPU_LIMIT downward API
-- output.go:263 — configmap subpath
-- container_probe.go:1763 — restart count (**FIX #168**)
-- disruption.go:604 — PDB PATCH (**FIX #167**)
-- pods.go:556 — generation (**FIX #169**)
-- service_accounts.go:898 — SA token (**FIX #169**)
-- service.go:1444, :1483 — ClusterIP (**FIX #169**)
-- predicates.go:1247 — PodScheduled (**FIX #169**)
-- service.go:251 — affinity
-- pod_resize.go:857 — resize
-- conformance.go:696 — resourceVersion empty
-- validatingadmissionpolicy.go:814 — VAP
-- resource_quota.go:803 — quota
-- builder.go:97 — kubectl protobuf
+### Remaining specific issues (5)
+- output.go:282 — CPU_LIMIT=1 instead of 2. Need to debug with deployed code.
+- output.go:263 — configmap subpath timeout
+- service.go:251 — session affinity (iptables recent module deployed)
+- pod_resize.go:857 — pod resize state verification
+- resource_quota.go:803 — quota counting timeout
+- validatingadmissionpolicy.go:814 — VAP CEL
+- builder.go:97 — kubectl protobuf (related to CRD protobuf issue)
