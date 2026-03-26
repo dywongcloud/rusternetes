@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**203 fixes** | 37 pending deploy | Build clean, all unit tests pass
+**204 fixes** | 38 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -41,6 +41,7 @@
 | 201 | RC controller: count ready replicas properly (not all pods) | 1 test |
 | 202 | PVC status subresource route (was missing) | 1 test |
 | 203 | StatefulSet: track currentRevision vs updateRevision separately during rolling updates | 1 test |
+| 204 | Job podFailurePolicy FailJob action: fail job when matching pod fails | 1 test |
 
 ## Round 99 results (in progress)
 

@@ -188,10 +188,81 @@ impl<S: Storage> JobController<S> {
             namespace, name, active, succeeded, failed, completions
         );
 
+        // Check podFailurePolicy — if a failed pod matches a FailJob rule, fail immediately
+        let mut pod_failure_policy_triggered = false;
+        let mut pod_failure_message = String::new();
+        if let Some(ref policy) = job.spec.pod_failure_policy {
+            if let Some(rules) = policy.get("rules").and_then(|r| r.as_array()) {
+                for pod in job_pods.iter() {
+                    let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
+                    if !matches!(phase, Some(Phase::Failed)) {
+                        continue;
+                    }
+                    // Get container exit codes
+                    let exit_codes: Vec<i32> = pod.status.as_ref()
+                        .and_then(|s| s.container_statuses.as_ref())
+                        .map(|cs| cs.iter().filter_map(|c| {
+                            match &c.state {
+                                Some(rusternetes_common::resources::ContainerState::Terminated { exit_code, .. }) => Some(*exit_code),
+                                _ => None,
+                            }
+                        }).collect())
+                        .unwrap_or_default();
+
+                    for rule in rules {
+                        let action = rule.get("action").and_then(|a| a.as_str()).unwrap_or("");
+                        if action != "FailJob" { continue; }
+
+                        // Check onExitCodes
+                        if let Some(on_exit) = rule.get("onExitCodes") {
+                            let operator = on_exit.get("operator").and_then(|o| o.as_str()).unwrap_or("In");
+                            let values: Vec<i32> = on_exit.get("values")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|v| v.as_i64().map(|i| i as i32)).collect())
+                                .unwrap_or_default();
+                            let matches = exit_codes.iter().any(|code| {
+                                match operator {
+                                    "In" => values.contains(code),
+                                    "NotIn" => !values.contains(code),
+                                    _ => false,
+                                }
+                            });
+                            if matches {
+                                pod_failure_policy_triggered = true;
+                                pod_failure_message = format!("Pod failed with exit code matching FailJob rule");
+                                break;
+                            }
+                        }
+
+                        // Check onPodConditions
+                        if let Some(on_conditions) = rule.get("onPodConditions") {
+                            if let Some(conditions) = on_conditions.as_array() {
+                                let pod_conditions = pod.status.as_ref()
+                                    .and_then(|s| s.conditions.as_ref());
+                                let matches = conditions.iter().any(|cond| {
+                                    let ctype = cond.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                                    let cstatus = cond.get("status").and_then(|s| s.as_str()).unwrap_or("True");
+                                    pod_conditions.map(|pcs| pcs.iter().any(|pc| {
+                                        pc.condition_type == ctype && pc.status == cstatus
+                                    })).unwrap_or(false)
+                                });
+                                if matches {
+                                    pod_failure_policy_triggered = true;
+                                    pod_failure_message = format!("Pod condition matched FailJob rule");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if pod_failure_policy_triggered { break; }
+                }
+            }
+        }
+
         // Check if Job is complete
         let is_complete = succeeded >= completions;
         // For backoffLimitPerIndex, job fails when all indexes are either succeeded or failed
-        let is_failed = if backoff_limit_per_index.is_some() && is_indexed {
+        let is_failed = pod_failure_policy_triggered || if backoff_limit_per_index.is_some() && is_indexed {
             let completed_count = completed_indexes.as_ref().map(|s| s.split(',').count()).unwrap_or(0);
             let failed_count = failed_indexes.as_ref().map(|s| s.split(',').count()).unwrap_or(0);
             (completed_count + failed_count) as i32 >= completions
@@ -338,11 +409,12 @@ impl<S: Storage> JobController<S> {
                     status: "True".to_string(),
                     last_probe_time: Some(chrono::Utc::now()),
                     last_transition_time: Some(chrono::Utc::now()),
-                    reason: Some("BackoffLimitExceeded".to_string()),
-                    message: Some(format!(
-                        "Job has reached backoff limit of {}",
-                        backoff_limit
-                    )),
+                    reason: Some(if pod_failure_policy_triggered { "PodFailurePolicy".to_string() } else { "BackoffLimitExceeded".to_string() }),
+                    message: Some(if pod_failure_policy_triggered {
+                        pod_failure_message.clone()
+                    } else {
+                        format!("Job has reached backoff limit of {}", backoff_limit)
+                    }),
                 }]),
                 start_time,
                 completion_time: Some(chrono::Utc::now()),
