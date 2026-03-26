@@ -44,6 +44,10 @@
 | runtimeclass.go:153 | timeout | Still failing despite watch handler fix (#180) — may need kube-root-ca.crt |
 | statefulset.go:786 | timed out scaling | StatefulSet controller timing/watch |
 | statefulset.go:2253 | timed out | StatefulSet readiness probe timing |
+| projected_configmap.go:367 | Error reading projected configmap file | Projected volume ConfigMap data not available after update |
+| projected_downwardapi.go:155 | timeout | Projected downward API volume issue |
+| service.go:251 | affinity timeout | Session affinity iptables recent module |
+| lifecycle_hook.go:132 | Timed out after 30s | Lifecycle hook (postStart/preStop) exec timing |
 
 ## Previously fixed (deployed in round 98)
 
