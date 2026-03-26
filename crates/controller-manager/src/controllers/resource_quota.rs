@@ -180,6 +180,16 @@ impl<S: Storage> ResourceQuotaController<S> {
         usage.insert("persistentvolumeclaims".to_string(), pvcs.len().to_string());
         usage.insert("count/persistentvolumeclaims".to_string(), pvcs.len().to_string());
 
+        let rc_prefix = format!("/registry/replicationcontrollers/{}/", namespace);
+        let rcs: Vec<serde_json::Value> = self.storage.list(&rc_prefix).await.unwrap_or_default();
+        usage.insert("replicationcontrollers".to_string(), rcs.len().to_string());
+        usage.insert("count/replicationcontrollers".to_string(), rcs.len().to_string());
+
+        let rq_prefix = format!("/registry/resourcequotas/{}/", namespace);
+        let rqs: Vec<serde_json::Value> = self.storage.list(&rq_prefix).await.unwrap_or_default();
+        usage.insert("resourcequotas".to_string(), rqs.len().to_string());
+        usage.insert("count/resourcequotas".to_string(), rqs.len().to_string());
+
         Ok(usage)
     }
 

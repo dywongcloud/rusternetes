@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**191 fixes** | 25 pending deploy | Build clean, all unit tests pass
+**192 fixes** | 26 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -29,6 +29,7 @@
 | 189 | Env var `$(VAR)` expansion in container env values | 1+ tests |
 | 190 | Return 415 for native protobuf bodies (CRD client retries with JSON) | 3+ tests |
 | 191 | **CRITICAL** Fix bookmark resourceVersion: 0 → use current etcd revision | many tests |
+| 192 | ResourceQuota: count replicationcontrollers + resourcequotas | 1 test |
 
 ## Round 98 results (in progress)
 
@@ -50,7 +51,7 @@
 | service.go:251 | affinity timeout | Session affinity iptables recent module |
 | lifecycle_hook.go:132 | Timed out after 30s | Lifecycle hook (postStart/preStop) exec timing |
 | **bookmark resourceVersion: 0** | Watch bookmarks sent with RV "0" | **FIXED #191** — initialize with current etcd revision, not "0". All 4 watch functions fixed. |
-| resource_quota.go:422 | missing replicationcontrollers, resourcequotas in status.used | Quota controller doesn't track all resource types |
+| resource_quota.go:422 | missing replicationcontrollers, resourcequotas in status.used | **FIXED #192** — added RC + RQ counting to quota controller |
 | output.go:263 (2nd) | env var output wrong | May be fixed by #189 (env var expansion) — needs redeploy |
 
 ## Previously fixed (deployed in round 98)
