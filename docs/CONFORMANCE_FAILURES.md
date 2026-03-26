@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**183 fixes** | 17 pending deploy | Build clean, all unit tests pass
+**185 fixes** | 19 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -21,6 +21,8 @@
 | 181 | ResourceQuota watch handlers + routes (ns + all) | 2 tests |
 | 182 | Proxy double-slash path fix (node/service/pod) | 1 test |
 | 183 | Termination message bind-mount + host-file read | 1 test |
+| 184 | IPAddress status route + ServiceCIDR Ready condition | 1 test |
+| 185 | ServiceCIDR + IPAddress watch handlers + routes | 1 test |
 
 ## Remaining issues needing post-deploy investigation
 
@@ -33,7 +35,7 @@
 | service.go:251 | Affinity didn't hold | iptables recent module deployed; need to verify |
 | runtimeclass.go:153,:297 | timeout + list length | **FIXED #180** — added watch handler + route |
 | resource_quota.go:102,:209 | quota timeout | **FIXED #181** — added watch handlers + routes (ns + all) |
-| service_cidrs.go:255 | IPAddress error | Missing IPAddress status route + no CIDR validation controller |
+| service_cidrs.go:255 | IPAddress error | **FIXED #184-185** — IPAddress status route, ServiceCIDR Ready condition, watch handlers |
 | kubectl.go:1881 | proxy unreachable | **FIXED #182** — double-slash URL path construction |
 | validatingadmissionpolicy.go:568 | watch ERROR events | Should be fixed by #170 + #174 |
 | Protobuf CRDs (4 tests) | native protobuf encoding | Handlers hardcode Json<T>; need content negotiation or 406 for protobuf Accept |

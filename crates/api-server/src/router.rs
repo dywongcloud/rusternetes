@@ -1753,6 +1753,10 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .delete(handlers::servicecidr::delete_servicecidr),
         )
         .route(
+            "/apis/networking.k8s.io/v1/watch/servicecidrs",
+            get(handlers::watch::watch_servicecidrs),
+        )
+        .route(
             "/apis/networking.k8s.io/v1/servicecidrs/:name/status",
             get(handlers::status::get_cluster_status)
                 .put(handlers::status::update_cluster_status)
@@ -1771,6 +1775,16 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::ipaddress::update_ipaddress)
                 .patch(handlers::ipaddress::patch_ipaddress)
                 .delete(handlers::ipaddress::delete_ipaddress),
+        )
+        .route(
+            "/apis/networking.k8s.io/v1/watch/ipaddresses",
+            get(handlers::watch::watch_ipaddresses),
+        )
+        .route(
+            "/apis/networking.k8s.io/v1/ipaddresses/:name/status",
+            get(handlers::status::get_cluster_status)
+                .put(handlers::status::update_cluster_status)
+                .patch(handlers::status::update_cluster_status),
         )
         // Networking v1 API - IngressClasses (cluster-scoped)
         .route(

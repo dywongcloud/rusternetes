@@ -1004,7 +1004,8 @@ impl_has_metadata!(
     rusternetes_common::resources::PodTemplate,
     rusternetes_common::resources::ControllerRevision,
     rusternetes_common::resources::RuntimeClass,
-    rusternetes_common::resources::ResourceQuota
+    rusternetes_common::resources::ResourceQuota,
+    rusternetes_common::resources::ServiceCIDR
 );
 
 // Concrete handler functions for specific resources
@@ -1338,6 +1339,38 @@ pub async fn watch_resourcequotas_all(
         auth_ctx,
         "resourcequotas",
         "",
+        params,
+    )
+    .await
+}
+
+/// Watch servicecidrs (cluster-scoped)
+pub async fn watch_servicecidrs(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::ServiceCIDR>(
+        state,
+        auth_ctx,
+        "servicecidrs",
+        "networking.k8s.io",
+        params,
+    )
+    .await
+}
+
+/// Watch ipaddresses (cluster-scoped)
+pub async fn watch_ipaddresses(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::IPAddress>(
+        state,
+        auth_ctx,
+        "ipaddresses",
+        "networking.k8s.io",
         params,
     )
     .await

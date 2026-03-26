@@ -38,6 +38,20 @@ pub async fn create_servicecidr(
     servicecidr.metadata.ensure_uid();
     servicecidr.metadata.ensure_creation_timestamp();
 
+    // Initialize status with Ready condition if not already set
+    if servicecidr.status.is_none() {
+        servicecidr.status = Some(rusternetes_common::resources::ServiceCIDRStatus {
+            conditions: Some(vec![rusternetes_common::resources::ServiceCIDRCondition {
+                condition_type: "Ready".to_string(),
+                status: "True".to_string(),
+                observed_generation: servicecidr.metadata.generation,
+                last_transition_time: Some(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()),
+                reason: "ServiceCIDRReady".to_string(),
+                message: "ServiceCIDR is ready for allocation".to_string(),
+            }]),
+        });
+    }
+
     // Handle dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
