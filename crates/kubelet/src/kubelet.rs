@@ -833,6 +833,51 @@ impl Kubelet {
             Phase::Running if is_running => {
                 debug!("Pod {}/{} is running, checking health", namespace, pod_name);
 
+                // Handle in-place pod resize: update container resources if spec changed
+                if let Some(spec) = &pod.spec {
+                    for container in &spec.containers {
+                        if let Some(resources) = &container.resources {
+                            let container_name = format!("{}_{}", pod_name, container.name);
+                            // Build update config from current spec resources
+                            let mut update_config = bollard::container::UpdateContainerOptions::<String>::default();
+                            let mut needs_update = false;
+
+                            if let Some(limits) = &resources.limits {
+                                if let Some(cpu) = limits.get("cpu") {
+                                    let millicores = crate::runtime::parse_cpu_quantity(cpu);
+                                    if millicores > 0 {
+                                        // Convert millicores to CPU period/quota
+                                        let period = 100000i64; // 100ms
+                                        let quota = (millicores as i64 * period) / 1000;
+                                        update_config.cpu_period = Some(period);
+                                        update_config.cpu_quota = Some(quota);
+                                        needs_update = true;
+                                    }
+                                }
+                                if let Some(memory) = limits.get("memory") {
+                                    let bytes = crate::runtime::parse_memory_quantity(memory);
+                                    if bytes > 0 {
+                                        update_config.memory = Some(bytes);
+                                        needs_update = true;
+                                    }
+                                }
+                            }
+
+                            if needs_update {
+                                match self.runtime.update_container_resources(
+                                    &container_name,
+                                    update_config.cpu_period,
+                                    update_config.cpu_quota,
+                                    update_config.memory,
+                                ).await {
+                                    Ok(_) => debug!("Updated container {} resources", container_name),
+                                    Err(e) => debug!("Failed to update container {} resources: {}", container_name, e),
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Check if all spec containers have terminated (pause container may still be running).
                 // This must happen before liveness probes, which may error on exited containers.
                 {

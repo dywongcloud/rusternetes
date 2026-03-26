@@ -4533,6 +4533,25 @@ impl ContainerRuntime {
         }
     }
 
+    /// Update container resource limits in-place (for pod resize)
+    pub async fn update_container_resources(
+        &self,
+        container_name: &str,
+        cpu_period: Option<i64>,
+        cpu_quota: Option<i64>,
+        memory: Option<i64>,
+    ) -> Result<()> {
+        let update = bollard::container::UpdateContainerOptions::<String> {
+            cpu_period,
+            cpu_quota,
+            memory,
+            ..Default::default()
+        };
+        self.docker.update_container(container_name, update).await
+            .context("Failed to update container resources")?;
+        Ok(())
+    }
+
     /// List all running pod names from the container runtime
     pub async fn list_running_pods(&self) -> Result<Vec<String>> {
         let options = ListContainersOptions::<String> {
@@ -4563,7 +4582,7 @@ impl ContainerRuntime {
 }
 
 /// Parse a Kubernetes memory quantity string (e.g., "128Mi", "1Gi", "1000000") into bytes.
-fn parse_memory_quantity(s: &str) -> i64 {
+pub fn parse_memory_quantity(s: &str) -> i64 {
     if s.ends_with("Gi") {
         s.trim_end_matches("Gi").parse::<i64>().unwrap_or(0) * 1024 * 1024 * 1024
     } else if s.ends_with("Mi") {
@@ -4585,7 +4604,7 @@ fn parse_memory_quantity(s: &str) -> i64 {
 }
 
 /// Parse a Kubernetes CPU quantity string (e.g., "500m", "1", "0.5") into millicores.
-fn parse_cpu_quantity(s: &str) -> i64 {
+pub fn parse_cpu_quantity(s: &str) -> i64 {
     if s.ends_with('m') {
         s.trim_end_matches('m').parse::<i64>().unwrap_or(0)
     } else {
