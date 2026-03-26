@@ -413,9 +413,13 @@ impl<T> List<T> {
                 }
             }
         }
-        if max_rv > 0 {
-            self.metadata.resource_version = Some(max_rv.to_string());
-        }
+        // Always set a resource version — "0" or empty causes client-go to fail
+        // with "initial RV '0' is not supported". Use max item RV or "1" as fallback.
+        self.metadata.resource_version = Some(if max_rv > 0 {
+            max_rv.to_string()
+        } else {
+            "1".to_string()
+        });
     }
 
     /// Create a new List with resource version

@@ -193,7 +193,12 @@ impl<S: Storage> ReplicationControllerController<S> {
             .collect();
 
         let final_current_replicas = rc_pods_after.len() as i32;
-        let final_ready_replicas = rc_pods_after.len() as i32; // All matched pods
+        let final_ready_replicas = rc_pods_after.iter().filter(|pod| {
+            pod.status.as_ref()
+                .and_then(|s| s.conditions.as_ref())
+                .map(|conditions| conditions.iter().any(|c| c.condition_type == "Ready" && c.status == "True"))
+                .unwrap_or(false)
+        }).count() as i32;
 
         // If we still don't have enough replicas after creation attempts, record failure
         if create_failure.is_none() && final_current_replicas < desired_replicas {

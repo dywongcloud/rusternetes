@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**199 fixes** | 33 pending deploy | Build clean, all unit tests pass
+**202 fixes** | 36 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -37,6 +37,9 @@
 | 197 | Add ?watch=true support to 21 list handlers across 12 files | many tests |
 | 198 | VAP: evaluate spec.variables before validations, add evaluate_to_value to CEL | 1+ tests |
 | 199 | Decode K8s native protobuf to JSON for CRD creation (replaces 415) | 2+ tests |
+| 200 | List resourceVersion: always set (fallback "1"), never "0" or empty | many tests |
+| 201 | RC controller: count ready replicas properly (not all pods) | 1 test |
+| 202 | PVC status subresource route (was missing) | 1 test |
 
 ## Round 99 results (in progress)
 

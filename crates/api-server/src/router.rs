@@ -1121,6 +1121,12 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::persistentvolumeclaim::patch_pvc)
                 .delete(handlers::persistentvolumeclaim::delete_pvc),
         )
+        .route(
+            "/api/v1/namespaces/:namespace/persistentvolumeclaims/:name/status",
+            get(handlers::status::get_status)
+                .put(handlers::status::update_status)
+                .patch(handlers::status::update_status),
+        )
         // PersistentVolumeClaims (all namespaces)
         .route(
             "/api/v1/persistentvolumeclaims",
