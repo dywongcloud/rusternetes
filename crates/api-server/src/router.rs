@@ -1744,6 +1744,12 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::servicecidr::patch_servicecidr)
                 .delete(handlers::servicecidr::delete_servicecidr),
         )
+        .route(
+            "/apis/networking.k8s.io/v1/servicecidrs/:name/status",
+            get(handlers::status::get_cluster_status)
+                .put(handlers::status::update_cluster_status)
+                .patch(handlers::status::update_cluster_status),
+        )
         // Networking v1 API - IPAddresses (cluster-scoped)
         .route(
             "/apis/networking.k8s.io/v1/ipaddresses",

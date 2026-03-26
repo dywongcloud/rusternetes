@@ -108,7 +108,21 @@ where
             .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
 
         match result {
-            ApplyResult::Success(applied_json) => {
+            ApplyResult::Success(mut applied_json) => {
+                // Set the last-applied-configuration annotation
+                if let Some(metadata) = applied_json.get_mut("metadata") {
+                    if let Some(obj) = metadata.as_object_mut() {
+                        let ann = obj.entry("annotations")
+                            .or_insert_with(|| serde_json::json!({}));
+                        if let Some(ann_obj) = ann.as_object_mut() {
+                            ann_obj.insert(
+                                "kubectl.kubernetes.io/last-applied-configuration".to_string(),
+                                serde_json::Value::String(serde_json::to_string(&desired_json).unwrap_or_default()),
+                            );
+                        }
+                    }
+                }
+
                 // Convert to resource type
                 let applied_resource: T = serde_json::from_value(applied_json).map_err(|e| {
                     rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e))
@@ -275,7 +289,21 @@ where
             .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
 
         match result {
-            ApplyResult::Success(applied_json) => {
+            ApplyResult::Success(mut applied_json) => {
+                // Set the last-applied-configuration annotation
+                if let Some(metadata) = applied_json.get_mut("metadata") {
+                    if let Some(obj) = metadata.as_object_mut() {
+                        let ann = obj.entry("annotations")
+                            .or_insert_with(|| serde_json::json!({}));
+                        if let Some(ann_obj) = ann.as_object_mut() {
+                            ann_obj.insert(
+                                "kubectl.kubernetes.io/last-applied-configuration".to_string(),
+                                serde_json::Value::String(serde_json::to_string(&desired_json).unwrap_or_default()),
+                            );
+                        }
+                    }
+                }
+
                 // Convert to resource type
                 let applied_resource: T = serde_json::from_value(applied_json).map_err(|e| {
                     rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e))
