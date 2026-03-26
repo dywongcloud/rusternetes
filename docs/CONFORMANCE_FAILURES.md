@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 96**: 1 FAIL, 0 PASS (running, tests active) | **166 fixes deployed** | Framework no longer stuck, events working (2471 events in one test)
+**Round 96**: 3 FAIL, 0 PASS (running) | **166 fixes deployed** | Framework working, tests progressing slowly
 
 ## Round 94 Failures (14 so far)
 
