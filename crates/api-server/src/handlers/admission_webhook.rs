@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -199,7 +200,14 @@ pub async fn list_validating_webhooks(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<ValidatingWebhookConfiguration>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<ValidatingWebhookConfiguration>(
+            state, auth_ctx, "validatingwebhookconfigurations", "admissionregistration.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing ValidatingWebhookConfigurations");
 
     // Check authorization
@@ -214,7 +222,7 @@ pub async fn list_validating_webhooks(
     }
 
     let prefix = build_prefix("validatingwebhookconfigurations", None);
-    let mut configs = state.storage.list(&prefix).await?;
+    let mut configs = state.storage.list::<ValidatingWebhookConfiguration>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut configs, &params)?;
@@ -224,7 +232,7 @@ pub async fn list_validating_webhooks(
         "admissionregistration.k8s.io/v1",
         configs,
     );
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Use the macro to create a PATCH handler
@@ -416,7 +424,14 @@ pub async fn list_mutating_webhooks(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<MutatingWebhookConfiguration>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<MutatingWebhookConfiguration>(
+            state, auth_ctx, "mutatingwebhookconfigurations", "admissionregistration.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing MutatingWebhookConfigurations");
 
     // Check authorization
@@ -431,7 +446,7 @@ pub async fn list_mutating_webhooks(
     }
 
     let prefix = build_prefix("mutatingwebhookconfigurations", None);
-    let mut configs = state.storage.list(&prefix).await?;
+    let mut configs = state.storage.list::<MutatingWebhookConfiguration>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut configs, &params)?;
@@ -441,7 +456,7 @@ pub async fn list_mutating_webhooks(
         "admissionregistration.k8s.io/v1",
         configs,
     );
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Use the macro to create a PATCH handler

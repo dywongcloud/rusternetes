@@ -5,6 +5,7 @@ use axum::{
     body::Bytes,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -171,7 +172,14 @@ pub async fn list_crds(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<CustomResourceDefinition>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped_json(
+            state, auth_ctx, "customresourcedefinitions", "apiextensions.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing all CustomResourceDefinitions");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "customresourcedefinitions")
@@ -185,7 +193,7 @@ pub async fn list_crds(
     }
 
     let prefix = build_prefix("customresourcedefinitions", None);
-    let mut crds = state.storage.list(&prefix).await?;
+    let mut crds = state.storage.list::<CustomResourceDefinition>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut crds, &params)?;
@@ -195,7 +203,7 @@ pub async fn list_crds(
         "apiextensions.k8s.io/v1",
         crds,
     );
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 /// Update a CustomResourceDefinition

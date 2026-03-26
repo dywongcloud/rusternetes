@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -174,7 +175,14 @@ pub async fn list_validating_admission_policies(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<ValidatingAdmissionPolicy>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<ValidatingAdmissionPolicy>(
+            state, auth_ctx, "validatingadmissionpolicies", "admissionregistration.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing ValidatingAdmissionPolicies");
 
     // Check authorization
@@ -189,7 +197,7 @@ pub async fn list_validating_admission_policies(
     }
 
     let prefix = build_prefix("validatingadmissionpolicies", None);
-    let mut policies = state.storage.list(&prefix).await?;
+    let mut policies = state.storage.list::<ValidatingAdmissionPolicy>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut policies, &params)?;
@@ -199,7 +207,7 @@ pub async fn list_validating_admission_policies(
         "admissionregistration.k8s.io/v1",
         policies,
     );
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Use the macro to create a PATCH handler
@@ -377,7 +385,14 @@ pub async fn list_validating_admission_policy_bindings(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<ValidatingAdmissionPolicyBinding>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<ValidatingAdmissionPolicyBinding>(
+            state, auth_ctx, "validatingadmissionpolicybindings", "admissionregistration.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing ValidatingAdmissionPolicyBindings");
 
     // Check authorization
@@ -392,7 +407,7 @@ pub async fn list_validating_admission_policy_bindings(
     }
 
     let prefix = build_prefix("validatingadmissionpolicybindings", None);
-    let mut bindings = state.storage.list(&prefix).await?;
+    let mut bindings = state.storage.list::<ValidatingAdmissionPolicyBinding>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut bindings, &params)?;
@@ -402,7 +417,7 @@ pub async fn list_validating_admission_policy_bindings(
         "admissionregistration.k8s.io/v1",
         bindings,
     );
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Use the macro to create a PATCH handler

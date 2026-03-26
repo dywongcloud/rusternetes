@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -76,7 +77,14 @@ pub async fn list_storageclasses(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<List<StorageClass>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<StorageClass>(
+            state, auth_ctx, "storageclasses", "storage.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing all StorageClasses");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "storageclasses")
@@ -90,13 +98,13 @@ pub async fn list_storageclasses(
     }
 
     let prefix = build_prefix("storageclasses", None);
-    let mut scs = state.storage.list(&prefix).await?;
+    let mut scs = state.storage.list::<StorageClass>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut scs, &params)?;
 
     let list = List::new("StorageClassList", "storage.k8s.io/v1", scs);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 pub async fn update_storageclass(

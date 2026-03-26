@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -178,7 +179,14 @@ pub async fn list_priority_level_configurations(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<PriorityLevelConfiguration>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<PriorityLevelConfiguration>(
+            state, auth_ctx, "prioritylevelconfigurations", "flowcontrol.apiserver.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing PriorityLevelConfigurations");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "prioritylevelconfigurations")
@@ -190,7 +198,7 @@ pub async fn list_priority_level_configurations(
     }
 
     let prefix = build_prefix("prioritylevelconfigurations", None);
-    let mut items = state.storage.list(&prefix).await?;
+    let mut items = state.storage.list::<PriorityLevelConfiguration>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;
@@ -200,7 +208,7 @@ pub async fn list_priority_level_configurations(
         "flowcontrol.apiserver.k8s.io/v1",
         items,
     );
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 crate::patch_handler_cluster!(
@@ -354,7 +362,14 @@ pub async fn list_flow_schemas(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<FlowSchema>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<FlowSchema>(
+            state, auth_ctx, "flowschemas", "flowcontrol.apiserver.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing FlowSchemas");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "flowschemas")
@@ -366,13 +381,13 @@ pub async fn list_flow_schemas(
     }
 
     let prefix = build_prefix("flowschemas", None);
-    let mut items = state.storage.list(&prefix).await?;
+    let mut items = state.storage.list::<FlowSchema>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;
 
     let list = List::new("FlowSchemaList", "flowcontrol.apiserver.k8s.io/v1", items);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 crate::patch_handler_cluster!(

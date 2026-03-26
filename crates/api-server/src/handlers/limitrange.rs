@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -199,7 +200,14 @@ pub async fn list(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<List<LimitRange>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_namespaced::<LimitRange>(
+            state, auth_ctx, namespace, "limitranges", "", watch_params,
+        ).await;
+    }
+
     info!("Listing LimitRanges in namespace: {}", namespace);
 
     // Check authorization
@@ -215,20 +223,27 @@ pub async fn list(
     }
 
     let prefix = build_prefix("limitranges", Some(&namespace));
-    let mut limit_ranges = state.storage.list(&prefix).await?;
+    let mut limit_ranges = state.storage.list::<LimitRange>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut limit_ranges, &params)?;
 
     let list = List::new("LimitRangeList", "v1", limit_ranges);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 pub async fn list_all(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<List<LimitRange>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<LimitRange>(
+            state, auth_ctx, "limitranges", "", watch_params,
+        ).await;
+    }
+
     info!("Listing all LimitRanges");
 
     // Check authorization
@@ -242,13 +257,13 @@ pub async fn list_all(
     }
 
     let prefix = build_prefix("limitranges", None);
-    let mut limit_ranges = state.storage.list(&prefix).await?;
+    let mut limit_ranges = state.storage.list::<LimitRange>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut limit_ranges, &params)?;
 
     let list = List::new("LimitRangeList", "v1", limit_ranges);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Use the macro to create a PATCH handler

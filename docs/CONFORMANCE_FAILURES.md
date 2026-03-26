@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**196 fixes** | 30 pending deploy | Build clean, all unit tests pass
+**197 fixes** | 31 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -34,6 +34,7 @@
 | 194 | Lifecycle hook exec handler: 30s timeout (was infinite) | 1 test |
 | 195 | Projected volume resync: items field, downwardAPI, stale file deletion | 2 tests |
 | 196 | StatefulSet status: set availableReplicas = readyReplicas (was None) | 2 tests |
+| 197 | Add ?watch=true support to 21 list handlers across 12 files | many tests |
 
 ## Round 98 results (in progress)
 
@@ -46,7 +47,7 @@
 | output.go:263 | `FOOBAR=$(FOO);;$(BAR)` not expanded | **FIXED #189** — expand `$(VAR)` in env values using prior env vars |
 | crd_publish_openapi.go:161 | `failed to decode CRD: missing field 'spec'` | **FIXED #190** — return 415 for native protobuf; client retries with JSON |
 | field_validation.go:570 | `key must be a string at line 1 column 2` | **FIXED #190** — same protobuf issue |
-| validatingadmissionpolicy.go:120 | wait for marker timeout | Watch events or VAP controller issue |
+| validatingadmissionpolicy.go:120 | wait for marker timeout | **FIXED #197** — VAP list handler now supports ?watch=true |
 | runtimeclass.go:153 | timeout | **FIXED #193** — list handler now supports ?watch=true query param |
 | statefulset.go:786 | timed out scaling | **FIXED #196** — availableReplicas was always None (should match readyReplicas) |
 | statefulset.go:2253 | timed out | **FIXED #196** — same availableReplicas issue |

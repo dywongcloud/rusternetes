@@ -94,6 +94,24 @@ pub fn normalize_resource_version(rv: Option<String>) -> Option<String> {
     rv.filter(|s| !s.is_empty())
 }
 
+/// Check if a query param map indicates a watch request
+pub fn is_watch_request(params: &std::collections::HashMap<String, String>) -> bool {
+    params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false)
+}
+
+/// Convert query parameters to WatchParams
+pub fn watch_params_from_query(params: &std::collections::HashMap<String, String>) -> WatchParams {
+    WatchParams {
+        resource_version: normalize_resource_version(params.get("resourceVersion").cloned()),
+        timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+        label_selector: params.get("labelSelector").cloned(),
+        field_selector: params.get("fieldSelector").cloned(),
+        watch: Some(true),
+        allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+        send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+    }
+}
+
 /// Generic watch handler for namespaced resources
 pub async fn watch_namespaced<T>(
     state: Arc<ApiServerState>,

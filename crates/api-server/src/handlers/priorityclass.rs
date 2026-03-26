@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -187,7 +188,14 @@ pub async fn list(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<PriorityClass>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<PriorityClass>(
+            state, auth_ctx, "priorityclasses", "scheduling.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing PriorityClasses");
 
     // Check authorization
@@ -202,7 +210,7 @@ pub async fn list(
     }
 
     let prefix = build_prefix("priorityclasses", None);
-    let mut priority_classes = state.storage.list(&prefix).await?;
+    let mut priority_classes = state.storage.list::<PriorityClass>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut priority_classes, &params)?;
@@ -212,7 +220,7 @@ pub async fn list(
         "scheduling.k8s.io/v1",
         priority_classes,
     );
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Use the macro to create a PATCH handler

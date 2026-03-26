@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -191,7 +192,15 @@ pub async fn list_replicationcontrollers(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
-) -> Result<Json<List<ReplicationController>>> {
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_namespaced::<ReplicationController>(
+            state, auth_ctx, namespace, "replicationcontrollers", "", watch_params,
+        ).await;
+    }
+
     info!("Listing replicationcontrollers in namespace: {}", namespace);
 
     // Check authorization
@@ -207,17 +216,25 @@ pub async fn list_replicationcontrollers(
     }
 
     let prefix = build_prefix("replicationcontrollers", Some(&namespace));
-    let rcs = state.storage.list(&prefix).await?;
+    let rcs = state.storage.list::<ReplicationController>(&prefix).await?;
 
     let list = List::new("ReplicationControllerList", "v1", rcs);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 /// List all replicationcontrollers across all namespaces
 pub async fn list_all_replicationcontrollers(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<List<ReplicationController>>> {
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<ReplicationController>(
+            state, auth_ctx, "replicationcontrollers", "", watch_params,
+        ).await;
+    }
+
     info!("Listing all replicationcontrollers");
 
     // Check authorization (cluster-wide list)
@@ -235,7 +252,7 @@ pub async fn list_all_replicationcontrollers(
     let rcs = state.storage.list::<ReplicationController>(&prefix).await?;
 
     let list = List::new("ReplicationControllerList", "v1", rcs);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Use the macro to create a PATCH handler

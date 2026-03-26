@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -172,7 +173,14 @@ pub async fn list_certificate_signing_requests(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<CertificateSigningRequest>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<CertificateSigningRequest>(
+            state, auth_ctx, "certificatesigningrequests", "certificates.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing CertificateSigningRequests");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "certificatesigningrequests")
@@ -184,7 +192,7 @@ pub async fn list_certificate_signing_requests(
     }
 
     let prefix = build_prefix("certificatesigningrequests", None);
-    let mut items = state.storage.list(&prefix).await?;
+    let mut items = state.storage.list::<CertificateSigningRequest>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;
@@ -194,7 +202,7 @@ pub async fn list_certificate_signing_requests(
         "certificates.k8s.io/v1",
         items,
     );
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Status subresource handlers

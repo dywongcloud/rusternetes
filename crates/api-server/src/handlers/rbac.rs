@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -178,7 +179,14 @@ pub async fn list_roles(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<List<Role>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_namespaced::<Role>(
+            state, auth_ctx, namespace, "roles", "rbac.authorization.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing roles in namespace: {}", namespace);
 
     // Check authorization
@@ -194,13 +202,13 @@ pub async fn list_roles(
     }
 
     let prefix = build_prefix("roles", Some(&namespace));
-    let mut roles = state.storage.list(&prefix).await?;
+    let mut roles = state.storage.list::<Role>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut roles, &params)?;
 
     let list = List::new("RoleList", "rbac.authorization.k8s.io/v1", roles);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 /// List all roles across all namespaces
@@ -208,7 +216,14 @@ pub async fn list_all_roles(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<List<Role>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<Role>(
+            state, auth_ctx, "roles", "rbac.authorization.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing all roles");
 
     // Check authorization (cluster-wide list)
@@ -229,7 +244,7 @@ pub async fn list_all_roles(
     crate::handlers::filtering::apply_selectors(&mut roles, &params)?;
 
     let list = List::new("RoleList", "rbac.authorization.k8s.io/v1", roles);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // RoleBinding handlers
@@ -402,7 +417,14 @@ pub async fn list_rolebindings(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<List<RoleBinding>>> {
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_namespaced::<RoleBinding>(
+            state, auth_ctx, namespace, "rolebindings", "rbac.authorization.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing rolebindings in namespace: {}", namespace);
 
     // Check authorization
@@ -418,7 +440,7 @@ pub async fn list_rolebindings(
     }
 
     let prefix = build_prefix("rolebindings", Some(&namespace));
-    let mut rolebindings = state.storage.list(&prefix).await?;
+    let mut rolebindings = state.storage.list::<RoleBinding>(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut rolebindings, &params)?;
@@ -428,7 +450,7 @@ pub async fn list_rolebindings(
         "rbac.authorization.k8s.io/v1",
         rolebindings,
     );
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 /// List all rolebindings across all namespaces
