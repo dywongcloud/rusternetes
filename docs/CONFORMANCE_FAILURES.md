@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 96**: 31 FAIL, 0 PASS (running) | **168 fixes** (166 deployed + 2 pending)
+**Round 96**: 31 FAIL, 0 PASS (running) | **169 fixes** (166 deployed + 3 pending: generation, ClusterIP, SA token, PodScheduled, PDB, restart count)
 
 ## ALL Round 96 Failures by Root Cause
 
