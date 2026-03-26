@@ -70,6 +70,7 @@ pub async fn proxy_node(
 
     // Build target URL (kubelet typically runs on port 10250)
     let kubelet_port = 10250;
+    let path = path.trim_start_matches('/');
     let target_url = format!("https://{}:{}/{}", node_address, kubelet_port, path);
 
     // Forward the request to the kubelet
@@ -170,6 +171,7 @@ pub async fn proxy_service(
     }
 
     // Use endpoint IP if available, otherwise fall back to ClusterIP
+    let path = path.trim_start_matches('/');
     let target_url = if let Some(ep_ip) = endpoint_ip {
         format!("http://{}:{}/{}", ep_ip, target_port, path)
     } else {
@@ -237,6 +239,7 @@ pub async fn proxy_pod(
         .unwrap_or(80);
 
     // Build target URL
+    let path = path.trim_start_matches('/');
     let target_url = format!("http://{}:{}/{}", pod_ip, port, path);
 
     // Forward the request

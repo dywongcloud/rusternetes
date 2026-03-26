@@ -1289,10 +1289,18 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::status::update_status)
                 .patch(handlers::status::update_status),
         )
+        .route(
+            "/api/v1/watch/namespaces/:namespace/resourcequotas",
+            get(handlers::watch::watch_resourcequotas),
+        )
         // ResourceQuotas (all namespaces)
         .route(
             "/api/v1/resourcequotas",
             get(handlers::resourcequota::list_all),
+        )
+        .route(
+            "/api/v1/watch/resourcequotas",
+            get(handlers::watch::watch_resourcequotas_all),
         )
         // LimitRanges (namespace-scoped)
         .route(
@@ -1791,6 +1799,10 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::runtimeclass::update_runtimeclass)
                 .patch(handlers::runtimeclass::patch_runtimeclass)
                 .delete(handlers::runtimeclass::delete_runtimeclass),
+        )
+        .route(
+            "/apis/node.k8s.io/v1/watch/runtimeclasses",
+            get(handlers::watch::watch_runtimeclasses),
         )
         // Core v1 API - PodTemplates (namespace-scoped)
         .route(

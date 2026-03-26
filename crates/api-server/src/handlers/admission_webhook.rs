@@ -38,6 +38,27 @@ pub async fn create_validating_webhook(
         }
     }
 
+    // Validate matchConditions CEL expressions
+    if let Some(webhooks) = &config.webhooks {
+        for webhook in webhooks {
+            if let Some(conditions) = &webhook.match_conditions {
+                for condition in conditions {
+                    if condition.expression.is_empty() {
+                        return Err(rusternetes_common::Error::InvalidResource(
+                            "matchConditions[].expression must be non-empty".to_string()
+                        ));
+                    }
+                    if cel_interpreter::Program::compile(&condition.expression).is_err() {
+                        return Err(rusternetes_common::Error::InvalidResource(format!(
+                            "matchConditions: Invalid CEL expression '{}': compilation failed",
+                            condition.expression
+                        )));
+                    }
+                }
+            }
+        }
+    }
+
     // Enrich metadata with system fields
     config.metadata.ensure_uid();
     config.metadata.ensure_creation_timestamp();
@@ -235,6 +256,27 @@ pub async fn create_mutating_webhook(
         Decision::Allow => {}
         Decision::Deny(reason) => {
             return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Validate matchConditions CEL expressions
+    if let Some(webhooks) = &config.webhooks {
+        for webhook in webhooks {
+            if let Some(conditions) = &webhook.match_conditions {
+                for condition in conditions {
+                    if condition.expression.is_empty() {
+                        return Err(rusternetes_common::Error::InvalidResource(
+                            "matchConditions[].expression must be non-empty".to_string()
+                        ));
+                    }
+                    if cel_interpreter::Program::compile(&condition.expression).is_err() {
+                        return Err(rusternetes_common::Error::InvalidResource(format!(
+                            "matchConditions: Invalid CEL expression '{}': compilation failed",
+                            condition.expression
+                        )));
+                    }
+                }
+            }
         }
     }
 

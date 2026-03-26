@@ -1002,7 +1002,9 @@ impl_has_metadata!(
     rusternetes_common::resources::PodDisruptionBudget,
     rusternetes_common::resources::IPAddress,
     rusternetes_common::resources::PodTemplate,
-    rusternetes_common::resources::ControllerRevision
+    rusternetes_common::resources::ControllerRevision,
+    rusternetes_common::resources::RuntimeClass,
+    rusternetes_common::resources::ResourceQuota
 );
 
 // Concrete handler functions for specific resources
@@ -1285,6 +1287,56 @@ pub async fn watch_persistentvolumeclaims(
         auth_ctx,
         namespace,
         "persistentvolumeclaims",
+        "",
+        params,
+    )
+    .await
+}
+
+/// Watch runtimeclasses (cluster-scoped)
+pub async fn watch_runtimeclasses(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::RuntimeClass>(
+        state,
+        auth_ctx,
+        "runtimeclasses",
+        "node.k8s.io",
+        params,
+    )
+    .await
+}
+
+/// Watch resourcequotas in a namespace
+pub async fn watch_resourcequotas(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(namespace): Path<String>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_namespaced::<rusternetes_common::resources::ResourceQuota>(
+        state,
+        auth_ctx,
+        namespace,
+        "resourcequotas",
+        "",
+        params,
+    )
+    .await
+}
+
+/// Watch resourcequotas across all namespaces
+pub async fn watch_resourcequotas_all(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Query(params): Query<WatchParams>,
+) -> Result<Response> {
+    watch_cluster_scoped::<rusternetes_common::resources::ResourceQuota>(
+        state,
+        auth_ctx,
+        "resourcequotas",
         "",
         params,
     )

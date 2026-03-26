@@ -2765,6 +2765,23 @@ impl ContainerRuntime {
             }
         }
 
+        // Create and bind-mount termination message log file.
+        // Kubernetes writes termination messages to /dev/termination-log (or a custom path).
+        // Docker's /dev is a tmpfs that becomes inaccessible after the container stops,
+        // so we create a host-side file and bind-mount it into the container.
+        {
+            let term_msg_path = container
+                .termination_message_path
+                .as_deref()
+                .unwrap_or("/dev/termination-log");
+            let term_host_dir = format!("{}/{}/termination", self.volumes_base_path, pod_name);
+            std::fs::create_dir_all(&term_host_dir).ok();
+            let term_host_file = format!("{}/{}", term_host_dir, container.name);
+            // Create an empty file
+            std::fs::write(&term_host_file, "").ok();
+            binds.push(format!("{}:{}", term_host_file, term_msg_path));
+        }
+
         // Create container configuration
         // Skip cluster DNS configuration for:
         //   - CoreDNS (to avoid circular dependency)
@@ -3658,7 +3675,7 @@ impl ContainerRuntime {
     }
 
     /// Read the termination message from a stopped container.
-    /// Reads /dev/termination-log (or custom path) from the container filesystem.
+    /// First tries reading from the host-side bind-mounted file, then falls back to docker cp.
     async fn read_termination_message(
         &self,
         container_name: &str,
@@ -3671,7 +3688,23 @@ impl ContainerRuntime {
 
         debug!("Reading termination message from {} in container {}", msg_path, container_name);
 
-        // Use docker cp to read the file from the stopped container
+        // Extract pod_name from container_name (format: {pod_name}_{container_name})
+        let pod_name = container_name.rsplitn(2, '_').last().unwrap_or(container_name);
+
+        // Try host-side file first (bind-mounted during container creation)
+        let term_host_file = format!("{}/{}/termination/{}", self.volumes_base_path, pod_name, container.name);
+        if let Ok(content) = std::fs::read_to_string(&term_host_file) {
+            if !content.is_empty() {
+                let mut content = content;
+                if content.len() > 4096 {
+                    content.truncate(4096);
+                }
+                debug!("Read termination message ({} bytes) from host file for {}", content.len(), container_name);
+                return Some(content);
+            }
+        }
+
+        // Fall back to docker cp for containers created before the bind-mount fix
         let mut stream = self
             .docker
             .download_from_container(container_name, Some(bollard::container::DownloadFromContainerOptions { path: msg_path.to_string() }));
@@ -3681,7 +3714,6 @@ impl ContainerRuntime {
                 Ok(bytes) => all_bytes.extend_from_slice(&bytes),
                 Err(e) => {
                     debug!("Error reading termination message from {}: {}", container_name, e);
-                    // Check terminationMessagePolicy for FallbackToLogsOnError
                     if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
                         return self.read_container_logs_tail(container_name, 80).await;
                     }
@@ -3692,7 +3724,6 @@ impl ContainerRuntime {
 
         if all_bytes.is_empty() {
             debug!("Termination message file empty or not found in {}", container_name);
-            // FallbackToLogsOnError: use container logs when file is empty/missing
             if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
                 return self.read_container_logs_tail(container_name, 80).await;
             }
@@ -3705,7 +3736,6 @@ impl ContainerRuntime {
             while let Some(Ok(mut entry)) = entries.next() {
                 let mut content = String::new();
                 if std::io::Read::read_to_string(&mut entry, &mut content).is_ok() && !content.is_empty() {
-                    // Trim to 4KB (Kubernetes limit for termination messages)
                     if content.len() > 4096 {
                         content.truncate(4096);
                     }
@@ -3716,7 +3746,6 @@ impl ContainerRuntime {
         }
 
         debug!("Failed to extract termination message from tar archive for {}", container_name);
-        // FallbackToLogsOnError: use container logs when extraction fails
         if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
             return self.read_container_logs_tail(container_name, 80).await;
         }
