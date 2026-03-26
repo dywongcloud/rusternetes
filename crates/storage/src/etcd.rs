@@ -44,16 +44,20 @@ impl Storage for EtcdStorage {
         T: Serialize + DeserializeOwned + Send + Sync,
     {
         let mut client = self.client.lock().await;
-        // Ensure metadata.generation is set to 1 on creation
+        // Ensure metadata exists and generation is set to 1 on creation
         let json = {
             let mut raw = Self::serialize(value)?;
             if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&raw) {
+                // Ensure metadata object exists
+                if v.get("metadata").is_none() || v.get("metadata").map_or(false, |m| m.is_null()) {
+                    v["metadata"] = serde_json::json!({});
+                }
                 if let Some(metadata) = v.get_mut("metadata") {
                     if metadata.get("generation").map_or(true, |g| g.is_null()) {
                         metadata["generation"] = serde_json::json!(1);
-                        raw = serde_json::to_string(&v).unwrap_or(raw);
                     }
                 }
+                raw = serde_json::to_string(&v).unwrap_or(raw);
             }
             raw
         };
