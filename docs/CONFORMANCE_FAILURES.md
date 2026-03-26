@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 94**: 8 FAIL, 0 PASS (running slow) | **162 fixes deployed** | Protobuf 415 doesn't work — client doesn't fall back to JSON
+**Round 94**: 9 FAIL, 0 PASS (running) | **163 fixes** (162 deployed + 1 pending) | Protobuf TypeMeta extraction fix pending deploy
 
 ## Fixes pending deploy (34)
 
