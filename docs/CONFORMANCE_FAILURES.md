@@ -50,6 +50,8 @@
 | service.go:251 | affinity timeout | Session affinity iptables recent module |
 | lifecycle_hook.go:132 | Timed out after 30s | Lifecycle hook (postStart/preStop) exec timing |
 | **bookmark resourceVersion: 0** | Watch bookmarks sent with RV "0" | **FIXED #191** — initialize with current etcd revision, not "0". All 4 watch functions fixed. |
+| resource_quota.go:422 | missing replicationcontrollers, resourcequotas in status.used | Quota controller doesn't track all resource types |
+| output.go:263 (2nd) | env var output wrong | May be fixed by #189 (env var expansion) — needs redeploy |
 
 ## Previously fixed (deployed in round 98)
 
