@@ -103,6 +103,27 @@ impl CELEvaluator {
         }
     }
 
+    /// Evaluate a CEL expression and return the raw Value (for VAP variables)
+    pub fn evaluate_to_value(&mut self, expression: &str, context: &CELContext) -> Result<Value> {
+        let program = if let Some(prog) = self.program_cache.get(expression) {
+            prog
+        } else {
+            let prog = Program::compile(expression)
+                .map_err(|e| anyhow!("Failed to compile CEL expression '{}': {}", expression, e))?;
+            self.program_cache.insert(expression.to_string(), prog);
+            self.program_cache.get(expression).unwrap()
+        };
+
+        let mut cel_context = Context::default();
+        for (key, value) in &context.variables {
+            cel_context.add_variable(key.clone(), value.clone());
+        }
+
+        program
+            .execute(&cel_context)
+            .map_err(|e| anyhow!("Failed to execute CEL expression '{}': {}", expression, e))
+    }
+
     /// Type-check a CEL expression without executing it
     pub fn type_check(&mut self, expression: &str) -> Result<()> {
         Program::compile(expression)

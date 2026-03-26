@@ -687,18 +687,38 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                 }
             }
 
+            // Build CEL context with object variable
+            let mut context = rusternetes_common::CELContext::new();
+            if let Some(obj) = object {
+                let _ = context.add_json_variable("object", obj);
+            }
+
+            // Evaluate spec.variables first, making results available as variables.NAME
+            if let Some(vars) = policy.get("spec").and_then(|s| s.get("variables")).and_then(|v| v.as_array()) {
+                for var_def in vars {
+                    let var_name = var_def.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                    let var_expr = var_def.get("expression").and_then(|e| e.as_str()).unwrap_or("");
+                    if var_name.is_empty() || var_expr.is_empty() {
+                        continue;
+                    }
+                    // Evaluate the variable expression and add result to context
+                    match evaluator.evaluate_to_value(var_expr, &context) {
+                        Ok(val) => {
+                            context.add_variable(format!("variables.{}", var_name), val);
+                        }
+                        Err(e) => {
+                            tracing::warn!("CEL variable {} evaluation error for policy {}: {}", var_name, policy_name, e);
+                        }
+                    }
+                }
+            }
+
             // Evaluate validations
             if let Some(validations) = policy.get("spec").and_then(|s| s.get("validations")).and_then(|v| v.as_array()) {
                 for validation in validations {
                     let expression = validation.get("expression").and_then(|e| e.as_str()).unwrap_or("");
                     if expression.is_empty() {
                         continue;
-                    }
-
-                    // Build CEL context with object variable
-                    let mut context = rusternetes_common::CELContext::new();
-                    if let Some(obj) = object {
-                        let _ = context.add_json_variable("object", obj);
                     }
 
                     // Evaluate

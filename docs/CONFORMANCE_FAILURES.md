@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**197 fixes** | 31 pending deploy | Build clean, all unit tests pass
+**198 fixes** | 32 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -35,6 +35,7 @@
 | 195 | Projected volume resync: items field, downwardAPI, stale file deletion | 2 tests |
 | 196 | StatefulSet status: set availableReplicas = readyReplicas (was None) | 2 tests |
 | 197 | Add ?watch=true support to 21 list handlers across 12 files | many tests |
+| 198 | VAP: evaluate spec.variables before validations, add evaluate_to_value to CEL | 1+ tests |
 
 ## Round 98 results (in progress)
 
