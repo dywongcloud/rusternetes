@@ -1,90 +1,58 @@
 # Conformance Issue Tracker
 
-**Round 96**: 40 FAIL, 0 PASS (complete) | **170 fixes** pending deploy
+**170 fixes total** | Pending deploy with critical watch fix
 
 ## CRITICAL FIX #170: Watch events missing resourceVersion
 
-Root cause of 0-pass regression identified and fixed. Watch events from etcd
-did NOT include metadata.resourceVersion in the JSON values. The watch cache
-fell back to chrono timestamps, creating mixed revision spaces. Now etcd's
-mod_revision is injected into every watch event value.
+Root cause of 0-pass regression in round 96. Watch events from etcd did NOT
+include metadata.resourceVersion in the JSON values (resourceVersion is only
+added during get/list, not stored in etcd). The watch cache fell back to
+chrono timestamps for revision tracking, creating mixed revision spaces
+that confused the K8s client watch reconnection.
 
-## ALL Round 96 Failures by Root Cause
+Fix: inject etcd mod_revision as metadata.resourceVersion into every watch
+event value at the etcd storage layer, for both regular and from_revision watches.
 
-### Protobuf body decoding (7 tests) — MUST FIX
-CRD/Service created via protobuf. TypeMeta extraction gives minimal JSON missing `spec`.
-- custom_resource_definition.go:72 — `missing field spec`
-- custom_resource_definition.go:104 — `missing field spec`
-- custom_resource_definition.go:288 — `missing field spec`
-- crd_publish_openapi.go:318 — `context deadline exceeded` (CRD create timeout)
-- crd_publish_openapi.go:366 — `context deadline exceeded`
-- field_validation.go:700 — `key must be a string at line 1 column 2`
-- service_latency.go:142 — `missing field spec at line 1 column 58`
+## Fixes pending deploy (since round 96 deploy)
 
-### Watch timeouts (8 tests) — MUST FIX
-Watch-based waiters time out. Events exist but may not reach subscriber.
-- statefulset.go:786 — `timed out waiting for the condition`
-- rc.go:717 — `timed out waiting for the condition`
-- watch.go:409 — `Timed out waiting for expected watch notification`
-- daemon_set.go:980 — `failed to locate daemon set`
-- replica_set.go:232 — timeout
-- lifecycle_hook.go:132 — timeout
-- projected_configmap.go:367 — timeout
-- builder.go:97 — kubectl timeout (protobuf validation)
+| # | Fix | Tests affected |
+|---|-----|----------------|
+| 163 | Protobuf: extract TypeMeta instead of 415 | 10 CRD/protobuf |
+| 164 | ServiceCIDR /status route + SSA last-applied annotation | 2 |
+| 166 | initial-events-end bookmark always sent | framework hang |
+| 167 | PDB status PATCH via generic handler | 1 |
+| 168 | Restart count monotonic (max docker + prev) | 1 |
+| 169 | metadata.generation=1 on create, ClusterIP alloc, SA token, PodScheduled | 5+ |
+| 170 | **CRITICAL** resourceVersion in watch event values | 12+ watch timeouts |
 
-### Webhook/aggregator pods not ready (2 tests)
-Container starts but deployment shows ReadyReplicas=0.
-- webhook.go:1269 — `waiting for webhook configuration to be ready`
-- aggregator.go:359 — ReadyReplicas=0
+## Round 96 Failures (40 total, 0 passes)
 
-### Pod generation field not set (1 test) — EASY FIX
-`metadata.generation` must be set to 1 on creation, incremented on spec change.
-- pods.go:556 — `verifying the new pod's generation is 1`
+### Watch timeouts (12) — should be fixed by #170
+statefulset.go:786, rc.go:717, daemon_set.go:980, replica_set.go:232,
+lifecycle_hook.go:132, pod_client.go:216, projected_configmap.go:367,
+watch.go:409, job.go:623, :755, runtime.go:158, proxy.go:271
 
-### Downward API resource field (2 tests)
-CPU_LIMIT env var not set correctly from resource field ref.
-- output.go:282 — `expected CPU_LIMIT=2`
-- output.go:263 — pod output mismatch
+### Protobuf body (10) — partially addressed by #163
+custom_resource_definition.go:72, :104, :288,
+crd_publish_openapi.go:318, :366, field_validation.go:570, :700,
+aggregated_discovery.go:227, :336, service_latency.go:142
 
-### PDB status PATCH (1 test) — FIX #167 PENDING
-Generic PUT handler can't handle PATCH merge body.
-- disruption.go:604 — `the server rejected our request (patch poddisruptionbudgets)`
+### Webhook/aggregator (3)
+webhook.go:861 (invalid matchConditions not rejected),
+webhook.go:1269 (webhook not ready), aggregator.go:359
 
-### Service account token creation (1 test)
-- service_accounts.go:898 — `the server rejected our request (post serviceaccounts)`
-
-### Restart count monotonic (1 test) — FIX #168 PENDING
-Docker restart count resets on container recreation.
-- container_probe.go:1763 — `restart count changed from 1 to 0`
-
-### Resource quota (1 test)
-- resource_quota.go:803 — quota counting
-
-### VAP (1 test)
-- validatingadmissionpolicy.go:814 — CEL/watch
-
-### Service (2 tests)
+### Specific bugs (15) — many fixed by #164-169
+- output.go:282 — CPU_LIMIT downward API
+- output.go:263 — configmap subpath
+- container_probe.go:1763 — restart count (**FIX #168**)
+- disruption.go:604 — PDB PATCH (**FIX #167**)
+- pods.go:556 — generation (**FIX #169**)
+- service_accounts.go:898 — SA token (**FIX #169**)
+- service.go:1444, :1483 — ClusterIP (**FIX #169**)
+- predicates.go:1247 — PodScheduled (**FIX #169**)
 - service.go:251 — affinity
-- service.go:1444 — `didn't get ClusterIP for non-ExternalName service`
-
-### Scheduling (1 test)
-- predicates.go:1247 — `Did not find scheduled condition for pod`
-
-### Job (2 tests)
-- job.go:623 — timeout
-- job.go:755 — timeout
-
-### Aggregated discovery (1 test)
-- aggregated_discovery.go:227 — `failed to decode CRD: missing field spec`
-
-### Pod lifecycle (1 test)
-- pod_client.go:216 — pod success timeout
-
-## Priority Fixes
-
-1. **metadata.generation** — set to 1 on create for ALL resources (easy, high impact)
-2. **ClusterIP for services** — service.go:1444 missing ClusterIP (easy)
-3. **SA token creation** — service_accounts.go:898 rejected (route issue?)
-4. **Scheduling condition** — predicates.go:1247 pod condition not set
-5. **PDB status PATCH** — fix #167 pending deploy
-6. **Restart count** — fix #168 pending deploy
+- pod_resize.go:857 — resize
+- conformance.go:696 — resourceVersion empty
+- validatingadmissionpolicy.go:814 — VAP
+- resource_quota.go:803 — quota
+- builder.go:97 — kubectl protobuf
