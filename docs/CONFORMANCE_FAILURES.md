@@ -4,9 +4,9 @@
 
 ## Current Status
 
-- **Round 102 in progress** (deployed fixes #1-229): 26 pass, 15 fail at 41/441 (**63%**)
-- **Pending deploy** (fixes #230-242): 13 fixes
-- **Progress**: ~40 passes (round 97) → 245/441 (round 101, 56%) → 63% early (round 102)
+- **Round 102 in progress** (deployed fixes #1-229): 36 pass, 22 fail at 58/441 (**62%**)
+- **Pending deploy** (fixes #230-244): 15 fixes
+- **Progress**: ~40 passes (round 97) → 245/441 (round 101, 56%) → 62% (round 102)
 
 ## Deployed Fixes (in current running build)
 
@@ -133,7 +133,7 @@ Fixes #1-216 are deployed and active in round 101.
 | Job completion timeout | job.go:958 — pod adoption timing |
 | Pod resize status | Cgroup values not updating after resize |
 | Network connectivity | proxy.go:271, network/util.go:182 — service proxy / endpoint resolution |
-| Websocket exec channel | Got status (ch3) before stdout (ch1) — protocol ordering |
+| Websocket exec channel | **FIXED #244** — send empty stdout before status |
 | Strict decoding | duplicate field detection for fieldValidation=Strict |
 | RS availableReplicas | RS controller timing — pods not counted as available fast enough |
 | Deployment revision | Rolling update revision annotation timing |
