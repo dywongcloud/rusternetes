@@ -361,6 +361,27 @@ pub async fn create(
         pod.status = Some(status);
     }
 
+    // Compute and set QoS class
+    {
+        let qos = if let Some(spec) = &pod.spec {
+            let mut all_guaranteed = true;
+            let mut any_resources = false;
+            for c in &spec.containers {
+                if let Some(res) = &c.resources {
+                    let has_limits = res.limits.as_ref().map_or(false, |l| l.contains_key("cpu") && l.contains_key("memory"));
+                    let has_requests = res.requests.as_ref().map_or(false, |r| r.contains_key("cpu") && r.contains_key("memory"));
+                    if has_limits || has_requests { any_resources = true; }
+                    if !has_limits || (has_requests && res.limits != res.requests) { all_guaranteed = false; }
+                } else {
+                    all_guaranteed = false;
+                }
+            }
+            if !any_resources { "BestEffort" } else if all_guaranteed { "Guaranteed" } else { "Burstable" }
+        } else { "BestEffort" };
+        let status = pod.status.get_or_insert_with(Default::default);
+        status.qos_class = Some(qos.to_string());
+    }
+
     let key = build_key("pods", Some(&namespace), &pod.metadata.name);
 
     // If dry-run, skip storage operation but return the validated resource
