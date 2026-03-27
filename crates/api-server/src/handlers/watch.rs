@@ -205,10 +205,13 @@ where
 
     // Determine whether to send initial ADDED events:
     // - If sendInitialEvents=true: always send
-    // - If resourceVersion is "0" or absent: send initial events
-    // - If resourceVersion is a specific value (non-zero): skip initial events
+    // - If resourceVersion is "0", "1", or absent: send initial events
+    // - If resourceVersion is a specific value (> 1): skip initial events (etcd watch replay handles it)
+    // NOTE: rv="1" is treated like rv="0" because replaying all events from the
+    // beginning of etcd history is too slow; listing current state is equivalent.
     let should_send_initial = send_initial_events
         || requested_rv.as_deref() == Some("0")
+        || requested_rv.as_deref() == Some("1")
         || requested_rv.is_none();
 
     // Spawn task to convert watch events to HTTP response
