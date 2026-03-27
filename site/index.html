@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rusternetes - Kubernetes Reimplemented in Rust</title>
+  <meta name="description" content="A full Kubernetes reimplementation in Rust, focusing on memory safety, performance, and conformance. 9 crates, 31 controllers, 1300+ tests.">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="#architecture">Architecture</a>
+        <a href="#features">Features</a>
+        <a href="#crates">Crates</a>
+        <a href="#quickstart">Quick Start</a>
+        <a href="https://github.com/chrisalfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="hero-badge">Open Source &middot; Apache-2.0</div>
+      <h1>Kubernetes,<br>reimplemented in <span class="rust-accent">Rust</span>.</h1>
+      <p class="hero-sub">
+        A ground-up reimplementation of the Kubernetes control plane and node components.
+        Memory-safe. Fast. Conformance-tested against the official K8s test suite.
+        Containers all the way down.
+      </p>
+      <div class="hero-stats">
+        <div class="stat">
+          <span class="stat-num">9</span>
+          <span class="stat-label">Crates</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">31</span>
+          <span class="stat-label">Controllers</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">1300+</span>
+          <span class="stat-label">Tests</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">270+</span>
+          <span class="stat-label">Conformance Fixes</span>
+        </div>
+      </div>
+      <div class="hero-actions">
+        <a href="#quickstart" class="btn btn-primary">Get Started</a>
+        <a href="https://github.com/chrisalfonso/rusternetes" class="btn btn-secondary">View on GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <section id="architecture" class="section">
+    <div class="section-inner">
+      <h2>Architecture</h2>
+      <p class="section-sub">Follows the standard Kubernetes architecture &mdash; control plane, node agents, and shared storage &mdash; all written in safe Rust.</p>
+      <div class="arch-diagram">
+<pre class="arch-pre">
+┌───────────────────────────────────────────────────────────────┐
+│                       Control Plane                           │
+│                                                               │
+│  ┌──────────────────┐  ┌──────────────┐  ┌────────────────┐  │
+│  │  API Server      │  │  Scheduler   │  │  Controller    │  │
+│  │  (Axum + TLS)    │  │              │  │  Manager       │  │
+│  │                  │  │  Affinity    │  │                │  │
+│  │  REST API        │  │  Taints      │  │  31 control    │  │
+│  │  Watch/SSE       │  │  Priority    │  │  loops         │  │
+│  │  RBAC + Webhooks │  │  Preemption  │  │                │  │
+│  └────────┬─────────┘  └──────────────┘  └────────────────┘  │
+│           │                                                   │
+│  ┌────────▼─────────┐                                         │
+│  │  etcd Storage    │                                         │
+│  │  /registry/...   │                                         │
+│  └──────────────────┘                                         │
+├───────────────────────────────────────────────────────────────┤
+│                       Node Components                         │
+│                                                               │
+│  ┌──────────────────┐  ┌──────────────────────────────────┐   │
+│  │  Kubelet         │  │  Kube-Proxy                      │   │
+│  │  Docker/Podman   │  │  iptables rules                  │   │
+│  │  via bollard     │  │  ClusterIP / NodePort /           │   │
+│  │  Probes+Volumes  │  │  LoadBalancer routing             │   │
+│  └──────────────────┘  └──────────────────────────────────┘   │
+└───────────────────────────────────────────────────────────────┘
+</pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="section section-alt">
+    <div class="section-inner">
+      <h2>Features</h2>
+      <p class="section-sub">Everything you need to run real workloads, built from scratch.</p>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">&#128274;</div>
+          <h3>Security</h3>
+          <ul>
+            <li>TLS/mTLS with custom certs</li>
+            <li>RBAC authorization</li>
+            <li>Admission webhooks</li>
+            <li>Pod Security Standards</li>
+            <li>ServiceAccount JWT tokens</li>
+            <li>Secrets encryption (AES/KMS)</li>
+            <li>Audit logging</li>
+          </ul>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#9881;</div>
+          <h3>Workloads</h3>
+          <ul>
+            <li>Deployments &amp; ReplicaSets</li>
+            <li>StatefulSets</li>
+            <li>DaemonSets</li>
+            <li>Jobs &amp; CronJobs</li>
+            <li>HPA &amp; VPA autoscaling</li>
+            <li>Pod Disruption Budgets</li>
+            <li>Init containers</li>
+          </ul>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128229;</div>
+          <h3>Storage</h3>
+          <ul>
+            <li>PersistentVolumes &amp; PVCs</li>
+            <li>Dynamic provisioning</li>
+            <li>StorageClasses</li>
+            <li>Volume snapshots</li>
+            <li>Volume expansion</li>
+            <li>CSI integration</li>
+            <li>emptyDir, hostPath, projected</li>
+          </ul>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#127760;</div>
+          <h3>Networking</h3>
+          <ul>
+            <li>ClusterIP, NodePort, LoadBalancer</li>
+            <li>CoreDNS service discovery</li>
+            <li>kube-proxy with iptables</li>
+            <li>CNI plugin framework</li>
+            <li>Network policies</li>
+            <li>Endpoints &amp; EndpointSlices</li>
+            <li>MetalLB integration</li>
+          </ul>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128200;</div>
+          <h3>API &amp; Extensibility</h3>
+          <ul>
+            <li>Full REST API (core, apps, batch)</li>
+            <li>Watch API with SSE</li>
+            <li>Custom Resource Definitions</li>
+            <li>Server-Side Apply</li>
+            <li>PATCH (JSON, Merge, Strategic)</li>
+            <li>Field selectors &amp; label selectors</li>
+            <li>Conversion webhooks</li>
+          </ul>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128737;</div>
+          <h3>Operations</h3>
+          <ul>
+            <li>High availability (multi-master)</li>
+            <li>etcd clustering (3-5 nodes)</li>
+            <li>Leader election</li>
+            <li>Prometheus metrics</li>
+            <li>OpenTelemetry tracing</li>
+            <li>Garbage collection</li>
+            <li>TTL controllers</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="crates" class="section">
+    <div class="section-inner">
+      <h2>Cargo Manifest</h2>
+      <p class="section-sub">9 crates in the container yard. Modular Rust workspace, each crate ships independently.</p>
+      <div class="crates-grid">
+        <div class="crate-card">
+          <code>api-server</code>
+          <p>Axum-based HTTPS REST API. Routes, handlers, auth, watch, webhooks.</p>
+        </div>
+        <div class="crate-card">
+          <code>controller-manager</code>
+          <p>31 reconciliation controllers: deployments, jobs, endpoints, GC, TTL, HPA, and more.</p>
+        </div>
+        <div class="crate-card">
+          <code>scheduler</code>
+          <p>Pod scheduling with filter/score plugins, affinity, taints, priority, preemption.</p>
+        </div>
+        <div class="crate-card">
+          <code>kubelet</code>
+          <p>Node agent. Container lifecycle via bollard (Docker API), volumes, probes, networking.</p>
+        </div>
+        <div class="crate-card">
+          <code>kube-proxy</code>
+          <p>Service routing via iptables. ClusterIP, NodePort, LoadBalancer. Host network mode.</p>
+        </div>
+        <div class="crate-card">
+          <code>storage</code>
+          <p>Storage trait with etcd and in-memory backends. Resource versioning via mod_revision.</p>
+        </div>
+        <div class="crate-card">
+          <code>common</code>
+          <p>Shared resource types (Pod, Service, Deployment, etc.), error handling, utilities.</p>
+        </div>
+        <div class="crate-card">
+          <code>kubectl</code>
+          <p>CLI tool for cluster interaction. get, create, apply, delete, logs, exec, and more.</p>
+        </div>
+        <div class="crate-card">
+          <code>cloud-providers</code>
+          <p>AWS, GCP, and Azure integrations for LoadBalancer and cloud-native features.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="quickstart" class="section section-alt">
+    <div class="section-inner">
+      <h2>Quick Start</h2>
+      <p class="section-sub">Get a local cluster running in minutes with Docker Compose.</p>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <pre><code><span class="comment"># Clone and build</span>
+git clone https://github.com/chrisalfonso/rusternetes.git
+cd rusternetes
+cargo build --release
+
+<span class="comment"># Start the cluster with Docker Compose</span>
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+docker compose build
+docker compose up -d
+
+<span class="comment"># Bootstrap CoreDNS, services, and SA tokens</span>
+bash scripts/bootstrap-cluster.sh
+
+<span class="comment"># Use the cluster</span>
+export KUBECONFIG=~/.kube/rusternetes-config
+kubectl get nodes
+kubectl get pods -A</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-inner">
+      <h2>Why Rust?</h2>
+      <div class="why-grid">
+        <div class="why-card">
+          <h3>Memory Safety</h3>
+          <p>No garbage collector, no null pointer dereferences, no data races. Rust's ownership model eliminates entire classes of bugs that plague C/C++ and even Go control planes.</p>
+        </div>
+        <div class="why-card">
+          <h3>Performance</h3>
+          <p>Zero-cost abstractions and no runtime overhead. Async I/O via Tokio delivers high throughput with minimal resource consumption compared to goroutine-based implementations.</p>
+        </div>
+        <div class="why-card">
+          <h3>Correctness</h3>
+          <p>The type system catches mismatches at compile time. Serde ensures wire-compatible JSON serialization. 1300+ tests and conformance testing validate behavior against real Kubernetes.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-left">
+        <span class="nav-logo"><svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes</span>
+        <p>A Kubernetes reimplementation in Rust.</p>
+        <p class="footer-license">Apache-2.0 License</p>
+      </div>
+      <div class="footer-right">
+        <div class="footer-col">
+          <h4>Docs</h4>
+          <a href="https://github.com/chrisalfonso/rusternetes/blob/main/docs/QUICKSTART.md">Quick Start</a>
+          <a href="https://github.com/chrisalfonso/rusternetes/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+          <a href="https://github.com/chrisalfonso/rusternetes/blob/main/docs/DEVELOPMENT.md">Development</a>
+          <a href="https://github.com/chrisalfonso/rusternetes/blob/main/docs/CONFORMANCE.md">Conformance</a>
+        </div>
+        <div class="footer-col">
+          <h4>Project</h4>
+          <a href="https://github.com/chrisalfonso/rusternetes">GitHub</a>
+          <a href="https://github.com/chrisalfonso/rusternetes/blob/main/docs/CONTRIBUTING.md">Contributing</a>
+          <a href="https://github.com/chrisalfonso/rusternetes/blob/main/docs/STATUS.md">Status</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
