@@ -695,8 +695,9 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                                     match nfnum {
                                                         1 => spec_names_plural = s.to_string(),
                                                         2 => spec_names_singular = s.to_string(),
-                                                        3 => spec_names_kind = s.to_string(),
-                                                        4 => spec_names_list_kind = s.to_string(),
+                                                        // field 3 = shortNames (repeated, skip)
+                                                        4 => spec_names_kind = s.to_string(),
+                                                        5 => spec_names_list_kind = s.to_string(),
                                                         _ => {}
                                                     }
                                                 }

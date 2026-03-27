@@ -169,13 +169,13 @@ impl AdmissionWebhookClient {
         }
 
         if let Some(ref service) = config.service {
-            // Build service URL
+            // Build service URL — use DNS-style name that will be resolved to endpoint IP
             let namespace = &service.namespace;
             let name = &service.name;
             let path = service.path.as_deref().unwrap_or("/");
             let port = service.port.unwrap_or(443);
 
-            // In-cluster service URL
+            // Store service ref for later resolution to endpoint IP
             let url = format!("https://{}.{}.svc:{}{}", name, namespace, port, path);
 
             return Ok(url);
@@ -184,6 +184,63 @@ impl AdmissionWebhookClient {
         Err(rusternetes_common::Error::InvalidResource(
             "Webhook client config must specify either url or service".to_string(),
         ))
+    }
+
+    /// Resolve a K8s service URL to an endpoint IP.
+    /// The API server can't resolve .svc DNS names — look up the service's
+    /// endpoint IPs from storage instead.
+    async fn resolve_service_url<S2: Storage>(url: &str, storage: &Arc<S2>) -> String {
+        // Parse service name and namespace from URL like https://name.ns.svc:port/path
+        let url_without_scheme = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")).unwrap_or(url);
+        let host_and_rest: Vec<&str> = url_without_scheme.splitn(2, '/').collect();
+        let host_port: Vec<&str> = host_and_rest[0].splitn(2, ':').collect();
+        let host = host_port[0];
+        let port = host_port.get(1).unwrap_or(&"443");
+        let path = if host_and_rest.len() > 1 { format!("/{}", host_and_rest[1]) } else { "/".to_string() };
+
+        // Check if host ends with .svc (K8s service)
+        if !host.ends_with(".svc") {
+            return url.to_string();
+        }
+
+        // Parse name.namespace.svc
+        let parts: Vec<&str> = host.strip_suffix(".svc").unwrap_or(host).splitn(2, '.').collect();
+        if parts.len() != 2 {
+            return url.to_string();
+        }
+        let svc_name = parts[0];
+        let svc_namespace = parts[1];
+
+        // Look up endpoint IPs from EndpointSlices
+        let es_prefix = format!("/registry/endpointslices/{}/", svc_namespace);
+        if let Ok(slices) = storage.list::<rusternetes_common::resources::EndpointSlice>(&es_prefix).await {
+            for slice in &slices {
+                let matches = slice.metadata.labels.as_ref()
+                    .and_then(|l| l.get("kubernetes.io/service-name"))
+                    .map(|n| n == svc_name)
+                    .unwrap_or(false);
+                if !matches { continue; }
+                for ep in &slice.endpoints {
+                    if ep.conditions.as_ref().and_then(|c| c.ready).unwrap_or(true) {
+                        if let Some(addr) = ep.addresses.first() {
+                            return format!("https://{}:{}{}", addr, port, path);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fall back to ClusterIP
+        let svc_key = format!("/registry/services/{}/{}", svc_namespace, svc_name);
+        if let Ok(svc) = storage.get::<rusternetes_common::resources::Service>(&svc_key).await {
+            if let Some(cluster_ip) = &svc.spec.cluster_ip {
+                if !cluster_ip.is_empty() && cluster_ip != "None" {
+                    return format!("https://{}:{}{}", cluster_ip, port, path);
+                }
+            }
+        }
+
+        url.to_string()
     }
 }
 
@@ -270,10 +327,26 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     };
 
                     // Call the webhook
-                    let response = self
-                        .client
-                        .call_validating_webhook(webhook, &request)
-                        .await?;
+                    // Resolve webhook URL — K8s service names need endpoint IP lookup
+                    let raw_url = self.client.build_webhook_url(&webhook.client_config)?;
+                    let resolved_url = AdmissionWebhookClient::resolve_service_url(&raw_url, &self.storage).await;
+                    let timeout = webhook.timeout_seconds
+                        .map(|t| Duration::from_secs(t as u64))
+                        .unwrap_or(Duration::from_secs(10));
+                    let review = AdmissionReview::new_request(request.clone());
+                    let response = match self.client.call_webhook(&resolved_url, &review, timeout).await {
+                        Ok(resp) => resp,
+                        Err(e) => {
+                            let fp = webhook.failure_policy.as_ref().unwrap_or(&FailurePolicy::Fail);
+                            match fp {
+                                FailurePolicy::Ignore => {
+                                    warn!("Webhook {} failed (Ignore): {}", webhook.name, e);
+                                    AdmissionReviewResponse { uid: request.uid.clone(), allowed: true, status: None, patch: None, patch_type: None, audit_annotations: None, warnings: None }
+                                }
+                                _ => return Err(e),
+                            }
+                        }
+                    };
 
                     // Collect warnings
                     if let Some(warnings) = &response.warnings {
@@ -365,8 +438,26 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         options: None,
                     };
 
-                    // Call the webhook
-                    let response = self.client.call_mutating_webhook(webhook, &request).await?;
+                    // Resolve webhook URL — K8s service names need endpoint IP lookup
+                    let raw_url = self.client.build_webhook_url(&webhook.client_config)?;
+                    let resolved_url = AdmissionWebhookClient::resolve_service_url(&raw_url, &self.storage).await;
+                    let timeout = webhook.timeout_seconds
+                        .map(|t| Duration::from_secs(t as u64))
+                        .unwrap_or(Duration::from_secs(10));
+                    let review = AdmissionReview::new_request(request.clone());
+                    let response = match self.client.call_webhook(&resolved_url, &review, timeout).await {
+                        Ok(resp) => resp,
+                        Err(e) => {
+                            let fp = webhook.failure_policy.as_ref().unwrap_or(&FailurePolicy::Fail);
+                            match fp {
+                                FailurePolicy::Ignore => {
+                                    warn!("Mutating webhook {} failed (Ignore): {}", webhook.name, e);
+                                    AdmissionReviewResponse { uid: request.uid.clone(), allowed: true, status: None, patch: None, patch_type: None, audit_annotations: None, warnings: None }
+                                }
+                                _ => return Err(e),
+                            }
+                        }
+                    };
 
                     // Collect warnings
                     if let Some(warnings) = &response.warnings {
