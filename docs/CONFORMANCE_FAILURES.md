@@ -6,8 +6,9 @@
 
 ## Current Status
 
-- **Round 103 in progress** (deployed fixes #1-254): 9 pass, 5 fail at 14/441 (64%)
-- **Progress**: ~40 passes (round 97) → 245/441 (round 101, 56%) → 60% (round 102) → 64% early (round 103)
+- **Round 103 in progress** (deployed fixes #1-254): 12 pass, 6 fail at 18/441 (**66%**)
+- **Pending deploy** (fix #255): kubelet 1s sync interval
+- **Progress**: ~40 passes (round 97) → 245/441 (round 101, 56%) → 60% (round 102) → 66% (round 103)
 - **Progress**: ~40 passes (round 97) → 245/441 (round 101, 56%) → 60% (round 102, 69 done)
 
 ## Deployed Fixes (in current running build)
