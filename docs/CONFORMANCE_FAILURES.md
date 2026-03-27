@@ -6,9 +6,9 @@
 
 ## Current Status
 
-- **Round 103 in progress** (deployed fixes #1-254): 12 pass, 7 fail at 19/441 (**63%**)
-- **Pending deploy** (fix #255): kubelet 1s sync interval — ALL 7 failures are timing-related
-- **Progress**: ~40 passes (round 97) → 245/441 (round 101, 56%) → 60% (round 102) → 63% (round 103)
+- **Round 103 in progress** (deployed fixes #1-254): 31 pass, 19 fail at 50/441 (**62%**)
+- **Pending deploy** (fixes #255-257): kubelet 1s sync, SA JTI, VAP status route
+- **Progress**: ~40 passes (round 97) → 245/441 (round 101, 56%) → 60% (round 102) → 62% (round 103)
 - **Progress**: ~40 passes (round 97) → 245/441 (round 101, 56%) → 60% (round 102, 69 done)
 
 ## Deployed Fixes (in current running build)
