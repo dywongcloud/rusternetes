@@ -1486,7 +1486,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/discovery.k8s.io/v1/namespaces/:namespace/endpointslices",
             get(handlers::endpointslice::list_endpointslices)
-                .post(handlers::endpointslice::create_endpointslice),
+                .post(handlers::endpointslice::create_endpointslice)
+                .delete(handlers::endpointslice::deletecollection_endpointslices),
         )
         .route(
             "/apis/discovery.k8s.io/v1/namespaces/:namespace/endpointslices/:name",
@@ -1628,7 +1629,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/resource.k8s.io/v1/namespaces/:namespace/resourceclaimtemplates",
             get(handlers::resourceclaimtemplate::list_resourceclaimtemplates)
-                .post(handlers::resourceclaimtemplate::create_resourceclaimtemplate),
+                .post(handlers::resourceclaimtemplate::create_resourceclaimtemplate)
+                .delete(handlers::resourceclaimtemplate::deletecollection_resourceclaimtemplates),
         )
         .route(
             "/apis/resource.k8s.io/v1/namespaces/:namespace/resourceclaimtemplates/:name",

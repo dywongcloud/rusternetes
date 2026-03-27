@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**225 total fixes** | Build clean, all unit tests pass
+**227 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -79,6 +79,8 @@ Fixes #1-216 are deployed and active in round 101.
 | 223 | SA token: add system:authenticated group | 1 test |
 | 224 | Immutable ConfigMap/Secret returns 422 Invalid (not 403 Forbidden) | 2 tests |
 | 225 | FlowSchema deletecollection handler + route | 1 test |
+| 226 | EndpointSlice deletecollection route (handler existed but not wired) | 1 test |
+| 227 | ResourceClaimTemplate deletecollection route (handler existed but not wired) | 1 test |
 
 ## Remaining Unfixed Issues
 
