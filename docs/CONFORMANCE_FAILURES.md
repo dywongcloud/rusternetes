@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**259 total fixes** | Build clean | Round 103: 47 pass, 32 fail at 79/441 (59%)
+**260 total fixes** | Build clean | Round 103: 47 pass, 32 fail at 79/441 (59%)
 
 ## What Still Needs Fixing
 
@@ -22,7 +22,7 @@
 | csistoragecapacity.go:190 | Watch channel closed | Same as above |
 | validatingadmissionpolicy.go:270 | VAP denies marker too early | VAP enforcement runs before binding is ready — need readiness check |
 | namespace.go:579 | Namespace deleted unexpectedly | kubernetes finalizer not preventing deletion — check finalizer handling |
-| statefulset.go:381 | Current revision = update revision | Rolling update revision tracking still wrong — check #203/#235 |
+| statefulset.go:381 | Current revision = update revision | **FIXED #260** — derive current_revision from pod labels, not template |
 
 ### Architecture gaps (need new features)
 | Issue | What's needed |

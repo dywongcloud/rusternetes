@@ -261,10 +261,17 @@ impl<S: Storage> StatefulSetController<S> {
 
         // The current_revision is the revision that existing pods are running.
         // During a rolling update, this differs from update_revision.
-        // Preserve the existing current_revision if set, otherwise use the update_revision.
+        // Preserve the existing current_revision if set, otherwise derive from pods.
         let current_revision = statefulset.status
             .as_ref()
             .and_then(|s| s.current_revision.clone())
+            .or_else(|| {
+                // No current_revision in status — derive from actual pod labels
+                statefulset_pods_after.iter()
+                    .find_map(|pod| pod.metadata.labels.as_ref()
+                        .and_then(|l| l.get("controller-revision-hash"))
+                        .cloned())
+            })
             .unwrap_or_else(|| update_revision.clone());
 
         // Count how many pods match the update revision (have the matching controller-revision-hash label)
