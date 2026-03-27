@@ -57,7 +57,12 @@ mod micro_time {
     {
         match date {
             Some(dt) => {
-                let s = dt.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
+                // Only include microseconds if the timestamp actually has sub-second precision
+                let s = if dt.timestamp_subsec_nanos() > 0 {
+                    dt.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
+                } else {
+                    dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+                };
                 serializer.serialize_str(&s)
             }
             None => serializer.serialize_none(),

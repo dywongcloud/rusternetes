@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**257 total fixes** | Build clean | Round 103: 46 pass, 30 fail at 76/441 (60%)
+**258 total fixes** | Build clean | Round 103: 47 pass, 31 fail at 78/441 (60%)
 
 ## What Still Needs Fixing
 
@@ -14,7 +14,7 @@
 ### Code bugs to fix
 | Issue | Error | What to do |
 |-------|-------|------------|
-| core_events.go:135 | Event timestamp has microseconds | Check if events.k8s.io/v1 Event type uses micro_time for fields that should use k8s_time |
+| core_events.go:135 | Event timestamp has microseconds | **FIXED #258** — micro_time only adds .000000 if timestamp has sub-second precision |
 | watch.go:409 | Watch restart doesn't deliver initial ADDED events | Debug sendInitialEvents flow with specific resourceVersion |
 | aggregated_discovery.go:227 | Watch channel closed unexpectedly | Watch stream may be dropping connection — check HTTP/2 keepalive |
 | csistoragecapacity.go:190 | Watch channel closed | Same as above |
