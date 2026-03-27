@@ -25,6 +25,7 @@ pub mod resourceclaim;
 pub mod service;
 pub mod serviceaccount;
 pub mod statefulset;
+pub mod taint_eviction;
 pub mod ttl_controller;
 pub mod volume_expansion;
 pub mod volume_snapshot;

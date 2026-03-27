@@ -544,6 +544,23 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Start TaintEviction controller
+    let taint_eviction_controller = Arc::new(
+        crate::controllers::taint_eviction::TaintEvictionController::new(storage.clone()),
+    );
+    let sync_interval_secs_te = args.sync_interval;
+    spawn_controller!("TaintEviction controller", leader_elector, {
+        let controller = taint_eviction_controller.clone();
+        async move {
+            loop {
+                if let Err(e) = controller.reconcile_all().await {
+                    tracing::error!("TaintEviction controller error: {}", e);
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs_te)).await;
+            }
+        }
+    });
+
     // Start ServiceAccount controller
     let serviceaccount_controller = Arc::new(ServiceAccountController::new(storage.clone()));
     let sync_interval_secs_sa = args.sync_interval;

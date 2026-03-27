@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**263 total fixes** | Build clean | Round 103: 64 pass, 47 fail at 111/441 (57%)
+**265 total fixes** | Build clean | Round 103: 64 pass, 47 fail at 111/441 (57%)
 
 ## What Still Needs Fixing
 
@@ -16,6 +16,8 @@
 | 261 | Watch resubscribe delay to prevent tight loop on channel close | 2 tests |
 | 262 | Namespace controller only removes kubernetes finalizer, not custom ones | 1 test |
 | 263 | VAP binding must be 2s old before enforcement (prevents early denial) | 1 test |
+| 264 | Reject pods with non-existent RuntimeClass | 1 test |
+| 265 | TaintEvictionController: evict pods not tolerating NoExecute taints | 1 test |
 
 ### Code bugs to fix
 | Issue | Error | What to do |
@@ -31,7 +33,7 @@
 ### Architecture gaps (need new features)
 | Issue | What's needed |
 |-------|---------------|
-| NoExecute taint eviction | Node lifecycle controller that evicts pods when nodes get NoExecute taints |
+| NoExecute taint eviction | **FIXED #265** — TaintEvictionController evicts non-tolerating pods |
 
 ### Timing-dependent (improved by #255, may still fail)
 | Test | Issue |
