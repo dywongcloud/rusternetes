@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**230 total fixes** | Build clean, all unit tests pass
+**231 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -84,6 +84,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 228 | Event k8s_time serializer: Time format without microseconds (was MicroTime) | 1 test |
 | 229 | Docker container hostname set to pod hostname (not container ID) | 1 test |
 | 230 | Termination message: don't fall through to docker cp when host file exists but is empty | 1 test |
+| 231 | Wire deletecollection for HPA v1/v2, RC, ControllerRevision, ResourceClaim | 5 tests |
 
 ## Remaining Unfixed Issues
 

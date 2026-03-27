@@ -1511,7 +1511,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/autoscaling/v1/namespaces/:namespace/horizontalpodautoscalers",
             get(handlers::horizontalpodautoscaler::list)
-                .post(handlers::horizontalpodautoscaler::create),
+                .post(handlers::horizontalpodautoscaler::create)
+                .delete(handlers::horizontalpodautoscaler::deletecollection_horizontalpodautoscalers),
         )
         .route(
             "/apis/autoscaling/v1/namespaces/:namespace/horizontalpodautoscalers/:name",
@@ -1535,7 +1536,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/autoscaling/v2/namespaces/:namespace/horizontalpodautoscalers",
             get(handlers::horizontalpodautoscaler::list)
-                .post(handlers::horizontalpodautoscaler::create),
+                .post(handlers::horizontalpodautoscaler::create)
+                .delete(handlers::horizontalpodautoscaler::deletecollection_horizontalpodautoscalers),
         )
         .route(
             "/apis/autoscaling/v2/namespaces/:namespace/horizontalpodautoscalers/:name",
@@ -1604,7 +1606,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/resource.k8s.io/v1/namespaces/:namespace/resourceclaims",
             get(handlers::resourceclaim::list_resourceclaims)
-                .post(handlers::resourceclaim::create_resourceclaim),
+                .post(handlers::resourceclaim::create_resourceclaim)
+                .delete(handlers::resourceclaim::deletecollection_resourceclaims),
         )
         .route(
             "/apis/resource.k8s.io/v1/namespaces/:namespace/resourceclaims/:name",
@@ -1866,7 +1869,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/api/v1/namespaces/:namespace/replicationcontrollers",
             get(handlers::replicationcontroller::list_replicationcontrollers)
-                .post(handlers::replicationcontroller::create_replicationcontroller),
+                .post(handlers::replicationcontroller::create_replicationcontroller)
+                .delete(handlers::replicationcontroller::deletecollection_replicationcontrollers),
         )
         .route(
             "/api/v1/namespaces/:namespace/replicationcontrollers/:name",
@@ -1897,7 +1901,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/apps/v1/namespaces/:namespace/controllerrevisions",
             get(handlers::controllerrevision::list_controllerrevisions)
-                .post(handlers::controllerrevision::create_controllerrevision),
+                .post(handlers::controllerrevision::create_controllerrevision)
+                .delete(handlers::controllerrevision::deletecollection_controllerrevisions),
         )
         .route(
             "/apis/apps/v1/namespaces/:namespace/controllerrevisions/:name",
