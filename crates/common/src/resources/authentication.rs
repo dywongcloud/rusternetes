@@ -128,6 +128,7 @@ pub struct TokenRequestSpec {
     /// Audiences are the intendend audiences of the token. A recipient of a
     /// token must identify himself with an identifier in the list of audiences
     /// of the token, and otherwise should reject the token.
+    #[serde(default, deserialize_with = "crate::deserialize_null_default")]
     pub audiences: Vec<String>,
 
     /// BoundObjectRef is a reference to an object that the token will be bound to.

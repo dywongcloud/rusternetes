@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**240 total fixes** | Build clean, all unit tests pass
+**241 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -94,6 +94,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 238 | PodSecurity admission: reject privileged/hostNamespace pods in baseline/restricted namespaces | 1 test |
 | 239 | Strict field validation: detect duplicate JSON keys | 1 test |
 | 240 | Reduce controller sync interval from 2s to 1s for faster status updates | timing tests |
+| 241 | TokenRequest audiences field accepts null (deserialize_null_default) | 1 test |
 
 ## Remaining Unfixed Issues
 
