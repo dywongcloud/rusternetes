@@ -549,7 +549,10 @@ impl ContainerRuntime {
                     let restart_always = pod.spec.as_ref()
                         .and_then(|s| s.restart_policy.as_deref())
                         .unwrap_or("Always") == "Always";
-                    let max_retries = if restart_always { 5 } else { 0 };
+                    // For restartPolicy=Always, retry init containers up to 3 times
+                    // in start_pod. Further retries happen via the kubelet sync loop
+                    // which shows CrashLoopBackOff status.
+                    let max_retries = if restart_always { 3 } else { 0 };
                     let mut attempt = 0;
 
                     loop {
@@ -3363,15 +3366,29 @@ impl ContainerRuntime {
                     } else if ds.finished_at.is_some() || matches!(ds.status, Some(bollard::secret::ContainerStateStatusEnum::EXITED)) {
                         let code = ds.exit_code.unwrap_or(0) as i32;
                         let term_msg = self.read_termination_message(&container_name, ic).await;
-                        (ContainerState::Terminated {
+                        let terminated = ContainerState::Terminated {
                             exit_code: code,
                             signal: None,
-                            reason: Some(if code == 0 { "Completed".to_string() } else { ds.error.unwrap_or_else(|| "Error".to_string()) }),
+                            reason: Some(if code == 0 { "Completed".to_string() } else { ds.error.clone().unwrap_or_else(|| "Error".to_string()) }),
                             message: term_msg,
-                            started_at: ds.started_at,
-                            finished_at: ds.finished_at,
+                            started_at: ds.started_at.clone(),
+                            finished_at: ds.finished_at.clone(),
                             container_id: cid.clone(),
-                        }, cid)
+                        };
+                        // For non-zero exit with restartPolicy=Always, show CrashLoopBackOff
+                        let restart_always = pod.spec.as_ref()
+                            .and_then(|s| s.restart_policy.as_deref())
+                            .unwrap_or("Always") == "Always";
+                        if code != 0 && restart_always {
+                            // Store terminated as lastState, show Waiting/CrashLoopBackOff as current
+                            // We'll handle lastState below
+                            (ContainerState::Waiting {
+                                reason: Some("CrashLoopBackOff".to_string()),
+                                message: Some(format!("back-off restarting failed container init container \"{}\" exited with {}", ic.name, code)),
+                            }, cid)
+                        } else {
+                            (terminated, cid)
+                        }
                     } else {
                         (ContainerState::Waiting { reason: Some("PodInitializing".to_string()), message: None }, cid)
                     }

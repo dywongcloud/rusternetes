@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**251 total fixes** | Build clean, all unit tests pass
+**252 total fixes** | Build clean, all unit tests pass
 
 ### Session summary: 68 fixes (#179-246)
 
@@ -107,6 +107,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 249 | LimitRange: default requests fall back to default limits when defaultRequest unset | 1 test |
 | 250 | IngressClass list handler supports ?watch=true + HasMetadata impl | 1 test |
 | 251 | CRD protobuf decoder: validate decoded JSON, fall back to TypeMeta if invalid | 1 test |
+| 252 | Init container CrashLoopBackOff status when failing with restartPolicy=Always | 1 test |
 
 ## Remaining Unfixed Issues
 
@@ -148,9 +149,9 @@ Fixes #1-216 are deployed and active in round 101.
 | Deployment revision | Timing — revision annotation set during reconcile |
 | Namespace PUT 404 | Timing — namespace not created yet when test adds finalizer |
 | Pod count 72/100 | Scheduling capacity — need more node capacity or fewer concurrent tests |
-| init_container.go:440 | Init container timed out — init container not completing in time |
+| init_container.go:440 | **FIXED #252** — init container shows CrashLoopBackOff when failing with restartPolicy=Always |
 | limit_range.go:162 | **FIXED #249** — LimitRange default requests now fall back to default limits |
-| taints.go:489 | "Failed to evict all Pods" — eviction deletes pod but kubelet recreates (restart policy) |
+| taints.go:489 | Missing NoExecute taint eviction controller — needs node lifecycle controller to evict pods when taints change |
 | ingressclass.go:375 | **FIXED #250** — IngressClass list handler now supports ?watch=true |
 | custom_resource_definition.go:161 | **FIXED #251** — CRD protobuf decoder validates JSON output, falls back to TypeMeta |
 
