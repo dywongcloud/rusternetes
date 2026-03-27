@@ -51,6 +51,30 @@
 | daemon_set.go:980 | DaemonSet pod status stale |
 | replica_set.go:203 | RS ReadyReplicas never updated |
 | downwardapi_volume.go:186 | Volume resync depends on pod status |
+
+### Additional round 103 failures (new)
+| Test | Error | Category |
+|------|-------|----------|
+| aggregated_discovery.go:336 | context deadline exceeded | Timing (#266) |
+| crd_publish_openapi.go:161,:285,:451 | failed to create CRD: context deadline exceeded | CRD protobuf decoder limitation |
+| field_validation.go:305 | cannot create CRD: context deadline exceeded | CRD protobuf decoder limitation |
+| namespace.go:426 | failed to add finalizer: 404 | Namespace PUT timing |
+| daemon_set.go:1064 | client rate limiter: context deadline exceeded | Timing (#266) |
+| job.go:548 | job not completed in 900s | Timing (#266) |
+| replica_set.go:738 | failed to locate RS | Timing (#266) |
+| statefulset.go:957 | Pod expected to be re-created | SS rolling update timing |
+| service_accounts.go:667 | SA token timeout 110s | SA token timing |
+| service_accounts.go:792 | timed out | SA test timing |
+| lifecycle_hook.go:132 | Timed out after 30s | Lifecycle hook exec (#194 deployed) |
+| pods.go:600 | Websocket channel 3 before channel 1 | **FIXED #244** pending deploy |
+| runtimeclass.go:64 | should get forbidden error | **FIXED #264** pending deploy |
+| conformance.go:835 | ResourceClaim devices field | **FIXED #259** pending deploy |
+| builder.go:97 | kubectl create -f - fails | **FIXED #247** pending deploy |
+| service.go:1485 | externalname-service deployment not ready | Timing (#266) |
+| service.go:4291 | affinity-nodeport not reachable | Session affinity / networking |
+| service.go:870 | context deadline exceeded | Timing (#266) |
+| util.go:182 | kubectl exec fails | Networking |
+| predicates.go:1102 | context deadline exceeded | Scheduling / timing |
 | kubectl/logs.go:212 | Webhook deployment not ready |
 | aggregator.go:359 | Extension apiserver deployment not ready |
 
