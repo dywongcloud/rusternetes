@@ -157,10 +157,12 @@ where
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
-    // Determine if we have a specific non-zero resourceVersion to replay from
+    // Determine if we have a specific non-zero resourceVersion to replay from.
+    // rv=0 and rv=1 are treated as "list current state" — don't replay from etcd
+    // history because early revisions may have been compacted.
     let replay_revision = requested_rv
         .as_deref()
-        .filter(|rv| !rv.is_empty() && *rv != "0")
+        .filter(|rv| !rv.is_empty() && *rv != "0" && *rv != "1")
         .and_then(|rv| rv.parse::<i64>().ok());
 
     // Subscribe to watch events.
@@ -530,10 +532,12 @@ where
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
-    // Determine if we have a specific non-zero resourceVersion to replay from
+    // Determine if we have a specific non-zero resourceVersion to replay from.
+    // rv=0 and rv=1 are treated as "list current state" — don't replay from etcd
+    // history because early revisions may have been compacted.
     let replay_revision = requested_rv
         .as_deref()
-        .filter(|rv| !rv.is_empty() && *rv != "0")
+        .filter(|rv| !rv.is_empty() && *rv != "0" && *rv != "1")
         .and_then(|rv| rv.parse::<i64>().ok());
 
     // Subscribe to watch events.
