@@ -13,8 +13,15 @@
 | — | service.go:3304 | Failed to locate Service via watch | Watch doesn't deliver initial ADDED events — same root cause as watch.go:409 |
 | — | util.go:182 | kubectl exec fails (exit code 7) | Exec/attach not fully implemented |
 | — | subPathExpr | var-expansion pod CreateContainerError: absolute path | Needs debug logging deployed to trace expanded values |
-| — | resource_quota.go:1152 | ResourceQuota watch timeout after /status update | Watch doesn't deliver MODIFIED for subresource updates |
+| — | resource_quota.go:1152 | ResourceQuota watch timeout after /status update | **FIXED #273** — watch rv=1 caused compacted etcd replay loop |
 | 272 | lifecycle_hook.go:132 | preStop hook never executed (httpGet not sent) | **FIXED #272** — pod deletion used stop_pod_with_grace_period instead of stop_pod_for |
+| — | service.go:3304 | Service watch timeout | **FIXED #273** — same watch rv=1 compaction issue |
+| — | job.go:236 | Job pods not ready in 15min | Readiness persistence (#270/#271 pending deploy) |
+| — | statefulset.go:2253 | StatefulSet test failure | Readiness persistence (#270/#271 pending deploy) |
+| — | job.go:665 | Job test failure | Readiness/timing (#270/#271 pending deploy) |
+| — | downwardapi_volume.go:155 | DownwardAPI volume failure | Needs investigation |
+| — | custom_resource_definition.go:104 | CRD creation timeout | CRD protobuf decoder issue |
+| — | output.go:263 | emptyDir file perms -rw-r--r-- expected -rw-rw-rw- | Docker Desktop macOS bind mount permission limitation |
 
 ### Pending deploy (code written, needs rebuild)
 | # | Fix | Expected impact |
@@ -22,6 +29,7 @@
 | 270 | Kubelet readiness: remove duplicate write, re-read pod for fresh RV | ~15 timing failures |
 | 271 | All pod status writes re-read from storage for fresh RV | CAS conflicts across all paths |
 | 272 | Pod deletion calls stop_pod_for (preStop hooks) instead of force-kill | 1 test (lifecycle_hook.go:132) |
+| 273 | Watch rv=1 uses live cache instead of compacted etcd replay | 2+ tests (resource_quota.go, service.go) |
 
 ### Previously pending (now deployed in Round 104 build)
 | # | Fix | Status |
