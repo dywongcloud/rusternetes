@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**217 fixes** | 51 pending deploy | Build clean, all unit tests pass
+**218 fixes** | 52 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -55,10 +55,11 @@
 | 215 | Job controller adopts orphaned pods (re-adds ownerReference) | 1 test |
 | 216 | Service proxy root path route (without sub-path) | 1 test |
 | 217 | Generic count-based ResourceQuota admission for service create | 1 test |
+| 218 | PersistentVolume status subresource route (was missing) | 1 test |
 
 ## Round 99 results (in progress)
 
-Round 101: 15 passed, 5 failed (20/441 done, 75% pass rate!) — VAP fix working, best result yet
+Round 101: 23 passed, 13 failed (36/441 done, 64% pass rate) — VAP fix working, no stalling
 
 ## Active failures (round 98)
 

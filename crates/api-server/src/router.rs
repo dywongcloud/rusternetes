@@ -1112,6 +1112,12 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::persistentvolume::patch_pv)
                 .delete(handlers::persistentvolume::delete_pv),
         )
+        .route(
+            "/api/v1/persistentvolumes/:name/status",
+            get(handlers::status::get_cluster_status)
+                .put(handlers::status::update_cluster_status)
+                .patch(handlers::status::update_cluster_status),
+        )
         // Watch persistentvolumes (cluster-scoped)
         .route(
             "/api/v1/watch/persistentvolumes",
