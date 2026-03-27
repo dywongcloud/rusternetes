@@ -93,7 +93,7 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
             desired_healthy,
             disruptions_allowed,
             expected_pods: total_pods,
-            observed_generation: None, // Generation tracking would need to be added to ObjectMeta
+            observed_generation: pdb.metadata.generation,
             conditions: None,
             disrupted_pods: None,
         });

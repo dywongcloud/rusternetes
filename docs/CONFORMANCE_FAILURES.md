@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**221 total fixes** | Build clean, all unit tests pass
+**222 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -75,6 +75,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 219 | CRD protobuf decoder: fix names field numbers (kind=4, listKind=5, not 3,4) | 5+ tests |
 | 220 | Webhook URL resolution: resolve .svc names to endpoint IPs from storage | 13+ tests |
 | 221 | Pod create sets QoS class (BestEffort/Burstable/Guaranteed) | 1+ tests |
+| 222 | PDB status: set observedGeneration (was None, test waits for it) | 5 tests |
 
 ## Remaining Unfixed Issues
 
