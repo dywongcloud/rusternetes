@@ -57,7 +57,7 @@
 
 ## Round 99 results (in progress)
 
-Round 100: 20 passed, 9 failed (29/441 done, 69% pass rate) — major improvement from round 99 (58%)
+Round 100: 20 passed, 9 failed (29/441 done, 69% pass rate) — stuck on VAP test (needs #214 deploy)
 
 ## Active failures (round 98)
 
