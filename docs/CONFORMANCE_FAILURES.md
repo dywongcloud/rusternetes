@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**265 total fixes** | Build clean | Round 103: 64 pass, 47 fail at 111/441 (57%)
+**266 total fixes** | Build clean | Round 103: 68 pass, 51 fail at 119/441 (57%)
 
 ## What Still Needs Fixing
 
@@ -18,6 +18,7 @@
 | 263 | VAP binding must be 2s old before enforcement (prevents early denial) | 1 test |
 | 264 | Reject pods with non-existent RuntimeClass | 1 test |
 | 265 | TaintEvictionController: evict pods not tolerating NoExecute taints | 1 test |
+| 266 | **CRITICAL** Kubelet writes readiness/container status to storage during Running sync | ~15 tests |
 
 ### Code bugs to fix
 | Issue | Error | What to do |
@@ -35,20 +36,21 @@
 |-------|---------------|
 | NoExecute taint eviction | **FIXED #265** — TaintEvictionController evicts non-tolerating pods |
 
-### Timing-dependent (improved by #255, may still fail)
+### Timing-dependent — **ROOT CAUSE FOUND: #266**
 | Test | Issue |
 |------|-------|
-| statefulset.go:786 | SS scaling — pods created but readiness probe slow |
-| deployment.go:769, :520 | Deployment replicas not reaching ready |
-| runtime.go:158 | Container not transitioning to Succeeded |
-| rc.go:173, :717 | RC watch condition / status timeout |
-| pod_client.go:216 | Pod not reaching Succeeded |
-| service.go:276 | Service deployment not reaching available |
-| endpoints.go:526 | Endpoint fetch rate limited |
-| endpointslice.go:798 | EndpointSlice fetch rate limited |
-| daemon_set.go:980 | DaemonSet locate timeout |
-| replica_set.go:203 | RS pod not becoming ready |
-| downwardapi_volume.go:186 | Volume value not updating fast enough |
+| ALL BELOW | **FIXED #266** — kubelet never wrote readiness/status changes to storage during Running sync |
+| statefulset.go:786 | SS scaling — pods marked Ready in container status but not persisted |
+| deployment.go:769, :520 | Deployment ReadyReplicas:0 because pod Ready condition never updated |
+| runtime.go:158 | Container terminated but phase never set to Succeeded |
+| rc.go:173, :717 | RC watch sees stale pod conditions |
+| pod_client.go:216 | Pod Succeeded never written |
+| service.go:276 | Service deployment AvailableReplicas:0 |
+| endpoints.go:526 | Endpoint controller reads stale pod status |
+| endpointslice.go:798 | Same |
+| daemon_set.go:980 | DaemonSet pod status stale |
+| replica_set.go:203 | RS ReadyReplicas never updated |
+| downwardapi_volume.go:186 | Volume resync depends on pod status |
 | kubectl/logs.go:212 | Webhook deployment not ready |
 | aggregator.go:359 | Extension apiserver deployment not ready |
 
