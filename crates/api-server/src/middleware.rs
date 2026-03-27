@@ -592,6 +592,7 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
     let mut spec_names_singular = String::new();
     let mut spec_names_kind = String::new();
     let mut spec_names_list_kind = String::new();
+    let mut spec_version_names: Vec<String> = Vec::new();
 
     let mut rpos = 0;
     while rpos < raw.len() {
@@ -706,6 +707,37 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                         }
                                     }
                                     4 => { spec_scope = String::from_utf8_lossy(&field_data[spos..spos + slen]).to_string(); }
+                                    7 => {
+                                        // Version submessage — extract name (field 1)
+                                        let ver = &field_data[spos..spos + slen];
+                                        let mut vpos = 0;
+                                        while vpos < ver.len() {
+                                            let vt = ver[vpos];
+                                            vpos += 1;
+                                            let vfnum = vt >> 3;
+                                            let vwire = vt & 0x07;
+                                            if vwire == 2 {
+                                                let mut vlen: usize = 0;
+                                                let mut vs = 0;
+                                                while vpos < ver.len() {
+                                                    let b = ver[vpos] as usize;
+                                                    vpos += 1;
+                                                    vlen |= (b & 0x7f) << vs;
+                                                    if b & 0x80 == 0 { break; }
+                                                    vs += 7;
+                                                }
+                                                if vfnum == 1 && vpos + vlen <= ver.len() {
+                                                    if let Ok(vname) = std::str::from_utf8(&ver[vpos..vpos + vlen]) {
+                                                        spec_version_names.push(vname.to_string());
+                                                    }
+                                                }
+                                                if vpos + vlen <= ver.len() { vpos += vlen; } else { break; }
+                                            } else if vwire == 0 {
+                                                while vpos < ver.len() && ver[vpos] & 0x80 != 0 { vpos += 1; }
+                                                if vpos < ver.len() { vpos += 1; }
+                                            } else { break; }
+                                        }
+                                    }
                                     _ => {}
                                 }
                             }
@@ -750,17 +782,13 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                 "kind": spec_names_kind,
                 "listKind": if spec_names_list_kind.is_empty() { format!("{}List", spec_names_kind) } else { spec_names_list_kind },
             },
-            "versions": [{
-                "name": "v1",
-                "served": true,
-                "storage": true,
-                "schema": {
-                    "openAPIV3Schema": {
-                        "type": "object",
-                        "x-kubernetes-preserve-unknown-fields": true,
-                    }
-                }
-            }],
+            "versions": if spec_version_names.is_empty() {
+                vec![serde_json::json!({"name": "v1", "served": true, "storage": true, "schema": {"openAPIV3Schema": {"type": "object", "x-kubernetes-preserve-unknown-fields": true}}})]
+            } else {
+                spec_version_names.iter().enumerate().map(|(i, vname)| {
+                    serde_json::json!({"name": vname, "served": true, "storage": i == 0, "schema": {"openAPIV3Schema": {"type": "object", "x-kubernetes-preserve-unknown-fields": true}}})
+                }).collect::<Vec<_>>()
+            },
         }
     });
 
