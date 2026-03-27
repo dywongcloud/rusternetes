@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**244 total fixes** | Build clean, all unit tests pass
+**245 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -98,14 +98,15 @@ Fixes #1-216 are deployed and active in round 101.
 | 242 | Share IPC namespace with pause container (fixes sysctl tests) | 1 test |
 | 243 | CRD protobuf decoder: extract version names from versions array | 1+ tests |
 | 244 | Websocket exec: send empty stdout before status on channel 3 | 1 test |
+| 245 | Session affinity: per-endpoint chains with recent module for proper DNAT+mark | 3 tests |
 
 ## Remaining Unfixed Issues
 
 ### Environment limitations (cannot fix in code)
 | Issue | Details |
 |-------|---------|
-| File permissions (emptyDir/secret) | Docker umask 0022 strips group/other write bits. Tests expect 0666/0777 but get 0644/0755. |
-| Service session affinity | iptables `recent` module not available in Docker Desktop LinuxKit VM |
+| File permissions (emptyDir/secret) | Docker umask 0022 strips group/other write bits. Tests expect 0666/0777 but get 0644/0755. May need fsGroup implementation. |
+| Service session affinity | **FIXED #245** — restructured to use per-endpoint chains with recent module |
 
 ### Needs architectural work
 | Issue | Details |

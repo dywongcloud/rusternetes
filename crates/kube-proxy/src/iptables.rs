@@ -345,114 +345,82 @@ impl IptablesManager {
 
         let proto = protocol.to_lowercase();
 
-        // For session affinity (ClientIP), use the `recent` iptables module to
-        // track client IPs and route them to the same backend consistently.
-        // Without affinity, use random probability-based load balancing.
+        // For session affinity (ClientIP), use per-endpoint chains with the `recent`
+        // module. Each endpoint gets its own chain that sets the recent mark and DNATs.
+        // The main chain checks recent marks first, then falls through to probability.
         let effective_endpoints = endpoints;
+        let probability = 1.0 / effective_endpoints.len() as f64;
 
-        // With session affinity, add `recent` module rules before the load-balancing rules.
-        // These check if the client IP was recently seen and route to the same backend.
         if session_affinity && endpoints.len() > 1 {
+            // Create per-endpoint chains and add recent-check rules
             for (idx, (endpoint_ip, endpoint_port)) in endpoints.iter().enumerate() {
-                let recent_name = format!("KUBE-SEP-{}-{}-{}",
-                    service_ip.replace('.', ""), port, idx);
+                let sep_chain = format!("KUBE-SEP-{}-{}-{}", service_ip.replace('.', ""), port, idx);
+                let recent_name = format!("AFFINITY-{}-{}-{}", service_ip.replace('.', ""), port, idx);
                 let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
-                let port_str = port.to_string();
 
-                // Check: if source IP was recently seen for this endpoint, route to it
-                let output = Command::new(&self.iptables_cmd)
-                    .args(&[
-                        "-t", "nat", "-A", &self.services_chain,
-                        "-d", service_ip,
-                        "-p", &proto,
-                        "--dport", &port_str,
-                        "-m", "recent", "--name", &recent_name, "--rcheck", "--seconds", "10800",
-                        "-j", "DNAT", "--to-destination", &dnat_target,
-                    ])
+                // Create the per-endpoint chain
+                let _ = Command::new(&self.iptables_cmd)
+                    .args(&["-t", "nat", "-N", &sep_chain])
                     .output();
 
-                if let Ok(o) = &output {
-                    if !o.status.success() {
-                        // `recent` module might not be available, fall back to normal
-                        debug!("recent module not available, skipping session affinity iptables rules");
-                        break;
-                    }
-                }
+                // In the per-endpoint chain: set recent mark, then DNAT
+                let _ = Command::new(&self.iptables_cmd)
+                    .args(&["-t", "nat", "-A", &sep_chain,
+                        "-m", "recent", "--name", &recent_name, "--set",
+                        "-j", "DNAT", "--to-destination", &dnat_target])
+                    .output();
+
+                // In the main chain: check if source was recently seen → jump to this endpoint
+                let port_str = port.to_string();
+                let _ = Command::new(&self.iptables_cmd)
+                    .args(&["-t", "nat", "-A", &self.services_chain,
+                        "-d", service_ip, "-p", &proto, "--dport", &port_str,
+                        "-m", "recent", "--name", &recent_name, "--rcheck", "--seconds", "10800",
+                        "-j", &sep_chain])
+                    .output();
             }
         }
-
-        let probability = 1.0 / effective_endpoints.len() as f64;
 
         for (idx, (endpoint_ip, endpoint_port)) in effective_endpoints.iter().enumerate() {
             let is_last = idx == effective_endpoints.len() - 1;
 
             let port_str = port.to_string();
-            let mut args = vec![
-                "-t",
-                "nat",
-                "-A",
-                &self.services_chain,
-                "-d",
-                service_ip,
-                "-p",
-                &proto,
-                "--dport",
-                &port_str,
-            ];
-
-            // Add probability for load balancing (except for the last endpoint)
-            let prob_str;
-            if !is_last {
-                let prob = probability;
-                prob_str = format!("{:.10}", prob);
-                args.extend_from_slice(&[
-                    "-m",
-                    "statistic",
-                    "--mode",
-                    "random",
-                    "--probability",
-                    &prob_str,
-                ]);
-            }
-
-            // Add DNAT to endpoint
             let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
-            let comment = format!("rusternetes service {}:{}", service_ip, port);
-            args.extend_from_slice(&[
-                "-j",
-                "DNAT",
-                "--to-destination",
-                &dnat_target,
-                "-m",
-                "comment",
-                "--comment",
-                &comment,
-            ]);
 
-            let output = Command::new(&self.iptables_cmd)
-                .args(&args)
-                .output()
-                .context("Failed to add iptables DNAT rule")?;
-
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                error!("Failed to add DNAT rule for {}: {}", endpoint_ip, stderr);
+            if session_affinity && endpoints.len() > 1 {
+                // Jump to per-endpoint chain (which sets recent + DNATs)
+                let sep_chain = format!("KUBE-SEP-{}-{}-{}", service_ip.replace('.', ""), port, idx);
+                let mut args = vec![
+                    "-t", "nat", "-A", &self.services_chain,
+                    "-d", service_ip, "-p", &proto, "--dport", &port_str,
+                ];
+                let prob_str;
+                if !is_last {
+                    prob_str = format!("{:.10}", probability);
+                    args.extend_from_slice(&["-m", "statistic", "--mode", "random", "--probability", &prob_str]);
+                }
+                args.extend_from_slice(&["-j", &sep_chain]);
+                let _ = Command::new(&self.iptables_cmd).args(&args).output();
             } else {
-                debug!("Added DNAT rule: {} -> {}", service_ip, dnat_target);
-
-                // For session affinity, mark source IP after DNAT so it sticks to this endpoint
-                if session_affinity {
-                    let recent_name = format!("KUBE-SEP-{}-{}-{}",
-                        service_ip.replace('.', ""), port, idx);
-                    let _ = Command::new(&self.iptables_cmd)
-                        .args(&[
-                            "-t", "nat", "-A", &self.services_chain,
-                            "-d", endpoint_ip,
-                            "-p", &proto,
-                            "-m", "recent", "--name", &recent_name, "--set",
-                            "-j", "RETURN",
-                        ])
-                        .output();
+                // No session affinity — direct DNAT
+                let mut args = vec![
+                    "-t", "nat", "-A", &self.services_chain,
+                    "-d", service_ip, "-p", &proto, "--dport", &port_str,
+                ];
+                let prob_str;
+                if !is_last {
+                    prob_str = format!("{:.10}", probability);
+                    args.extend_from_slice(&["-m", "statistic", "--mode", "random", "--probability", &prob_str]);
+                }
+                let comment = format!("rusternetes service {}:{}", service_ip, port);
+                args.extend_from_slice(&["-j", "DNAT", "--to-destination", &dnat_target, "-m", "comment", "--comment", &comment]);
+                let output = Command::new(&self.iptables_cmd).args(&args).output()
+                    .context("Failed to add iptables DNAT rule")?;
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    error!("Failed to add DNAT rule for {}: {}", endpoint_ip, stderr);
+                } else {
+                    debug!("Added DNAT rule: {} -> {}", service_ip, dnat_target);
                 }
             }
         }
