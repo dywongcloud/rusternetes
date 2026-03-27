@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**266 total fixes** | Build clean | Round 103: 68 pass, 51 fail at 119/441 (57%)
+**267 total fixes** | Build clean | Round 103: 73 pass, 56 fail at 129/441 (56%)
 
 ## What Still Needs Fixing
 
@@ -19,6 +19,7 @@
 | 264 | Reject pods with non-existent RuntimeClass | 1 test |
 | 265 | TaintEvictionController: evict pods not tolerating NoExecute taints | 1 test |
 | 266 | **CRITICAL** Kubelet writes readiness/container status to storage during Running sync | ~15 tests |
+| 267 | Namespace controller recreates kube-root-ca.crt ConfigMap when deleted | 1 test |
 
 ### Code bugs to fix
 | Issue | Error | What to do |
@@ -64,7 +65,7 @@
 | replica_set.go:738 | failed to locate RS | Timing (#266) |
 | statefulset.go:957 | Pod expected to be re-created | SS rolling update timing |
 | service_accounts.go:667 | SA token timeout 110s | SA token timing |
-| service_accounts.go:792 | timed out | SA test timing |
+| service_accounts.go:792 | timed out | **FIXED #267** — namespace controller recreates kube-root-ca.crt |
 | lifecycle_hook.go:132 | Timed out after 30s | Lifecycle hook exec (#194 deployed) |
 | pods.go:600 | Websocket channel 3 before channel 1 | **FIXED #244** pending deploy |
 | runtimeclass.go:64 | should get forbidden error | **FIXED #264** pending deploy |

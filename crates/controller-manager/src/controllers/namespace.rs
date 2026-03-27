@@ -48,6 +48,31 @@ impl NamespaceController {
             return self.finalize_namespace(namespace).await;
         }
 
+        // Ensure kube-root-ca.crt ConfigMap exists in active namespaces
+        let cm_key = build_key("configmaps", Some(name), "kube-root-ca.crt");
+        if self.storage.get::<serde_json::Value>(&cm_key).await.is_err() {
+            // Read CA cert
+            let ca_cert = std::fs::read_to_string("/root/.rusternetes/certs/ca.crt")
+                .or_else(|_| std::fs::read_to_string("/etc/kubernetes/pki/ca.crt"))
+                .unwrap_or_else(|_| "".to_string());
+            if !ca_cert.is_empty() {
+                let cm = serde_json::json!({
+                    "apiVersion": "v1",
+                    "kind": "ConfigMap",
+                    "metadata": {
+                        "name": "kube-root-ca.crt",
+                        "namespace": name
+                    },
+                    "data": {
+                        "ca.crt": ca_cert
+                    }
+                });
+                if self.storage.create(&cm_key, &cm).await.is_ok() {
+                    info!("Recreated kube-root-ca.crt ConfigMap in namespace {}", name);
+                }
+            }
+        }
+
         debug!("Namespace {} is active", name);
         Ok(())
     }
