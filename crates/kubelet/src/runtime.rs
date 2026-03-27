@@ -852,9 +852,16 @@ impl ContainerRuntime {
                     .collect()
             });
 
+        // Set hostname on pause container (it owns the network namespace)
+        let pause_hostname = pod.spec.as_ref()
+            .and_then(|s| s.hostname.as_deref())
+            .unwrap_or(pod_name)
+            .to_string();
+
         let config = Config {
             image: Some("busybox:latest".to_string()),
             cmd: Some(vec!["sleep".to_string(), "infinity".to_string()]),
+            hostname: Some(pause_hostname),
             exposed_ports: if exposed_ports.is_empty() {
                 None
             } else {
@@ -3019,18 +3026,24 @@ impl ContainerRuntime {
             (None, None) => None,
         };
 
-        // Set container hostname to pod hostname (prevents Docker using container ID)
-        let pod_hostname = pod.spec.as_ref()
-            .and_then(|s| s.hostname.as_deref())
-            .unwrap_or(&pod.metadata.name)
-            .to_string();
+        // Set container hostname to pod hostname — but only when NOT using container:
+        // network mode (Docker rejects hostname on containers sharing another's network NS)
+        let using_container_network = !self.use_cni && netns_path.is_none();
+        let pod_hostname = if !using_container_network {
+            Some(pod.spec.as_ref()
+                .and_then(|s| s.hostname.as_deref())
+                .unwrap_or(&pod.metadata.name)
+                .to_string())
+        } else {
+            None // Hostname is set on the pause container instead
+        };
 
         let mut config = Config {
             image: Some(container.image.clone()),
             env,
             working_dir: container.working_dir.clone(),
             user: run_as_user,
-            hostname: Some(pod_hostname),
+            hostname: pod_hostname,
             exposed_ports: if exposed_ports.is_empty() {
                 None
             } else {
