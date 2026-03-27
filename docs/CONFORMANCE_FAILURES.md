@@ -115,6 +115,12 @@ Fixes #1-216 are deployed and active in round 101.
 | Job completion timeout | job.go:958 — pod adoption timing |
 | Pod resize status | Cgroup values not updating after resize |
 | Network connectivity | proxy.go:271, network/util.go:182 — service proxy / endpoint resolution |
+| Websocket exec channel | Got status (ch3) before stdout (ch1) — protocol ordering |
+| Strict decoding | duplicate field detection for fieldValidation=Strict |
+| RS availableReplicas | RS controller timing — pods not counted as available fast enough |
+| Deployment revision | Rolling update revision annotation timing |
+| Namespace PUT 404 | Timing — namespace not created yet when test adds finalizer |
+| Pod count 72/100 | Scheduling capacity with 2 nodes, test pods from other tests consuming slots |
 
 ## All Fixes by Session
 
