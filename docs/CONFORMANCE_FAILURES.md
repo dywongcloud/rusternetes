@@ -54,7 +54,7 @@
 
 ## Round 99 results (in progress)
 
-Round 100: 14 passed, 5 failed (19/441 done, 74% pass rate) — major improvement from round 99 (58%)
+Round 100: 20 passed, 9 failed (29/441 done, 69% pass rate) — major improvement from round 99 (58%)
 
 ## Active failures (round 98)
 
