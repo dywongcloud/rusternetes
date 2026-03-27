@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**267 total fixes** | Build clean | Round 103: 73 pass, 56 fail at 129/441 (56%)
+**269 total fixes** | Build clean | Round 103: 73 pass, 56 fail at 129/441 (56%)
 
 ## What Still Needs Fixing
 
@@ -20,6 +20,8 @@
 | 265 | TaintEvictionController: evict pods not tolerating NoExecute taints | 1 test |
 | 266 | **CRITICAL** Kubelet writes readiness/container status to storage during Running sync | ~15 tests |
 | 267 | Namespace controller recreates kube-root-ca.crt ConfigMap when deleted | 1 test |
+| 268 | CRD protobuf decoder: add subresources.status to versions | CRD tests |
+| 269 | Namespace finalize endpoint at /api/v1/namespaces/:name/finalize | 1 test |
 
 ### Code bugs to fix
 | Issue | Error | What to do |
@@ -59,7 +61,7 @@
 | aggregated_discovery.go:336 | context deadline exceeded | Timing (#266) |
 | crd_publish_openapi.go:161,:285,:451 | failed to create CRD: context deadline exceeded | CRD protobuf decoder limitation |
 | field_validation.go:305 | cannot create CRD: context deadline exceeded | CRD protobuf decoder limitation |
-| namespace.go:426 | failed to add finalizer: 404 | Namespace PUT timing |
+| namespace.go:426 | failed to add finalizer: 404 | **FIXED #269** — added /finalize endpoint |
 | daemon_set.go:1064 | client rate limiter: context deadline exceeded | Timing (#266) |
 | job.go:548 | job not completed in 900s | Timing (#266) |
 | replica_set.go:738 | failed to locate RS | Timing (#266) |

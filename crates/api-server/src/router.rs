@@ -598,6 +598,10 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .put(handlers::status::update_cluster_status)
                 .patch(handlers::status::update_cluster_status),
         )
+        .route(
+            "/api/v1/namespaces/:name/finalize",
+            put(handlers::namespace::update),
+        )
         // Watch namespaces (cluster-scoped)
         .route(
             "/api/v1/watch/namespaces",

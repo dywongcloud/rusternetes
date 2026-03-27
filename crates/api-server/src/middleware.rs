@@ -794,10 +794,10 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                 "listKind": if spec_names_list_kind.is_empty() { format!("{}List", spec_names_kind) } else { spec_names_list_kind },
             },
             "versions": if spec_version_names.is_empty() {
-                vec![serde_json::json!({"name": "v1", "served": true, "storage": true, "schema": {"openAPIV3Schema": {"type": "object", "x-kubernetes-preserve-unknown-fields": true}}})]
+                vec![serde_json::json!({"name": "v1", "served": true, "storage": true, "schema": {"openAPIV3Schema": {"type": "object", "x-kubernetes-preserve-unknown-fields": true}}, "subresources": {"status": {}}})]
             } else {
                 spec_version_names.iter().enumerate().map(|(i, vname)| {
-                    serde_json::json!({"name": vname, "served": true, "storage": i == 0, "schema": {"openAPIV3Schema": {"type": "object", "x-kubernetes-preserve-unknown-fields": true}}})
+                    serde_json::json!({"name": vname, "served": true, "storage": i == 0, "schema": {"openAPIV3Schema": {"type": "object", "x-kubernetes-preserve-unknown-fields": true}}, "subresources": {"status": {}}})
                 }).collect::<Vec<_>>()
             },
         }
