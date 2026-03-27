@@ -333,9 +333,10 @@ where
                                         latest_resource_version = Some(rv.clone());
                                     }
 
-                                    // Filter by label and field selectors
-                                    if !matches_label_selector(object.metadata(), &label_selector)
-                                        || !matches_field_selector(object.metadata(), &field_selector)
+                                    // Don't filter MODIFIED events by label selector — the client
+                                    // needs to see all modifications to handle label changes correctly.
+                                    // Only filter by field selector (which doesn't change).
+                                    if !matches_field_selector(object.metadata(), &field_selector)
                                     {
                                         continue;
                                     }
@@ -693,9 +694,10 @@ where
                                         latest_resource_version = Some(rv.clone());
                                     }
 
-                                    // Filter by label and field selectors
-                                    if !matches_label_selector(object.metadata(), &label_selector)
-                                        || !matches_field_selector(object.metadata(), &field_selector)
+                                    // Don't filter MODIFIED events by label selector — the client
+                                    // needs to see all modifications to handle label changes correctly.
+                                    // Only filter by field selector (which doesn't change).
+                                    if !matches_field_selector(object.metadata(), &field_selector)
                                     {
                                         continue;
                                     }

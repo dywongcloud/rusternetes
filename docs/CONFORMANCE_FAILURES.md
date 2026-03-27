@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**231 total fixes** | Build clean, all unit tests pass
+**233 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -85,6 +85,8 @@ Fixes #1-216 are deployed and active in round 101.
 | 229 | Docker container hostname set to pod hostname (not container ID) | 1 test |
 | 230 | Termination message: don't fall through to docker cp when host file exists but is empty | 1 test |
 | 231 | Wire deletecollection for HPA v1/v2, RC, ControllerRevision, ResourceClaim | 5 tests |
+| 232 | Wire deletecollection for VolumeSnapshot, CSIStorageCapacity | 2 tests |
+| 233 | Watch: don't filter MODIFIED events by label selector (fixes label change watches) | 4 tests |
 
 ## Remaining Unfixed Issues
 
@@ -97,7 +99,7 @@ Fixes #1-216 are deployed and active in round 101.
 ### Needs architectural work
 | Issue | Details |
 |-------|---------|
-| Watch label selector re-evaluation | When labels change to match/unmatch a selector, watch should emit ADDED/DELETED events. Currently only filters initial events. |
+| Watch label selector re-evaluation | **FIXED #233** — don't filter MODIFIED by label selector so clients see label changes |
 | kubectl stdin validation | kubectl `--validate` uses OpenAPI schema. Our schema may be incomplete for some resource types. |
 
 ### Controller timing / watch delivery

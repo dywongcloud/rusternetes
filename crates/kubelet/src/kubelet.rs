@@ -870,7 +870,9 @@ impl Kubelet {
                                     update_config.cpu_quota,
                                     update_config.memory,
                                 ).await {
-                                    Ok(_) => debug!("Updated container {} resources", container_name),
+                                    Ok(_) => {
+                                        debug!("Updated container {} resources", container_name);
+                                    }
                                     Err(e) => debug!("Failed to update container {} resources: {}", container_name, e),
                                 }
                             }

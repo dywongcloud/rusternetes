@@ -1226,7 +1226,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/snapshot.storage.k8s.io/v1/namespaces/:namespace/volumesnapshots",
             get(handlers::volumesnapshot::list_volumesnapshots)
-                .post(handlers::volumesnapshot::create_volumesnapshot),
+                .post(handlers::volumesnapshot::create_volumesnapshot)
+                .delete(handlers::volumesnapshot::deletecollection_volumesnapshots),
         )
         .route(
             "/apis/snapshot.storage.k8s.io/v1/namespaces/:namespace/volumesnapshots/:name",
@@ -1587,7 +1588,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/storage.k8s.io/v1/namespaces/:namespace/csistoragecapacities",
             get(handlers::csistoragecapacity::list_csistoragecapacities)
-                .post(handlers::csistoragecapacity::create_csistoragecapacity),
+                .post(handlers::csistoragecapacity::create_csistoragecapacity)
+                .delete(handlers::csistoragecapacity::deletecollection_csistoragecapacities),
         )
         .route(
             "/apis/storage.k8s.io/v1/namespaces/:namespace/csistoragecapacities/:name",
