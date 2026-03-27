@@ -1754,6 +1754,12 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::validating_admission_policy::patch_validating_admission_policy)
                 .delete(handlers::validating_admission_policy::delete_validating_admission_policy),
         )
+        .route(
+            "/apis/admissionregistration.k8s.io/v1/validatingadmissionpolicies/:name/status",
+            get(handlers::status::get_cluster_status)
+                .put(handlers::status::update_cluster_status)
+                .patch(handlers::status::update_cluster_status),
+        )
         // Admission v1 API - ValidatingAdmissionPolicyBindings (cluster-scoped)
         .route(
             "/apis/admissionregistration.k8s.io/v1/validatingadmissionpolicybindings",

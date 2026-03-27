@@ -46,7 +46,16 @@ pub async fn create_token_review(
                     format!("system:serviceaccounts:{}", claims.namespace),
                     "system:authenticated".to_string(),
                 ]),
-                extra: None,
+                extra: Some({
+                    let mut extra = std::collections::HashMap::new();
+                    // K8s expects credential-id with JTI prefix for SA tokens
+                    let jti = format!("JTI={}", uuid::Uuid::new_v4());
+                    extra.insert(
+                        "authentication.kubernetes.io/credential-id".to_string(),
+                        vec![jti],
+                    );
+                    extra
+                }),
             }),
             audiences: token_review.spec.audiences.clone(),
             error: None,

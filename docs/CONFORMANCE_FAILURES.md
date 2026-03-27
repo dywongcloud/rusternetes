@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**255 total fixes** | Build clean, all unit tests pass
+**257 total fixes** | Build clean, all unit tests pass
 
 ### Session summary: 76 fixes (#179-254)
 
@@ -112,6 +112,8 @@ Fixes #1-216 are deployed and active in round 101.
 | 253 | Don't set hostname on containers using container: network mode | ALL pods |
 | 254 | Pause container IpcMode=shareable for IPC namespace sharing | ALL pods |
 | 255 | Kubelet sync interval reduced from 2s to 1s (matching controller-manager) | timing tests |
+| 256 | SA token review: add JTI credential-id in extra field | 1 test |
+| 257 | ValidatingAdmissionPolicy status subresource route | 1 test |
 
 ## Remaining Unfixed Issues
 
