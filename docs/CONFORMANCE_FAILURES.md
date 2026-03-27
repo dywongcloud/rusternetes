@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**207 fixes** | 41 pending deploy | Build clean, all unit tests pass
+**209 fixes** | 43 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -45,6 +45,8 @@
 | 205 | Service update handler allocates NodePorts | 1 test |
 | 206 | API group discovery endpoint /apis/{group}/ for all groups | 1+ tests |
 | 207 | ServiceAccount username doubled — claims.sub already has full prefix | 1 test |
+| 208 | Aggregated discovery: autoscaling v1+v2 both listed | 1 test |
+| 209 | Namespace create: add kubernetes finalizer (prevents immediate deletion) | 1 test |
 
 ## Round 99 results (in progress)
 
@@ -71,13 +73,13 @@
 | network/util.go:182 | network test failure | Networking/endpoint resolution |
 | replica_set.go:738 | failed to locate replicaset via watch | Watch event delivery or RS controller timing |
 | replica_set.go:560 | replicas didn't scale to 3 | RS controller scaling or status update timing |
-| HPA discovery | "Expected gvr autoscaling v1 horizontalpodautoscalers to exist in discovery" | HPA missing from API discovery response |
-| /apis/apps/ | "Fail to access: /apis/apps/" | API group discovery incomplete |
+| HPA discovery | "Expected gvr autoscaling v1 horizontalpodautoscalers to exist in discovery" | **FIXED #208** — aggregated discovery now lists autoscaling v1+v2 |
+| /apis/apps/ | "Fail to access: /apis/apps/" | **FIXED #206** — API group discovery endpoints added |
 | NodePort | "unexpected Spec.Ports[0].NodePort (0)" | **FIXED #205** — update handler didn't allocate NodePorts |
 | kubectl create -f - | kubectl stdin piping fails (multiple tests) | kubectl binary doesn't support stdin |
 | ConfigMap watch | "Timed out waiting for expected watch notification" after label change | Watch event not delivered for label updates |
 | controllerRevisions | "Failed to find any controllerRevisions" | DaemonSet controller revision creation |
-| namespace delete | "namespace was deleted unexpectedly" | Namespace finalizer handling |
+| namespace delete | "namespace was deleted unexpectedly" | **FIXED #209** — kubernetes finalizer added to namespace create |
 | secret volume perms | "perms of file: -rw-rw-rw- / -rwxrwxrwx" | File permissions on bind-mounted secret volumes |
 | service affinity | "Affinity should hold but didn't" | iptables recent module not available in Docker Desktop |
 | PDB processing | "client rate limiter Wait" for PDB | PDB controller timing or watch delivery |

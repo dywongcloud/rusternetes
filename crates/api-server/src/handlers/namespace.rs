@@ -58,6 +58,12 @@ pub async fn create(
         _ => {}
     }
 
+    // Add kubernetes finalizer (prevents immediate deletion; namespace controller cleans up)
+    let finalizers = namespace.metadata.finalizers.get_or_insert_with(Vec::new);
+    if !finalizers.contains(&"kubernetes".to_string()) {
+        finalizers.push("kubernetes".to_string());
+    }
+
     // Ensure kind/apiVersion
     namespace.type_meta.kind = "Namespace".to_string();
     namespace.type_meta.api_version = "v1".to_string();

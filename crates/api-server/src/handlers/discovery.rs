@@ -150,24 +150,37 @@ pub async fn get_core_api(headers: HeaderMap) -> Response {
 pub async fn get_api_groups(headers: HeaderMap) -> Response {
     if wants_aggregated_discovery(&headers) {
         // Return aggregated discovery format for /apis with inline resources
-        let groups: Vec<serde_json::Value> = get_api_group_names()
-            .into_iter()
-            .map(|(name, version)| {
-                let resources = get_aggregated_resources_for_group(name, version);
-                serde_json::json!({
-                    "metadata": {
-                        "name": name
-                    },
-                    "versions": [
-                        {
-                            "version": version,
-                            "resources": resources,
-                            "freshness": "Current"
-                        }
-                    ]
-                })
-            })
-            .collect();
+        // Build groups, handling autoscaling specially (v1 + v2)
+        let mut groups: Vec<serde_json::Value> = Vec::new();
+        let mut seen_groups: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (name, version) in get_api_group_names() {
+            if seen_groups.contains(name) { continue; }
+            seen_groups.insert(name.to_string());
+            let versions = if name == "autoscaling" {
+                vec![
+                    serde_json::json!({
+                        "version": "v2",
+                        "resources": get_aggregated_resources_for_group("autoscaling", "v2"),
+                        "freshness": "Current"
+                    }),
+                    serde_json::json!({
+                        "version": "v1",
+                        "resources": get_aggregated_resources_for_group("autoscaling", "v1"),
+                        "freshness": "Current"
+                    }),
+                ]
+            } else {
+                vec![serde_json::json!({
+                    "version": version,
+                    "resources": get_aggregated_resources_for_group(name, version),
+                    "freshness": "Current"
+                })]
+            };
+            groups.push(serde_json::json!({
+                "metadata": { "name": name },
+                "versions": versions
+            }));
+        }
 
         let discovery = serde_json::json!({
             "kind": "APIGroupDiscoveryList",
