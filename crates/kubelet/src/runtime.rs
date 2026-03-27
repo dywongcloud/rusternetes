@@ -3978,8 +3978,9 @@ impl ContainerRuntime {
 
         match client.get(&url).send().await {
             Ok(response) => {
-                let status = response.status();
-                Ok(status.is_success())
+                let code = response.status().as_u16();
+                // K8s probes consider 200-399 as success
+                Ok(code >= 200 && code < 400)
             }
             Err(e) => {
                 debug!("HTTP probe failed: {}", e);

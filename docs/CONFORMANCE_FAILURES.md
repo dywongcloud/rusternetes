@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**245 total fixes** | Build clean, all unit tests pass
+**246 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -99,6 +99,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 243 | CRD protobuf decoder: extract version names from versions array | 1+ tests |
 | 244 | Websocket exec: send empty stdout before status on channel 3 | 1 test |
 | 245 | Session affinity: per-endpoint chains with recent module for proper DNAT+mark | 3 tests |
+| 246 | HTTP probe: accept 200-399 as success (was 2xx only) | timing tests |
 
 ## Remaining Unfixed Issues
 
