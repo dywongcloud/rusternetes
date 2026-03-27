@@ -4,9 +4,9 @@
 
 ## Current Status
 
-- **Round 101** (deployed fixes #1-216): 239 pass, 187 fail at 426/441 (**56% pass rate**)
-- **Pending deploy** (fixes #217-225): 9 fixes not yet deployed, targeting ~30+ additional passes
-- **Progress**: Pass rate improved from ~40 passes (round 97) → 239 passes (round 101)
+- **Round 101 COMPLETE** (deployed fixes #1-216): **245 pass, 196 fail (55.6%)**
+- **Pending deploy** (fixes #217-227): 11 fixes targeting ~35+ additional passes → projected **~280/441 (63%)**
+- **Progress**: ~40 passes (round 97) → 245 passes (round 101) — **6x improvement**
 
 ## Deployed Fixes (in current running build)
 
