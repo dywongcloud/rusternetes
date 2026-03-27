@@ -4,9 +4,9 @@
 
 ## Current Status
 
-- **Round 102 in progress** (deployed fixes #1-229): 21 pass, 11 fail at 32/441 (**65%**)
-- **Pending deploy** (fixes #230-237): 8 fixes
-- **Progress**: ~40 passes (round 97) → 245/441 (round 101, 56%) → 65% early (round 102)
+- **Round 102 in progress** (deployed fixes #1-229): 26 pass, 15 fail at 41/441 (**63%**)
+- **Pending deploy** (fixes #230-242): 13 fixes
+- **Progress**: ~40 passes (round 97) → 245/441 (round 101, 56%) → 63% early (round 102)
 
 ## Deployed Fixes (in current running build)
 
