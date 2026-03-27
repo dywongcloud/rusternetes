@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**213 fixes** | 47 pending deploy | Build clean, all unit tests pass
+**214 fixes** | 48 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -51,6 +51,7 @@
 | 211 | DaemonSet pods get controller-revision-hash label | 1 test |
 | 212 | EndpointSlice ports field accepts null (deserialize_null_default) | 1 test |
 | 213 | OpenAPI v3 root document + per-group-version endpoints | 4+ tests |
+| 214 | VAP variables: use Map variable not dotted keys (CEL "undeclared reference") | 1+ tests |
 
 ## Round 99 results (in progress)
 

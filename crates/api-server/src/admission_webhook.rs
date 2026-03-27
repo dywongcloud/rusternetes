@@ -693,18 +693,32 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                 let _ = context.add_json_variable("object", obj);
             }
 
-            // Evaluate spec.variables first, making results available as variables.NAME
+            // Evaluate spec.variables, building a "variables" Map for CEL access.
+            // CEL expressions reference variables as `variables.NAME`, which means
+            // "variables" must be a Map variable in the CEL context.
             if let Some(vars) = policy.get("spec").and_then(|s| s.get("variables")).and_then(|v| v.as_array()) {
+                let mut var_map: std::collections::HashMap<cel_interpreter::objects::Key, cel_interpreter::Value> = std::collections::HashMap::new();
                 for var_def in vars {
                     let var_name = var_def.get("name").and_then(|n| n.as_str()).unwrap_or("");
                     let var_expr = var_def.get("expression").and_then(|e| e.as_str()).unwrap_or("");
                     if var_name.is_empty() || var_expr.is_empty() {
                         continue;
                     }
-                    // Evaluate the variable expression and add result to context
+                    // Evaluate the variable expression and add to the variables map
                     match evaluator.evaluate_to_value(var_expr, &context) {
                         Ok(val) => {
-                            context.add_variable(format!("variables.{}", var_name), val);
+                            var_map.insert(
+                                cel_interpreter::objects::Key::String(std::sync::Arc::new(var_name.to_string())),
+                                val,
+                            );
+                            // Re-add the updated variables map to context after each variable
+                            // so later variables can reference earlier ones
+                            context.add_variable(
+                                "variables".to_string(),
+                                cel_interpreter::Value::Map(cel_interpreter::objects::Map {
+                                    map: std::sync::Arc::new(var_map.clone()),
+                                }),
+                            );
                         }
                         Err(e) => {
                             tracing::warn!("CEL variable {} evaluation error for policy {}: {}", var_name, policy_name, e);
