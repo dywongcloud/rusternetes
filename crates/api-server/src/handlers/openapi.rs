@@ -7,9 +7,36 @@ use axum::{
 };
 
 /// GET /openapi/v3
-/// Get the OpenAPI v3 specification
-/// Explicitly returns application/json to prevent kubectl from attempting protobuf decode.
+/// Get the OpenAPI v3 root document listing available paths
 pub async fn get_openapi_spec() -> Response {
+    // Return the root document that lists all available OpenAPI paths
+    // In real K8s, this returns {"paths": {"/apis/apps/v1": {...}, ...}}
+    let mut paths = serde_json::Map::new();
+    let path_entry = |gv: &str| serde_json::json!({"serverRelativeURL": format!("/openapi/v3/{}", gv)});
+    paths.insert("api/v1".into(), path_entry("api/v1"));
+    for (group, version) in &[
+        ("apps", "v1"), ("batch", "v1"), ("networking.k8s.io", "v1"),
+        ("rbac.authorization.k8s.io", "v1"), ("storage.k8s.io", "v1"),
+        ("scheduling.k8s.io", "v1"), ("apiextensions.k8s.io", "v1"),
+        ("admissionregistration.k8s.io", "v1"), ("coordination.k8s.io", "v1"),
+        ("flowcontrol.apiserver.k8s.io", "v1"), ("certificates.k8s.io", "v1"),
+        ("discovery.k8s.io", "v1"), ("node.k8s.io", "v1"),
+        ("autoscaling", "v1"), ("autoscaling", "v2"), ("policy", "v1"),
+        ("resource.k8s.io", "v1"), ("events.k8s.io", "v1"),
+    ] {
+        paths.insert(format!("apis/{}/{}", group, version), path_entry(&format!("apis/{}/{}", group, version)));
+    }
+    let root = serde_json::json!({"paths": paths});
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&root).unwrap_or_default()))
+        .unwrap()
+}
+
+/// GET /openapi/v3/*path
+/// Returns the OpenAPI v3 spec for a specific group version
+pub async fn get_openapi_spec_path() -> Response {
     let spec = generate_openapi_spec();
     let json_bytes = serde_json::to_vec(&spec).unwrap_or_default();
     Response::builder()

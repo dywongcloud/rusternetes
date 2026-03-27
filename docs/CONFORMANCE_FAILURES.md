@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**212 fixes** | 46 pending deploy | Build clean, all unit tests pass
+**213 fixes** | 47 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -50,6 +50,7 @@
 | 210 | ResourceClaim status PATCH uses generic handler (was rejecting non-JSON) | 1 test |
 | 211 | DaemonSet pods get controller-revision-hash label | 1 test |
 | 212 | EndpointSlice ports field accepts null (deserialize_null_default) | 1 test |
+| 213 | OpenAPI v3 root document + per-group-version endpoints | 4+ tests |
 
 ## Round 99 results (in progress)
 
@@ -79,7 +80,7 @@
 | HPA discovery | "Expected gvr autoscaling v1 horizontalpodautoscalers to exist in discovery" | **FIXED #208** — aggregated discovery now lists autoscaling v1+v2 |
 | /apis/apps/ | "Fail to access: /apis/apps/" | **FIXED #206** — API group discovery endpoints added |
 | NodePort | "unexpected Spec.Ports[0].NodePort (0)" | **FIXED #205** — update handler didn't allocate NodePorts |
-| kubectl create -f - | kubectl stdin piping fails (multiple tests) | kubectl binary doesn't support stdin |
+| kubectl create -f - | kubectl stdin piping fails (multiple tests) | **FIXED #213** — OpenAPI v3 per-group endpoints for kubectl validation |
 | ConfigMap watch | "Timed out waiting for expected watch notification" after label change | Watch event not delivered for label updates |
 | controllerRevisions | "Failed to find any controllerRevisions" | **FIXED #211** — DaemonSet pods now get controller-revision-hash label |
 | namespace delete | "namespace was deleted unexpectedly" | **FIXED #209** — kubernetes finalizer added to namespace create |

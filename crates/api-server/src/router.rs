@@ -576,6 +576,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         // OpenAPI spec endpoints
         .route("/openapi/v2", get(handlers::openapi::get_swagger_spec))
         .route("/openapi/v3", get(handlers::openapi::get_openapi_spec))
+        .route("/openapi/v3/*path", get(handlers::openapi::get_openapi_spec_path))
         .route("/swagger.json", get(handlers::openapi::get_swagger_spec));
 
     // Routes that require authentication (unless skip_auth is enabled)
