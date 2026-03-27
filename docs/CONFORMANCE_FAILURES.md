@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**233 total fixes** | Build clean, all unit tests pass
+**234 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -87,6 +87,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 231 | Wire deletecollection for HPA v1/v2, RC, ControllerRevision, ResourceClaim | 5 tests |
 | 232 | Wire deletecollection for VolumeSnapshot, CSIStorageCapacity | 2 tests |
 | 233 | Watch: don't filter MODIFIED events by label selector (fixes label change watches) | 4 tests |
+| 234 | Pod resize: re-read pod from storage in Running sync to get updated spec resources | 4 tests |
 
 ## Remaining Unfixed Issues
 

@@ -833,8 +833,15 @@ impl Kubelet {
             Phase::Running if is_running => {
                 debug!("Pod {}/{} is running, checking health", namespace, pod_name);
 
+                // Re-read pod from storage to get latest spec (resize PATCH may have updated it)
+                let key = build_key("pods", Some(namespace), pod_name);
+                let fresh_pod: Pod = match self.storage.get(&key).await {
+                    Ok(Some(p)) => p,
+                    _ => pod.clone(),
+                };
+
                 // Handle in-place pod resize: update container resources if spec changed
-                if let Some(spec) = &pod.spec {
+                if let Some(spec) = &fresh_pod.spec {
                     for container in &spec.containers {
                         if let Some(resources) = &container.resources {
                             let container_name = format!("{}_{}", pod_name, container.name);
@@ -879,6 +886,9 @@ impl Kubelet {
                         }
                     }
                 }
+
+                // Use fresh_pod for all subsequent checks (spec may have been updated by resize PATCH)
+                let pod = &fresh_pod;
 
                 // Check if all spec containers have terminated (pause container may still be running).
                 // This must happen before liveness probes, which may error on exited containers.
