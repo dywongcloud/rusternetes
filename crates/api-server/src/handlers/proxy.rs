@@ -77,6 +77,23 @@ pub async fn proxy_node(
     proxy_request(target_url, method, headers, params, body).await
 }
 
+/// Proxy HTTP requests to a service (root path — no sub-path)
+pub async fn proxy_service_root(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((namespace, service_name)): Path<(String, String)>,
+    method: Method,
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+    body: Body,
+) -> Result<Response> {
+    proxy_service(
+        State(state), Extension(auth_ctx),
+        Path((namespace, service_name, String::new())),
+        method, headers, Query(params), body,
+    ).await
+}
+
 /// Proxy HTTP requests to a service
 ///
 /// Proxies requests to a service endpoint for debugging.

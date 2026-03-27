@@ -706,6 +706,14 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::status::update_status),
         )
         .route(
+            "/api/v1/namespaces/:namespace/services/:name/proxy",
+            get(handlers::proxy::proxy_service_root)
+                .post(handlers::proxy::proxy_service_root)
+                .put(handlers::proxy::proxy_service_root)
+                .patch(handlers::proxy::proxy_service_root)
+                .delete(handlers::proxy::proxy_service_root),
+        )
+        .route(
             "/api/v1/namespaces/:namespace/services/:name/proxy/*path",
             get(handlers::proxy::proxy_service)
                 .post(handlers::proxy::proxy_service)

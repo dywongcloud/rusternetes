@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**215 fixes** | 49 pending deploy | Build clean, all unit tests pass
+**216 fixes** | 50 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -53,6 +53,7 @@
 | 213 | OpenAPI v3 root document + per-group-version endpoints | 4+ tests |
 | 214 | VAP variables: use Map variable not dotted keys (CEL "undeclared reference") | 1+ tests |
 | 215 | Job controller adopts orphaned pods (re-adds ownerReference) | 1 test |
+| 216 | Service proxy root path route (without sub-path) | 1 test |
 
 ## Round 99 results (in progress)
 
