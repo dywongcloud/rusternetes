@@ -288,8 +288,37 @@ impl<S: Storage> JobController<S> {
 
         // Check if Job is complete
         let is_complete = succeeded >= completions;
+
+        // Check maxFailedIndexes — if the number of failed indexes exceeds this limit, fail the job
+        let max_failed_indexes_exceeded = if is_indexed {
+            if let Some(max_failed) = job.spec.max_failed_indexes {
+                let failed_index_count = failed_indexes.as_ref().map(|s| s.split(',').count()).unwrap_or(0) as i32;
+                // Also count indexes that failed but aren't tracked in failed_indexes (no backoffLimitPerIndex)
+                if backoff_limit_per_index.is_none() {
+                    // Without backoffLimitPerIndex, count unique failed indexes
+                    let mut failed_idx_set: std::collections::HashSet<i32> = std::collections::HashSet::new();
+                    for pod in job_pods.iter() {
+                        if matches!(pod.status.as_ref().and_then(|s| s.phase.as_ref()), Some(Phase::Failed)) {
+                            let index = pod.metadata.annotations.as_ref()
+                                .and_then(|a| a.get("batch.kubernetes.io/job-completion-index"))
+                                .and_then(|v| v.parse::<i32>().ok())
+                                .unwrap_or(-1);
+                            if index >= 0 { failed_idx_set.insert(index); }
+                        }
+                    }
+                    failed_idx_set.len() as i32 > max_failed
+                } else {
+                    failed_index_count > max_failed
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
         // For backoffLimitPerIndex, job fails when all indexes are either succeeded or failed
-        let is_failed = pod_failure_policy_triggered || if backoff_limit_per_index.is_some() && is_indexed {
+        let is_failed = pod_failure_policy_triggered || max_failed_indexes_exceeded || if backoff_limit_per_index.is_some() && is_indexed {
             let completed_count = completed_indexes.as_ref().map(|s| s.split(',').count()).unwrap_or(0);
             let failed_count = failed_indexes.as_ref().map(|s| s.split(',').count()).unwrap_or(0);
             (completed_count + failed_count) as i32 >= completions
