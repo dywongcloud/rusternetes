@@ -8,15 +8,20 @@
 | # | Test | Error | Status |
 |---|------|-------|--------|
 | 270 | statefulset.go:786 | SS scaling timeout — pods never became Ready | **FIXED #270** — duplicate storage write caused CAS conflict, readiness never persisted |
-| 271 | runtime.go:115 | RestartCount never incremented on pod restart | **FIXED #271** — Running→Stopped→Restart path never updated restart count in storage |
-| — | aggregated_discovery.go:227 | CRD not in aggregated discovery within 30s | CRD discovery registration timing — needs investigation |
-| — | subPathExpr absolute path | var-expansion pod CreateContainerError | Annotation env var resolves empty on first sync, `$(ANNOTATION)/$(POD_NAME)` → `/foo` |
+| 271 | runtime.go:115 | RestartCount=0 expected 2 | **FIXED #271** — all pod.clone() writes now re-read from storage for fresh RV |
+| — | aggregated_discovery.go:227 | context deadline exceeded 30s | Watch/discovery channel timing — needs investigation |
+| — | service.go:3304 | Failed to locate Service via watch | Watch doesn't deliver initial ADDED events — same root cause as watch.go:409 |
+| — | util.go:182 | kubectl exec fails (exit code 7) | Exec/attach not fully implemented |
+| — | subPathExpr | var-expansion pod CreateContainerError: absolute path | Needs debug logging deployed to trace expanded values |
+| — | resource_quota.go:1152 | ResourceQuota watch timeout after /status update | Watch doesn't deliver MODIFIED for subresource updates |
+| 272 | lifecycle_hook.go:132 | preStop hook never executed (httpGet not sent) | **FIXED #272** — pod deletion used stop_pod_with_grace_period instead of stop_pod_for |
 
 ### Pending deploy (code written, needs rebuild)
 | # | Fix | Expected impact |
 |---|-----|-----------------|
 | 270 | Kubelet readiness: remove duplicate write, re-read pod for fresh RV | ~15 timing failures |
-| 271 | Kubelet restart count: track RestartCount in Running→Stopped→Restart path | 1 test |
+| 271 | All pod status writes re-read from storage for fresh RV | CAS conflicts across all paths |
+| 272 | Pod deletion calls stop_pod_for (preStop hooks) instead of force-kill | 1 test (lifecycle_hook.go:132) |
 
 ### Previously pending (now deployed in Round 104 build)
 | # | Fix | Status |
