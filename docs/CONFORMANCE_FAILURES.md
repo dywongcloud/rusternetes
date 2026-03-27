@@ -1,111 +1,170 @@
 # Conformance Issue Tracker
 
-**218 fixes** | 52 pending deploy | Build clean, all unit tests pass
+**218 total fixes** | Build clean, all unit tests pass
 
-## Pending deploy fixes (since round 97)
+## Current Status
+
+- **Round 101** (deployed fixes #1-216): 23 pass, 13 fail at 36/441 (64% pass rate)
+- **Pending deploy** (fixes #217-218): 2 fixes not yet deployed
+- **Progress**: Pass rate improved from 53% (round 98) → 58% (round 99) → 69% (round 100) → 64-75% (round 101)
+
+## Deployed Fixes (in current running build)
+
+Fixes #1-216 are deployed and active in round 101.
+
+### Critical infrastructure fixes
+| # | Fix | Impact |
+|---|-----|--------|
+| 170 | resourceVersion in watch events from etcd mod_revision | ALL tests |
+| 174 | List RV from items, not timestamps | ALL tests |
+| 191 | Bookmark resourceVersion: use current etcd revision, not "0" | many tests (eliminated test hangs) |
+| 200 | List resourceVersion: always set (fallback "1"), never empty | many tests |
+| 197 | ?watch=true support on 21 list handlers across 12 files | many tests |
+| 188 | 23 missing watch handlers + routes | many tests |
+
+### API server fixes
+| # | Fix |
+|---|-----|
+| 199 | Decode K8s native protobuf to JSON for CRD creation |
+| 214 | VAP variables: CEL Map variable (eliminated VAP test stalling) |
+| 198 | VAP: evaluate spec.variables before validations |
+| 206 | API group discovery endpoint /apis/{group}/ |
+| 208 | Aggregated discovery: autoscaling v1+v2 |
+| 213 | OpenAPI v3 root document + per-group-version endpoints |
+| 207 | ServiceAccount username doubled fix |
+| 187 | CRD status: Established + NamesAccepted conditions |
+| 179 | CEL matchConditions validation in webhooks |
+| 175 | Immutable returns 403 Forbidden |
+| 177 | Aggregated discovery responseKind.group empty |
+| 202 | PVC status subresource route |
+| 184 | IPAddress status route + ServiceCIDR Ready condition |
+| 210 | ResourceClaim status PATCH uses generic handler |
+| 212 | EndpointSlice ports accepts null |
+| 205 | Service update handler allocates NodePorts |
+| 216 | Service proxy root path route |
+| 182 | Proxy double-slash path fix |
+| 209 | Namespace kubernetes finalizer on create |
+
+### Controller fixes
+| # | Fix |
+|---|-----|
+| 196 | StatefulSet: availableReplicas = readyReplicas |
+| 203 | StatefulSet: currentRevision vs updateRevision in rolling updates |
+| 204 | Job podFailurePolicy FailJob action |
+| 215 | Job controller adopts orphaned pods |
+| 192 | ResourceQuota: count replicationcontrollers + resourcequotas |
+| 201 | RC controller: count ready replicas properly |
+| 211 | DaemonSet pods get controller-revision-hash label |
+
+### Kubelet/runtime fixes
+| # | Fix |
+|---|-----|
+| 189 | Env var $(VAR) expansion in container env values |
+| 186 | CPU/memory downward API: ceiling division |
+| 183 | Termination message bind-mount + host-file read |
+| 194 | Lifecycle hook exec: 30s timeout (was infinite) |
+| 195 | Projected volume resync: items, downwardAPI, stale file deletion |
+| 193 | RuntimeClass list ?watch=true |
+
+## Pending Deploy (not in current build)
 
 | # | Fix | Impact |
 |---|-----|--------|
-| 169 | generation=1, ClusterIP, SA token, PodScheduled | 5+ tests |
-| 170 | **CRITICAL** resourceVersion in watch events | 12+ tests |
-| 171 | Endpoints single subset | 1 test |
-| 172 | Ensure metadata for resourceVersion | 1 test |
-| 173 | Remove duplicate SA token route (panic) | startup |
-| 174 | **CRITICAL** List RV from items, not timestamps | ALL tests |
-| 175 | Immutable returns 403 Forbidden | 2 tests |
-| 176 | RC orphan handling + DaemonSet ControllerRevision | 2 tests |
-| 177 | Aggregated discovery responseKind.group empty | 1 test |
-| 178 | In-place pod resize via Docker update_container | 1 test |
-| 179 | CEL matchConditions validation in webhook create handlers | 1 test |
-| 180 | RuntimeClass watch handler + route | 2 tests |
-| 181 | ResourceQuota watch handlers + routes (ns + all) | 2 tests |
-| 182 | Proxy double-slash path fix (node/service/pod) | 1 test |
-| 183 | Termination message bind-mount + host-file read | 1 test |
-| 184 | IPAddress status route + ServiceCIDR Ready condition | 1 test |
-| 185 | ServiceCIDR + IPAddress watch handlers + routes | 1 test |
-| 186 | CPU/memory downward API: ceiling division (not floor) | 2 tests |
-| 187 | CRD status: Established + NamesAccepted conditions on create | 4 tests |
-| 188 | Add 23 missing watch handlers + routes (CRD, webhooks, VAP, PDB, RBAC, storage, etc.) | many tests |
-| 189 | Env var `$(VAR)` expansion in container env values | 1+ tests |
-| 190 | Return 415 for native protobuf bodies (CRD client retries with JSON) | 3+ tests |
-| 191 | **CRITICAL** Fix bookmark resourceVersion: 0 → use current etcd revision | many tests |
-| 192 | ResourceQuota: count replicationcontrollers + resourcequotas | 1 test |
-| 193 | RuntimeClass list handler supports `?watch=true` query param | 1 test |
-| 194 | Lifecycle hook exec handler: 30s timeout (was infinite) | 1 test |
-| 195 | Projected volume resync: items field, downwardAPI, stale file deletion | 2 tests |
-| 196 | StatefulSet status: set availableReplicas = readyReplicas (was None) | 2 tests |
-| 197 | Add ?watch=true support to 21 list handlers across 12 files | many tests |
-| 198 | VAP: evaluate spec.variables before validations, add evaluate_to_value to CEL | 1+ tests |
-| 199 | Decode K8s native protobuf to JSON for CRD creation (replaces 415) | 2+ tests |
-| 200 | List resourceVersion: always set (fallback "1"), never "0" or empty | many tests |
-| 201 | RC controller: count ready replicas properly (not all pods) | 1 test |
-| 202 | PVC status subresource route (was missing) | 1 test |
-| 203 | StatefulSet: track currentRevision vs updateRevision separately during rolling updates | 1 test |
-| 204 | Job podFailurePolicy FailJob action: fail job when matching pod fails | 1 test |
-| 205 | Service update handler allocates NodePorts | 1 test |
-| 206 | API group discovery endpoint /apis/{group}/ for all groups | 1+ tests |
-| 207 | ServiceAccount username doubled — claims.sub already has full prefix | 1 test |
-| 208 | Aggregated discovery: autoscaling v1+v2 both listed | 1 test |
-| 209 | Namespace create: add kubernetes finalizer (prevents immediate deletion) | 1 test |
-| 210 | ResourceClaim status PATCH uses generic handler (was rejecting non-JSON) | 1 test |
-| 211 | DaemonSet pods get controller-revision-hash label | 1 test |
-| 212 | EndpointSlice ports field accepts null (deserialize_null_default) | 1 test |
-| 213 | OpenAPI v3 root document + per-group-version endpoints | 4+ tests |
-| 214 | VAP variables: use Map variable not dotted keys (CEL "undeclared reference") | 1+ tests |
-| 215 | Job controller adopts orphaned pods (re-adds ownerReference) | 1 test |
-| 216 | Service proxy root path route (without sub-path) | 1 test |
 | 217 | Generic count-based ResourceQuota admission for service create | 1 test |
-| 218 | PersistentVolume status subresource route (was missing) | 1 test |
+| 218 | PersistentVolume status subresource route | 1 test |
 
-## Round 99 results (in progress)
+## Remaining Unfixed Issues
 
-Round 101: 23 passed, 13 failed (36/441 done, 64% pass rate) — VAP fix working, no stalling
+### Environment limitations (cannot fix in code)
+| Issue | Details |
+|-------|---------|
+| File permissions (emptyDir/secret) | Docker umask 0022 strips group/other write bits. Tests expect 0666/0777 but get 0644/0755. |
+| Service session affinity | iptables `recent` module not available in Docker Desktop LinuxKit VM |
 
-## Active failures (round 98)
+### Needs architectural work
+| Issue | Details |
+|-------|---------|
+| Watch label selector re-evaluation | When labels change to match/unmatch a selector, watch should emit ADDED/DELETED events. Currently only filters initial events. |
+| kubectl stdin validation | kubectl `--validate` uses OpenAPI schema. Our schema may be incomplete for some resource types. |
 
-| Test | Error | Root Cause |
-|------|-------|------------|
-| output.go:263 | `FOOBAR=$(FOO);;$(BAR)` not expanded | **FIXED #189** — expand `$(VAR)` in env values using prior env vars |
-| crd_publish_openapi.go:161 | `failed to decode CRD: missing field 'spec'` | **FIXED #190** — return 415 for native protobuf; client retries with JSON |
-| field_validation.go:570 | `key must be a string at line 1 column 2` | **FIXED #190** — same protobuf issue |
-| validatingadmissionpolicy.go:120 | wait for marker timeout | **FIXED #197** — VAP list handler now supports ?watch=true |
-| runtimeclass.go:153 | timeout | **FIXED #193** — list handler now supports ?watch=true query param |
-| statefulset.go:786 | timed out scaling | **FIXED #196** — availableReplicas was always None (should match readyReplicas) |
-| statefulset.go:2253 | timed out | **FIXED #196** — same availableReplicas issue |
-| projected_configmap.go:367 | Error reading projected configmap file | **FIXED #195** — resync respects items field, deletes stale files |
-| projected_downwardapi.go:155 | timeout | **FIXED #195** — resync now handles downwardAPI projections |
-| service.go:251 | affinity timeout | Session affinity iptables recent module |
-| lifecycle_hook.go:132 | Timed out after 30s | **FIXED #194** — exec handler had no timeout (blocked forever) |
-| **bookmark resourceVersion: 0** | Watch bookmarks sent with RV "0" | **FIXED #191** — initialize with current etcd revision, not "0". All 4 watch functions fixed. |
-| resource_quota.go:422 | missing replicationcontrollers, resourcequotas in status.used | **FIXED #192** — added RC + RQ counting to quota controller |
-| output.go:263 (2nd) | env var output wrong | May be fixed by #189 (env var expansion) — needs redeploy |
-| network/util.go:182 | network test failure | Networking/endpoint resolution |
-| replica_set.go:738 | failed to locate replicaset via watch | Watch event delivery or RS controller timing |
-| replica_set.go:560 | replicas didn't scale to 3 | RS controller scaling or status update timing |
-| HPA discovery | "Expected gvr autoscaling v1 horizontalpodautoscalers to exist in discovery" | **FIXED #208** — aggregated discovery now lists autoscaling v1+v2 |
-| /apis/apps/ | "Fail to access: /apis/apps/" | **FIXED #206** — API group discovery endpoints added |
-| NodePort | "unexpected Spec.Ports[0].NodePort (0)" | **FIXED #205** — update handler didn't allocate NodePorts |
-| kubectl create -f - | kubectl stdin piping fails (multiple tests) | **FIXED #213** — OpenAPI v3 per-group endpoints for kubectl validation |
-| ConfigMap watch | "Timed out waiting for expected watch notification" after label change | Watch event not delivered for label updates |
-| controllerRevisions | "Failed to find any controllerRevisions" | **FIXED #211** — DaemonSet pods now get controller-revision-hash label |
-| namespace delete | "namespace was deleted unexpectedly" | **FIXED #209** — kubernetes finalizer added to namespace create |
-| secret volume perms | "perms of file: -rw-rw-rw- / -rwxrwxrwx" | File permissions on bind-mounted secret volumes |
-| service affinity | "Affinity should hold but didn't" | iptables recent module not available in Docker Desktop |
-| PDB processing | "client rate limiter Wait" for PDB | PDB controller timing or watch delivery |
-| endpointslice create | "server rejected our request (post endpointslices)" | **FIXED #212** — ports field now accepts null via deserialize_null_default |
-| pod resize | "Verifying pod resources resize state" | Pod resize status not updating |
-| resource claim patch | "server rejected our request" for resourceclaims status | **FIXED #210** — PATCH now uses generic status handler |
+### Controller timing / watch delivery
+| Issue | Details |
+|-------|---------|
+| StatefulSet scaling timeout | statefulset.go:786 — pods created but readiness probe transition slow |
+| ReplicaSet locate/scale | replica_set.go:738,:560,:232 — RS watch event delivery timing |
+| PDB processing timeout | client rate limiter exceeded — too many API calls |
+| Webhook not ready | webhook.go:425,:1269 — webhook service endpoint timing |
 
-## Previously fixed (deployed in round 98)
+### Needs investigation
+| Issue | Details |
+|-------|---------|
+| runtime.go:169 | Termination message: expected empty but got "DONE" — FallbackToLogsOnError logic |
+| service_accounts.go:898 | SA token test failure — needs debugging |
+| resource_quota.go:142 | Quota enforcement for service creation (fix #217 pending) |
+| Job completion timeout | job.go:958 — pod adoption timing |
+| Pod resize status | Cgroup values not updating after resize |
+| Network connectivity | proxy.go:271, network/util.go:182 — service proxy / endpoint resolution |
 
-| Test | Fix |
-|------|-----|
-| output.go:263,:282 (CPU) | **#186** — ceiling division |
-| runtime.go:169 | **#183** — termination msg bind-mount |
-| webhook.go:837 | **#179** — CEL validation |
-| runtimeclass.go (watch) | **#180** — watch handler |
-| resource_quota.go | **#181** — watch handlers |
-| service_cidrs.go | **#184-185** — status route + watch |
-| kubectl.go:1881 | **#182** — proxy path fix |
-| CRD conditions | **#187** — Established+NamesAccepted |
-| 23 watch handlers | **#188** — all resource types |
+## All Fixes by Session
+
+<details>
+<summary>Fixes #169-178 (pre-session)</summary>
+
+| # | Fix |
+|---|-----|
+| 169 | generation=1, ClusterIP, SA token, PodScheduled |
+| 170 | resourceVersion in watch events |
+| 171 | Endpoints single subset |
+| 172 | Ensure metadata for resourceVersion |
+| 173 | Remove duplicate SA token route (panic) |
+| 174 | List RV from items, not timestamps |
+| 175 | Immutable returns 403 Forbidden |
+| 176 | RC orphan handling + DaemonSet ControllerRevision |
+| 177 | Aggregated discovery responseKind.group empty |
+| 178 | In-place pod resize via Docker update_container |
+</details>
+
+<details>
+<summary>Fixes #179-218 (this session — 40 fixes)</summary>
+
+| # | Fix |
+|---|-----|
+| 179 | CEL matchConditions validation in webhook create handlers |
+| 180-181 | RuntimeClass + ResourceQuota watch handlers + routes |
+| 182 | Proxy double-slash path fix |
+| 183 | Termination message bind-mount + host-file read |
+| 184-185 | IPAddress/ServiceCIDR status + watch |
+| 186 | CPU/memory downward API ceiling division |
+| 187 | CRD status Established + NamesAccepted |
+| 188 | 23 missing watch handlers + routes |
+| 189 | Env var $(VAR) expansion |
+| 190 | Protobuf 415 (superseded by #199) |
+| 191 | **CRITICAL** bookmark RV: 0 → current etcd revision |
+| 192 | ResourceQuota counts RCs + RQs |
+| 193 | RuntimeClass list ?watch=true |
+| 194 | Lifecycle hook exec 30s timeout |
+| 195 | Projected volume resync |
+| 196 | StatefulSet availableReplicas |
+| 197 | ?watch=true on 21 list handlers |
+| 198 | VAP variable evaluation |
+| 199 | CRD protobuf decoder |
+| 200 | List RV fallback "1" |
+| 201 | RC ready replica count |
+| 202 | PVC status route |
+| 203 | StatefulSet revision tracking |
+| 204 | Job podFailurePolicy |
+| 205 | Service NodePort on update |
+| 206 | API group discovery /apis/{group}/ |
+| 207 | SA username doubled fix |
+| 208 | Autoscaling v1+v2 discovery |
+| 209 | Namespace kubernetes finalizer |
+| 210 | ResourceClaim status PATCH |
+| 211 | DaemonSet controller-revision-hash label |
+| 212 | EndpointSlice ports null |
+| 213 | OpenAPI v3 per-group endpoints |
+| 214 | **CRITICAL** VAP CEL Map variables |
+| 215 | Job pod adoption |
+| 216 | Service proxy root path |
+| 217 | ResourceQuota admission for services |
+| 218 | PV status route |
+</details>
