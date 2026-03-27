@@ -1219,7 +1219,7 @@ impl ContainerRuntime {
         }
         // Reject absolute paths
         if result.starts_with('/') {
-            return Err("subPath must not be an absolute path".to_string());
+            return Err(format!("subPath must not be an absolute path (expr='{}' result='{}')", expr, result));
         }
         // Reject path traversal
         if result.contains("..") {
@@ -2610,6 +2610,7 @@ impl ContainerRuntime {
                 // ".." or is absolute, regardless of whether the volume exists.
                 let expanded_sub_path: Option<String> =
                     if let Some(ref expr) = mount.sub_path_expr {
+                        debug!("subPathExpr='{}' for container {} mount {}, env_pairs={:?}", expr, container.name, mount.name, resolved_env_pairs);
                         match Self::expand_subpath_expr(expr, &resolved_env_pairs) {
                             Ok(expanded) => {
                                 if expanded.is_empty() {

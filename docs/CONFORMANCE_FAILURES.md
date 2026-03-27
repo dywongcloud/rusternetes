@@ -1,85 +1,82 @@
 # Conformance Issue Tracker
 
-**269 total fixes** | Build clean | Round 103: 73 pass, 56 fail at 129/441 (56%)
+**271 total fixes** | Build clean | Round 104 IN PROGRESS (fixes #255-270 deployed)
 
 ## What Still Needs Fixing
 
-### Pending deploy (code written, not yet in running build)
+### Actively failing in Round 104
+| # | Test | Error | Status |
+|---|------|-------|--------|
+| 270 | statefulset.go:786 | SS scaling timeout — pods never became Ready | **FIXED #270** — duplicate storage write caused CAS conflict, readiness never persisted |
+| 271 | runtime.go:115 | RestartCount never incremented on pod restart | **FIXED #271** — Running→Stopped→Restart path never updated restart count in storage |
+| — | aggregated_discovery.go:227 | CRD not in aggregated discovery within 30s | CRD discovery registration timing — needs investigation |
+| — | subPathExpr absolute path | var-expansion pod CreateContainerError | Annotation env var resolves empty on first sync, `$(ANNOTATION)/$(POD_NAME)` → `/foo` |
+
+### Pending deploy (code written, needs rebuild)
 | # | Fix | Expected impact |
 |---|-----|-----------------|
-| 255 | Kubelet sync interval 2s → 1s | ~15 timing failures |
-| 256 | SA token JTI credential-id in extra field | 1 test |
-| 257 | ValidatingAdmissionPolicy status route | 1 test |
-| 258 | MicroTime omits .000000 for whole-second timestamps | 1 test |
-| 259 | ResourceClaim AllocationResult.devices field default | 1 test |
-| 260 | SS current_revision derived from pod labels, not template | 1 test |
-| 261 | Watch resubscribe delay to prevent tight loop on channel close | 2 tests |
-| 262 | Namespace controller only removes kubernetes finalizer, not custom ones | 1 test |
-| 263 | VAP binding must be 2s old before enforcement (prevents early denial) | 1 test |
-| 264 | Reject pods with non-existent RuntimeClass | 1 test |
-| 265 | TaintEvictionController: evict pods not tolerating NoExecute taints | 1 test |
-| 266 | **CRITICAL** Kubelet writes readiness/container status to storage during Running sync | ~15 tests |
-| 267 | Namespace controller recreates kube-root-ca.crt ConfigMap when deleted | 1 test |
-| 268 | CRD protobuf decoder: add subresources.status to versions | CRD tests |
-| 269 | Namespace finalize endpoint at /api/v1/namespaces/:name/finalize | 1 test |
+| 270 | Kubelet readiness: remove duplicate write, re-read pod for fresh RV | ~15 timing failures |
+| 271 | Kubelet restart count: track RestartCount in Running→Stopped→Restart path | 1 test |
 
-### Code bugs to fix
+### Previously pending (now deployed in Round 104 build)
+| # | Fix | Status |
+|---|-----|--------|
+| 255 | Kubelet sync interval 2s → 1s | DEPLOYED |
+| 256 | SA token JTI credential-id in extra field | DEPLOYED |
+| 257 | ValidatingAdmissionPolicy status route | DEPLOYED |
+| 258 | MicroTime omits .000000 for whole-second timestamps | DEPLOYED |
+| 259 | ResourceClaim AllocationResult.devices field default | DEPLOYED |
+| 260 | SS current_revision derived from pod labels, not template | DEPLOYED |
+| 261 | Watch resubscribe delay to prevent tight loop on channel close | DEPLOYED |
+| 262 | Namespace controller only removes kubernetes finalizer | DEPLOYED |
+| 263 | VAP binding must be 2s old before enforcement | DEPLOYED |
+| 264 | Reject pods with non-existent RuntimeClass | DEPLOYED |
+| 265 | TaintEvictionController: evict pods not tolerating NoExecute taints | DEPLOYED |
+| 266 | **CRITICAL** Kubelet writes readiness/container status to storage | DEPLOYED (but had bug — see #270) |
+| 267 | Namespace controller recreates kube-root-ca.crt when deleted | DEPLOYED |
+| 268 | CRD protobuf decoder: add subresources.status to versions | DEPLOYED |
+| 269 | Namespace finalize endpoint | DEPLOYED |
+
+### Known issues from Round 103 (may be fixed by deployed fixes)
+| Test | Error | Expected fix |
+|------|-------|-------------|
+| statefulset.go:786 | SS scaling timeout | #266 + #270 (readiness persistence) |
+| deployment.go:769, :520 | Deployment ReadyReplicas:0 | #266 + #270 |
+| runtime.go:158 | Container phase never set to Succeeded | #266 + #270 |
+| rc.go:173, :717 | RC watch sees stale pod conditions | #266 + #270 |
+| pod_client.go:216 | Pod Succeeded never written | #266 + #270 |
+| service.go:276 | Service deployment AvailableReplicas:0 | #266 + #270 |
+| endpoints.go:526 | Endpoint controller reads stale pod status | #266 + #270 |
+| endpointslice.go:798 | Same | #266 + #270 |
+| daemon_set.go:980, :1064 | DaemonSet pod status stale | #266 + #270 |
+| replica_set.go:203, :738 | RS ReadyReplicas never updated | #266 + #270 |
+| downwardapi_volume.go:186 | Volume resync depends on pod status | #266 + #270 |
+| service.go:1485, :870 | Service deployment not ready / timeout | #266 + #270 |
+| job.go:548 | Job not completed in 900s | #266 + #270 |
+| aggregated_discovery.go:336 | context deadline exceeded | #261 (watch resubscribe) |
+| crd_publish_openapi.go:161,:285,:451 | CRD create timeout | #268 (CRD protobuf subresources) |
+| field_validation.go:305 | CRD create timeout | #268 |
+| namespace.go:426 | Failed to add finalizer: 404 | #269 (finalize endpoint) |
+| statefulset.go:957 | Pod expected to be re-created | #260 (SS current_revision) |
+| statefulset.go:381 | Current revision = update revision | #260 |
+| service_accounts.go:667 | SA token timeout 110s | #256 (JTI credential-id) |
+| service_accounts.go:792 | timed out | #267 (kube-root-ca.crt) |
+| pods.go:600 | Websocket channel 3 before channel 1 | #244 (deployed) |
+| runtimeclass.go:64 | Should get forbidden error | #264 (RuntimeClass check) |
+| conformance.go:835 | ResourceClaim devices field | #259 (devices default) |
+| builder.go:97 | kubectl create -f - fails | #247 (OpenAPI JSON) |
+
+### Code bugs still needing investigation
 | Issue | Error | What to do |
 |-------|-------|------------|
-| core_events.go:135 | Event timestamp has microseconds | **FIXED #258** — micro_time only adds .000000 if timestamp has sub-second precision |
-| watch.go:409 | Watch restart doesn't deliver initial ADDED events | Code path looks correct — may be timing between label update and list. Needs runtime debugging. |
-| aggregated_discovery.go:227 | Watch channel closed unexpectedly | **FIXED #261** — added delay before resubscribe to prevent tight loop |
-| csistoragecapacity.go:190 | Watch channel closed | **FIXED #261** — same fix |
-| validatingadmissionpolicy.go:270 | VAP denies marker too early | **FIXED #263** — binding must be 2s old before enforcement |
-| namespace.go:579 | Namespace deleted unexpectedly | **FIXED #262** — namespace controller only removes kubernetes finalizer, not custom ones |
-| statefulset.go:381 | Current revision = update revision | **FIXED #260** — derive current_revision from pod labels, not template |
-
-### Architecture gaps (need new features)
-| Issue | What's needed |
-|-------|---------------|
-| NoExecute taint eviction | **FIXED #265** — TaintEvictionController evicts non-tolerating pods |
-
-### Timing-dependent — **ROOT CAUSE FOUND: #266**
-| Test | Issue |
-|------|-------|
-| ALL BELOW | **FIXED #266** — kubelet never wrote readiness/status changes to storage during Running sync |
-| statefulset.go:786 | SS scaling — pods marked Ready in container status but not persisted |
-| deployment.go:769, :520 | Deployment ReadyReplicas:0 because pod Ready condition never updated |
-| runtime.go:158 | Container terminated but phase never set to Succeeded |
-| rc.go:173, :717 | RC watch sees stale pod conditions |
-| pod_client.go:216 | Pod Succeeded never written |
-| service.go:276 | Service deployment AvailableReplicas:0 |
-| endpoints.go:526 | Endpoint controller reads stale pod status |
-| endpointslice.go:798 | Same |
-| daemon_set.go:980 | DaemonSet pod status stale |
-| replica_set.go:203 | RS ReadyReplicas never updated |
-| downwardapi_volume.go:186 | Volume resync depends on pod status |
-
-### Additional round 103 failures (new)
-| Test | Error | Category |
-|------|-------|----------|
-| aggregated_discovery.go:336 | context deadline exceeded | Timing (#266) |
-| crd_publish_openapi.go:161,:285,:451 | failed to create CRD: context deadline exceeded | CRD protobuf decoder limitation |
-| field_validation.go:305 | cannot create CRD: context deadline exceeded | CRD protobuf decoder limitation |
-| namespace.go:426 | failed to add finalizer: 404 | **FIXED #269** — added /finalize endpoint |
-| daemon_set.go:1064 | client rate limiter: context deadline exceeded | Timing (#266) |
-| job.go:548 | job not completed in 900s | Timing (#266) |
-| replica_set.go:738 | failed to locate RS | Timing (#266) |
-| statefulset.go:957 | Pod expected to be re-created | SS rolling update timing |
-| service_accounts.go:667 | SA token timeout 110s | SA token timing |
-| service_accounts.go:792 | timed out | **FIXED #267** — namespace controller recreates kube-root-ca.crt |
-| lifecycle_hook.go:132 | Timed out after 30s | Lifecycle hook exec (#194 deployed) |
-| pods.go:600 | Websocket channel 3 before channel 1 | **FIXED #244** pending deploy |
-| runtimeclass.go:64 | should get forbidden error | **FIXED #264** pending deploy |
-| conformance.go:835 | ResourceClaim devices field | **FIXED #259** pending deploy |
-| builder.go:97 | kubectl create -f - fails | **FIXED #247** pending deploy |
-| service.go:1485 | externalname-service deployment not ready | Timing (#266) |
+| watch.go:409 | Watch restart doesn't deliver initial ADDED events | Needs runtime debugging — label update vs list timing |
+| subPathExpr | Annotation env var empty on first kubelet sync | Kubelet gets pod from storage before annotation is persisted? Or CAS issue |
 | service.go:4291 | affinity-nodeport not reachable | Session affinity / networking |
-| service.go:870 | context deadline exceeded | Timing (#266) |
-| util.go:182 | kubectl exec fails | Networking |
+| util.go:182 | kubectl exec fails | Networking (exec not implemented?) |
 | predicates.go:1102 | context deadline exceeded | Scheduling / timing |
-| kubectl/logs.go:212 | Webhook deployment not ready |
-| aggregator.go:359 | Extension apiserver deployment not ready |
+| kubectl/logs.go:212 | Webhook deployment not ready | Webhook deployment timing |
+| aggregator.go:359 | Extension apiserver deployment not ready | Extension API server not supported |
+| lifecycle_hook.go:132 | Timed out after 30s | Lifecycle hook exec timeout |
 
 ## Progress
 
@@ -90,24 +87,29 @@
 | 101 | 245 | 196 | 441 | 56% | 76 fixes deployed |
 | 102 | ~60% | | | 60% | Webhook URL, CRD protobuf, PDB |
 | 103 | 46 | 30 | 76 | 60% | fsGroup, session affinity, IPC sharing |
+| 104 | IN PROGRESS | | 441 | ? | Fixes #255-270: readiness persistence, taint eviction, CRD subresources |
 
 ## All Deployed Fixes
 
 <details>
-<summary>254 fixes deployed in current build (click to expand)</summary>
+<summary>269 fixes deployed in current build (click to expand)</summary>
 
-Fixes #1-254 are in the current running build. Key categories:
+Fixes #1-269 are in the current running build. Key categories:
 
-**Infrastructure**: Watch handlers (#188, #197), bookmark RV (#191), list RV (#200), ?watch=true (#197), controller 1s interval (#240)
+**Infrastructure**: Watch handlers (#188, #197), bookmark RV (#191), list RV (#200), ?watch=true (#197), controller 1s interval (#240, #255)
 
-**API Server**: CRD protobuf (#199, #219, #243, #251), VAP (#198, #214), webhooks (#220), OpenAPI (#213, #247), discovery (#206, #208), PodSecurity (#238), strict validation (#239), fsGroup (#248)
+**API Server**: CRD protobuf (#199, #219, #243, #251, #268), VAP (#198, #214, #257, #263), webhooks (#220), OpenAPI (#213, #247), discovery (#206, #208), PodSecurity (#238), strict validation (#239), fsGroup (#248), namespace finalize (#269)
 
-**Controllers**: StatefulSet (#196, #203, #235), Job (#204, #215), RS (#201), RC (#192), PDB (#222), DaemonSet (#211), Deployment revision
+**Controllers**: StatefulSet (#196, #203, #235, #260), Job (#204, #215), RS (#201), RC (#192), PDB (#222), DaemonSet (#211), Deployment revision, TaintEviction (#265), Namespace (#262, #267)
 
-**Kubelet**: Env var expansion (#189), CPU ceiling (#186), termination msg (#183, #230), lifecycle hooks (#194), probes (#246), projected volumes (#195), resize (#234), sysctls (#242), IPC sharing (#242, #254), hostname (#229, #253)
+**Kubelet**: Env var expansion (#189), CPU ceiling (#186), termination msg (#183, #230), lifecycle hooks (#194), probes (#246), projected volumes (#195), resize (#234), sysctls (#242), IPC sharing (#242, #254), hostname (#229, #253), readiness writes (#266), sync interval (#255)
 
 **Networking**: Session affinity (#245), proxy (#182, #216), NodePort (#205)
 
+**Authentication**: SA token (#256), JTI credential-id
+
 **Routes**: PVC status (#202), PV status (#218), IPAddress status (#184), ServiceCIDR (#184-185), deletecollection wiring (#225-227, #231-232), IngressClass watch (#250)
+
+**Common**: MicroTime (#258), ResourceClaim devices (#259), RuntimeClass check (#264)
 
 </details>
