@@ -851,9 +851,20 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                                 acts.iter().any(|a| a.as_str() == Some("Deny"))
                             });
                             if has_deny {
-                                let message = validation.get("message")
-                                    .and_then(|m| m.as_str())
-                                    .unwrap_or("Validation failed");
+                                // Use messageExpression (CEL) if present, otherwise static message
+                                let message = if let Some(msg_expr) = validation.get("messageExpression").and_then(|m| m.as_str()) {
+                                    match evaluator.evaluate_to_value(msg_expr, &context) {
+                                        Ok(cel_interpreter::Value::String(s)) => s.to_string(),
+                                        Ok(other) => format!("{:?}", other),
+                                        Err(_) => validation.get("message")
+                                            .and_then(|m| m.as_str())
+                                            .unwrap_or("Validation failed").to_string(),
+                                    }
+                                } else {
+                                    validation.get("message")
+                                        .and_then(|m| m.as_str())
+                                        .unwrap_or("Validation failed").to_string()
+                                };
                                 return Err(rusternetes_common::Error::Forbidden(format!(
                                     "ValidatingAdmissionPolicy {} denied: {}",
                                     policy_name, message
