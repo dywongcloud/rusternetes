@@ -467,16 +467,9 @@ impl Kubelet {
                 info!("Pod {}/{} deleted from storage", namespace, pod_name);
             }
 
-            // Stop the pod containers with a short timeout (5s) since the pod
-            // is already removed from storage. Use a short timeout to avoid blocking
-            // the reconcile loop — the container will be force-killed after the timeout.
+            // Stop the pod containers, executing preStop lifecycle hooks first
             if self.runtime.is_pod_running(pod_name).await.unwrap_or(false) {
-                let stop_timeout = std::cmp::min(grace_period, 5);
-                if let Err(e) = self
-                    .runtime
-                    .stop_pod_with_grace_period(pod_name, stop_timeout)
-                    .await
-                {
+                if let Err(e) = self.runtime.stop_pod_for(pod, grace_period).await {
                     warn!("Error stopping pod {}/{}: {}", namespace, pod_name, e);
                 }
             }
