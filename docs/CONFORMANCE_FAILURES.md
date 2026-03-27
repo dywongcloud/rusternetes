@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**277 total fixes** | Round 104 IN PROGRESS: 25 failures at ~300/441 tests
+**277 total fixes** | Round 104 IN PROGRESS: 30 failures at ~350/441 tests
 
 ## What Still Needs Fixing
 
@@ -35,6 +35,10 @@
 | crd_conversion_webhook.go:318 | Conversion webhook deployment failed | Conversion webhooks not implemented | Hard |
 | service.go:1571 | ExternalName DNS resolution fails | CoreDNS CNAME not served for ExternalName | Medium |
 | crd_publish_openapi.go:366 | CRD OpenAPI timeout | CRD protobuf for multi-CRD group | Hard |
+| endpointslice.go:798 | EndpointSlice fetch — rate limiter timeout | Readiness / watch issues | #270 |
+| field_validation.go:428,700 | CRD field validation — protobuf decode fail | CRD protobuf decoder | Hard |
+| statefulset.go:1092 | SS test timeout | Readiness persistence | #270 |
+| webhook.go:1133 (x2) | Webhook deployment not ready | Readiness persistence | #270 |
 
 ### Pending deploy (code written, needs rebuild)
 | # | Fix | Expected impact |
@@ -56,7 +60,7 @@
 | 98 | | | | 53% | Round 98 fixes |
 | 101 | 245 | 196 | 441 | 56% | 76 fixes deployed |
 | 103 | 46 | 30 | 76 | 60% | fsGroup, session affinity, IPC |
-| 104 | IN PROGRESS | 25 | ~300/441 | ~92% est | #255-269 deployed, #270-277 pending |
+| 104 | IN PROGRESS | 30 | ~350/441 | ~91% est | #255-269 deployed, #270-277 pending |
 
 ## All Deployed Fixes
 
