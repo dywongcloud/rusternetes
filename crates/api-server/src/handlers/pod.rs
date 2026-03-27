@@ -276,6 +276,39 @@ pub async fn create(
         }
     }
 
+    // Check PodSecurity admission — enforce namespace pod security standard
+    {
+        let ns_key = rusternetes_storage::build_key("namespaces", None, &namespace);
+        if let Ok(ns) = state.storage.get::<rusternetes_common::resources::Namespace>(&ns_key).await {
+            let enforce_level = ns.metadata.labels.as_ref()
+                .and_then(|l| l.get("pod-security.kubernetes.io/enforce"))
+                .map(|s| s.as_str())
+                .unwrap_or("privileged");
+            if enforce_level == "restricted" || enforce_level == "baseline" {
+                if let Some(spec) = &pod.spec {
+                    // Check for privileged containers
+                    for c in &spec.containers {
+                        if let Some(sc) = &c.security_context {
+                            if sc.privileged == Some(true) {
+                                return Err(rusternetes_common::Error::Forbidden(format!(
+                                    "pod {} violates PodSecurity \"{}\": privileged containers are not allowed",
+                                    pod.metadata.name, enforce_level
+                                )));
+                            }
+                        }
+                    }
+                    // Check for host namespaces
+                    if spec.host_network == Some(true) || spec.host_pid == Some(true) || spec.host_ipc == Some(true) {
+                        return Err(rusternetes_common::Error::Forbidden(format!(
+                            "pod {} violates PodSecurity \"{}\": host namespaces are not allowed",
+                            pod.metadata.name, enforce_level
+                        )));
+                    }
+                }
+            }
+        }
+    }
+
     // Check ResourceQuota
     match crate::admission::check_resource_quota(&state.storage, &namespace, &pod).await {
         Ok(true) => {

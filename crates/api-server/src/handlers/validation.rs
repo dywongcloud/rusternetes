@@ -5,7 +5,64 @@
 //! - DNS label names: lowercase alphanumeric, '-', max 63 chars
 
 use rusternetes_common::Error;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+/// Find duplicate JSON keys at the top level of a JSON object string.
+/// Returns the first duplicate key found, or None.
+fn find_duplicate_json_key(json_str: &str) -> Option<String> {
+    // Simple approach: use serde_json streaming to detect duplicate keys
+    // Parse as a generic JSON value and check for duplicate keys at each level
+    let trimmed = json_str.trim();
+    if !trimmed.starts_with('{') { return None; }
+
+    // Use a simple key extraction — find all "key": patterns at the top level
+    let mut seen = HashSet::new();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    let mut key_start: Option<usize> = None;
+    let chars: Vec<char> = trimmed.chars().collect();
+
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+        if escape { escape = false; i += 1; continue; }
+        if ch == '\\' && in_string { escape = true; i += 1; continue; }
+
+        if ch == '"' {
+            if !in_string {
+                in_string = true;
+                if depth == 1 && key_start.is_none() {
+                    key_start = Some(i + 1);
+                }
+            } else {
+                in_string = false;
+                if depth == 1 {
+                    if let Some(start) = key_start {
+                        // Check if this is a key (followed by ':')
+                        let end = i;
+                        let key: String = chars[start..end].iter().collect();
+                        // Look ahead for ':'
+                        let mut j = i + 1;
+                        while j < chars.len() && chars[j].is_whitespace() { j += 1; }
+                        if j < chars.len() && chars[j] == ':' {
+                            if !seen.insert(key.clone()) {
+                                return Some(key);
+                            }
+                        }
+                        key_start = None;
+                    }
+                }
+            }
+        } else if !in_string {
+            if ch == '{' || ch == '[' { depth += 1; }
+            if ch == '}' || ch == ']' { depth -= 1; }
+            if ch == ',' && depth == 1 { key_start = None; }
+        }
+        i += 1;
+    }
+    None
+}
 
 /// Recursively find fields in `original` that are not present in `canonical`.
 /// Returns a list of dotted field paths for unknown fields.
@@ -58,11 +115,20 @@ pub fn validate_strict_fields(
         return Ok(());
     }
 
+    // Check for duplicate keys in the JSON body before parsing
+    // serde_json silently takes the last value for duplicates, so we must detect manually
+    if let Ok(body_str) = std::str::from_utf8(original_body) {
+        if let Some(dup_field) = find_duplicate_json_key(body_str) {
+            return Err(Error::InvalidResource(format!(
+                "strict decoding error: json: duplicate field \"{}\"", dup_field
+            )));
+        }
+    }
+
     // Parse original as generic JSON
     let original: serde_json::Value = serde_json::from_slice(original_body)
         .map_err(|e| {
             let msg = e.to_string();
-            // Reformat "duplicate field" errors to match Kubernetes strict decoding format
             if msg.contains("duplicate field") {
                 if let Some(field) = msg.split('`').nth(1) {
                     return Error::InvalidResource(format!(

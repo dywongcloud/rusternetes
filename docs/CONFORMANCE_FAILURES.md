@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**237 total fixes** | Build clean, all unit tests pass
+**239 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -91,6 +91,8 @@ Fixes #1-216 are deployed and active in round 101.
 | 235 | StatefulSet rolling update: delete old-revision pods one at a time | 2 tests |
 | 236 | Sysctls: apply pod sysctls to application containers (not just pause) | 1 test |
 | 237 | Webhook matchConditions: type-check CEL with admission context variables | 1 test |
+| 238 | PodSecurity admission: reject privileged/hostNamespace pods in baseline/restricted namespaces | 1 test |
+| 239 | Strict field validation: detect duplicate JSON keys | 1 test |
 
 ## Remaining Unfixed Issues
 
@@ -105,9 +107,9 @@ Fixes #1-216 are deployed and active in round 101.
 |-------|---------|
 | Watch label selector re-evaluation | **FIXED #233** — don't filter MODIFIED by label selector so clients see label changes |
 | kubectl stdin validation | kubectl `--validate` uses OpenAPI schema. Our schema may be incomplete for some resource types. |
-| PodSecurity admission | No pod security admission controller — pods that violate namespace policy aren't rejected |
+| PodSecurity admission | **FIXED #238** — basic PSA: reject privileged/hostNS pods in baseline/restricted namespaces |
 | StatefulSet rolling update | **FIXED #235** — deletes old-revision pods one at a time for rolling update |
-| Strict field validation | Server doesn't detect duplicate JSON fields when fieldValidation=Strict |
+| Strict field validation | **FIXED #239** — detect duplicate JSON keys at top level |
 
 ### Controller timing / watch delivery
 | Issue | Details |
