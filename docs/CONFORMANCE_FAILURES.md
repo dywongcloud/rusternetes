@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**239 total fixes** | Build clean, all unit tests pass
+**240 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -93,6 +93,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 237 | Webhook matchConditions: type-check CEL with admission context variables | 1 test |
 | 238 | PodSecurity admission: reject privileged/hostNamespace pods in baseline/restricted namespaces | 1 test |
 | 239 | Strict field validation: detect duplicate JSON keys | 1 test |
+| 240 | Reduce controller sync interval from 2s to 1s for faster status updates | timing tests |
 
 ## Remaining Unfixed Issues
 
