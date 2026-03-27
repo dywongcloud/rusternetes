@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**243 total fixes** | Build clean, all unit tests pass
+**244 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -97,6 +97,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 241 | TokenRequest audiences field accepts null (deserialize_null_default) | 1 test |
 | 242 | Share IPC namespace with pause container (fixes sysctl tests) | 1 test |
 | 243 | CRD protobuf decoder: extract version names from versions array | 1+ tests |
+| 244 | Websocket exec: send empty stdout before status on channel 3 | 1 test |
 
 ## Remaining Unfixed Issues
 
