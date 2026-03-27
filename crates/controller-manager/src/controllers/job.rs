@@ -2,7 +2,7 @@ use anyhow::Result;
 use rusternetes_common::resources::workloads::{Job, JobCondition, JobStatus};
 use rusternetes_common::resources::{Pod, PodStatus};
 use rusternetes_common::types::{OwnerReference, Phase};
-use rusternetes_storage::Storage;
+use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
@@ -81,6 +81,33 @@ impl<S: Storage> JobController<S> {
                 owned_by_ref || owned_by_label
             })
             .collect();
+
+        // Adopt orphaned pods — re-add ownerReference if pod matches by label but not by ownerRef
+        for pod in &job_pods {
+            let has_owner_ref = pod.metadata.owner_references.as_ref()
+                .map(|refs| refs.iter().any(|r| &r.uid == job_uid))
+                .unwrap_or(false);
+            if !has_owner_ref {
+                let mut adopted_pod = pod.clone();
+                let owner_ref = rusternetes_common::types::OwnerReference {
+                    api_version: "batch/v1".to_string(),
+                    kind: "Job".to_string(),
+                    name: name.to_string(),
+                    uid: job.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                };
+                adopted_pod.metadata.owner_references
+                    .get_or_insert_with(Vec::new)
+                    .push(owner_ref);
+                let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                if let Err(e) = self.storage.update(&pod_key, &adopted_pod).await {
+                    tracing::warn!("Failed to adopt pod {}: {}", pod.metadata.name, e);
+                } else {
+                    info!("Adopted orphaned pod {} for job {}/{}", pod.metadata.name, namespace, name);
+                }
+            }
+        }
 
         let mut active = 0;
         let mut succeeded = 0;

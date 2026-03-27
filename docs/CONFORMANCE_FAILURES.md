@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**214 fixes** | 48 pending deploy | Build clean, all unit tests pass
+**215 fixes** | 49 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -52,6 +52,7 @@
 | 212 | EndpointSlice ports field accepts null (deserialize_null_default) | 1 test |
 | 213 | OpenAPI v3 root document + per-group-version endpoints | 4+ tests |
 | 214 | VAP variables: use Map variable not dotted keys (CEL "undeclared reference") | 1+ tests |
+| 215 | Job controller adopts orphaned pods (re-adds ownerReference) | 1 test |
 
 ## Round 99 results (in progress)
 
