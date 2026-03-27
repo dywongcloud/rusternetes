@@ -869,6 +869,8 @@ impl ContainerRuntime {
             },
             host_config: Some(bollard::models::HostConfig {
                 network_mode: Some(self.network.clone()),
+                // Shareable IPC so app containers can join via ipc_mode=container:pause
+                ipc_mode: Some("shareable".to_string()),
                 dns: if is_coredns { None } else { Some(vec![self.cluster_dns.clone()]) },
                 dns_options: if is_coredns { None } else { Some(vec!["ndots:5".to_string()]) },
                 port_bindings: if port_bindings.is_empty() {
