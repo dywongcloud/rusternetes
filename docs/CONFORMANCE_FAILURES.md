@@ -145,6 +145,11 @@ Fixes #1-216 are deployed and active in round 101.
 | Deployment revision | Timing — revision annotation set during reconcile |
 | Namespace PUT 404 | Timing — namespace not created yet when test adds finalizer |
 | Pod count 72/100 | Scheduling capacity — need more node capacity or fewer concurrent tests |
+| init_container.go:440 | Init container timed out — init container not completing in time |
+| limit_range.go:162 | "resource cpu expected 300m actual 100m" — LimitRange default CPU not applied to container |
+| taints.go:489 | "Failed to evict all Pods" — eviction deletes pod but kubelet recreates (restart policy) |
+| ingressclass.go:375 | Watch event not delivered for IngressClass annotation change |
+| custom_resource_definition.go:161 | CRD protobuf decode still failing for complex CRDs |
 
 ## All Fixes by Session
 
