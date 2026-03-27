@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**275 total fixes** | Round 104: 15 failures at ~100/441, test still running
+**277 total fixes** | Round 104: 15 failures at ~100/441, test still running
 
 ## What Still Needs Fixing
 
@@ -37,6 +37,8 @@
 | 273 | PreStop hooks: stop containers before deleting from storage | 1 test |
 | 274 | Aggregated discovery: dynamic CRD groups from storage | 1 test |
 | 275 | Job controller: maxFailedIndexes check | 1 test |
+| 276 | Watch label selector: 'in', 'notin', '!key' set-based operators | watch.go:409 + multiple tests |
+| 277 | Resync standalone downwardAPI volumes on label changes | 1 test (downwardapi_volume.go:155) |
 
 ## Progress
 
