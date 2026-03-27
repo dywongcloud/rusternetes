@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**262 total fixes** | Build clean | Round 103: 64 pass, 47 fail at 111/441 (57%)
+**263 total fixes** | Build clean | Round 103: 64 pass, 47 fail at 111/441 (57%)
 
 ## What Still Needs Fixing
 
@@ -15,6 +15,7 @@
 | 260 | SS current_revision derived from pod labels, not template | 1 test |
 | 261 | Watch resubscribe delay to prevent tight loop on channel close | 2 tests |
 | 262 | Namespace controller only removes kubernetes finalizer, not custom ones | 1 test |
+| 263 | VAP binding must be 2s old before enforcement (prevents early denial) | 1 test |
 
 ### Code bugs to fix
 | Issue | Error | What to do |
@@ -23,7 +24,7 @@
 | watch.go:409 | Watch restart doesn't deliver initial ADDED events | Debug sendInitialEvents flow with specific resourceVersion |
 | aggregated_discovery.go:227 | Watch channel closed unexpectedly | **FIXED #261** — added delay before resubscribe to prevent tight loop |
 | csistoragecapacity.go:190 | Watch channel closed | **FIXED #261** — same fix |
-| validatingadmissionpolicy.go:270 | VAP denies marker too early | VAP enforcement runs before binding is ready — need readiness check |
+| validatingadmissionpolicy.go:270 | VAP denies marker too early | **FIXED #263** — binding must be 2s old before enforcement |
 | namespace.go:579 | Namespace deleted unexpectedly | **FIXED #262** — namespace controller only removes kubernetes finalizer, not custom ones |
 | statefulset.go:381 | Current revision = update revision | **FIXED #260** — derive current_revision from pod labels, not template |
 

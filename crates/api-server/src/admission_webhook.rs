@@ -734,14 +734,28 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                 .and_then(|n| n.as_str())
                 .unwrap_or("");
 
-            // Check if any binding references this policy
-            let has_binding = bindings.iter().any(|b| {
-                b.get("spec")
+            // Check if any binding references this policy AND has been around long enough
+            // K8s VAP enforcement requires the controller to observe the binding first.
+            // We approximate this by requiring the binding to be at least 2 seconds old.
+            let has_ready_binding = bindings.iter().any(|b| {
+                let matches_policy = b.get("spec")
                     .and_then(|s| s.get("policyName"))
                     .and_then(|n| n.as_str())
-                    == Some(policy_name)
+                    == Some(policy_name);
+                if !matches_policy { return false; }
+                // Check binding age — skip if too new
+                if let Some(created) = b.get("metadata")
+                    .and_then(|m| m.get("creationTimestamp"))
+                    .and_then(|t| t.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                {
+                    let age = chrono::Utc::now().signed_duration_since(created);
+                    age.num_seconds() >= 2
+                } else {
+                    true // No timestamp, assume ready
+                }
             });
-            if !has_binding {
+            if !has_ready_binding {
                 continue;
             }
 
