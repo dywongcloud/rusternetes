@@ -121,26 +121,26 @@ Fixes #1-216 are deployed and active in round 101.
 ### Controller timing / watch delivery
 | Issue | Details |
 |-------|---------|
-| StatefulSet scaling timeout | statefulset.go:786 — pods created but readiness probe transition slow |
-| ReplicaSet locate/scale | replica_set.go:738,:560,:232 — RS watch event delivery timing |
-| PDB processing timeout | client rate limiter exceeded — too many API calls |
-| Webhook not ready | webhook.go:425,:1269 — webhook service endpoint timing |
+| StatefulSet scaling timeout | Improved by #240 (1s interval), #246 (probe 200-399). May need dedicated probe timer. |
+| ReplicaSet locate/scale | Improved by #240 (1s interval). RS available count should be faster. |
+| PDB processing timeout | Improved by #222 (observedGeneration), #240 (1s interval). |
+| Webhook not ready | Improved by #220 (URL resolution), #240 (1s interval). Still 2-3 failures. |
 
 ### Needs investigation
 | Issue | Details |
 |-------|---------|
-| runtime.go:169 | Termination message: expected empty but got "DONE" — **FIXED #230** don't fall through to docker cp when host file exists |
-| service_accounts.go:898 | SA token test failure — needs debugging |
-| resource_quota.go:142 | Quota enforcement for service creation (fix #217 pending) |
-| Job completion timeout | job.go:958 — pod adoption timing |
-| Pod resize status | Cgroup values not updating after resize |
-| Network connectivity | proxy.go:271, network/util.go:182 — service proxy / endpoint resolution |
+| runtime.go:169 | **FIXED #230** — don't fall through to docker cp when host file exists |
+| service_accounts.go:898 | **FIXED #241** — TokenRequest audiences null handling |
+| resource_quota.go:142 | **FIXED #217** — quota admission for services |
+| Job completion timeout | **FIXED #215** — pod adoption |
+| Pod resize status | **FIXED #234** — re-read fresh spec in Running sync |
+| Network connectivity | **FIXED #216,#220** — proxy root path + webhook URL resolution |
 | Websocket exec channel | **FIXED #244** — send empty stdout before status |
-| Strict decoding | duplicate field detection for fieldValidation=Strict |
-| RS availableReplicas | RS controller timing — pods not counted as available fast enough |
-| Deployment revision | Rolling update revision annotation timing |
+| Strict decoding | **FIXED #239** — duplicate JSON key detection |
+| RS availableReplicas | Improved by #240 (1s interval). Timing-dependent. |
+| Deployment revision | Timing — revision annotation set during reconcile |
 | Namespace PUT 404 | Timing — namespace not created yet when test adds finalizer |
-| Pod count 72/100 | Scheduling capacity with 2 nodes, test pods from other tests consuming slots |
+| Pod count 72/100 | Scheduling capacity — need more node capacity or fewer concurrent tests |
 
 ## All Fixes by Session
 
