@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**206 fixes** | 40 pending deploy | Build clean, all unit tests pass
+**207 fixes** | 41 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -44,6 +44,7 @@
 | 204 | Job podFailurePolicy FailJob action: fail job when matching pod fails | 1 test |
 | 205 | Service update handler allocates NodePorts | 1 test |
 | 206 | API group discovery endpoint /apis/{group}/ for all groups | 1+ tests |
+| 207 | ServiceAccount username doubled — claims.sub already has full prefix | 1 test |
 
 ## Round 99 results (in progress)
 

@@ -39,10 +39,7 @@ pub async fn create_token_review(
         TokenReviewStatus {
             authenticated: Some(true),
             user: Some(UserInfo {
-                username: Some(format!(
-                    "system:serviceaccount:{}:{}",
-                    claims.namespace, claims.sub
-                )),
+                username: Some(claims.sub.clone()),
                 uid: Some(claims.uid),
                 groups: Some(vec![
                     "system:serviceaccounts".to_string(),
