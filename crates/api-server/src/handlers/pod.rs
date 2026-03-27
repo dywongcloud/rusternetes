@@ -1003,6 +1003,13 @@ pub async fn patch(
                 applied_pod.metadata.name = name.clone();
                 applied_pod.metadata.namespace = Some(namespace.clone());
 
+                // Check dry-run before persisting
+                let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+                if is_dry_run {
+                    info!("Dry-run: Pod {}/{} server-side apply validated (not persisted)", namespace, name);
+                    return Ok(Json(applied_pod));
+                }
+
                 // Save to storage (create or update)
                 let saved = if current_json.is_some() {
                     state.storage.update(&key, &applied_pod).await?
