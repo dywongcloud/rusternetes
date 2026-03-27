@@ -135,9 +135,28 @@ pub async fn create_crd(
         .map_err(|e| rusternetes_common::Error::Internal(format!("serialize: {}", e)))?;
     let created: serde_json::Value = state.storage.create(&key, &crd_value).await?;
 
-    // Notify the dynamic route manager about new CRD
-    // This will be implemented in the dynamic routing section
     info!("CRD created: {}", crd_name);
+
+    // Trigger a status update shortly after creation to generate a MODIFIED event.
+    // K8s clients watch for CRD status changes (Established condition) using the
+    // resourceVersion from the CREATE response. Since we set status during creation,
+    // there's no MODIFIED event without this update.
+    {
+        let storage = state.storage.clone();
+        let key_clone = key.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            if let Ok(mut crd_val) = storage.get::<serde_json::Value>(&key_clone).await {
+                // Touch the status to trigger a MODIFIED watch event
+                if let Some(status) = crd_val.get_mut("status") {
+                    if let Some(obj) = status.as_object_mut() {
+                        obj.insert("observedGeneration".to_string(), serde_json::json!(1));
+                    }
+                }
+                let _ = storage.update(&key_clone, &crd_val).await;
+            }
+        });
+    }
 
     Ok((StatusCode::CREATED, Json(created)))
 }
