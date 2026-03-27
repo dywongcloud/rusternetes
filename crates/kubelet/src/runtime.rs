@@ -4247,7 +4247,9 @@ impl ContainerRuntime {
                 ));
             }
         } else if let Some(ref http_get) = handler.http_get {
-            // Execute HTTP GET request — use host field if specified, otherwise container IP
+            // Execute HTTP GET request — use host field if specified, otherwise container/pause IP.
+            // Containers using container: network mode won't have their own IP — we need the
+            // pause container's IP (which owns the network namespace).
             let ip = if let Some(ref host) = http_get.host {
                 host.clone()
             } else {
@@ -4255,10 +4257,38 @@ impl ContainerRuntime {
                     .docker
                     .inspect_container(container_name, None::<InspectContainerOptions>)
                     .await?;
-                inspect
+                let container_ip = inspect
                     .network_settings
-                    .and_then(|ns| ns.ip_address)
-                    .unwrap_or_else(|| "127.0.0.1".to_string())
+                    .as_ref()
+                    .and_then(|ns| ns.ip_address.as_ref())
+                    .filter(|ip| !ip.is_empty())
+                    .cloned();
+                if let Some(ip) = container_ip {
+                    ip
+                } else {
+                    // Container uses container: network mode — get IP from the pause container
+                    let pod_name = container_name.rsplit('_').last().unwrap_or(container_name);
+                    let pause_name = format!("{}_pause", pod_name);
+                    let pause_inspect = self
+                        .docker
+                        .inspect_container(&pause_name, None::<InspectContainerOptions>)
+                        .await
+                        .ok();
+                    pause_inspect
+                        .and_then(|pi| pi.network_settings)
+                        .and_then(|ns| {
+                            // Check bridge network first, then global IP
+                            ns.networks
+                                .and_then(|nets| {
+                                    nets.values()
+                                        .next()
+                                        .and_then(|n| n.ip_address.clone())
+                                        .filter(|ip| !ip.is_empty())
+                                })
+                                .or_else(|| ns.ip_address.filter(|ip| !ip.is_empty()))
+                        })
+                        .unwrap_or_else(|| "127.0.0.1".to_string())
+                }
             };
 
             let scheme = http_get.scheme.as_deref().unwrap_or("http");

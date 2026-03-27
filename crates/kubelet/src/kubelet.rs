@@ -453,10 +453,16 @@ impl Kubelet {
                 .and_then(|s| s.termination_grace_period_seconds)
                 .unwrap_or(30);
 
-            // Delete the pod from storage first (triggers watch DELETED event)
-            // then stop containers asynchronously. This matches Kubernetes behavior
-            // where the API server removes the pod from etcd and the watch stream
-            // delivers the DELETED event while the kubelet is still cleaning up.
+            // Stop the pod containers FIRST, executing preStop lifecycle hooks.
+            // We must stop before deleting from storage to prevent the orphan
+            // cleanup from killing containers without running preStop hooks.
+            if self.runtime.is_pod_running(pod_name).await.unwrap_or(false) {
+                if let Err(e) = self.runtime.stop_pod_for(pod, grace_period).await {
+                    warn!("Error stopping pod {}/{}: {}", namespace, pod_name, e);
+                }
+            }
+
+            // Now delete the pod from storage (triggers watch DELETED event)
             let key = build_key("pods", Some(namespace), pod_name);
             if let Err(e) = self.storage.delete(&key).await {
                 warn!(
@@ -465,13 +471,6 @@ impl Kubelet {
                 );
             } else {
                 info!("Pod {}/{} deleted from storage", namespace, pod_name);
-            }
-
-            // Stop the pod containers, executing preStop lifecycle hooks first
-            if self.runtime.is_pod_running(pod_name).await.unwrap_or(false) {
-                if let Err(e) = self.runtime.stop_pod_for(pod, grace_period).await {
-                    warn!("Error stopping pod {}/{}: {}", namespace, pod_name, e);
-                }
             }
             return Ok(());
         }
