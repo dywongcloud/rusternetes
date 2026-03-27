@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**258 total fixes** | Build clean | Round 103: 47 pass, 31 fail at 78/441 (60%)
+**259 total fixes** | Build clean | Round 103: 47 pass, 32 fail at 79/441 (59%)
 
 ## What Still Needs Fixing
 
@@ -10,6 +10,8 @@
 | 255 | Kubelet sync interval 2s → 1s | ~15 timing failures |
 | 256 | SA token JTI credential-id in extra field | 1 test |
 | 257 | ValidatingAdmissionPolicy status route | 1 test |
+| 258 | MicroTime omits .000000 for whole-second timestamps | 1 test |
+| 259 | ResourceClaim AllocationResult.devices field default | 1 test |
 
 ### Code bugs to fix
 | Issue | Error | What to do |

@@ -247,6 +247,7 @@ pub struct ResourceClaimStatus {
 #[serde(rename_all = "camelCase")]
 pub struct AllocationResult {
     /// Devices contains the result of allocating devices
+    #[serde(default)]
     pub devices: DeviceAllocationResult,
 
     /// NodeSelector defines where the allocated resources are available
