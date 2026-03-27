@@ -53,7 +53,7 @@
 
 ## Round 99 results (in progress)
 
-87 passed, 64 failed so far (151/441 done, 58% pass rate) — progressing without hangs
+91 passed, 67 failed so far (158/441 done, 58% pass rate) — progressing without hangs
 
 ## Active failures (round 98)
 
