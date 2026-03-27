@@ -44,6 +44,7 @@ pub async fn create_token_review(
                 groups: Some(vec![
                     "system:serviceaccounts".to_string(),
                     format!("system:serviceaccounts:{}", claims.namespace),
+                    "system:authenticated".to_string(),
                 ]),
                 extra: None,
             }),

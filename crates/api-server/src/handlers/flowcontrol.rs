@@ -463,3 +463,25 @@ pub async fn deletecollection_prioritylevelconfigurations(
     );
     Ok(StatusCode::OK)
 }
+
+pub async fn deletecollection_flowschemas(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<StatusCode> {
+    info!("DeleteCollection flowschemas");
+    let attrs = RequestAttributes::new(auth_ctx.user, "deletecollection", "flowschemas")
+        .with_api_group("flowcontrol.apiserver.k8s.io");
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => return Err(rusternetes_common::Error::Forbidden(reason)),
+    }
+    if crate::handlers::dryrun::is_dry_run(&params) { return Ok(StatusCode::OK); }
+    let prefix = build_prefix("flowschemas", None);
+    let items: Vec<FlowSchema> = state.storage.list(&prefix).await?;
+    for item in items {
+        let key = build_key("flowschemas", None, &item.metadata.name);
+        let _ = state.storage.delete(&key).await;
+    }
+    Ok(StatusCode::OK)
+}

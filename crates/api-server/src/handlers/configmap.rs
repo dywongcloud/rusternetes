@@ -124,10 +124,10 @@ pub async fn update(
 
     let key = build_key("configmaps", Some(&namespace), &name);
 
-    // Check if existing configmap is immutable — K8s returns 403 Forbidden
+    // Check if existing configmap is immutable — K8s returns 422 Invalid
     if let Ok(existing) = state.storage.get::<ConfigMap>(&key).await {
         if existing.immutable == Some(true) {
-            return Err(rusternetes_common::Error::Forbidden(format!(
+            return Err(rusternetes_common::Error::InvalidResource(format!(
                 "ConfigMap \"{}/{}\" is immutable", namespace, name
             )));
         }

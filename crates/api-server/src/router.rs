@@ -1441,7 +1441,8 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route(
             "/apis/flowcontrol.apiserver.k8s.io/v1/flowschemas",
             get(handlers::flowcontrol::list_flow_schemas)
-                .post(handlers::flowcontrol::create_flow_schema),
+                .post(handlers::flowcontrol::create_flow_schema)
+                .delete(handlers::flowcontrol::deletecollection_flowschemas),
         )
         .route(
             "/apis/flowcontrol.apiserver.k8s.io/v1/flowschemas/:name",
