@@ -2,6 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Extension, Json,
 };
 use rusternetes_common::{
@@ -171,10 +172,17 @@ pub async fn delete_ingressclass(
 pub async fn list_ingressclasses(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
-) -> Result<Json<List<IngressClass>>> {
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<axum::response::Response> {
+    if crate::handlers::watch::is_watch_request(&params) {
+        let watch_params = crate::handlers::watch::watch_params_from_query(&params);
+        return crate::handlers::watch::watch_cluster_scoped::<IngressClass>(
+            state, auth_ctx, "ingressclasses", "networking.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing IngressClasses");
 
-    // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "ingressclasses")
         .with_api_group("networking.k8s.io");
 
@@ -186,10 +194,11 @@ pub async fn list_ingressclasses(
     }
 
     let prefix = build_prefix("ingressclasses", None);
-    let ingress_classes = state.storage.list(&prefix).await?;
+    let mut ingress_classes: Vec<IngressClass> = state.storage.list(&prefix).await?;
+    crate::handlers::filtering::apply_selectors(&mut ingress_classes, &params)?;
 
     let list = List::new("IngressClassList", "networking.k8s.io/v1", ingress_classes);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 // Use the macro to create a PATCH handler for cluster-scoped IngressClass

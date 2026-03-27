@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**248 total fixes** | Build clean, all unit tests pass
+**251 total fixes** | Build clean, all unit tests pass
 
 ### Session summary: 68 fixes (#179-246)
 
@@ -104,6 +104,9 @@ Fixes #1-216 are deployed and active in round 101.
 | 246 | HTTP probe: accept 200-399 as success (was 2xx only) | timing tests |
 | 247 | OpenAPI v2 always returns JSON (was returning 406 for protobuf Accept) | 9+ kubectl tests |
 | 248 | fsGroup: chown volume files to fsGroup GID, set setgid bit, chmod g+rwX | 4 tests |
+| 249 | LimitRange: default requests fall back to default limits when defaultRequest unset | 1 test |
+| 250 | IngressClass list handler supports ?watch=true + HasMetadata impl | 1 test |
+| 251 | CRD protobuf decoder: validate decoded JSON, fall back to TypeMeta if invalid | 1 test |
 
 ## Remaining Unfixed Issues
 
@@ -146,10 +149,10 @@ Fixes #1-216 are deployed and active in round 101.
 | Namespace PUT 404 | Timing — namespace not created yet when test adds finalizer |
 | Pod count 72/100 | Scheduling capacity — need more node capacity or fewer concurrent tests |
 | init_container.go:440 | Init container timed out — init container not completing in time |
-| limit_range.go:162 | "resource cpu expected 300m actual 100m" — LimitRange default CPU not applied to container |
+| limit_range.go:162 | **FIXED #249** — LimitRange default requests now fall back to default limits |
 | taints.go:489 | "Failed to evict all Pods" — eviction deletes pod but kubelet recreates (restart policy) |
-| ingressclass.go:375 | Watch event not delivered for IngressClass annotation change |
-| custom_resource_definition.go:161 | CRD protobuf decode still failing for complex CRDs |
+| ingressclass.go:375 | **FIXED #250** — IngressClass list handler now supports ?watch=true |
+| custom_resource_definition.go:161 | **FIXED #251** — CRD protobuf decoder validates JSON output, falls back to TypeMeta |
 
 ## All Fixes by Session
 

@@ -190,8 +190,19 @@ pub async fn normalize_content_type_middleware(
                         //   field 2 = raw object bytes (also protobuf-encoded)
                         // We extract string fields from the raw bytes to construct JSON.
                         if let Some(json_bytes) = decode_k8s_protobuf_to_json(&body_bytes) {
-                            info!("Decoded K8s protobuf to JSON ({} bytes)", json_bytes.len());
-                            json_bytes
+                            // Verify the decoded JSON is valid
+                            if serde_json::from_slice::<serde_json::Value>(&json_bytes).is_ok() {
+                                info!("Decoded K8s protobuf to JSON ({} bytes)", json_bytes.len());
+                                json_bytes
+                            } else {
+                                warn!("Decoded protobuf produced invalid JSON, falling back to TypeMeta");
+                                let type_meta = extract_type_meta_from_protobuf(&body_bytes);
+                                if let Some((av, k)) = type_meta {
+                                    format!(r#"{{"apiVersion":"{}","kind":"{}","metadata":{{}}}}"#, av, k).into_bytes()
+                                } else {
+                                    b"{}".to_vec()
+                                }
+                            }
                         } else {
                             // Last resort: extract TypeMeta only
                             let type_meta = extract_type_meta_from_protobuf(&body_bytes);

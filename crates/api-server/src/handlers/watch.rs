@@ -1049,7 +1049,8 @@ impl_has_metadata!(
     rusternetes_common::resources::RoleBinding,
     rusternetes_common::resources::CertificateSigningRequest,
     rusternetes_common::resources::FlowSchema,
-    rusternetes_common::resources::PriorityLevelConfiguration
+    rusternetes_common::resources::PriorityLevelConfiguration,
+    rusternetes_common::resources::IngressClass
 );
 
 // Concrete handler functions for specific resources

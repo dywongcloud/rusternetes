@@ -136,21 +136,24 @@ pub async fn create(
                                     claims: None,
                                 }
                             });
-                            // Apply default requests
-                            if let Some(ref defaults) = limit.default_request {
-                                let requests = resources.requests.get_or_insert_with(std::collections::HashMap::new);
-                                for (k, v) in defaults {
-                                    if !requests.contains_key(k) {
-                                        requests.insert(k.clone(), v.clone());
-                                    }
-                                }
-                            }
-                            // Apply default limits
+                            // Apply default limits first
                             if let Some(ref default_limits) = limit.default {
                                 let limits = resources.limits.get_or_insert_with(std::collections::HashMap::new);
                                 for (k, v) in default_limits {
                                     if !limits.contains_key(k) {
                                         limits.insert(k.clone(), v.clone());
+                                    }
+                                }
+                            }
+                            // Apply default requests — use defaultRequest if set,
+                            // otherwise fall back to default (limits) values per K8s spec
+                            let effective_defaults = limit.default_request.as_ref()
+                                .or(limit.default.as_ref());
+                            if let Some(defaults) = effective_defaults {
+                                let requests = resources.requests.get_or_insert_with(std::collections::HashMap::new);
+                                for (k, v) in defaults {
+                                    if !requests.contains_key(k) {
+                                        requests.insert(k.clone(), v.clone());
                                     }
                                 }
                             }
