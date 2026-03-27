@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**246 total fixes** | Build clean, all unit tests pass
+**247 total fixes** | Build clean, all unit tests pass
 
 ### Session summary: 68 fixes (#179-246)
 
@@ -102,6 +102,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 244 | Websocket exec: send empty stdout before status on channel 3 | 1 test |
 | 245 | Session affinity: per-endpoint chains with recent module for proper DNAT+mark | 3 tests |
 | 246 | HTTP probe: accept 200-399 as success (was 2xx only) | timing tests |
+| 247 | OpenAPI v2 always returns JSON (was returning 406 for protobuf Accept) | 9+ kubectl tests |
 
 ## Remaining Unfixed Issues
 
@@ -115,7 +116,7 @@ Fixes #1-216 are deployed and active in round 101.
 | Issue | Details |
 |-------|---------|
 | Watch label selector re-evaluation | **FIXED #233** — don't filter MODIFIED by label selector so clients see label changes |
-| kubectl stdin validation | kubectl `--validate` uses OpenAPI schema. Our schema may be incomplete for some resource types. |
+| kubectl stdin validation | **FIXED #247** — /openapi/v2 was returning 406 for protobuf Accept; now always returns JSON |
 | PodSecurity admission | **FIXED #238** — basic PSA: reject privileged/hostNS pods in baseline/restricted namespaces |
 | StatefulSet rolling update | **FIXED #235** — deletes old-revision pods one at a time for rolling update |
 | Strict field validation | **FIXED #239** — detect duplicate JSON keys at top level |

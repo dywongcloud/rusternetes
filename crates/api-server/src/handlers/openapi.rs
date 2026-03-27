@@ -52,20 +52,10 @@ pub async fn get_openapi_spec_path() -> Response {
 /// valid JSON with an explicit Content-Type so kubectl does not fall back to protobuf.
 /// kubectl may send Accept: application/com.github.proto-openapi.spec.v2@v1.0+protobuf
 /// but we always respond with JSON.
-pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
-    // Check if client ONLY accepts protobuf (no JSON fallback)
-    if let Some(accept) = headers.get(header::ACCEPT).and_then(|v| v.to_str().ok()) {
-        if accept.contains("protobuf") && !accept.contains("json") && !accept.contains("*/*") {
-            // Return 406 — we don't support protobuf OpenAPI encoding
-            return Response::builder()
-                .status(StatusCode::NOT_ACCEPTABLE)
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"kind":"Status","apiVersion":"v1","status":"Failure","message":"only JSON OpenAPI spec is available","reason":"NotAcceptable","code":406}"#))
-                .unwrap();
-        }
-    }
-
-    // Return JSON OpenAPI spec
+pub async fn get_swagger_spec(_headers: HeaderMap) -> Response {
+    // Always return JSON OpenAPI spec regardless of Accept header.
+    // kubectl sends Accept: application/com.github.proto-openapi.spec.v2@v1.0+protobuf
+    // but can parse JSON just fine. Returning 406 breaks kubectl --validate.
     let spec = serde_json::json!({
         "swagger": "2.0",
         "info": {
