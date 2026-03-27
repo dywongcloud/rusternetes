@@ -39,21 +39,46 @@ pub async fn create_validating_webhook(
         }
     }
 
-    // Validate matchConditions CEL expressions
+    // Validate matchConditions CEL expressions with type-checking
     if let Some(webhooks) = &config.webhooks {
         for webhook in webhooks {
             if let Some(conditions) = &webhook.match_conditions {
-                for condition in conditions {
+                for (i, condition) in conditions.iter().enumerate() {
                     if condition.expression.is_empty() {
                         return Err(rusternetes_common::Error::InvalidResource(
                             "matchConditions[].expression must be non-empty".to_string()
                         ));
                     }
-                    if cel_interpreter::Program::compile(&condition.expression).is_err() {
+                    if condition.name.is_empty() {
                         return Err(rusternetes_common::Error::InvalidResource(format!(
-                            "matchConditions: Invalid CEL expression '{}': compilation failed",
-                            condition.expression
+                            "matchConditions[{}].name must be non-empty", i
                         )));
+                    }
+                    // Compile the expression
+                    let program = match cel_interpreter::Program::compile(&condition.expression) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            return Err(rusternetes_common::Error::InvalidResource(format!(
+                                "matchConditions[{}].expression: Invalid CEL expression '{}': {}",
+                                i, condition.expression, e
+                            )));
+                        }
+                    };
+                    // Type-check by evaluating with admission context variables
+                    // This catches references to undefined variables
+                    let mut ctx = cel_interpreter::Context::default();
+                    ctx.add_variable("object".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
+                    ctx.add_variable("oldObject".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
+                    ctx.add_variable("request".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
+                    if let Err(e) = program.execute(&ctx) {
+                        let err_str = format!("{}", e);
+                        // Allow "no such key" errors (valid expression, just empty test data)
+                        if !err_str.contains("no such key") && !err_str.contains("not found") {
+                            return Err(rusternetes_common::Error::InvalidResource(format!(
+                                "matchConditions[{}].expression: compilation failed: {}",
+                                i, err_str
+                            )));
+                        }
                     }
                 }
             }
@@ -267,21 +292,42 @@ pub async fn create_mutating_webhook(
         }
     }
 
-    // Validate matchConditions CEL expressions
+    // Validate matchConditions CEL expressions with type-checking
     if let Some(webhooks) = &config.webhooks {
         for webhook in webhooks {
             if let Some(conditions) = &webhook.match_conditions {
-                for condition in conditions {
+                for (i, condition) in conditions.iter().enumerate() {
                     if condition.expression.is_empty() {
                         return Err(rusternetes_common::Error::InvalidResource(
                             "matchConditions[].expression must be non-empty".to_string()
                         ));
                     }
-                    if cel_interpreter::Program::compile(&condition.expression).is_err() {
+                    if condition.name.is_empty() {
                         return Err(rusternetes_common::Error::InvalidResource(format!(
-                            "matchConditions: Invalid CEL expression '{}': compilation failed",
-                            condition.expression
+                            "matchConditions[{}].name must be non-empty", i
                         )));
+                    }
+                    let program = match cel_interpreter::Program::compile(&condition.expression) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            return Err(rusternetes_common::Error::InvalidResource(format!(
+                                "matchConditions[{}].expression: Invalid CEL expression '{}': {}",
+                                i, condition.expression, e
+                            )));
+                        }
+                    };
+                    let mut ctx = cel_interpreter::Context::default();
+                    ctx.add_variable("object".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
+                    ctx.add_variable("oldObject".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
+                    ctx.add_variable("request".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
+                    if let Err(e) = program.execute(&ctx) {
+                        let err_str = format!("{}", e);
+                        if !err_str.contains("no such key") && !err_str.contains("not found") {
+                            return Err(rusternetes_common::Error::InvalidResource(format!(
+                                "matchConditions[{}].expression: compilation failed: {}",
+                                i, err_str
+                            )));
+                        }
                     }
                 }
             }

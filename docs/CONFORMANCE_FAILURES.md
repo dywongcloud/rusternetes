@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**236 total fixes** | Build clean, all unit tests pass
+**237 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -90,6 +90,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 234 | Pod resize: re-read pod from storage in Running sync to get updated spec resources | 4 tests |
 | 235 | StatefulSet rolling update: delete old-revision pods one at a time | 2 tests |
 | 236 | Sysctls: apply pod sysctls to application containers (not just pause) | 1 test |
+| 237 | Webhook matchConditions: type-check CEL with admission context variables | 1 test |
 
 ## Remaining Unfixed Issues
 
