@@ -54,7 +54,7 @@
 
 ## Round 99 results (in progress)
 
-91 passed, 67 failed so far (158/441 done, 58% pass rate) — progressing without hangs
+91 passed, 67 failed so far (158/441 done, 58% pass rate) — currently stuck on VAP test (needs #198 deploy)
 
 ## Active failures (round 98)
 
