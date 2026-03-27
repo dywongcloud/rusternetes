@@ -23,7 +23,7 @@
 | Issue | Error | What to do |
 |-------|-------|------------|
 | core_events.go:135 | Event timestamp has microseconds | **FIXED #258** — micro_time only adds .000000 if timestamp has sub-second precision |
-| watch.go:409 | Watch restart doesn't deliver initial ADDED events | Debug sendInitialEvents flow with specific resourceVersion |
+| watch.go:409 | Watch restart doesn't deliver initial ADDED events | Code path looks correct — may be timing between label update and list. Needs runtime debugging. |
 | aggregated_discovery.go:227 | Watch channel closed unexpectedly | **FIXED #261** — added delay before resubscribe to prevent tight loop |
 | csistoragecapacity.go:190 | Watch channel closed | **FIXED #261** — same fix |
 | validatingadmissionpolicy.go:270 | VAP denies marker too early | **FIXED #263** — binding must be 2s old before enforcement |
