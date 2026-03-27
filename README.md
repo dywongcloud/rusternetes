@@ -1,219 +1,232 @@
 # Rusternetes
 
-A Kubernetes reimplementation in Rust, focusing on memory safety, performance.
+**A ground-up reimplementation of Kubernetes in Rust.**
 
-## Architecture
+155,000 lines of Rust across 9 crates. 31 controllers. 1,300+ tests. Actively conformance-tested against the official Kubernetes e2e test suite — currently passing 60% of conformance tests with 271 fixes deployed and climbing.
 
-Rusternetes follows the standard Kubernetes architecture with the following components:
+This isn't a wrapper around the Go codebase or a partial mock. Every component — API server, scheduler, controller manager, kubelet, kube-proxy — is written from scratch in Rust, implementing the actual Kubernetes API surface, wire format, and behavioral semantics.
 
-### Control Plane Components
+```
+┌───────────────────────────────────────────────────────────────┐
+│                       Control Plane                           │
+│                                                               │
+│  ┌──────────────────┐  ┌──────────────┐  ┌────────────────┐   │
+│  │  API Server      │  │  Scheduler   │  │  Controller    │   │
+│  │  Axum + TLS      │  │  Affinity    │  │  Manager       │   │
+│  │  REST + Watch    │  │  Taints      │  │  31 control    │   │
+│  │  RBAC + Webhooks │  │  Preemption  │  │  loops         │   │
+│  └────────┬─────────┘  └──────────────┘  └────────────────┘   │
+│           │                                                   │
+│  ┌────────▼─────────┐                                         │
+│  │  etcd Storage    │                                         │
+│  └──────────────────┘                                         │
+├───────────────────────────────────────────────────────────────┤
+│                       Node Components                         │
+│                                                               │
+│  ┌──────────────────┐  ┌──────────────────────────────────┐   │
+│  │  Kubelet         │  │  Kube-Proxy                      │   │
+│  │  bollard (Docker)│  │  iptables routing                │   │
+│  │  Probes+Volumes  │  │  ClusterIP/NodePort/LB           │   │
+│  └──────────────────┘  └──────────────────────────────────┘   │
+└───────────────────────────────────────────────────────────────┘
+```
 
-- **API Server** (`api-server`): Central management component that exposes the Kubernetes API
-- **Scheduler** (`scheduler`): Assigns pods to nodes based on resource requirements and constraints
-- **Controller Manager** (`controller-manager`): Runs controllers that regulate the state of the cluster
-
-### Node Components
-
-- **Kubelet** (`kubelet`): Agent that runs on each node and manages containers
-- **Kube-proxy** (`kube-proxy`): Network proxy that maintains network rules
-
-### Additional Components
-
-- **CoreDNS**: Standard Kubernetes DNS for service discovery (deployed via bootstrap-cluster.yaml)
-
-### CLI Tools
-
-- **kubectl** (`kubectl`): Command-line interface for interacting with the cluster
-
-### Shared Libraries
-
-- **Common** (`common`): Shared types, utilities, and resource definitions
-- **Storage** (`storage`): Abstraction layer for etcd and persistent storage
-
-## Building
+## Quick Start
 
 ```bash
+# Build
+git clone https://github.com/calfonso/rusternetes.git
+cd rusternetes
 cargo build --release
+
+# Start a full cluster with Docker Compose
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+docker compose build
+docker compose up -d
+
+# Bootstrap CoreDNS, services, and ServiceAccount tokens
+bash scripts/bootstrap-cluster.sh
+
+# Use it — standard kubectl works
+export KUBECONFIG=~/.kube/rusternetes-config
+kubectl get nodes
+kubectl get pods -A
+kubectl create deployment nginx --image=nginx
 ```
 
-## Running
+**Prerequisites:** Docker Desktop (macOS) or Docker/Podman in rootful mode (Linux). See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed setup.
 
-### Prerequisites
+## What's Implemented
 
-- Container runtime:
-  - **macOS**: Docker Desktop (required - see note below)
-  - **Linux**: Docker or Podman in rootful mode
+### API Server
+Axum-based HTTPS server implementing the Kubernetes REST API. 76 handler modules covering core/v1, apps/v1, batch/v1, rbac.authorization.k8s.io/v1, storage.k8s.io/v1, networking.k8s.io/v1, and more.
 
-### Start Control Plane
+- Full CRUD for all major resource types
+- Watch API with Server-Sent Events
+- Server-Side Apply, Strategic Merge Patch, JSON Patch
+- Field selectors and label selectors
+- Custom Resource Definitions with hot-reload and conversion webhooks
+- Validating and Mutating Admission Webhooks
+- ValidatingAdmissionPolicy with CEL expressions
+- RBAC authorization with Roles, ClusterRoles, and Bindings
+- ServiceAccount JWT token signing (RS256)
+- TLS/mTLS, audit logging, Pod Security Standards
+- OpenAPI v3 discovery, aggregated discovery
+
+### Scheduler
+Filter/score plugin architecture with:
+- Node/Pod affinity and anti-affinity
+- Taints and tolerations
+- Resource requests and limits scoring
+- Priority classes and preemption
+- Topology spread constraints
+
+### Controller Manager
+31 reconciliation controllers running concurrent loops:
+
+| Controller | What it does |
+|---|---|
+| Deployment | Rolling updates, rollbacks, revision history |
+| ReplicaSet | Desired replica count enforcement |
+| ReplicationController | Legacy RC support |
+| StatefulSet | Ordered pod management, stable network IDs |
+| DaemonSet | Per-node pod scheduling |
+| Job | Run-to-completion workloads, indexed completion |
+| CronJob | Scheduled job creation |
+| Endpoints | Service endpoint maintenance from pod selectors |
+| EndpointSlice | Scalable endpoint slicing |
+| Service | ClusterIP allocation, service lifecycle |
+| ServiceAccount | Default SA creation, token management |
+| Namespace | Finalization, resource cleanup |
+| Node | Node status, heartbeat monitoring |
+| PV Binder | PersistentVolume to PVC binding |
+| Dynamic Provisioner | Automatic PV creation from StorageClasses |
+| Volume Snapshot | Snapshot lifecycle management |
+| Volume Expansion | Online PVC resize |
+| ResourceQuota | Namespace resource usage tracking |
+| ResourceClaim | Dynamic Resource Allocation |
+| HPA | Horizontal Pod Autoscaler |
+| VPA | Vertical Pod Autoscaler |
+| PDB | Pod Disruption Budget enforcement |
+| LoadBalancer | External LB provisioning (cloud + MetalLB) |
+| Ingress | Ingress resource management |
+| NetworkPolicy | Network policy lifecycle |
+| CRD | Custom resource schema validation |
+| CSR | Certificate signing requests |
+| Garbage Collector | Owner reference cascade deletion |
+| TTL Controller | Finished resource cleanup |
+| Taint Eviction | Evict pods from tainted nodes |
+| Events | Event recording and TTL cleanup |
+
+### Kubelet
+Container runtime integration via [bollard](https://github.com/fussybeaver/bollard) (Docker API):
+- Pod lifecycle: create, start, stop, restart with grace periods
+- Pause container network namespace sharing
+- Liveness, readiness, and startup probes (HTTP, TCP, exec)
+- Volume mounts: emptyDir, hostPath, projected, configMap, secret, downwardAPI
+- Container resource limits (CPU, memory)
+- Init containers and sidecar containers
+- Lifecycle hooks (preStop, postStart) — exec and httpGet
+- Container log retrieval
+- Pod exec and attach via WebSocket
+- Sysctls, fsGroup, IPC namespace sharing
+
+### Kube-Proxy
+iptables-based service routing in host network mode:
+- ClusterIP, NodePort, LoadBalancer service types
+- Session affinity (ClientIP)
+- Endpoints and EndpointSlice consumption
+- Service CIDR routing
+
+### Storage
+Pluggable storage backend with `Storage` trait:
+- **etcd backend** — production use with optimistic concurrency (CAS via mod_revision)
+- **Memory backend** — unit testing
+- Key schema: `/registry/{resource_type}/{namespace}/{name}`
+
+## Conformance
+
+Rusternetes is actively tested against the official Kubernetes v1.35 conformance test suite using [Sonobuoy](https://sonobuoy.io/).
+
+| Round | Pass | Total | Rate | Notes |
+|-------|------|-------|------|-------|
+| 97 | ~40 | 441 | ~9% | Baseline |
+| 101 | 245 | 441 | 56% | 76 fixes deployed |
+| 103 | 245 | 441 | 60% | 271 fixes deployed |
+| 104 | TBD | 441 | — | In progress |
 
 ```bash
-# Start API server
-cargo run --bin api-server
+# Run conformance tests
+bash scripts/run-conformance.sh
 
-# Start scheduler
-cargo run --bin scheduler
-
-# Start controller manager
-cargo run --bin controller-manager
+# Monitor progress
+bash scripts/conformance-progress.sh
 ```
 
-### Start Node Components
+See [CONFORMANCE_FAILURES.md](docs/CONFORMANCE_FAILURES.md) for the full fix tracker.
 
-```bash
-# Start kubelet
-cargo run --bin kubelet
+## Project Structure
 
-# Start kube-proxy
-cargo run --bin kube-proxy
+```
+crates/
+  api-server/          Axum HTTPS API (76 handler modules, 2100-line router)
+  controller-manager/  31 reconciliation controllers
+  scheduler/           Filter/score plugin scheduling
+  kubelet/             Container runtime, probes, volumes
+  kube-proxy/          iptables service routing
+  storage/             etcd + memory storage backends
+  common/              Shared types (36 resource modules), errors, utilities
+  kubectl/             CLI tool
+  cloud-providers/     AWS, GCP, Azure integrations
+
+scripts/
+  bootstrap-cluster.sh   Bootstrap CoreDNS, services, SA tokens
+  run-conformance.sh     Full conformance test lifecycle
+  conformance-progress.sh  Monitor pass/fail progress
+  generate-certs.sh      TLS certificate generation
+
+docs/                  Architecture, guides, conformance tracking
 ```
 
 ## Development
 
-### Quick Setup Scripts
-
-We provide automated setup scripts for easy development:
-
-**macOS (Docker Desktop)**:
 ```bash
-./scripts/dev-setup-macos.sh
+cargo build                    # Debug build
+cargo test                     # All workspace tests
+cargo test -p rusternetes_api_server  # Single crate
+cargo clippy --all-targets --all-features -- -D warnings
+make pre-commit                # Format + clippy + test
 ```
 
-**Fedora/RHEL/CentOS (Podman or Docker)**:
+Docker cluster:
 ```bash
-sudo ./scripts/dev-setup-fedora.sh
-```
-
-These scripts install all dependencies, build the project, create helper scripts, and set up your development environment.
-
-### Quick Start with Docker
-
-For local development, we provide a complete container-based development environment:
-
-**Important Prerequisites:**
-- **Docker Desktop** is required on macOS (Podman Machine has compatibility issues on macOS Sequoia 15.7+)
-- **Docker with rootful mode** is required on Linux for kube-proxy iptables access
-- Set the `KUBELET_VOLUMES_PATH` environment variable before starting
-
-```bash
-# Set the volumes path (required)
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
-
-# Set up kubeconfig (one-time)
-cp kubeconfig.example.yaml ~/.kube/rusternetes-config
-export KUBECONFIG=~/.kube/rusternetes-config
-
-# Build and start the cluster
-docker-compose build
-docker-compose up -d
-
-# Apply bootstrap resources (CoreDNS, services)
-cat bootstrap-cluster.yaml | envsubst > /tmp/bootstrap-expanded.yaml
-kubectl apply -f /tmp/bootstrap-expanded.yaml
-
-# Verify the cluster
-kubectl get pods -A
+docker compose build           # Build images
+docker compose up -d           # Start cluster
+docker compose down            # Stop cluster
 ```
 
-**Why Docker Desktop on macOS?**
-
-Podman Machine on macOS Sequoia 15.7+ has a known issue with the Apple Virtualization Framework that prevents VMs from starting. Additionally, kube-proxy requires rootful container execution for iptables access, which Docker Desktop provides automatically.
-
-**Note:** See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed development workflows, troubleshooting, Podman alternatives on Linux, and advanced usage.
-
-### Linux Users
-
-On Linux, you can use either Docker or Podman. For Podman, you must run in **rootful mode** for kube-proxy to access iptables:
-
+High availability mode:
 ```bash
-# Create a rootful Podman machine (if using Podman Desktop)
-podman machine init --rootful --cpus 4 --memory 8192
-
-# Or run Podman containers as root
-sudo podman-compose up -d
+docker compose -f docker-compose.ha.yml up
 ```
 
-This is an educational project to understand Kubernetes internals while leveraging Rust's safety guarantees.
+See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full guide and [CONTRIBUTING.md](docs/CONTRIBUTING.md) for contribution guidelines.
 
 ## Documentation
 
-**📚 Complete Documentation Index:** See [docs/DOCUMENTATION_INDEX.md](docs/DOCUMENTATION_INDEX.md) for a comprehensive, organized guide to all documentation.
-
-### Getting Started
-- [QUICKSTART.md](docs/QUICKSTART.md) - Quick start guide for trying Rusternetes
-- [GETTING_STARTED.md](docs/GETTING_STARTED.md) - Traditional development setup
-- [DEVELOPMENT.md](docs/DEVELOPMENT.md) - Comprehensive development guide
-- [DEPLOYMENT.md](docs/DEPLOYMENT.md) - Production deployment guide
-
-### Features & Implementation
-- [STATUS.md](docs/STATUS.md) - Current implementation status and roadmap
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture and design
-- [HIGH_AVAILABILITY.md](docs/HIGH_AVAILABILITY.md) - High Availability setup with etcd clustering, load balancing, and leader election ⭐ NEW
-- [API_FEATURES_COMPLETE.md](docs/API_FEATURES_COMPLETE.md) - API features implementation (PATCH, Field Selectors, Server-Side Apply)
-- [PATCH_IMPLEMENTATION.md](docs/PATCH_IMPLEMENTATION.md) - Detailed PATCH operations guide
-
-### Storage & Volumes
-- [DYNAMIC_PROVISIONING.md](docs/DYNAMIC_PROVISIONING.md) - Dynamic volume provisioning
-- [VOLUME_SNAPSHOTS.md](docs/VOLUME_SNAPSHOTS.md) - Volume snapshot feature
-- [VOLUME_EXPANSION.md](docs/VOLUME_EXPANSION.md) - Volume expansion feature
-
-### Networking
-- [DNS.md](docs/DNS.md) - DNS server and service discovery
-- [LOADBALANCER.md](docs/LOADBALANCER.md) - LoadBalancer service type with MetalLB
-- [Network Policies](docs/networking/network-policies.md) - NetworkPolicy validation and CNI plugin integration ⭐ NEW
-
-### Security
-- [SECURITY.md](docs/SECURITY.md) - Security features (Admission Controllers, Pod Security Standards, Encryption, Audit)
-- [ServiceAccount Token Signing](docs/security/service-account-tokens.md) - JWT token signing with RS256 for production deployments ⭐ NEW
-- [WEBHOOK_INTEGRATION.md](docs/WEBHOOK_INTEGRATION.md) - Admission webhook integration guide
-- [WEBHOOK_TESTING.md](docs/WEBHOOK_TESTING.md) - Comprehensive webhook testing guide
-- [TLS_GUIDE.md](docs/TLS_GUIDE.md) - TLS configuration
-
-### Testing & Observability
-- [TESTING_IMPLEMENTATION_GUIDE.md](docs/TESTING_IMPLEMENTATION_GUIDE.md) - Comprehensive testing guide
-- [TESTING.md](docs/TESTING.md) - Testing procedures
-- [TRACING.md](docs/TRACING.md) - Distributed tracing with OpenTelemetry
-
-### Development & Utilities
-- [CONTRIBUTING.md](docs/CONTRIBUTING.md) - Contribution guidelines
-- [DEV_SETUP_METALLB.md](docs/DEV_SETUP_METALLB.md) - MetalLB setup for LoadBalancer services
-- [PODMAN_TIPS.md](docs/PODMAN_TIPS.md) - Podman troubleshooting and tips
-- [SETUP_NOTES.md](docs/SETUP_NOTES.md) - Setup and configuration notes
-
-## Current Status
-
-Rusternetes implements core Kubernetes features including:
-
-- ✅ **API Server** - Full CRUD operations with TLS, RBAC, authentication
-- ✅ **Scheduler** - Advanced scheduling with affinity/anti-affinity, taints/tolerations, priority/preemption
-- ✅ **Controllers** - Deployment, StatefulSet, Job, DaemonSet, CronJob, Endpoints, PV/PVC Binder, Dynamic Provisioner, Volume Snapshot, LoadBalancer
-- ✅ **Storage** - PV/PVC, Dynamic Provisioning, Volume Snapshots, Volume Expansion
-- ✅ **Networking** - ClusterIP, NodePort, LoadBalancer services, CoreDNS, kube-proxy with iptables
-- ✅ **Security** - RBAC, Admission Webhooks, Pod Security Standards, Secrets Encryption, Audit Logging
-- ✅ **High Availability** - Multi-master API servers, etcd clustering (3-5 nodes), leader election, automatic failover ⭐ NEW
-- ✅ **Advanced API** - PATCH (all resources), Field Selectors, Server-Side Apply, Watch API, CRDs with hot-reload
-- ✅ **Observability** - Prometheus metrics, Events API, OpenTelemetry tracing
-
-**Latest Addition (March 10, 2026):** Production-grade High Availability support with:
-- **etcd Clustering**: 3-5 node clusters with quorum for fault tolerance
-- **Multi-Master API Servers**: Active-active API servers behind HAProxy load balancer
-- **Leader Election**: Controller-manager and scheduler use etcd-based leader election for active-standby HA
-- **Automatic Failover**: ~15 second failover time for all components
-- **Enhanced Health Checks**: Comprehensive liveness/readiness probes with storage connectivity checks
-
-Run in HA mode: `docker-compose -f docker-compose.ha.yml up` or test with `./scripts/test-ha.sh`
-
-**Test Coverage:** 1306+ tests passing including:
-- 21 admission webhook tests
-- 16 CNI framework tests
-- 16 LoadBalancer tests
-- 8 autoscaling/init container tests
-- 42 controller unit tests
-- 371 status subresource tests
-- 324 garbage collector tests
-- 402 TTL controller tests
-- Integration tests for all workload controllers
-
-See [STATUS.md](docs/STATUS.md) for detailed implementation status and [CONFORMANCE_PLAN.md](docs/planning/CONFORMANCE_PLAN.md) for Kubernetes conformance tracking.
+| Topic | Link |
+|-------|------|
+| Quick Start | [QUICKSTART.md](docs/QUICKSTART.md) |
+| Architecture | [ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Development | [DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| Conformance | [CONFORMANCE.md](docs/CONFORMANCE.md) |
+| High Availability | [HIGH_AVAILABILITY.md](docs/HIGH_AVAILABILITY.md) |
+| Security | [SECURITY.md](docs/SECURITY.md) |
+| CRDs | [CRD_IMPLEMENTATION.md](docs/CRD_IMPLEMENTATION.md) |
+| Networking | [CNI_INTEGRATION.md](docs/CNI_INTEGRATION.md) |
+| Storage | [DYNAMIC_PROVISIONING.md](docs/DYNAMIC_PROVISIONING.md) |
+| All docs | [DOCUMENTATION_INDEX.md](docs/DOCUMENTATION_INDEX.md) |
 
 ## License
 
