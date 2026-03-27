@@ -4623,23 +4623,27 @@ impl ContainerRuntime {
                 .as_ref()
                 .and_then(|s| s.host_ip.clone())
                 .unwrap_or_else(|| "127.0.0.1".to_string()),
-            // All labels formatted as key="value"\n
+            // All labels formatted as key="value"\n (with trailing newline, matching K8s)
             "metadata.labels" => {
                 pod.metadata.labels.as_ref()
                     .map(|labels| {
                         let mut pairs: Vec<_> = labels.iter().collect();
                         pairs.sort_by_key(|(k, _)| k.clone());
-                        pairs.iter().map(|(k, v)| format!("{}=\"{}\"", k, v)).collect::<Vec<_>>().join("\n")
+                        let mut result = pairs.iter().map(|(k, v)| format!("{}=\"{}\"", k, v)).collect::<Vec<_>>().join("\n");
+                        if !result.is_empty() { result.push('\n'); }
+                        result
                     })
                     .unwrap_or_default()
             }
-            // All annotations formatted as key="value"\n
+            // All annotations formatted as key="value"\n (with trailing newline, matching K8s)
             "metadata.annotations" => {
                 pod.metadata.annotations.as_ref()
                     .map(|anns| {
                         let mut pairs: Vec<_> = anns.iter().collect();
                         pairs.sort_by_key(|(k, _)| k.clone());
-                        pairs.iter().map(|(k, v)| format!("{}=\"{}\"", k, v)).collect::<Vec<_>>().join("\n")
+                        let mut result = pairs.iter().map(|(k, v)| format!("{}=\"{}\"", k, v)).collect::<Vec<_>>().join("\n");
+                        if !result.is_empty() { result.push('\n'); }
+                        result
                     })
                     .unwrap_or_default()
             }
