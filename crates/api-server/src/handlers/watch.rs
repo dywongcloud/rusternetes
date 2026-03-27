@@ -866,10 +866,39 @@ fn matches_label_selector(metadata: &ObjectMeta, selector: &Option<String>) -> b
         None => return false, // No labels but selector exists = no match
     };
 
-    // Parse selector: "key=value,key2=value2" or "key!=value"
-    for requirement in selector.split(',') {
+    // Parse selector: supports key=value, key!=value, key in (v1,v2), key notin (v1,v2), key, !key
+    for requirement in split_label_requirements(selector) {
         let requirement = requirement.trim();
         if requirement.is_empty() {
+            continue;
+        }
+
+        // Handle "key in (v1,v2,...)" — set-based
+        if let Some(captures) = parse_set_requirement(requirement) {
+            match captures {
+                SetRequirement::In(key, values) => {
+                    let label_val = labels.get(key);
+                    if !values.iter().any(|v| label_val.map_or(false, |lv| lv == v)) {
+                        return false;
+                    }
+                }
+                SetRequirement::NotIn(key, values) => {
+                    let label_val = labels.get(key);
+                    if values.iter().any(|v| label_val.map_or(false, |lv| lv == v)) {
+                        return false;
+                    }
+                }
+                SetRequirement::Exists(key) => {
+                    if !labels.contains_key(key) {
+                        return false;
+                    }
+                }
+                SetRequirement::NotExists(key) => {
+                    if labels.contains_key(key) {
+                        return false;
+                    }
+                }
+            }
             continue;
         }
 
@@ -881,10 +910,17 @@ fn matches_label_selector(metadata: &ObjectMeta, selector: &Option<String>) -> b
                     return false; // Must NOT equal
                 }
             } else {
-                // key=value: must match
+                // key=value or key==value: must match
+                let value = value.trim_start_matches('='); // handle ==
                 if labels.get(key).map_or(true, |v| v != value) {
                     return false;
                 }
+            }
+        } else if requirement.starts_with('!') {
+            // !key — key must not exist
+            let key = &requirement[1..];
+            if labels.contains_key(key) {
+                return false;
             }
         } else {
             // Just a key with no value — check existence
@@ -894,6 +930,54 @@ fn matches_label_selector(metadata: &ObjectMeta, selector: &Option<String>) -> b
         }
     }
     true
+}
+
+enum SetRequirement<'a> {
+    In(&'a str, Vec<&'a str>),
+    NotIn(&'a str, Vec<&'a str>),
+    Exists(&'a str),
+    NotExists(&'a str),
+}
+
+fn parse_set_requirement(s: &str) -> Option<SetRequirement<'_>> {
+    // "key in (v1,v2)" or "key notin (v1,v2)"
+    if let Some(idx) = s.find(" in (") {
+        let key = s[..idx].trim();
+        let values_str = &s[idx + 5..];
+        let values_str = values_str.trim_end_matches(')');
+        let values: Vec<&str> = values_str.split(',').map(|v| v.trim()).collect();
+        return Some(SetRequirement::In(key, values));
+    }
+    if let Some(idx) = s.find(" notin (") {
+        let key = s[..idx].trim();
+        let values_str = &s[idx + 8..];
+        let values_str = values_str.trim_end_matches(')');
+        let values: Vec<&str> = values_str.split(',').map(|v| v.trim()).collect();
+        return Some(SetRequirement::NotIn(key, values));
+    }
+    None
+}
+
+/// Split label selector string into requirements, respecting parentheses in set-based expressions
+fn split_label_requirements(selector: &str) -> Vec<&str> {
+    let mut results = Vec::new();
+    let mut depth = 0;
+    let mut start = 0;
+    for (i, c) in selector.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                results.push(&selector[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < selector.len() {
+        results.push(&selector[start..]);
+    }
+    results
 }
 
 /// Check if an object matches a field selector (common: metadata.name, metadata.namespace)
