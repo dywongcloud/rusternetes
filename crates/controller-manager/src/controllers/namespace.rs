@@ -124,15 +124,16 @@ impl NamespaceController {
             return Ok(()); // Will be retried in next reconciliation
         }
 
-        // Remove finalizers from the namespace
+        // Only remove the "kubernetes" finalizer — custom finalizers are managed by their owners
         if let Some(finalizers) = &namespace.metadata.finalizers {
-            if !finalizers.is_empty() {
-                info!(
-                    "Removing {} finalizers from namespace {}",
-                    finalizers.len(),
-                    name
-                );
-                self.remove_namespace_finalizers(name).await?;
+            if finalizers.contains(&"kubernetes".to_string()) {
+                info!("Removing kubernetes finalizer from namespace {}", name);
+                let key = build_key("namespaces", None, name);
+                let mut ns: Namespace = self.storage.get(&key).await?;
+                if let Some(ref mut fins) = ns.metadata.finalizers {
+                    fins.retain(|f| f != "kubernetes");
+                }
+                self.storage.update(&key, &ns).await?;
             }
         }
 

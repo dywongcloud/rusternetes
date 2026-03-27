@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**260 total fixes** | Build clean | Round 103: 51 pass, 38 fail at 89/441 (57%)
+**262 total fixes** | Build clean | Round 103: 51 pass, 38 fail at 89/441 (57%)
 
 ## What Still Needs Fixing
 
@@ -12,16 +12,19 @@
 | 257 | ValidatingAdmissionPolicy status route | 1 test |
 | 258 | MicroTime omits .000000 for whole-second timestamps | 1 test |
 | 259 | ResourceClaim AllocationResult.devices field default | 1 test |
+| 260 | SS current_revision derived from pod labels, not template | 1 test |
+| 261 | Watch resubscribe delay to prevent tight loop on channel close | 2 tests |
+| 262 | Namespace controller only removes kubernetes finalizer, not custom ones | 1 test |
 
 ### Code bugs to fix
 | Issue | Error | What to do |
 |-------|-------|------------|
 | core_events.go:135 | Event timestamp has microseconds | **FIXED #258** — micro_time only adds .000000 if timestamp has sub-second precision |
 | watch.go:409 | Watch restart doesn't deliver initial ADDED events | Debug sendInitialEvents flow with specific resourceVersion |
-| aggregated_discovery.go:227 | Watch channel closed unexpectedly | Watch stream may be dropping connection — check HTTP/2 keepalive |
-| csistoragecapacity.go:190 | Watch channel closed | Same as above |
+| aggregated_discovery.go:227 | Watch channel closed unexpectedly | **FIXED #261** — added delay before resubscribe to prevent tight loop |
+| csistoragecapacity.go:190 | Watch channel closed | **FIXED #261** — same fix |
 | validatingadmissionpolicy.go:270 | VAP denies marker too early | VAP enforcement runs before binding is ready — need readiness check |
-| namespace.go:579 | Namespace deleted unexpectedly | kubernetes finalizer not preventing deletion — check finalizer handling |
+| namespace.go:579 | Namespace deleted unexpectedly | **FIXED #262** — namespace controller only removes kubernetes finalizer, not custom ones |
 | statefulset.go:381 | Current revision = update revision | **FIXED #260** — derive current_revision from pod labels, not template |
 
 ### Architecture gaps (need new features)

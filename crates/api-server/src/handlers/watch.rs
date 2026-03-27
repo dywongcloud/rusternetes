@@ -389,7 +389,8 @@ where
                             }
                             None => {
                                 // Watch stream ended — resubscribe from cache.
-                                // The cache handles etcd reconnection internally.
+                                // Small delay to prevent tight loop if channel keeps closing.
+                                tokio::time::sleep(Duration::from_millis(100)).await;
                                 let new_rx = state.watch_cache.subscribe(&prefix).await;
                                 watch_stream = Box::pin(crate::watch_cache::broadcast_to_stream(new_rx));
                                 continue;
@@ -750,7 +751,8 @@ where
                             }
                             None => {
                                 // Watch stream ended — resubscribe from cache.
-                                // The cache handles etcd reconnection internally.
+                                // Small delay to prevent tight loop if channel keeps closing.
+                                tokio::time::sleep(Duration::from_millis(100)).await;
                                 let new_rx = state.watch_cache.subscribe(&prefix).await;
                                 watch_stream = Box::pin(crate::watch_cache::broadcast_to_stream(new_rx));
                                 continue;
