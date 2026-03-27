@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**254 total fixes** | Build clean, all unit tests pass
+**255 total fixes** | Build clean, all unit tests pass
 
 ### Session summary: 76 fixes (#179-254)
 
@@ -110,6 +110,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 252 | Init container CrashLoopBackOff status when failing with restartPolicy=Always | 1 test |
 | 253 | Don't set hostname on containers using container: network mode | ALL pods |
 | 254 | Pause container IpcMode=shareable for IPC namespace sharing | ALL pods |
+| 255 | Kubelet sync interval reduced from 2s to 1s (matching controller-manager) | timing tests |
 
 ## Remaining Unfixed Issues
 
