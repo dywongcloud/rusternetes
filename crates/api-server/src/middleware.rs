@@ -607,10 +607,18 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
 
     let mut rpos = 0;
     while rpos < raw.len() {
-        let tag = raw[rpos];
-        rpos += 1;
-        let field_num = tag >> 3;
-        let wire_type = tag & 0x07;
+        // Decode tag as varint (supports field numbers > 15)
+        let mut tag: u64 = 0;
+        let mut tag_shift = 0;
+        while rpos < raw.len() {
+            let b = raw[rpos] as u64;
+            rpos += 1;
+            tag |= (b & 0x7f) << tag_shift;
+            if b & 0x80 == 0 { break; }
+            tag_shift += 7;
+        }
+        let field_num = (tag >> 3) as u8;
+        let wire_type = (tag & 0x07) as u8;
 
         if wire_type == 2 {
             let mut len: usize = 0;
@@ -631,10 +639,17 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                     // ObjectMeta — parse name (field 1) and namespace (field 3)
                     let mut mpos = 0;
                     while mpos < field_data.len() {
-                        let mt = field_data[mpos];
-                        mpos += 1;
-                        let mfnum = mt >> 3;
-                        let mwire = mt & 0x07;
+                        let mut mt: u64 = 0;
+                        let mut mt_shift = 0;
+                        while mpos < field_data.len() {
+                            let b = field_data[mpos] as u64;
+                            mpos += 1;
+                            mt |= (b & 0x7f) << mt_shift;
+                            if b & 0x80 == 0 { break; }
+                            mt_shift += 7;
+                        }
+                        let mfnum = (mt >> 3) as u8;
+                        let mwire = (mt & 0x07) as u8;
                         if mwire == 2 {
                             let mut mlen: usize = 0;
                             let mut ms = 0;
@@ -667,10 +682,17 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                     // CRDSpec — parse group, names, scope, versions
                     let mut spos = 0;
                     while spos < field_data.len() {
-                        let st = field_data[spos];
-                        spos += 1;
-                        let sfnum = st >> 3;
-                        let swire = st & 0x07;
+                        let mut st: u64 = 0;
+                        let mut st_shift = 0;
+                        while spos < field_data.len() {
+                            let b = field_data[spos] as u64;
+                            spos += 1;
+                            st |= (b & 0x7f) << st_shift;
+                            if b & 0x80 == 0 { break; }
+                            st_shift += 7;
+                        }
+                        let sfnum = (st >> 3) as u8;
+                        let swire = (st & 0x07) as u8;
                         if swire == 2 {
                             let mut slen: usize = 0;
                             let mut ss = 0;
@@ -689,10 +711,25 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                         let names = &field_data[spos..spos + slen];
                                         let mut npos = 0;
                                         while npos < names.len() {
-                                            let nt = names[npos];
-                                            npos += 1;
-                                            let nfnum = nt >> 3;
-                                            if (nt & 0x07) != 2 { break; }
+                                            let mut nt: u64 = 0;
+                                            let mut nt_shift = 0;
+                                            while npos < names.len() {
+                                                let b = names[npos] as u64;
+                                                npos += 1;
+                                                nt |= (b & 0x7f) << nt_shift;
+                                                if b & 0x80 == 0 { break; }
+                                                nt_shift += 7;
+                                            }
+                                            let nfnum = (nt >> 3) as u8;
+                                            if (nt & 0x07) != 2 {
+                                                // Skip varint fields
+                                                if (nt & 0x07) == 0 {
+                                                    while npos < names.len() && names[npos] & 0x80 != 0 { npos += 1; }
+                                                    if npos < names.len() { npos += 1; }
+                                                    continue;
+                                                }
+                                                break;
+                                            }
                                             let mut nlen: usize = 0;
                                             let mut ns = 0;
                                             while npos < names.len() {
@@ -723,10 +760,17 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                         let ver = &field_data[spos..spos + slen];
                                         let mut vpos = 0;
                                         while vpos < ver.len() {
-                                            let vt = ver[vpos];
-                                            vpos += 1;
-                                            let vfnum = vt >> 3;
-                                            let vwire = vt & 0x07;
+                                            let mut vt: u64 = 0;
+                                            let mut vt_shift = 0;
+                                            while vpos < ver.len() {
+                                                let b = ver[vpos] as u64;
+                                                vpos += 1;
+                                                vt |= (b & 0x7f) << vt_shift;
+                                                if b & 0x80 == 0 { break; }
+                                                vt_shift += 7;
+                                            }
+                                            let vfnum = (vt >> 3) as u8;
+                                            let vwire = (vt & 0x07) as u8;
                                             if vwire == 2 {
                                                 let mut vlen: usize = 0;
                                                 let mut vs = 0;
