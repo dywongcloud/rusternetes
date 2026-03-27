@@ -103,7 +103,7 @@ impl axum::response::IntoResponse for Error {
             }
             Error::InvalidResource(msg) => {
                 let details = extract_resource_details_for_invalid(&msg);
-                (StatusCode::BAD_REQUEST, msg, "Invalid", details)
+                (StatusCode::UNPROCESSABLE_ENTITY, msg, "Invalid", details)
             }
             Error::Authentication(msg) => (StatusCode::UNAUTHORIZED, msg, "Unauthorized", None),
             Error::Authorization(msg) => (StatusCode::FORBIDDEN, msg, "Forbidden", None),
