@@ -645,3 +645,37 @@ pub async fn inject_service_account_token<S: Storage>(
 
     Ok(())
 }
+
+/// Check if creating a resource would exceed ResourceQuota count limits.
+/// Returns Ok(()) if allowed, Err with quota exceeded message if not.
+pub async fn check_count_quota<S: Storage>(
+    storage: &Arc<S>,
+    namespace: &str,
+    resource_type: &str,
+) -> Result<(), rusternetes_common::Error> {
+    let quota_prefix = format!("/registry/resourcequotas/{}/", namespace);
+    let quotas: Vec<ResourceQuota> = storage.list(&quota_prefix).await.unwrap_or_default();
+
+    for quota in &quotas {
+        if let Some(hard) = &quota.spec.hard {
+            // Check count/{resource_type} and {resource_type} limits
+            let count_key = format!("count/{}", resource_type);
+            for limit_key in [&count_key, &resource_type.to_string()] {
+                if let Some(limit_str) = hard.get(limit_key.as_str()) {
+                    let limit: i64 = limit_str.parse().unwrap_or(i64::MAX);
+                    // Count current resources
+                    let prefix = format!("/registry/{}/{}/", resource_type, namespace);
+                    let current: Vec<serde_json::Value> = storage.list(&prefix).await.unwrap_or_default();
+                    if current.len() as i64 >= limit {
+                        return Err(rusternetes_common::Error::Forbidden(format!(
+                            "exceeded quota: {}, requested: 1, used: {}, limited: {}",
+                            limit_key, current.len(), limit_str
+                        )));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}

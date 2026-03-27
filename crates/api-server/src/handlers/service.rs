@@ -185,6 +185,9 @@ pub async fn create(
         }
     }
 
+    // Check ResourceQuota count limits for services
+    crate::admission::check_count_quota(&state.storage, &namespace, "services").await?;
+
     let key = build_key("services", Some(&namespace), &service.metadata.name);
 
     // If dry-run, skip storage operation but return the validated resource
