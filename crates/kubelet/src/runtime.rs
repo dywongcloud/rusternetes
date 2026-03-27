@@ -7,7 +7,7 @@ use bollard::exec::{CreateExecOptions, StartExecResults};
 use bollard::image::CreateImageOptions;
 use bollard::Docker;
 use chrono::Utc;
-use futures_util::StreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use rusternetes_common::resources::{
     ConfigMap, Container, ContainerState, ContainerStatus, ExecAction, GRPCAction, HTTPGetAction,
     LifecycleHandler, PersistentVolume, PersistentVolumeClaim, Pod, Probe, Secret, TCPSocketAction,
@@ -1301,40 +1301,20 @@ impl ContainerRuntime {
         let pod_name = &pod.metadata.name;
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
 
-        // EmptyDir: create a Docker named volume for proper POSIX permissions.
-        // Host bind mounts on Docker Desktop (virtiofs) don't support chmod, so
-        // files created with mode 0666 end up as 0644. Named volumes are stored
-        // inside the Docker VM's ext4 filesystem which supports full chmod.
+        // EmptyDir: create a temporary directory with mode 777
         if volume.empty_dir.is_some() {
-            let vol_name = format!("rusternetes-emptydir-{}-{}", pod_name, volume.name);
-            // Create Docker named volume
-            use bollard::volume::CreateVolumeOptions;
-            match self.docker.create_volume(CreateVolumeOptions {
-                name: vol_name.clone(),
-                ..Default::default()
-            }).await {
-                Ok(v) => {
-                    info!("Created Docker named volume {} for emptyDir {}", vol_name, volume.name);
-                    // Return the volume name prefixed with "docker-vol:" to distinguish
-                    // from regular paths in the mount logic
-                    return Ok(format!("docker-vol:{}", vol_name));
-                }
-                Err(e) => {
-                    warn!("Failed to create Docker volume {}: {}, falling back to bind mount", vol_name, e);
-                    // Fallback to host directory
-                    let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
-                    std::fs::create_dir_all(&volume_dir).context("Failed to create emptyDir volume")?;
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        std::fs::set_permissions(
-                            &volume_dir,
-                            std::fs::Permissions::from_mode(0o777),
-                        )?;
-                    }
-                    return Ok(volume_dir);
-                }
+            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+            std::fs::create_dir_all(&volume_dir).context("Failed to create emptyDir volume")?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    &volume_dir,
+                    std::fs::Permissions::from_mode(0o777),
+                )?;
             }
+            info!("Created emptyDir volume {} at {}", volume.name, volume_dir);
+            return Ok(volume_dir);
         }
 
         // HostPath: use the specified host path
@@ -2700,16 +2680,6 @@ impl ContainerRuntime {
                 if let Some(host_path) = volume_paths.get(&mount.name) {
                     let read_only = mount.read_only.unwrap_or(false);
 
-                    // Docker named volumes use "docker-vol:" prefix
-                    if host_path.starts_with("docker-vol:") {
-                        let vol_name = &host_path["docker-vol:".len()..];
-                        let ro_suffix = if read_only { ":ro" } else { "" };
-                        let bind = format!("{}:{}{}", vol_name, mount.mount_path, ro_suffix);
-                        binds.push(bind);
-                        info!("Mounting Docker volume {} at {} in container {}", vol_name, mount.mount_path, container.name);
-                        continue;
-                    }
-
                     // Determine the effective host path, applying validated sub_path
                     let effective_host_path = if let Some(ref sub) = expanded_sub_path {
                         let full = format!("{}/{}", host_path, sub);
@@ -3369,21 +3339,6 @@ impl ContainerRuntime {
             }
         }
 
-        // Clean up Docker named volumes for emptyDir
-        let vol_prefix = format!("rusternetes-emptydir-{}-", pod_name);
-        if let Ok(volumes) = self.docker.list_volumes::<String>(None).await {
-            if let Some(vols) = volumes.volumes {
-                for vol in vols {
-                    if vol.name.starts_with(&vol_prefix) {
-                        if let Err(e) = self.docker.remove_volume(&vol.name, None).await {
-                            warn!("Failed to remove Docker volume {}: {}", vol.name, e);
-                        } else {
-                            debug!("Removed Docker volume {}", vol.name);
-                        }
-                    }
-                }
-            }
-        }
 
         Ok(())
     }
