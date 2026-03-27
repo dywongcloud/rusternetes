@@ -312,6 +312,19 @@ pub async fn create(
         }
     }
 
+    // Check RuntimeClass exists if specified
+    if let Some(rc_name) = pod.spec.as_ref().and_then(|s| s.runtime_class_name.as_deref()) {
+        if !rc_name.is_empty() {
+            let rc_key = rusternetes_storage::build_key("runtimeclasses", None, rc_name);
+            if state.storage.get::<serde_json::Value>(&rc_key).await.is_err() {
+                return Err(rusternetes_common::Error::Forbidden(format!(
+                    "pod {} references non-existent RuntimeClass \"{}\"",
+                    pod.metadata.name, rc_name
+                )));
+            }
+        }
+    }
+
     // Check ResourceQuota
     match crate::admission::check_resource_quota(&state.storage, &namespace, &pod).await {
         Ok(true) => {
