@@ -834,30 +834,12 @@ body::after {
 
 /* --- GAME OVER --- */
 .game-over {
-  background: var(--bg-deep);
-  padding: 80px 24px 100px;
+  padding: 60px 24px 40px;
   text-align: center;
+  margin-top: 48px;
   border-top: 2px solid var(--border);
   position: relative;
   overflow: hidden;
-}
-
-/* Scanline intensifier for game over */
-.game-over::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 3px,
-    rgba(0, 0, 0, 0.08) 3px,
-    rgba(0, 0, 0, 0.08) 6px
-  );
-  pointer-events: none;
 }
 
 .game-over-text {
