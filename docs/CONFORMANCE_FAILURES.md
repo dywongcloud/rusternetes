@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**277 total fixes** | Round 104 in progress | 30 failures so far
+**278 total fixes** | Round 104 in progress | 31 failures so far
 
 ## Round 104 Failures
 
@@ -26,9 +26,9 @@
 |------|-------|------------|----------|
 | watch.go:409 — configmap watchers | Watch events missed | Watch cache broadcast timing race | HIGH |
 | watch — specific RV | Watch from specific RV fails | etcd history replay too slow | HIGH |
-| CRD listing (custom_resource_definition.go:104) | CRD create: context deadline | CRD watch for Established condition | HIGH |
-| CRD OpenAPI (crd_publish_openapi.go:366) | CRD create: context deadline | Same CRD Established condition | HIGH |
-| FieldValidation CRD | CRD create: context deadline | Same CRD Established condition | HIGH |
+| CRD listing (custom_resource_definition.go:104) | CRD create: context deadline | **FIXED #278** — status update after create | HIGH |
+| CRD OpenAPI (crd_publish_openapi.go:366) | CRD create: context deadline | **FIXED #278** — same fix | HIGH |
+| FieldValidation CRD | CRD create: context deadline | **FIXED #278** — same fix | HIGH |
 | CRD conversion webhook | CR v1→v2 conversion | Conversion webhook not implemented | HARD |
 | service NodePort→ExternalName | DNS nslookup fails | ExternalName CNAME in CoreDNS | MEDIUM |
 | endpointslice — kubectl exec+curl | curl target unreachable | Service routing via kube-proxy | MEDIUM |
@@ -49,6 +49,7 @@
 | 275 | controller-manager | Job controller: maxFailedIndexes check |
 | 276 | kubelet | Downward API labels/annotations trailing newline |
 | 277 | api-server | Pod server-side apply respects dryRun=All |
+| 278 | api-server | CRD status update after creation triggers watch MODIFIED event |
 
 ## Progress
 
