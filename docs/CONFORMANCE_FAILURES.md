@@ -1,49 +1,52 @@
 # Conformance Issue Tracker
 
-**277 total fixes** | Round 104 IN PROGRESS: 21 failures so far at ~250/441 tests
+**277 total fixes** | Round 104 IN PROGRESS: 25 failures at ~300/441 tests
 
 ## What Still Needs Fixing
 
-### Fixed by pending deploy (#270-277) — expect ~11 of 21 to resolve
+### Expected to fix with pending deploy (#270-277)
 | Test | Error | Fix |
 |------|-------|-----|
-| statefulset.go:786 | SS scaling timeout — readiness never persisted | **#270** remove duplicate CAS write, re-read for fresh RV |
-| runtime.go:115 | RestartCount=0 expected 2 | **#271** re-read pod for all status writes |
-| service.go:3304 | Watch rv=1 missed ADDED event | **#272** treat rv=1 like rv=0 (compacted history) |
-| resource_quota.go:1152 | Watch rv=1 missed ResourceQuota | **#272** same fix |
-| lifecycle_hook.go:132 | PreStop HTTP hook never executed | **#273** pod deletion calls stop_pod_for |
-| job.go:236 | Pod failure policy — pods never ready (15min timeout) | **#270** readiness persistence |
-| statefulset.go:2253 | SS rolling update timeout | **#270** readiness persistence |
-| init_container.go:440 | Init container — timed out waiting | **#270** readiness persistence |
-| watch.go:409 | Configmap watch events missed by label selector | **#276** watch label selector 'in'/'notin' operators |
-| downwardapi_volume.go:155 | Label update not reflected in volume | **#277** resync standalone downwardAPI volumes |
-| kubectl.go:1130 | dry-run=server actually persisted change | **#277** SSA dry-run check |
-| webhook.go:1133 | Webhook deployment not ready (BeforeEach) | **#270** readiness persistence |
-| builder.go:97 | kubectl create -f - fails (BeforeEach) | **#247** deployed, may be readiness |
+| statefulset.go:786 | SS scaling timeout — readiness never persisted | **#270** CAS conflict fix |
+| runtime.go:115 | RestartCount=0 expected 2 | **#271** re-read pod for status writes |
+| service.go:3304 | Watch rv=1 missed ADDED event | **#272** treat rv=1 like rv=0 |
+| resource_quota.go:1152 | Watch rv=1 missed ResourceQuota | **#272** same |
+| lifecycle_hook.go:132 | PreStop HTTP hook never executed | **#273** stop_pod_for on deletion |
+| job.go:236 | Pod failure policy — pods never ready (15min) | **#270** readiness |
+| statefulset.go:2253 | SS rolling update timeout | **#270** readiness |
+| init_container.go:440 | Init container timeout | **#270** readiness |
+| watch.go:409 (x2) | Configmap watch label selector missed | **#276** 'in'/'notin' operators |
+| downwardapi_volume.go:155 | Label update not reflected in volume | **#277** resync standalone downwardAPI |
+| kubectl.go:1130 | dry-run=server persisted change | **#277** SSA dry-run check |
+| webhook.go:1133 | Webhook deployment not ready (BeforeEach) | **#270** readiness |
+| builder.go:97 | kubectl create -f - fails (BeforeEach) | **#247** deployed, may need readiness |
+| aggregated_discovery.go:227 | CRD not in aggregated discovery | **#274** dynamic CRD groups |
+| job.go:665 | maxFailedIndexes | **#275** Job controller check |
+| job.go:817 | Job pods not ready | **#270** readiness |
 
-### Still need fixes — 8 remaining failures
-| Test | Error | Root cause | Status |
-|------|-------|------------|--------|
-| aggregated_discovery.go:227 | CRD not in aggregated discovery | **#274** dynamic CRD groups (pending deploy) | Pending |
-| util.go:182 | kubectl exec fails (exit code 7) | Exec/networking issue — curl target unreachable | Needs investigation |
-| job.go:665 | maxFailedIndexes | **#275** Job controller check (pending deploy) | Pending |
-| custom_resource_definition.go:104 | CRD create: context deadline exceeded | CRD protobuf decoder limitation | Hard |
-| output.go:263 | EmptyDir file perms 0644 expected 0666 | Docker Desktop virtiofs doesn't support chmod on bind mounts | Platform limitation |
+### Need additional fixes (8 failures)
+| Test | Error | Root cause | Difficulty |
+|------|-------|------------|-----------|
+| util.go:182 | kubectl exec fails (exit code 7) | Exec networking — curl target unreachable | Medium |
+| custom_resource_definition.go:104 | CRD create timeout (complex schema) | Protobuf decoder can't handle JSONSchemaProps | Hard |
+| custom_resource_definition.go:288 | CRD create timeout | Same protobuf decoder issue | Hard |
+| field_validation.go:428 | CRD field validation — creation fails | Same protobuf decoder issue | Hard |
+| output.go:263 | EmptyDir file perms 0644 expected 0666 | Docker Desktop virtiofs chmod limitation | Platform |
 | crd_conversion_webhook.go:318 | Conversion webhook deployment failed | Conversion webhooks not implemented | Hard |
-| service.go:1571 | ExternalName DNS resolution fails | CoreDNS doesn't serve CNAME for ExternalName services | Medium |
-| crd_publish_openapi.go:366 | CRD create timeout (multiple CRDs same group) | CRD protobuf decoder limitation | Hard |
+| service.go:1571 | ExternalName DNS resolution fails | CoreDNS CNAME not served for ExternalName | Medium |
+| crd_publish_openapi.go:366 | CRD OpenAPI timeout | CRD protobuf for multi-CRD group | Hard |
 
 ### Pending deploy (code written, needs rebuild)
 | # | Fix | Expected impact |
 |---|-----|-----------------|
-| 270 | Kubelet readiness: remove duplicate write, re-read pod for fresh RV | ~5-8 timing failures |
-| 271 | All pod status writes re-read from storage for fresh resourceVersion | CAS conflicts across all paths |
-| 272 | Watch: treat rv=1 like rv=0 — use live cache not compacted etcd | 2+ tests (service, resourcequota) |
-| 273 | Pod deletion calls stop_pod_for (preStop lifecycle hooks) | 1 test (lifecycle_hook.go) |
+| 270 | Kubelet readiness: remove duplicate CAS write, re-read for fresh RV | ~8 timing failures |
+| 271 | All pod status writes re-read from storage for fresh resourceVersion | CAS conflicts everywhere |
+| 272 | Watch: treat rv=1 like rv=0 — use live cache not compacted etcd | 2 tests |
+| 273 | Pod deletion calls stop_pod_for (preStop lifecycle hooks) | 1 test |
 | 274 | Aggregated discovery: dynamically include CRD groups from storage | 1 test |
 | 275 | Job controller: maxFailedIndexes check terminates indexed jobs | 1 test |
-| 276 | Watch label selector: support 'in', 'notin', '!key' set-based operators | watch.go:409 + related |
-| 277 | Downward API: resync standalone volumes on label changes + dryRun fix | 2 tests |
+| 276 | Watch label selector: support 'in', 'notin', '!key' set-based operators | 2 tests |
+| 277 | Downward API volume resync + SSA dryRun + trailing newline | 3 tests |
 
 ## Progress
 
@@ -52,8 +55,8 @@
 | 97 | ~40 | ~400 | 441 | ~9% | Baseline |
 | 98 | | | | 53% | Round 98 fixes |
 | 101 | 245 | 196 | 441 | 56% | 76 fixes deployed |
-| 103 | 46 | 30 | 76 | 60% | fsGroup, session affinity, IPC sharing |
-| 104 | IN PROGRESS | 21 | ~250/441 | ? | #255-269 deployed, #270-277 pending |
+| 103 | 46 | 30 | 76 | 60% | fsGroup, session affinity, IPC |
+| 104 | IN PROGRESS | 25 | ~300/441 | ~92% est | #255-269 deployed, #270-277 pending |
 
 ## All Deployed Fixes
 
