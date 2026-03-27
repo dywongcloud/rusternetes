@@ -366,6 +366,14 @@ impl<S: Storage> DaemonSetController<S> {
             .unwrap_or_default();
         labels.insert("app".to_string(), daemonset_name.clone());
         labels.insert("controller-uid".to_string(), daemonset.metadata.uid.clone());
+        // Add controller-revision-hash label (computed from template)
+        let template_hash = format!("{:x}", {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            format!("{:?}", daemonset.spec.template).hash(&mut hasher);
+            hasher.finish()
+        });
+        labels.insert("controller-revision-hash".to_string(), template_hash);
 
         let mut spec = template.spec.clone();
 

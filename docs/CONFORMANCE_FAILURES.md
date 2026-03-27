@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**209 fixes** | 43 pending deploy | Build clean, all unit tests pass
+**211 fixes** | 45 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -47,6 +47,8 @@
 | 207 | ServiceAccount username doubled — claims.sub already has full prefix | 1 test |
 | 208 | Aggregated discovery: autoscaling v1+v2 both listed | 1 test |
 | 209 | Namespace create: add kubernetes finalizer (prevents immediate deletion) | 1 test |
+| 210 | ResourceClaim status PATCH uses generic handler (was rejecting non-JSON) | 1 test |
+| 211 | DaemonSet pods get controller-revision-hash label | 1 test |
 
 ## Round 99 results (in progress)
 
@@ -78,14 +80,14 @@
 | NodePort | "unexpected Spec.Ports[0].NodePort (0)" | **FIXED #205** — update handler didn't allocate NodePorts |
 | kubectl create -f - | kubectl stdin piping fails (multiple tests) | kubectl binary doesn't support stdin |
 | ConfigMap watch | "Timed out waiting for expected watch notification" after label change | Watch event not delivered for label updates |
-| controllerRevisions | "Failed to find any controllerRevisions" | DaemonSet controller revision creation |
+| controllerRevisions | "Failed to find any controllerRevisions" | **FIXED #211** — DaemonSet pods now get controller-revision-hash label |
 | namespace delete | "namespace was deleted unexpectedly" | **FIXED #209** — kubernetes finalizer added to namespace create |
 | secret volume perms | "perms of file: -rw-rw-rw- / -rwxrwxrwx" | File permissions on bind-mounted secret volumes |
 | service affinity | "Affinity should hold but didn't" | iptables recent module not available in Docker Desktop |
 | PDB processing | "client rate limiter Wait" for PDB | PDB controller timing or watch delivery |
 | endpointslice create | "server rejected our request (post endpointslices)" | EndpointSlice create validation |
 | pod resize | "Verifying pod resources resize state" | Pod resize status not updating |
-| resource claim patch | "server rejected our request" for resourceclaims status | ResourceClaim status PATCH handler |
+| resource claim patch | "server rejected our request" for resourceclaims status | **FIXED #210** — PATCH now uses generic status handler |
 
 ## Previously fixed (deployed in round 98)
 

@@ -1600,7 +1600,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             "/apis/resource.k8s.io/v1/namespaces/:namespace/resourceclaims/:name/status",
             get(handlers::status::get_status)
                 .put(handlers::resourceclaim::update_resourceclaim_status)
-                .patch(handlers::resourceclaim::update_resourceclaim_status),
+                .patch(handlers::status::update_status),
         )
         // ResourceClaims (all namespaces)
         .route(
