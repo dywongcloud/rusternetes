@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**241 total fixes** | Build clean, all unit tests pass
+**242 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -95,6 +95,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 239 | Strict field validation: detect duplicate JSON keys | 1 test |
 | 240 | Reduce controller sync interval from 2s to 1s for faster status updates | timing tests |
 | 241 | TokenRequest audiences field accepts null (deserialize_null_default) | 1 test |
+| 242 | Share IPC namespace with pause container (fixes sysctl tests) | 1 test |
 
 ## Remaining Unfixed Issues
 

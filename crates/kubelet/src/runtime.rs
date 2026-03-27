@@ -3018,6 +3018,13 @@ impl ContainerRuntime {
                 } else {
                     Some(self.network.clone())
                 },
+                // Share IPC and PID namespaces with pause container (K8s pod semantics)
+                ipc_mode: if !self.use_cni {
+                    Some(format!("container:{}_pause", pod_name))
+                } else { None },
+                pid_mode: if pod.spec.as_ref().and_then(|s| s.share_process_namespace).unwrap_or(false) {
+                    Some(format!("container:{}_pause", pod_name))
+                } else { None },
                 // Resource limits enforcement via cgroups
                 memory: memory_limit,
                 cpu_period,
@@ -3052,11 +3059,8 @@ impl ContainerRuntime {
                 // Privileged mode
                 privileged: container.security_context.as_ref()
                     .and_then(|sc| sc.privileged),
-                // Sysctls from pod security context (same as pause container)
-                sysctls: pod.spec.as_ref()
-                    .and_then(|s| s.security_context.as_ref())
-                    .and_then(|sc| sc.sysctls.as_ref())
-                    .map(|sysctls| sysctls.iter().map(|s| (s.name.clone(), s.value.clone())).collect()),
+                // Sysctls are set on the pause container (which owns the namespaces).
+                // App containers share namespaces via ipc_mode/pid_mode above.
                 ..Default::default()
             }),
             ..Default::default()
