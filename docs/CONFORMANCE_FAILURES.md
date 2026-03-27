@@ -1,13 +1,13 @@
 # Conformance Issue Tracker
 
-**252 total fixes** | Build clean, all unit tests pass
+**254 total fixes** | Build clean, all unit tests pass
 
-### Session summary: 68 fixes (#179-246)
+### Session summary: 76 fixes (#179-254)
 
 ## Current Status
 
-- **Round 102 in progress** (deployed fixes #1-229): 42 pass, 27 fail at 69/441 (**60%**)
-- **Pending deploy** (fixes #230-246): 17 fixes
+- **Round 103 in progress** (deployed fixes #1-254): early results pending
+- **Progress**: ~40 passes (round 97) → 245/441 (round 101, 56%) → 60% (round 102)
 - **Progress**: ~40 passes (round 97) → 245/441 (round 101, 56%) → 60% (round 102, 69 done)
 
 ## Deployed Fixes (in current running build)
@@ -108,6 +108,8 @@ Fixes #1-216 are deployed and active in round 101.
 | 250 | IngressClass list handler supports ?watch=true + HasMetadata impl | 1 test |
 | 251 | CRD protobuf decoder: validate decoded JSON, fall back to TypeMeta if invalid | 1 test |
 | 252 | Init container CrashLoopBackOff status when failing with restartPolicy=Always | 1 test |
+| 253 | Don't set hostname on containers using container: network mode | ALL pods |
+| 254 | Pause container IpcMode=shareable for IPC namespace sharing | ALL pods |
 
 ## Remaining Unfixed Issues
 
