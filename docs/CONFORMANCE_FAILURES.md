@@ -101,6 +101,9 @@ Fixes #1-216 are deployed and active in round 101.
 |-------|---------|
 | Watch label selector re-evaluation | **FIXED #233** — don't filter MODIFIED by label selector so clients see label changes |
 | kubectl stdin validation | kubectl `--validate` uses OpenAPI schema. Our schema may be incomplete for some resource types. |
+| PodSecurity admission | No pod security admission controller — pods that violate namespace policy aren't rejected |
+| StatefulSet rolling update | Controller doesn't update existing pods to match new template — only creates/deletes by count |
+| Strict field validation | Server doesn't detect duplicate JSON fields when fieldValidation=Strict |
 
 ### Controller timing / watch delivery
 | Issue | Details |
