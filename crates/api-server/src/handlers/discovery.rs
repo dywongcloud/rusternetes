@@ -699,6 +699,68 @@ fn get_aggregated_resources_for_group(
     }
 }
 
+/// GET /apis/{group}/
+/// Returns the APIGroup resource for a specific API group
+pub async fn get_api_group(
+    axum::extract::Path(group): axum::extract::Path<String>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    // Find the group in our known groups
+    let groups = get_api_group_names();
+    let found = groups.iter().find(|(name, _)| *name == group.as_str());
+
+    if let Some((name, version)) = found {
+        // autoscaling has both v1 and v2
+        let versions = if *name == "autoscaling" {
+            vec![
+                GroupVersionForDiscovery {
+                    group_version: format!("{}/v2", name),
+                    version: "v2".to_string(),
+                },
+                GroupVersionForDiscovery {
+                    group_version: format!("{}/v1", name),
+                    version: "v1".to_string(),
+                },
+            ]
+        } else {
+            vec![GroupVersionForDiscovery {
+                group_version: format!("{}/{}", name, version),
+                version: version.to_string(),
+            }]
+        };
+        let preferred = versions[0].clone();
+        let api_group = APIGroup {
+            name: name.to_string(),
+            versions,
+            preferred_version: preferred,
+        };
+        let response = serde_json::json!({
+            "kind": "APIGroup",
+            "apiVersion": "v1",
+            "name": api_group.name,
+            "versions": api_group.versions.iter().map(|v| serde_json::json!({
+                "groupVersion": v.group_version,
+                "version": v.version,
+            })).collect::<Vec<_>>(),
+            "preferredVersion": {
+                "groupVersion": api_group.preferred_version.group_version,
+                "version": api_group.preferred_version.version,
+            }
+        });
+        (StatusCode::OK, axum::Json(response)).into_response()
+    } else {
+        (StatusCode::NOT_FOUND, axum::Json(serde_json::json!({
+            "kind": "Status",
+            "apiVersion": "v1",
+            "status": "Failure",
+            "message": format!("the server could not find the requested resource"),
+            "reason": "NotFound",
+            "code": 404
+        }))).into_response()
+    }
+}
+
 /// GET /version
 /// Returns the version information for the server
 pub async fn get_version() -> (StatusCode, Json<VersionInfo>) {

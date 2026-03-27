@@ -273,6 +273,14 @@ pub async fn update(
                 service.spec.cluster_ips = Some(vec![ip]);
             }
         }
+        // Allocate NodePorts for NodePort/LoadBalancer services
+        if matches!(service.spec.service_type, Some(ServiceType::NodePort) | Some(ServiceType::LoadBalancer)) {
+            for port in &mut service.spec.ports {
+                if port.node_port.is_none() || port.node_port == Some(0) {
+                    port.node_port = Some(allocate_node_port());
+                }
+            }
+        }
     }
 
     let key = build_key("services", Some(&namespace), &name);

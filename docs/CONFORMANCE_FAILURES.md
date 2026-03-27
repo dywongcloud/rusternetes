@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**204 fixes** | 38 pending deploy | Build clean, all unit tests pass
+**206 fixes** | 40 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -42,6 +42,8 @@
 | 202 | PVC status subresource route (was missing) | 1 test |
 | 203 | StatefulSet: track currentRevision vs updateRevision separately during rolling updates | 1 test |
 | 204 | Job podFailurePolicy FailJob action: fail job when matching pod fails | 1 test |
+| 205 | Service update handler allocates NodePorts | 1 test |
+| 206 | API group discovery endpoint /apis/{group}/ for all groups | 1+ tests |
 
 ## Round 99 results (in progress)
 
@@ -65,9 +67,22 @@
 | **bookmark resourceVersion: 0** | Watch bookmarks sent with RV "0" | **FIXED #191** — initialize with current etcd revision, not "0". All 4 watch functions fixed. |
 | resource_quota.go:422 | missing replicationcontrollers, resourcequotas in status.used | **FIXED #192** — added RC + RQ counting to quota controller |
 | output.go:263 (2nd) | env var output wrong | May be fixed by #189 (env var expansion) — needs redeploy |
-| network/util.go:182 | network test failure | Needs investigation |
+| network/util.go:182 | network test failure | Networking/endpoint resolution |
 | replica_set.go:738 | failed to locate replicaset via watch | Watch event delivery or RS controller timing |
 | replica_set.go:560 | replicas didn't scale to 3 | RS controller scaling or status update timing |
+| HPA discovery | "Expected gvr autoscaling v1 horizontalpodautoscalers to exist in discovery" | HPA missing from API discovery response |
+| /apis/apps/ | "Fail to access: /apis/apps/" | API group discovery incomplete |
+| NodePort | "unexpected Spec.Ports[0].NodePort (0)" | **FIXED #205** — update handler didn't allocate NodePorts |
+| kubectl create -f - | kubectl stdin piping fails (multiple tests) | kubectl binary doesn't support stdin |
+| ConfigMap watch | "Timed out waiting for expected watch notification" after label change | Watch event not delivered for label updates |
+| controllerRevisions | "Failed to find any controllerRevisions" | DaemonSet controller revision creation |
+| namespace delete | "namespace was deleted unexpectedly" | Namespace finalizer handling |
+| secret volume perms | "perms of file: -rw-rw-rw- / -rwxrwxrwx" | File permissions on bind-mounted secret volumes |
+| service affinity | "Affinity should hold but didn't" | iptables recent module not available in Docker Desktop |
+| PDB processing | "client rate limiter Wait" for PDB | PDB controller timing or watch delivery |
+| endpointslice create | "server rejected our request (post endpointslices)" | EndpointSlice create validation |
+| pod resize | "Verifying pod resources resize state" | Pod resize status not updating |
+| resource claim patch | "server rejected our request" for resourceclaims status | ResourceClaim status PATCH handler |
 
 ## Previously fixed (deployed in round 98)
 
