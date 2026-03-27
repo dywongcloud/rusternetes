@@ -988,6 +988,44 @@ impl ContainerRuntime {
             }
         }
 
+        // Apply fsGroup: change group ownership and set group-writable on all volume files
+        #[cfg(unix)]
+        if let Some(fs_group) = pod.spec.as_ref()
+            .and_then(|s| s.security_context.as_ref())
+            .and_then(|sc| sc.fs_group)
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for (_name, path) in &volume_paths {
+                // Recursively chown to fsGroup and chmod g+rwx
+                if let Ok(entries) = std::fs::read_dir(path) {
+                    for entry in entries.flatten() {
+                        let fpath = entry.path();
+                        // chown -R :fsGroup
+                        let _ = std::process::Command::new("chown")
+                            .args(&["-R", &format!(":{}", fs_group), fpath.to_str().unwrap_or("")])
+                            .output();
+                        // chmod -R g+rwX
+                        let _ = std::process::Command::new("chmod")
+                            .args(&["-R", "g+rwX", fpath.to_str().unwrap_or("")])
+                            .output();
+                    }
+                }
+                // Set setgid bit on the directory itself
+                if let Ok(meta) = std::fs::metadata(path) {
+                    let mode = meta.permissions().mode();
+                    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode | 0o2000));
+                }
+                // chown the directory itself
+                let _ = std::process::Command::new("chown")
+                    .args(&[&format!(":{}", fs_group), path])
+                    .output();
+                let _ = std::process::Command::new("chmod")
+                    .args(&["g+rwx", path])
+                    .output();
+            }
+            info!("Applied fsGroup {} to {} volumes", fs_group, volume_paths.len());
+        }
+
         Ok(volume_paths)
     }
 

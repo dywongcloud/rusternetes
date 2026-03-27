@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**247 total fixes** | Build clean, all unit tests pass
+**248 total fixes** | Build clean, all unit tests pass
 
 ### Session summary: 68 fixes (#179-246)
 
@@ -103,13 +103,14 @@ Fixes #1-216 are deployed and active in round 101.
 | 245 | Session affinity: per-endpoint chains with recent module for proper DNAT+mark | 3 tests |
 | 246 | HTTP probe: accept 200-399 as success (was 2xx only) | timing tests |
 | 247 | OpenAPI v2 always returns JSON (was returning 406 for protobuf Accept) | 9+ kubectl tests |
+| 248 | fsGroup: chown volume files to fsGroup GID, set setgid bit, chmod g+rwX | 4 tests |
 
 ## Remaining Unfixed Issues
 
 ### Environment limitations (cannot fix in code)
 | Issue | Details |
 |-------|---------|
-| File permissions (emptyDir/secret) | Docker umask 0022 strips group/other write bits. Tests expect 0666/0777 but get 0644/0755. May need fsGroup implementation. |
+| File permissions (emptyDir/secret) | **FIXED #248** — fsGroup implementation: chown volumes to fsGroup GID, set setgid bit, chmod g+rwX |
 | Service session affinity | **FIXED #245** — restructured to use per-endpoint chains with recent module |
 
 ### Needs architectural work
