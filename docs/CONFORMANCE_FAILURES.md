@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**234 total fixes** | Build clean, all unit tests pass
+**235 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -88,6 +88,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 232 | Wire deletecollection for VolumeSnapshot, CSIStorageCapacity | 2 tests |
 | 233 | Watch: don't filter MODIFIED events by label selector (fixes label change watches) | 4 tests |
 | 234 | Pod resize: re-read pod from storage in Running sync to get updated spec resources | 4 tests |
+| 235 | StatefulSet rolling update: delete old-revision pods one at a time | 2 tests |
 
 ## Remaining Unfixed Issues
 
@@ -103,7 +104,7 @@ Fixes #1-216 are deployed and active in round 101.
 | Watch label selector re-evaluation | **FIXED #233** — don't filter MODIFIED by label selector so clients see label changes |
 | kubectl stdin validation | kubectl `--validate` uses OpenAPI schema. Our schema may be incomplete for some resource types. |
 | PodSecurity admission | No pod security admission controller — pods that violate namespace policy aren't rejected |
-| StatefulSet rolling update | Controller doesn't update existing pods to match new template — only creates/deletes by count |
+| StatefulSet rolling update | **FIXED #235** — deletes old-revision pods one at a time for rolling update |
 | Strict field validation | Server doesn't detect duplicate JSON fields when fieldValidation=Strict |
 
 ### Controller timing / watch delivery
