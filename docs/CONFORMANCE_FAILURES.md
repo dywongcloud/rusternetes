@@ -26,7 +26,7 @@
 | Service NodePort→ExternalName | DNS nslookup fails | ExternalName CNAME in CoreDNS |
 | EmptyDir 0666 | File 0644 not 0666 | **FIXED #279** — Docker named volumes for POSIX perms |
 | kubectl create -f (protobuf) | OpenAPI proto parse | kubectl requires protobuf OpenAPI v2 |
-| Session affinity NodePort | Affinity switch fails | iptables session affinity |
+| Session affinity NodePort | ReadyReplicas:0 | **#270** readiness persistence (not affinity) |
 | EndpointSlice create/match | Panic in goroutine | EndpointSlice condition check |
 
 ## Progress
