@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**235 total fixes** | Build clean, all unit tests pass
+**236 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -89,6 +89,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 233 | Watch: don't filter MODIFIED events by label selector (fixes label change watches) | 4 tests |
 | 234 | Pod resize: re-read pod from storage in Running sync to get updated spec resources | 4 tests |
 | 235 | StatefulSet rolling update: delete old-revision pods one at a time | 2 tests |
+| 236 | Sysctls: apply pod sysctls to application containers (not just pause) | 1 test |
 
 ## Remaining Unfixed Issues
 

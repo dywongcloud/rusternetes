@@ -3052,6 +3052,11 @@ impl ContainerRuntime {
                 // Privileged mode
                 privileged: container.security_context.as_ref()
                     .and_then(|sc| sc.privileged),
+                // Sysctls from pod security context (same as pause container)
+                sysctls: pod.spec.as_ref()
+                    .and_then(|s| s.security_context.as_ref())
+                    .and_then(|sc| sc.sysctls.as_ref())
+                    .map(|sysctls| sysctls.iter().map(|s| (s.name.clone(), s.value.clone())).collect()),
                 ..Default::default()
             }),
             ..Default::default()
