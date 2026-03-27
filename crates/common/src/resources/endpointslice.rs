@@ -24,7 +24,7 @@ pub struct EndpointSlice {
     pub endpoints: Vec<Endpoint>,
 
     /// ports specifies the list of network ports exposed by each endpoint in this slice.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, deserialize_with = "crate::deserialize_null_default", skip_serializing_if = "Vec::is_empty")]
     pub ports: Vec<EndpointPort>,
 }
 

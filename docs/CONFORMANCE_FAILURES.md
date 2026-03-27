@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**211 fixes** | 45 pending deploy | Build clean, all unit tests pass
+**212 fixes** | 46 pending deploy | Build clean, all unit tests pass
 
 ## Pending deploy fixes (since round 97)
 
@@ -49,6 +49,7 @@
 | 209 | Namespace create: add kubernetes finalizer (prevents immediate deletion) | 1 test |
 | 210 | ResourceClaim status PATCH uses generic handler (was rejecting non-JSON) | 1 test |
 | 211 | DaemonSet pods get controller-revision-hash label | 1 test |
+| 212 | EndpointSlice ports field accepts null (deserialize_null_default) | 1 test |
 
 ## Round 99 results (in progress)
 
@@ -85,7 +86,7 @@
 | secret volume perms | "perms of file: -rw-rw-rw- / -rwxrwxrwx" | File permissions on bind-mounted secret volumes |
 | service affinity | "Affinity should hold but didn't" | iptables recent module not available in Docker Desktop |
 | PDB processing | "client rate limiter Wait" for PDB | PDB controller timing or watch delivery |
-| endpointslice create | "server rejected our request (post endpointslices)" | EndpointSlice create validation |
+| endpointslice create | "server rejected our request (post endpointslices)" | **FIXED #212** — ports field now accepts null via deserialize_null_default |
 | pod resize | "Verifying pod resources resize state" | Pod resize status not updating |
 | resource claim patch | "server rejected our request" for resourceclaims status | **FIXED #210** — PATCH now uses generic status handler |
 
