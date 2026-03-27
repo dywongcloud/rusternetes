@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**229 total fixes** | Build clean, all unit tests pass
+**230 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -83,6 +83,7 @@ Fixes #1-216 are deployed and active in round 101.
 | 227 | ResourceClaimTemplate deletecollection route (handler existed but not wired) | 1 test |
 | 228 | Event k8s_time serializer: Time format without microseconds (was MicroTime) | 1 test |
 | 229 | Docker container hostname set to pod hostname (not container ID) | 1 test |
+| 230 | Termination message: don't fall through to docker cp when host file exists but is empty | 1 test |
 
 ## Remaining Unfixed Issues
 
@@ -109,7 +110,7 @@ Fixes #1-216 are deployed and active in round 101.
 ### Needs investigation
 | Issue | Details |
 |-------|---------|
-| runtime.go:169 | Termination message: expected empty but got "DONE" — FallbackToLogsOnError logic |
+| runtime.go:169 | Termination message: expected empty but got "DONE" — **FIXED #230** don't fall through to docker cp when host file exists |
 | service_accounts.go:898 | SA token test failure — needs debugging |
 | resource_quota.go:142 | Quota enforcement for service creation (fix #217 pending) |
 | Job completion timeout | job.go:958 — pod adoption timing |

@@ -3776,15 +3776,24 @@ impl ContainerRuntime {
 
         // Try host-side file first (bind-mounted during container creation)
         let term_host_file = format!("{}/{}/termination/{}", self.volumes_base_path, pod_name, container.name);
-        if let Ok(content) = std::fs::read_to_string(&term_host_file) {
-            if !content.is_empty() {
-                let mut content = content;
-                if content.len() > 4096 {
-                    content.truncate(4096);
+        if std::path::Path::new(&term_host_file).exists() {
+            // Host file exists — read from it (authoritative, not docker cp)
+            if let Ok(content) = std::fs::read_to_string(&term_host_file) {
+                if !content.is_empty() {
+                    let mut content = content;
+                    if content.len() > 4096 {
+                        content.truncate(4096);
+                    }
+                    debug!("Read termination message ({} bytes) from host file for {}", content.len(), container_name);
+                    return Some(content);
                 }
-                debug!("Read termination message ({} bytes) from host file for {}", content.len(), container_name);
-                return Some(content);
             }
+            // Host file exists but is empty — termination message is empty (don't fall through to docker cp)
+            debug!("Termination message file is empty (host-side) for {}", container_name);
+            if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
+                return self.read_container_logs_tail(container_name, 80).await;
+            }
+            return None;
         }
 
         // Fall back to docker cp for containers created before the bind-mount fix
