@@ -1182,6 +1182,26 @@ impl ContainerRuntime {
                         }
                     }
                 }
+                // Resync standalone downwardAPI volumes
+                if let Some(downward_api) = &volume.downward_api {
+                    if let Some(items) = &downward_api.items {
+                        let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+                        for item in items {
+                            let file_path = format!("{}/{}", volume_dir, item.path);
+                            let value = if let Some(ref field_ref) = item.field_ref {
+                                self.get_pod_field_value(pod, &field_ref.field_path).unwrap_or_default()
+                            } else if let Some(ref resource_ref) = item.resource_field_ref {
+                                self.get_container_resource_value(pod, resource_ref).unwrap_or_default()
+                            } else {
+                                String::new()
+                            };
+                            if let Ok(existing) = std::fs::read_to_string(&file_path) {
+                                if existing == value { continue; }
+                            }
+                            let _ = std::fs::write(&file_path, &value);
+                        }
+                    }
+                }
             }
         }
         Ok(())
