@@ -1214,29 +1214,6 @@ impl Kubelet {
                         {
                             let all_ready = container_statuses.iter().all(|s| s.ready);
 
-                            // Update pod status with current container statuses and Ready condition
-                            // This is CRITICAL — without this, readiness changes are never persisted
-                            {
-                                let key = build_key("pods", Some(namespace), pod_name);
-                                let mut new_pod = pod.clone();
-                                if let Some(ref mut status) = new_pod.status {
-                                    status.container_statuses = Some(container_statuses.clone());
-                                    // Update Ready and ContainersReady conditions
-                                    if let Some(ref mut conditions) = status.conditions {
-                                        for cond in conditions.iter_mut() {
-                                            if cond.condition_type == "Ready" || cond.condition_type == "ContainersReady" {
-                                                let new_status = if all_ready { "True" } else { "False" };
-                                                if cond.status != new_status {
-                                                    cond.status = new_status.to_string();
-                                                    cond.last_transition_time = Some(chrono::Utc::now());
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                let _ = self.storage.update(&key, &new_pod).await;
-                            }
-
                             // Check if all containers have terminated (for Never/OnFailure restart policies)
                             let restart_policy = pod
                                 .spec
@@ -1314,7 +1291,12 @@ impl Kubelet {
                             // Get pod IP (important for pods started by docker-compose)
                             let pod_ip = self.runtime.get_pod_ip(pod_name).await.ok().flatten();
 
-                            let mut new_pod = pod.clone();
+                            // Re-read pod from storage to get latest resourceVersion
+                            let key = build_key("pods", Some(namespace), pod_name);
+                            let mut new_pod: Pod = match self.storage.get(&key).await {
+                                Ok(Some(p)) => p,
+                                _ => pod.clone(),
+                            };
                             if let Some(ref mut status) = new_pod.status {
                                 status.container_statuses = Some(container_statuses);
                                 status.observed_generation = new_pod.metadata.generation;
