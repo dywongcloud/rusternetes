@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**227 total fixes** | Build clean, all unit tests pass
+**229 total fixes** | Build clean, all unit tests pass
 
 ## Current Status
 
@@ -81,6 +81,8 @@ Fixes #1-216 are deployed and active in round 101.
 | 225 | FlowSchema deletecollection handler + route | 1 test |
 | 226 | EndpointSlice deletecollection route (handler existed but not wired) | 1 test |
 | 227 | ResourceClaimTemplate deletecollection route (handler existed but not wired) | 1 test |
+| 228 | Event k8s_time serializer: Time format without microseconds (was MicroTime) | 1 test |
+| 229 | Docker container hostname set to pod hostname (not container ID) | 1 test |
 
 ## Remaining Unfixed Issues
 

@@ -2978,11 +2978,18 @@ impl ContainerRuntime {
             (None, None) => None,
         };
 
+        // Set container hostname to pod hostname (prevents Docker using container ID)
+        let pod_hostname = pod.spec.as_ref()
+            .and_then(|s| s.hostname.as_deref())
+            .unwrap_or(&pod.metadata.name)
+            .to_string();
+
         let mut config = Config {
             image: Some(container.image.clone()),
             env,
             working_dir: container.working_dir.clone(),
             user: run_as_user,
+            hostname: Some(pod_hostname),
             exposed_ports: if exposed_ports.is_empty() {
                 None
             } else {
