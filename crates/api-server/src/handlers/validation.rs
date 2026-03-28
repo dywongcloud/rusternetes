@@ -7,61 +7,246 @@
 use rusternetes_common::Error;
 use std::collections::{HashMap, HashSet};
 
-/// Find duplicate JSON keys at the top level of a JSON object string.
-/// Returns the first duplicate key found, or None.
+/// Find duplicate JSON keys at any nesting level of a JSON object string.
+/// Returns the first duplicate key found (just the key name, not dotted path), or None.
+/// This scans each `{...}` object at every depth for duplicate keys within that object.
 fn find_duplicate_json_key(json_str: &str) -> Option<String> {
-    // Simple approach: use serde_json streaming to detect duplicate keys
-    // Parse as a generic JSON value and check for duplicate keys at each level
     let trimmed = json_str.trim();
     if !trimmed.starts_with('{') { return None; }
 
-    // Use a simple key extraction — find all "key": patterns at the top level
-    let mut seen = HashSet::new();
-    let mut depth = 0i32;
-    let mut in_string = false;
-    let mut escape = false;
-    let mut key_start: Option<usize> = None;
-    let chars: Vec<char> = trimmed.chars().collect();
+    let bytes = trimmed.as_bytes();
+    // Find all object boundaries and check each one for duplicate keys
+    find_duplicate_in_object(bytes, 0).map(|(_pos, key)| key)
+}
 
-    let mut i = 0;
-    while i < chars.len() {
-        let ch = chars[i];
-        if escape { escape = false; i += 1; continue; }
-        if ch == '\\' && in_string { escape = true; i += 1; continue; }
+/// Parse a JSON object starting at `start` (which should point to '{'),
+/// returning the first duplicate key found and the position after the object.
+/// Returns Some((end_pos, duplicate_key)) if a duplicate is found.
+fn find_duplicate_in_object(bytes: &[u8], start: usize) -> Option<(usize, String)> {
+    if start >= bytes.len() || bytes[start] != b'{' {
+        return None;
+    }
 
-        if ch == '"' {
-            if !in_string {
-                in_string = true;
-                if depth == 1 && key_start.is_none() {
-                    key_start = Some(i + 1);
+    let mut seen_keys: HashSet<String> = HashSet::new();
+    let mut pos = start + 1;
+
+    loop {
+        // Skip whitespace
+        pos = skip_whitespace(bytes, pos);
+        if pos >= bytes.len() { return None; }
+
+        // Check for end of object
+        if bytes[pos] == b'}' {
+            return None;
+        }
+
+        // Skip comma between entries
+        if bytes[pos] == b',' {
+            pos += 1;
+            pos = skip_whitespace(bytes, pos);
+            if pos >= bytes.len() { return None; }
+        }
+
+        // Expect a key string
+        if bytes[pos] != b'"' {
+            // Not a valid JSON key, skip
+            return None;
+        }
+
+        // Extract key
+        let (key, key_end) = match extract_string(bytes, pos) {
+            Some(v) => v,
+            None => return None,
+        };
+        pos = key_end;
+
+        // Skip whitespace and colon
+        pos = skip_whitespace(bytes, pos);
+        if pos >= bytes.len() || bytes[pos] != b':' { return None; }
+        pos += 1;
+        pos = skip_whitespace(bytes, pos);
+
+        // Check for duplicate key in this object
+        if !seen_keys.insert(key.clone()) {
+            return Some((pos, key));
+        }
+
+        // Now we need to skip the value, but also recurse into objects/arrays
+        // to check for nested duplicates
+        match skip_value_and_check(bytes, pos) {
+            Some((end, dup)) => {
+                if let Some(d) = dup {
+                    return Some((end, d));
                 }
-            } else {
-                in_string = false;
-                if depth == 1 {
-                    if let Some(start) = key_start {
-                        // Check if this is a key (followed by ':')
-                        let end = i;
-                        let key: String = chars[start..end].iter().collect();
-                        // Look ahead for ':'
-                        let mut j = i + 1;
-                        while j < chars.len() && chars[j].is_whitespace() { j += 1; }
-                        if j < chars.len() && chars[j] == ':' {
-                            if !seen.insert(key.clone()) {
-                                return Some(key);
-                            }
-                        }
-                        key_start = None;
+                pos = end;
+            }
+            None => return None,
+        }
+    }
+}
+
+/// Skip a JSON value starting at `pos`, also checking nested objects for duplicates.
+/// Returns Some((end_pos, Option<duplicate_key>)) or None on parse error.
+fn skip_value_and_check(bytes: &[u8], pos: usize) -> Option<(usize, Option<String>)> {
+    if pos >= bytes.len() { return None; }
+
+    match bytes[pos] {
+        b'{' => {
+            // Recurse into object to check for duplicates
+            if let Some((end_pos, dup_key)) = find_duplicate_in_object(bytes, pos) {
+                return Some((end_pos, Some(dup_key)));
+            }
+            // No duplicate found, but we still need to skip past the object
+            let end = skip_json_value(bytes, pos)?;
+            Some((end, None))
+        }
+        b'[' => {
+            // Recurse into array elements
+            let mut p = pos + 1;
+            loop {
+                p = skip_whitespace(bytes, p);
+                if p >= bytes.len() { return None; }
+                if bytes[p] == b']' { return Some((p + 1, None)); }
+                if bytes[p] == b',' { p += 1; continue; }
+
+                match skip_value_and_check(bytes, p) {
+                    Some((end, dup)) => {
+                        if dup.is_some() { return Some((end, dup)); }
+                        p = end;
                     }
+                    None => return None,
                 }
             }
-        } else if !in_string {
-            if ch == '{' || ch == '[' { depth += 1; }
-            if ch == '}' || ch == ']' { depth -= 1; }
-            if ch == ',' && depth == 1 { key_start = None; }
         }
-        i += 1;
+        _ => {
+            // Scalar value — just skip it
+            let end = skip_json_value(bytes, pos)?;
+            Some((end, None))
+        }
+    }
+}
+
+/// Skip whitespace characters
+fn skip_whitespace(bytes: &[u8], mut pos: usize) -> usize {
+    while pos < bytes.len() && matches!(bytes[pos], b' ' | b'\t' | b'\n' | b'\r') {
+        pos += 1;
+    }
+    pos
+}
+
+/// Extract a JSON string starting at `pos` (which should point to '"').
+/// Returns (string_content, position_after_closing_quote).
+fn extract_string(bytes: &[u8], pos: usize) -> Option<(String, usize)> {
+    if pos >= bytes.len() || bytes[pos] != b'"' { return None; }
+    let mut i = pos + 1;
+    let mut s = String::new();
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            i += 1;
+            if i < bytes.len() {
+                s.push(bytes[i] as char);
+            }
+            i += 1;
+        } else if bytes[i] == b'"' {
+            return Some((s, i + 1));
+        } else {
+            s.push(bytes[i] as char);
+            i += 1;
+        }
     }
     None
+}
+
+/// Skip an entire JSON value (string, number, object, array, bool, null)
+/// starting at `pos`. Returns the position after the value.
+fn skip_json_value(bytes: &[u8], pos: usize) -> Option<usize> {
+    if pos >= bytes.len() { return None; }
+    match bytes[pos] {
+        b'"' => {
+            // String
+            let mut i = pos + 1;
+            while i < bytes.len() {
+                if bytes[i] == b'\\' { i += 2; continue; }
+                if bytes[i] == b'"' { return Some(i + 1); }
+                i += 1;
+            }
+            None
+        }
+        b'{' => {
+            // Object — skip matching braces
+            let mut depth = 1;
+            let mut i = pos + 1;
+            let mut in_str = false;
+            while i < bytes.len() && depth > 0 {
+                if in_str {
+                    if bytes[i] == b'\\' { i += 1; }
+                    else if bytes[i] == b'"' { in_str = false; }
+                } else {
+                    match bytes[i] {
+                        b'"' => in_str = true,
+                        b'{' => depth += 1,
+                        b'}' => depth -= 1,
+                        _ => {}
+                    }
+                }
+                i += 1;
+            }
+            Some(i)
+        }
+        b'[' => {
+            // Array — skip matching brackets
+            let mut depth = 1;
+            let mut i = pos + 1;
+            let mut in_str = false;
+            while i < bytes.len() && depth > 0 {
+                if in_str {
+                    if bytes[i] == b'\\' { i += 1; }
+                    else if bytes[i] == b'"' { in_str = false; }
+                } else {
+                    match bytes[i] {
+                        b'"' => in_str = true,
+                        b'[' => depth += 1,
+                        b']' => depth -= 1,
+                        _ => {}
+                    }
+                }
+                i += 1;
+            }
+            Some(i)
+        }
+        b't' => { // true
+            if pos + 4 <= bytes.len() { Some(pos + 4) } else { None }
+        }
+        b'f' => { // false
+            if pos + 5 <= bytes.len() { Some(pos + 5) } else { None }
+        }
+        b'n' => { // null
+            if pos + 4 <= bytes.len() { Some(pos + 4) } else { None }
+        }
+        b'-' | b'0'..=b'9' => {
+            // Number
+            let mut i = pos;
+            if i < bytes.len() && bytes[i] == b'-' { i += 1; }
+            while i < bytes.len() && bytes[i].is_ascii_digit() { i += 1; }
+            if i < bytes.len() && bytes[i] == b'.' {
+                i += 1;
+                while i < bytes.len() && bytes[i].is_ascii_digit() { i += 1; }
+            }
+            if i < bytes.len() && (bytes[i] == b'e' || bytes[i] == b'E') {
+                i += 1;
+                if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') { i += 1; }
+                while i < bytes.len() && bytes[i].is_ascii_digit() { i += 1; }
+            }
+            Some(i)
+        }
+        _ => None,
+    }
+}
+
+/// Public wrapper for `find_duplicate_json_key` so handlers can call it directly
+/// (e.g. for CRD creation where serde silently merges duplicate keys).
+pub fn find_duplicate_json_key_public(json_str: &str) -> Option<String> {
+    find_duplicate_json_key(json_str)
 }
 
 /// Recursively find fields in `original` that are not present in `canonical`.
@@ -251,5 +436,187 @@ mod tests {
         // Max length is OK (253 chars)
         let max_name = "a".repeat(253);
         assert!(validate_resource_name(&max_name).is_ok());
+    }
+
+    // --- Duplicate JSON key detection tests ---
+
+    #[test]
+    fn test_duplicate_key_top_level() {
+        let json = r#"{"name": "a", "name": "b"}"#;
+        assert_eq!(find_duplicate_json_key(json), Some("name".to_string()));
+    }
+
+    #[test]
+    fn test_no_duplicate_keys() {
+        let json = r#"{"name": "a", "value": "b"}"#;
+        assert_eq!(find_duplicate_json_key(json), None);
+    }
+
+    #[test]
+    fn test_duplicate_key_nested() {
+        // Duplicate "replicas" inside "spec" — should be detected
+        let json = r#"{"metadata": {"name": "test"}, "spec": {"replicas": 1, "replicas": 2}}"#;
+        assert_eq!(find_duplicate_json_key(json), Some("replicas".to_string()));
+    }
+
+    #[test]
+    fn test_duplicate_key_deeply_nested() {
+        let json = r#"{"a": {"b": {"c": 1, "c": 2}}}"#;
+        assert_eq!(find_duplicate_json_key(json), Some("c".to_string()));
+    }
+
+    #[test]
+    fn test_duplicate_key_in_array_element() {
+        let json = r#"{"items": [{"x": 1, "x": 2}]}"#;
+        assert_eq!(find_duplicate_json_key(json), Some("x".to_string()));
+    }
+
+    #[test]
+    fn test_no_duplicate_same_key_different_objects() {
+        // "name" appears in both objects but each object has it once — no duplicate
+        let json = r#"{"a": {"name": "x"}, "b": {"name": "y"}}"#;
+        assert_eq!(find_duplicate_json_key(json), None);
+    }
+
+    #[test]
+    fn test_empty_object() {
+        assert_eq!(find_duplicate_json_key("{}"), None);
+    }
+
+    #[test]
+    fn test_non_object() {
+        assert_eq!(find_duplicate_json_key("[]"), None);
+        assert_eq!(find_duplicate_json_key("42"), None);
+    }
+
+    // --- Strict field validation tests ---
+
+    #[test]
+    fn test_strict_validation_no_unknown_fields() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Simple {
+            name: String,
+            value: i32,
+        }
+
+        let body = br#"{"name": "test", "value": 42}"#;
+        let parsed = Simple { name: "test".to_string(), value: 42 };
+        let mut params = HashMap::new();
+        params.insert("fieldValidation".to_string(), "Strict".to_string());
+
+        assert!(validate_strict_fields(&params, body, &parsed).is_ok());
+    }
+
+    #[test]
+    fn test_strict_validation_unknown_field() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Simple {
+            name: String,
+        }
+
+        let body = br#"{"name": "test", "extra": "field"}"#;
+        let parsed = Simple { name: "test".to_string() };
+        let mut params = HashMap::new();
+        params.insert("fieldValidation".to_string(), "Strict".to_string());
+
+        let result = validate_strict_fields(&params, body, &parsed);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("unknown field"), "Expected 'unknown field' in error: {}", err_msg);
+    }
+
+    #[test]
+    fn test_strict_validation_duplicate_field() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Simple {
+            name: String,
+        }
+
+        let body = br#"{"name": "a", "name": "b"}"#;
+        let parsed = Simple { name: "b".to_string() };
+        let mut params = HashMap::new();
+        params.insert("fieldValidation".to_string(), "Strict".to_string());
+
+        let result = validate_strict_fields(&params, body, &parsed);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("duplicate field"), "Expected 'duplicate field' in error: {}", err_msg);
+        assert!(err_msg.contains("name"), "Expected field name in error: {}", err_msg);
+    }
+
+    #[test]
+    fn test_strict_validation_not_strict_mode_allows_unknown() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Simple {
+            name: String,
+        }
+
+        let body = br#"{"name": "test", "extra": "field"}"#;
+        let parsed = Simple { name: "test".to_string() };
+        let params = HashMap::new(); // no fieldValidation param
+
+        // Should pass since not in strict mode
+        assert!(validate_strict_fields(&params, body, &parsed).is_ok());
+    }
+
+    #[test]
+    fn test_strict_validation_warn_mode_allows_unknown() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Simple {
+            name: String,
+        }
+
+        let body = br#"{"name": "test", "extra": "field"}"#;
+        let parsed = Simple { name: "test".to_string() };
+        let mut params = HashMap::new();
+        params.insert("fieldValidation".to_string(), "Warn".to_string());
+
+        // Should pass since Warn mode, not Strict
+        assert!(validate_strict_fields(&params, body, &parsed).is_ok());
+    }
+
+    #[test]
+    fn test_strict_validation_nested_duplicate() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Outer {
+            spec: Inner,
+        }
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Inner {
+            replicas: i32,
+        }
+
+        let body = br#"{"spec": {"replicas": 1, "replicas": 2}}"#;
+        let parsed = Outer { spec: Inner { replicas: 2 } };
+        let mut params = HashMap::new();
+        params.insert("fieldValidation".to_string(), "Strict".to_string());
+
+        let result = validate_strict_fields(&params, body, &parsed);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("duplicate field"), "Expected 'duplicate field' in error: {}", err_msg);
+        assert!(err_msg.contains("replicas"), "Expected 'replicas' in error: {}", err_msg);
+    }
+
+    #[test]
+    fn test_strict_validation_error_format_matches_k8s() {
+        // K8s returns: strict decoding error: json: duplicate field "fieldName"
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Simple {
+            name: String,
+        }
+
+        let body = br#"{"name": "a", "name": "b"}"#;
+        let parsed = Simple { name: "b".to_string() };
+        let mut params = HashMap::new();
+        params.insert("fieldValidation".to_string(), "Strict".to_string());
+
+        let result = validate_strict_fields(&params, body, &parsed);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains(r#"strict decoding error: json: duplicate field "name""#),
+            "Error format must match K8s: {}", err_msg
+        );
     }
 }

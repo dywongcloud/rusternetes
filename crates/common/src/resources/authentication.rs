@@ -107,6 +107,7 @@ pub struct TokenRequest {
     pub api_version: String,
     #[serde(default = "default_kind_token_request")]
     pub kind: String,
+    #[serde(default)]
     pub metadata: ObjectMeta,
     pub spec: TokenRequestSpec,
     #[serde(skip_serializing_if = "Option::is_none")]

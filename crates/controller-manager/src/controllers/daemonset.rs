@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rusternetes_common::resources::node::Taint;
 use rusternetes_common::resources::pod::{SecretVolumeSource, Toleration, Volume, VolumeMount};
-use rusternetes_common::resources::{DaemonSet, DaemonSetStatus, Node, Pod, PodStatus};
+use rusternetes_common::resources::{ControllerRevision, DaemonSet, DaemonSetStatus, Node, Pod, PodStatus};
 use rusternetes_common::types::{OwnerReference, Phase};
 use rusternetes_storage::Storage;
 use std::sync::Arc;
@@ -95,31 +95,40 @@ impl<S: Storage> DaemonSetController<S> {
             hasher.finish()
         });
         let cr_name = format!("{}-{}", name, &template_hash[..10]);
-        let cr = serde_json::json!({
-            "apiVersion": "apps/v1",
-            "kind": "ControllerRevision",
-            "metadata": {
-                "name": cr_name,
-                "namespace": namespace,
-                "labels": {
-                    "controller-revision-hash": template_hash,
-                    "controller.kubernetes.io/hash": template_hash,
-                },
-                "ownerReferences": [{
-                    "apiVersion": "apps/v1",
-                    "kind": "DaemonSet",
-                    "name": name,
-                    "uid": daemonset.metadata.uid,
-                    "controller": true,
-                    "blockOwnerDeletion": true
-                }]
-            },
-            "revision": 1,
-            "data": {}
-        });
+
+        // Check if ControllerRevision already exists before creating
         let cr_key = rusternetes_storage::build_key("controllerrevisions", Some(namespace), &cr_name);
-        if self.storage.create(&cr_key, &cr).await.is_ok() {
-            info!("Created ControllerRevision {} for DaemonSet {}/{}", cr_name, namespace, name);
+        if self.storage.get::<ControllerRevision>(&cr_key).await.is_err() {
+            let mut cr_labels = std::collections::HashMap::new();
+            cr_labels.insert("controller-revision-hash".to_string(), template_hash.clone());
+            cr_labels.insert("controller.kubernetes.io/hash".to_string(), template_hash.clone());
+
+            // Copy DaemonSet's matchLabels to ControllerRevision labels for label selector matching
+            if let Some(match_labels) = &daemonset.spec.selector.match_labels {
+                for (k, v) in match_labels {
+                    cr_labels.insert(k.clone(), v.clone());
+                }
+            }
+
+            let mut cr = ControllerRevision::new(cr_name.clone(), namespace.clone(), 1);
+            cr.metadata.labels = Some(cr_labels);
+            cr.metadata.ensure_uid();
+            cr.metadata.ensure_creation_timestamp();
+            cr.metadata.owner_references = Some(vec![OwnerReference {
+                api_version: "apps/v1".to_string(),
+                kind: "DaemonSet".to_string(),
+                name: name.clone(),
+                uid: daemonset.metadata.uid.clone(),
+                controller: Some(true),
+                block_owner_deletion: Some(true),
+            }]);
+
+            // Store pod template spec as the revision data
+            cr.data = serde_json::to_value(&daemonset.spec.template).ok();
+
+            if self.storage.create(&cr_key, &cr).await.is_ok() {
+                info!("Created ControllerRevision {} for DaemonSet {}/{}", cr_name, namespace, name);
+            }
         }
 
         // Get all nodes
@@ -193,6 +202,7 @@ impl<S: Storage> DaemonSetController<S> {
             .collect();
 
         let mut pods_by_node = std::collections::HashMap::new();
+        let mut nodes_with_deleted_terminal_pods = std::collections::HashSet::new();
         for pod in daemonset_pods.iter() {
             if let Some(node_name) = pod.spec.as_ref().and_then(|s| s.node_name.as_ref()) {
                 // Check if pod is in a terminal phase (Failed or Succeeded)
@@ -212,7 +222,9 @@ impl<S: Storage> DaemonSetController<S> {
                     } else {
                         info!("Deleted terminal ({:?}) DaemonSet pod {}", pod.status.as_ref().and_then(|s| s.phase.as_ref()), pod_name);
                     }
-                    // Don't add to pods_by_node so it gets recreated
+                    // Track this node so we don't immediately recreate in this cycle
+                    // (allows the deletion to be observed by watchers before recreation)
+                    nodes_with_deleted_terminal_pods.insert(node_name.clone());
                 } else {
                     pods_by_node.insert(node_name.clone(), pod.clone());
                 }
@@ -223,7 +235,9 @@ impl<S: Storage> DaemonSetController<S> {
         for node in eligible_nodes.iter() {
             let node_name = &node.metadata.name;
 
-            if !pods_by_node.contains_key(node_name) {
+            if !pods_by_node.contains_key(node_name)
+                && !nodes_with_deleted_terminal_pods.contains(node_name)
+            {
                 // Create pod for this node, ignore AlreadyExists (race / re-reconcile)
                 match self.create_pod(daemonset, node_name, namespace).await {
                     Ok(_) => {
@@ -312,9 +326,9 @@ impl<S: Storage> DaemonSetController<S> {
             current_number_scheduled,
             number_ready,
             number_misscheduled: 0,
-            number_available: None,
-            number_unavailable: None,
-            updated_number_scheduled: None,
+            number_available: Some(number_ready),
+            number_unavailable: Some(desired_number_scheduled - number_ready),
+            updated_number_scheduled: Some(current_number_scheduled),
             observed_generation: daemonset.metadata.generation,
             collision_count: None,
             conditions: None,
@@ -355,7 +369,9 @@ impl<S: Storage> DaemonSetController<S> {
         namespace: &str,
     ) -> Result<()> {
         let daemonset_name = &daemonset.metadata.name;
-        let pod_name = format!("{}-{}", daemonset_name, &node_name.replace('.', "-"));
+        // Use a short random suffix to avoid name collisions when recreating after failed pods
+        let suffix: String = uuid::Uuid::new_v4().to_string()[..5].to_string();
+        let pod_name = format!("{}-{}-{}", daemonset_name, &node_name.replace('.', "-"), suffix);
 
         // Create pod from template
         let template = &daemonset.spec.template;
@@ -870,5 +886,278 @@ mod tests {
             },
         ];
         assert!(!pod_tolerates_node_taints(&tolerations, &taints));
+    }
+
+    /// Helper to create a minimal DaemonSet for testing
+    fn make_test_daemonset(name: &str, namespace: &str) -> DaemonSet {
+        let mut match_labels = HashMap::new();
+        match_labels.insert("app".to_string(), name.to_string());
+
+        DaemonSet {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "DaemonSet".to_string(),
+                api_version: "apps/v1".to_string(),
+            },
+            metadata: {
+                let mut m = rusternetes_common::types::ObjectMeta::new(name.to_string())
+                    .with_namespace(namespace.to_string());
+                m.ensure_uid();
+                m.generation = Some(1);
+                m
+            },
+            spec: rusternetes_common::resources::DaemonSetSpec {
+                selector: rusternetes_common::types::LabelSelector {
+                    match_labels: Some(match_labels.clone()),
+                    match_expressions: None,
+                },
+                template: rusternetes_common::resources::PodTemplateSpec {
+                    metadata: Some(rusternetes_common::types::ObjectMeta {
+                        name: "".to_string(),
+                        namespace: None,
+                        labels: Some(match_labels),
+                        annotations: None,
+                        uid: String::new(),
+                        creation_timestamp: None,
+                        deletion_timestamp: None,
+                        resource_version: None,
+                        deletion_grace_period_seconds: None,
+                        finalizers: None,
+                        owner_references: None,
+                        generate_name: None,
+                        generation: None,
+                        managed_fields: None,
+                    }),
+                    spec: PodSpec {
+                        init_containers: None,
+                        containers: vec![rusternetes_common::resources::pod::Container {
+                            name: "test".to_string(),
+                            image: "busybox:latest".to_string(),
+                            command: None,
+                            args: None,
+                            working_dir: None,
+                            ports: None,
+                            env: None,
+                            env_from: None,
+                            resources: None,
+                            volume_mounts: None,
+                            volume_devices: None,
+                            liveness_probe: None,
+                            readiness_probe: None,
+                            startup_probe: None,
+                            lifecycle: None,
+                            termination_message_path: None,
+                            termination_message_policy: None,
+                            image_pull_policy: None,
+                            security_context: None,
+                            stdin: None,
+                            stdin_once: None,
+                            tty: None,
+                            resize_policy: None,
+                            restart_policy: None,
+                        }],
+                        node_name: None,
+                        node_selector: None,
+                        restart_policy: None,
+                        service_account_name: None,
+                        service_account: None,
+                        volumes: None,
+                        affinity: None,
+                        tolerations: None,
+                        priority: None,
+                        priority_class_name: None,
+                        hostname: None,
+                        subdomain: None,
+                        host_network: None,
+                        host_pid: None,
+                        host_ipc: None,
+                        automount_service_account_token: None,
+                        ephemeral_containers: None,
+                        overhead: None,
+                        scheduler_name: None,
+                        topology_spread_constraints: None,
+                        resource_claims: None,
+                        active_deadline_seconds: None,
+                        dns_policy: None,
+                        dns_config: None,
+                        security_context: None,
+                        image_pull_secrets: None,
+                        share_process_namespace: None,
+                        readiness_gates: None,
+                        runtime_class_name: None,
+                        enable_service_links: None,
+                        preemption_policy: None,
+                        host_users: None,
+                        set_hostname_as_fqdn: None,
+                        termination_grace_period_seconds: None,
+                        host_aliases: None,
+                        os: None,
+                        scheduling_gates: None,
+                        resources: None,
+                    },
+                },
+                update_strategy: None,
+                min_ready_seconds: None,
+                revision_history_limit: None,
+            },
+            status: None,
+        }
+    }
+
+    /// Helper to create a minimal Node for testing
+    fn make_test_node(name: &str) -> Node {
+        Node {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Node".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: {
+                let mut m = rusternetes_common::types::ObjectMeta::new(name.to_string());
+                m.ensure_uid();
+                m
+            },
+            spec: Some(rusternetes_common::resources::NodeSpec {
+                pod_cidr: None,
+                pod_cidrs: None,
+                provider_id: None,
+                unschedulable: None,
+                taints: None,
+            }),
+            status: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_creates_controller_revision() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = DaemonSetController::new(storage.clone());
+
+        // Create a node
+        let node = make_test_node("test-node-1");
+        storage.create("/registry/nodes/test-node-1", &node).await.unwrap();
+
+        // Create a DaemonSet
+        let mut ds = make_test_daemonset("my-ds", "default");
+        storage.create("/registry/daemonsets/default/my-ds", &ds).await.unwrap();
+
+        // Reconcile
+        controller.reconcile(&mut ds).await.unwrap();
+
+        // Verify a ControllerRevision was created
+        let cr_prefix = "/registry/controllerrevisions/default/";
+        let revisions: Vec<ControllerRevision> = storage.list(cr_prefix).await.unwrap();
+        assert!(!revisions.is_empty(), "ControllerRevision should be created");
+
+        let cr = &revisions[0];
+        assert_eq!(cr.type_meta.kind, "ControllerRevision");
+        assert_eq!(cr.type_meta.api_version, "apps/v1");
+        assert_eq!(cr.revision, 1);
+        assert!(!cr.metadata.uid.is_empty(), "ControllerRevision should have a UID");
+        assert!(cr.metadata.creation_timestamp.is_some(), "Should have creation timestamp");
+
+        // Verify owner reference
+        let owner_refs = cr.metadata.owner_references.as_ref().unwrap();
+        assert_eq!(owner_refs.len(), 1);
+        assert_eq!(owner_refs[0].kind, "DaemonSet");
+        assert_eq!(owner_refs[0].name, "my-ds");
+        assert_eq!(owner_refs[0].uid, ds.metadata.uid);
+        assert_eq!(owner_refs[0].controller, Some(true));
+
+        // Verify labels include controller-revision-hash
+        let labels = cr.metadata.labels.as_ref().unwrap();
+        assert!(labels.contains_key("controller-revision-hash"));
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_deletes_terminal_pods() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = DaemonSetController::new(storage.clone());
+
+        // Create a node
+        let node = make_test_node("test-node-2");
+        storage.create("/registry/nodes/test-node-2", &node).await.unwrap();
+
+        // Create a DaemonSet
+        let mut ds = make_test_daemonset("fail-ds", "default");
+        storage.create("/registry/daemonsets/default/fail-ds", &ds).await.unwrap();
+
+        // Reconcile once to create pods
+        controller.reconcile(&mut ds).await.unwrap();
+
+        // Verify a pod was created
+        let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        let ds_pods: Vec<&Pod> = pods.iter().filter(|p| {
+            p.metadata.owner_references.as_ref().map_or(false, |refs| {
+                refs.iter().any(|r| r.name == "fail-ds")
+            })
+        }).collect();
+        assert_eq!(ds_pods.len(), 1, "Should have 1 DS pod");
+        let pod_name = ds_pods[0].metadata.name.clone();
+
+        // Mark the pod as Failed
+        let pod_key = format!("/registry/pods/default/{}", pod_name);
+        let mut failed_pod: Pod = storage.get(&pod_key).await.unwrap();
+        if let Some(status) = failed_pod.status.as_mut() {
+            status.phase = Some(Phase::Failed);
+        }
+        storage.update(&pod_key, &failed_pod).await.unwrap();
+
+        // Re-read DaemonSet (status was updated)
+        let mut ds: DaemonSet = storage.get("/registry/daemonsets/default/fail-ds").await.unwrap();
+
+        // Reconcile again — should delete the failed pod but NOT recreate in this cycle
+        controller.reconcile(&mut ds).await.unwrap();
+
+        // The failed pod should be gone
+        let result: rusternetes_common::Result<Pod> = storage.get(&pod_key).await;
+        assert!(result.is_err(), "Failed pod should have been deleted");
+
+        // But no new pod should be created in this reconcile cycle
+        let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        let ds_pods_after: Vec<&Pod> = pods_after.iter().filter(|p| {
+            p.metadata.owner_references.as_ref().map_or(false, |refs| {
+                refs.iter().any(|r| r.name == "fail-ds")
+            })
+        }).collect();
+        assert_eq!(ds_pods_after.len(), 0, "No DS pods should exist after terminal pod deletion in same cycle");
+
+        // Next reconcile should create a new pod
+        let mut ds: DaemonSet = storage.get("/registry/daemonsets/default/fail-ds").await.unwrap();
+        controller.reconcile(&mut ds).await.unwrap();
+        let pods_next: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        let ds_pods_next: Vec<&Pod> = pods_next.iter().filter(|p| {
+            p.metadata.owner_references.as_ref().map_or(false, |refs| {
+                refs.iter().any(|r| r.name == "fail-ds")
+            })
+        }).collect();
+        assert_eq!(ds_pods_next.len(), 1, "A new DS pod should be created in the next cycle");
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_sets_number_available() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = DaemonSetController::new(storage.clone());
+
+        // Create a node
+        let node = make_test_node("test-node-3");
+        storage.create("/registry/nodes/test-node-3", &node).await.unwrap();
+
+        // Create a DaemonSet
+        let mut ds = make_test_daemonset("avail-ds", "default");
+        storage.create("/registry/daemonsets/default/avail-ds", &ds).await.unwrap();
+
+        // Reconcile
+        controller.reconcile(&mut ds).await.unwrap();
+
+        // Read back the updated DS
+        let updated_ds: DaemonSet = storage.get("/registry/daemonsets/default/avail-ds").await.unwrap();
+        let status = updated_ds.status.as_ref().unwrap();
+
+        assert_eq!(status.desired_number_scheduled, 1);
+        assert_eq!(status.current_number_scheduled, 1);
+        // Pod is Pending, not Running, so number_ready should be 0
+        assert_eq!(status.number_ready, 0);
+        assert!(status.number_available.is_some(), "number_available should be set");
+        assert!(status.updated_number_scheduled.is_some(), "updated_number_scheduled should be set");
+        assert_eq!(status.updated_number_scheduled, Some(1));
     }
 }

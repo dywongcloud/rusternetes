@@ -91,8 +91,34 @@ impl TokenManager {
 
     /// Validate and decode a JWT token
     pub fn validate_token(&self, token: &str) -> Result<ServiceAccountClaims> {
+        // First try with standard audience
         let mut validation = Validation::new(Algorithm::HS256);
         validation.set_audience(&["rusternetes"]);
+        validation.set_issuer(&["rusternetes-api-server"]);
+
+        if let Ok(data) = decode::<ServiceAccountClaims>(token, &self.decoding_key, &validation) {
+            return Ok(data.claims);
+        }
+
+        // Retry without audience validation — tokens created via TokenRequest API
+        // may have custom audiences (e.g. "https://kubernetes.default.svc", "api", etc.)
+        let mut validation_relaxed = Validation::new(Algorithm::HS256);
+        validation_relaxed.set_issuer(&["rusternetes-api-server"]);
+        validation_relaxed.validate_aud = false;
+
+        decode::<ServiceAccountClaims>(token, &self.decoding_key, &validation_relaxed)
+            .map(|data| data.claims)
+            .map_err(|e| Error::Authentication(format!("Invalid token: {}", e)))
+    }
+
+    /// Validate and decode a JWT token against specific audiences
+    pub fn validate_token_with_audiences(&self, token: &str, audiences: &[String]) -> Result<ServiceAccountClaims> {
+        let mut validation = Validation::new(Algorithm::HS256);
+        if !audiences.is_empty() {
+            validation.set_audience(audiences);
+        } else {
+            validation.validate_aud = false;
+        }
         validation.set_issuer(&["rusternetes-api-server"]);
 
         decode::<ServiceAccountClaims>(token, &self.decoding_key, &validation)
@@ -762,5 +788,100 @@ mod tests {
         assert_eq!(user.username, "admin");
         assert!(user.groups.contains(&"system:masters".to_string()));
         assert!(user.groups.contains(&"system:authenticated".to_string()));
+    }
+
+    #[test]
+    fn test_token_with_custom_audience() {
+        let secret = b"test-secret-key";
+        let manager = TokenManager::new(secret);
+
+        // Create a token with custom audiences (like TokenRequest API would)
+        let now = Utc::now();
+        let claims = ServiceAccountClaims {
+            sub: "system:serviceaccount:default:my-sa".to_string(),
+            namespace: "default".to_string(),
+            uid: "test-uid".to_string(),
+            iat: now.timestamp(),
+            exp: (now + Duration::hours(1)).timestamp(),
+            iss: "rusternetes-api-server".to_string(),
+            aud: vec!["https://kubernetes.default.svc".to_string(), "api".to_string()],
+            pod_name: None,
+            pod_uid: None,
+            node_name: None,
+        };
+
+        let token = manager.generate_token(claims).unwrap();
+
+        // validate_token should accept custom audiences (relaxed validation)
+        let validated = manager.validate_token(&token).unwrap();
+        assert_eq!(validated.sub, "system:serviceaccount:default:my-sa");
+        assert_eq!(validated.namespace, "default");
+        assert!(validated.aud.contains(&"https://kubernetes.default.svc".to_string()));
+    }
+
+    #[test]
+    fn test_token_with_specific_audience_validation() {
+        let secret = b"test-secret-key";
+        let manager = TokenManager::new(secret);
+
+        let now = Utc::now();
+        let claims = ServiceAccountClaims {
+            sub: "system:serviceaccount:default:my-sa".to_string(),
+            namespace: "default".to_string(),
+            uid: "test-uid".to_string(),
+            iat: now.timestamp(),
+            exp: (now + Duration::hours(1)).timestamp(),
+            iss: "rusternetes-api-server".to_string(),
+            aud: vec!["api".to_string()],
+            pod_name: None,
+            pod_uid: None,
+            node_name: None,
+        };
+
+        let token = manager.generate_token(claims).unwrap();
+
+        // validate_token_with_audiences should work with matching audience
+        let validated = manager.validate_token_with_audiences(
+            &token,
+            &["api".to_string()],
+        ).unwrap();
+        assert_eq!(validated.sub, "system:serviceaccount:default:my-sa");
+
+        // Should fail with non-matching audience
+        let result = manager.validate_token_with_audiences(
+            &token,
+            &["wrong-audience".to_string()],
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_token_with_short_expiry() {
+        let secret = b"test-secret-key";
+        let manager = TokenManager::new(secret);
+
+        // TokenRequest API may request short expiry (e.g., 600 seconds)
+        let now = Utc::now();
+        let claims = ServiceAccountClaims {
+            sub: "system:serviceaccount:default:short-lived".to_string(),
+            namespace: "default".to_string(),
+            uid: "test-uid".to_string(),
+            iat: now.timestamp(),
+            exp: (now + Duration::seconds(600)).timestamp(),
+            iss: "rusternetes-api-server".to_string(),
+            aud: vec!["rusternetes".to_string()],
+            pod_name: None,
+            pod_uid: None,
+            node_name: None,
+        };
+
+        let token = manager.generate_token(claims).unwrap();
+
+        // Token should be valid
+        let validated = manager.validate_token(&token).unwrap();
+        assert_eq!(validated.sub, "system:serviceaccount:default:short-lived");
+        // Expiry should be ~600 seconds from now
+        let exp_diff = validated.exp - validated.iat;
+        assert!(exp_diff >= 590 && exp_diff <= 610, "Expected ~600s expiry, got {}s", exp_diff);
     }
 }

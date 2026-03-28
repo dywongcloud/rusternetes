@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rusternetes_common::resources::{Pod, ResourceQuota, ResourceQuotaStatus};
+use rusternetes_common::resources::{Pod, ResourceQuota, ResourceQuotaStatus, Service};
 use rusternetes_common::types::Phase;
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -59,9 +59,27 @@ impl<S: Storage> ResourceQuotaController<S> {
 
         debug!("Reconciling quota {}/{}", namespace, quota_name);
 
+        // Collect the set of resource names tracked by this quota
+        let hard_keys: Vec<String> = quota
+            .spec
+            .hard
+            .as_ref()
+            .map(|h| h.keys().cloned().collect())
+            .unwrap_or_default();
+
         // Calculate current resource usage in the namespace, respecting scopes
         let scopes = quota.spec.scopes.as_deref().unwrap_or(&[]);
-        let used = self.calculate_usage(namespace, scopes).await?;
+        let scope_selector = quota.spec.scope_selector.as_ref();
+        let mut used = self
+            .calculate_usage(namespace, scopes, scope_selector, &hard_keys)
+            .await?;
+
+        // Ensure every key in hard also appears in used (default to "0")
+        if let Some(hard) = &quota.spec.hard {
+            for key in hard.keys() {
+                used.entry(key.clone()).or_insert_with(|| "0".to_string());
+            }
+        }
 
         // Update quota status
         let mut updated_quota = quota.clone();
@@ -79,145 +97,384 @@ impl<S: Storage> ResourceQuotaController<S> {
         Ok(())
     }
 
-    /// Calculate resource usage in a namespace, respecting quota scopes
-    async fn calculate_usage(&self, namespace: &str, scopes: &[String]) -> Result<HashMap<String, String>> {
-        let mut usage = HashMap::new();
-
-        // Count active pods (not Failed/Succeeded), filtered by scopes
-        let pod_prefix = format!("/registry/pods/{}/", namespace);
-        let all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
-        let pods: Vec<&Pod> = all_pods.iter()
-            .filter(|p| {
-                let phase = p.status.as_ref().and_then(|s| s.phase.as_ref());
-                if matches!(phase, Some(Phase::Failed) | Some(Phase::Succeeded)) {
-                    return false;
-                }
-                // Apply scope filtering
-                let is_terminating = p.metadata.deletion_timestamp.is_some()
-                    || p.spec.as_ref()
-                        .and_then(|s| s.active_deadline_seconds)
-                        .is_some();
-                for scope in scopes {
-                    match scope.as_str() {
-                        "Terminating" => if !is_terminating { return false; },
-                        "NotTerminating" => if is_terminating { return false; },
-                        "BestEffort" => {
-                            // BestEffort: no requests or limits on any container
-                            let has_resources = p.spec.as_ref().map_or(false, |s| {
-                                s.containers.iter().any(|c| c.resources.is_some())
-                            });
-                            if has_resources { return false; }
-                        },
-                        "NotBestEffort" => {
-                            let has_resources = p.spec.as_ref().map_or(false, |s| {
-                                s.containers.iter().any(|c| c.resources.is_some())
-                            });
-                            if !has_resources { return false; }
-                        },
-                        _ => {}
+    /// Check if a pod is BestEffort QoS class.
+    /// A pod is BestEffort if NONE of its containers specify any resource requests or limits.
+    fn is_pod_best_effort(pod: &Pod) -> bool {
+        let spec = match &pod.spec {
+            Some(s) => s,
+            None => return true, // no spec = no resources = best effort
+        };
+        for container in &spec.containers {
+            if let Some(resources) = &container.resources {
+                // Check if there are actual non-empty requests or limits
+                if let Some(requests) = &resources.requests {
+                    if !requests.is_empty() {
+                        return false;
                     }
                 }
-                true
-            })
-            .collect();
-        usage.insert("pods".to_string(), pods.len().to_string());
-
-        // Calculate CPU and memory requests
-        let mut total_cpu_requests = 0i64;
-        let mut total_memory_requests = 0i64;
-        let mut total_cpu_limits = 0i64;
-        let mut total_memory_limits = 0i64;
-
-        for pod in pods.iter() {
-            if let Some(spec) = &pod.spec {
-                for container in &spec.containers {
-                    // Count CPU requests
-                    if let Some(resources) = &container.resources {
-                        if let Some(requests) = &resources.requests {
-                            if let Some(cpu) = requests.get("cpu") {
-                                if let Ok(millis) = self.parse_cpu_to_millicores(cpu) {
-                                    total_cpu_requests += millis;
-                                }
-                            }
-                            if let Some(memory) = requests.get("memory") {
-                                if let Ok(bytes) = self.parse_memory_to_bytes(memory) {
-                                    total_memory_requests += bytes;
-                                }
-                            }
+                if let Some(limits) = &resources.limits {
+                    if !limits.is_empty() {
+                        return false;
+                    }
+                }
+            }
+        }
+        // Also check init containers
+        if let Some(init_containers) = &spec.init_containers {
+            for container in init_containers {
+                if let Some(resources) = &container.resources {
+                    if let Some(requests) = &resources.requests {
+                        if !requests.is_empty() {
+                            return false;
                         }
-                        if let Some(limits) = &resources.limits {
-                            if let Some(cpu) = limits.get("cpu") {
-                                if let Ok(millis) = self.parse_cpu_to_millicores(cpu) {
-                                    total_cpu_limits += millis;
+                    }
+                    if let Some(limits) = &resources.limits {
+                        if !limits.is_empty() {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    /// Check if a pod matches the given scopes
+    fn pod_matches_scopes(
+        pod: &Pod,
+        scopes: &[String],
+        scope_selector: Option<&rusternetes_common::resources::ScopeSelector>,
+    ) -> bool {
+        let is_terminating = pod.metadata.deletion_timestamp.is_some()
+            || pod
+                .spec
+                .as_ref()
+                .and_then(|s| s.active_deadline_seconds)
+                .is_some();
+        let is_best_effort = Self::is_pod_best_effort(pod);
+
+        // All scopes must match (AND logic)
+        for scope in scopes {
+            match scope.as_str() {
+                "Terminating" => {
+                    if !is_terminating {
+                        return false;
+                    }
+                }
+                "NotTerminating" => {
+                    if is_terminating {
+                        return false;
+                    }
+                }
+                "BestEffort" => {
+                    if !is_best_effort {
+                        return false;
+                    }
+                }
+                "NotBestEffort" => {
+                    if is_best_effort {
+                        return false;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Check scopeSelector if present (all match expressions must match, AND logic)
+        if let Some(selector) = scope_selector {
+            for req in &selector.match_expressions {
+                match req.scope_name.as_str() {
+                    "Terminating" => {
+                        let matches = match req.operator.as_str() {
+                            "Exists" => is_terminating,
+                            "DoesNotExist" => !is_terminating,
+                            _ => true,
+                        };
+                        if !matches {
+                            return false;
+                        }
+                    }
+                    "NotTerminating" => {
+                        let matches = match req.operator.as_str() {
+                            "Exists" => !is_terminating,
+                            "DoesNotExist" => is_terminating,
+                            _ => true,
+                        };
+                        if !matches {
+                            return false;
+                        }
+                    }
+                    "BestEffort" => {
+                        let matches = match req.operator.as_str() {
+                            "Exists" => is_best_effort,
+                            "DoesNotExist" => !is_best_effort,
+                            _ => true,
+                        };
+                        if !matches {
+                            return false;
+                        }
+                    }
+                    "NotBestEffort" => {
+                        let matches = match req.operator.as_str() {
+                            "Exists" => !is_best_effort,
+                            "DoesNotExist" => is_best_effort,
+                            _ => true,
+                        };
+                        if !matches {
+                            return false;
+                        }
+                    }
+                    "PriorityClass" => {
+                        let pod_priority_class = pod
+                            .spec
+                            .as_ref()
+                            .and_then(|s| s.priority_class_name.as_deref())
+                            .unwrap_or("");
+                        let matches = match req.operator.as_str() {
+                            "In" => req
+                                .values
+                                .as_ref()
+                                .map_or(false, |v| v.iter().any(|val| val == pod_priority_class)),
+                            "NotIn" => req
+                                .values
+                                .as_ref()
+                                .map_or(true, |v| !v.iter().any(|val| val == pod_priority_class)),
+                            "Exists" => !pod_priority_class.is_empty(),
+                            "DoesNotExist" => pod_priority_class.is_empty(),
+                            _ => true,
+                        };
+                        if !matches {
+                            return false;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        true
+    }
+
+    /// Calculate resource usage in a namespace, respecting quota scopes.
+    /// Only counts resources that appear in `hard_keys` to avoid unnecessary work.
+    async fn calculate_usage(
+        &self,
+        namespace: &str,
+        scopes: &[String],
+        scope_selector: Option<&rusternetes_common::resources::ScopeSelector>,
+        hard_keys: &[String],
+    ) -> Result<HashMap<String, String>> {
+        let mut usage = HashMap::new();
+
+        // Determine which resource categories we need
+        let needs_pods = hard_keys.iter().any(|k| {
+            k == "pods"
+                || k.starts_with("requests.")
+                || k.starts_with("limits.")
+                || k == "cpu"
+                || k == "memory"
+                || k.starts_with("count/pods")
+        });
+        let needs_services = hard_keys.iter().any(|k| {
+            k == "services"
+                || k == "count/services"
+                || k == "services.nodeports"
+                || k == "services.loadbalancers"
+        });
+        let needs_configmaps = hard_keys
+            .iter()
+            .any(|k| k == "configmaps" || k == "count/configmaps");
+        let needs_secrets = hard_keys
+            .iter()
+            .any(|k| k == "secrets" || k == "count/secrets");
+        let needs_replicasets = hard_keys
+            .iter()
+            .any(|k| k == "count/replicasets" || k == "replicasets");
+        let needs_pvcs = hard_keys
+            .iter()
+            .any(|k| k == "persistentvolumeclaims" || k == "count/persistentvolumeclaims");
+        let needs_rcs = hard_keys
+            .iter()
+            .any(|k| k == "replicationcontrollers" || k == "count/replicationcontrollers");
+        let needs_rqs = hard_keys
+            .iter()
+            .any(|k| k == "resourcequotas" || k == "count/resourcequotas");
+
+        // Count active pods (not Failed/Succeeded), filtered by scopes
+        if needs_pods {
+            let pod_prefix = format!("/registry/pods/{}/", namespace);
+            let all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
+            let pods: Vec<&Pod> = all_pods
+                .iter()
+                .filter(|p| {
+                    let phase = p.status.as_ref().and_then(|s| s.phase.as_ref());
+                    if matches!(phase, Some(Phase::Failed) | Some(Phase::Succeeded)) {
+                        return false;
+                    }
+                    Self::pod_matches_scopes(p, scopes, scope_selector)
+                })
+                .collect();
+            usage.insert("pods".to_string(), pods.len().to_string());
+
+            // Calculate CPU and memory requests/limits
+            let mut total_cpu_requests = 0i64;
+            let mut total_memory_requests = 0i64;
+            let mut total_cpu_limits = 0i64;
+            let mut total_memory_limits = 0i64;
+
+            for pod in pods.iter() {
+                if let Some(spec) = &pod.spec {
+                    for container in &spec.containers {
+                        if let Some(resources) = &container.resources {
+                            if let Some(requests) = &resources.requests {
+                                if let Some(cpu) = requests.get("cpu") {
+                                    if let Ok(millis) = self.parse_cpu_to_millicores(cpu) {
+                                        total_cpu_requests += millis;
+                                    }
+                                }
+                                if let Some(memory) = requests.get("memory") {
+                                    if let Ok(bytes) = self.parse_memory_to_bytes(memory) {
+                                        total_memory_requests += bytes;
+                                    }
                                 }
                             }
-                            if let Some(memory) = limits.get("memory") {
-                                if let Ok(bytes) = self.parse_memory_to_bytes(memory) {
-                                    total_memory_limits += bytes;
+                            if let Some(limits) = &resources.limits {
+                                if let Some(cpu) = limits.get("cpu") {
+                                    if let Ok(millis) = self.parse_cpu_to_millicores(cpu) {
+                                        total_cpu_limits += millis;
+                                    }
+                                }
+                                if let Some(memory) = limits.get("memory") {
+                                    if let Ok(bytes) = self.parse_memory_to_bytes(memory) {
+                                        total_memory_limits += bytes;
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-        }
 
-        // Convert to Kubernetes resource format
-        // CPU: both "cpu" and "requests.cpu" should be set
-        if total_cpu_requests > 0 {
-            let cpu_str = format!("{}m", total_cpu_requests);
-            usage.insert("requests.cpu".to_string(), cpu_str.clone());
-            usage.insert("cpu".to_string(), cpu_str);
-        }
-        if total_memory_requests > 0 {
-            let mem_str = self.bytes_to_memory_string(total_memory_requests);
-            usage.insert("requests.memory".to_string(), mem_str.clone());
-            usage.insert("memory".to_string(), mem_str);
-        }
-        if total_cpu_limits > 0 {
+            // Always insert resource usage values (even when zero, K8s expects "0" in status.used)
+            let cpu_req_str = format!("{}m", total_cpu_requests);
+            usage.insert("requests.cpu".to_string(), cpu_req_str.clone());
+            usage.insert("cpu".to_string(), cpu_req_str);
+
+            let mem_req_str = self.bytes_to_memory_string(total_memory_requests);
+            usage.insert("requests.memory".to_string(), mem_req_str.clone());
+            usage.insert("memory".to_string(), mem_req_str);
+
             usage.insert("limits.cpu".to_string(), format!("{}m", total_cpu_limits));
-        }
-        if total_memory_limits > 0 {
             usage.insert(
                 "limits.memory".to_string(),
                 self.bytes_to_memory_string(total_memory_limits),
             );
         }
 
-        // Count other resource types
-        let count_prefix = format!("/registry/configmaps/{}/", namespace);
-        let configmaps: Vec<serde_json::Value> = self.storage.list(&count_prefix).await.unwrap_or_default();
-        usage.insert("count/configmaps".to_string(), configmaps.len().to_string());
-        usage.insert("configmaps".to_string(), configmaps.len().to_string());
+        // Count services and service subtypes
+        if needs_services {
+            let svc_prefix = format!("/registry/services/{}/", namespace);
+            let services: Vec<Service> = self.storage.list(&svc_prefix).await.unwrap_or_default();
+            usage.insert("count/services".to_string(), services.len().to_string());
+            usage.insert("services".to_string(), services.len().to_string());
 
-        let secret_prefix = format!("/registry/secrets/{}/", namespace);
-        let secrets: Vec<serde_json::Value> = self.storage.list(&secret_prefix).await.unwrap_or_default();
-        usage.insert("count/secrets".to_string(), secrets.len().to_string());
-        usage.insert("secrets".to_string(), secrets.len().to_string());
+            // Count NodePort services (NodePort + LoadBalancer both use NodePorts)
+            let nodeport_count = services
+                .iter()
+                .filter(|s| {
+                    matches!(
+                        s.spec.service_type,
+                        Some(rusternetes_common::resources::ServiceType::NodePort)
+                            | Some(rusternetes_common::resources::ServiceType::LoadBalancer)
+                    )
+                })
+                .count();
+            usage.insert("services.nodeports".to_string(), nodeport_count.to_string());
 
-        let svc_prefix = format!("/registry/services/{}/", namespace);
-        let services: Vec<serde_json::Value> = self.storage.list(&svc_prefix).await.unwrap_or_default();
-        usage.insert("count/services".to_string(), services.len().to_string());
-        usage.insert("services".to_string(), services.len().to_string());
+            // Count LoadBalancer services
+            let lb_count = services
+                .iter()
+                .filter(|s| {
+                    matches!(
+                        s.spec.service_type,
+                        Some(rusternetes_common::resources::ServiceType::LoadBalancer)
+                    )
+                })
+                .count();
+            usage.insert(
+                "services.loadbalancers".to_string(),
+                lb_count.to_string(),
+            );
+        }
 
-        let rs_prefix = format!("/registry/replicasets/{}/", namespace);
-        let replicasets: Vec<serde_json::Value> = self.storage.list(&rs_prefix).await.unwrap_or_default();
-        usage.insert("count/replicasets".to_string(), replicasets.len().to_string());
+        if needs_configmaps {
+            let count_prefix = format!("/registry/configmaps/{}/", namespace);
+            let configmaps: Vec<serde_json::Value> =
+                self.storage.list(&count_prefix).await.unwrap_or_default();
+            usage.insert(
+                "count/configmaps".to_string(),
+                configmaps.len().to_string(),
+            );
+            usage.insert("configmaps".to_string(), configmaps.len().to_string());
+        }
 
-        let pvc_prefix = format!("/registry/persistentvolumeclaims/{}/", namespace);
-        let pvcs: Vec<serde_json::Value> = self.storage.list(&pvc_prefix).await.unwrap_or_default();
-        usage.insert("persistentvolumeclaims".to_string(), pvcs.len().to_string());
-        usage.insert("count/persistentvolumeclaims".to_string(), pvcs.len().to_string());
+        if needs_secrets {
+            let secret_prefix = format!("/registry/secrets/{}/", namespace);
+            let secrets: Vec<serde_json::Value> =
+                self.storage.list(&secret_prefix).await.unwrap_or_default();
+            usage.insert("count/secrets".to_string(), secrets.len().to_string());
+            usage.insert("secrets".to_string(), secrets.len().to_string());
+        }
 
-        let rc_prefix = format!("/registry/replicationcontrollers/{}/", namespace);
-        let rcs: Vec<serde_json::Value> = self.storage.list(&rc_prefix).await.unwrap_or_default();
-        usage.insert("replicationcontrollers".to_string(), rcs.len().to_string());
-        usage.insert("count/replicationcontrollers".to_string(), rcs.len().to_string());
+        if needs_replicasets {
+            let rs_prefix = format!("/registry/replicasets/{}/", namespace);
+            let replicasets: Vec<serde_json::Value> =
+                self.storage.list(&rs_prefix).await.unwrap_or_default();
+            usage.insert(
+                "count/replicasets".to_string(),
+                replicasets.len().to_string(),
+            );
+            usage.insert("replicasets".to_string(), replicasets.len().to_string());
+        }
 
-        let rq_prefix = format!("/registry/resourcequotas/{}/", namespace);
-        let rqs: Vec<serde_json::Value> = self.storage.list(&rq_prefix).await.unwrap_or_default();
-        usage.insert("resourcequotas".to_string(), rqs.len().to_string());
-        usage.insert("count/resourcequotas".to_string(), rqs.len().to_string());
+        if needs_pvcs {
+            let pvc_prefix = format!("/registry/persistentvolumeclaims/{}/", namespace);
+            let pvcs: Vec<serde_json::Value> =
+                self.storage.list(&pvc_prefix).await.unwrap_or_default();
+            usage.insert(
+                "persistentvolumeclaims".to_string(),
+                pvcs.len().to_string(),
+            );
+            usage.insert(
+                "count/persistentvolumeclaims".to_string(),
+                pvcs.len().to_string(),
+            );
+        }
+
+        if needs_rcs {
+            let rc_prefix = format!("/registry/replicationcontrollers/{}/", namespace);
+            let rcs: Vec<serde_json::Value> =
+                self.storage.list(&rc_prefix).await.unwrap_or_default();
+            usage.insert(
+                "replicationcontrollers".to_string(),
+                rcs.len().to_string(),
+            );
+            usage.insert(
+                "count/replicationcontrollers".to_string(),
+                rcs.len().to_string(),
+            );
+        }
+
+        if needs_rqs {
+            let rq_prefix = format!("/registry/resourcequotas/{}/", namespace);
+            let rqs: Vec<serde_json::Value> =
+                self.storage.list(&rq_prefix).await.unwrap_or_default();
+            usage.insert("resourcequotas".to_string(), rqs.len().to_string());
+            usage.insert(
+                "count/resourcequotas".to_string(),
+                rqs.len().to_string(),
+            );
+        }
 
         Ok(usage)
     }
@@ -265,6 +522,9 @@ impl<S: Storage> ResourceQuotaController<S> {
 
     /// Convert bytes to human-readable memory string
     fn bytes_to_memory_string(&self, bytes: i64) -> String {
+        if bytes == 0 {
+            return "0".to_string();
+        }
         const GI: i64 = 1024 * 1024 * 1024;
         const MI: i64 = 1024 * 1024;
         const KI: i64 = 1024;
@@ -284,6 +544,10 @@ impl<S: Storage> ResourceQuotaController<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusternetes_common::resources::{
+        Container, PodSpec, ResourceQuotaSpec, ScopeSelector, ScopedResourceSelectorRequirement,
+    };
+    use rusternetes_common::types::{ObjectMeta, ResourceRequirements, TypeMeta};
     use rusternetes_storage::memory::MemoryStorage;
 
     #[test]
@@ -318,8 +582,326 @@ mod tests {
 
         assert_eq!(controller.bytes_to_memory_string(1073741824), "1Gi");
         assert_eq!(controller.bytes_to_memory_string(536870912), "512Mi");
-        assert_eq!(controller.bytes_to_memory_string(1048576), "1Mi"); // 1048576 = 1024 * 1024 = 1 MiB
-        assert_eq!(controller.bytes_to_memory_string(1024), "1Ki"); // 1024 bytes = 1 KiB
+        assert_eq!(controller.bytes_to_memory_string(1048576), "1Mi");
+        assert_eq!(controller.bytes_to_memory_string(1024), "1Ki");
         assert_eq!(controller.bytes_to_memory_string(1000), "1000");
+        assert_eq!(controller.bytes_to_memory_string(0), "0");
+    }
+
+    fn make_container(name: &str, resources: Option<ResourceRequirements>) -> Container {
+        Container {
+            name: name.to_string(),
+            image: "busybox".to_string(),
+            command: None,
+            args: None,
+            working_dir: None,
+            ports: None,
+            env: None,
+            env_from: None,
+            resources,
+            volume_mounts: None,
+            volume_devices: None,
+            liveness_probe: None,
+            readiness_probe: None,
+            startup_probe: None,
+            lifecycle: None,
+            termination_message_path: None,
+            termination_message_policy: None,
+            image_pull_policy: None,
+            security_context: None,
+            stdin: None,
+            stdin_once: None,
+            tty: None,
+            resize_policy: None,
+            restart_policy: None,
+        }
+    }
+
+    fn make_pod(name: &str, namespace: &str, resources: Option<ResourceRequirements>) -> Pod {
+        Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta::new(name).with_namespace(namespace),
+            spec: Some(PodSpec {
+                containers: vec![make_container("test", resources)],
+                ..Default::default()
+            }),
+            status: None,
+        }
+    }
+
+    fn make_pod_with_deadline(
+        name: &str,
+        namespace: &str,
+        active_deadline: Option<i64>,
+    ) -> Pod {
+        let mut pod = make_pod(name, namespace, None);
+        if let Some(spec) = &mut pod.spec {
+            spec.active_deadline_seconds = active_deadline;
+        }
+        pod
+    }
+
+    #[test]
+    fn test_is_pod_best_effort() {
+        // Pod with no resources is BestEffort
+        let pod = make_pod("test", "default", None);
+        assert!(ResourceQuotaController::<MemoryStorage>::is_pod_best_effort(&pod));
+
+        // Pod with empty resources is BestEffort
+        let pod = make_pod(
+            "test",
+            "default",
+            Some(ResourceRequirements {
+                requests: None,
+                limits: None,
+                claims: None,
+            }),
+        );
+        assert!(ResourceQuotaController::<MemoryStorage>::is_pod_best_effort(&pod));
+
+        // Pod with empty maps is BestEffort
+        let pod = make_pod(
+            "test",
+            "default",
+            Some(ResourceRequirements {
+                requests: Some(HashMap::new()),
+                limits: Some(HashMap::new()),
+                claims: None,
+            }),
+        );
+        assert!(ResourceQuotaController::<MemoryStorage>::is_pod_best_effort(&pod));
+
+        // Pod with CPU request is NOT BestEffort
+        let mut reqs = HashMap::new();
+        reqs.insert("cpu".to_string(), "100m".to_string());
+        let pod = make_pod(
+            "test",
+            "default",
+            Some(ResourceRequirements {
+                requests: Some(reqs),
+                limits: None,
+                claims: None,
+            }),
+        );
+        assert!(!ResourceQuotaController::<MemoryStorage>::is_pod_best_effort(&pod));
+
+        // Pod with only limits is NOT BestEffort
+        let mut limits = HashMap::new();
+        limits.insert("memory".to_string(), "128Mi".to_string());
+        let pod = make_pod(
+            "test",
+            "default",
+            Some(ResourceRequirements {
+                requests: None,
+                limits: Some(limits),
+                claims: None,
+            }),
+        );
+        assert!(!ResourceQuotaController::<MemoryStorage>::is_pod_best_effort(&pod));
+    }
+
+    #[test]
+    fn test_pod_matches_scopes_terminating() {
+        // Pod with active_deadline_seconds is Terminating
+        let pod = make_pod_with_deadline("test", "default", Some(30));
+        assert!(ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+            &pod,
+            &["Terminating".to_string()],
+            None
+        ));
+        assert!(!ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+            &pod,
+            &["NotTerminating".to_string()],
+            None
+        ));
+
+        // Pod without active_deadline_seconds is NotTerminating
+        let pod = make_pod_with_deadline("test", "default", None);
+        assert!(!ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+            &pod,
+            &["Terminating".to_string()],
+            None
+        ));
+        assert!(ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+            &pod,
+            &["NotTerminating".to_string()],
+            None
+        ));
+    }
+
+    #[test]
+    fn test_pod_matches_scopes_best_effort() {
+        // Pod with no resources = BestEffort
+        let pod = make_pod("test", "default", None);
+        assert!(ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+            &pod,
+            &["BestEffort".to_string()],
+            None
+        ));
+        assert!(!ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+            &pod,
+            &["NotBestEffort".to_string()],
+            None
+        ));
+
+        // Pod with resources = NotBestEffort
+        let mut reqs = HashMap::new();
+        reqs.insert("cpu".to_string(), "100m".to_string());
+        let pod = make_pod(
+            "test",
+            "default",
+            Some(ResourceRequirements {
+                requests: Some(reqs),
+                limits: None,
+                claims: None,
+            }),
+        );
+        assert!(!ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+            &pod,
+            &["BestEffort".to_string()],
+            None
+        ));
+        assert!(ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+            &pod,
+            &["NotBestEffort".to_string()],
+            None
+        ));
+    }
+
+    #[test]
+    fn test_pod_matches_scope_selector() {
+        let pod = make_pod_with_deadline("test", "default", Some(30));
+        let selector = ScopeSelector {
+            match_expressions: vec![ScopedResourceSelectorRequirement {
+                scope_name: "Terminating".to_string(),
+                operator: "Exists".to_string(),
+                values: None,
+            }],
+        };
+        assert!(ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+            &pod,
+            &[],
+            Some(&selector)
+        ));
+
+        let selector_not = ScopeSelector {
+            match_expressions: vec![ScopedResourceSelectorRequirement {
+                scope_name: "Terminating".to_string(),
+                operator: "DoesNotExist".to_string(),
+                values: None,
+            }],
+        };
+        assert!(!ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+            &pod,
+            &[],
+            Some(&selector_not)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_calculate_usage_with_scopes() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = ResourceQuotaController::new(storage.clone());
+
+        // Create a BestEffort pod (no resources)
+        let pod1 = make_pod("be-pod", "test-ns", None);
+        storage
+            .create("/registry/pods/test-ns/be-pod", &pod1)
+            .await
+            .unwrap();
+
+        // Create a NotBestEffort pod (has resources)
+        let mut reqs = HashMap::new();
+        reqs.insert("cpu".to_string(), "100m".to_string());
+        let pod2 = make_pod(
+            "nbe-pod",
+            "test-ns",
+            Some(ResourceRequirements {
+                requests: Some(reqs),
+                limits: None,
+                claims: None,
+            }),
+        );
+        storage
+            .create("/registry/pods/test-ns/nbe-pod", &pod2)
+            .await
+            .unwrap();
+
+        // BestEffort scope should count only the BE pod
+        let usage = controller
+            .calculate_usage(
+                "test-ns",
+                &["BestEffort".to_string()],
+                None,
+                &["pods".to_string()],
+            )
+            .await
+            .unwrap();
+        assert_eq!(usage.get("pods").unwrap(), "1");
+
+        // NotBestEffort scope should count only the NBE pod
+        let usage = controller
+            .calculate_usage(
+                "test-ns",
+                &["NotBestEffort".to_string()],
+                None,
+                &["pods".to_string()],
+            )
+            .await
+            .unwrap();
+        assert_eq!(usage.get("pods").unwrap(), "1");
+
+        // No scope should count both
+        let usage = controller
+            .calculate_usage("test-ns", &[], None, &["pods".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(usage.get("pods").unwrap(), "2");
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_quota_sets_status_used() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = ResourceQuotaController::new(storage.clone());
+
+        // Create a quota
+        let mut hard = HashMap::new();
+        hard.insert("pods".to_string(), "10".to_string());
+        hard.insert("requests.cpu".to_string(), "4".to_string());
+        let quota = ResourceQuota {
+            type_meta: TypeMeta {
+                kind: "ResourceQuota".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta::new("test-quota").with_namespace("test-ns"),
+            spec: ResourceQuotaSpec {
+                hard: Some(hard),
+                scopes: None,
+                scope_selector: None,
+            },
+            status: None,
+        };
+        storage
+            .create("/registry/resourcequotas/test-ns/test-quota", &quota)
+            .await
+            .unwrap();
+
+        // Reconcile
+        controller.reconcile_all().await.unwrap();
+
+        // Check status was set
+        let updated: ResourceQuota = storage
+            .get("/registry/resourcequotas/test-ns/test-quota")
+            .await
+            .unwrap();
+        let status = updated.status.unwrap();
+        assert!(status.hard.is_some());
+        assert!(status.used.is_some());
+        let used = status.used.unwrap();
+        assert_eq!(used.get("pods").unwrap(), "0");
+        assert_eq!(used.get("requests.cpu").unwrap(), "0m");
     }
 }

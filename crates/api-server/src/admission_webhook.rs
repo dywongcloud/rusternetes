@@ -702,11 +702,29 @@ fn apply_json_pointer_remove(object: &mut Value, path: &str) -> Result<()> {
 impl<S: Storage> AdmissionWebhookManager<S> {
     /// Run ValidatingAdmissionPolicy checks for an admission request.
     /// Evaluates CEL expressions from matching policies and rejects if any Deny action matches.
+    ///
+    /// `resource` is the plural resource name (e.g. "configmaps", "pods", "deployments").
+    /// If provided, it is used for more accurate resource rule matching.
+    /// `namespace` is the namespace of the object (for namespaced resources).
+    /// `old_object` is the previous version (for UPDATE operations).
     pub async fn run_validating_admission_policies(
         &self,
         operation: &Operation,
         gvk: &GroupVersionKind,
         object: Option<&Value>,
+    ) -> Result<()> {
+        self.run_validating_admission_policies_ext(operation, gvk, object, None, None, None).await
+    }
+
+    /// Extended VAP evaluation with resource name and namespace for precise matching.
+    pub async fn run_validating_admission_policies_ext(
+        &self,
+        operation: &Operation,
+        gvk: &GroupVersionKind,
+        object: Option<&Value>,
+        old_object: Option<&Value>,
+        resource: Option<&str>,
+        namespace: Option<&str>,
     ) -> Result<()> {
         use rusternetes_common::CELEvaluator;
 
@@ -727,6 +745,18 @@ impl<S: Storage> AdmissionWebhookManager<S> {
             .unwrap_or_default();
 
         let mut evaluator = CELEvaluator::new();
+
+        // Derive resource name from kind if not provided
+        let derived_resource = resource.map(|s| s.to_string()).unwrap_or_else(|| {
+            format!("{}s", gvk.kind.to_lowercase())
+        });
+
+        let op_str = match operation {
+            Operation::Create => "CREATE",
+            Operation::Update => "UPDATE",
+            Operation::Delete => "DELETE",
+            _ => "",
+        };
 
         for policy in &policies {
             let policy_name = policy.get("metadata")
@@ -771,18 +801,22 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         let ops = rule.get("operations").and_then(|o| o.as_array());
 
                         let group_match = api_groups.map_or(true, |groups| {
-                            groups.iter().any(|g| g.as_str() == Some("*") || g.as_str() == Some(&gvk.group))
+                            groups.iter().any(|g| {
+                                let gs = g.as_str().unwrap_or("");
+                                gs == "*" || gs == gvk.group
+                            })
                         });
                         let resource_match = resources.map_or(true, |res| {
-                            res.iter().any(|r| r.as_str() == Some("*") || r.as_str().map_or(false, |s| gvk.kind.to_lowercase().starts_with(&s.trim_end_matches('s').to_lowercase())))
+                            res.iter().any(|r| {
+                                let rs = r.as_str().unwrap_or("");
+                                rs == "*" || rs == derived_resource
+                            })
                         });
                         let op_match = ops.map_or(true, |operations| {
-                            operations.iter().any(|o| o.as_str() == Some("*") || o.as_str() == Some(match operation {
-                                Operation::Create => "CREATE",
-                                Operation::Update => "UPDATE",
-                                Operation::Delete => "DELETE",
-                                _ => "",
-                            }))
+                            operations.iter().any(|o| {
+                                let os = o.as_str().unwrap_or("");
+                                os == "*" || os == op_str
+                            })
                         });
                         group_match && resource_match && op_match
                     });
@@ -792,11 +826,49 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                 }
             }
 
+            // Check matchConditions from the policy spec
+            let match_conditions_pass = self.evaluate_match_conditions(
+                policy, object, old_object, operation, gvk, namespace, &mut evaluator,
+            );
+            if !match_conditions_pass {
+                continue;
+            }
+
             // Build CEL context with object variable
             let mut context = rusternetes_common::CELContext::new();
             if let Some(obj) = object {
                 let _ = context.add_json_variable("object", obj);
             }
+
+            // Add oldObject for UPDATE operations
+            if let Some(old) = old_object {
+                let _ = context.add_json_variable("oldObject", old);
+            } else {
+                // For non-update ops, oldObject is null
+                let _ = context.add_json_variable("oldObject", &serde_json::Value::Null);
+            }
+
+            // Add request context (K8s conformance tests access request.operation, etc.)
+            let request_val = serde_json::json!({
+                "operation": op_str,
+                "kind": {
+                    "group": gvk.group,
+                    "version": gvk.version,
+                    "kind": gvk.kind,
+                },
+                "resource": {
+                    "group": gvk.group,
+                    "version": gvk.version,
+                    "resource": derived_resource,
+                },
+                "namespace": namespace.unwrap_or(""),
+                "name": object.and_then(|o| o.get("metadata")).and_then(|m| m.get("name")).and_then(|n| n.as_str()).unwrap_or(""),
+                "userInfo": {
+                    "username": "system:admin",
+                    "groups": ["system:masters", "system:authenticated"],
+                },
+            });
+            let _ = context.add_json_variable("request", &request_val);
 
             // Evaluate spec.variables, building a "variables" Map for CEL access.
             // CEL expressions reference variables as `variables.NAME`, which means
@@ -832,6 +904,12 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                 }
             }
 
+            // Check failure policy
+            let failure_policy = policy.get("spec")
+                .and_then(|s| s.get("failurePolicy"))
+                .and_then(|f| f.as_str())
+                .unwrap_or("Fail");
+
             // Evaluate validations
             if let Some(validations) = policy.get("spec").and_then(|s| s.get("validations")).and_then(|v| v.as_array()) {
                 for validation in validations {
@@ -844,7 +922,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     match evaluator.evaluate(expression, &context) {
                         Ok(true) => { /* Validation passed */ }
                         Ok(false) => {
-                            // Check validation actions
+                            // Check validation actions (from validation rule or binding)
                             let actions = validation.get("validationActions")
                                 .and_then(|a| a.as_array());
                             let has_deny = actions.map_or(true, |acts| {
@@ -874,12 +952,78 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         Err(e) => {
                             tracing::warn!("CEL evaluation error for policy {}: {}", policy_name, e);
                             // On error, check failure policy
+                            if failure_policy == "Fail" {
+                                return Err(rusternetes_common::Error::Forbidden(format!(
+                                    "ValidatingAdmissionPolicy {} evaluation error: {}",
+                                    policy_name, e
+                                )));
+                            }
                         }
                     }
                 }
             }
         }
         Ok(())
+    }
+
+    /// Evaluate matchConditions for a policy. Returns true if all conditions pass (or none exist).
+    fn evaluate_match_conditions(
+        &self,
+        policy: &Value,
+        object: Option<&Value>,
+        old_object: Option<&Value>,
+        operation: &Operation,
+        gvk: &GroupVersionKind,
+        namespace: Option<&str>,
+        evaluator: &mut rusternetes_common::CELEvaluator,
+    ) -> bool {
+        let conditions = match policy.get("spec")
+            .and_then(|s| s.get("matchConditions"))
+            .and_then(|c| c.as_array())
+        {
+            Some(c) if !c.is_empty() => c,
+            _ => return true, // No conditions = always match
+        };
+
+        let op_str = match operation {
+            Operation::Create => "CREATE",
+            Operation::Update => "UPDATE",
+            Operation::Delete => "DELETE",
+            _ => "",
+        };
+
+        let mut context = rusternetes_common::CELContext::new();
+        if let Some(obj) = object {
+            let _ = context.add_json_variable("object", obj);
+        }
+        if let Some(old) = old_object {
+            let _ = context.add_json_variable("oldObject", old);
+        } else {
+            let _ = context.add_json_variable("oldObject", &serde_json::Value::Null);
+        }
+        let request_val = serde_json::json!({
+            "operation": op_str,
+            "kind": {
+                "group": gvk.group,
+                "version": gvk.version,
+                "kind": gvk.kind,
+            },
+            "namespace": namespace.unwrap_or(""),
+        });
+        let _ = context.add_json_variable("request", &request_val);
+
+        for cond in conditions {
+            let expr = cond.get("expression").and_then(|e| e.as_str()).unwrap_or("");
+            if expr.is_empty() {
+                continue;
+            }
+            match evaluator.evaluate(expr, &context) {
+                Ok(true) => { /* condition matched, continue */ }
+                Ok(false) => return false, // condition not met, skip this policy
+                Err(_) => return false, // error evaluating = skip
+            }
+        }
+        true
     }
 }
 
@@ -1393,5 +1537,340 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("must specify either url or service"));
+    }
+
+    // ===== ValidatingAdmissionPolicy Tests =====
+
+    #[tokio::test]
+    async fn test_vap_denies_configmap_creation() {
+        let storage = Arc::new(MemoryStorage::new());
+        let manager = AdmissionWebhookManager::new(storage.clone());
+
+        // Create a VAP that denies configmaps with name starting with "deny-"
+        let policy = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicy",
+            "metadata": {
+                "name": "deny-configmaps",
+                "creationTimestamp": chrono::Utc::now().to_rfc3339(),
+            },
+            "spec": {
+                "matchConstraints": {
+                    "resourceRules": [{
+                        "apiGroups": [""],
+                        "apiVersions": ["v1"],
+                        "resources": ["configmaps"],
+                        "operations": ["CREATE"],
+                    }]
+                },
+                "validations": [{
+                    "expression": "!object.metadata.name.startsWith('deny-')",
+                    "message": "ConfigMap name cannot start with deny-",
+                }]
+            }
+        });
+
+        // Store the policy
+        let policy_key = "/registry/validatingadmissionpolicies/deny-configmaps";
+        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+
+        // Create a binding for the policy (with old timestamp so it's "ready")
+        let old_time = (chrono::Utc::now() - chrono::Duration::seconds(10)).to_rfc3339();
+        let binding = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicyBinding",
+            "metadata": {
+                "name": "deny-configmaps-binding",
+                "creationTimestamp": old_time,
+            },
+            "spec": {
+                "policyName": "deny-configmaps",
+                "validationActions": ["Deny"],
+            }
+        });
+
+        let binding_key = "/registry/validatingadmissionpolicybindings/deny-configmaps-binding";
+        storage.create::<serde_json::Value>(binding_key, &binding).await.unwrap();
+
+        // Test: Creating a configmap with name "deny-test" should be denied
+        let gvk = GroupVersionKind {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            kind: "ConfigMap".to_string(),
+        };
+        let deny_cm = json!({
+            "metadata": {"name": "deny-test", "namespace": "default"},
+            "data": {"key": "value"},
+        });
+
+        let result = manager.run_validating_admission_policies_ext(
+            &Operation::Create,
+            &gvk,
+            Some(&deny_cm),
+            None,
+            Some("configmaps"),
+            Some("default"),
+        ).await;
+
+        assert!(result.is_err(), "Should deny configmap with name starting with 'deny-'");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("ValidatingAdmissionPolicy"), "Error should mention VAP: {}", err_msg);
+
+        // Test: Creating a configmap with a different name should be allowed
+        let allow_cm = json!({
+            "metadata": {"name": "allowed-cm", "namespace": "default"},
+            "data": {"key": "value"},
+        });
+
+        let result = manager.run_validating_admission_policies_ext(
+            &Operation::Create,
+            &gvk,
+            Some(&allow_cm),
+            None,
+            Some("configmaps"),
+            Some("default"),
+        ).await;
+
+        assert!(result.is_ok(), "Should allow configmap with name 'allowed-cm'");
+    }
+
+    #[tokio::test]
+    async fn test_vap_with_variables() {
+        let storage = Arc::new(MemoryStorage::new());
+        let manager = AdmissionWebhookManager::new(storage.clone());
+
+        // Create a VAP that uses variables
+        let policy = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicy",
+            "metadata": {
+                "name": "var-policy",
+                "creationTimestamp": chrono::Utc::now().to_rfc3339(),
+            },
+            "spec": {
+                "matchConstraints": {
+                    "resourceRules": [{
+                        "apiGroups": [""],
+                        "resources": ["configmaps"],
+                        "operations": ["CREATE"],
+                    }]
+                },
+                "variables": [{
+                    "name": "nameLen",
+                    "expression": "size(object.metadata.name)",
+                }],
+                "validations": [{
+                    "expression": "variables.nameLen <= 10",
+                    "message": "Name too long",
+                }]
+            }
+        });
+
+        let policy_key = "/registry/validatingadmissionpolicies/var-policy";
+        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+
+        let old_time = (chrono::Utc::now() - chrono::Duration::seconds(10)).to_rfc3339();
+        let binding = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicyBinding",
+            "metadata": {
+                "name": "var-policy-binding",
+                "creationTimestamp": old_time,
+            },
+            "spec": {
+                "policyName": "var-policy",
+            }
+        });
+
+        let binding_key = "/registry/validatingadmissionpolicybindings/var-policy-binding";
+        storage.create::<serde_json::Value>(binding_key, &binding).await.unwrap();
+
+        let gvk = GroupVersionKind {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            kind: "ConfigMap".to_string(),
+        };
+
+        // Short name should pass
+        let short_cm = json!({"metadata": {"name": "short"}});
+        let result = manager.run_validating_admission_policies_ext(
+            &Operation::Create, &gvk, Some(&short_cm), None, Some("configmaps"), Some("default"),
+        ).await;
+        assert!(result.is_ok(), "Short name should be allowed");
+
+        // Long name should be denied
+        let long_cm = json!({"metadata": {"name": "this-name-is-way-too-long"}});
+        let result = manager.run_validating_admission_policies_ext(
+            &Operation::Create, &gvk, Some(&long_cm), None, Some("configmaps"), Some("default"),
+        ).await;
+        assert!(result.is_err(), "Long name should be denied");
+    }
+
+    #[tokio::test]
+    async fn test_vap_no_binding_skips_policy() {
+        let storage = Arc::new(MemoryStorage::new());
+        let manager = AdmissionWebhookManager::new(storage.clone());
+
+        // Create a VAP without a binding
+        let policy = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicy",
+            "metadata": {
+                "name": "unbound-policy",
+                "creationTimestamp": chrono::Utc::now().to_rfc3339(),
+            },
+            "spec": {
+                "matchConstraints": {
+                    "resourceRules": [{
+                        "apiGroups": [""],
+                        "resources": ["configmaps"],
+                        "operations": ["CREATE"],
+                    }]
+                },
+                "validations": [{
+                    "expression": "false",
+                    "message": "Should never trigger",
+                }]
+            }
+        });
+
+        let policy_key = "/registry/validatingadmissionpolicies/unbound-policy";
+        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+
+        let gvk = GroupVersionKind {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            kind: "ConfigMap".to_string(),
+        };
+        let cm = json!({"metadata": {"name": "test"}});
+
+        // Should pass because there's no binding
+        let result = manager.run_validating_admission_policies_ext(
+            &Operation::Create, &gvk, Some(&cm), None, Some("configmaps"), Some("default"),
+        ).await;
+        assert!(result.is_ok(), "Should pass because no binding exists");
+    }
+
+    #[tokio::test]
+    async fn test_vap_resource_mismatch_skips() {
+        let storage = Arc::new(MemoryStorage::new());
+        let manager = AdmissionWebhookManager::new(storage.clone());
+
+        // Create a VAP that only matches pods
+        let policy = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicy",
+            "metadata": {
+                "name": "pod-only",
+                "creationTimestamp": chrono::Utc::now().to_rfc3339(),
+            },
+            "spec": {
+                "matchConstraints": {
+                    "resourceRules": [{
+                        "apiGroups": [""],
+                        "resources": ["pods"],
+                        "operations": ["CREATE"],
+                    }]
+                },
+                "validations": [{
+                    "expression": "false",
+                    "message": "Always deny",
+                }]
+            }
+        });
+
+        let policy_key = "/registry/validatingadmissionpolicies/pod-only";
+        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+
+        let old_time = (chrono::Utc::now() - chrono::Duration::seconds(10)).to_rfc3339();
+        let binding = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicyBinding",
+            "metadata": {
+                "name": "pod-only-binding",
+                "creationTimestamp": old_time,
+            },
+            "spec": {
+                "policyName": "pod-only",
+            }
+        });
+
+        let binding_key = "/registry/validatingadmissionpolicybindings/pod-only-binding";
+        storage.create::<serde_json::Value>(binding_key, &binding).await.unwrap();
+
+        // Creating a configmap should NOT be denied (resource mismatch)
+        let gvk = GroupVersionKind {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            kind: "ConfigMap".to_string(),
+        };
+        let cm = json!({"metadata": {"name": "test"}});
+
+        let result = manager.run_validating_admission_policies_ext(
+            &Operation::Create, &gvk, Some(&cm), None, Some("configmaps"), Some("default"),
+        ).await;
+        assert!(result.is_ok(), "Should pass because resource type doesn't match");
+    }
+
+    #[tokio::test]
+    async fn test_vap_failure_policy_ignore() {
+        let storage = Arc::new(MemoryStorage::new());
+        let manager = AdmissionWebhookManager::new(storage.clone());
+
+        // Create a VAP with Ignore failure policy and an expression that will error
+        let policy = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicy",
+            "metadata": {
+                "name": "ignore-errors",
+                "creationTimestamp": chrono::Utc::now().to_rfc3339(),
+            },
+            "spec": {
+                "failurePolicy": "Ignore",
+                "matchConstraints": {
+                    "resourceRules": [{
+                        "apiGroups": [""],
+                        "resources": ["configmaps"],
+                        "operations": ["CREATE"],
+                    }]
+                },
+                "validations": [{
+                    "expression": "object.nonexistent.field > 0",
+                    "message": "Should not see this",
+                }]
+            }
+        });
+
+        let policy_key = "/registry/validatingadmissionpolicies/ignore-errors";
+        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+
+        let old_time = (chrono::Utc::now() - chrono::Duration::seconds(10)).to_rfc3339();
+        let binding = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicyBinding",
+            "metadata": {
+                "name": "ignore-errors-binding",
+                "creationTimestamp": old_time,
+            },
+            "spec": {
+                "policyName": "ignore-errors",
+            }
+        });
+
+        let binding_key = "/registry/validatingadmissionpolicybindings/ignore-errors-binding";
+        storage.create::<serde_json::Value>(binding_key, &binding).await.unwrap();
+
+        let gvk = GroupVersionKind {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            kind: "ConfigMap".to_string(),
+        };
+        let cm = json!({"metadata": {"name": "test"}});
+
+        // Should pass because failurePolicy is Ignore
+        let result = manager.run_validating_admission_policies_ext(
+            &Operation::Create, &gvk, Some(&cm), None, Some("configmaps"), Some("default"),
+        ).await;
+        assert!(result.is_ok(), "Should pass with Ignore failure policy on CEL error");
     }
 }

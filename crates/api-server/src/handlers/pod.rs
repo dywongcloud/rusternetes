@@ -98,9 +98,9 @@ pub async fn create(
                         && !sysctl.name.starts_with("net.ipv4.conf.")
                         && !sysctl.name.starts_with("net.ipv6.conf.")
                     {
-                        return Err(rusternetes_common::Error::Forbidden(format!(
-                            "sysctl \"{}\" is not allowed",
-                            sysctl.name
+                        return Err(rusternetes_common::Error::InvalidResource(format!(
+                            "Pod \"{}\" is invalid: spec.securityContext.sysctls: Invalid value: \"{}\": unsafe sysctl \"{}\" is not allowed",
+                            pod.metadata.name, sysctl.name, sysctl.name
                         )));
                     }
                 }
@@ -629,6 +629,18 @@ pub async fn update(
         &mut pod.metadata,
     );
 
+    // Detect in-place pod resize: if spec.containers[].resources changed,
+    // set status.resize = "Proposed" so the kubelet picks it up (KEP-1287).
+    {
+        let resources_changed = detect_container_resource_change(&old_pod, &pod);
+        if resources_changed {
+            info!("Pod {}/{} resource resize detected (update), setting status.resize=Proposed", namespace, name);
+            if let Some(ref mut status) = pod.status {
+                status.resize = Some("Proposed".to_string());
+            }
+        }
+    }
+
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
         info!(
@@ -1004,6 +1016,18 @@ pub async fn patch(
                 applied_pod.metadata.name = name.clone();
                 applied_pod.metadata.namespace = Some(namespace.clone());
 
+                // Detect in-place pod resize for server-side apply
+                if let Some(ref current) = current_json {
+                    if let Ok(current_pod) = serde_json::from_value::<Pod>(current.clone()) {
+                        if detect_container_resource_change(&current_pod, &applied_pod) {
+                            info!("Pod {}/{} resource resize detected (SSA), setting status.resize=Proposed", namespace, name);
+                            if let Some(ref mut status) = applied_pod.status {
+                                status.resize = Some("Proposed".to_string());
+                            }
+                        }
+                    }
+                }
+
                 // Check dry-run before persisting
                 let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
                 if is_dry_run {
@@ -1071,6 +1095,18 @@ pub async fn patch(
     // Ensure metadata matches URL (prevent changing name/namespace via patch)
     patched_pod.metadata.name = name.clone();
     patched_pod.metadata.namespace = Some(namespace.clone());
+
+    // Detect in-place pod resize: if spec.containers[].resources changed,
+    // set status.resize = "Proposed" so the kubelet picks it up (KEP-1287).
+    {
+        let resources_changed = detect_container_resource_change(&current_pod, &patched_pod);
+        if resources_changed {
+            info!("Pod {}/{} resource resize detected, setting status.resize=Proposed", namespace, name);
+            if let Some(ref mut status) = patched_pod.status {
+                status.resize = Some("Proposed".to_string());
+            }
+        }
+    }
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
@@ -1145,4 +1181,209 @@ pub async fn deletecollection_pods(
 
     info!("DeleteCollection completed: {} pods deleted", deleted_count);
     Ok(StatusCode::OK)
+}
+
+/// Detect if container resource requests/limits changed between old and new pod specs.
+/// Used to trigger in-place pod resize (KEP-1287).
+fn detect_container_resource_change(old_pod: &Pod, new_pod: &Pod) -> bool {
+    let old_containers = old_pod.spec.as_ref().map(|s| &s.containers);
+    let new_containers = new_pod.spec.as_ref().map(|s| &s.containers);
+
+    match (old_containers, new_containers) {
+        (Some(old_cs), Some(new_cs)) => {
+            for new_c in new_cs {
+                if let Some(old_c) = old_cs.iter().find(|c| c.name == new_c.name) {
+                    let old_res = old_c.resources.as_ref();
+                    let new_res = new_c.resources.as_ref();
+                    match (old_res, new_res) {
+                        (Some(old_r), Some(new_r)) => {
+                            if old_r.requests != new_r.requests || old_r.limits != new_r.limits {
+                                return true;
+                            }
+                        }
+                        (None, Some(_)) | (Some(_), None) => return true,
+                        (None, None) => {}
+                    }
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusternetes_common::types::{ObjectMeta, ResourceRequirements, TypeMeta};
+    use std::collections::HashMap;
+
+    fn make_container_with_resources(
+        name: &str,
+        cpu_limit: Option<&str>,
+        mem_limit: Option<&str>,
+    ) -> rusternetes_common::resources::Container {
+        let limits = match (cpu_limit, mem_limit) {
+            (None, None) => None,
+            _ => {
+                let mut m = HashMap::new();
+                if let Some(c) = cpu_limit {
+                    m.insert("cpu".to_string(), c.to_string());
+                }
+                if let Some(mem) = mem_limit {
+                    m.insert("memory".to_string(), mem.to_string());
+                }
+                Some(m)
+            }
+        };
+
+        let json = serde_json::json!({
+            "name": name,
+            "image": "nginx:latest",
+            "resources": if limits.is_some() {
+                serde_json::json!({
+                    "limits": limits,
+                })
+            } else {
+                serde_json::Value::Null
+            },
+        });
+
+        serde_json::from_value(json).unwrap()
+    }
+
+    fn make_pod_with_containers(
+        name: &str,
+        containers: Vec<rusternetes_common::resources::Container>,
+    ) -> Pod {
+        let json = serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "name": name,
+                "namespace": "default",
+            },
+            "spec": {
+                "containers": containers.iter().map(|c| serde_json::to_value(c).unwrap()).collect::<Vec<_>>(),
+            },
+        });
+
+        serde_json::from_value(json).unwrap()
+    }
+
+    #[test]
+    fn test_detect_resource_change_no_change() {
+        let pod1 = make_pod_with_containers(
+            "p",
+            vec![make_container_with_resources("c1", Some("100m"), Some("128Mi"))],
+        );
+        let pod2 = make_pod_with_containers(
+            "p",
+            vec![make_container_with_resources("c1", Some("100m"), Some("128Mi"))],
+        );
+        assert!(!detect_container_resource_change(&pod1, &pod2));
+    }
+
+    #[test]
+    fn test_detect_resource_change_cpu_changed() {
+        let pod1 = make_pod_with_containers(
+            "p",
+            vec![make_container_with_resources("c1", Some("100m"), Some("128Mi"))],
+        );
+        let pod2 = make_pod_with_containers(
+            "p",
+            vec![make_container_with_resources("c1", Some("200m"), Some("128Mi"))],
+        );
+        assert!(detect_container_resource_change(&pod1, &pod2));
+    }
+
+    #[test]
+    fn test_detect_resource_change_memory_changed() {
+        let pod1 = make_pod_with_containers(
+            "p",
+            vec![make_container_with_resources("c1", Some("100m"), Some("128Mi"))],
+        );
+        let pod2 = make_pod_with_containers(
+            "p",
+            vec![make_container_with_resources("c1", Some("100m"), Some("256Mi"))],
+        );
+        assert!(detect_container_resource_change(&pod1, &pod2));
+    }
+
+    #[test]
+    fn test_detect_resource_change_no_resources_to_some() {
+        let pod1 = make_pod_with_containers(
+            "p",
+            vec![make_container_with_resources("c1", None, None)],
+        );
+        let pod2 = make_pod_with_containers(
+            "p",
+            vec![make_container_with_resources("c1", Some("100m"), None)],
+        );
+        assert!(detect_container_resource_change(&pod1, &pod2));
+    }
+
+    #[test]
+    fn test_detect_resource_change_both_no_resources() {
+        let pod1 = make_pod_with_containers(
+            "p",
+            vec![make_container_with_resources("c1", None, None)],
+        );
+        let pod2 = make_pod_with_containers(
+            "p",
+            vec![make_container_with_resources("c1", None, None)],
+        );
+        assert!(!detect_container_resource_change(&pod1, &pod2));
+    }
+
+    #[test]
+    fn test_sysctl_safe_list() {
+        // Safe sysctls should not cause validation errors
+        let safe = [
+            "kernel.shm_rmid_forced",
+            "net.ipv4.ip_local_port_range",
+            "net.ipv4.tcp_syncookies",
+            "net.ipv4.ping_group_range",
+            "net.ipv4.ip_unprivileged_port_start",
+            "net.ipv4.conf.all.forwarding",
+            "net.ipv6.conf.all.forwarding",
+        ];
+        let safe_sysctls = [
+            "kernel.shm_rmid_forced",
+            "net.ipv4.ip_local_port_range",
+            "net.ipv4.tcp_syncookies",
+            "net.ipv4.ping_group_range",
+            "net.ipv4.ip_unprivileged_port_start",
+        ];
+        for name in &safe {
+            let is_safe = safe_sysctls.contains(name)
+                || name.starts_with("net.ipv4.conf.")
+                || name.starts_with("net.ipv6.conf.");
+            assert!(is_safe, "Expected {} to be classified as safe", name);
+        }
+    }
+
+    #[test]
+    fn test_sysctl_unsafe_list() {
+        // Unsafe sysctls should NOT match the safe list
+        let unsafe_sysctls = [
+            "kernel.msgmax",
+            "kernel.sem",
+            "net.core.somaxconn",
+            "vm.max_map_count",
+        ];
+        let safe_sysctls = [
+            "kernel.shm_rmid_forced",
+            "net.ipv4.ip_local_port_range",
+            "net.ipv4.tcp_syncookies",
+            "net.ipv4.ping_group_range",
+            "net.ipv4.ip_unprivileged_port_start",
+        ];
+        for name in &unsafe_sysctls {
+            let is_safe = safe_sysctls.contains(name)
+                || name.starts_with("net.ipv4.conf.")
+                || name.starts_with("net.ipv6.conf.");
+            assert!(!is_safe, "Expected {} to be classified as unsafe", name);
+        }
+    }
 }

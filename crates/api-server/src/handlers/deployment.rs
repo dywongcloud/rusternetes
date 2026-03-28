@@ -213,6 +213,7 @@ pub async fn delete_deployment(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
+    body: axum::body::Bytes,
 ) -> Result<Json<Deployment>> {
     info!("Deleting deployment: {}/{}", namespace, name);
 
@@ -246,8 +247,18 @@ pub async fn delete_deployment(
         return Ok(Json(deployment));
     }
 
+    // Extract propagation policy from query params or request body (DeleteOptions)
+    let body_propagation: Option<String> = if !body.is_empty() {
+        serde_json::from_slice::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("propagationPolicy").and_then(|p| p.as_str()).map(|s| s.to_string()))
+    } else {
+        None
+    };
+    let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str())
+        .or(body_propagation.as_deref());
+
     // Handle deletion with finalizers and propagation policy
-    let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str());
     let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
         &state.storage,
         &key,

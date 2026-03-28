@@ -6,6 +6,7 @@ use axum::{
     Extension, Json,
 };
 use rusternetes_common::{
+    admission::{GroupVersionKind, Operation},
     authz::{Decision, RequestAttributes},
     resources::ConfigMap,
     List, Result,
@@ -51,6 +52,24 @@ pub async fn create(
     // Enrich metadata with system fields
     configmap.metadata.ensure_uid();
     configmap.metadata.ensure_creation_timestamp();
+
+    // Run ValidatingAdmissionPolicy checks
+    let gvk = GroupVersionKind {
+        group: "".to_string(),
+        version: "v1".to_string(),
+        kind: "ConfigMap".to_string(),
+    };
+    let cm_value = serde_json::to_value(&configmap).ok();
+    if let Err(e) = state.webhook_manager.run_validating_admission_policies_ext(
+        &Operation::Create,
+        &gvk,
+        cm_value.as_ref(),
+        None,
+        Some("configmaps"),
+        Some(&namespace),
+    ).await {
+        return Err(e);
+    }
 
     let key = build_key("configmaps", Some(&namespace), &configmap.metadata.name);
 
@@ -121,6 +140,24 @@ pub async fn update(
 
     configmap.metadata.name = name.clone();
     configmap.metadata.namespace = Some(namespace.clone());
+
+    // Run ValidatingAdmissionPolicy checks for UPDATE
+    let gvk = GroupVersionKind {
+        group: "".to_string(),
+        version: "v1".to_string(),
+        kind: "ConfigMap".to_string(),
+    };
+    let cm_value = serde_json::to_value(&configmap).ok();
+    if let Err(e) = state.webhook_manager.run_validating_admission_policies_ext(
+        &Operation::Update,
+        &gvk,
+        cm_value.as_ref(),
+        None,
+        Some("configmaps"),
+        Some(&namespace),
+    ).await {
+        return Err(e);
+    }
 
     let key = build_key("configmaps", Some(&namespace), &name);
 

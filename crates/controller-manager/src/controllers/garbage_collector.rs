@@ -175,6 +175,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
             ("replicasets", true),
             ("statefulsets", true),
             ("daemonsets", true),
+            ("controllerrevisions", true),
             ("jobs", true),
             ("cronjobs", true),
             ("configmaps", true),
@@ -512,72 +513,75 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         Ok(())
     }
 
-    /// Orphan dependents by removing owner references
+    /// Orphan dependents by removing owner references.
+    /// Finds all resources that have the deleted resource as an owner,
+    /// then removes the owner reference to the deleted resource from each.
     async fn orphan_dependents(
         &self,
         resource: &ResourceInfo,
-        dependent_map: &HashMap<String, Vec<String>>,
+        _dependent_map: &HashMap<String, Vec<String>>,
     ) -> rusternetes_common::Result<()> {
         let resource_uid = &resource.metadata.uid;
 
-        // Get all UIDs of dependents for this resource
-        if let Some(dependent_uids) = dependent_map.get(resource_uid) {
-            if dependent_uids.is_empty() {
-                debug!("No dependents to orphan for resource {}", resource.key);
-                return Ok(());
-            }
+        // Find all resources that reference this resource as an owner
+        let all_resources = self.get_all_resources().await?;
+        let dependents: Vec<_> = all_resources
+            .iter()
+            .filter(|r| {
+                r.metadata.owner_references.as_ref().map_or(false, |refs| {
+                    refs.iter().any(|oref| oref.uid == *resource_uid)
+                })
+            })
+            .collect();
 
-            info!(
-                "Orphan deletion: removing owner references from {} dependents of {}",
-                dependent_uids.len(),
-                resource.key
-            );
+        if dependents.is_empty() {
+            debug!("No dependents to orphan for resource {}", resource.key);
+            return Ok(());
+        }
 
-            // Find all resources and filter to our dependents
-            let all_resources = self.get_all_resources().await?;
-            let dependents: Vec<_> = all_resources
-                .iter()
-                .filter(|r| dependent_uids.contains(&r.metadata.uid))
-                .collect();
+        info!(
+            "Orphan deletion: removing owner references from {} dependents of {}",
+            dependents.len(),
+            resource.key
+        );
 
-            // Remove owner references from each dependent
-            for dependent in dependents {
-                info!("Orphaning dependent {}", dependent.key);
+        // Remove owner references from each dependent
+        for dependent in dependents {
+            info!("Orphaning dependent {}", dependent.key);
 
-                // Parse the dependent's full object
-                let mut dependent_value = dependent.value.clone();
+            // Parse the dependent's full object
+            let mut dependent_value = dependent.value.clone();
 
-                // Remove the owner reference to this resource
-                if let Some(metadata) = dependent_value.get_mut("metadata") {
-                    if let Some(owner_refs) = metadata.get_mut("ownerReferences") {
-                        if let Some(owner_refs_array) = owner_refs.as_array_mut() {
-                            // Filter out the owner reference matching this resource
-                            owner_refs_array.retain(|owner_ref| {
-                                owner_ref
-                                    .get("uid")
-                                    .and_then(|uid| uid.as_str())
-                                    .map(|uid| uid != resource_uid)
-                                    .unwrap_or(true)
-                            });
+            // Remove the owner reference to this resource
+            if let Some(metadata) = dependent_value.get_mut("metadata") {
+                if let Some(owner_refs) = metadata.get_mut("ownerReferences") {
+                    if let Some(owner_refs_array) = owner_refs.as_array_mut() {
+                        // Filter out the owner reference matching this resource
+                        owner_refs_array.retain(|owner_ref| {
+                            owner_ref
+                                .get("uid")
+                                .and_then(|uid| uid.as_str())
+                                .map(|uid| uid != resource_uid)
+                                .unwrap_or(true)
+                        });
 
-                            // If no more owner references, remove the field
-                            if owner_refs_array.is_empty() {
-                                if let Some(metadata_obj) = metadata.as_object_mut() {
-                                    metadata_obj.remove("ownerReferences");
-                                }
+                        // If no more owner references, remove the field entirely
+                        if owner_refs_array.is_empty() {
+                            if let Some(metadata_obj) = metadata.as_object_mut() {
+                                metadata_obj.remove("ownerReferences");
                             }
                         }
                     }
                 }
+            }
 
-                // Update the dependent in storage
-                if let Err(e) = self
-                    .storage
-                    .update_raw(&dependent.key, &dependent_value)
-                    .await
-                {
-                    error!("Failed to orphan dependent {}: {}", dependent.key, e);
-                }
+            // Update the dependent in storage
+            if let Err(e) = self
+                .storage
+                .update_raw(&dependent.key, &dependent_value)
+                .await
+            {
+                error!("Failed to orphan dependent {}: {}", dependent.key, e);
             }
         }
 

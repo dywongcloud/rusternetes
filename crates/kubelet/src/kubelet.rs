@@ -858,78 +858,98 @@ impl Kubelet {
                     _ => pod.clone(),
                 };
 
-                // Handle in-place pod resize: update container resources if spec changed
-                if let Some(spec) = &fresh_pod.spec {
-                    for container in &spec.containers {
-                        if let Some(resources) = &container.resources {
-                            let container_name = format!("{}_{}", pod_name, container.name);
-                            // Build update config from current spec resources
-                            let mut update_config = bollard::container::UpdateContainerOptions::<String>::default();
-                            let mut needs_update = false;
-
-                            if let Some(limits) = &resources.limits {
-                                if let Some(cpu) = limits.get("cpu") {
-                                    let millicores = crate::runtime::parse_cpu_quantity(cpu);
-                                    if millicores > 0 {
-                                        // Convert millicores to CPU period/quota
-                                        let period = 100000i64; // 100ms
-                                        let quota = (millicores as i64 * period) / 1000;
-                                        update_config.cpu_period = Some(period);
-                                        update_config.cpu_quota = Some(quota);
-                                        needs_update = true;
-                                    }
-                                }
-                                if let Some(memory) = limits.get("memory") {
-                                    let bytes = crate::runtime::parse_memory_quantity(memory);
-                                    if bytes > 0 {
-                                        update_config.memory = Some(bytes);
-                                        needs_update = true;
-                                    }
-                                }
+                // Handle in-place pod resize (KEP-1287):
+                // Flow: API sets resize="Proposed" -> kubelet sets "InProgress" ->
+                // applies resources -> sets resize="" with updated allocatedResources
+                let resize_status = fresh_pod.status.as_ref()
+                    .and_then(|s| s.resize.as_deref())
+                    .unwrap_or("");
+                if resize_status == "Proposed" || resize_status == "InProgress" {
+                    // Set resize to InProgress if it was Proposed
+                    if resize_status == "Proposed" {
+                        let rkey = build_key("pods", Some(namespace), pod_name);
+                        if let Ok(mut rpod) = self.storage.get::<Pod>(&rkey).await {
+                            if let Some(ref mut status) = rpod.status {
+                                status.resize = Some("InProgress".to_string());
                             }
+                            let _ = self.storage.update(&rkey, &rpod).await;
+                        }
+                    }
 
-                            if needs_update {
-                                match self.runtime.update_container_resources(
-                                    &container_name,
-                                    update_config.cpu_period,
-                                    update_config.cpu_quota,
-                                    update_config.memory,
-                                ).await {
-                                    Ok(_) => {
-                                        info!("Updated container {} resources (resize)", container_name);
-                                        // Update pod status to reflect resize
-                                        let rkey = build_key("pods", Some(namespace), pod_name);
-                                        if let Ok(mut rpod) = self.storage.get::<Pod>(&rkey).await {
-                                            if let Some(ref mut status) = rpod.status {
-                                                status.resize = Some("InProgress".to_string());
-                                                // Update allocatedResources in container statuses
-                                                if let Some(ref mut cs_list) = status.container_statuses {
-                                                    for cs in cs_list.iter_mut() {
-                                                        if cs.name == container.name {
-                                                            cs.allocated_resources = resources.requests.clone();
-                                                            cs.resources = Some(resources.clone());
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            let _ = self.storage.update(&rkey, &rpod).await;
+                    // Apply resource changes to containers
+                    let mut all_resized = true;
+                    if let Some(spec) = &fresh_pod.spec {
+                        for container in &spec.containers {
+                            if let Some(resources) = &container.resources {
+                                let container_name = format!("{}_{}", pod_name, container.name);
+                                let mut cpu_period = None;
+                                let mut cpu_quota = None;
+                                let mut memory = None;
+                                let mut needs_update = false;
+
+                                if let Some(limits) = &resources.limits {
+                                    if let Some(cpu) = limits.get("cpu") {
+                                        let millicores = crate::runtime::parse_cpu_quantity(cpu);
+                                        if millicores > 0 {
+                                            let period = 100000i64; // 100ms
+                                            let quota = (millicores as i64 * period) / 1000;
+                                            cpu_period = Some(period);
+                                            cpu_quota = Some(quota);
+                                            needs_update = true;
                                         }
                                     }
-                                    Err(e) => debug!("Failed to update container {} resources: {}", container_name, e),
+                                    if let Some(mem) = limits.get("memory") {
+                                        let bytes = crate::runtime::parse_memory_quantity(mem);
+                                        if bytes > 0 {
+                                            memory = Some(bytes);
+                                            needs_update = true;
+                                        }
+                                    }
+                                }
+
+                                if needs_update {
+                                    match self.runtime.update_container_resources(
+                                        &container_name,
+                                        cpu_period,
+                                        cpu_quota,
+                                        memory,
+                                    ).await {
+                                        Ok(_) => {
+                                            info!("Updated container {} resources (resize)", container_name);
+                                        }
+                                        Err(e) => {
+                                            debug!("Failed to update container {} resources: {}", container_name, e);
+                                            all_resized = false;
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                // After processing all containers, mark resize as complete
-                if fresh_pod.status.as_ref().and_then(|s| s.resize.as_deref()) == Some("InProgress") {
-                    let rkey = build_key("pods", Some(namespace), pod_name);
-                    if let Ok(mut rpod) = self.storage.get::<Pod>(&rkey).await {
-                        if let Some(ref mut status) = rpod.status {
-                            status.resize = Some(String::new()); // Empty = resize complete
+                    // Mark resize as complete and update allocatedResources
+                    if all_resized {
+                        let rkey = build_key("pods", Some(namespace), pod_name);
+                        if let Ok(mut rpod) = self.storage.get::<Pod>(&rkey).await {
+                            if let Some(ref mut status) = rpod.status {
+                                status.resize = Some(String::new()); // Empty = resize complete
+                                // Update allocatedResources in container statuses
+                                if let Some(ref spec) = rpod.spec.clone() {
+                                    if let Some(ref mut cs_list) = status.container_statuses {
+                                        for cs in cs_list.iter_mut() {
+                                            if let Some(c) = spec.containers.iter().find(|c| c.name == cs.name) {
+                                                if let Some(ref res) = c.resources {
+                                                    cs.allocated_resources = res.requests.clone()
+                                                        .or_else(|| res.limits.clone());
+                                                    cs.resources = Some(res.clone());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            let _ = self.storage.update(&rkey, &rpod).await;
                         }
-                        let _ = self.storage.update(&rkey, &rpod).await;
                     }
                 }
 

@@ -10,6 +10,161 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, warn};
 
+/// Check if a pod is BestEffort QoS class.
+/// A pod is BestEffort if NONE of its containers specify any resource requests or limits.
+fn is_pod_best_effort(pod: &Pod) -> bool {
+    let spec = match &pod.spec {
+        Some(s) => s,
+        None => return true,
+    };
+    for container in &spec.containers {
+        if let Some(resources) = &container.resources {
+            if let Some(requests) = &resources.requests {
+                if !requests.is_empty() {
+                    return false;
+                }
+            }
+            if let Some(limits) = &resources.limits {
+                if !limits.is_empty() {
+                    return false;
+                }
+            }
+        }
+    }
+    if let Some(init_containers) = &spec.init_containers {
+        for container in init_containers {
+            if let Some(resources) = &container.resources {
+                if let Some(requests) = &resources.requests {
+                    if !requests.is_empty() {
+                        return false;
+                    }
+                }
+                if let Some(limits) = &resources.limits {
+                    if !limits.is_empty() {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    true
+}
+
+/// Check if a pod matches the scopes of a ResourceQuota.
+/// All scopes must match (AND logic).
+fn pod_matches_quota_scopes(pod: &Pod, quota: &ResourceQuota) -> bool {
+    let is_terminating = pod.metadata.deletion_timestamp.is_some()
+        || pod
+            .spec
+            .as_ref()
+            .and_then(|s| s.active_deadline_seconds)
+            .is_some();
+    let is_best_effort = is_pod_best_effort(pod);
+
+    // Check scopes list
+    if let Some(scopes) = &quota.spec.scopes {
+        for scope in scopes {
+            match scope.as_str() {
+                "Terminating" => {
+                    if !is_terminating {
+                        return false;
+                    }
+                }
+                "NotTerminating" => {
+                    if is_terminating {
+                        return false;
+                    }
+                }
+                "BestEffort" => {
+                    if !is_best_effort {
+                        return false;
+                    }
+                }
+                "NotBestEffort" => {
+                    if is_best_effort {
+                        return false;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Check scopeSelector if present
+    if let Some(selector) = &quota.spec.scope_selector {
+        for req in &selector.match_expressions {
+            match req.scope_name.as_str() {
+                "Terminating" => {
+                    let matches = match req.operator.as_str() {
+                        "Exists" => is_terminating,
+                        "DoesNotExist" => !is_terminating,
+                        _ => true,
+                    };
+                    if !matches {
+                        return false;
+                    }
+                }
+                "NotTerminating" => {
+                    let matches = match req.operator.as_str() {
+                        "Exists" => !is_terminating,
+                        "DoesNotExist" => is_terminating,
+                        _ => true,
+                    };
+                    if !matches {
+                        return false;
+                    }
+                }
+                "BestEffort" => {
+                    let matches = match req.operator.as_str() {
+                        "Exists" => is_best_effort,
+                        "DoesNotExist" => !is_best_effort,
+                        _ => true,
+                    };
+                    if !matches {
+                        return false;
+                    }
+                }
+                "NotBestEffort" => {
+                    let matches = match req.operator.as_str() {
+                        "Exists" => !is_best_effort,
+                        "DoesNotExist" => is_best_effort,
+                        _ => true,
+                    };
+                    if !matches {
+                        return false;
+                    }
+                }
+                "PriorityClass" => {
+                    let pod_priority_class = pod
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.priority_class_name.as_deref())
+                        .unwrap_or("");
+                    let matches = match req.operator.as_str() {
+                        "In" => req
+                            .values
+                            .as_ref()
+                            .map_or(false, |v| v.iter().any(|val| val == pod_priority_class)),
+                        "NotIn" => req
+                            .values
+                            .as_ref()
+                            .map_or(true, |v| !v.iter().any(|val| val == pod_priority_class)),
+                        "Exists" => !pod_priority_class.is_empty(),
+                        "DoesNotExist" => pod_priority_class.is_empty(),
+                        _ => true,
+                    };
+                    if !matches {
+                        return false;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    true
+}
+
 /// Check if pod creation would exceed ResourceQuota limits
 pub async fn check_resource_quota<S: Storage>(
     storage: &Arc<S>,
@@ -25,15 +180,25 @@ pub async fn check_resource_quota<S: Storage>(
         return Ok(true);
     }
 
-    // Calculate current usage
-    let current_usage = calculate_namespace_usage(storage, namespace).await?;
-
-    // Calculate pod resource requirements
-    let pod_requests = calculate_pod_requests(pod);
-
     // Check each quota
     for quota in quotas {
+        // Skip quotas whose scopes don't match this pod
+        if !pod_matches_quota_scopes(pod, &quota) {
+            continue;
+        }
+
         if let Some(hard) = &quota.spec.hard {
+            // Calculate current usage from status, or count from storage
+            let current_usage = if let Some(status) = &quota.status {
+                status.used.clone().unwrap_or_default()
+            } else {
+                // Fall back to calculating usage
+                calculate_namespace_usage(storage, namespace).await?
+            };
+
+            // Calculate pod resource requirements
+            let pod_requests = calculate_pod_requests(pod);
+
             // Check pod count
             if let Some(pod_limit) = hard.get("pods") {
                 let current_pods = current_usage
@@ -84,6 +249,42 @@ pub async fn check_resource_quota<S: Storage>(
                     warn!(
                         "Pod creation would exceed memory quota {}/{}: {} + {} > {}",
                         namespace, quota.metadata.name, current_mem, pod_mem, limit
+                    );
+                    return Ok(false);
+                }
+            }
+
+            // Check CPU limits
+            if let Some(cpu_limit_quota) = hard.get("limits.cpu") {
+                let current_cpu = current_usage
+                    .get("limits.cpu")
+                    .and_then(|s| parse_cpu_to_millicores(s).ok())
+                    .unwrap_or(0);
+                let pod_cpu_limits = calculate_pod_limits_cpu(pod);
+                let limit = parse_cpu_to_millicores(cpu_limit_quota)?;
+
+                if current_cpu + pod_cpu_limits > limit {
+                    warn!(
+                        "Pod creation would exceed CPU limits quota {}/{}: {}m + {}m > {}m",
+                        namespace, quota.metadata.name, current_cpu, pod_cpu_limits, limit
+                    );
+                    return Ok(false);
+                }
+            }
+
+            // Check memory limits
+            if let Some(mem_limit_quota) = hard.get("limits.memory") {
+                let current_mem = current_usage
+                    .get("limits.memory")
+                    .and_then(|s| parse_memory_to_bytes(s).ok())
+                    .unwrap_or(0);
+                let pod_mem_limits = calculate_pod_limits_memory(pod);
+                let limit = parse_memory_to_bytes(mem_limit_quota)?;
+
+                if current_mem + pod_mem_limits > limit {
+                    warn!(
+                        "Pod creation would exceed memory limits quota {}/{}: {} + {} > {}",
+                        namespace, quota.metadata.name, current_mem, pod_mem_limits, limit
                     );
                     return Ok(false);
                 }
@@ -277,6 +478,42 @@ fn calculate_pod_requests(pod: &Pod) -> HashMap<String, i64> {
     }
 
     requests
+}
+
+fn calculate_pod_limits_cpu(pod: &Pod) -> i64 {
+    let mut total = 0i64;
+    if let Some(spec) = &pod.spec {
+        for container in &spec.containers {
+            if let Some(resources) = &container.resources {
+                if let Some(limits) = &resources.limits {
+                    if let Some(cpu) = limits.get("cpu") {
+                        if let Ok(millis) = parse_cpu_to_millicores(cpu) {
+                            total += millis;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    total
+}
+
+fn calculate_pod_limits_memory(pod: &Pod) -> i64 {
+    let mut total = 0i64;
+    if let Some(spec) = &pod.spec {
+        for container in &spec.containers {
+            if let Some(resources) = &container.resources {
+                if let Some(limits) = &resources.limits {
+                    if let Some(memory) = limits.get("memory") {
+                        if let Ok(bytes) = parse_memory_to_bytes(memory) {
+                            total += bytes;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    total
 }
 
 fn validate_min_resources(

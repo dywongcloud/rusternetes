@@ -121,27 +121,37 @@ pub async fn create_token_request(
         return Err(rusternetes_common::Error::Forbidden(reason));
     }
 
+    // Set metadata from path params so response includes them
+    token_request.metadata.name = service_account_name.clone();
+    token_request.metadata.namespace = Some(namespace.clone());
+
     // Verify the service account exists
     let sa_key = rusternetes_storage::build_key("serviceaccounts", Some(&namespace), &service_account_name);
     let sa: rusternetes_common::resources::ServiceAccount = state.storage.get(&sa_key).await?;
 
     // Calculate expiration time
     let expiration_seconds = token_request.spec.expiration_seconds.unwrap_or(3600);
-    let expiration_hours = expiration_seconds / 3600;
 
-    let expiration_timestamp = chrono::Utc::now()
+    let now = chrono::Utc::now();
+    let expiration_timestamp = now
         .checked_add_signed(chrono::Duration::seconds(expiration_seconds))
         .ok_or_else(|| {
             rusternetes_common::Error::Internal("Failed to calculate expiration time".to_string())
         })?;
 
-    // Generate a proper JWT service account token
-    let mut claims = rusternetes_common::auth::ServiceAccountClaims::new(
-        service_account_name.clone(),
-        namespace.clone(),
-        sa.metadata.uid.clone(),
-        expiration_hours,
-    );
+    // Generate a proper JWT service account token using direct seconds for precision
+    let mut claims = rusternetes_common::auth::ServiceAccountClaims {
+        sub: format!("system:serviceaccount:{}:{}", namespace, service_account_name),
+        namespace: namespace.clone(),
+        uid: sa.metadata.uid.clone(),
+        iat: now.timestamp(),
+        exp: expiration_timestamp.timestamp(),
+        iss: "rusternetes-api-server".to_string(),
+        aud: vec!["rusternetes".to_string()],
+        pod_name: None,
+        pod_uid: None,
+        node_name: None,
+    };
 
     // Set audience from the request (TokenRequestSpec.audiences is Vec<String>, not Option)
     if !token_request.spec.audiences.is_empty() {
@@ -165,6 +175,11 @@ pub async fn create_token_request(
     }
 
     let token = state.token_manager.generate_token(claims)?;
+
+    // Ensure apiVersion and kind are set
+    token_request.api_version = "authentication.k8s.io/v1".to_string();
+    token_request.kind = "TokenRequest".to_string();
+    token_request.metadata.ensure_creation_timestamp();
 
     token_request.status = Some(TokenRequestStatus {
         token,

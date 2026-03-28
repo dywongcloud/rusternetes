@@ -506,6 +506,74 @@ mod garbage_collector_integration {
     }
 
     #[tokio::test]
+    async fn test_gc_orphan_propagation_removes_owner_references() {
+        let storage = setup_test().await;
+        let gc = GarbageCollector::new(storage.clone());
+
+        // Create a "deployment" (represented as a pod for simplicity, since GC works on generic resources)
+        let mut owner = create_test_pod("owner-deploy", "default", None);
+        let owner_uid = owner.metadata.uid.clone();
+        let owner_key = build_key("pods", Some("default"), "owner-deploy");
+
+        // Mark owner for deletion with orphan finalizer (simulating Orphan propagation policy)
+        owner.metadata.deletion_timestamp = Some(Utc::now());
+        owner.metadata.add_finalizer("orphan".to_string());
+        storage.create(&owner_key, &owner).await.unwrap();
+
+        // Create child resources with owner references
+        for i in 0..3 {
+            let child = create_test_pod(
+                &format!("child-rs-{}", i),
+                "default",
+                Some(&owner_uid),
+            );
+            let child_key = build_key("pods", Some("default"), &format!("child-rs-{}", i));
+            storage.create(&child_key, &child).await.unwrap();
+        }
+
+        // Verify children have owner references
+        for i in 0..3 {
+            let child_key = build_key("pods", Some("default"), &format!("child-rs-{}", i));
+            let child: Pod = storage.get(&child_key).await.unwrap();
+            assert!(
+                child.metadata.owner_references.is_some(),
+                "Child should have owner references before GC"
+            );
+            let refs = child.metadata.owner_references.as_ref().unwrap();
+            assert_eq!(refs.len(), 1);
+            assert_eq!(refs[0].uid, owner_uid);
+        }
+
+        // Run GC — should process orphan propagation
+        gc.scan_and_collect().await.unwrap();
+
+        // Children should still exist (not deleted)
+        for i in 0..3 {
+            let child_key = build_key("pods", Some("default"), &format!("child-rs-{}", i));
+            let child: Pod = storage.get(&child_key).await.unwrap();
+
+            // Owner references should be removed (orphaned)
+            let has_owner_ref = child
+                .metadata
+                .owner_references
+                .as_ref()
+                .map_or(false, |refs| !refs.is_empty());
+            assert!(
+                !has_owner_ref,
+                "Child {} should have ownerReferences removed after orphan propagation, but still has {:?}",
+                i,
+                child.metadata.owner_references
+            );
+        }
+
+        // Owner should be deleted (orphan finalizer removed, then deleted)
+        assert!(
+            storage.get::<Pod>(&owner_key).await.is_err(),
+            "Owner should be deleted after orphan finalizer is processed"
+        );
+    }
+
+    #[tokio::test]
     async fn test_gc_respects_finalizers() {
         let storage = setup_test().await;
         let gc = GarbageCollector::new(storage.clone());
