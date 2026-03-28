@@ -432,6 +432,14 @@ impl Kubelet {
             }
         }
 
+        // Clean up stale "Created" containers that were never started (prevents Docker OOM)
+        if let Ok(stale) = self.runtime.list_stale_created_containers().await {
+            for container_id in stale {
+                debug!("Removing stale created container: {}", container_id);
+                let _ = self.runtime.remove_container(&container_id).await;
+            }
+        }
+
         Ok(())
     }
 

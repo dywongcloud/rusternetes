@@ -4850,6 +4850,53 @@ impl ContainerRuntime {
 
         Ok(pod_names.into_iter().collect())
     }
+
+    /// List containers stuck in "Created" state for more than 60 seconds
+    pub async fn list_stale_created_containers(&self) -> Result<Vec<String>> {
+        let options = ListContainersOptions::<String> {
+            all: true,
+            filters: {
+                let mut f = std::collections::HashMap::new();
+                f.insert("status".to_string(), vec!["created".to_string()]);
+                f
+            },
+            ..Default::default()
+        };
+
+        let containers = self.docker.list_containers(Some(options)).await?;
+        let now = chrono::Utc::now().timestamp();
+        let mut stale = Vec::new();
+
+        for container in containers {
+            // Skip rusternetes infrastructure containers
+            let name = container.names.as_ref()
+                .and_then(|n| n.first())
+                .map(|n| n.trim_start_matches('/'))
+                .unwrap_or("");
+            if name.starts_with("rusternetes-") {
+                continue;
+            }
+            // Check if created more than 60 seconds ago
+            if let Some(created) = container.created {
+                if now - created > 60 {
+                    if let Some(id) = container.id {
+                        stale.push(id);
+                    }
+                }
+            }
+        }
+
+        Ok(stale)
+    }
+
+    /// Remove a container by ID
+    pub async fn remove_container(&self, container_id: &str) -> Result<()> {
+        self.docker.remove_container(container_id, Some(bollard::container::RemoveContainerOptions {
+            force: true,
+            ..Default::default()
+        })).await?;
+        Ok(())
+    }
 }
 
 /// Parse a Kubernetes memory quantity string (e.g., "128Mi", "1Gi", "1000000") into bytes.
