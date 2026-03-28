@@ -52,11 +52,6 @@ pub async fn get_openapi_spec_path() -> Response {
 /// first, then falls back to JSON on 406. We return 406 for protobuf requests
 /// to force kubectl to use JSON, which we can serve.
 pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
-    // kubectl may request protobuf OpenAPI, but we only serve JSON.
-    // Always return JSON regardless of Accept header — kubectl's client library
-    // checks Content-Type and can handle JSON even when it prefers protobuf.
-    // Returning 406 causes kubectl to fail without retrying.
-
     let spec = serde_json::json!({
         "swagger": "2.0",
         "info": {
@@ -67,6 +62,37 @@ pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
         "definitions": {}
     });
     let json_bytes = serde_json::to_vec(&spec).unwrap_or_default();
+
+    // Check if client requests protobuf OpenAPI
+    let accept = headers.get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if accept.contains("proto-openapi") || accept.contains("protobuf") {
+        // Wrap JSON in K8s protobuf Unknown format: "k8s\0" + field2(raw JSON bytes)
+        // This allows kubectl to decode the protobuf wrapper and extract JSON
+        let mut pb = Vec::new();
+        pb.extend_from_slice(b"k8s\0");
+        // Field 2 (raw bytes), wire type 2 (length-delimited)
+        pb.push(0x12); // tag = field 2, wire type 2
+        // Varint encode length
+        let len = json_bytes.len();
+        let mut l = len;
+        loop {
+            let mut byte = (l & 0x7f) as u8;
+            l >>= 7;
+            if l > 0 { byte |= 0x80; }
+            pb.push(byte);
+            if l == 0 { break; }
+        }
+        pb.extend_from_slice(&json_bytes);
+
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "application/com.github.proto-openapi.spec.v2@v1.0+protobuf")
+            .body(Body::from(pb))
+            .unwrap();
+    }
+
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
