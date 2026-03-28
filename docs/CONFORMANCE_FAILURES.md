@@ -1,25 +1,25 @@
 # Conformance Issue Tracker
 
-**312 total fixes** | Round 107 IN PROGRESS | 16 failures at ~300/441
+**312 total fixes** | Round 107 near completion | 19 failures at ~430/441
 
 ## Deployed: #1-310 | Pending: #311-312
 
-## Round 107 Failures (13 so far)
+## Round 107 Failures (19 unique)
 | Test | Error | Fix/Status |
 |------|-------|-----------|
 | statefulset.go:2479 | SS replicas 3→2 | **#311** pending |
-| predicates.go:1102 | Scheduler timeout | Kubelet timing |
-| rc.go:442 | RC rate limiter | **#310** deployed (bookmark keepalive) |
 | watch.go:370 | RV mismatch | **#312** pending |
-| crd_conversion_webhook | Webhook pod failed | Pause container port conflict |
-| crd_watch.go:72 | CRD Established watch | CRD status update timing |
-| crd_publish_openapi (x2) | CRD Established watch | CRD status update timing |
-| field_validation.go:428 | CRD Established watch | CRD status update timing |
-| ResourceQuota service | Service lifecycle | NEW |
-| Watchers concurrent | Watch event ordering | NEW |
+| EmptyDir non-root 0777 | chmod on bind mount | **#308** deployed but may need test |
+| CRD watch/OpenAPI/FieldVal (x4) | CRD Established timeout | CRD status update timing |
+| CRD conversion webhook | Webhook pod fail | Pause container conflict |
+| AdmissionWebhook | Webhook fail closed | Webhook deployment |
+| ResourceQuota (x2) | Service lifecycle + scopes | **#300** deployed + new |
 | Deployment rolling update | Pod timeout | Kubelet timing |
+| RC scale + RC basic image | Rate limiter + timeout | **#310** deployed |
 | Container Runtime status | Expected status | Container status |
-| Scheduler preemption | Preemption timeout | Scheduler |
+| Scheduler predicates + preemption | Timeout | Scheduler timing |
+| Session affinity NodePort | Deployment timeout | Kubelet timing |
+| Pod InPlace Resize | Resize verification | Resize implementation |
 
 ## Pending deploy (#311-312)
 | # | Fix |
@@ -33,4 +33,4 @@
 | 104 | 36 | 441 | 92% |
 | 105 | 43 | 441 | 90% |
 | 106 | ~25 | 441 | ~94% |
-| 107 | 13 | ~250/441 | IN PROGRESS |
+| 107 | 19 | ~430/441 | ~96% |
