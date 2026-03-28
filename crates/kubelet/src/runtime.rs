@@ -518,6 +518,29 @@ impl ContainerRuntime {
         // Create /etc/hosts now that we know the pod IP.
         let hosts_file_path = self.create_pod_hosts_file(pod, pod_ip.as_deref())?;
 
+        // Copy the kubelet-managed /etc/hosts into the pause container.
+        // Docker manages /etc/hosts for containers in the network namespace, so
+        // bind mounts on app containers (which use container:pause network mode)
+        // don't override /etc/hosts. We must write directly into the pause container.
+        if let Some(ref hosts_path) = hosts_file_path {
+            let pause_name = format!("{}_pause", pod_name);
+            if let Ok(hosts_content) = std::fs::read(hosts_path) {
+                use bollard::container::UploadToContainerOptions;
+                // Create a tar archive containing /etc/hosts
+                let mut tar_builder = tar::Builder::new(Vec::new());
+                let mut header = tar::Header::new_gnu();
+                header.set_size(hosts_content.len() as u64);
+                header.set_mode(0o644);
+                header.set_cksum();
+                tar_builder.append_data(&mut header, "hosts", &hosts_content[..]).ok();
+                if let Ok(tar_data) = tar_builder.into_inner() {
+                    let opts = UploadToContainerOptions { path: "/etc", ..Default::default() };
+                    let _ = self.docker.upload_to_container(&pause_name, Some(opts), tar_data.into()).await;
+                    debug!("Copied kubelet-managed /etc/hosts into pause container {}", pause_name);
+                }
+            }
+        }
+
         // resolved_ip is only used in the non-CNI/non-pause fallback path now.
         let mut resolved_ip = pod_ip.is_some();
 

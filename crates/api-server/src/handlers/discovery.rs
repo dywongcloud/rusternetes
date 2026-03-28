@@ -78,19 +78,25 @@ fn wants_aggregated_discovery(headers: &HeaderMap) -> bool {
         if !accept.contains("apidiscovery.k8s.io") {
             return false;
         }
-        // Only return aggregated discovery when the Accept header EXCLUSIVELY
-        // requests it (no plain application/json alternative). This prevents
-        // breaking clients like sonobuoy that list both types but can't parse aggregated.
-        let has_plain_json = accept.split(',').any(|mt| {
-            let mt = mt.trim();
-            mt == "application/json" || (mt.starts_with("application/json") && !mt.contains("apidiscovery"))
+        // Return aggregated discovery when requested. Use q-value preference:
+        // if apidiscovery type appears with higher or equal q-value, use it.
+        // If plain application/json appears FIRST (before apidiscovery), prefer plain.
+        let parts: Vec<&str> = accept.split(',').map(|s| s.trim()).collect();
+        let aggregated_pos = parts.iter().position(|p| p.contains("apidiscovery.k8s.io"));
+        let plain_pos = parts.iter().position(|p| {
+            let p = p.trim();
+            (p == "application/json" || (p.starts_with("application/json") && !p.contains("apidiscovery")))
+                && !p.contains(";q=0")
         });
-        if has_plain_json {
-            return false; // Client also accepts plain JSON — prefer it for compatibility
+        // If aggregated appears before plain JSON (or plain doesn't appear), use aggregated
+        match (aggregated_pos, plain_pos) {
+            (Some(agg), Some(plain)) => agg < plain,
+            (Some(_), None) => true,
+            _ => false,
         }
-        return true;
+    } else {
+        false
     }
-    false
 }
 
 /// GET /api

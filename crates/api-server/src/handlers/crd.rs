@@ -54,9 +54,32 @@ pub async fn create_crd(
                     rusternetes_common::Error::InvalidResource(format!("failed to decode CRD: {}", e2))
                 })?
             } else if !body.is_empty() && !matches!(body[0], b'{' | b'[' | b'"' | b'0'..=b'9' | b't' | b'f' | b'n' | b' ' | b'\t' | b'\n' | b'\r') {
-                return Err(rusternetes_common::Error::UnsupportedMediaType(
-                    "only application/json is supported; send requests with Content-Type: application/json".to_string(),
-                ));
+                // Body appears to be binary (protobuf/CBOR) — try to extract JSON from it
+                // by scanning for a JSON object within the binary data
+                let mut found_json = None;
+                for i in 0..body.len() {
+                    if body[i] == b'{' {
+                        if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&body[i..]) {
+                            found_json = Some(val);
+                            break;
+                        }
+                    }
+                }
+                if let Some(mut val) = found_json {
+                    if val.get("apiVersion").is_none() {
+                        val["apiVersion"] = serde_json::Value::String("apiextensions.k8s.io/v1".to_string());
+                    }
+                    if val.get("kind").is_none() {
+                        val["kind"] = serde_json::Value::String("CustomResourceDefinition".to_string());
+                    }
+                    serde_json::from_value(val).map_err(|e2| {
+                        rusternetes_common::Error::InvalidResource(format!("failed to decode CRD from binary body: {}", e2))
+                    })?
+                } else {
+                    return Err(rusternetes_common::Error::UnsupportedMediaType(
+                        "only application/json is supported; send requests with Content-Type: application/json".to_string(),
+                    ));
+                }
             } else {
                 return Err(rusternetes_common::Error::InvalidResource(format!("failed to decode CRD: {}", e)));
             }
@@ -137,23 +160,28 @@ pub async fn create_crd(
 
     info!("CRD created: {}", crd_name);
 
-    // Trigger a status update shortly after creation to generate a MODIFIED event.
+    // Trigger status updates after creation to generate MODIFIED events.
     // K8s clients watch for CRD status changes (Established condition) using the
     // resourceVersion from the CREATE response. Since we set status during creation,
-    // there's no MODIFIED event without this update.
+    // there's no MODIFIED event without this update. We retry multiple times to
+    // ensure the watch catches it even if there are timing issues.
     {
         let storage = state.storage.clone();
         let key_clone = key.clone();
         tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            if let Ok(mut crd_val) = storage.get::<serde_json::Value>(&key_clone).await {
-                // Touch the status to trigger a MODIFIED watch event
-                if let Some(status) = crd_val.get_mut("status") {
-                    if let Some(obj) = status.as_object_mut() {
-                        obj.insert("observedGeneration".to_string(), serde_json::json!(1));
+            for delay_ms in [50, 200, 1000] {
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                if let Ok(mut crd_val) = storage.get::<serde_json::Value>(&key_clone).await {
+                    // Touch the status to trigger a MODIFIED watch event
+                    if let Some(status) = crd_val.get_mut("status") {
+                        if let Some(obj) = status.as_object_mut() {
+                            obj.insert("observedGeneration".to_string(), serde_json::json!(1));
+                        }
+                    }
+                    if storage.update(&key_clone, &crd_val).await.is_ok() {
+                        break; // Update succeeded, stop retrying
                     }
                 }
-                let _ = storage.update(&key_clone, &crd_val).await;
             }
         });
     }
