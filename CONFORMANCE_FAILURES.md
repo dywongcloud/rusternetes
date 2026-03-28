@@ -2,7 +2,7 @@
 
 Test run started: 2026-03-28 05:17 UTC
 Status: IN PROGRESS (~153 failures so far, tests still running)
-Fixes applied: 6 commits (hostname, watch events, RC conditions, SA tokens, TypeMeta, OpenAPI MIME)
+Fixes applied: 7 commits (hostname, watch events, RC conditions, SA tokens, TypeMeta, OpenAPI MIME, CAS re-reads)
 
 ## Failure Categories
 
@@ -208,6 +208,7 @@ Fixes applied: 6 commits (hostname, watch events, RC conditions, SA tokens, Type
 | d800695 | TypeMeta in status update responses | ~3 failures |
 | 628911b | OpenAPI MIME type (406 for protobuf) | ~6 failures |
 | 52bafcb | RC failure conditions & observed_generation | ~1 failure |
+| 3147f7b | Fix broken CAS re-reads in kubelet (Ok(Some(p)) -> Ok(p)) | ~20+ failures |
 
 ## Priority Order for Remaining Fixes
 
