@@ -583,6 +583,7 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
     }
 
     if api_version.is_empty() || kind.is_empty() {
+        tracing::warn!("Protobuf decode: api_version='{}' kind='{}' raw_bytes={}", api_version, kind, raw_bytes.map(|r| r.len()).unwrap_or(0));
         return None;
     }
 
@@ -816,6 +817,7 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
     }
 
     if metadata_name.is_empty() {
+        tracing::warn!("CRD protobuf decode: metadata_name empty, group='{}', plural='{}', versions={:?}", spec_group, spec_names_plural, spec_version_names);
         return None;
     }
 
