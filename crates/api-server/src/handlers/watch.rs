@@ -289,12 +289,9 @@ where
             }
         }
 
-        // Create bookmark interval (60 seconds) if bookmarks are enabled
-        let mut bookmark_interval = if allow_bookmarks || send_initial_events {
-            Some(interval(Duration::from_secs(15)))
-        } else {
-            None
-        };
+        // Always send periodic bookmarks as keep-alive to prevent the K8s client
+        // from closing the watch connection due to inactivity
+        let mut bookmark_interval = Some(interval(Duration::from_secs(15)));
 
         // Box-pin the watch stream so it can be replaced on reconnect
         let mut watch_stream: std::pin::Pin<Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>> = Box::pin(watch_stream);
@@ -656,12 +653,9 @@ where
             }
         }
 
-        // Create bookmark interval (60 seconds) if bookmarks are enabled
-        let mut bookmark_interval = if allow_bookmarks || send_initial_events {
-            Some(interval(Duration::from_secs(15)))
-        } else {
-            None
-        };
+        // Always send periodic bookmarks as keep-alive to prevent the K8s client
+        // from closing the watch connection due to inactivity
+        let mut bookmark_interval = Some(interval(Duration::from_secs(15)));
 
         // Box-pin the watch stream so it can be replaced on reconnect
         let mut watch_stream: std::pin::Pin<Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>> = Box::pin(watch_stream);
