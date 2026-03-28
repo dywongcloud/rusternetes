@@ -1016,9 +1016,9 @@ impl ContainerRuntime {
                         let _ = std::process::Command::new("chown")
                             .args(&["-R", &format!(":{}", fs_group), fpath.to_str().unwrap_or("")])
                             .output();
-                        // chmod -R g+rwX
+                        // chmod -R g+rX (K8s fsGroup adds group-read, NOT group-write)
                         let _ = std::process::Command::new("chmod")
-                            .args(&["-R", "g+rwX", fpath.to_str().unwrap_or("")])
+                            .args(&["-R", "g+rX", fpath.to_str().unwrap_or("")])
                             .output();
                     }
                 }
@@ -1032,7 +1032,7 @@ impl ContainerRuntime {
                     .args(&[&format!(":{}", fs_group), path])
                     .output();
                 let _ = std::process::Command::new("chmod")
-                    .args(&["g+rwx", path])
+                    .args(&["g+rx", path])
                     .output();
             }
             info!("Applied fsGroup {} to {} volumes", fs_group, volume_paths.len());
