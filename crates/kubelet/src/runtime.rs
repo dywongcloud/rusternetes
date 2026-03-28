@@ -3628,8 +3628,23 @@ impl ContainerRuntime {
                     }
                 }
                 Err(_) => {
-                    // If pod already has CreateContainerError for this container,
-                    // preserve that status instead of defaulting to ContainerCreating.
+                    // If pod already has a container status (from a previous sync),
+                    // preserve it. This handles containers that exit and are removed
+                    // before the kubelet can inspect them.
+                    let existing_status = pod
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.container_statuses.as_ref())
+                        .and_then(|statuses| {
+                            statuses.iter().find(|cs| cs.name == container.name).cloned()
+                        });
+
+                    if let Some(prev) = existing_status {
+                        // Preserve the previous container status (terminated, waiting, etc.)
+                        statuses.push(prev);
+                        continue;
+                    }
+
                     let existing_reason = pod
                         .status
                         .as_ref()
