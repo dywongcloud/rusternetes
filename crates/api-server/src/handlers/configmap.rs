@@ -124,12 +124,19 @@ pub async fn update(
 
     let key = build_key("configmaps", Some(&namespace), &name);
 
-    // Check if existing configmap is immutable — K8s returns 422 Invalid
+    // Check if existing configmap is immutable — K8s only prevents changes to
+    // data, binaryData, and immutable fields. Metadata changes (labels, annotations)
+    // are still allowed.
     if let Ok(existing) = state.storage.get::<ConfigMap>(&key).await {
         if existing.immutable == Some(true) {
-            return Err(rusternetes_common::Error::InvalidResource(format!(
-                "ConfigMap \"{}/{}\" is immutable", namespace, name
-            )));
+            let data_changed = existing.data != configmap.data;
+            let binary_data_changed = existing.binary_data != configmap.binary_data;
+            let immutable_changed = configmap.immutable != Some(true) && configmap.immutable != existing.immutable;
+            if data_changed || binary_data_changed || immutable_changed {
+                return Err(rusternetes_common::Error::InvalidResource(format!(
+                    "ConfigMap \"{}/{}\" is immutable", namespace, name
+                )));
+            }
         }
     }
 
