@@ -87,6 +87,30 @@ mod micro_time {
             None => Ok(None),
         }
     }
+
+    /// Serialize a required DateTime in MicroTime format (non-Option)
+    pub fn serialize_required<S>(date: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s = date.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
+        serializer.serialize_str(&s)
+    }
+
+    /// Deserialize a required DateTime from MicroTime format (non-Option)
+    pub fn deserialize_required<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: String = String::deserialize(deserializer)?;
+        if let Ok(dt) = DateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.6fZ") {
+            return Ok(dt.with_timezone(&Utc));
+        }
+        if let Ok(dt) = DateTime::parse_from_rfc3339(&s) {
+            return Ok(dt.with_timezone(&Utc));
+        }
+        s.parse::<DateTime<Utc>>().map_err(serde::de::Error::custom)
+    }
 }
 
 /// Event represents a single event in the system
@@ -274,7 +298,11 @@ pub struct EventSeries {
     /// Number of occurrences in this series up to the last heartbeat time
     pub count: i32,
 
-    /// Time of the last occurrence observed
+    /// Time of the last occurrence observed (MicroTime format for K8s compatibility)
+    #[serde(
+        serialize_with = "micro_time::serialize_required",
+        deserialize_with = "micro_time::deserialize_required"
+    )]
     pub last_observed_time: DateTime<Utc>,
 }
 
