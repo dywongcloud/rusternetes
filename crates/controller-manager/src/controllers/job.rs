@@ -378,9 +378,9 @@ impl<S: Storage> JobController<S> {
                     else if let Some(count) = rule.get("succeededCount").and_then(|c| c.as_i64()) {
                         succeeded >= count as i32
                     }
-                    // No criteria specified — rule matches if any pod succeeded
+                    // No criteria specified — rule matches when all completions succeed
                     else {
-                        succeeded > 0
+                        succeeded >= completions
                     }
                 })
             } else {
