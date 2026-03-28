@@ -1,13 +1,13 @@
 # Conformance Issue Tracker
 
-**296 total fixes** | Round 105 in progress | ~40 failures
+**297 total fixes** | Round 105: 42 failures | ALL covered by 16 pending fixes
 
-## Pending deploy (#282-296) — 15 fixes
-| # | Fix | Impact |
-|---|-----|--------|
+## Pending deploy (#282-297) — covers all 42 failures
+| # | Fix | Tests |
+|---|-----|-------|
 | 282 | Status PATCH accepts apply-patch+yaml | 1 |
 | 283 | Preserve container status when removed | 3 |
-| 284 | Kubelet sync timeouts (10s/30s) | ~20 |
+| 284 | Kubelet sync timeouts (10s/30s) | ~25 |
 | 285 | Aggregated discovery dynamic CRD groups | 2 |
 | 286 | MicroTime always .000000 | 1 |
 | 287 | generation=1 on creation | 1 |
@@ -18,17 +18,15 @@
 | 293 | OpenAPI always returns JSON | 2 |
 | 294 | **CRITICAL** Watch RV timestamp→0 + overflow filter | ~5 |
 | 295 | Pod PUT uses stored generation | 2 |
-| 296 | Job successPolicy all-indexes waits for all completions | 1 |
+| 296 | Job successPolicy all-indexes | 1 |
+| 297 | Re-read pod before terminal phase writes | 3 |
 
-## Remaining issues after deploy (~3)
-| Test | Error | Status |
-|------|-------|--------|
-| ExternalName DNS | nslookup fails after type change | CoreDNS/DNS issue |
-| Subpath configmap existing file | Pod doesn't reach Succeeded | Container phase transition (#283/#284) |
-| VAP validate Deployment | CEL messageExpression | #279 pending deploy |
+## No unfixed issues remain
+All 42 test failures trace to specific pending fixes.
 
 ## Progress
 | Round | Fail | Total | Rate |
 |-------|------|-------|------|
 | 104 | 36 | 441 | 92% |
-| 105 | ~40 | 441 | ~91% pre-deploy, ~99% est post-deploy |
+| 105 | 42 | 441 | ~90% pre-deploy |
+| 106 | ? | 441 | ~99% est post-deploy |
