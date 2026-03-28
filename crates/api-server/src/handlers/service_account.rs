@@ -440,6 +440,9 @@ pub async fn create_token(
         iat: now.timestamp(),
         exp: (now + chrono::Duration::hours(1)).timestamp(),
         aud: vec!["https://kubernetes.default.svc".to_string()],
+        pod_name: None,
+        pod_uid: None,
+        node_name: None,
     };
     let token = state.token_manager
         .generate_token(claims)

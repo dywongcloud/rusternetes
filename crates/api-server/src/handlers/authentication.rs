@@ -54,6 +54,25 @@ pub async fn create_token_review(
                         "authentication.kubernetes.io/credential-id".to_string(),
                         vec![jti],
                     );
+                    // Include pod binding info if present in claims
+                    if let Some(ref pod_name) = claims.pod_name {
+                        extra.insert(
+                            "authentication.kubernetes.io/pod-name".to_string(),
+                            vec![pod_name.clone()],
+                        );
+                    }
+                    if let Some(ref pod_uid) = claims.pod_uid {
+                        extra.insert(
+                            "authentication.kubernetes.io/pod-uid".to_string(),
+                            vec![pod_uid.clone()],
+                        );
+                    }
+                    if let Some(ref node_name) = claims.node_name {
+                        extra.insert(
+                            "authentication.kubernetes.io/node-name".to_string(),
+                            vec![node_name.clone()],
+                        );
+                    }
                     extra
                 }),
             }),
@@ -127,6 +146,22 @@ pub async fn create_token_request(
     // Set audience from the request (TokenRequestSpec.audiences is Vec<String>, not Option)
     if !token_request.spec.audiences.is_empty() {
         claims.aud = token_request.spec.audiences.clone();
+    }
+
+    // Set bound object reference (pod name/uid) in claims for projected SA tokens
+    if let Some(ref bound_ref) = token_request.spec.bound_object_ref {
+        if bound_ref.kind.as_deref() == Some("Pod") {
+            claims.pod_name = bound_ref.name.clone();
+            claims.pod_uid = bound_ref.uid.clone();
+
+            // Try to get node name from the pod
+            if let Some(ref pod_name) = bound_ref.name {
+                let pod_key = rusternetes_storage::build_key("pods", Some(&namespace), pod_name);
+                if let Ok(pod) = state.storage.get::<rusternetes_common::resources::Pod>(&pod_key).await {
+                    claims.node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
+                }
+            }
+        }
     }
 
     let token = state.token_manager.generate_token(claims)?;

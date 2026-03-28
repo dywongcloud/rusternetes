@@ -29,6 +29,18 @@ pub struct ServiceAccountClaims {
 
     /// Audience
     pub aud: Vec<String>,
+
+    /// Bound pod name (for projected service account tokens)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pod_name: Option<String>,
+
+    /// Bound pod UID (for projected service account tokens)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pod_uid: Option<String>,
+
+    /// Node name where the bound pod is running
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_name: Option<String>,
 }
 
 impl ServiceAccountClaims {
@@ -49,6 +61,9 @@ impl ServiceAccountClaims {
             exp: exp.timestamp(),
             iss: "rusternetes-api-server".to_string(),
             aud: vec!["rusternetes".to_string()],
+            pod_name: None,
+            pod_uid: None,
+            node_name: None,
         }
     }
 }
