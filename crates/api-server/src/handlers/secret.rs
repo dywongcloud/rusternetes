@@ -152,12 +152,19 @@ pub async fn update(
 
     let key = build_key("secrets", Some(&namespace), &name);
 
-    // Check if existing secret is immutable
+    // Check if existing secret is immutable — only reject data/stringData changes
     if let Ok(existing) = state.storage.get::<Secret>(&key).await {
         if existing.immutable == Some(true) {
-            return Err(rusternetes_common::Error::InvalidResource(format!(
-                "Secret \"{}\" is immutable", name
-            )));
+            // Compare data and stringData — reject if changed
+            let data_changed = existing.data != secret.data;
+            let string_data_changed = existing.string_data != secret.string_data;
+            // Also reject changing immutable from true to false
+            let immutable_changed = secret.immutable != Some(true) && secret.immutable.is_some();
+            if data_changed || string_data_changed || immutable_changed {
+                return Err(rusternetes_common::Error::InvalidResource(format!(
+                    "Secret \"{}\" is immutable", name
+                )));
+            }
         }
     }
 
