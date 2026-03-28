@@ -548,7 +548,14 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                         let t = field_data[tpos];
                         tpos += 1;
                         let fnum = t >> 3;
-                        if (t & 0x07) != 2 { break; }
+                        let twire = t & 0x07;
+                        if twire == 0 {
+                            while tpos < field_data.len() && field_data[tpos] & 0x80 != 0 { tpos += 1; }
+                            if tpos < field_data.len() { tpos += 1; }
+                            continue;
+                        } else if twire == 1 { tpos += 8; continue;
+                        } else if twire == 5 { tpos += 4; continue;
+                        } else if twire != 2 { break; }
                         let mut slen: usize = 0;
                         let mut ss = 0;
                         while tpos < field_data.len() {
@@ -674,6 +681,10 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                         } else if mwire == 0 {
                             while mpos < field_data.len() && field_data[mpos] & 0x80 != 0 { mpos += 1; }
                             if mpos < field_data.len() { mpos += 1; }
+                        } else if mwire == 1 {
+                            mpos += 8; // 64-bit fixed
+                        } else if mwire == 5 {
+                            mpos += 4; // 32-bit fixed
                         } else {
                             break;
                         }
@@ -723,11 +734,14 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                             }
                                             let nfnum = (nt >> 3) as u8;
                                             if (nt & 0x07) != 2 {
-                                                // Skip varint fields
-                                                if (nt & 0x07) == 0 {
+                                                // Skip non-length-delimited fields
+                                                let nwire = (nt & 0x07) as u8;
+                                                if nwire == 0 {
                                                     while npos < names.len() && names[npos] & 0x80 != 0 { npos += 1; }
                                                     if npos < names.len() { npos += 1; }
                                                     continue;
+                                                } else if nwire == 1 { npos += 8; continue;
+                                                } else if nwire == 5 { npos += 4; continue;
                                                 }
                                                 break;
                                             }
@@ -791,6 +805,8 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                             } else if vwire == 0 {
                                                 while vpos < ver.len() && ver[vpos] & 0x80 != 0 { vpos += 1; }
                                                 if vpos < ver.len() { vpos += 1; }
+                                            } else if vwire == 1 { vpos += 8; // 64-bit
+                                            } else if vwire == 5 { vpos += 4; // 32-bit
                                             } else { break; }
                                         }
                                     }
@@ -801,6 +817,10 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                         } else if swire == 0 {
                             while spos < field_data.len() && field_data[spos] & 0x80 != 0 { spos += 1; }
                             if spos < field_data.len() { spos += 1; }
+                        } else if swire == 1 {
+                            spos += 8; // 64-bit fixed
+                        } else if swire == 5 {
+                            spos += 4; // 32-bit fixed
                         } else {
                             break;
                         }
@@ -809,8 +829,15 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                 _ => {}
             }
         } else if wire_type == 0 {
+            // Varint — skip
             while rpos < raw.len() && raw[rpos] & 0x80 != 0 { rpos += 1; }
             if rpos < raw.len() { rpos += 1; }
+        } else if wire_type == 1 {
+            // 64-bit fixed (double, fixed64, sfixed64) — skip 8 bytes
+            rpos += 8;
+        } else if wire_type == 5 {
+            // 32-bit fixed (float, fixed32, sfixed32) — skip 4 bytes
+            rpos += 4;
         } else {
             break;
         }
