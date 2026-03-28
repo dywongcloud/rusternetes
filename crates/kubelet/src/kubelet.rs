@@ -515,8 +515,17 @@ impl Kubelet {
             }
         }
 
-        // Check current runtime status
-        let is_running = self.runtime.is_pod_running(pod_name).await?;
+        // Check current runtime status with timeout to prevent sync loop blocking
+        let is_running = match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            self.runtime.is_pod_running(pod_name),
+        ).await {
+            Ok(result) => result?,
+            Err(_) => {
+                warn!("Timeout checking pod {}/{} runtime status, assuming not running", namespace, pod_name);
+                false
+            }
+        };
 
         // Get current phase from pod status
         let current_phase = pod
@@ -544,8 +553,16 @@ impl Kubelet {
                 self.update_pod_status(pod, Phase::Pending, Some(reason), None)
                     .await?;
 
-                // Start the pod
-                match self.runtime.start_pod(pod).await {
+                // Start the pod with timeout
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    self.runtime.start_pod(pod),
+                ).await {
+                    Err(_timeout) => {
+                        warn!("Timeout starting pod {}/{}, will retry", namespace, pod_name);
+                        return Ok(());
+                    }
+                    Ok(result) => match result {
                     Ok(_) => {
                         info!("Pod {}/{} started successfully", namespace, pod_name);
 
@@ -728,7 +745,8 @@ impl Kubelet {
                             }
                         }
                     }
-                }
+                } // end inner match result
+                } // end outer match timeout
             }
             // If pod is Pending but containers are already running, update to Running.
             // If a container has CreateContainerError, retry starting it first.
