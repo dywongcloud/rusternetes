@@ -17,6 +17,7 @@
 6. Update the CONFORMANCE_FAILURES.md with the status of this fix
 7. Do NOT arbitrarily go to the Clean Redeploy Process as this will delete the test results you need to reference for research fixing issues
 8. Move on to the next known issue fix, using these process steps.
+9. Do not stop this loop until all issues are fixed.
 
 ## Start Conformance Testing and monitor for errors
 1. Start the conformance testing using the script
