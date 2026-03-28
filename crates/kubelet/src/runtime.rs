@@ -2703,8 +2703,17 @@ impl ContainerRuntime {
                         .map(|m| m == "Memory")
                         .unwrap_or(false);
 
-                    if is_memory_medium && empty_dir_volumes.contains(&mount.name) && expanded_sub_path.is_none() {
-                        // Use tmpfs for Memory-backed emptyDir
+                    // Use tmpfs for emptyDir when:
+                    // - medium: Memory (explicit tmpfs request)
+                    // - fsGroup is set (needs proper chmod support that virtiofs lacks)
+                    let has_fs_group = pod.spec.as_ref()
+                        .and_then(|s| s.security_context.as_ref())
+                        .and_then(|sc| sc.fs_group)
+                        .is_some();
+                    let use_tmpfs = (is_memory_medium || has_fs_group) && empty_dir_volumes.contains(&mount.name) && expanded_sub_path.is_none();
+
+                    if use_tmpfs {
+                        // Use tmpfs — supports proper chmod unlike virtiofs bind mounts
                         let opts = if read_only { "ro".to_string() } else { String::new() };
                         tmpfs_mounts.insert(mount.mount_path.clone(), opts);
                     } else {
