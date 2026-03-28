@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**309 total fixes** | Round 107 pending deploy
+**310 total fixes** | Round 107 IN PROGRESS | Docker 15.6GB
 
 ## ALL Known Issues
 
