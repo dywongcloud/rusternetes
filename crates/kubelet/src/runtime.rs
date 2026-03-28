@@ -704,7 +704,13 @@ impl ContainerRuntime {
         let spec = pod.spec.as_ref().unwrap();
 
         // Determine the pod's hostname: spec.hostname if set, otherwise pod name
-        let hostname = spec.hostname.as_deref().unwrap_or(pod_name);
+        // Linux hostnames limited to 63 chars
+        let raw_hostname = spec.hostname.as_deref().unwrap_or(pod_name);
+        let hostname = if raw_hostname.len() > 63 {
+            &raw_hostname[..63].trim_end_matches('-')
+        } else {
+            raw_hostname
+        };
 
         let pod_dir = format!("{}/{}", self.volumes_base_path, pod_name);
         std::fs::create_dir_all(&pod_dir)
@@ -853,10 +859,16 @@ impl ContainerRuntime {
             });
 
         // Set hostname on pause container (it owns the network namespace)
-        let pause_hostname = pod.spec.as_ref()
+        // Linux hostnames are limited to 63 characters (POSIX HOST_NAME_MAX - 1).
+        // Kubernetes truncates pod hostnames to 63 chars as well.
+        let raw_hostname = pod.spec.as_ref()
             .and_then(|s| s.hostname.as_deref())
-            .unwrap_or(pod_name)
-            .to_string();
+            .unwrap_or(pod_name);
+        let pause_hostname = if raw_hostname.len() > 63 {
+            raw_hostname[..63].trim_end_matches('-').to_string()
+        } else {
+            raw_hostname.to_string()
+        };
 
         let config = Config {
             image: Some("busybox:latest".to_string()),
@@ -3056,10 +3068,16 @@ impl ContainerRuntime {
         // network mode (Docker rejects hostname on containers sharing another's network NS)
         let using_container_network = !self.use_cni && netns_path.is_none();
         let pod_hostname = if !using_container_network {
-            Some(pod.spec.as_ref()
+            let raw = pod.spec.as_ref()
                 .and_then(|s| s.hostname.as_deref())
-                .unwrap_or(&pod.metadata.name)
-                .to_string())
+                .unwrap_or(&pod.metadata.name);
+            // Linux hostnames limited to 63 chars
+            let truncated = if raw.len() > 63 {
+                raw[..63].trim_end_matches('-').to_string()
+            } else {
+                raw.to_string()
+            };
+            Some(truncated)
         } else {
             None // Hostname is set on the pause container instead
         };
@@ -5037,7 +5055,12 @@ mod tests {
         let pod_name = &pod.metadata.name;
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
         let spec = pod.spec.as_ref().unwrap();
-        let hostname = spec.hostname.as_deref().unwrap_or(pod_name);
+        let raw_hostname = spec.hostname.as_deref().unwrap_or(pod_name);
+        let hostname = if raw_hostname.len() > 63 {
+            &raw_hostname[..63].trim_end_matches('-')
+        } else {
+            raw_hostname
+        };
 
         let mut content = String::from(
             "# Kubernetes-managed hosts file\n\
@@ -5370,6 +5393,52 @@ mod tests {
             assert!(pause_name.starts_with(&format!("{}_", pod_name)));
             assert!(pause_name.ends_with("_pause"));
         }
+    }
+
+    #[test]
+    fn test_hostname_truncation_for_long_pod_names() {
+        // Linux hostnames are limited to 63 characters.
+        // Pod names can be up to 253 chars, so we must truncate.
+        let long_name = "sample-webhook-deployment-1ea22597-ec36f15a-8ae5-4dc4-8f3b-1da2641cef30";
+        assert!(long_name.len() > 63);
+
+        let truncated = if long_name.len() > 63 {
+            long_name[..63].trim_end_matches('-').to_string()
+        } else {
+            long_name.to_string()
+        };
+
+        assert!(truncated.len() <= 63);
+        assert!(!truncated.ends_with('-'));
+
+        // Short names should not be modified
+        let short_name = "web-0";
+        let result = if short_name.len() > 63 {
+            short_name[..63].trim_end_matches('-').to_string()
+        } else {
+            short_name.to_string()
+        };
+        assert_eq!(result, "web-0");
+
+        // Exactly 63 chars should not be modified
+        let exact = "a".repeat(63);
+        let result = if exact.len() > 63 {
+            exact[..63].trim_end_matches('-').to_string()
+        } else {
+            exact.clone()
+        };
+        assert_eq!(result.len(), 63);
+
+        // Name that would truncate to end with dash should have dash stripped
+        let dash_name = "abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz-1234567890-xyz";
+        assert!(dash_name.len() > 63);
+        let truncated = if dash_name.len() > 63 {
+            dash_name[..63].trim_end_matches('-').to_string()
+        } else {
+            dash_name.to_string()
+        };
+        assert!(!truncated.ends_with('-'));
+        assert!(truncated.len() <= 63);
     }
 
     #[test]

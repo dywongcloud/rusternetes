@@ -189,23 +189,58 @@ impl<S: Storage> ReplicationControllerController<S> {
 
         let rc_pods_after: Vec<Pod> = all_pods_after
             .into_iter()
-            .filter(|p| self.matches_selector(p, rc))
+            .filter(|p| {
+                if !self.matches_selector(p, rc) {
+                    return false;
+                }
+                // Only count pods owned by this RC or orphans
+                let owned_by_this_rc = p.metadata.owner_references.as_ref()
+                    .map(|refs| refs.iter().any(|r| r.uid == rc.metadata.uid))
+                    .unwrap_or(false);
+                let is_orphan = p.metadata.owner_references.as_ref()
+                    .map(|refs| refs.is_empty() || !refs.iter().any(|r| r.controller == Some(true)))
+                    .unwrap_or(true);
+                owned_by_this_rc || is_orphan
+            })
             .collect();
 
-        let final_current_replicas = rc_pods_after.len() as i32;
-        let final_ready_replicas = rc_pods_after.iter().filter(|pod| {
+        // Count only active (non-Failed, non-Succeeded) pods as replicas
+        let active_pods: Vec<&Pod> = rc_pods_after.iter().filter(|pod| {
+            !matches!(
+                pod.status.as_ref().and_then(|s| s.phase.as_ref()),
+                Some(Phase::Failed) | Some(Phase::Succeeded)
+            )
+        }).collect();
+
+        let final_current_replicas = active_pods.len() as i32;
+        let final_ready_replicas = active_pods.iter().filter(|pod| {
             pod.status.as_ref()
                 .and_then(|s| s.conditions.as_ref())
                 .map(|conditions| conditions.iter().any(|c| c.condition_type == "Ready" && c.status == "True"))
                 .unwrap_or(false)
         }).count() as i32;
 
+        // Check for failed pods as a failure signal
+        let failed_pods = rc_pods_after.iter().filter(|pod| {
+            matches!(
+                pod.status.as_ref().and_then(|s| s.phase.as_ref()),
+                Some(Phase::Failed)
+            )
+        }).count();
+
         // If we still don't have enough replicas after creation attempts, record failure
         if create_failure.is_none() && final_current_replicas < desired_replicas {
-            create_failure = Some(format!(
-                "unable to create pods: only {} of {} desired replicas are available",
-                final_current_replicas, desired_replicas
-            ));
+            if failed_pods > 0 {
+                create_failure = Some(format!(
+                    "pods for rc {}/{} failed: {} pods in Failed phase",
+                    namespace, rc.metadata.name, failed_pods
+                ));
+            } else {
+                create_failure = Some(format!(
+                    "unable to create pods: only {} of {} desired replicas are available",
+                    final_current_replicas, desired_replicas
+                ));
+            }
         }
 
         // Update status with accurate counts
@@ -341,7 +376,7 @@ impl<S: Storage> ReplicationControllerController<S> {
             fully_labeled_replicas: Some(current_replicas),
             ready_replicas: Some(ready_replicas),
             available_replicas: Some(ready_replicas),
-            observed_generation: None,
+            observed_generation: updated_rc.metadata.generation,
             conditions,
         });
 
