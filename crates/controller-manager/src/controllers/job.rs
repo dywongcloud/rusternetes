@@ -392,9 +392,64 @@ impl<S: Storage> JobController<S> {
 
         if success_policy_met {
             info!("Job {}/{} met success policy criteria", namespace, name);
+
+            // When successPolicy triggers, terminate remaining active pods
+            // and only count pods that match the success criteria
+            let success_indexes: std::collections::HashSet<i32> = if let Some(ref policy) = job.spec.success_policy {
+                policy.get("rules").and_then(|r| r.as_array())
+                    .and_then(|rules| rules.first())
+                    .and_then(|rule| rule.get("succeededIndexes").and_then(|s| s.as_str()))
+                    .map(|indexes| {
+                        let mut set = std::collections::HashSet::new();
+                        for part in indexes.split(',') {
+                            let part = part.trim();
+                            if part.contains('-') {
+                                let bounds: Vec<&str> = part.split('-').collect();
+                                if bounds.len() == 2 {
+                                    if let (Ok(start), Ok(end)) = (bounds[0].parse::<i32>(), bounds[1].parse::<i32>()) {
+                                        for i in start..=end { set.insert(i); }
+                                    }
+                                }
+                            } else if let Ok(idx) = part.parse::<i32>() {
+                                set.insert(idx);
+                            }
+                        }
+                        set
+                    })
+                    .unwrap_or_default()
+            } else {
+                std::collections::HashSet::new()
+            };
+
+            // Count only pods matching the success criteria indexes
+            let policy_succeeded = if !success_indexes.is_empty() && is_indexed {
+                job_pods.iter().filter(|pod| {
+                    let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
+                    if !matches!(phase, Some(Phase::Succeeded)) { return false; }
+                    let index = pod.metadata.annotations.as_ref()
+                        .and_then(|a| a.get("batch.kubernetes.io/job-completion-index"))
+                        .and_then(|v| v.parse::<i32>().ok())
+                        .unwrap_or(-1);
+                    success_indexes.contains(&index)
+                }).count() as i32
+            } else {
+                succeeded
+            };
+
+            // Terminate remaining active pods
+            for pod in job_pods.iter() {
+                let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
+                if matches!(phase, Some(Phase::Running) | Some(Phase::Pending)) {
+                    let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                    let mut term_pod = pod.clone();
+                    term_pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
+                    let _ = self.storage.update(&pod_key, &term_pod).await;
+                }
+            }
+
             job.status = Some(JobStatus {
                 active: Some(0),
-                succeeded: Some(succeeded),
+                succeeded: Some(policy_succeeded),
                 failed: Some(failed),
                 conditions: Some(vec![
                     JobCondition {
@@ -417,7 +472,7 @@ impl<S: Storage> JobController<S> {
                 start_time,
                 completion_time: Some(chrono::Utc::now()),
                 ready: None,
-                terminating: None,
+                terminating: Some(active),
                 completed_indexes: completed_indexes.clone(),
                 failed_indexes: failed_indexes.clone(),
                 uncounted_terminated_pods: None,
