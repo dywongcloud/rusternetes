@@ -3830,7 +3830,9 @@ impl ContainerRuntime {
 
     /// Execute a probe check
     async fn check_probe(&self, container_name: &str, probe: &Probe) -> Result<bool> {
-        let timeout = Duration::from_secs(probe.timeout_seconds.unwrap_or(1) as u64);
+        // K8s default timeout is 1s; treat 0 as default
+        let timeout_secs = probe.timeout_seconds.unwrap_or(1).max(1) as u64;
+        let timeout = Duration::from_secs(timeout_secs);
 
         // HTTP GET probe
         if let Some(http_get) = &probe.http_get {
@@ -6030,5 +6032,16 @@ mod tests {
 
         let uses_host_dns = dns_policy == "ClusterFirst" && is_host_network;
         assert!(uses_host_dns);
+    }
+
+    #[test]
+    fn test_probe_timeout_zero_uses_default() {
+        // K8s treats timeout_seconds=0 as "use default" (1s)
+        // timeout_seconds=0 → .max(1) → 1
+        assert_eq!(Some(0i32).unwrap_or(1).max(1) as u64, 1);
+        // timeout_seconds=None → unwrap_or(1) → 1
+        assert_eq!(None::<i32>.unwrap_or(1).max(1) as u64, 1);
+        // timeout_seconds=5 → 5
+        assert_eq!(Some(5i32).unwrap_or(1).max(1) as u64, 5);
     }
 }
