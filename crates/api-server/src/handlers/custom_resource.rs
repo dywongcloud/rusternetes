@@ -304,9 +304,11 @@ pub async fn patch_custom_resource(
     let (parts, body) = req.into_parts();
 
     // Get Content-Type header to determine patch type
+    // Check X-Original-Content-Type first (set by middleware when normalizing)
     let content_type = parts
         .headers
-        .get(axum::http::header::CONTENT_TYPE)
+        .get("x-original-content-type")
+        .or_else(|| parts.headers.get(axum::http::header::CONTENT_TYPE))
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/json-patch+json");
 
@@ -434,9 +436,11 @@ pub async fn patch_custom_resource_status(
     let (parts, body) = req.into_parts();
 
     // Get Content-Type header to determine patch type
+    // Check X-Original-Content-Type first (set by middleware when normalizing)
     let content_type = parts
         .headers
-        .get(axum::http::header::CONTENT_TYPE)
+        .get("x-original-content-type")
+        .or_else(|| parts.headers.get(axum::http::header::CONTENT_TYPE))
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/json-patch+json");
 

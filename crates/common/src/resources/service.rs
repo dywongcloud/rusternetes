@@ -10,6 +10,7 @@ pub struct Service {
     #[serde(flatten)]
     pub type_meta: TypeMeta,
     pub metadata: ObjectMeta,
+    #[serde(default)]
     pub spec: ServiceSpec,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<ServiceStatus>,
@@ -29,10 +30,10 @@ impl Service {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceSpec {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selector: Option<HashMap<String, String>>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]

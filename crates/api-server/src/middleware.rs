@@ -243,11 +243,24 @@ pub async fn normalize_content_type_middleware(
             request = new_request;
         }
 
-        // If not already a JSON content type, normalize to application/json
-        if !content_type.starts_with("application/json")
-            && !content_type.starts_with("application/strategic-merge-patch+json")
-            && !content_type.starts_with("application/merge-patch+json")
-            && !content_type.starts_with("application/json-patch+json")
+        // For patch content types, save the original in a custom header before
+        // normalizing to application/json (which Axum's Json extractor requires).
+        // Patch handlers check X-Original-Content-Type or Content-Type to determine patch type.
+        if content_type.starts_with("application/strategic-merge-patch+json")
+            || content_type.starts_with("application/merge-patch+json")
+            || content_type.starts_with("application/json-patch+json")
+        {
+            if let Ok(hv) = axum::http::HeaderValue::from_str(&content_type) {
+                request.headers_mut().insert(
+                    axum::http::HeaderName::from_static("x-original-content-type"),
+                    hv,
+                );
+            }
+            request.headers_mut().insert(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::HeaderValue::from_static("application/json"),
+            );
+        } else if !content_type.starts_with("application/json")
             && !content_type.starts_with("application/apply-patch+yaml")
         {
             request.headers_mut().insert(

@@ -92,17 +92,12 @@ pub async fn update_status(
     Path((namespace, name)): Path<(String, String)>,
     body: axum::body::Bytes,
 ) -> Result<Json<Value>> {
-    // Parse body as JSON or YAML (for apply-patch+yaml SSA requests)
-    let content_type = headers.get("content-type")
+    // Determine content type — check X-Original-Content-Type for middleware-normalized requests
+    let content_type = headers.get("x-original-content-type")
+        .or_else(|| headers.get("content-type"))
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/json");
-    let new_resource: Value = if content_type.contains("yaml") {
-        serde_yaml::from_slice(&body).map_err(|e|
-            rusternetes_common::Error::InvalidResource(format!("Invalid YAML: {}", e)))?
-    } else {
-        serde_json::from_slice(&body).map_err(|e|
-            rusternetes_common::Error::InvalidResource(format!("Invalid JSON: {}", e)))?
-    };
+
     let resource_type = extract_resource_type_from_uri(&uri);
     info!(
         "Updating status for {}/{}/{}",
@@ -121,6 +116,47 @@ pub async fn update_status(
             return Err(rusternetes_common::Error::Forbidden(reason));
         }
     }
+
+    // Handle JSON Patch (RFC 6902) — body is an array of patch operations
+    if content_type.contains("json-patch") {
+        let key = build_key(&resource_type, Some(&namespace), &name);
+        let current_resource: Value = state.storage.get(&key).await?;
+        let patch_ops: Value = serde_json::from_slice(&body).map_err(|e|
+            rusternetes_common::Error::InvalidResource(format!("Invalid JSON patch: {}", e)))?;
+
+        let patched = crate::patch::apply_patch(
+            &current_resource,
+            &patch_ops,
+            crate::patch::PatchType::JsonPatch,
+        ).map_err(|e| rusternetes_common::Error::Internal(format!("Failed to apply JSON patch: {}", e)))?;
+
+        // Only keep the status changes — preserve current spec and metadata
+        let mut result = current_resource.clone();
+        if let (Some(result_obj), Some(patched_obj)) = (result.as_object_mut(), patched.as_object()) {
+            if let Some(new_status) = patched_obj.get("status") {
+                result_obj.insert("status".to_string(), new_status.clone());
+            }
+            result_obj.remove("resourceVersion");
+            // Ensure TypeMeta
+            if !result_obj.contains_key("kind") || !result_obj.contains_key("apiVersion") {
+                let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
+                result_obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
+                result_obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+            }
+        }
+
+        let saved: Value = state.storage.update(&key, &result).await?;
+        return Ok(Json(saved));
+    }
+
+    // Parse body as JSON or YAML (for PUT / merge-patch / apply-patch requests)
+    let new_resource: Value = if content_type.contains("yaml") {
+        serde_yaml::from_slice(&body).map_err(|e|
+            rusternetes_common::Error::InvalidResource(format!("Invalid YAML: {}", e)))?
+    } else {
+        serde_json::from_slice(&body).map_err(|e|
+            rusternetes_common::Error::InvalidResource(format!("Invalid JSON: {}", e)))?
+    };
 
     // Get the current resource
     let key = build_key(&resource_type, Some(&namespace), &name);
