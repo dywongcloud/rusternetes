@@ -82,6 +82,29 @@ impl<S: Storage> JobController<S> {
             })
             .collect();
 
+        // Release pods whose labels no longer match the Job selector
+        let selector = job.spec.selector.as_ref().and_then(|s| s.match_labels.as_ref());
+        for pod in &job_pods {
+            if let Some(sel) = selector {
+                let labels = pod.metadata.labels.as_ref();
+                let matches = labels.map_or(false, |l| sel.iter().all(|(k, v)| l.get(k) == Some(v)));
+                if !matches {
+                    // Pod no longer matches selector — release it by removing ownerReference
+                    let mut released = pod.clone();
+                    if let Some(ref mut refs) = released.metadata.owner_references {
+                        refs.retain(|r| &r.uid != job_uid);
+                    }
+                    let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                    if let Err(e) = self.storage.update(&pod_key, &released).await {
+                        tracing::warn!("Failed to release pod {}: {}", pod.metadata.name, e);
+                    } else {
+                        info!("Released pod {} from job {}/{} (labels no longer match)", pod.metadata.name, namespace, name);
+                    }
+                    continue;
+                }
+            }
+        }
+
         // Adopt orphaned pods — re-add ownerReference if pod matches by label but not by ownerRef
         for pod in &job_pods {
             let has_owner_ref = pod.metadata.owner_references.as_ref()
