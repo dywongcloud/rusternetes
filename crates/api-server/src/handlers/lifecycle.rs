@@ -11,9 +11,8 @@ use rusternetes_common::types::ObjectMeta;
 /// This should be called during resource creation, after all mutations
 /// but before storing the resource.
 pub fn set_initial_generation(metadata: &mut ObjectMeta) {
-    if metadata.generation.is_none() {
-        metadata.generation = Some(1);
-    }
+    // K8s always sets generation to 1 on creation, regardless of what the client sends
+    metadata.generation = Some(1);
 }
 
 /// Increment generation if spec has changed (by comparing old vs new JSON, ignoring metadata and status).
