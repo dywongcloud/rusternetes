@@ -55,9 +55,21 @@ pub async fn update_status(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     uri: Uri,
+    headers: axum::http::HeaderMap,
     Path((namespace, name)): Path<(String, String)>,
-    Json(new_resource): Json<Value>,
+    body: axum::body::Bytes,
 ) -> Result<Json<Value>> {
+    // Parse body as JSON or YAML (for apply-patch+yaml SSA requests)
+    let content_type = headers.get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/json");
+    let new_resource: Value = if content_type.contains("yaml") {
+        serde_yaml::from_slice(&body).map_err(|e|
+            rusternetes_common::Error::InvalidResource(format!("Invalid YAML: {}", e)))?
+    } else {
+        serde_json::from_slice(&body).map_err(|e|
+            rusternetes_common::Error::InvalidResource(format!("Invalid JSON: {}", e)))?
+    };
     let resource_type = extract_resource_type_from_uri(&uri);
     info!(
         "Updating status for {}/{}/{}",
