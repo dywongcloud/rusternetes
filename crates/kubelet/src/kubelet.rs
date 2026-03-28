@@ -1314,13 +1314,16 @@ impl Kubelet {
                                     return Ok(());
                                 } else {
                                     // All containers exited 0 — transition to Succeeded
-                                    let mut new_pod = pod.clone();
+                                    let key = build_key("pods", Some(namespace), pod_name);
+                                    let mut new_pod: Pod = match self.storage.get(&key).await {
+                                        Ok(Some(p)) => p,
+                                        _ => pod.clone(),
+                                    };
                                     if let Some(ref mut status) = new_pod.status {
                                         status.phase = Some(Phase::Succeeded);
                                         status.message = Some("Pod completed successfully".to_string());
                                         status.container_statuses = Some(container_statuses);
                                     }
-                                    let key = build_key("pods", Some(namespace), pod_name);
                                     let _ = self.storage.update(&key, &new_pod).await;
                                     return Ok(());
                                 }
@@ -1468,7 +1471,11 @@ impl Kubelet {
                             }
                         } else {
                             info!("Pod {}/{} completed successfully (restartPolicy=OnFailure)", namespace, pod_name);
-                            let mut new_pod = pod.clone();
+                            let key = build_key("pods", Some(namespace), pod_name);
+                            let mut new_pod: Pod = match self.storage.get(&key).await {
+                                Ok(Some(p)) => p,
+                                _ => pod.clone(),
+                            };
                             if let Some(ref mut status) = new_pod.status {
                                 status.phase = Some(Phase::Succeeded);
                                 status.message = Some("Pod completed successfully".to_string());
@@ -1488,7 +1495,11 @@ impl Kubelet {
                             "Pod completed successfully".to_string()
                         };
                         info!("Pod {}/{} terminated (restartPolicy=Never, phase={:?})", namespace, pod_name, terminal_phase);
-                        let mut new_pod = pod.clone();
+                        let key = build_key("pods", Some(namespace), pod_name);
+                        let mut new_pod: Pod = match self.storage.get(&key).await {
+                            Ok(Some(p)) => p,
+                            _ => pod.clone(),
+                        };
                         if let Some(ref mut status) = new_pod.status {
                             status.phase = Some(terminal_phase);
                             status.message = Some(message);
