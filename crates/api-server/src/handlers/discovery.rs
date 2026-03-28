@@ -147,7 +147,10 @@ pub async fn get_core_api(headers: HeaderMap) -> Response {
 
 /// GET /apis
 /// Returns the list of API groups available
-pub async fn get_api_groups(headers: HeaderMap) -> Response {
+pub async fn get_api_groups(
+    state: Option<axum::extract::State<std::sync::Arc<crate::state::ApiServerState>>>,
+    headers: HeaderMap,
+) -> Response {
     if wants_aggregated_discovery(&headers) {
         // Return aggregated discovery format for /apis with inline resources
         // Build groups, handling autoscaling specially (v1 + v2)
@@ -180,6 +183,49 @@ pub async fn get_api_groups(headers: HeaderMap) -> Response {
                 "metadata": { "name": name },
                 "versions": versions
             }));
+        }
+
+        // Dynamically add CRD groups from storage
+        if let Some(axum::extract::State(ref st)) = state {
+            use rusternetes_storage::Storage;
+            let crd_prefix = rusternetes_storage::build_prefix("customresourcedefinitions", None);
+            if let Ok(crds) = st.storage.list::<serde_json::Value>(&crd_prefix).await {
+                for crd in &crds {
+                    let group = crd.pointer("/spec/group").and_then(|v| v.as_str());
+                    let names = crd.pointer("/spec/names");
+                    let versions_arr = crd.pointer("/spec/versions").and_then(|v| v.as_array());
+                    if let (Some(group), Some(names), Some(versions_arr)) = (group, names, versions_arr) {
+                        if seen_groups.contains(group) { continue; }
+                        seen_groups.insert(group.to_string());
+                        let plural = names.get("plural").and_then(|v| v.as_str()).unwrap_or("");
+                        let singular = names.get("singular").and_then(|v| v.as_str()).unwrap_or("");
+                        let kind = names.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                        let scope = crd.pointer("/spec/scope").and_then(|v| v.as_str()).unwrap_or("Namespaced");
+                        let all_verbs = vec!["create","delete","deletecollection","get","list","patch","update","watch"];
+                        let mut crd_versions = Vec::new();
+                        for ver in versions_arr {
+                            if let Some(ver_name) = ver.get("name").and_then(|v| v.as_str()) {
+                                let mut resources = vec![serde_json::json!({
+                                    "resource": plural,
+                                    "responseKind": { "group": group, "version": ver_name, "kind": kind },
+                                    "scope": scope, "singularResource": singular, "verbs": all_verbs
+                                })];
+                                if ver.pointer("/subresources/status").is_some() || crd.pointer("/spec/subresources/status").is_some() {
+                                    resources.push(serde_json::json!({
+                                        "resource": format!("{}/status", plural),
+                                        "responseKind": { "group": group, "version": ver_name, "kind": kind },
+                                        "scope": scope, "singularResource": "", "verbs": ["get", "patch", "update"], "subresource": true
+                                    }));
+                                }
+                                crd_versions.push(serde_json::json!({ "version": ver_name, "resources": resources, "freshness": "Current" }));
+                            }
+                        }
+                        if !crd_versions.is_empty() {
+                            groups.push(serde_json::json!({ "metadata": { "name": group }, "versions": crd_versions }));
+                        }
+                    }
+                }
+            }
         }
 
         let discovery = serde_json::json!({
