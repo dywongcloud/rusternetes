@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**294 total fixes** | Round 105 in progress | 31 failures
+**294 total fixes** | Round 105 in progress | 34 failures
 
 ## Pending deploy (#282-294) — 13 fixes
 | # | Fix | Impact |
