@@ -222,9 +222,15 @@ where
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
         // Track the latest resourceVersion for bookmarks.
-        // Initialize to the current storage revision so bookmarks always have
-        // a valid, non-zero resourceVersion (RV "0" confuses client-go).
-        let mut latest_resource_version: Option<String> = Some(current_rev_str);
+        // Initialize to MAX of current revision and requested RV so bookmarks
+        // never report a lower RV than what the client already knows.
+        let mut latest_resource_version: Option<String> = {
+            let rv = requested_rv.as_deref()
+                .and_then(|rv| rv.parse::<i64>().ok())
+                .unwrap_or(0)
+                .max(current_rev);
+            Some(rv.to_string())
+        };
 
         // Send initial state as ADDED events (only when appropriate)
         if should_send_initial {
@@ -586,9 +592,15 @@ where
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
         // Track the latest resourceVersion for bookmarks.
-        // Initialize to the current storage revision so bookmarks always have
-        // a valid, non-zero resourceVersion (RV "0" confuses client-go).
-        let mut latest_resource_version: Option<String> = Some(current_rev_str);
+        // Initialize to MAX of current revision and requested RV so bookmarks
+        // never report a lower RV than what the client already knows.
+        let mut latest_resource_version: Option<String> = {
+            let rv = requested_rv.as_deref()
+                .and_then(|rv| rv.parse::<i64>().ok())
+                .unwrap_or(0)
+                .max(current_rev);
+            Some(rv.to_string())
+        };
 
         // Send initial state as ADDED events (only when appropriate)
         if should_send_initial {
