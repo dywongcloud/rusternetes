@@ -1,54 +1,26 @@
 # Conformance Issue Tracker
 
-**310 total fixes** | Round 107 IN PROGRESS | Docker 15.6GB
+**311 total fixes** | Round 107 IN PROGRESS | 4 failures at ~80/441
 
-## ALL Known Issues
+## Deployed: #1-310 | Pending: #311
 
-### Fixed by pending deploy (#298-308)
-| Test | Error | Fix # |
-|------|-------|-------|
-| SS scaling probe timeout=0 | Ready=False loop | #298 |
-| Events lifecycle MicroTime | MicroTime parse error | #299 |
-| Events API MicroTime | MicroTime parse error | #299 |
-| ResourceQuota terminating scopes | No scope filtering | #300 |
-| kubectl replace/label/expose | OpenAPI protobuf | #301 |
-| Secrets immutable | Metadata update rejected | #302 |
-| Job adopt/release | Pod not released | #303 |
-| Job FailIndex | FailIndex action missing | #304 |
-| PriorityClass endpoints | value field mutable | #305 |
-| RC exceeded quota | CAS conflict on status | #306 |
-| Docker OOM / zombie containers | 738 Created containers | #307 |
-| EmptyDir non-root 0777 | chmod on virtiofs | #308 |
+## Round 107 Failures (4 so far)
+| Test | Error | Fix |
+|------|-------|-----|
+| statefulset.go:2479 | SS replicas 3→2 unexpectedly | **#311** pending — replicas not capped |
+| predicates.go:1102 | Scheduler predicates timeout | Kubelet/scheduler timing |
+| rc.go:442 | RC scale rate limiter | Watch reconnection overhead |
+| watch.go:370 | RV mismatch (expected 63599, got 63586) | Watch RV tracking bug |
 
-### Still unfixed — need more work
-| Test | Error | Root cause |
-|------|-------|------------|
-| CRD protobuf (x4-5) | CRD creation times out | **#309** name fallback may help |
-| AdmissionWebhook (x4) | Webhook deployment timeout | #307 + more Docker memory should help |
-| Proxy v1 | Pod proxy timeout | #307 + more Docker memory should help |
-| Pod InPlace Resize | Resize verification fails | **#309** resize completion status |
-| RC scale rate limiter | Client rate limiter timeout | Watch reconnection overhead |
-
-## Pending deploy (#298-308)
+## Pending deploy
 | # | Fix |
 |---|-----|
-| 298 | Probe timeout=0 defaults to 1s |
-| 299 | EventSeries.lastObservedTime MicroTime |
-| 300 | ResourceQuota scope filtering |
-| 301 | OpenAPI v2 protobuf wrapper for kubectl |
-| 302 | Immutable secrets allow metadata updates |
-| 303 | Job releases pods when labels don't match |
-| 304 | Job podFailurePolicy FailIndex action |
-| 305 | PriorityClass value field immutable |
-| 306 | RC status re-reads from storage (CAS fix) |
-| 307 | Kubelet cleans up stale Created containers |
-| 308 | EmptyDir uses tmpfs when fsGroup set |
-| 309 | Pod resize completion + CRD protobuf name fallback |
+| 311 | SS status.replicas reports actual count |
 
 ## Progress
 | Round | Fail | Total | Rate |
 |-------|------|-------|------|
 | 104 | 36 | 441 | 92% |
 | 105 | 43 | 441 | 90% |
-| 106 | ~25 | 441 | ~94% (Docker OOM) |
-| 107 | ? | 441 | est ~97% (11 pending fixes + more Docker memory) |
+| 106 | ~25 | 441 | ~94% |
+| 107 | 4 | ~80/441 | IN PROGRESS |
