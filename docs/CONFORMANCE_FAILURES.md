@@ -4,13 +4,20 @@
 
 ## Deployed: #1-310 | Pending: #311
 
-## Round 107 Failures (4 so far)
+## Round 107 Failures (5 so far)
 | Test | Error | Fix |
 |------|-------|-----|
-| statefulset.go:2479 | SS replicas 3→2 unexpectedly | **#311** pending — replicas not capped |
+| statefulset.go:2479 | SS replicas 3→2 unexpectedly | **#311** pending |
 | predicates.go:1102 | Scheduler predicates timeout | Kubelet/scheduler timing |
-| rc.go:442 | RC scale rate limiter | Watch reconnection overhead |
-| watch.go:370 | RV mismatch (expected 63599, got 63586) | Watch RV tracking bug |
+| rc.go:442 | RC scale rate limiter | **#310** pending (bookmark keepalive) |
+| watch.go:370 | RV mismatch (63599 vs 63586) | **#312** pending |
+| crd_conversion_webhook.go:318 | Webhook pod failed to start | Secret volume mount timing |
+
+## Pending deploy (#311-312)
+| # | Fix |
+|---|-----|
+| 311 | SS status.replicas reports actual count |
+| 312 | Watch bookmark RV initialized to MAX of current and requested |
 
 ## Pending deploy
 | # | Fix |
