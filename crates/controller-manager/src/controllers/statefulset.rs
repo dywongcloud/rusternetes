@@ -93,6 +93,14 @@ impl<S: Storage> StatefulSetController<S> {
             })
             .collect();
 
+        // Filter out terminated (Failed/Succeeded) pods — only count active pods as replicas
+        statefulset_pods.retain(|pod| {
+            !matches!(
+                pod.status.as_ref().and_then(|s| s.phase.as_ref()),
+                Some(Phase::Failed) | Some(Phase::Succeeded)
+            )
+        });
+
         // Sort pods by ordinal index
         statefulset_pods.sort_by_key(|pod| {
             pod.metadata
