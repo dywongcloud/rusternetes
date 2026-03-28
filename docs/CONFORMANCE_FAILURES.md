@@ -1,36 +1,30 @@
 # Conformance Issue Tracker
 
-**300 total fixes** | Round 106 IN PROGRESS | 17 failures at ~300/441
+**301 total fixes** | Round 106 IN PROGRESS | 17 failures at ~300/441
 
-## Deployed: #1-297 | Pending: #298-300
+## Deployed: #1-297 | Pending: #298-301
 
-## Round 106 Failures (17)
-| Test | Error | Fix |
-|------|-------|-----|
-| statefulset.go:786 | Probe timeout=0 causes Ready=False | **#298** pending |
-| CRD FieldSelectors | CRD protobuf creation timeout | CRD protobuf decoder |
-| FieldValidation CRD | CRD protobuf creation | CRD protobuf decoder |
-| CRD conversion webhook | Webhook deployment timeout | Kubelet blocking |
-| ResourceQuota terminating | Scope filtering missing | **#300** pending |
-| kubectl replace | Pod image update fails | Needs investigation |
-| kubectl label | Label update fails | Needs investigation |
-| kubectl expose | RC services fails | Needs investigation |
-| Proxy v1 | Pod proxy timeout | Pod not starting |
-| RC scale | RC replicas timeout | Rate limiter |
-| RC exceeded quota | Failure condition | Needs investigation |
-| Events lifecycle | Event MicroTime | **#299** pending |
-| Events API | Event MicroTime | **#299** pending |
-| AdmissionWebhook timeout | Webhook deploy | Kubelet blocking |
-| AdmissionWebhook mutate CR | CRD protobuf | CRD protobuf |
-| Pod InPlace Resize | Resize status | Resize implementation |
-| Secrets immutable | Immutable update rejected | Secret handler |
-
-## Pending deploy (#298-300)
+## Pending deploy (#298-301)
 | # | Fix |
 |---|-----|
 | 298 | Probe timeout=0 defaults to 1s |
-| 299 | EventSeries.lastObservedTime MicroTime format |
+| 299 | EventSeries.lastObservedTime MicroTime |
 | 300 | ResourceQuota scope filtering |
+| 301 | OpenAPI v2 protobuf wrapper for kubectl |
+
+## Round 106 Failures (17)
+| Test | Fix |
+|------|-----|
+| SS scaling probe timeout | #298 |
+| CRD FieldSelectors/Validation/webhook | CRD protobuf |
+| ResourceQuota scopes | #300 |
+| kubectl replace/label/expose | #301 |
+| Events lifecycle/API | #299 |
+| Proxy v1 pod timeout | Pod startup |
+| RC scale/quota | RC controller |
+| Pod InPlace Resize | Resize impl |
+| Secrets immutable | Secret handler |
+| AdmissionWebhook | Webhook deploy |
 
 ## Progress
 | Round | Fail | Total | Rate |
