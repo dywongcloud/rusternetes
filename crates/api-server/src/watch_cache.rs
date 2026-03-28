@@ -65,7 +65,7 @@ impl WatchCache {
         }
 
         // Create a new watcher
-        let (tx, rx) = broadcast::channel(1024); // Buffer 1024 events
+        let (tx, rx) = broadcast::channel(16384); // Buffer 16K events to prevent lag
         {
             let mut watchers = self.watchers.write().await;
             // Double-check after acquiring write lock
@@ -94,7 +94,7 @@ impl WatchCache {
                                 serde_json::from_str::<serde_json::Value>(value).ok()
                                     .and_then(|v| v.get("metadata")?.get("resourceVersion")?.as_str().map(String::from))
                                     .and_then(|rv| rv.parse::<i64>().ok())
-                                    .unwrap_or_else(|| chrono::Utc::now().timestamp())
+                                    .unwrap_or(0) // Never use timestamps — 0 is safe fallback
                             }
 
                             let cached = match event_result {

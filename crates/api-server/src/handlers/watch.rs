@@ -160,10 +160,13 @@ where
     // Determine if we have a specific non-zero resourceVersion to replay from.
     // rv=0 and rv=1 are treated as "list current state" — don't replay from etcd
     // history because early revisions may have been compacted.
+    // Also filter out timestamp-based RVs (> 1 billion) which would cause etcd errors.
+    let current_rev = state.storage.current_revision().await.unwrap_or(1);
     let replay_revision = requested_rv
         .as_deref()
         .filter(|rv| !rv.is_empty() && *rv != "0" && *rv != "1")
-        .and_then(|rv| rv.parse::<i64>().ok());
+        .and_then(|rv| rv.parse::<i64>().ok())
+        .filter(|&rv| rv > 0 && rv <= current_rev + 1000);
 
     // Subscribe to watch events.
     // If a specific resourceVersion was given, use etcd's watch_from_revision
@@ -535,10 +538,13 @@ where
     // Determine if we have a specific non-zero resourceVersion to replay from.
     // rv=0 and rv=1 are treated as "list current state" — don't replay from etcd
     // history because early revisions may have been compacted.
+    // Also filter out timestamp-based RVs (> 1 billion) which would cause etcd errors.
+    let current_rev = state.storage.current_revision().await.unwrap_or(1);
     let replay_revision = requested_rv
         .as_deref()
         .filter(|rv| !rv.is_empty() && *rv != "0" && *rv != "1")
-        .and_then(|rv| rv.parse::<i64>().ok());
+        .and_then(|rv| rv.parse::<i64>().ok())
+        .filter(|&rv| rv > 0 && rv <= current_rev + 1000);
 
     // Subscribe to watch events.
     // If a specific resourceVersion was given, use etcd's watch_from_revision
