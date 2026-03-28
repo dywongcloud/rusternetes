@@ -583,7 +583,7 @@ impl Kubelet {
                         // all containers have already finished.
                         let key = build_key("pods", Some(namespace), pod_name);
                         let fresh_pod: Pod = match self.storage.get(&key).await {
-                            Ok(Some(p)) => p,
+                            Ok(p) => p,
                             _ => pod.clone(),
                         };
 
@@ -647,7 +647,7 @@ impl Kubelet {
                             // container in Waiting/CreateContainerError state.
                             let key = build_key("pods", Some(namespace), pod_name);
                             let fresh_pod: Pod = match self.storage.get(&key).await {
-                                Ok(Some(p)) => p,
+                                Ok(p) => p,
                                 _ => pod.clone(),
                             };
                             let mut new_pod = fresh_pod;
@@ -716,7 +716,7 @@ impl Kubelet {
                             // actual exit codes for failed init containers
                             let key = build_key("pods", Some(namespace), pod_name);
                             let fresh_pod: Pod = match self.storage.get(&key).await {
-                                Ok(Some(p)) => p,
+                                Ok(p) => p,
                                 _ => pod.clone(),
                             };
                             let init_container_statuses =
@@ -793,7 +793,7 @@ impl Kubelet {
 
                 let key = build_key("pods", Some(namespace), pod_name);
                 let fresh_pod: Pod = match self.storage.get(&key).await {
-                    Ok(Some(p)) => p,
+                    Ok(p) => p,
                     _ => pod.clone(),
                 };
 
@@ -854,7 +854,7 @@ impl Kubelet {
                 // Re-read pod from storage to get latest spec (resize PATCH may have updated it)
                 let key = build_key("pods", Some(namespace), pod_name);
                 let fresh_pod: Pod = match self.storage.get(&key).await {
-                    Ok(Some(p)) => p,
+                    Ok(p) => p,
                     _ => pod.clone(),
                 };
 
@@ -967,7 +967,7 @@ impl Kubelet {
 
                                 let key = build_key("pods", Some(namespace), pod_name);
                                 let mut new_pod: Pod = match self.storage.get(&key).await {
-                                    Ok(Some(p)) => p,
+                                    Ok(p) => p,
                                     _ => pod.clone(),
                                 };
                                 if let Some(ref mut status) = new_pod.status {
@@ -988,7 +988,7 @@ impl Kubelet {
                                     // All containers exited successfully — re-read for fresh RV
                                     let key = build_key("pods", Some(namespace), pod_name);
                                     let mut new_pod: Pod = match self.storage.get(&key).await {
-                                        Ok(Some(p)) => p,
+                                        Ok(p) => p,
                                         _ => pod.clone(),
                                     };
                                     if let Some(ref mut status) = new_pod.status {
@@ -1056,7 +1056,7 @@ impl Kubelet {
                                 // Update pod status — re-read from storage for fresh resourceVersion
                                 let key = build_key("pods", Some(namespace), pod_name);
                                 let mut new_pod: Pod = match self.storage.get(&key).await {
-                                    Ok(Some(p)) => p,
+                                    Ok(p) => p,
                                     _ => pod.clone(),
                                 };
                                 if let Some(ref mut status) = new_pod.status {
@@ -1199,7 +1199,7 @@ impl Kubelet {
                                     // Update status with incremented restart counts — re-read for fresh RV
                                     let key = build_key("pods", Some(namespace), pod_name);
                                     let mut new_pod: Pod = match self.storage.get(&key).await {
-                                        Ok(Some(p)) => p,
+                                        Ok(p) => p,
                                         _ => pod.clone(),
                                     };
                                     if let Some(ref mut status) = new_pod.status {
@@ -1293,7 +1293,7 @@ impl Kubelet {
 
                                 let key = build_key("pods", Some(namespace), pod_name);
                                 let mut new_pod: Pod = match self.storage.get(&key).await {
-                                    Ok(Some(p)) => p,
+                                    Ok(p) => p,
                                     _ => pod.clone(),
                                 };
                                 if let Some(ref mut status) = new_pod.status {
@@ -1335,7 +1335,7 @@ impl Kubelet {
                                     // All containers exited 0 — transition to Succeeded
                                     let key = build_key("pods", Some(namespace), pod_name);
                                     let mut new_pod: Pod = match self.storage.get(&key).await {
-                                        Ok(Some(p)) => p,
+                                        Ok(p) => p,
                                         _ => pod.clone(),
                                     };
                                     if let Some(ref mut status) = new_pod.status {
@@ -1352,10 +1352,12 @@ impl Kubelet {
                             let pod_ip = self.runtime.get_pod_ip(pod_name).await.ok().flatten();
 
                             // Re-read pod from storage to get latest resourceVersion
+                            // to avoid CAS conflicts when other controllers have
+                            // updated the pod since we last read it.
                             let key = build_key("pods", Some(namespace), pod_name);
-                            let mut new_pod: Pod = match self.storage.get(&key).await {
-                                Ok(Some(p)) => p,
-                                _ => pod.clone(),
+                            let mut new_pod: Pod = match self.storage.get::<Pod>(&key).await {
+                                Ok(p) => p,
+                                Err(_) => pod.clone(),
                             };
                             if let Some(ref mut status) = new_pod.status {
                                 status.container_statuses = Some(container_statuses);
@@ -1374,14 +1376,28 @@ impl Kubelet {
                                 }
                             }
 
-                            let key = build_key(
-                                "pods",
-                                new_pod.metadata.namespace.as_deref(),
-                                &new_pod.metadata.name,
-                            );
-
                             if let Err(e) = self.storage.update(&key, &new_pod).await {
-                                debug!("Failed to update pod status: {}", e);
+                                // CAS conflict — re-read and retry once
+                                debug!("Pod status update CAS conflict, retrying: {}", e);
+                                if let Ok(mut fresh_pod) = self.storage.get::<Pod>(&key).await {
+                                    if let Some(ref mut status) = fresh_pod.status {
+                                        status.container_statuses = new_pod.status.as_ref()
+                                            .and_then(|s| s.container_statuses.clone());
+                                        status.conditions = new_pod.status.as_ref()
+                                            .and_then(|s| s.conditions.clone());
+                                        status.message = new_pod.status.as_ref()
+                                            .and_then(|s| s.message.clone());
+                                        if let Some(ref new_status) = new_pod.status {
+                                            if new_status.pod_ip.is_some() {
+                                                status.pod_ip = new_status.pod_ip.clone();
+                                                status.pod_i_ps = new_status.pod_i_ps.clone();
+                                            }
+                                        }
+                                    }
+                                    if let Err(e2) = self.storage.update(&key, &fresh_pod).await {
+                                        warn!("Failed to update pod status after retry: {}", e2);
+                                    }
+                                }
                             }
                         }
                     }
@@ -1412,7 +1428,7 @@ impl Kubelet {
                         // Update container statuses with incremented restart count
                         let key = build_key("pods", Some(namespace), pod_name);
                         let mut fresh_pod: Pod = match self.storage.get(&key).await {
-                            Ok(Some(p)) => p,
+                            Ok(p) => p,
                             _ => pod.clone(),
                         };
                         if let Some(ref mut status) = fresh_pod.status {
@@ -1455,7 +1471,7 @@ impl Kubelet {
                             // Update container statuses with incremented restart count
                             let key = build_key("pods", Some(namespace), pod_name);
                             let mut fresh_pod: Pod = match self.storage.get(&key).await {
-                                Ok(Some(p)) => p,
+                                Ok(p) => p,
                                 _ => pod.clone(),
                             };
                             if let Some(ref mut status) = fresh_pod.status {
@@ -1492,7 +1508,7 @@ impl Kubelet {
                             info!("Pod {}/{} completed successfully (restartPolicy=OnFailure)", namespace, pod_name);
                             let key = build_key("pods", Some(namespace), pod_name);
                             let mut new_pod: Pod = match self.storage.get(&key).await {
-                                Ok(Some(p)) => p,
+                                Ok(p) => p,
                                 _ => pod.clone(),
                             };
                             if let Some(ref mut status) = new_pod.status {
@@ -1516,7 +1532,7 @@ impl Kubelet {
                         info!("Pod {}/{} terminated (restartPolicy=Never, phase={:?})", namespace, pod_name, terminal_phase);
                         let key = build_key("pods", Some(namespace), pod_name);
                         let mut new_pod: Pod = match self.storage.get(&key).await {
-                            Ok(Some(p)) => p,
+                            Ok(p) => p,
                             _ => pod.clone(),
                         };
                         if let Some(ref mut status) = new_pod.status {
