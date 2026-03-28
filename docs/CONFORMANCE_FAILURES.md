@@ -1,39 +1,40 @@
 # Conformance Issue Tracker
 
-**298 total fixes** | Round 106 IN PROGRESS | 16 failures so far
+**300 total fixes** | Round 106 IN PROGRESS | 17 failures at ~300/441
 
-## Deployed: #1-297 | Pending: #298
+## Deployed: #1-297 | Pending: #298-300
 
-## Round 106 Failures (16 so far)
-| Test | Error | Fix status |
-|------|-------|-----------|
-| statefulset.go:786 | SS probe timeout=0 causes Ready=False loop | **#298** pending deploy |
-| statefulset.go:2479 | SS list/patch/delete | Same probe timeout issue |
+## Round 106 Failures (17)
+| Test | Error | Fix |
+|------|-------|-----|
+| statefulset.go:786 | Probe timeout=0 causes Ready=False | **#298** pending |
 | CRD FieldSelectors | CRD protobuf creation timeout | CRD protobuf decoder |
-| CRD conversion webhook | Webhook deployment timeout | Deployment readiness |
-| ResourceQuota terminating | ResourceQuota scopes | NEW — needs investigation |
-| kubectl replace | Pod image update | NEW — needs investigation |
-| kubectl label | Label update | kubectl issue |
-| kubectl expose | RC services | kubectl issue |
-| Proxy v1 | Pod proxy timeout | Pod startup timeout |
-| RC scale | RC replicas confirm timeout | Rate limiter timeout |
-| RC exceeded quota | RC failure condition | NEW — needs investigation |
-| Events lifecycle | Event update parsing error | MicroTime format |
-| Events API | Event fetch/patch/delete | MicroTime format |
-| FieldValidation CRD | CRD protobuf | CRD decoder |
+| FieldValidation CRD | CRD protobuf creation | CRD protobuf decoder |
+| CRD conversion webhook | Webhook deployment timeout | Kubelet blocking |
+| ResourceQuota terminating | Scope filtering missing | **#300** pending |
+| kubectl replace | Pod image update fails | Needs investigation |
+| kubectl label | Label update fails | Needs investigation |
+| kubectl expose | RC services fails | Needs investigation |
+| Proxy v1 | Pod proxy timeout | Pod not starting |
+| RC scale | RC replicas timeout | Rate limiter |
+| RC exceeded quota | Failure condition | Needs investigation |
+| Events lifecycle | Event MicroTime | **#299** pending |
+| Events API | Event MicroTime | **#299** pending |
+| AdmissionWebhook timeout | Webhook deploy | Kubelet blocking |
+| AdmissionWebhook mutate CR | CRD protobuf | CRD protobuf |
 | Pod InPlace Resize | Resize status | Resize implementation |
-| Secrets immutable | Immutable field update | Secret handler |
-| AdmissionWebhook timeout | Webhook deployment | Deployment readiness |
-| Job backoffLimitPerIndex | Job index tracking | Job controller |
+| Secrets immutable | Immutable update rejected | Secret handler |
 
-## Pending deploy
+## Pending deploy (#298-300)
 | # | Fix |
 |---|-----|
-| 298 | Probe timeout_seconds=0 defaults to 1s |
+| 298 | Probe timeout=0 defaults to 1s |
+| 299 | EventSeries.lastObservedTime MicroTime format |
+| 300 | ResourceQuota scope filtering |
 
 ## Progress
 | Round | Fail | Total | Rate |
 |-------|------|-------|------|
 | 104 | 36 | 441 | 92% |
 | 105 | 43 | 441 | 90% |
-| 106 | 16 | ~150/441 | IN PROGRESS |
+| 106 | 17 | ~300/441 | IN PROGRESS |
