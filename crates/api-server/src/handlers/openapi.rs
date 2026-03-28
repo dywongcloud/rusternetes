@@ -68,28 +68,13 @@ pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     if accept.contains("proto-openapi") || accept.contains("protobuf") {
-        // Wrap JSON in K8s protobuf Unknown format: "k8s\0" + field2(raw JSON bytes)
-        // This allows kubectl to decode the protobuf wrapper and extract JSON
-        let mut pb = Vec::new();
-        pb.extend_from_slice(b"k8s\0");
-        // Field 2 (raw bytes), wire type 2 (length-delimited)
-        pb.push(0x12); // tag = field 2, wire type 2
-        // Varint encode length
-        let len = json_bytes.len();
-        let mut l = len;
-        loop {
-            let mut byte = (l & 0x7f) as u8;
-            l >>= 7;
-            if l > 0 { byte |= 0x80; }
-            pb.push(byte);
-            if l == 0 { break; }
-        }
-        pb.extend_from_slice(&json_bytes);
-
+        // Return 406 Not Acceptable for protobuf requests to force clients to use JSON.
+        // The custom MIME type "application/com.github.proto-openapi.spec.v2@v1.0+protobuf"
+        // causes Go's mime.ParseMediaType to fail with "unexpected content after media subtype".
         return Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "application/com.github.proto-openapi.spec.v2@v1.0+protobuf")
-            .body(Body::from(pb))
+            .status(StatusCode::NOT_ACCEPTABLE)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"message":"protobuf OpenAPI not supported, use application/json"}"#))
             .unwrap();
     }
 
