@@ -6,10 +6,11 @@ Status: IN PROGRESS (~125 failures out of ~350+ tests run so far)
 ## Failure Categories
 
 ### 1. Webhook Deployment Never Becomes Ready (~15 failures)
-**Status:** NOT FIXED
+**Status:** FIXED (commit 52bafcb)
 **Tests:** All `sample-webhook-deployment` and `sample-crd-conversion-webhook-deployment` tests
-**Error:** `deployment status: ReadyReplicas:0, AvailableReplicas:0` - webhook pods never become ready
-**Root Cause:** TBD - pods are created but never reach ready state. Likely kubelet not correctly reporting container readiness back to API server, or readiness probe issue for webhook containers.
+**Error:** `sethostname: invalid argument` - pause container failed to start because pod names > 63 chars exceed Linux hostname limit
+**Root Cause:** Pod names like `sample-webhook-deployment-1ea22597-ec36f15a-...` are 71+ chars. The hostname was set to the full pod name without truncation, causing `runc create` to fail with `sethostname: invalid argument`.
+**Fix:** Truncate hostnames to 63 characters (Linux POSIX limit) in pause container, /etc/hosts generation, and CNI hostname setting.
 **Files:**
 - `crd_conversion_webhook.go:318`
 - Multiple `webhook-*` namespace tests (webhook-2294, 5513, 5360, 3584, 2201, 2181, 6401, 426, 5540, 3725, 8515, 9879, 1793, 8216)
@@ -33,7 +34,7 @@ Status: IN PROGRESS (~125 failures out of ~350+ tests run so far)
 - `field_validation.go:428, 105, 245, 305, 700`
 
 ### 4. Deployment Pods Never Become Ready (~8 failures)
-**Status:** NOT FIXED
+**Status:** LIKELY FIXED by hostname truncation (commit 52bafcb)
 **Tests:** Various deployment, service affinity, statefulset tests
 **Error:** `ReadyReplicas:0, AvailableReplicas:0` or `Gave up waiting for pods to come up`
 **Root Cause:** Related to issue #1 - pods are created but never transition to Ready. This is the core kubelet readiness reporting issue affecting many tests.
@@ -50,10 +51,11 @@ Status: IN PROGRESS (~125 failures out of ~350+ tests run so far)
 - `job.go:588, 422, 553, 755, 817, 974, 623, 236`
 
 ### 6. Watch Resource Version Issues (~3 failures)
-**Status:** NOT FIXED
+**Status:** PARTIALLY FIXED (commit 8ecc830)
 **Tests:** Watch tests
 **Error:** `resource version mismatch, expected X but got Y` / `Timed out waiting for expected watch notification: {DELETED <nil>}`
-**Root Cause:** Watch events may have inconsistent resource versions, or DELETE watch events aren't being sent properly.
+**Root Cause:** etcd watch responses can contain multiple events, but our code only processed the first event per response using `stream.map()` with an early `return`. DELETE events were dropped when batched with MODIFIED events.
+**Fix:** Changed both `watch()` and `watch_from_revision()` to use `flat_map()` with `futures::stream::iter()` to emit all events.
 **Files:**
 - `watch.go:370, 409`
 
@@ -74,10 +76,11 @@ Status: IN PROGRESS (~125 failures out of ~350+ tests run so far)
 - `statefulset.go:2479, 2253, 957, 381, 1092`
 
 ### 9. ReplicationController Issues (~3 failures)
-**Status:** NOT FIXED
+**Status:** PARTIALLY FIXED (commit 52bafcb)
 **Tests:** RC tests
 **Error:** `failed to confirm quantity of replicas` / `rc manager never added failure condition` / pod startup timeout
-**Root Cause:** RC controller missing failure condition reporting, or pod scheduling/startup delays.
+**Root Cause:** RC controller didn't filter Failed/Succeeded pods from replica count, didn't set ReplicaFailure condition for Failed pods, and didn't set observed_generation.
+**Fix:** Filter Failed/Succeeded pods from active count, set ReplicaFailure condition when pods are in Failed phase, set observed_generation, apply ownership filter in post-reconcile recount.
 **Files:**
 - `rc.go:442, 509, 594`
 
@@ -108,10 +111,11 @@ Status: IN PROGRESS (~125 failures out of ~350+ tests run so far)
 - `sysctl.go:99, 153`
 
 ### 13. Service Account Token Issues (~4 failures)
-**Status:** NOT FIXED
+**Status:** PARTIALLY FIXED (commit a863f99)
 **Tests:** Service account tests
 **Error:** `expected single authentication.kubernetes.io/pod-name extra info item` / `the server rejected our request` / `the server does not allow this method`
-**Root Cause:** TokenRequest API or SA token projection not fully implemented.
+**Root Cause:** JWT claims didn't include pod binding info. TokenReview responses were missing pod-name, pod-uid, node-name extra info.
+**Fix:** Added pod_name, pod_uid, node_name to ServiceAccountClaims. TokenRequest handler sets them from BoundObjectReference. TokenReview returns them as extra info.
 **Files:**
 - `service_accounts.go:151, 667, 792, 898`
 - `certificates.go:364`
