@@ -1,16 +1,17 @@
 # Conformance Issue Tracker
 
-**301 total fixes** | Round 106 IN PROGRESS | 17 failures at ~300/441
+**302 total fixes** | Round 106 IN PROGRESS | 18 failures at ~300/441
 
 ## Deployed: #1-297 | Pending: #298-301
 
-## Pending deploy (#298-301)
+## Pending deploy (#298-302)
 | # | Fix |
 |---|-----|
 | 298 | Probe timeout=0 defaults to 1s |
 | 299 | EventSeries.lastObservedTime MicroTime |
 | 300 | ResourceQuota scope filtering |
 | 301 | OpenAPI v2 protobuf wrapper for kubectl |
+| 302 | Immutable secrets allow metadata updates |
 
 ## Round 106 Failures (17)
 | Test | Fix |
