@@ -619,7 +619,8 @@ pub async fn update(
         }
     }
 
-    // Increment generation if spec changed
+    // Increment generation if spec changed — use STORED generation, not client's
+    pod.metadata.generation = old_pod.metadata.generation;
     let new_pod_value = serde_json::to_value(&pod)
         .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
     crate::handlers::lifecycle::maybe_increment_generation(
