@@ -16,7 +16,7 @@
 | builder.go:97 (x2) | kubectl -f - protobuf OpenAPI | OpenAPI protobuf format | **FIXED #281** pending deploy |
 | runtime.go:162 | Empty container statuses | Container removed before inspect | **FIXED #283** pending deploy |
 | webhook.go:1133 | Webhook deployment not ready | Webhook pod startup timing | Readiness-related |
-| expansion.go:345 | subPathExpr pod not running | Annotation empty on first sync | Needs subPathExpr fix |
+| expansion.go:345 | subPathExpr pod not running | Kubelet sync blocked 4min on slow Docker/storage op | Needs kubelet timeout handling |
 
 ## Pending deploy
 | # | Description |
