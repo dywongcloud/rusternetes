@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**323 total fixes** | Round 108 in progress | ~155 failures on old code, 11 fixes pending redeploy
+**323 total fixes** | Round 108 complete | 178 failures / 441 tests (60% pass) | 11 fixes pending redeploy
 
 ## Deployed: #1-312 | Pending: #313-323
 
@@ -22,34 +22,41 @@
 
 **Estimated total impact: ~75+ failures resolved** (pending redeploy to verify)
 
-## Round 108 Failures (22 categories)
+## Round 108 Final Results: 263 Passed | 178 Failed | 441 Total
 
-| # | Test | Error | Fix/Status |
-|---|------|-------|-----------|
-| 1 | Webhook deployments (~15) | `sethostname: invalid argument` | **FIXED** #313 + #319 |
-| 2 | CRD creation/watch (~7) | `context deadline exceeded` | **FIXED** #322 (retry status update + binary extraction) |
-| 3 | CRD field validation (~5) | `key must be a string` | PARTIALLY FIXED #322 (binary body JSON extraction) |
-| 4 | Deployment pods not ready (~8) | `ReadyReplicas:0` / `missing field 'kind'` | **FIXED** #313 + #319 + #317 |
-| 5 | Job completion (~8) | `Timed out` | LIKELY FIXED by #319 |
-| 6 | Watch DELETE events (~3) | `Timed out waiting for {DELETED}` | **FIXED** #315 |
-| 7 | ResourceQuota (~5) | `Expected an error` | PARTIALLY FIXED #321 (service quotas added) |
-| 8 | StatefulSet scaling (~5) | `scaled 3 -> 2` / timeouts | LIKELY FIXED by #319 |
-| 9 | RC failure conditions (~4) | `never added failure condition` | **FIXED** #314 + #319 |
-| 10 | ReplicaSet scaling (~3) | `failed to scale` | LIKELY FIXED by #319 |
-| 11 | Init containers (~2) | `PodCondition nil` | LIKELY FIXED by #319 |
-| 12 | Pod runtime status (~4) | `container statuses []` | PARTIALLY FIXED by #319 |
-| 13 | SA token extra info (~4) | `missing pod-name extra` | PARTIALLY FIXED #316 |
-| 14 | LimitRange defaults (~1) | `cpu expected 300m actual 100m` | **FIXED** #321 (requests default to limits) |
-| 15 | Network/service (~7) | service not reachable / timeouts | LIKELY PARTIALLY FIXED by #319 |
-| 16 | /etc/hosts (~1) | `not kubelet managed` | **FIXED** #323 (copy hosts into pause container) |
-| 17 | kubectl builder (~7) | `mime: unexpected content` | **FIXED** #318 |
-| 18 | Scheduler preemption (~4) | `context deadline exceeded` | LIKELY PARTIALLY FIXED by #319 |
-| 19 | EmptyDir permissions (~5) | `perms -rwxr-xr-x expected -rwxrwxrwx` | **FIXED** #321 (tmpfs for all emptyDir + mode=1777) |
-| 20 | Aggregated discovery (~3) | `context deadline exceeded` | **FIXED** #323 (Accept header preference) |
-| 21 | ConfigMap immutable (~2) | `ConfigMap is immutable` | PARTIALLY FIXED #320 |
-| 22 | Misc (~8+) | various | VARIES (see details below) |
+| # | Test | Count | Error | Fix/Status |
+|---|------|-------|-------|-----------|
+| 1 | Webhook deployments | ~15 | `sethostname: invalid argument` | **FIXED** #313 + #319 |
+| 2 | CRD creation/watch/openapi | 8 | `context deadline exceeded` | **FIXED** #322 (retry + binary extraction) |
+| 3 | CRD field validation | 6 | `key must be a string` / strict decode | PARTIALLY FIXED #322 |
+| 4 | Deployment pods not ready | 7 | `ReadyReplicas:0` / `missing field 'kind'` | **FIXED** #313 + #319 + #317 |
+| 5 | Job completion / SuccessPolicy | 10 | `Timed out` / assertion failures | LIKELY FIXED by #319 |
+| 6 | Watch DELETE events | 4 | `Timed out waiting for {DELETED}` / RV mismatch | **FIXED** #315 |
+| 7 | ResourceQuota | 6 | `Expected an error` / scoped quota / status timeout | PARTIALLY FIXED #321 (service quotas) |
+| 8 | StatefulSet scaling | 5 | `scaled 3 -> 2` / timeouts | LIKELY FIXED by #319 |
+| 9 | RC issues | 5 | `never added failure condition` / timeouts | **FIXED** #314 + #319 |
+| 10 | ReplicaSet scaling | 4 | `failed to scale` / timeouts | LIKELY FIXED by #319 |
+| 11 | Init containers | 2 | `PodCondition nil` / timeout | LIKELY FIXED by #319 |
+| 12 | Pod runtime status | 5 | `container statuses []` / timeouts | PARTIALLY FIXED by #319 |
+| 13 | SA token extra info | 4 | `missing pod-name extra` / method not allowed | PARTIALLY FIXED #316 |
+| 14 | LimitRange defaults | 1 | `cpu expected 300m actual 100m` | **FIXED** #321 |
+| 15 | Network/service | 11 | service not reachable / curl fail / timeouts | LIKELY PARTIALLY FIXED by #319 |
+| 16 | /etc/hosts | 1 | `not kubelet managed` | **FIXED** #323 |
+| 17 | kubectl builder | 8 | `mime: unexpected content` | **FIXED** #318 |
+| 18 | Scheduler preemption/predicates | 7 | `context deadline exceeded` / timeout | LIKELY PARTIALLY FIXED by #319 |
+| 19 | EmptyDir permissions | 5 | `-rwxr-xr-x expected -rwxrwxrwx` | **FIXED** #321 |
+| 20 | Aggregated discovery | 3 | `context deadline exceeded` | **FIXED** #323 |
+| 21 | ConfigMap/secrets volume | 3 | `ConfigMap is immutable` / volume issues | PARTIALLY FIXED #320 |
+| 22 | DaemonSet / ControllerRevision | 4 | controller revisions not created / timeouts | LIKELY FIXED by #319 |
+| 23 | Garbage Collector / Orphan | 1 | RS ownerRef not removed on orphan delete | LIKELY FIXED by #314 (orphan handling) |
+| 24 | Namespace lifecycle | 2 | namespace deleted unexpectedly | LIKELY FIXED by #319 (CAS re-reads) |
+| 25 | ValidatingAdmissionPolicy | 2 | VAP policy not enforced | LIKELY FIXED by #319 (pod status for marker) |
+| 26 | PodDisruptionBudget / Eviction | 2 | pod eviction timeout / not evicted | LIKELY FIXED by #319 |
+| 27 | Taints / Tolerations | 1 | pods not evicted | LIKELY FIXED by #319 |
+| 28 | Service latency | 1 | `missing field 'selector'` | LIKELY FIXED by #317 (TypeMeta) |
+| 29 | Conformance framework | 1 | resourceclaims status patch missing | Feature gap (ResourceClaims) |
 
-### Detail: Issue #22 Miscellaneous
+### Detail: Previously listed misc items
 - `expansion.go:419` (x2) - LIKELY FIXED by #319 (CAS re-reads)
 - `runtimeclass.go:153` - LIKELY FIXED by #319 (pod status never persisted)
 - `kubelet.go:127` - LIKELY FIXED by #319 (CAS re-reads)
@@ -77,21 +84,25 @@ Protobuf OpenAPI response used `application/com.github.proto-openapi.spec.v2@v1.
 
 | Category | Before | Expected After |
 |----------|--------|---------------|
-| Hostname truncation fixes | ~20 | 0 |
-| CAS re-read fixes | ~20 | 0 |
-| Other targeted fixes (11 commits) | ~35 | 0 |
-| Feature gaps (CSI, API aggregator) | ~2 | ~2 |
-| Possible remaining edge cases | ~78 | ~20-40 |
+| Hostname truncation (#313) | ~20 | 0 |
+| CAS re-read (#319) | ~30 | 0 |
+| CRD/watch/OpenAPI (#315,#318,#322) | ~20 | ~5 |
+| Pod lifecycle (#314,#317,#321,#323) | ~25 | ~5 |
+| SA/auth/ConfigMap (#316,#320) | ~6 | ~2 |
+| Feature gaps (CSI, aggregator, DRA, resize, sysctl) | ~10 | ~10 |
+| Networking edge cases | ~11 | ~5 |
+| Remaining edge cases | ~56 | ~15 |
 
-**Expected: ~20-40 failures remaining (down from ~155)**
+**Expected: ~20-40 failures remaining (down from 178)**
 
 ## Remaining Feature Gaps (post-redeploy)
 
 1. **CSI storage** - `csistoragecapacity.go` - CSI not implemented
 2. **API aggregator** - `aggregator.go` - API aggregation not implemented
-3. **Scoped ResourceQuotas** - terminating/not-terminating/best-effort scopes
-4. **Pod resize** - in-place pod resource resize not fully supported
-5. **Sysctl** - sysctl support limited in Docker environment
+3. **ResourceClaims** - `conformance.go:888` - DRA ResourceClaims not implemented
+4. **Scoped ResourceQuotas** - terminating/not-terminating/best-effort scopes
+5. **Pod resize** - in-place pod resource resize (4 failures)
+6. **Sysctl** - sysctl support limited in Docker environment (2 failures)
 
 ## Progress
 | Round | Fail | Total | Rate |
@@ -100,5 +111,5 @@ Protobuf OpenAPI response used `application/com.github.proto-openapi.spec.v2@v1.
 | 105 | 43 | 441 | 90% |
 | 106 | ~25 | 441 | ~94% |
 | 107 | 19 | ~430/441 | ~96% |
-| 108 | ~155 | ~441 | ~65% (old code, pre-deploy) |
-| 108 est | ~20-40 | ~441 | ~91-95% (post-deploy estimate) |
+| 108 | 178 | 441 | 60% (old code, pre-deploy) |
+| 108 est | ~20-40 | 441 | ~91-95% (post-deploy estimate) |
