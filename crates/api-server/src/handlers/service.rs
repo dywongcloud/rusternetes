@@ -190,6 +190,66 @@ pub async fn create(
 
     let key = build_key("services", Some(&namespace), &service.metadata.name);
 
+    // Check ResourceQuota for services
+    {
+        let quota_prefix = format!("/registry/resourcequotas/{}/", namespace);
+        if let Ok(quotas) = state.storage.list::<rusternetes_common::resources::ResourceQuota>(&quota_prefix).await {
+            for quota in &quotas {
+                if let Some(hard) = &quota.spec.hard {
+                    // Count existing services
+                    let svc_prefix = format!("/registry/services/{}/", namespace);
+                    let existing_svcs: Vec<Service> = state.storage.list(&svc_prefix).await.unwrap_or_default();
+
+                    // Check "services" quota
+                    if let Some(limit_str) = hard.get("services") {
+                        if let Ok(limit) = limit_str.parse::<i64>() {
+                            if existing_svcs.len() as i64 + 1 > limit {
+                                return Err(rusternetes_common::Error::Forbidden(format!(
+                                    "exceeded quota: services, requested: 1, used: {}, limited: {}",
+                                    existing_svcs.len(), limit
+                                )));
+                            }
+                        }
+                    }
+
+                    // Check "services.loadbalancers" quota
+                    if matches!(service.spec.service_type, Some(ServiceType::LoadBalancer)) {
+                        if let Some(limit_str) = hard.get("services.loadbalancers") {
+                            if let Ok(limit) = limit_str.parse::<i64>() {
+                                let current_lb = existing_svcs.iter()
+                                    .filter(|s| matches!(s.spec.service_type, Some(ServiceType::LoadBalancer)))
+                                    .count() as i64;
+                                if current_lb + 1 > limit {
+                                    return Err(rusternetes_common::Error::Forbidden(format!(
+                                        "exceeded quota: services.loadbalancers, requested: 1, used: {}, limited: {}",
+                                        current_lb, limit
+                                    )));
+                                }
+                            }
+                        }
+                    }
+
+                    // Check "services.nodeports" quota
+                    if matches!(service.spec.service_type, Some(ServiceType::NodePort | ServiceType::LoadBalancer)) {
+                        if let Some(limit_str) = hard.get("services.nodeports") {
+                            if let Ok(limit) = limit_str.parse::<i64>() {
+                                let current_np = existing_svcs.iter()
+                                    .filter(|s| matches!(s.spec.service_type, Some(ServiceType::NodePort | ServiceType::LoadBalancer)))
+                                    .count() as i64;
+                                if current_np + 1 > limit {
+                                    return Err(rusternetes_common::Error::Forbidden(format!(
+                                        "exceeded quota: services.nodeports, requested: 1, used: {}, limited: {}",
+                                        current_np, limit
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
         info!(

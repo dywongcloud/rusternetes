@@ -2718,15 +2718,18 @@ impl ContainerRuntime {
                     // Use tmpfs for emptyDir when:
                     // - medium: Memory (explicit tmpfs request)
                     // - fsGroup is set (needs proper chmod support that virtiofs lacks)
-                    let has_fs_group = pod.spec.as_ref()
-                        .and_then(|s| s.security_context.as_ref())
-                        .and_then(|sc| sc.fs_group)
-                        .is_some();
-                    let use_tmpfs = (is_memory_medium || has_fs_group) && empty_dir_volumes.contains(&mount.name) && expanded_sub_path.is_none();
+                    // - Any emptyDir volume (virtiofs on Docker Desktop doesn't support chmod,
+                    //   causing permission tests to fail; tmpfs supports full POSIX permissions)
+                    let use_tmpfs = empty_dir_volumes.contains(&mount.name) && expanded_sub_path.is_none();
 
                     if use_tmpfs {
-                        // Use tmpfs — supports proper chmod unlike virtiofs bind mounts
-                        let opts = if read_only { "ro".to_string() } else { String::new() };
+                        // Use tmpfs — supports proper chmod unlike virtiofs bind mounts.
+                        // Set mode=1777 (world-writable + sticky bit) to match K8s emptyDir behavior.
+                        let opts = if read_only {
+                            "ro,mode=1777".to_string()
+                        } else {
+                            "mode=1777".to_string()
+                        };
                         tmpfs_mounts.insert(mount.mount_path.clone(), opts);
                     } else {
                         let ro_suffix = if read_only { ":ro" } else { "" };

@@ -153,6 +153,15 @@ pub async fn apply_limit_range<S: Storage>(
                             }
                         }
 
+                        // K8s rule: if limits are set but requests are not, default
+                        // requests to the limits value
+                        if let Some(ref limits) = resources.limits {
+                            let requests = resources.requests.get_or_insert_with(HashMap::new);
+                            for (key, value) in limits {
+                                requests.entry(key.clone()).or_insert_with(|| value.clone());
+                            }
+                        }
+
                         // Validate min constraints
                         if let Some(min) = &limit_item.min {
                             if !validate_min_resources(resources, min, &container.name)? {
