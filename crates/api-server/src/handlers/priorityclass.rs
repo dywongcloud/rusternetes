@@ -110,6 +110,15 @@ pub async fn update(
 
     let key = build_key("priorityclasses", None, &name);
 
+    // Validate immutable fields — value cannot be changed after creation
+    if let Ok(existing) = state.storage.get::<PriorityClass>(&key).await {
+        if existing.value != priority_class.value {
+            return Err(rusternetes_common::Error::InvalidResource(format!(
+                "PriorityClass.value: Invalid value: \"{}\": field is immutable", priority_class.value
+            )));
+        }
+    }
+
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
         info!(
@@ -224,7 +233,36 @@ pub async fn list(
 }
 
 // Use the macro to create a PATCH handler
-crate::patch_handler_cluster!(patch, PriorityClass, "priorityclasses", "scheduling.k8s.io");
+pub async fn patch(
+    state: axum::extract::State<std::sync::Arc<crate::state::ApiServerState>>,
+    auth_ctx: axum::Extension<crate::middleware::AuthContext>,
+    path: axum::extract::Path<String>,
+    query: axum::extract::Query<std::collections::HashMap<String, String>>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> rusternetes_common::Result<axum::Json<PriorityClass>> {
+    let name = path.0.clone();
+    // Get existing value before patch
+    let key = build_key("priorityclasses", None, &name);
+    let existing_value = state.storage.get::<PriorityClass>(&key).await.ok().map(|pc| pc.value);
+
+    // Delegate to generic patch
+    let result = crate::handlers::generic_patch::patch_cluster_resource::<PriorityClass>(
+        state, auth_ctx, axum::extract::Path(name), query, headers, body,
+        "priorityclasses", "scheduling.k8s.io",
+    ).await?;
+
+    // Validate immutable field wasn't changed
+    if let Some(old_value) = existing_value {
+        if result.0.value != old_value {
+            return Err(rusternetes_common::Error::InvalidResource(format!(
+                "PriorityClass.value: Invalid value: \"{}\": field is immutable", result.0.value
+            )));
+        }
+    }
+
+    Ok(result)
+}
 
 pub async fn deletecollection_priorityclasses(
     State(state): State<Arc<ApiServerState>>,
