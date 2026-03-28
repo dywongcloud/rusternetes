@@ -388,21 +388,23 @@ impl Storage for EtcdStorage {
             .await
             .map_err(|e| Error::Storage(format!("Failed to create watch from revision {}: {}", revision, e)))?;
         info!("Started watching prefix: {} from revision {}", prefix, revision);
-        let watch_stream = stream.map(move |watch_resp| {
-            match watch_resp {
+        // Use flat_map to handle multiple events per etcd watch response.
+        // etcd can batch multiple events into a single response, and we must
+        // emit all of them — not just the first one.
+        let watch_stream = stream.flat_map(move |watch_resp| {
+            let events: Vec<Result<WatchEvent>> = match watch_resp {
                 Ok(resp) => {
-                    for event in resp.events() {
+                    resp.events().iter().map(|event| {
                         let key = event
                             .kv()
                             .map(|kv| kv.key_str().unwrap_or("").to_string())
                             .unwrap_or_default();
-                        return match event.event_type() {
+                        match event.event_type() {
                             etcd_client::EventType::Put => {
                                 let raw_value = event
                                     .kv()
                                     .map(|kv| String::from_utf8_lossy(kv.value()).to_string())
                                     .unwrap_or_default();
-                                // Inject resourceVersion from etcd mod_revision
                                 let mod_revision = event.kv().map(|kv| kv.mod_revision()).unwrap_or(0);
                                 let value = if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&raw_value) {
                                     if let Some(metadata) = v.get_mut("metadata") {
@@ -438,14 +440,12 @@ impl Storage for EtcdStorage {
                                 };
                                 Ok(WatchEvent::Deleted(key, prev_value))
                             }
-                        };
-                    }
-                    // No events in this response — return a dummy Added event
-                    // that the watch handler will ignore
-                    Err(Error::Storage("empty watch response".to_string()))
+                        }
+                    }).collect()
                 }
-                Err(e) => Err(Error::Storage(format!("Watch error: {}", e))),
-            }
+                Err(e) => vec![Err(Error::Storage(format!("Watch error: {}", e)))],
+            };
+            futures::stream::iter(events)
         });
         Ok(Box::pin(watch_stream))
     }
@@ -462,17 +462,18 @@ impl Storage for EtcdStorage {
 
         info!("Started watching prefix: {}", prefix);
 
-        // Convert etcd watch stream to our WatchStream
-        let watch_stream = stream.map(move |watch_resp| {
-            match watch_resp {
+        // Convert etcd watch stream to our WatchStream.
+        // Use flat_map to handle multiple events per etcd watch response.
+        let watch_stream = stream.flat_map(move |watch_resp| {
+            let events: Vec<Result<WatchEvent>> = match watch_resp {
                 Ok(resp) => {
-                    for event in resp.events() {
+                    resp.events().iter().map(|event| {
                         let key = event
                             .kv()
                             .map(|kv| kv.key_str().unwrap_or("").to_string())
                             .unwrap_or_default();
 
-                        return match event.event_type() {
+                        match event.event_type() {
                             etcd_client::EventType::Put => {
                                 let raw_value = event
                                     .kv()
@@ -480,7 +481,6 @@ impl Storage for EtcdStorage {
                                     .unwrap_or("")
                                     .to_string();
 
-                                // Inject resourceVersion from etcd mod_revision into the JSON value
                                 let mod_revision = event.kv().map(|kv| kv.mod_revision()).unwrap_or(0);
                                 let value = if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&raw_value) {
                                     if let Some(metadata) = v.get_mut("metadata") {
@@ -493,7 +493,6 @@ impl Storage for EtcdStorage {
                                     raw_value
                                 };
 
-                                // Check if this is a new key or an update
                                 if event.kv().map(|kv| kv.version()).unwrap_or(0) == 1 {
                                     Ok(WatchEvent::Added(key, value))
                                 } else {
@@ -501,7 +500,6 @@ impl Storage for EtcdStorage {
                                 }
                             }
                             etcd_client::EventType::Delete => {
-                                // Get the previous value from prev_kv and inject resourceVersion
                                 let raw_prev = event
                                     .prev_kv()
                                     .and_then(|kv| kv.value_str().ok())
@@ -520,12 +518,12 @@ impl Storage for EtcdStorage {
                                 };
                                 Ok(WatchEvent::Deleted(key, prev_value))
                             }
-                        };
-                    }
-                    Err(Error::Storage("Empty watch response".to_string()))
+                        }
+                    }).collect()
                 }
-                Err(e) => Err(Error::Storage(format!("Watch error: {}", e))),
-            }
+                Err(e) => vec![Err(Error::Storage(format!("Watch error: {}", e)))],
+            };
+            futures::stream::iter(events)
         });
 
         Ok(Box::pin(watch_stream))
