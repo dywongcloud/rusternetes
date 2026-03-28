@@ -1,7 +1,8 @@
 # Conformance Test Failures - Round 108
 
 Test run started: 2026-03-28 05:17 UTC
-Status: IN PROGRESS (~125 failures out of ~350+ tests run so far)
+Status: IN PROGRESS (~153 failures so far, tests still running)
+Fixes applied: 6 commits (hostname, watch events, RC conditions, SA tokens, TypeMeta, OpenAPI MIME)
 
 ## Failure Categories
 
@@ -34,19 +35,21 @@ Status: IN PROGRESS (~125 failures out of ~350+ tests run so far)
 - `field_validation.go:428, 105, 245, 305, 700`
 
 ### 4. Deployment Pods Never Become Ready (~8 failures)
-**Status:** LIKELY FIXED by hostname truncation (commit 52bafcb)
+**Status:** PARTIALLY FIXED
+- Hostname truncation (commit 52bafcb) fixes pods failing to start with long names
+- TypeMeta injection (commit d800695) fixes `missing field 'kind'` errors on status updates
 **Tests:** Various deployment, service affinity, statefulset tests
-**Error:** `ReadyReplicas:0, AvailableReplicas:0` or `Gave up waiting for pods to come up`
-**Root Cause:** Related to issue #1 - pods are created but never transition to Ready. This is the core kubelet readiness reporting issue affecting many tests.
+**Error:** `ReadyReplicas:0, AvailableReplicas:0` or `Gave up waiting for pods to come up` or `missing field 'kind'`
+**Root Cause:** Multiple root causes: (a) hostname > 63 chars caused pause container failure, (b) status update response missing TypeMeta
 **Files:**
 - `deployment.go:769, 520, 1678, 995, 814, 352, 1230`
 - `service.go:276` (affinity-nodeport-transition, affinity-clusterip-transition)
 
-### 5. Job Completion Timeout (~6 failures)
+### 5. Job Completion Timeout (~8 failures)
 **Status:** NOT FIXED
-**Tests:** Job tests
+**Tests:** Job tests (primarily SuccessPolicy-related)
 **Error:** `failed to ensure job completion: Timed out` / various job assertion failures
-**Root Cause:** Job controller likely has issues with completion tracking or the pods backing jobs aren't reaching completion properly.
+**Root Cause:** Most failures are around Job SuccessPolicy (v1.28+ feature) — succeededIndexes and succeededCount rules. The job controller has SuccessPolicy logic but it may not trigger correctly. Some may also be fixed by hostname truncation.
 **Files:**
 - `job.go:588, 422, 553, 755, 817, 974, 623, 236`
 
@@ -63,7 +66,7 @@ Status: IN PROGRESS (~125 failures out of ~350+ tests run so far)
 **Status:** NOT FIXED
 **Tests:** Resource quota tests
 **Error:** `Expected an error to have occurred` (quota should reject over-limit requests)
-**Root Cause:** ResourceQuota admission is not implemented or not rejecting requests that exceed quota.
+**Root Cause:** Quota enforcement only applies to pods (CPU/memory/count). Missing: service quota (NodePort/LoadBalancer limits), scoped quotas (terminating/not-terminating/best-effort), count/ prefixed quotas for non-pod resources. Quota status calculation may also timeout.
 **Files:**
 - `resource_quota.go:142, 803, 478, 896, 1196`
 
@@ -142,15 +145,16 @@ Status: IN PROGRESS (~125 failures out of ~350+ tests run so far)
 **Status:** NOT FIXED
 **Tests:** kubelet_etc_hosts test
 **Error:** `/etc/hosts file should be kubelet managed` - contains Docker-default entries instead of kubelet-managed entries
-**Root Cause:** Kubelet doesn't inject /etc/hosts into pods. Docker provides default /etc/hosts.
+**Root Cause:** Kubelet creates the hosts file correctly but the Docker bind mount may not take effect for containers using `container:pause` network mode. Docker manages /etc/hosts for containers sharing network namespaces, overriding our bind mount.
 **Files:**
 - `kubelet_etc_hosts.go:143`
 
 ### 17. kubectl Proxy / Builder Issues (~7 failures)
-**Status:** NOT FIXED
+**Status:** PARTIALLY FIXED (commit 628911b)
 **Tests:** kubectl tests
-**Error:** `Failed to parse /api output: unexpected end of JSON input` / builder.go failures
-**Root Cause:** API discovery endpoint returning unexpected format, or kubectl apply/create issues.
+**Error:** `Failed to parse /api output: unexpected end of JSON input` / builder.go `failed to download openapi: mime: unexpected content after media subtype`
+**Root Cause:** OpenAPI v2 protobuf response used non-standard MIME type with `@` character that Go's mime.ParseMediaType rejects.
+**Fix:** Return 406 for protobuf OpenAPI requests to force kubectl to use JSON.
 **Files:**
 - `kubectl.go:1881`
 - `builder.go:97` (x6)
@@ -164,27 +168,55 @@ Status: IN PROGRESS (~125 failures out of ~350+ tests run so far)
 - `predicates.go:1102` (x2)
 - `preemption.go:1025, 268, 181`
 
-### 19. Miscellaneous (~5 failures)
+### 19. EmptyDir Volume Permissions (~5 failures)
+**Status:** NOT FIXED
+**Tests:** Volume tests via output.go framework
+**Error:** `perms of file "/test-volume/test-file": -rwxr-xr-x` expected `-rwxrwxrwx`
+**Root Cause:** emptyDir with Memory medium doesn't use tmpfs. File permissions are limited by Docker's default umask (0022).
+**Files:**
+- `output.go:263` (x5)
+
+### 20. Aggregated Discovery (~3 failures)
+**Status:** NOT FIXED
+**Tests:** Aggregated discovery tests
+**Error:** `context deadline exceeded` - waiting for aggregated API discovery
+**Root Cause:** Aggregated discovery API not fully implemented.
+**Files:**
+- `aggregated_discovery.go:336, 227`
+
+### 21. Miscellaneous (~10+ failures)
 **Status:** NOT FIXED
 - `expansion.go:419` (x2) - Environment variable expansion timeout
 - `configmap_volume.go:547, 415` - ConfigMap volume issues
 - `runtimeclass.go:153` - RuntimeClass not supported
 - `kubelet.go:127` - Kubelet test failure
-- `pods.go:600` - Pod lifecycle issue
-- `events.go:124` - Events test failure
+- `pods.go:600, 575` - Pod lifecycle issues
+- `events.go:124`, `core_events.go:144` - Events test failures
 - `empty_dir_wrapper.go:406` - EmptyDir wrapper issue
 - `csistoragecapacity.go:190` - CSI storage capacity
 - `aggregator.go:359` - API aggregator
-- `aggregated_discovery.go:336` - Aggregated discovery
+- `sysctl.go:99, 153` - Sysctl tests (not supported in Docker)
+- `pod_resize.go:857` (x4) - Pod resize not supported
 
-## Priority Order for Fixes
+## Fixes Applied (6 commits)
 
-1. **Pod Readiness Reporting** (Issues #1, #4) - Highest impact, ~23 failures
-2. **CRD Creation/Watch** (Issue #2) - 7 failures
-3. **ResourceQuota Admission** (Issue #7) - 5 failures
-4. **Job Controller** (Issue #5) - 6 failures
-5. **CRD Field Validation** (Issue #3) - 4 failures
-6. **Watch Resource Versions** (Issue #6) - 3 failures
-7. **Service Account Tokens** (Issue #13) - 4 failures
-8. **StatefulSet Controller** (Issue #8) - 4 failures
+| Commit | Fix | Est. Impact |
+|--------|-----|-------------|
+| 52bafcb | Hostname truncation to 63 chars | ~20+ failures |
+| 8ecc830 | Watch event batching (flat_map) | ~3 failures |
+| a863f99 | SA token pod binding info | ~2 failures |
+| d800695 | TypeMeta in status update responses | ~3 failures |
+| 628911b | OpenAPI MIME type (406 for protobuf) | ~6 failures |
+| 52bafcb | RC failure conditions & observed_generation | ~1 failure |
+
+## Priority Order for Remaining Fixes
+
+1. **CRD Creation/Watch** (Issue #2) - 7 failures, likely protobuf decode
+2. **Job SuccessPolicy** (Issue #5) - 8 failures
+3. **Network/Service** (Issue #15) - 7 failures (service.go)
+4. **ResourceQuota Admission** (Issue #7) - 5 failures
+5. **CRD Field Validation** (Issue #3) - 5 failures
+6. **StatefulSet Controller** (Issue #8) - 5 failures
+7. **Scheduling/Preemption** (Issue #18) - 4 failures
+8. **EmptyDir Permissions** (Issue #19) - 5 failures
 9. **Everything else** - individual fixes
