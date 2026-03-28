@@ -57,12 +57,9 @@ mod micro_time {
     {
         match date {
             Some(dt) => {
-                // Only include microseconds if the timestamp actually has sub-second precision
-                let s = if dt.timestamp_subsec_nanos() > 0 {
-                    dt.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
-                } else {
-                    dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()
-                };
+                // Always include microseconds for MicroTime — K8s Events v1 client
+                // uses time.Parse("2006-01-02T15:04:05.000000Z07:00") which requires .000000
+                let s = dt.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
                 serializer.serialize_str(&s)
             }
             None => serializer.serialize_none(),
