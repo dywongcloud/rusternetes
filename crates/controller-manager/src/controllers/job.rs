@@ -261,7 +261,7 @@ impl<S: Storage> JobController<S> {
 
                     for rule in rules {
                         let action = rule.get("action").and_then(|a| a.as_str()).unwrap_or("");
-                        if action != "FailJob" { continue; }
+                        if action != "FailJob" && action != "FailIndex" { continue; }
 
                         // Check onExitCodes
                         if let Some(on_exit) = rule.get("onExitCodes") {
@@ -278,8 +278,19 @@ impl<S: Storage> JobController<S> {
                                 }
                             });
                             if matches {
-                                pod_failure_policy_triggered = true;
-                                pod_failure_message = format!("Pod failed with exit code matching FailJob rule");
+                                if action == "FailJob" {
+                                    pod_failure_policy_triggered = true;
+                                    pod_failure_message = format!("Pod failed with exit code matching FailJob rule");
+                                } else if action == "FailIndex" && is_indexed {
+                                    // Mark this pod's index as failed
+                                    let index = pod.metadata.annotations.as_ref()
+                                        .and_then(|a| a.get("batch.kubernetes.io/job-completion-index"))
+                                        .and_then(|v| v.parse::<i32>().ok());
+                                    if let Some(idx) = index {
+                                        // Add to failed count — will be checked in is_failed logic
+                                        failed += 1;
+                                    }
+                                }
                                 break;
                             }
                         }
@@ -297,8 +308,11 @@ impl<S: Storage> JobController<S> {
                                     })).unwrap_or(false)
                                 });
                                 if matches {
-                                    pod_failure_policy_triggered = true;
-                                    pod_failure_message = format!("Pod condition matched FailJob rule");
+                                    if action == "FailJob" {
+                                        pod_failure_policy_triggered = true;
+                                        pod_failure_message = format!("Pod condition matched FailJob rule");
+                                    }
+                                    // FailIndex is handled by the is_failed logic below
                                     break;
                                 }
                             }
