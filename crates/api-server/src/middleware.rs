@@ -844,8 +844,24 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
     }
 
     if metadata_name.is_empty() {
-        tracing::warn!("CRD protobuf decode: metadata_name empty, group='{}', plural='{}', versions={:?}", spec_group, spec_names_plural, spec_version_names);
-        return None;
+        // Try extracting name from the raw bytes directly (string search)
+        if let Ok(raw_str) = std::str::from_utf8(raw) {
+            // Look for strings that look like CRD names (contain dots)
+            for word in raw_str.split(|c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '-') {
+                if word.contains('.') && word.len() > 5 && !word.starts_with('.') && !word.ends_with('.') {
+                    // Likely a CRD name like "foos.example.com"
+                    if spec_group.is_empty() || word.ends_with(&format!(".{}", spec_group)) {
+                        metadata_name = word.to_string();
+                        tracing::info!("CRD protobuf: extracted name '{}' via string search", metadata_name);
+                        break;
+                    }
+                }
+            }
+        }
+        if metadata_name.is_empty() {
+            tracing::warn!("CRD protobuf decode: metadata_name empty, group='{}', plural='{}', versions={:?}", spec_group, spec_names_plural, spec_version_names);
+            return None;
+        }
     }
 
     // Construct a JSON CRD with the extracted fields

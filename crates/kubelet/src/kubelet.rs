@@ -922,6 +922,17 @@ impl Kubelet {
                     }
                 }
 
+                // After processing all containers, mark resize as complete
+                if fresh_pod.status.as_ref().and_then(|s| s.resize.as_deref()) == Some("InProgress") {
+                    let rkey = build_key("pods", Some(namespace), pod_name);
+                    if let Ok(mut rpod) = self.storage.get::<Pod>(&rkey).await {
+                        if let Some(ref mut status) = rpod.status {
+                            status.resize = Some(String::new()); // Empty = resize complete
+                        }
+                        let _ = self.storage.update(&rkey, &rpod).await;
+                    }
+                }
+
                 // Use fresh_pod for all subsequent checks (spec may have been updated by resize PATCH)
                 let pod = &fresh_pod;
 
