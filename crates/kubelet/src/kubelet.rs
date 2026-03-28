@@ -888,7 +888,24 @@ impl Kubelet {
                                     update_config.memory,
                                 ).await {
                                     Ok(_) => {
-                                        debug!("Updated container {} resources", container_name);
+                                        info!("Updated container {} resources (resize)", container_name);
+                                        // Update pod status to reflect resize
+                                        let rkey = build_key("pods", Some(namespace), pod_name);
+                                        if let Ok(mut rpod) = self.storage.get::<Pod>(&rkey).await {
+                                            if let Some(ref mut status) = rpod.status {
+                                                status.resize = Some("InProgress".to_string());
+                                                // Update allocatedResources in container statuses
+                                                if let Some(ref mut cs_list) = status.container_statuses {
+                                                    for cs in cs_list.iter_mut() {
+                                                        if cs.name == container.name {
+                                                            cs.allocated_resources = resources.requests.clone();
+                                                            cs.resources = Some(resources.clone());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            let _ = self.storage.update(&rkey, &rpod).await;
+                                        }
                                     }
                                     Err(e) => debug!("Failed to update container {} resources: {}", container_name, e),
                                 }
