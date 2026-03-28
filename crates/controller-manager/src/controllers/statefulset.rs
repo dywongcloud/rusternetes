@@ -284,7 +284,7 @@ impl<S: Storage> StatefulSetController<S> {
 
         // Update status with accurate counts
         statefulset.status = Some(StatefulSetStatus {
-            replicas: final_current_replicas.min(desired_replicas),
+            replicas: final_current_replicas,
             ready_replicas: Some(final_ready_pods),
             current_replicas: Some(final_current_replicas),
             updated_replicas: Some(updated_count),
