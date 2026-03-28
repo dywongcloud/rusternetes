@@ -52,11 +52,13 @@ pub async fn get_openapi_spec_path() -> Response {
 /// first, then falls back to JSON on 406. We return 406 for protobuf requests
 /// to force kubectl to use JSON, which we can serve.
 pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
-    // Check if client requests protobuf — return 406 to force JSON fallback
+    // Check if client explicitly requests protobuf — return 406 to force JSON fallback.
+    // kubectl sends Accept: application/com.github.proto-openapi.spec.v2@v1.0+protobuf
+    // then retries with application/json on 406.
     let accept = headers.get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    if accept.contains("proto") && !accept.contains("application/json") {
+    if accept.contains("proto-openapi") || accept.contains("protobuf") {
         return Response::builder()
             .status(StatusCode::NOT_ACCEPTABLE)
             .header(header::CONTENT_TYPE, "application/json")
