@@ -46,6 +46,39 @@ fn extract_resource_type_from_uri(uri: &Uri) -> String {
     }
 }
 
+/// Map resource type to Kind and apiVersion for TypeMeta injection.
+fn resource_type_to_kind_api_version(resource_type: &str) -> (String, String) {
+    match resource_type {
+        "pods" => ("Pod".into(), "v1".into()),
+        "services" => ("Service".into(), "v1".into()),
+        "configmaps" => ("ConfigMap".into(), "v1".into()),
+        "secrets" => ("Secret".into(), "v1".into()),
+        "serviceaccounts" => ("ServiceAccount".into(), "v1".into()),
+        "namespaces" => ("Namespace".into(), "v1".into()),
+        "nodes" => ("Node".into(), "v1".into()),
+        "persistentvolumes" => ("PersistentVolume".into(), "v1".into()),
+        "persistentvolumeclaims" => ("PersistentVolumeClaim".into(), "v1".into()),
+        "endpoints" => ("Endpoints".into(), "v1".into()),
+        "replicationcontrollers" => ("ReplicationController".into(), "v1".into()),
+        "resourcequotas" => ("ResourceQuota".into(), "v1".into()),
+        "deployments" => ("Deployment".into(), "apps/v1".into()),
+        "replicasets" => ("ReplicaSet".into(), "apps/v1".into()),
+        "statefulsets" => ("StatefulSet".into(), "apps/v1".into()),
+        "daemonsets" => ("DaemonSet".into(), "apps/v1".into()),
+        "jobs" => ("Job".into(), "batch/v1".into()),
+        "cronjobs" => ("CronJob".into(), "batch/v1".into()),
+        "ingresses" => ("Ingress".into(), "networking.k8s.io/v1".into()),
+        "networkpolicies" => ("NetworkPolicy".into(), "networking.k8s.io/v1".into()),
+        "customresourcedefinitions" => ("CustomResourceDefinition".into(), "apiextensions.k8s.io/v1".into()),
+        "endpointslices" => ("EndpointSlice".into(), "discovery.k8s.io/v1".into()),
+        _ => {
+            let s = resource_type.strip_suffix('s').unwrap_or(resource_type);
+            let kind = format!("{}{}", &s[..1].to_uppercase(), &s[1..]);
+            (kind, "v1".into())
+        }
+    }
+}
+
 /// Generic status update handler
 ///
 /// This handler updates only the status field of a resource while preserving
@@ -155,6 +188,16 @@ pub async fn update_status(
         }
     }
 
+    // Ensure TypeMeta fields are present before saving — some clients (e.g., protobuf)
+    // may strip kind/apiVersion and K8s clients require them in responses.
+    if let Some(obj) = updated_resource.as_object_mut() {
+        if !obj.contains_key("kind") || !obj.contains_key("apiVersion") {
+            let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
+            obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
+            obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+        }
+    }
+
     // Save the updated resource
     let saved: Value = state.storage.update(&key, &updated_resource).await?;
 
@@ -224,6 +267,15 @@ pub async fn update_cluster_status(
             let mut new_metadata = metadata_obj.clone();
             new_metadata.remove("resourceVersion");
             obj.insert("metadata".to_string(), Value::Object(new_metadata));
+        }
+    }
+
+    // Ensure TypeMeta fields are present
+    if let Some(obj) = updated_resource.as_object_mut() {
+        if !obj.contains_key("kind") || !obj.contains_key("apiVersion") {
+            let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
+            obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
+            obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
         }
     }
 
