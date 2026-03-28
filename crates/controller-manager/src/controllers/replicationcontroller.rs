@@ -331,7 +331,11 @@ impl<S: Storage> ReplicationControllerController<S> {
             Some(vec![])
         };
 
-        let mut updated_rc = rc.clone();
+        // Re-read from storage for fresh resourceVersion to avoid CAS conflicts
+        let mut updated_rc: ReplicationController = match self.storage.get(&key).await {
+            Ok(rc) => rc,
+            Err(_) => rc.clone(),
+        };
         updated_rc.status = Some(rusternetes_common::resources::ReplicationControllerStatus {
             replicas: current_replicas,
             fully_labeled_replicas: Some(current_replicas),
