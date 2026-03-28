@@ -1,22 +1,17 @@
 # Conformance Issue Tracker
 
-**281 total fixes** | Round 105 in progress | 1 failure so far
+**281 total fixes** | Round 105 in progress | 7 failures so far
 
-## Round 105 Status
-Fix #270 (readiness persistence) IS WORKING — pods show Ready=True in etcd.
-
-### Current failures
-| Test | Error | Root cause |
-|------|-------|------------|
-| statefulset.go:786 | SS scaling — "Verifying scaled up in order" timeout | Watch event ordering — watch doesn't deliver ADDED events in sequence |
-
-### Known platform limitations
-| Test | Error | Root cause |
-|------|-------|------------|
-| output.go:263 | EmptyDir 0666 | Docker Desktop virtiofs chmod limitation |
-
-## Pending Deploy
-All 12 fixes (#270-281) are deployed in current build.
+## Round 105 Failures
+| Test | Error | Root cause | Fix needed |
+|------|-------|------------|-----------|
+| statefulset.go:786 | SS scaling — watch ordering | Watch doesn't deliver ADDED events in sequence | Watch cache timing |
+| preemption.go:1025 | RS never had availableReplicas | Deployment/RS controller `availableReplicas` not updated | RS controller fix |
+| conformance.go:888 | ResourceClaim apply-patch+yaml | Server doesn't accept apply-patch+yaml content type | Content-type handling |
+| aggregated_discovery.go:227 | CRD not in aggregated discovery | Dynamic CRD groups (#274 code was reverted) | Re-implement #274 |
+| crd_publish_openapi.go:244 | CRD preserving unknown fields | CRD protobuf decoder | Protobuf fix |
+| output.go:282 | Secret volume defaultMode+fsGroup | File permissions on secret volume | fsGroup handling |
+| pods.go:556 | Pod generation != 1 | Pod generation field mismatch | Check generation handling |
 
 ## Progress
 | Round | Fail | Total | Rate |
@@ -25,4 +20,4 @@ All 12 fixes (#270-281) are deployed in current build.
 | 101 | 196 | 441 | 56% |
 | 103 | 30 | 76 | 60% |
 | 104 | 36 | 441 | ~92% |
-| 105 | 1 | ~20/441 | ~95%+ (in progress) |
+| 105 | 7 | ~50/441 | ~86% (test in progress) |
