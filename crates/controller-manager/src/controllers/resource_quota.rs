@@ -59,8 +59,9 @@ impl<S: Storage> ResourceQuotaController<S> {
 
         debug!("Reconciling quota {}/{}", namespace, quota_name);
 
-        // Calculate current resource usage in the namespace
-        let used = self.calculate_usage(namespace).await?;
+        // Calculate current resource usage in the namespace, respecting scopes
+        let scopes = quota.spec.scopes.as_deref().unwrap_or(&[]);
+        let used = self.calculate_usage(namespace, scopes).await?;
 
         // Update quota status
         let mut updated_quota = quota.clone();
@@ -78,17 +79,45 @@ impl<S: Storage> ResourceQuotaController<S> {
         Ok(())
     }
 
-    /// Calculate resource usage in a namespace
-    async fn calculate_usage(&self, namespace: &str) -> Result<HashMap<String, String>> {
+    /// Calculate resource usage in a namespace, respecting quota scopes
+    async fn calculate_usage(&self, namespace: &str, scopes: &[String]) -> Result<HashMap<String, String>> {
         let mut usage = HashMap::new();
 
-        // Count active pods (not Failed/Succeeded)
+        // Count active pods (not Failed/Succeeded), filtered by scopes
         let pod_prefix = format!("/registry/pods/{}/", namespace);
         let all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
         let pods: Vec<&Pod> = all_pods.iter()
             .filter(|p| {
                 let phase = p.status.as_ref().and_then(|s| s.phase.as_ref());
-                !matches!(phase, Some(Phase::Failed) | Some(Phase::Succeeded))
+                if matches!(phase, Some(Phase::Failed) | Some(Phase::Succeeded)) {
+                    return false;
+                }
+                // Apply scope filtering
+                let is_terminating = p.metadata.deletion_timestamp.is_some()
+                    || p.spec.as_ref()
+                        .and_then(|s| s.active_deadline_seconds)
+                        .is_some();
+                for scope in scopes {
+                    match scope.as_str() {
+                        "Terminating" => if !is_terminating { return false; },
+                        "NotTerminating" => if is_terminating { return false; },
+                        "BestEffort" => {
+                            // BestEffort: no requests or limits on any container
+                            let has_resources = p.spec.as_ref().map_or(false, |s| {
+                                s.containers.iter().any(|c| c.resources.is_some())
+                            });
+                            if has_resources { return false; }
+                        },
+                        "NotBestEffort" => {
+                            let has_resources = p.spec.as_ref().map_or(false, |s| {
+                                s.containers.iter().any(|c| c.resources.is_some())
+                            });
+                            if !has_resources { return false; }
+                        },
+                        _ => {}
+                    }
+                }
+                true
             })
             .collect();
         usage.insert("pods".to_string(), pods.len().to_string());
