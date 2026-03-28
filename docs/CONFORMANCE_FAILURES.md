@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**308 total fixes** | Round 107 pending deploy
+**309 total fixes** | Round 107 pending deploy
 
 ## ALL Known Issues
 
@@ -23,10 +23,10 @@
 ### Still unfixed — need more work
 | Test | Error | Root cause |
 |------|-------|------------|
-| CRD protobuf (x4-5) | CRD creation times out | Protobuf decoder — needs debug deploy |
-| AdmissionWebhook (x4) | Webhook deployment timeout | Docker OOM (#307 should help with more memory) |
-| Proxy v1 | Pod proxy timeout | Pod not starting (#307 should help) |
-| Pod InPlace Resize | Resize verification fails | Resize status needs more fields |
+| CRD protobuf (x4-5) | CRD creation times out | **#309** name fallback may help |
+| AdmissionWebhook (x4) | Webhook deployment timeout | #307 + more Docker memory should help |
+| Proxy v1 | Pod proxy timeout | #307 + more Docker memory should help |
+| Pod InPlace Resize | Resize verification fails | **#309** resize completion status |
 | RC scale rate limiter | Client rate limiter timeout | Watch reconnection overhead |
 
 ## Pending deploy (#298-308)
@@ -43,6 +43,7 @@
 | 306 | RC status re-reads from storage (CAS fix) |
 | 307 | Kubelet cleans up stale Created containers |
 | 308 | EmptyDir uses tmpfs when fsGroup set |
+| 309 | Pod resize completion + CRD protobuf name fallback |
 
 ## Progress
 | Round | Fail | Total | Rate |
