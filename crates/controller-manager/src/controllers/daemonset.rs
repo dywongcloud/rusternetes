@@ -88,12 +88,12 @@ impl<S: Storage> DaemonSetController<S> {
         info!("Reconciling DaemonSet {}/{}", namespace, name);
 
         // Ensure a ControllerRevision exists for the current template
-        let template_hash = format!("{:x}", {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            format!("{:?}", daemonset.spec.template).hash(&mut hasher);
-            hasher.finish()
-        });
+        let template_hash = {
+            use sha2::{Sha256, Digest};
+            let serialized = serde_json::to_string(&daemonset.spec.template).unwrap_or_default();
+            let hash = Sha256::digest(serialized.as_bytes());
+            format!("{:010x}", u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8])))
+        };
         let cr_name = format!("{}-{}", name, &template_hash[..10]);
 
         // Check if ControllerRevision already exists before creating
@@ -110,7 +110,17 @@ impl<S: Storage> DaemonSetController<S> {
                 }
             }
 
-            let mut cr = ControllerRevision::new(cr_name.clone(), namespace.clone(), 1);
+            // Count existing revisions to get the next revision number
+            let cr_prefix = rusternetes_storage::build_prefix("controllerrevisions", Some(namespace));
+            let existing_revisions: Vec<ControllerRevision> = self.storage.list(&cr_prefix).await.unwrap_or_default();
+            let max_revision = existing_revisions.iter()
+                .filter(|r| r.metadata.owner_references.as_ref()
+                    .map(|refs| refs.iter().any(|ref_| ref_.uid == daemonset.metadata.uid))
+                    .unwrap_or(false))
+                .map(|r| r.revision)
+                .max()
+                .unwrap_or(0);
+            let mut cr = ControllerRevision::new(cr_name.clone(), namespace.clone(), max_revision + 1);
             cr.metadata.labels = Some(cr_labels);
             cr.metadata.ensure_uid();
             cr.metadata.ensure_creation_timestamp();
@@ -383,12 +393,12 @@ impl<S: Storage> DaemonSetController<S> {
         labels.insert("app".to_string(), daemonset_name.clone());
         labels.insert("controller-uid".to_string(), daemonset.metadata.uid.clone());
         // Add controller-revision-hash label (computed from template)
-        let template_hash = format!("{:x}", {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            format!("{:?}", daemonset.spec.template).hash(&mut hasher);
-            hasher.finish()
-        });
+        let template_hash = {
+            use sha2::{Sha256, Digest};
+            let serialized = serde_json::to_string(&daemonset.spec.template).unwrap_or_default();
+            let hash = Sha256::digest(serialized.as_bytes());
+            format!("{:010x}", u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8])))
+        };
         labels.insert("controller-revision-hash".to_string(), template_hash);
 
         let mut spec = template.spec.clone();
