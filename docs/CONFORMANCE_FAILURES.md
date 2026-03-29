@@ -33,13 +33,11 @@
 | RC watch | 1 | fba0a62 | Watch condition event |
 | Pod client | 1 | 7d40469 | Ephemeral PATCH content-type |
 
-## Failures NOT Fixed (need code changes) (~3)
+## Failures NOT Fixed (~1)
 
 | Category | Count | Error | Status |
 |----------|-------|-------|--------|
-| Expansion | 1 | SubPath validation — kubelet sync timing | Needs faster CAS write |
-| Exec | 1 | Exec command exit code 1 | Container exec environment issue |
-| Runtime | 1 | Container count mismatch | Container status reporting |
+| Runtime | 1 | Container count 0 after 300s | CAS persistence — retry committed |
 
 ## Recently Fixed
 | Category | Commit | Fix |
@@ -52,6 +50,8 @@
 | DaemonSet status (1) | 3efd08d | numberReady uses Ready condition |
 | Runtime termination (2) | 6af1a31 | FallbackToLogsOnError policy + SPDY channel order |
 | VAP binding (1) | 8bcfeb2 | Remove 2-second binding age delay |
+| emptyDir sharing (1) | 7881f80 | Only tmpfs for Memory medium, bind mounts for default |
+| Expansion CAS (1) | 7881f80 | CAS retry for CreateContainerError status write |
 
 ## Timeout Failures (~24) — caused by pods not becoming Ready fast enough
 
