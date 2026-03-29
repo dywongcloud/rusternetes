@@ -441,12 +441,14 @@ impl<S: Storage> StatefulSetController<S> {
     /// Compute a revision string from the pod template spec.
     /// This produces a deterministic hash like "controller-revision-hash-<hash>".
     fn compute_revision(template: &rusternetes_common::resources::PodTemplateSpec) -> String {
-        let serialized = serde_json::to_string(&template.spec).unwrap_or_default();
-        let mut hasher = DefaultHasher::new();
-        serialized.hash(&mut hasher);
-        let hash = hasher.finish();
-        // Format as a 10-char hex string, similar to Kubernetes controller revision hashes
-        format!("{:010x}", hash)
+        // Use SHA-256 for deterministic hashing that captures template changes.
+        // DefaultHasher is NOT deterministic across program restarts and may
+        // produce the same hash for different inputs within the same run.
+        use sha2::{Sha256, Digest};
+        let serialized = serde_json::to_string(&template).unwrap_or_default();
+        let hash = Sha256::digest(serialized.as_bytes());
+        // Format as a 10-char hex string from the hash
+        format!("{:010x}", u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8])))
     }
 
     async fn create_pod(
