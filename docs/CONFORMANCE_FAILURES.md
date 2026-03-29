@@ -74,9 +74,10 @@ Quota controller rewrites deployed, but specific `status.used` format mismatch n
 |------|------|
 | `resource_quota.go` | 282, 489 |
 
-### 11. Watch DELETE event (1 failure) — NOT FIXED
+### 11. Watch DELETE event (1 failure) — FIXED (d8030f2)
 Error: `Timed out waiting for expected watch notification: {DELETED <nil>}`
-This is a LABEL-FILTERED watch: object's label changed so it no longer matches the watch selector, which should produce a synthetic DELETE. Our watch doesn't support label-filtered DELETE events.
+Fix: Watch now sends synthetic DELETE when MODIFIED event's labels no longer match selector.
+**Confidence: HIGH** — exact behavior traced and implemented.
 | File | Line |
 |------|------|
 | `watch.go` | 409 |
@@ -144,9 +145,10 @@ Expected 2 containers, got 0 after 300s. CAS fix should help but needs conforman
 |------|------|
 | `runtime.go` | 115 |
 
-### 22. Secrets volume (1 failure) — NOT FIXED
+### 22. Secrets volume (1 failure) — FIXED (d8030f2)
 Error: `Error reading file /etc/secret-volumes/delete/data-1`
-Secret volume data not properly updated when secret is deleted. Volume resync may not handle deletions.
+Fix: Volume resync now removes files when secret keys are deleted. Also handles complete secret deletion.
+**Confidence: HIGH** — exact issue traced (resync only added, never removed files).
 | File | Line |
 |------|------|
 | `secrets_volume.go` | 374 |
@@ -177,10 +179,10 @@ Ephemeral container PATCH fixed (7d40469). Pod count mismatch needs conformance 
 | `pod_client.go` | 302 | ephemeral container PATCH FIXED |
 
 ## Summary
-- **FIXED (HIGH confidence)**: #2, #3, #4, #5, #6, #7, #8, #15, #24, #25 = 22 failures
+- **FIXED (HIGH confidence)**: #2, #3, #4, #5, #6, #7, #8, #11, #15, #22, #24, #25 = 24 failures
 - **FIXED (MEDIUM confidence)**: #1, #9 = 9 failures
 - **NOT VERIFIED (need conformance run)**: #10, #13, #14, #16, #17, #18, #20, #21, #23, #26 = 12 failures
-- **NOT FIXED (known issues)**: #11, #12, #19, #22 = 5 failures
+- **NOT FIXED (known issues)**: #12, #19 = 2 failures
 
 ## Progress
 | Round | Fail | Total | Rate |
