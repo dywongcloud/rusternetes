@@ -5,28 +5,68 @@ Get a Rust-based Kubernetes cluster running locally.
 ## Prerequisites
 
 - **Rust toolchain** -- install via [rustup](https://rustup.rs/)
-- **Docker Desktop** (macOS) or **Docker Engine** (Linux)
-- **Docker Compose** (included with Docker Desktop; install separately on Linux if needed)
+- **Container runtime** -- one of the options below
 - **kubectl** (optional) -- standard `kubectl` works against the cluster
+
+### macOS -- Docker Desktop (recommended)
+
+Docker Desktop is the recommended runtime on macOS. Podman Machine has known
+issues with macOS Sequoia 15.7+ and the Apple Virtualization Framework.
+
+```bash
+brew install --cask docker
+# Then start Docker Desktop from Applications
+```
+
+### Linux -- Docker Engine
+
+```bash
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+# Log out and back in for the group change to take effect
+```
+
+### Linux -- Podman (rootful mode required)
+
+Podman works on Linux but must run in rootful mode because kube-proxy needs
+`CAP_NET_ADMIN` for iptables. Substitute `sudo podman-compose` wherever this
+guide says `docker compose`.
+
+```bash
+# Fedora/RHEL/CentOS
+sudo dnf install podman podman-compose
+
+# Ubuntu/Debian
+sudo apt-get install podman podman-compose
+```
 
 ## Start the Cluster
 
+### Clone and Build
+
 ```bash
-# Clone and build
 git clone https://github.com/calfonso/rusternetes.git
 cd rusternetes
 cargo build --release
+```
 
-# Set the volumes path (required for kubelet bind mounts)
+### Docker (macOS and Linux)
+
+```bash
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
 
-# Build container images (~10-15 minutes the first time)
-docker compose build
-
-# Start all services
+docker compose build           # ~10-15 minutes the first time
 docker compose up -d
+bash scripts/bootstrap-cluster.sh
+```
 
-# Bootstrap CoreDNS, default services, and ServiceAccount tokens
+### Podman (Linux, rootful)
+
+```bash
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose build
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose up -d
 bash scripts/bootstrap-cluster.sh
 ```
 
@@ -60,6 +100,9 @@ TLS certificates are auto-generated in `.rusternetes/certs/` by
 `scripts/generate-certs.sh` (called during the Docker build).
 
 ## Common Operations
+
+The examples below use `docker compose`. If you are using Podman, substitute
+`sudo podman-compose` in each command.
 
 ### View Logs
 
@@ -146,9 +189,19 @@ bash scripts/bootstrap-cluster.sh
 
 ### "Build is taking too long"
 
-The first `docker compose build` compiles all Rust crates inside Docker and
-takes 10-15 minutes. Subsequent builds use the Docker layer cache and are
-much faster. For local iteration without Docker, use `cargo build` directly.
+The first build compiles all Rust crates inside the container and takes 10-15
+minutes. Subsequent builds use the layer cache and are much faster. For local
+iteration without containers, use `cargo build` directly.
+
+### Podman: "Permission denied" from kube-proxy
+
+kube-proxy needs iptables access. You must run Podman in rootful mode with
+`sudo podman-compose`. Without `sudo`, kube-proxy will fail.
+
+### Podman Machine fails on macOS
+
+If you see `VZErrorDomain Code=1` or `vfkit exited unexpectedly`, this is a
+known issue with macOS Sequoia 15.7+. Use Docker Desktop instead.
 
 ## What's Different from Real Kubernetes
 

@@ -5,8 +5,7 @@ How to build, test, and run Rusternetes locally.
 ## Prerequisites
 
 - **Rust** (latest stable, via [rustup](https://rustup.rs))
-- **Docker Desktop** (macOS) or **Docker Engine** (Linux)
-- **Docker Compose** (included with Docker Desktop; install separately on Linux if needed)
+- **Container runtime** -- see [Container Runtime Setup](#container-runtime-setup) below
 
 ## Project Structure
 
@@ -45,12 +44,64 @@ cargo clippy --all-targets --all-features -- -D warnings  # Lint
 make pre-commit
 ```
 
-## Docker Cluster
+## Container Runtime Setup
 
 The cluster runs 7 services: etcd, api-server (port 6443 with TLS), scheduler,
-controller-manager, two kubelets (node-1, node-2), and kube-proxy.
+controller-manager, two kubelets (node-1, node-2), and kube-proxy. kube-proxy
+requires `CAP_NET_ADMIN` for iptables, which means rootful container execution.
 
-### Start the Cluster
+### macOS -- Docker Desktop
+
+Docker Desktop is the recommended runtime on macOS. Podman Machine has known
+issues with macOS Sequoia 15.7+ where the Apple Virtualization Framework
+prevents VMs from starting.
+
+```bash
+# Install Docker Desktop
+brew install --cask docker
+# Then start Docker Desktop from Applications
+
+# Verify
+docker info
+docker compose version
+```
+
+### Linux -- Docker Engine
+
+```bash
+# Install Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+# Log out and back in for group change to take effect
+
+# Verify
+docker info
+docker compose version
+```
+
+### Linux -- Podman (rootful mode required)
+
+Podman works on Linux but must run in rootful mode for kube-proxy iptables access.
+All `docker compose` commands below become `sudo podman-compose` commands.
+
+```bash
+# Fedora/RHEL/CentOS
+sudo dnf install podman podman-compose
+
+# Ubuntu/Debian
+sudo apt-get install podman podman-compose
+
+# All commands must run as root
+sudo KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes podman-compose build
+sudo KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes podman-compose up -d
+```
+
+The rest of this guide uses `docker compose` syntax. If you are using Podman,
+substitute `sudo podman-compose` wherever you see `docker compose`.
+
+## Running the Cluster
+
+### Start
 
 ```bash
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
@@ -60,17 +111,11 @@ docker compose up -d           # Start all services
 bash scripts/bootstrap-cluster.sh  # Create CoreDNS, services, SA tokens
 ```
 
-### Stop the Cluster
-
-```bash
-docker compose down            # Stop services
-docker compose down -v         # Stop and remove volumes (clean slate)
-```
-
 ### KUBECONFIG
 
 ```bash
 export KUBECONFIG=~/.kube/rusternetes-config
+kubectl get nodes
 kubectl get pods -A
 ```
 
@@ -87,6 +132,13 @@ docker compose logs -f api-server  # Single service
 ```bash
 docker compose build api-server
 docker compose up -d api-server
+```
+
+### Stop
+
+```bash
+docker compose down            # Stop services
+docker compose down -v         # Stop and remove volumes (clean slate)
 ```
 
 ## Development Workflow
@@ -189,9 +241,24 @@ Stop conflicting services or change ports in `docker-compose.yml`.
 ### Container Build Fails
 
 ```bash
+# Docker
 docker system prune -a
 docker compose build
+
+# Podman
+sudo podman system prune -a
+sudo podman-compose build
 ```
+
+### Podman: kube-proxy Permission Denied
+
+If kube-proxy logs show `Permission denied (you must be root)`, you are not
+running in rootful mode. Use `sudo podman-compose` for all commands.
+
+### Podman Machine Fails on macOS
+
+If you see `VZErrorDomain Code=1` or `vfkit exited unexpectedly`, this is a
+known issue with macOS Sequoia 15.7+. Use Docker Desktop instead.
 
 ### etcd Issues
 
