@@ -477,6 +477,13 @@ impl Kubelet {
                 }
             }
 
+            // Remove stopped containers to prevent accumulation of exited containers.
+            // During conformance tests, hundreds of pods are created and deleted,
+            // and leftover exited containers waste Docker daemon resources.
+            if let Err(e) = self.runtime.stop_and_remove_pod(pod_name).await {
+                debug!("Error removing containers for pod {}/{}: {}", namespace, pod_name, e);
+            }
+
             // Now delete the pod from storage (triggers watch DELETED event)
             let key = build_key("pods", Some(namespace), pod_name);
             if let Err(e) = self.storage.delete(&key).await {
