@@ -1,177 +1,186 @@
 # Conformance Issue Tracker
 
-**Round 109** | 48 failures / 78 tests ran (e2e killed during skip phase) | 328 fixes deployed
+**Round 109** | 48 failures / 78 tests ran (e2e killed during skip phase) | 336 fixes deployed
 
 ## Round 109 — All 48 Failures
 
 ### 1. Webhook deployment not ready (7 failures) — FIXED (7bc88bf)
-Error: `waiting for webhook configuration to be ready: timed out waiting for the condition`
-Fix: Kubelet timeout fix — when Docker API times out checking Running pods, assume still running instead of skipping readiness path. Also removes exited containers to prevent Docker overhead.
+Fix: Kubelet timeout — assume Running pods still running. Removes exited containers.
+**Confidence: MEDIUM** — readiness probe path no longer skipped, but HTTPS probes not verified.
 | File | Line |
 |------|------|
 | `webhook.go` | 425, 520, 601, 1244, 1549, 2338, 2465 |
 
 ### 2. Webhook matchConditions CEL error (2 failures) — FIXED (7d40469)
-Error: `matchConditions[0].expression: compilation failed: No such key: metadata`
-Fix: Case-insensitive comparison for CEL errors. "No such key" (uppercase) wasn't matching "no such key" check.
+Fix: Case-insensitive CEL error check.
+**Confidence: HIGH** — exact error traced and fixed.
 | File | Line |
 |------|------|
 | `webhook.go` | 729, 783 |
 
 ### 3. CRD creation timeout (4 failures) — FIXED (be1af28)
-Fix: Protobuf brace-scanning now validates candidates with serde_json. Structured decoder tried first.
+Fix: Protobuf brace-scanning validates with serde_json. 10 new tests.
+**Confidence: HIGH** — root cause identified and tested.
 | File | Line |
 |------|------|
 | `crd_publish_openapi.go` | 318, 451 |
 | `custom_resource_definition.go` | 104, 288 |
 
 ### 4. CRD field validation decode error (3 failures) — FIXED (be1af28)
-Fix: Same — garbage binary bytes no longer extracted as "JSON". Invalid candidates skipped.
+**Confidence: HIGH**
 | File | Line |
 |------|------|
 | `field_validation.go` | 245, 428, 570 |
 
 ### 5. CRD field validation timeout (1 failure) — FIXED (be1af28)
-Fix: CRD protobuf properly decoded, creation succeeds on first attempt.
+**Confidence: HIGH**
 | File | Line |
 |------|------|
 | `field_validation.go` | 305 |
 
 ### 6. Pod resize PATCH rejected (3 failures) — FIXED (7d40469)
-Error: `failed to patch pod for resize: Unsupported content type: application/json`
-Fix: Pod PATCH handler now checks X-Original-Content-Type header before content-type.
+Fix: Pod PATCH checks X-Original-Content-Type header.
+**Confidence: HIGH** — exact error traced and fixed.
 | File | Line |
 |------|------|
 | `pod_resize.go` | 850 (x3) |
 
 ### 7. Ephemeral containers PATCH rejected (1 failure) — FIXED (7d40469)
-Error: `Failed to patch ephemeral containers: Unsupported content type: application/json`
-Fix: Same as #6 — pod PATCH handler shared by ephemeral containers endpoint.
+**Confidence: HIGH** — same fix as #6.
 | File | Line |
 |------|------|
 | `ephemeral_containers.go` | 80 |
 
 ### 8. Job SuccessPolicy (3 failures) — FIXED (4f60d58)
-Fix: Job controller now preserves completion status from SuccessPolicy instead of overwriting on next reconcile.
+Fix: Job controller preserves completion status from SuccessPolicy.
+**Confidence: HIGH** — exact assertion traced (nil vs *int32(0)).
 | File | Line | Error |
 |------|------|-------|
-| `job.go` | 514 | Expected 0, got nil — regular update wiped SuccessPolicy status |
-| `job.go` | 553 | Same root cause |
-| `job.go` | 974 | context deadline exceeded — cascading from status not set |
+| `job.go` | 514 | regular update wiped SuccessPolicy status |
+| `job.go` | 553 | same root cause |
+| `job.go` | 974 | cascading timeout |
 
 ### 9. Aggregated discovery (2 failures) — FIXED (f5241df)
-Fix: q-value preference parsing for Accept header. Returns aggregated when q-value is higher.
+Fix: q-value Accept header parsing.
+**Confidence: MEDIUM** — depends on test's exact Accept header format.
 | File | Line | Error |
 |------|------|-------|
 | `aggregated_discovery.go` | 227 | context deadline exceeded |
-| `aggregated_discovery.go` | 282 | Expected validatingwebhookconfigurations to be present |
+| `aggregated_discovery.go` | 282 | Expected validatingwebhookconfigurations |
 
-### 10. Resource quota status (2 failures) — FIXED (scoped quotas + status calc deployed)
-Quota controller now properly calculates status.used with all tracked keys.
+### 10. Resource quota status (2 failures) — NOT VERIFIED
+Quota controller rewrites deployed, but specific `status.used` format mismatch needs conformance run to verify.
 | File | Line |
 |------|------|
 | `resource_quota.go` | 282, 489 |
 
-### 11. Watch DELETE event (1 failure) — FIXED (flat_map watch events deployed)
-etcd watch events properly emitted via flat_map.
+### 11. Watch DELETE event (1 failure) — NOT FIXED
+Error: `Timed out waiting for expected watch notification: {DELETED <nil>}`
+This is a LABEL-FILTERED watch: object's label changed so it no longer matches the watch selector, which should produce a synthetic DELETE. Our watch doesn't support label-filtered DELETE events.
 | File | Line |
 |------|------|
 | `watch.go` | 409 |
 
-### 12. StatefulSet scaling (1 failure) — FIXED (phase filter + CAS deployed)
-StatefulSet controller filters Failed/Succeeded pods from replica count.
+### 12. StatefulSet scaling (1 failure) — NOT FIXED
+Error: `StatefulSet ss scaled unexpectedly scaled to 3 -> 2 replicas`
+Phase filter deployed but same error occurred in Round 109. Root cause is likely a race condition in pod counting during rapid creation.
 | File | Line |
 |------|------|
 | `statefulset.go` | 2479 |
 
-### 13. /etc/hosts not kubelet-managed (1 failure) — FIXED (tar upload to pause deployed)
-Kubelet copies managed /etc/hosts into pause container via Docker upload API.
+### 13. /etc/hosts not kubelet-managed (1 failure) — NOT VERIFIED
+Tar upload to pause container deployed, but Docker may still override /etc/hosts for containers in shared network namespace. Needs conformance run.
 | File | Line |
 |------|------|
 | `kubelet_etc_hosts.go` | 143 |
 
-### 14. Init container timeout (1 failure) — FIXED (CAS re-reads + readiness timeout deployed)
-Kubelet properly persists pod conditions including Initialized.
+### 14. Init container timeout (1 failure) — NOT VERIFIED
+CAS fix deployed, but init container condition tracking needs conformance run.
 | File | Line |
 |------|------|
 | `init_container.go` | 440 |
 
 ### 15. Service latency decode error (1 failure) — FIXED (already deployed)
-Error: `failed to decode: missing field 'selector' at line 1 column 493`
-Fix: ServiceSpec has Default derive and `#[serde(default)]` on selector — already in deployed code.
+**Confidence: HIGH** — ServiceSpec Default derive tested with unit tests.
 | File | Line |
 |------|------|
 | `service_latency.go` | 142 |
 
-### 16. Network service (2 failures) — FIXED (CAS + readiness + endpoints deployed)
-Pods now reach Ready, endpoints populated. Service reachability depends on kube-proxy + readiness.
+### 16. Network service (2 failures) — NOT VERIFIED
+Depends on kube-proxy + pod readiness. CAS fix helps pods reach Ready but networking needs conformance run.
 | File | Line | Error |
 |------|------|-------|
 | `service.go` | 1571 | context deadline exceeded |
 | `service.go` | 4291 | service not reachable within 2m0s |
 
-### 17. DNS resolution (1 failure) — FIXED (CAS + readiness deployed)
-CoreDNS pods reach Ready, DNS resolution works.
+### 17. DNS resolution (1 failure) — NOT VERIFIED
+Depends on CoreDNS + kube-proxy routing. Needs conformance run.
 | File | Line |
 |------|------|
 | `dns_common.go` | 476 |
 
-### 18. EndpointSlice (1 failure) — FIXED (CAS + endpoints controller deployed)
-EndpointSlice controller populates endpoints when pods are Ready.
+### 18. EndpointSlice (1 failure) — NOT VERIFIED
+Depends on endpoint controller timing. Needs conformance run.
 | File | Line |
 |------|------|
 | `endpointslice.go` | 798 |
 
-### 19. Hostport (1 failure) — FIXED (hostname truncation + CAS deployed)
-Pod startup fixed by hostname truncation and CAS re-reads.
+### 19. Hostport (1 failure) — NOT FIXED
+Error: `The phase of Pod pod2 is Failed which is unexpected`
+Pod with hostPort fails — likely Docker Desktop limitation with hostPort binding.
 | File | Line |
 |------|------|
 | `hostport.go` | 219 |
 
-### 20. Scheduler predicates (1 failure) — FIXED (CAS + readiness deployed)
-Pods report status correctly, scheduler can make decisions.
+### 20. Scheduler predicates (1 failure) — NOT VERIFIED
+Depends on resource reporting + scheduling. Needs conformance run.
 | File | Line |
 |------|------|
 | `predicates.go` | 1102 |
 
-### 21. Container runtime status (1 failure) — FIXED (CAS re-reads deployed)
-Container statuses now persisted correctly via CAS fix.
+### 21. Container runtime status (1 failure) — NOT VERIFIED
+Expected 2 containers, got 0 after 300s. CAS fix should help but needs conformance run.
 | File | Line |
 |------|------|
 | `runtime.go` | 115 |
 
-### 22. Secrets volume (1 failure) — FIXED (volume resync deployed)
-Secret volumes resynced on each kubelet sync cycle.
+### 22. Secrets volume (1 failure) — NOT FIXED
+Error: `Error reading file /etc/secret-volumes/delete/data-1`
+Secret volume data not properly updated when secret is deleted. Volume resync may not handle deletions.
 | File | Line |
 |------|------|
 | `secrets_volume.go` | 374 |
 
-### 23. EmptyDir volume permissions (1 failure) — FIXED (tmpfs mode=1777 deployed)
-All emptyDir volumes use tmpfs with mode=1777 for proper permissions.
+### 23. EmptyDir volume permissions (1 failure) — NOT VERIFIED
+tmpfs with mode=1777 deployed but not tested in conformance. Needs run to verify.
 | File | Line |
 |------|------|
 | `output.go` | 263 |
 
 ### 24. kubectl API parse (1 failure) — FIXED (f91637a)
-Error: `Failed to parse /api output : unexpected end of JSON input`
-Fix: OpenAPI v2 now returns JSON instead of 406 for protobuf Accept header.
+**Confidence: HIGH** — tested kubectl create from STDIN.
 | File | Line |
 |------|------|
 | `kubectl.go` | 1881 |
 
 ### 25. kubectl builder (1 failure) — FIXED (f91637a)
-Error: `exit status 1` — kubectl create with validation failed
-Fix: Same as #24 — OpenAPI validation works now.
+**Confidence: HIGH**
 | File | Line |
 |------|------|
 | `builder.go` | 97 |
 
-### 26. Pod lifecycle (2 failures) — FIXED (7d40469 + 7bc88bf)
-Fix: Ephemeral container PATCH now uses correct content-type. Pod readiness path no longer skipped on Docker timeout.
+### 26. Pod lifecycle (2 failures) — PARTIALLY FIXED
+Ephemeral container PATCH fixed (7d40469). Pod count mismatch needs conformance run.
 | File | Line | Error |
 |------|------|-------|
-| `pods.go` | 575 | expected 2 containers, got different count |
-| `pod_client.go` | 302 | ephemeral container timeout |
+| `pods.go` | 575 | expected 2 containers, NOT VERIFIED |
+| `pod_client.go` | 302 | ephemeral container PATCH FIXED |
+
+## Summary
+- **FIXED (HIGH confidence)**: #2, #3, #4, #5, #6, #7, #8, #15, #24, #25 = 22 failures
+- **FIXED (MEDIUM confidence)**: #1, #9 = 9 failures
+- **NOT VERIFIED (need conformance run)**: #10, #13, #14, #16, #17, #18, #20, #21, #23, #26 = 12 failures
+- **NOT FIXED (known issues)**: #11, #12, #19, #22 = 5 failures
 
 ## Progress
 | Round | Fail | Total | Rate |
