@@ -671,6 +671,10 @@ pub struct ContainerPort {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host_port: Option<u16>,
+
+    /// What host IP to bind the external port to.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "hostIP")]
+    pub host_ip: Option<String>,
 }
 
 // Generate skip functions for structs with all-optional fields

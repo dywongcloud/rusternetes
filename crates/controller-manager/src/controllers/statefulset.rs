@@ -194,30 +194,39 @@ impl<S: Storage> StatefulSetController<S> {
             }
         }
 
-        // Rolling update: if replica count matches but pods have old revision, delete one at a time
+        // Rolling update: if replica count matches but pods have old revision, delete one at a time.
         // The controller will recreate them with the new template on the next reconcile.
-        if current_replicas == desired_replicas && desired_replicas > 0 {
-            let update_revision = Self::compute_revision(&statefulset.spec.template);
-            // Check pods in reverse order for rolling update
-            for pod in statefulset_pods.iter().rev() {
-                let pod_revision = pod.metadata.labels.as_ref()
-                    .and_then(|l| l.get("controller-revision-hash"))
-                    .map(|s| s.as_str())
-                    .unwrap_or("");
-                if pod_revision != update_revision && !pod_revision.is_empty() {
-                    // Check if the pod is Ready before deleting (OrderedReady)
-                    let is_ready = pod.status.as_ref()
-                        .and_then(|s| s.conditions.as_ref())
-                        .map(|c| c.iter().any(|cond| cond.condition_type == "Ready" && cond.status == "True"))
-                        .unwrap_or(false);
-                    if is_ready {
+        // Skip if updateStrategy is OnDelete (user must manually delete pods to trigger update).
+        let update_strategy = statefulset.spec.update_strategy.as_ref()
+            .and_then(|s| s.strategy_type.as_deref())
+            .unwrap_or("RollingUpdate");
+
+        if current_replicas == desired_replicas && desired_replicas > 0 && update_strategy == "RollingUpdate" {
+            // Only do rolling updates when ALL pods are Ready — prevents premature deletion
+            // during initial scale-up when pods haven't reported Ready yet.
+            let all_ready = statefulset_pods.iter().all(|pod| {
+                pod.status.as_ref()
+                    .and_then(|s| s.conditions.as_ref())
+                    .map(|c| c.iter().any(|cond| cond.condition_type == "Ready" && cond.status == "True"))
+                    .unwrap_or(false)
+            });
+
+            if all_ready {
+                let update_revision = Self::compute_revision(&statefulset.spec.template);
+                // Check pods in reverse order for rolling update
+                for pod in statefulset_pods.iter().rev() {
+                    let pod_revision = pod.metadata.labels.as_ref()
+                        .and_then(|l| l.get("controller-revision-hash"))
+                        .map(|s| s.as_str())
+                        .unwrap_or("");
+                    if pod_revision != update_revision && !pod_revision.is_empty() {
                         let pod_key = format!("/registry/pods/{}/{}", namespace, pod.metadata.name);
                         self.storage.delete(&pod_key).await?;
                         info!("Rolling update: deleted pod {} (old revision {})", pod.metadata.name, pod_revision);
                         break; // Delete one at a time
                     }
                 }
-            }
+            } // end if all_ready
         }
 
         // Re-fetch and recount pods after create/delete operations to get accurate status

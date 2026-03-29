@@ -852,10 +852,13 @@ impl ContainerRuntime {
                         let port_key = format!("{}/{}", port.container_port, proto);
                         exposed_ports.insert(port_key.clone(), HashMap::new());
                         if let Some(host_port) = port.host_port {
+                            // Use the pod spec's hostIP if specified, otherwise 0.0.0.0.
+                            // Different pods can bind the same port on different hostIPs.
+                            let bind_ip = port.host_ip.as_deref().unwrap_or("0.0.0.0").to_string();
                             port_bindings.insert(
                                 port_key,
                                 Some(vec![bollard::models::PortBinding {
-                                    host_ip: Some("0.0.0.0".to_string()),
+                                    host_ip: Some(bind_ip),
                                     host_port: Some(host_port.to_string()),
                                 }]),
                             );
