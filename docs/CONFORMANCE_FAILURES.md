@@ -4,16 +4,16 @@
 
 ## Round 109 — All 48 Failures
 
-### 1. Webhook deployment not ready (7 failures)
+### 1. Webhook deployment not ready (7 failures) — FIXED (7bc88bf)
 Error: `waiting for webhook configuration to be ready: timed out waiting for the condition`
-Pods start, containers created, but deployment never reports ReadyReplicas > 0.
+Fix: Kubelet timeout fix — when Docker API times out checking Running pods, assume still running instead of skipping readiness path. Also removes exited containers to prevent Docker overhead.
 | File | Line |
 |------|------|
 | `webhook.go` | 425, 520, 601, 1244, 1549, 2338, 2465 |
 
-### 2. Webhook matchConditions CEL error (2 failures)
+### 2. Webhook matchConditions CEL error (2 failures) — FIXED (7d40469)
 Error: `matchConditions[0].expression: compilation failed: No such key: metadata`
-CEL evaluation for webhook matchConditions doesn't have `object.metadata` in scope.
+Fix: Case-insensitive comparison for CEL errors. "No such key" (uppercase) wasn't matching "no such key" check.
 | File | Line |
 |------|------|
 | `webhook.go` | 729, 783 |
@@ -38,16 +38,16 @@ Error: `cannot create crd context deadline exceeded`
 |------|------|
 | `field_validation.go` | 305 |
 
-### 6. Pod resize PATCH rejected (3 failures)
+### 6. Pod resize PATCH rejected (3 failures) — FIXED (7d40469)
 Error: `failed to patch pod for resize: Unsupported content type: application/json`
-Middleware normalizes `strategic-merge-patch+json` to `application/json`, then `PatchType::from_content_type("application/json")` fails because that's not a valid patch type.
+Fix: Pod PATCH handler now checks X-Original-Content-Type header before content-type.
 | File | Line |
 |------|------|
 | `pod_resize.go` | 850 (x3) |
 
-### 7. Ephemeral containers PATCH rejected (1 failure)
+### 7. Ephemeral containers PATCH rejected (1 failure) — FIXED (7d40469)
 Error: `Failed to patch ephemeral containers: Unsupported content type: application/json`
-Same root cause as #6.
+Fix: Same as #6 — pod PATCH handler shared by ephemeral containers endpoint.
 | File | Line |
 |------|------|
 | `ephemeral_containers.go` | 80 |
@@ -149,14 +149,16 @@ Error: file permissions mismatch
 |------|------|
 | `output.go` | 263 |
 
-### 24. kubectl API parse (1 failure)
+### 24. kubectl API parse (1 failure) — FIXED (f91637a)
 Error: `Failed to parse /api output : unexpected end of JSON input`
+Fix: OpenAPI v2 now returns JSON instead of 406 for protobuf Accept header.
 | File | Line |
 |------|------|
 | `kubectl.go` | 1881 |
 
-### 25. kubectl builder (1 failure)
+### 25. kubectl builder (1 failure) — FIXED (f91637a)
 Error: `exit status 1` — kubectl create with validation failed
+Fix: Same as #24 — OpenAPI validation works now.
 | File | Line |
 |------|------|
 | `builder.go` | 97 |
