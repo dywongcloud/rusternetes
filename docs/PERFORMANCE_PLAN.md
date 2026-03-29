@@ -204,6 +204,20 @@ Watch handlers FILTER events using label selectors and field selectors, which re
 ### Kube-proxy: diff before apply — DEFERRED (risky)
 The flush-and-rebuild pattern is self-healing: process restarts, failed iptables commands, and partial state all recover on the next cycle. A diff approach would need to handle stale in-memory state after restart, partial failures, and deleted services. The complexity/risk outweighs the benefit given kube-proxy only syncs every 30 seconds.
 
+### Reduce Pod cloning in kubelet — REJECTED (structurally required)
+Audited every `.clone()` call. Most are REQUIRED by Rust's ownership model: code modifies the pod (`new_pod.status = Some(...)`) before writing to storage. `storage.update()` takes `&T` but you need an owned value to mutate. Fallback clones (`match storage.get() { Ok(p) => p, _ => pod.clone() }`) are needed because the match arms produce different types (owned vs borrowed). Only 1 truly unnecessary clone found (line 954, already fixed). Minimal gains for significant refactoring risk.
+
+### Cache admission lookups (cross-request) — REJECTED (security risk)
+- **Namespace caching:** A 5-second stale namespace label could admit pods under `privileged` policy when namespace requires `restricted`. Once admitted, the pod runs permanently under the wrong security policy.
+- **ResourceQuota caching:** Two concurrent pod creates would both see the same cached count and both be admitted, potentially exceeding the quota.
+- **Per-request LimitRange deduplication is SAFE** — see Phase 1 item 2.
+
+### Streaming pagination — REJECTED (not worthwhile at current scale)
+- Label/field selectors are applied in-memory AFTER etcd returns data. Pushing `limit` to etcd means under-filled pages when selectors filter items.
+- Continue tokens use offset-based encoding, not key-based — would need complete redesign.
+- Conformance tests create ~100-200 pods, not 10,000. Overhead of loading 200 pods is negligible.
+- Controllers need FULL lists for aggregation (counting, summing) — can't stream.
+
 ---
 
 ## Execution Order (Revised After Audit)
@@ -211,22 +225,25 @@ The flush-and-rebuild pattern is self-healing: process restarts, failed iptables
 ### Phase 1: Proven Safe, High Impact
 
 1. **Remove `log_request_body_middleware`** — purely diagnostic, gated by `debug!()` log level (which is off at `RUST_LOG=info`). Buffers entire request body a second time (`to_bytes(body, usize::MAX)`) for no benefit at info level. It does NOT transform the body or affect downstream handlers. Safe to remove entirely. Note: the two middleware should NOT be merged — they serve different purposes and have different error handling. Just remove the log one.
-2. **Deduplicate LimitRange reads** in pod admission — listed twice (pod.rs:125 and admission.rs:306). Pure waste, no correctness concern.
+2. **Deduplicate LimitRange reads** in pod admission — listed twice (pod.rs:125 and admission.rs:306). Per-request deduplication is safe since nothing changes LimitRange during a single pod create request. Pass the first read's result to `apply_limit_range()` instead of re-listing.
 3. **Filtering: struct-level matching** — `apply_selectors()` calls `to_value()` per resource. Labels are already `HashMap<String, String>` on the struct. Match directly instead of serializing to Value. No correctness concern — same filtering logic, just avoids the intermediate serialization.
 4. **Bound watch channels** — replace `unbounded_channel()` with bounded channel + backpressure (`watch.rs:209,605`). Prevents memory leak with slow clients. Standard practice, no behavioral change for well-behaved clients.
 5. **Watch cache: targeted RV extraction** — replace full JSON parse in `extract_rv()` (`watch_cache.rs:93-98`) with a simple string search for `"resourceVersion":"NNN"`. Safe because the format is controlled by our own `inject_resource_version()`.
 
-### Phase 2: Moderate Risk, Big Wins
+### Phase 2: Moderate Risk, Validated Wins
 
-6. **Scheduler: watch-driven queue** — watch pods for `phase=Pending` instead of listing ALL pods every second. List nodes only when a pending pod exists. Significant latency reduction.
-7. **Reduce Pod cloning in kubelet** — many clones are in read-only paths where `&Pod` would suffice. Must audit each clone individually; some are needed for storage writes.
-8. **Cache admission lookups** — namespace and LimitRange data change rarely. Cache with short TTL (e.g., 5 seconds). Must invalidate on write.
+6. **Scheduler: early-return before node list** — move the "no pending pods" check (line 93-96) to BEFORE listing nodes and priority classes. Currently lists all nodes even when nothing is pending. Simple reorder, no behavioral change. (Full watch conversion deferred — affinity requires all pods, pending retry needs node watches, complexity exceeds benefit.)
+7. **Fast resourceVersion injection** — byte-level insertion of `,"resourceVersion":"NNN"` into metadata object instead of full JSON parse→modify→reserialize. Feasibility confirmed: all resource types have `metadata` as top-level field, TypeMeta flatten doesn't affect it, etcd always stores compact JSON. **Requires fuzz test harness** to validate against all resource types before deployment. Must search within metadata object bounds only (not globally) to avoid matching `"resourceVersion"` in annotation/label values.
 
 ### Phase 3: Highest Impact, Highest Risk
 
-9. **SharedInformer for controllers** — watch-driven cache + workqueue. This is the single biggest possible win (eliminates 30+ list calls/sec) but also the most complex. Requires careful cache coherency, watch reconnection handling, and extensive integration testing. The prior CachedStorage attempt was reverted for exactly these reasons.
-10. **Streaming pagination** — push limit/offset to storage layer instead of loading all resources into memory.
-11. **Fast resourceVersion injection** — byte-level insertion instead of full JSON parse. Requires fuzz testing to prove correctness across all resource types.
+8. **SharedInformer for controllers** — watch-driven cache + workqueue. Single biggest possible win (eliminates 30+ list calls/sec). Critical unsolved issues from audit:
+   - Watch streams do NOT auto-reconnect — manual reconnection leaves revision gaps where events are missed
+   - etcd compaction can invalidate the revision we're watching from — need fallback to full re-list
+   - Key construction mismatch — watch events use etcd keys, but cache population must reconstruct keys from metadata (CRD instances may use `/registry/customresources/{group}/{version}/{resource}/{ns}/{name}`, not the standard `/registry/{type}/{ns}/{name}`)
+   - **Requirement:** Must use etcd keys directly for cache keying (not reconstructed from metadata). Initial list must return keys alongside values (current `list()` trait doesn't expose keys).
+   - **Requirement:** Must handle compacted revisions by detecting the error and triggering a full re-list.
+   - **Requirement:** Needs integration tests against real etcd with concurrent writes, watch disconnections, and compaction.
 
 ---
 
