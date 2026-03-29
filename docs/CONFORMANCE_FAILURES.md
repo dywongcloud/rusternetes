@@ -34,11 +34,12 @@
 | Node pods | 1 | Pod lifecycle |
 
 ## Fixes committed (not yet deployed — need rebuild)
-| Commit | Fix |
-|--------|-----|
-| 4624a26 | CRD: 4 status updates, TokenRequest defaults |
-| 5da5f98 | OpenAPI: protobuf envelope for kubectl |
-| f65ab7b | RC CAS retry, SA token validation, LimitRange defaults |
+| Commit | Fix | Failures |
+|--------|-----|----------|
+| 4624a26 | CRD: 4 status updates, TokenRequest defaults | 5 CRD + 2 SA |
+| 5da5f98 | OpenAPI: protobuf envelope for kubectl | 4 builder |
+| f65ab7b | RC CAS retry, SA token validation, LimitRange defaults | 2 RC + 1 LR |
+| 7266a9e | Webhook: scheme lowercase + no_proxy + headers | 3 webhook |
 
 ## Progress
 | Round | Fail | Total | Rate |
