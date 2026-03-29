@@ -4,36 +4,173 @@
 
 ## Deployed: #1-328
 
-## Round 109 Partial Results (78/441 tests, e2e container killed during skip phase)
+## Round 109 — All 48 Failures (78/441 tests ran, e2e killed during skip phase)
 
-| Category | Count | Files | Notes |
-|----------|-------|-------|-------|
-| Webhook tests | 9 | webhook.go:425,520,601,729,783,1244,1549,2338,2465 | NEW — webhook deployments fail to start |
-| Field validation | 4 | field_validation.go:245,305,428,570 | CRD field validation still failing |
-| Pod resize | 3 | pod_resize.go:850 (x3) | Resize not fully working |
-| Job SuccessPolicy | 3 | job.go:514,553,974 | SuccessPolicy still failing |
-| CRD creation | 2 | crd_publish_openapi.go:318,451 | CRD timeout reduced from 8 to 2 |
-| CRD definition | 2 | custom_resource_definition.go:104,288 | CRD creation issues |
-| Aggregated discovery | 2 | aggregated_discovery.go:227,282 | Still timing out |
-| Resource quota | 2 | resource_quota.go:282,489 | Quota status format mismatch |
-| Network/service | 2 | service.go:1571,4291 | Service not reachable |
-| Service latency | 1 | service_latency.go:142 | missing field selector |
-| Hostport | 1 | hostport.go:219 | Hostport not working |
-| EndpointSlice | 1 | endpointslice.go:798 | Endpoint issue |
-| DNS | 1 | dns_common.go:476 | DNS resolution issue |
-| StatefulSet | 1 | statefulset.go:2479 | Still scaling 3->2 |
-| Watch | 1 | watch.go:409 | Watch DELETE still missing |
-| Scheduler | 1 | predicates.go:1102 | Scheduling timeout |
-| Init container | 1 | init_container.go:440 | Init container timeout |
-| Ephemeral containers | 1 | ephemeral_containers.go:80 | Not implemented |
-| Runtime status | 1 | runtime.go:115 | Container status timeout |
-| /etc/hosts | 1 | kubelet_etc_hosts.go:143 | Still not kubelet managed |
-| EmptyDir perms | 1 | output.go:263 | Permissions still wrong |
-| Secrets volume | 1 | secrets_volume.go:374 | Volume issue |
-| kubectl | 1 | kubectl.go:1881 | API output parse error |
-| kubectl builder | 1 | builder.go:97 | kubectl create failure |
-| Pod lifecycle | 1 | pods.go:575 | Pod status issue |
-| Pod client | 1 | pod_client.go:302 | Ephemeral container timeout |
+### 1. Webhook deployment not ready (7 failures)
+All fail with: `waiting for webhook configuration to be ready: timed out waiting for the condition`
+Pods start, containers created, but deployment never reports ReadyReplicas > 0. Readiness probe passes in Docker but kubelet never persists Ready status.
+| File | Line |
+|------|------|
+| `webhook.go` | 425, 520, 601, 1244, 1549, 2338, 2465 |
+
+### 2. Webhook matchConditions CEL error (2 failures)
+Error: `matchConditions[0].expression: compilation failed: No such key: metadata`
+CEL expression evaluation for webhook matchConditions doesn't have `object.metadata` in scope.
+| File | Line |
+|------|------|
+| `webhook.go` | 729, 783 |
+
+### 3. CRD creation timeout (4 failures)
+Error: `failed to create CRD: context deadline exceeded` / `creating CustomResourceDefinition: context deadline exceeded`
+K8s client sends CRD as protobuf, protobuf-to-JSON extraction produces incomplete CRD, creation fails or Established watch never fires.
+| File | Line |
+|------|------|
+| `crd_publish_openapi.go` | 318, 451 |
+| `custom_resource_definition.go` | 104, 288 |
+
+### 4. CRD field validation decode error (3 failures)
+Error: `cannot create crd failed to decode CRD: key must be a string at line 1 column 2`
+Binary body (protobuf/CBOR) sent for CRD creation, serde_json can't parse it.
+| File | Line |
+|------|------|
+| `field_validation.go` | 245, 428, 570 |
+
+### 5. CRD field validation timeout (1 failure)
+Error: `cannot create crd context deadline exceeded`
+| File | Line |
+|------|------|
+| `field_validation.go` | 305 |
+
+### 6. Pod resize PATCH rejected (3 failures)
+Error: `failed to patch pod for resize: Unsupported content type: application/json`
+The resize PATCH uses `application/strategic-merge-patch+json` which our middleware normalizes to `application/json`, but then the patch handler's `PatchType::from_content_type("application/json")` returns an error because `application/json` is not a valid patch type.
+| File | Line |
+|------|------|
+| `pod_resize.go` | 850 (x3) |
+
+### 7. Job SuccessPolicy (3 failures)
+Errors: assertion failures (expected values don't match)
+| File | Line | Error |
+|------|------|-------|
+| `job.go` | 514 | Expected 0, got non-zero |
+| `job.go` | 553 | Expected 0, got non-zero |
+| `job.go` | 974 | context deadline exceeded |
+
+### 8. Aggregated discovery (2 failures)
+| File | Line | Error |
+|------|------|-------|
+| `aggregated_discovery.go` | 227 | context deadline exceeded |
+| `aggregated_discovery.go` | 282 | Expected admissionregistration.k8s.io/v1 Resource=validatingwebhookconfigurations to be present |
+
+### 9. Resource quota status (2 failures)
+Quota status.used doesn't match expected values (missing `count/replicasets.apps`, wrong format for some keys).
+| File | Line |
+|------|------|
+| `resource_quota.go` | 282, 489 |
+
+### 10. Watch DELETE event (1 failure)
+Error: `Timed out waiting for expected watch notification: {DELETED <nil>}`
+| File | Line |
+|------|------|
+| `watch.go` | 409 |
+
+### 11. StatefulSet scaling (1 failure)
+Error: `StatefulSet ss scaled unexpectedly scaled to 3 -> 2 replicas`
+| File | Line |
+|------|------|
+| `statefulset.go` | 2479 |
+
+### 12. /etc/hosts not kubelet-managed (1 failure)
+Error: `/etc/hosts file should be kubelet managed` — Docker default /etc/hosts used instead of kubelet-managed one.
+| File | Line |
+|------|------|
+| `kubelet_etc_hosts.go` | 143 |
+
+### 13. Ephemeral containers PATCH rejected (1 failure)
+Error: `Failed to patch ephemeral containers: Unsupported content type: application/json`
+Same root cause as pod resize — strategic-merge-patch content type normalization breaks patch type detection.
+| File | Line |
+|------|------|
+| `ephemeral_containers.go` | 80 |
+
+### 14. Init container timeout (1 failure)
+Error: `timed out waiting for the condition`
+| File | Line |
+|------|------|
+| `init_container.go` | 440 |
+
+### 15. Service latency decode error (1 failure)
+Error: `failed to decode: missing field 'selector' at line 1 column 493`
+Service deserialization fails when spec.selector is missing from stored JSON.
+| File | Line |
+|------|------|
+| `service_latency.go` | 142 |
+
+### 16. Network service reachability (2 failures)
+| File | Line | Error |
+|------|------|-------|
+| `service.go` | 1571 | context deadline exceeded |
+| `service.go` | 4291 | service not reachable within 2m0s on endpoint affinity-clusterip:80 |
+
+### 17. DNS resolution (1 failure)
+Error: `context deadline exceeded`
+| File | Line |
+|------|------|
+| `dns_common.go` | 476 |
+
+### 18. EndpointSlice (1 failure)
+Error: `Error fetching EndpointSlice: client rate limiter Wait returned an error: context deadline exceeded`
+| File | Line |
+|------|------|
+| `endpointslice.go` | 798 |
+
+### 19. Hostport (1 failure)
+Error: `The phase of Pod pod2 is Failed which is unexpected`
+| File | Line |
+|------|------|
+| `hostport.go` | 219 |
+
+### 20. Scheduler predicates (1 failure)
+Error: `context deadline exceeded`
+| File | Line |
+|------|------|
+| `predicates.go` | 1102 |
+
+### 21. Container runtime status (1 failure)
+Error: expected container count mismatch
+| File | Line |
+|------|------|
+| `runtime.go` | 115 |
+
+### 22. Secrets volume (1 failure)
+Error: `Error reading file /etc/secret-volumes/delete/data-1`
+| File | Line |
+|------|------|
+| `secrets_volume.go` | 374 |
+
+### 23. EmptyDir volume permissions (1 failure)
+Error: file permissions mismatch
+| File | Line |
+|------|------|
+| `output.go` | 263 |
+
+### 24. kubectl API parse (1 failure)
+Error: `Failed to parse /api output : unexpected end of JSON input`
+| File | Line |
+|------|------|
+| `kubectl.go` | 1881 |
+
+### 25. kubectl builder (1 failure)
+Error: `exit status 1` — kubectl create with validation failed
+| File | Line |
+|------|------|
+| `builder.go` | 97 |
+
+### 26. Pod lifecycle (2 failures)
+| File | Line | Error |
+|------|------|-------|
+| `pods.go` | 575 | expected 2 containers, got different count |
+| `pod_client.go` | 302 | ephemeral container timeout |
 
 ## Round 108 Fixes Applied (11 commits, #313-323)
 
