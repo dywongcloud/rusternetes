@@ -341,8 +341,13 @@ pub async fn apply_limit_range<S: Storage>(
                             }
                         }
 
-                        // Apply default requests
-                        if let Some(default_requests) = &limit_item.default_request {
+                        // Apply default requests — use defaultRequest if set,
+                        // otherwise fall back to default (limits) values per K8s spec.
+                        // This matches Kubernetes behavior: when defaultRequest is not
+                        // specified, requests default to the default limit value.
+                        let effective_request_defaults = limit_item.default_request.as_ref()
+                            .or(limit_item.default.as_ref());
+                        if let Some(default_requests) = effective_request_defaults {
                             if resources.requests.is_none() {
                                 resources.requests = Some(default_requests.clone());
                             } else {
@@ -1070,5 +1075,134 @@ mod tests {
         assert_eq!(parse_memory_to_bytes("1Ki").unwrap(), 1024);
         assert_eq!(parse_memory_to_bytes("1Mi").unwrap(), 1024 * 1024);
         assert_eq!(parse_memory_to_bytes("1Gi").unwrap(), 1024 * 1024 * 1024);
+    }
+
+    // ---- LimitRange admission tests ----
+
+    fn make_limit_range(
+        default_cpu: Option<&str>,
+        default_request_cpu: Option<&str>,
+        min_cpu: Option<&str>,
+        max_cpu: Option<&str>,
+    ) -> LimitRange {
+        let mut default = HashMap::new();
+        if let Some(v) = default_cpu {
+            default.insert("cpu".to_string(), v.to_string());
+        }
+        let mut default_request = HashMap::new();
+        if let Some(v) = default_request_cpu {
+            default_request.insert("cpu".to_string(), v.to_string());
+        }
+        let mut min = HashMap::new();
+        if let Some(v) = min_cpu {
+            min.insert("cpu".to_string(), v.to_string());
+        }
+        let mut max = HashMap::new();
+        if let Some(v) = max_cpu {
+            max.insert("cpu".to_string(), v.to_string());
+        }
+        LimitRange {
+            type_meta: rusternetes_common::types::TypeMeta {
+                api_version: "v1".to_string(),
+                kind: "LimitRange".to_string(),
+            },
+            metadata: ObjectMeta::new("test-limit-range").with_namespace("default"),
+            spec: rusternetes_common::resources::LimitRangeSpec {
+                limits: vec![rusternetes_common::resources::LimitRangeItem {
+                    item_type: "Container".to_string(),
+                    default: if default.is_empty() { None } else { Some(default) },
+                    default_request: if default_request.is_empty() { None } else { Some(default_request) },
+                    min: if min.is_empty() { None } else { Some(min) },
+                    max: if max.is_empty() { None } else { Some(max) },
+                    max_limit_request_ratio: None,
+                }],
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn test_limit_range_applies_default_request_cpu() {
+        // Conformance test scenario: LimitRange with default=500m, defaultRequest=300m
+        // Pod with NO resources should get requests.cpu=300m, limits.cpu=500m
+        let storage = Arc::new(rusternetes_storage::MemoryStorage::new());
+        let lr = make_limit_range(Some("500m"), Some("300m"), Some("100m"), Some("1"));
+        let lr_key = "/registry/limitranges/default/test-limit-range";
+        storage.create(lr_key, &lr).await.unwrap();
+
+        let mut pod = make_pod("test-pod", None, None);
+        let result = apply_limit_range(&storage, "default", &mut pod).await.unwrap();
+        assert!(result, "LimitRange admission should pass");
+
+        let resources = pod.spec.as_ref().unwrap().containers[0].resources.as_ref().unwrap();
+        let requests = resources.requests.as_ref().expect("requests should be set");
+        let limits = resources.limits.as_ref().expect("limits should be set");
+
+        assert_eq!(requests.get("cpu").unwrap(), "300m",
+            "requests.cpu should be 300m from defaultRequest, not from default limits");
+        assert_eq!(limits.get("cpu").unwrap(), "500m",
+            "limits.cpu should be 500m from default");
+    }
+
+    #[tokio::test]
+    async fn test_limit_range_requests_fallback_to_limits_when_no_default_request() {
+        // When defaultRequest is NOT set but default (limits) IS set,
+        // requests should default to the limit value
+        let storage = Arc::new(rusternetes_storage::MemoryStorage::new());
+        let lr = make_limit_range(Some("500m"), None, None, None);
+        let lr_key = "/registry/limitranges/default/test-limit-range";
+        storage.create(lr_key, &lr).await.unwrap();
+
+        let mut pod = make_pod("test-pod", None, None);
+        let result = apply_limit_range(&storage, "default", &mut pod).await.unwrap();
+        assert!(result);
+
+        let resources = pod.spec.as_ref().unwrap().containers[0].resources.as_ref().unwrap();
+        let requests = resources.requests.as_ref().expect("requests should be set");
+        let limits = resources.limits.as_ref().expect("limits should be set");
+
+        assert_eq!(limits.get("cpu").unwrap(), "500m");
+        assert_eq!(requests.get("cpu").unwrap(), "500m",
+            "requests.cpu should fall back to default limits (500m) when defaultRequest not set");
+    }
+
+    #[tokio::test]
+    async fn test_limit_range_does_not_override_explicit_requests() {
+        // Container with explicit requests.cpu=200m should NOT be overridden by defaultRequest
+        let storage = Arc::new(rusternetes_storage::MemoryStorage::new());
+        let lr = make_limit_range(Some("500m"), Some("300m"), Some("100m"), Some("1"));
+        let lr_key = "/registry/limitranges/default/test-limit-range";
+        storage.create(lr_key, &lr).await.unwrap();
+
+        let mut pod = make_pod("test-pod", Some("200m"), None);
+        let result = apply_limit_range(&storage, "default", &mut pod).await.unwrap();
+        assert!(result);
+
+        let resources = pod.spec.as_ref().unwrap().containers[0].resources.as_ref().unwrap();
+        let requests = resources.requests.as_ref().expect("requests should be set");
+        assert_eq!(requests.get("cpu").unwrap(), "200m",
+            "explicit requests.cpu=200m should not be overridden by defaultRequest=300m");
+    }
+
+    #[tokio::test]
+    async fn test_limit_range_limits_default_to_requests_when_unset() {
+        // K8s rule: if limits are set (from LimitRange default) but container has no requests,
+        // requests should default to the limits value
+        let storage = Arc::new(rusternetes_storage::MemoryStorage::new());
+        // Only default limits, no defaultRequest
+        let lr = make_limit_range(Some("400m"), None, None, None);
+        let lr_key = "/registry/limitranges/default/test-limit-range";
+        storage.create(lr_key, &lr).await.unwrap();
+
+        let mut pod = make_pod("test-pod", None, None);
+        let result = apply_limit_range(&storage, "default", &mut pod).await.unwrap();
+        assert!(result);
+
+        let resources = pod.spec.as_ref().unwrap().containers[0].resources.as_ref().unwrap();
+        let requests = resources.requests.as_ref().expect("requests should be set");
+        let limits = resources.limits.as_ref().expect("limits should be set");
+
+        assert_eq!(limits.get("cpu").unwrap(), "400m");
+        assert_eq!(requests.get("cpu").unwrap(), "400m",
+            "requests.cpu should default to limits.cpu when no defaultRequest");
     }
 }

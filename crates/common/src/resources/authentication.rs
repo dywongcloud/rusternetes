@@ -265,6 +265,63 @@ mod tests {
     }
 
     #[test]
+    fn test_token_request_deserialization_with_extra_fields() {
+        // The K8s client may send extra fields like "status" or unknown fields.
+        // Our deserialization should tolerate them (serde default behavior with
+        // camelCase rename ignores unknown fields).
+        let json = r#"{
+            "apiVersion": "authentication.k8s.io/v1",
+            "kind": "TokenRequest",
+            "metadata": {
+                "name": "e2e-sa-test",
+                "namespace": "e2e-ns",
+                "creationTimestamp": null
+            },
+            "spec": {
+                "audiences": ["https://kubernetes.default.svc"],
+                "expirationSeconds": 3600,
+                "boundObjectRef": null
+            },
+            "status": null
+        }"#;
+
+        let token_request: TokenRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(token_request.api_version, "authentication.k8s.io/v1");
+        assert_eq!(token_request.kind, "TokenRequest");
+        assert_eq!(token_request.spec.audiences, vec!["https://kubernetes.default.svc"]);
+        assert_eq!(token_request.spec.expiration_seconds, Some(3600));
+    }
+
+    #[test]
+    fn test_token_request_deserialization_minimal() {
+        // The protobuf fallback may produce a minimal body with just apiVersion/kind/metadata
+        let json = r#"{
+            "apiVersion": "authentication.k8s.io/v1",
+            "kind": "TokenRequest",
+            "metadata": {}
+        }"#;
+
+        let token_request: TokenRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(token_request.spec.audiences.len(), 0);
+        assert_eq!(token_request.spec.expiration_seconds, None);
+        assert!(token_request.spec.bound_object_ref.is_none());
+    }
+
+    #[test]
+    fn test_token_request_deserialization_empty_spec() {
+        // K8s client may send an empty spec object
+        let json = r#"{
+            "apiVersion": "authentication.k8s.io/v1",
+            "kind": "TokenRequest",
+            "metadata": {},
+            "spec": {}
+        }"#;
+
+        let token_request: TokenRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(token_request.spec.audiences.len(), 0);
+    }
+
+    #[test]
     fn test_self_subject_review_serialization() {
         let review = SelfSubjectReview {
             api_version: "authentication.k8s.io/v1".to_string(),

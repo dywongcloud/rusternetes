@@ -1,5 +1,6 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
+    body::Bytes,
     extract::{Path, State},
     Extension, Json,
 };
@@ -13,7 +14,7 @@ use rusternetes_common::{
 };
 use rusternetes_storage::Storage;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Create a TokenReview (authentication.k8s.io/v1)
 /// TokenReview attempts to authenticate a token to a known user.
@@ -104,8 +105,19 @@ pub async fn create_token_request(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, service_account_name)): Path<(String, String)>,
-    Json(mut token_request): Json<TokenRequest>,
+    body: Bytes,
 ) -> Result<Json<TokenRequest>> {
+    // Parse the body manually — the K8s client may send protobuf or JSON with extra
+    // fields that Axum's Json<T> extractor rejects with a 422, which is not a proper
+    // Kubernetes Status error.  Manual parsing gives us control over the error response.
+    let mut token_request: TokenRequest = serde_json::from_slice(&body).map_err(|e| {
+        warn!(
+            "Failed to decode TokenRequest body ({} bytes): {}",
+            body.len(),
+            e
+        );
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
     info!(
         "Creating token request for service account {}/{}",
         namespace, service_account_name

@@ -371,6 +371,7 @@ impl<S: Storage> ReplicationControllerController<S> {
             Ok(rc) => rc,
             Err(_) => rc.clone(),
         };
+        let conditions_clone = conditions.clone();
         updated_rc.status = Some(rusternetes_common::resources::ReplicationControllerStatus {
             replicas: current_replicas,
             fully_labeled_replicas: Some(current_replicas),
@@ -380,7 +381,21 @@ impl<S: Storage> ReplicationControllerController<S> {
             conditions,
         });
 
-        self.storage.update(&key, &updated_rc).await?;
+        if let Err(e) = self.storage.update(&key, &updated_rc).await {
+            // CAS conflict — re-read and retry once to ensure condition updates persist
+            debug!("RC status update CAS conflict, retrying: {}", e);
+            if let Ok(mut fresh_rc) = self.storage.get::<ReplicationController>(&key).await {
+                fresh_rc.status = Some(rusternetes_common::resources::ReplicationControllerStatus {
+                    replicas: current_replicas,
+                    fully_labeled_replicas: Some(current_replicas),
+                    ready_replicas: Some(ready_replicas),
+                    available_replicas: Some(ready_replicas),
+                    observed_generation: fresh_rc.metadata.generation,
+                    conditions: conditions_clone,
+                });
+                let _ = self.storage.update(&key, &fresh_rc).await;
+            }
+        }
 
         debug!(
             "Updated status for replicationcontroller {}/{}",
