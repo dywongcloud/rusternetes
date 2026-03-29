@@ -117,15 +117,15 @@ impl<S: Storage> StatefulSetController<S> {
             namespace, name, desired_replicas, current_replicas
         );
 
+        let is_ordered_ready = statefulset
+            .spec
+            .pod_management_policy
+            .as_ref()
+            .map(|p| p == "OrderedReady")
+            .unwrap_or(true);
+
         // Scale up or down
         if current_replicas < desired_replicas {
-            let is_ordered_ready = statefulset
-                .spec
-                .pod_management_policy
-                .as_ref()
-                .map(|p| p == "OrderedReady")
-                .unwrap_or(true);
-
             // Scale up: create pods in order
             for i in current_replicas..desired_replicas {
                 // For OrderedReady policy, check that the previous pod is Ready before
@@ -181,15 +181,10 @@ impl<S: Storage> StatefulSetController<S> {
                 self.storage.delete(&pod_key).await?;
                 info!("Deleted pod {}", pod_name);
 
-                // Wait between deletions for OrderedReady policy
-                if statefulset
-                    .spec
-                    .pod_management_policy
-                    .as_ref()
-                    .map(|p| p == "OrderedReady")
-                    .unwrap_or(true)
-                {
-                    time::sleep(Duration::from_secs(2)).await;
+                // For OrderedReady policy, only delete one at a time per reconciliation cycle
+                // to ensure pods are terminated in reverse order. Parallel can delete all at once.
+                if is_ordered_ready {
+                    break;
                 }
             }
         }
@@ -201,32 +196,57 @@ impl<S: Storage> StatefulSetController<S> {
             .and_then(|s| s.strategy_type.as_deref())
             .unwrap_or("RollingUpdate");
 
-        if current_replicas == desired_replicas && desired_replicas > 0 && update_strategy == "RollingUpdate" {
-            // Only do rolling updates when ALL pods are Ready — prevents premature deletion
-            // during initial scale-up when pods haven't reported Ready yet.
-            let all_ready = statefulset_pods.iter().all(|pod| {
-                pod.status.as_ref()
-                    .and_then(|s| s.conditions.as_ref())
-                    .map(|c| c.iter().any(|cond| cond.condition_type == "Ready" && cond.status == "True"))
-                    .unwrap_or(false)
-            });
+        let partition = statefulset.spec.update_strategy.as_ref()
+            .and_then(|s| s.rolling_update.as_ref())
+            .and_then(|ru| ru.partition)
+            .unwrap_or(0);
 
-            if all_ready {
-                let update_revision = Self::compute_revision(&statefulset.spec.template);
-                // Check pods in reverse order for rolling update
-                for pod in statefulset_pods.iter().rev() {
-                    let pod_revision = pod.metadata.labels.as_ref()
-                        .and_then(|l| l.get("controller-revision-hash"))
-                        .map(|s| s.as_str())
-                        .unwrap_or("");
-                    if pod_revision != update_revision && !pod_revision.is_empty() {
+        if current_replicas == desired_replicas && desired_replicas > 0 && update_strategy == "RollingUpdate" {
+            let update_revision = Self::compute_revision(&statefulset.spec.template);
+
+            // Check pods in reverse order for rolling update.
+            // Only update pods with ordinal >= partition.
+            // For each pod: if it has a stale revision AND is Ready (or at least Running),
+            // delete it so it gets recreated with the new template.
+            // If the most recently deleted pod's replacement is not yet Ready, wait before
+            // deleting the next one.
+            let mut deleted_one = false;
+            for pod in statefulset_pods.iter().rev() {
+                let ordinal = pod.metadata.name.rsplit_once('-')
+                    .and_then(|(_, idx)| idx.parse::<i32>().ok())
+                    .unwrap_or(0);
+
+                // Only update pods with ordinal >= partition
+                if ordinal < partition {
+                    continue;
+                }
+
+                let pod_revision = pod.metadata.labels.as_ref()
+                    .and_then(|l| l.get("controller-revision-hash"))
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                if pod_revision != update_revision {
+                    // Check if this pod is at least Running or Ready — don't delete pods
+                    // that haven't even started yet (prevents cascading deletions during initial creation)
+                    let pod_phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
+                    let pod_is_active = matches!(pod_phase, Some(Phase::Running) | Some(Phase::Pending));
+                    let pod_is_ready = pod.status.as_ref()
+                        .and_then(|s| s.conditions.as_ref())
+                        .map(|c| c.iter().any(|cond| cond.condition_type == "Ready" && cond.status == "True"))
+                        .unwrap_or(false);
+
+                    // Delete pods with stale revision if they have a revision label
+                    // (empty revision means newly created — skip those)
+                    if !pod_revision.is_empty() && (pod_is_ready || pod_is_active) {
                         let pod_key = format!("/registry/pods/{}/{}", namespace, pod.metadata.name);
                         self.storage.delete(&pod_key).await?;
-                        info!("Rolling update: deleted pod {} (old revision {})", pod.metadata.name, pod_revision);
-                        break; // Delete one at a time
+                        info!("Rolling update: deleted pod {} (old revision {}, update revision {})", pod.metadata.name, pod_revision, update_revision);
+                        deleted_one = true;
+                        break; // Delete one at a time for OrderedReady rolling updates
                     }
                 }
-            } // end if all_ready
+            }
+            let _ = deleted_one;
         }
 
         // Re-fetch and recount pods after create/delete operations to get accurate status

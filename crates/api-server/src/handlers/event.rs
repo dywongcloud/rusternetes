@@ -101,7 +101,10 @@ pub async fn list_all(
     }
 
     let prefix = build_prefix("events", None);
-    let events: Vec<Event> = state.storage.list(&prefix).await?;
+    let mut events: Vec<Event> = state.storage.list(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut events, &params)?;
 
     Ok(Json(EventList {
         api_version: "v1".to_string(),
@@ -478,10 +481,12 @@ pub async fn list_all_events_v1(
     }
 
     let prefix = build_prefix("events", None);
-    let events: Vec<Event> = state.storage.list(&prefix).await?;
+    let mut events: Vec<Event> = state.storage.list(&prefix).await?;
 
-    let mut events_v1: Vec<Event> = events;
-    for event in &mut events_v1 {
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut events, &params)?;
+
+    for event in &mut events {
         event.api_version = "events.k8s.io/v1".to_string();
     }
 
@@ -489,7 +494,7 @@ pub async fn list_all_events_v1(
         api_version: "events.k8s.io/v1".to_string(),
         kind: "EventList".to_string(),
         metadata: rusternetes_common::types::ListMeta::default(),
-        items: events_v1,
+        items: events,
     }).into_response())
 }
 

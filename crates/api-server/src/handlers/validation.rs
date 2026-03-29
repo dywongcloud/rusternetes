@@ -11,18 +11,26 @@ use std::collections::{HashMap, HashSet};
 /// Returns the first duplicate key found (just the key name, not dotted path), or None.
 /// This scans each `{...}` object at every depth for duplicate keys within that object.
 fn find_duplicate_json_key(json_str: &str) -> Option<String> {
+    let dups = find_all_duplicate_json_keys(json_str);
+    dups.into_iter().next()
+}
+
+/// Find ALL duplicate JSON keys at any nesting level of a JSON object string.
+/// Returns dotted paths (e.g., "spec.replicas") for each duplicate found.
+fn find_all_duplicate_json_keys(json_str: &str) -> Vec<String> {
     let trimmed = json_str.trim();
-    if !trimmed.starts_with('{') { return None; }
+    if !trimmed.starts_with('{') { return Vec::new(); }
 
     let bytes = trimmed.as_bytes();
-    // Find all object boundaries and check each one for duplicate keys
-    find_duplicate_in_object(bytes, 0).map(|(_pos, key)| key)
+    let mut results = Vec::new();
+    find_duplicates_in_object(bytes, 0, "", &mut results);
+    results
 }
 
 /// Parse a JSON object starting at `start` (which should point to '{'),
-/// returning the first duplicate key found and the position after the object.
-/// Returns Some((end_pos, duplicate_key)) if a duplicate is found.
-fn find_duplicate_in_object(bytes: &[u8], start: usize) -> Option<(usize, String)> {
+/// collecting all duplicate key paths into `results`.
+/// Returns the position after the closing '}', or None on parse error.
+fn find_duplicates_in_object(bytes: &[u8], start: usize, prefix: &str, results: &mut Vec<String>) -> Option<usize> {
     if start >= bytes.len() || bytes[start] != b'{' {
         return None;
     }
@@ -37,7 +45,7 @@ fn find_duplicate_in_object(bytes: &[u8], start: usize) -> Option<(usize, String
 
         // Check for end of object
         if bytes[pos] == b'}' {
-            return None;
+            return Some(pos + 1);
         }
 
         // Skip comma between entries
@@ -45,6 +53,11 @@ fn find_duplicate_in_object(bytes: &[u8], start: usize) -> Option<(usize, String
             pos += 1;
             pos = skip_whitespace(bytes, pos);
             if pos >= bytes.len() { return None; }
+        }
+
+        // Check for end of object again (after comma)
+        if bytes[pos] == b'}' {
+            return Some(pos + 1);
         }
 
         // Expect a key string
@@ -60,6 +73,13 @@ fn find_duplicate_in_object(bytes: &[u8], start: usize) -> Option<(usize, String
         };
         pos = key_end;
 
+        // Build the dotted path for this key
+        let dotted_path = if prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{}.{}", prefix, key)
+        };
+
         // Skip whitespace and colon
         pos = skip_whitespace(bytes, pos);
         if pos >= bytes.len() || bytes[pos] != b':' { return None; }
@@ -68,16 +88,13 @@ fn find_duplicate_in_object(bytes: &[u8], start: usize) -> Option<(usize, String
 
         // Check for duplicate key in this object
         if !seen_keys.insert(key.clone()) {
-            return Some((pos, key));
+            results.push(dotted_path.clone());
         }
 
         // Now we need to skip the value, but also recurse into objects/arrays
         // to check for nested duplicates
-        match skip_value_and_check(bytes, pos) {
-            Some((end, dup)) => {
-                if let Some(d) = dup {
-                    return Some((end, d));
-                }
+        match collect_value_duplicates(bytes, pos, &dotted_path, results) {
+            Some(end) => {
                 pos = end;
             }
             None => return None,
@@ -86,33 +103,31 @@ fn find_duplicate_in_object(bytes: &[u8], start: usize) -> Option<(usize, String
 }
 
 /// Skip a JSON value starting at `pos`, also checking nested objects for duplicates.
-/// Returns Some((end_pos, Option<duplicate_key>)) or None on parse error.
-fn skip_value_and_check(bytes: &[u8], pos: usize) -> Option<(usize, Option<String>)> {
+/// Collects all duplicate key paths into `results`.
+/// Returns the position after the value, or None on parse error.
+fn collect_value_duplicates(bytes: &[u8], pos: usize, prefix: &str, results: &mut Vec<String>) -> Option<usize> {
     if pos >= bytes.len() { return None; }
 
     match bytes[pos] {
         b'{' => {
             // Recurse into object to check for duplicates
-            if let Some((end_pos, dup_key)) = find_duplicate_in_object(bytes, pos) {
-                return Some((end_pos, Some(dup_key)));
-            }
-            // No duplicate found, but we still need to skip past the object
-            let end = skip_json_value(bytes, pos)?;
-            Some((end, None))
+            find_duplicates_in_object(bytes, pos, prefix, results)
         }
         b'[' => {
             // Recurse into array elements
             let mut p = pos + 1;
+            let mut idx = 0;
             loop {
                 p = skip_whitespace(bytes, p);
                 if p >= bytes.len() { return None; }
-                if bytes[p] == b']' { return Some((p + 1, None)); }
+                if bytes[p] == b']' { return Some(p + 1); }
                 if bytes[p] == b',' { p += 1; continue; }
 
-                match skip_value_and_check(bytes, p) {
-                    Some((end, dup)) => {
-                        if dup.is_some() { return Some((end, dup)); }
+                let elem_prefix = format!("{}[{}]", prefix, idx);
+                match collect_value_duplicates(bytes, p, &elem_prefix, results) {
+                    Some(end) => {
                         p = end;
+                        idx += 1;
                     }
                     None => return None,
                 }
@@ -120,8 +135,7 @@ fn skip_value_and_check(bytes: &[u8], pos: usize) -> Option<(usize, Option<Strin
         }
         _ => {
             // Scalar value — just skip it
-            let end = skip_json_value(bytes, pos)?;
-            Some((end, None))
+            skip_json_value(bytes, pos)
         }
     }
 }
@@ -289,8 +303,11 @@ fn find_unknown_fields_recursive(
 }
 
 /// When `fieldValidation=Strict` is set, validate that the request body does not
-/// contain unknown fields by comparing the original JSON against a re-serialized
-/// version of the parsed struct.
+/// contain unknown or duplicate fields. Unknown fields are detected by comparing
+/// the original JSON against a re-serialized version of the parsed struct.
+/// Duplicate fields are detected by scanning the raw JSON.
+/// All errors are combined into a single message matching the Kubernetes format:
+/// `strict decoding error: unknown field "spec.foo", duplicate field "spec.bar"`
 pub fn validate_strict_fields(
     params: &HashMap<String, String>,
     original_body: &[u8],
@@ -300,15 +317,7 @@ pub fn validate_strict_fields(
         return Ok(());
     }
 
-    // Check for duplicate keys in the JSON body before parsing
-    // serde_json silently takes the last value for duplicates, so we must detect manually
-    if let Ok(body_str) = std::str::from_utf8(original_body) {
-        if let Some(dup_field) = find_duplicate_json_key(body_str) {
-            return Err(Error::InvalidResource(format!(
-                "strict decoding error: json: duplicate field \"{}\"", dup_field
-            )));
-        }
-    }
+    let mut error_parts: Vec<String> = Vec::new();
 
     // Parse original as generic JSON
     let original: serde_json::Value = serde_json::from_slice(original_body)
@@ -332,10 +341,24 @@ pub fn validate_strict_fields(
     let mut unknown = Vec::new();
     find_unknown_fields_recursive(&original, &canonical, "", &mut unknown);
 
-    if !unknown.is_empty() {
+    // Add unknown field errors
+    for field in &unknown {
+        error_parts.push(format!("unknown field \"{}\"", field));
+    }
+
+    // Check for duplicate keys in the JSON body
+    // serde_json silently takes the last value for duplicates, so we must detect manually
+    if let Ok(body_str) = std::str::from_utf8(original_body) {
+        let dup_fields = find_all_duplicate_json_keys(body_str);
+        for dup_field in &dup_fields {
+            error_parts.push(format!("duplicate field \"{}\"", dup_field));
+        }
+    }
+
+    if !error_parts.is_empty() {
         return Err(Error::InvalidResource(format!(
-            "strict decoding error: unknown field \"{}\"",
-            unknown[0]
+            "strict decoding error: {}",
+            error_parts.join(", ")
         )));
     }
 

@@ -98,9 +98,9 @@ pub async fn create(
                         && !sysctl.name.starts_with("net.ipv4.conf.")
                         && !sysctl.name.starts_with("net.ipv6.conf.")
                     {
-                        return Err(rusternetes_common::Error::InvalidResource(format!(
-                            "Pod \"{}\" is invalid: spec.securityContext.sysctls: Invalid value: \"{}\": unsafe sysctl \"{}\" is not allowed",
-                            pod.metadata.name, sysctl.name, sysctl.name
+                        return Err(rusternetes_common::Error::Forbidden(format!(
+                            "pods \"{}\" is forbidden: unsafe sysctl \"{}\" is not allowed",
+                            pod.metadata.name, sysctl.name
                         )));
                     }
                 }

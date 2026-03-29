@@ -599,7 +599,7 @@ fn get_aggregated_resources_for_group(
         serde_json::json!({
             "resource": name,
             "responseKind": {
-                "group": "",
+                "group": group,
                 "version": version,
                 "kind": kind
             },

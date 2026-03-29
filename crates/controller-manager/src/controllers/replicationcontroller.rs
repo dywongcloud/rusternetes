@@ -362,8 +362,9 @@ impl<S: Storage> ReplicationControllerController<S> {
                 message: Some(msg),
             }])
         } else {
-            // Clear failure conditions when replicas are sufficient
-            Some(vec![])
+            // Clear failure conditions when replicas are sufficient — use None
+            // (not empty vec) so K8s clients see no conditions field at all
+            None
         };
 
         // Re-read from storage for fresh resourceVersion to avoid CAS conflicts

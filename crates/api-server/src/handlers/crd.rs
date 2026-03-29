@@ -156,33 +156,28 @@ pub async fn create_crd(
 
     info!("CRD created: {}", crd_name);
 
-    // Trigger status updates after creation to generate MODIFIED events.
+    // Synchronously update the CRD status to generate a MODIFIED watch event.
     // K8s clients watch for CRD status changes (Established condition) using the
-    // resourceVersion from the CREATE response. Since we set status during creation,
-    // there's no MODIFIED event without this update. We retry multiple times to
-    // ensure the watch catches it even if there are timing issues.
+    // resourceVersion from the CREATE response. The CREATE itself produces an ADDED
+    // watch event, but clients watch from that resourceVersion for MODIFIED events
+    // containing the Established condition. By doing a synchronous update before
+    // returning the CREATE response, we ensure the MODIFIED event exists in the
+    // watch stream at a resourceVersion >= the CREATE's resourceVersion.
+    // The client will see the MODIFIED event when it starts watching.
     {
-        let storage = state.storage.clone();
-        let key_clone = key.clone();
-        tokio::spawn(async move {
-            // Fire multiple updates at increasing intervals to ensure the watch
-            // catches at least one MODIFIED event. The watch may not be established
-            // by the first update (50ms), so we keep firing. Do NOT break after
-            // first success — the watch needs a MODIFIED event AFTER it subscribes.
-            for (i, delay_ms) in [100, 500, 2000, 5000].iter().enumerate() {
-                tokio::time::sleep(std::time::Duration::from_millis(*delay_ms)).await;
-                if let Ok(mut crd_val) = storage.get::<serde_json::Value>(&key_clone).await {
-                    if let Some(status) = crd_val.get_mut("status") {
-                        if let Some(obj) = status.as_object_mut() {
-                            obj.insert("observedGeneration".to_string(), serde_json::json!(i as i64 + 1));
-                        }
-                    }
-                    let _ = storage.update(&key_clone, &crd_val).await;
+        if let Ok(mut crd_val) = state.storage.get::<serde_json::Value>(&key).await {
+            if let Some(status) = crd_val.get_mut("status") {
+                if let Some(obj) = status.as_object_mut() {
+                    obj.insert("observedGeneration".to_string(), serde_json::json!(1));
                 }
             }
-        });
+            let _ = state.storage.update(&key, &crd_val).await;
+        }
     }
 
+    // Return the originally created value (with the CREATE resourceVersion).
+    // The client will watch from this resourceVersion and see the MODIFIED event
+    // we just wrote above.
     Ok((StatusCode::CREATED, Json(created)))
 }
 

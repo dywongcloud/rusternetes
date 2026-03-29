@@ -93,6 +93,8 @@ pub struct ContainerRuntime {
     cni: Option<CniRuntime>,
     use_cni: bool,
     kubernetes_service_host: String,
+    /// Token manager for generating projected service account tokens
+    token_manager: rusternetes_common::auth::TokenManager,
     /// Probe state tracker: key is "{pod_name}/{container_name}/{probe_type}"
     probe_states: Mutex<HashMap<String, ProbeState>>,
 }
@@ -129,6 +131,11 @@ impl ContainerRuntime {
             }
         };
 
+        // Use the same JWT secret as the API server for token generation
+        let jwt_secret = std::env::var("JWT_SECRET")
+            .unwrap_or_else(|_| "rusternetes-secret-change-in-production".to_string());
+        let token_manager = rusternetes_common::auth::TokenManager::new(jwt_secret.as_bytes());
+
         Ok(Self {
             docker,
             storage: None,
@@ -139,6 +146,7 @@ impl ContainerRuntime {
             cni,
             use_cni,
             kubernetes_service_host,
+            token_manager,
             probe_states: Mutex::new(HashMap::new()),
         })
     }
@@ -2063,9 +2071,47 @@ impl ContainerRuntime {
                         if let Some(parent) = std::path::Path::new(&token_path).parent() {
                             std::fs::create_dir_all(parent)?;
                         }
-                        // Write a placeholder JWT token
-                        let token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.placeholder";
-                        std::fs::write(&token_path, token)?;
+                        // Generate a real JWT token bound to this pod
+                        let sa_name = pod.spec.as_ref()
+                            .and_then(|s| s.service_account_name.as_deref())
+                            .unwrap_or("default");
+                        let sa_uid = if let Some(storage) = storage {
+                            let sa_key = build_key("serviceaccounts", Some(namespace), sa_name);
+                            match storage.get::<rusternetes_common::resources::ServiceAccount>(&sa_key).await {
+                                Ok(sa) => sa.metadata.uid.clone(),
+                                Err(_) => String::new(),
+                            }
+                        } else {
+                            String::new()
+                        };
+                        let expiration_seconds = sa_token.expiration_seconds.unwrap_or(3600);
+                        let now = chrono::Utc::now();
+                        let exp = now.timestamp() + expiration_seconds;
+                        let mut audiences = vec!["rusternetes".to_string()];
+                        if let Some(ref aud) = sa_token.audience {
+                            audiences = vec![aud.clone()];
+                        }
+                        let node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
+                        let claims = rusternetes_common::auth::ServiceAccountClaims {
+                            sub: format!("system:serviceaccount:{}:{}", namespace, sa_name),
+                            namespace: namespace.to_string(),
+                            uid: sa_uid,
+                            iat: now.timestamp(),
+                            exp,
+                            iss: "rusternetes-api-server".to_string(),
+                            aud: audiences,
+                            pod_name: Some(pod_name.clone()),
+                            pod_uid: Some(pod.metadata.uid.clone()),
+                            node_name,
+                        };
+                        let token = match self.token_manager.generate_token(claims) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                warn!("Failed to generate SA token for pod {}: {}, using placeholder", pod_name, e);
+                                "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.placeholder".to_string()
+                            }
+                        };
+                        std::fs::write(&token_path, &token)?;
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt;

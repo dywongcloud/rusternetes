@@ -51,6 +51,19 @@ impl<S: Storage> JobController<S> {
 
         info!("Reconciling Job {}/{}", namespace, name);
 
+        // Skip already-completed or already-failed jobs
+        if let Some(ref status) = job.status {
+            if let Some(ref conditions) = status.conditions {
+                let is_finished = conditions.iter().any(|c| {
+                    (c.condition_type == "Complete" || c.condition_type == "Failed")
+                        && c.status == "True"
+                });
+                if is_finished {
+                    return Ok(());
+                }
+            }
+        }
+
         let completions = job.spec.completions.unwrap_or(1);
         let parallelism = job.spec.parallelism.unwrap_or(1);
         let backoff_limit = job.spec.backoff_limit.unwrap_or(6);
@@ -143,6 +156,82 @@ impl<S: Storage> JobController<S> {
                     Some(Phase::Succeeded) => succeeded += 1,
                     Some(Phase::Failed) => failed += 1,
                     _ => {}
+                }
+            }
+        }
+
+        // Handle suspended jobs: delete all active pods and set active to 0
+        if job.spec.suspend.unwrap_or(false) {
+            if active > 0 {
+                for pod in job_pods.iter() {
+                    let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
+                    if matches!(phase, Some(Phase::Running) | Some(Phase::Pending)) {
+                        let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                        let _ = self.storage.delete(&pod_key).await;
+                        info!("Suspended job {}/{}: deleted active pod {}", namespace, name, pod.metadata.name);
+                    }
+                }
+            }
+            // Preserve existing start_time
+            let existing_start_time = job.status.as_ref().and_then(|s| s.start_time);
+            let existing_conditions = job.status.as_ref().and_then(|s| s.conditions.clone());
+            job.status = Some(JobStatus {
+                active: Some(0),
+                succeeded: Some(succeeded),
+                failed: Some(failed),
+                conditions: existing_conditions,
+                start_time: existing_start_time,
+                completion_time: None,
+                ready: None,
+                terminating: None,
+                completed_indexes: None,
+                failed_indexes: None,
+                uncounted_terminated_pods: None,
+                observed_generation: job.metadata.generation,
+            });
+            let key = format!("/registry/jobs/{}/{}", namespace, name);
+            self.storage.update(&key, job).await?;
+            return Ok(());
+        }
+
+        // Handle activeDeadlineSeconds — fail the job if it has been active too long
+        if let Some(deadline) = job.spec.active_deadline_seconds {
+            if let Some(start) = job.status.as_ref().and_then(|s| s.start_time) {
+                let elapsed = chrono::Utc::now().signed_duration_since(start).num_seconds();
+                if elapsed > deadline {
+                    warn!("Job {}/{} exceeded activeDeadlineSeconds ({} > {})", namespace, name, elapsed, deadline);
+                    // Delete all active pods
+                    for pod in job_pods.iter() {
+                        let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
+                        if matches!(phase, Some(Phase::Running) | Some(Phase::Pending)) {
+                            let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                            let _ = self.storage.delete(&pod_key).await;
+                        }
+                    }
+                    job.status = Some(JobStatus {
+                        active: Some(0),
+                        succeeded: Some(succeeded),
+                        failed: Some(failed),
+                        conditions: Some(vec![JobCondition {
+                            condition_type: "Failed".to_string(),
+                            status: "True".to_string(),
+                            last_probe_time: Some(chrono::Utc::now()),
+                            last_transition_time: Some(chrono::Utc::now()),
+                            reason: Some("DeadlineExceeded".to_string()),
+                            message: Some(format!("Job was active longer than specified deadline of {} seconds", deadline)),
+                        }]),
+                        start_time: job.status.as_ref().and_then(|s| s.start_time),
+                        completion_time: Some(chrono::Utc::now()),
+                        ready: None,
+                        terminating: None,
+                        completed_indexes: None,
+                        failed_indexes: None,
+                        uncounted_terminated_pods: None,
+                        observed_generation: job.metadata.generation,
+                    });
+                    let key = format!("/registry/jobs/{}/{}", namespace, name);
+                    self.storage.update(&key, job).await?;
+                    return Ok(());
                 }
             }
         }

@@ -357,7 +357,11 @@ fn generate_pod_logs(
         lines.push(formatted_line);
     }
 
-    let result = lines.join("\n") + "\n";
+    let result = if lines.is_empty() {
+        String::new()
+    } else {
+        lines.join("\n")
+    };
 
     // Apply limit_bytes if specified
     if let Some(limit) = query.limit_bytes {

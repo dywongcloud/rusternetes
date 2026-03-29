@@ -33,7 +33,7 @@ impl Service {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceSpec {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub selector: Option<HashMap<String, String>>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -390,13 +390,13 @@ mod tests {
 
     #[test]
     fn test_service_selector_none_serialization() {
-        // When selector is None, it should be omitted from JSON
+        // When selector is None, it should be serialized as null (K8s clients require it)
         let spec = ServiceSpec {
             selector: None,
             ..Default::default()
         };
         let json = serde_json::to_string(&spec).unwrap();
-        assert!(!json.contains("selector"));
+        assert!(json.contains("\"selector\":null"));
     }
 
     #[test]
