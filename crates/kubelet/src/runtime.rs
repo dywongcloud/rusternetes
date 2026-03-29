@@ -2811,7 +2811,11 @@ impl ContainerRuntime {
                     // - fsGroup is set (needs proper chmod support that virtiofs lacks)
                     // - Any emptyDir volume (virtiofs on Docker Desktop doesn't support chmod,
                     //   causing permission tests to fail; tmpfs supports full POSIX permissions)
-                    let use_tmpfs = empty_dir_volumes.contains(&mount.name) && expanded_sub_path.is_none();
+                    // Only use tmpfs for emptyDir with medium: Memory.
+                    // Default medium must use bind mounts for cross-container sharing.
+                    // tmpfs mounts are per-container in Docker — containers sharing the
+                    // same emptyDir volume wouldn't see each other's writes with tmpfs.
+                    let use_tmpfs = is_memory_medium && empty_dir_volumes.contains(&mount.name) && expanded_sub_path.is_none();
 
                     if use_tmpfs {
                         // Use tmpfs — supports proper chmod unlike virtiofs bind mounts.

@@ -803,9 +803,14 @@ impl Kubelet {
 
                             if let Err(e) = self.storage.update(&key, &new_pod).await {
                                 warn!(
-                                    "Failed to update pod {}/{} status to CreateContainerError: {}",
+                                    "Failed to update pod {}/{} status to CreateContainerError: {}, retrying",
                                     namespace, pod_name, e
                                 );
+                                // CAS retry — re-read and apply status
+                                if let Ok(mut retry_pod) = self.storage.get::<Pod>(&key).await {
+                                    retry_pod.status = new_pod.status.clone();
+                                    let _ = self.storage.update(&key, &retry_pod).await;
+                                }
                             }
                         } else {
                             // Get init container statuses from Docker to capture
