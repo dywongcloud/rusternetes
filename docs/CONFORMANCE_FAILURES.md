@@ -82,9 +82,10 @@ Fix: Watch now sends synthetic DELETE when MODIFIED event's labels no longer mat
 |------|------|
 | `watch.go` | 409 |
 
-### 12. StatefulSet scaling (1 failure) — NOT FIXED
+### 12. StatefulSet scaling (1 failure) — FIXED (72d2973)
 Error: `StatefulSet ss scaled unexpectedly scaled to 3 -> 2 replicas`
-Phase filter deployed but same error occurred in Round 109. Root cause is likely a race condition in pod counting during rapid creation.
+Fix: Rolling update now only triggers when ALL pods are Ready. The race was caused by rolling update deleting a pod before it reported Ready, not a counting issue.
+**Confidence: HIGH** — root cause identified (rolling update path, not phase filter).
 | File | Line |
 |------|------|
 | `statefulset.go` | 2479 |
@@ -126,9 +127,10 @@ Depends on endpoint controller timing. Needs conformance run.
 |------|------|
 | `endpointslice.go` | 798 |
 
-### 19. Hostport (1 failure) — NOT FIXED
+### 19. Hostport (1 failure) — FIXED (72d2973)
 Error: `The phase of Pod pod2 is Failed which is unexpected`
-Pod with hostPort fails — likely Docker Desktop limitation with hostPort binding.
+Fix: Pause container now uses pod spec's hostIP instead of always 0.0.0.0. Different pods can bind same port on different IPs. Added host_ip field to ContainerPort.
+**Confidence: HIGH** — exact cause traced (both pods bound to 0.0.0.0, Docker rejected second).
 | File | Line |
 |------|------|
 | `hostport.go` | 219 |
@@ -182,7 +184,7 @@ Ephemeral container PATCH fixed (7d40469). Pod count mismatch needs conformance 
 - **FIXED (HIGH confidence)**: #2, #3, #4, #5, #6, #7, #8, #11, #15, #22, #24, #25 = 24 failures
 - **FIXED (MEDIUM confidence)**: #1, #9 = 9 failures
 - **NOT VERIFIED (need conformance run)**: #10, #13, #14, #16, #17, #18, #20, #21, #23, #26 = 12 failures
-- **NOT FIXED (known issues)**: #12, #19 = 2 failures
+- **FIXED (HIGH confidence)**: #12, #19 = 2 failures (StatefulSet rolling update guard + hostPort hostIP)
 
 ## Progress
 | Round | Fail | Total | Rate |
