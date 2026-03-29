@@ -59,7 +59,8 @@ Fix: Same as #6 — pod PATCH handler shared by ephemeral containers endpoint.
 | `job.go` | 553 | Expected 0, got non-zero |
 | `job.go` | 974 | context deadline exceeded |
 
-### 9. Aggregated discovery (2 failures)
+### 9. Aggregated discovery (2 failures) — FIXED (f5241df)
+Fix: q-value preference parsing for Accept header. Returns aggregated when q-value is higher.
 | File | Line | Error |
 |------|------|-------|
 | `aggregated_discovery.go` | 227 | context deadline exceeded |
@@ -95,8 +96,9 @@ Error: `timed out waiting for the condition`
 |------|------|
 | `init_container.go` | 440 |
 
-### 15. Service latency decode error (1 failure)
+### 15. Service latency decode error (1 failure) — FIXED (already deployed)
 Error: `failed to decode: missing field 'selector' at line 1 column 493`
+Fix: ServiceSpec has Default derive and `#[serde(default)]` on selector — already in deployed code.
 | File | Line |
 |------|------|
 | `service_latency.go` | 142 |
@@ -163,7 +165,8 @@ Fix: Same as #24 — OpenAPI validation works now.
 |------|------|
 | `builder.go` | 97 |
 
-### 26. Pod lifecycle (2 failures)
+### 26. Pod lifecycle (2 failures) — FIXED (7d40469 + 7bc88bf)
+Fix: Ephemeral container PATCH now uses correct content-type. Pod readiness path no longer skipped on Docker timeout.
 | File | Line | Error |
 |------|------|-------|
 | `pods.go` | 575 | expected 2 containers, got different count |
