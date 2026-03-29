@@ -78,14 +78,24 @@ impl Kubelet {
                         while let Some(event) = stream.next().await {
                             match event {
                                 Ok(WatchEvent::Added(key, value) | WatchEvent::Modified(key, value)) => {
-                                    // Quick check: is this pod assigned to our node?
-                                    if value.contains(&format!("\"nodeName\":\"{}\"", node_name)) {
-                                        // Extract pod name from key for targeted sync
-                                        let _ = watch_tx_clone.try_send(key);
+                                    // Parse to check nodeName reliably (avoid string matching on JSON)
+                                    if let Ok(pod) = serde_json::from_str::<serde_json::Value>(&value) {
+                                        let assigned_node = pod.pointer("/spec/nodeName")
+                                            .and_then(|v| v.as_str());
+                                        if assigned_node == Some(&node_name) {
+                                            let _ = watch_tx_clone.try_send(key);
+                                        }
                                     }
                                 }
-                                Ok(WatchEvent::Deleted(key, _)) => {
-                                    let _ = watch_tx_clone.try_send(key);
+                                Ok(WatchEvent::Deleted(key, prev_value)) => {
+                                    // Only trigger for pods that were on our node
+                                    if let Ok(pod) = serde_json::from_str::<serde_json::Value>(&prev_value) {
+                                        let assigned_node = pod.pointer("/spec/nodeName")
+                                            .and_then(|v| v.as_str());
+                                        if assigned_node == Some(&node_name) {
+                                            let _ = watch_tx_clone.try_send(key);
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     debug!("Pod watch error: {}", e);
