@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 110** | IN PROGRESS | 74/441 tests | 29 passed, 45 failed
+**Round 110** | IN PROGRESS | 90/441 tests | 36 passed, 54 failed (40% pass)
 
 ## Round 110 Live Failures by Category
 
@@ -8,7 +8,7 @@
 |----------|-------|------------|
 | kubectl builder | 4 | Fix committed (5da5f98) — protobuf envelope wrapping |
 | CRD timeout | 5 | Fix committed (4624a26) — status update timing |
-| Webhook not ready | 3 | Agent working on fix |
+| Webhook not ready | 3 | Fix committed (7266a9e) — scheme lowercase + no_proxy |
 | Network/service | 4 | Timeout — pods may not be reachable fast enough |
 | StatefulSet | 2 | Rolling update guard not sufficient |
 | SA tokens | 2 | Fix committed (f65ab7b) — TokenRequest resilience |
@@ -46,6 +46,6 @@
 | 107 | 19 | ~430 | ~96% |
 | 108 | 178 | 441 | 60% |
 | 109 | 48* | 78* | 38%* |
-| 110 | 45 | 74/441 | in progress |
+| 110 | 54 | 90/441 | 40% pass (in progress) |
 
 *Round 109 incomplete
