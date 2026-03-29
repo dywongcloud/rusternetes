@@ -773,17 +773,10 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     .and_then(|n| n.as_str())
                     == Some(policy_name);
                 if !matches_policy { return false; }
-                // Check binding age — skip if too new
-                if let Some(created) = b.get("metadata")
-                    .and_then(|m| m.get("creationTimestamp"))
-                    .and_then(|t| t.as_str())
-                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                {
-                    let age = chrono::Utc::now().signed_duration_since(created);
-                    age.num_seconds() >= 2
-                } else {
-                    true // No timestamp, assume ready
-                }
+                // VAP bindings take effect immediately — no delay needed.
+                // The conformance test creates a binding and immediately tests
+                // enforcement. Any artificial delay causes the test to fail.
+                true
             });
             if !has_ready_binding {
                 continue;
