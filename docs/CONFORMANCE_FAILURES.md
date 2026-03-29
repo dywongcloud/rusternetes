@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 110** | IN PROGRESS | 303/441 tests | 192 passed, 111 failed (63.4% pass)
+**Round 110** | IN PROGRESS | 335/441 tests | 216 passed, 119 failed (64.5% pass)
 
 ## Failures with Committed Fixes (~65 of 104)
 
@@ -33,15 +33,14 @@
 | RC watch | 1 | fba0a62 | Watch condition event |
 | Pod client | 1 | 7d40469 | Ephemeral PATCH content-type |
 
-## Failures NOT Fixed (need code changes) (~6)
+## Failures NOT Fixed (need code changes) (~4)
 
 | Category | Count | Error | Status |
 |----------|-------|-------|--------|
-| Runtime status | 2 | Container termination message wrong channel | SPDY protocol issue |
 | VAP marker | 1 | Policy didn't deny request | CEL evaluation at admission |
-| Expansion | 1 | Pod env var | Downward API expansion |
-| Exec | 1 | Exec command failed | Container exec issue |
-| Pods SPDY | 1 | Channel 3 before channel 1 | WebSocket protocol |
+| Expansion | 1 | SubPath validation timeout | Container error state detection |
+| Exec | 1 | Exec command exit code 1 | Container exec environment |
+| Runtime | 1 | Container count mismatch | Container status reporting |
 
 ## Recently Fixed
 | Category | Commit | Fix |
@@ -52,6 +51,7 @@
 | StatefulSet revision (4) | 78c79bb | SHA-256 deterministic hashing |
 | Volume perms (2) | 90cd952 | Prevent duplicate resolv.conf mount |
 | DaemonSet status (1) | 3efd08d | numberReady uses Ready condition |
+| Runtime termination (2) | 6af1a31 | FallbackToLogsOnError policy + SPDY channel order |
 
 ## Timeout Failures (~24) — caused by pods not becoming Ready fast enough
 
@@ -76,4 +76,4 @@ These are NOT code bugs. They're caused by Docker Desktop latency in the kubelet
 |-------|------|-------|------|
 | 107 | 19 | ~430 | ~96% |
 | 108 | 178 | 441 | 60% |
-| 110 | 111 | 303/441 | 63.4% (in progress, 69% complete) |
+| 110 | 119 | 335/441 | 64.5% (in progress, 76% complete) |
