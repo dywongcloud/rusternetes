@@ -1,28 +1,25 @@
 # Conformance Issue Tracker
 
-**328 total fixes** | Round 109 INCOMPLETE (killed at 78/441 tests) | 48 failures / 78 tests (38% fail rate)
+**Round 109** | 48 failures / 78 tests ran (e2e killed during skip phase) | 328 fixes deployed
 
-## Deployed: #1-328
-
-## Round 109 — All 48 Failures (78/441 tests ran, e2e killed during skip phase)
+## Round 109 — All 48 Failures
 
 ### 1. Webhook deployment not ready (7 failures)
-All fail with: `waiting for webhook configuration to be ready: timed out waiting for the condition`
-Pods start, containers created, but deployment never reports ReadyReplicas > 0. Readiness probe passes in Docker but kubelet never persists Ready status.
+Error: `waiting for webhook configuration to be ready: timed out waiting for the condition`
+Pods start, containers created, but deployment never reports ReadyReplicas > 0.
 | File | Line |
 |------|------|
 | `webhook.go` | 425, 520, 601, 1244, 1549, 2338, 2465 |
 
 ### 2. Webhook matchConditions CEL error (2 failures)
 Error: `matchConditions[0].expression: compilation failed: No such key: metadata`
-CEL expression evaluation for webhook matchConditions doesn't have `object.metadata` in scope.
+CEL evaluation for webhook matchConditions doesn't have `object.metadata` in scope.
 | File | Line |
 |------|------|
 | `webhook.go` | 729, 783 |
 
 ### 3. CRD creation timeout (4 failures)
 Error: `failed to create CRD: context deadline exceeded` / `creating CustomResourceDefinition: context deadline exceeded`
-K8s client sends CRD as protobuf, protobuf-to-JSON extraction produces incomplete CRD, creation fails or Established watch never fires.
 | File | Line |
 |------|------|
 | `crd_publish_openapi.go` | 318, 451 |
@@ -30,7 +27,7 @@ K8s client sends CRD as protobuf, protobuf-to-JSON extraction produces incomplet
 
 ### 4. CRD field validation decode error (3 failures)
 Error: `cannot create crd failed to decode CRD: key must be a string at line 1 column 2`
-Binary body (protobuf/CBOR) sent for CRD creation, serde_json can't parse it.
+Binary body (protobuf/CBOR) can't be parsed as JSON.
 | File | Line |
 |------|------|
 | `field_validation.go` | 245, 428, 570 |
@@ -43,55 +40,54 @@ Error: `cannot create crd context deadline exceeded`
 
 ### 6. Pod resize PATCH rejected (3 failures)
 Error: `failed to patch pod for resize: Unsupported content type: application/json`
-The resize PATCH uses `application/strategic-merge-patch+json` which our middleware normalizes to `application/json`, but then the patch handler's `PatchType::from_content_type("application/json")` returns an error because `application/json` is not a valid patch type.
+Middleware normalizes `strategic-merge-patch+json` to `application/json`, then `PatchType::from_content_type("application/json")` fails because that's not a valid patch type.
 | File | Line |
 |------|------|
 | `pod_resize.go` | 850 (x3) |
 
-### 7. Job SuccessPolicy (3 failures)
-Errors: assertion failures (expected values don't match)
+### 7. Ephemeral containers PATCH rejected (1 failure)
+Error: `Failed to patch ephemeral containers: Unsupported content type: application/json`
+Same root cause as #6.
+| File | Line |
+|------|------|
+| `ephemeral_containers.go` | 80 |
+
+### 8. Job SuccessPolicy (3 failures)
 | File | Line | Error |
 |------|------|-------|
 | `job.go` | 514 | Expected 0, got non-zero |
 | `job.go` | 553 | Expected 0, got non-zero |
 | `job.go` | 974 | context deadline exceeded |
 
-### 8. Aggregated discovery (2 failures)
+### 9. Aggregated discovery (2 failures)
 | File | Line | Error |
 |------|------|-------|
 | `aggregated_discovery.go` | 227 | context deadline exceeded |
-| `aggregated_discovery.go` | 282 | Expected admissionregistration.k8s.io/v1 Resource=validatingwebhookconfigurations to be present |
+| `aggregated_discovery.go` | 282 | Expected validatingwebhookconfigurations to be present |
 
-### 9. Resource quota status (2 failures)
-Quota status.used doesn't match expected values (missing `count/replicasets.apps`, wrong format for some keys).
+### 10. Resource quota status (2 failures)
+Quota `status.used` doesn't match expected values.
 | File | Line |
 |------|------|
 | `resource_quota.go` | 282, 489 |
 
-### 10. Watch DELETE event (1 failure)
+### 11. Watch DELETE event (1 failure)
 Error: `Timed out waiting for expected watch notification: {DELETED <nil>}`
 | File | Line |
 |------|------|
 | `watch.go` | 409 |
 
-### 11. StatefulSet scaling (1 failure)
+### 12. StatefulSet scaling (1 failure)
 Error: `StatefulSet ss scaled unexpectedly scaled to 3 -> 2 replicas`
 | File | Line |
 |------|------|
 | `statefulset.go` | 2479 |
 
-### 12. /etc/hosts not kubelet-managed (1 failure)
-Error: `/etc/hosts file should be kubelet managed` — Docker default /etc/hosts used instead of kubelet-managed one.
+### 13. /etc/hosts not kubelet-managed (1 failure)
+Error: Docker default `/etc/hosts` used instead of kubelet-managed one.
 | File | Line |
 |------|------|
 | `kubelet_etc_hosts.go` | 143 |
-
-### 13. Ephemeral containers PATCH rejected (1 failure)
-Error: `Failed to patch ephemeral containers: Unsupported content type: application/json`
-Same root cause as pod resize — strategic-merge-patch content type normalization breaks patch type detection.
-| File | Line |
-|------|------|
-| `ephemeral_containers.go` | 80 |
 
 ### 14. Init container timeout (1 failure)
 Error: `timed out waiting for the condition`
@@ -101,16 +97,15 @@ Error: `timed out waiting for the condition`
 
 ### 15. Service latency decode error (1 failure)
 Error: `failed to decode: missing field 'selector' at line 1 column 493`
-Service deserialization fails when spec.selector is missing from stored JSON.
 | File | Line |
 |------|------|
 | `service_latency.go` | 142 |
 
-### 16. Network service reachability (2 failures)
+### 16. Network service (2 failures)
 | File | Line | Error |
 |------|------|-------|
 | `service.go` | 1571 | context deadline exceeded |
-| `service.go` | 4291 | service not reachable within 2m0s on endpoint affinity-clusterip:80 |
+| `service.go` | 4291 | service not reachable within 2m0s |
 
 ### 17. DNS resolution (1 failure)
 Error: `context deadline exceeded`
@@ -119,7 +114,7 @@ Error: `context deadline exceeded`
 | `dns_common.go` | 476 |
 
 ### 18. EndpointSlice (1 failure)
-Error: `Error fetching EndpointSlice: client rate limiter Wait returned an error: context deadline exceeded`
+Error: `Error fetching EndpointSlice: context deadline exceeded`
 | File | Line |
 |------|------|
 | `endpointslice.go` | 798 |
@@ -172,113 +167,11 @@ Error: `exit status 1` — kubectl create with validation failed
 | `pods.go` | 575 | expected 2 containers, got different count |
 | `pod_client.go` | 302 | ephemeral container timeout |
 
-## Round 108 Fixes Applied (11 commits, #313-323)
-
-| # | Commit | Fix | Est. Impact |
-|---|--------|-----|-------------|
-| 313 | 52bafcb | Hostname truncation to 63 chars | ~20+ failures |
-| 314 | 52bafcb | RC failure conditions & observed_generation | ~1 failure |
-| 315 | 8ecc830 | Watch event batching (flat_map) | ~3 failures |
-| 316 | a863f99 | SA token pod binding info | ~2 failures |
-| 317 | d800695 | TypeMeta in status update responses | ~3 failures |
-| 318 | 628911b | OpenAPI MIME type (406 for protobuf) | ~6 failures |
-| 319 | 3147f7b | Fix broken CAS re-reads in kubelet (Ok(Some(p)) -> Ok(p)) | ~20+ failures |
-| 320 | 605c80c | Allow metadata updates on immutable ConfigMaps | ~1 failure |
-| 321 | 79f55e6 | EmptyDir tmpfs + service quota + LimitRange defaults | ~11 failures |
-| 322 | b98b8c4 | CRD status retry + binary body extraction | ~7 failures |
-| 323 | b98b8c4 | /etc/hosts in pause container + aggregated discovery Accept | ~4 failures |
-
-**Estimated total impact: ~165+ failures resolved** (all 178 failures addressed, pending redeploy)
-
-## Round 108 Final Results: 263 Passed | 178 Failed | 441 Total
-
-| # | Test | Count | Error | Fix/Status |
-|---|------|-------|-------|-----------|
-| 1 | Webhook deployments | ~15 | `sethostname: invalid argument` | **FIXED** #313 + #319 |
-| 2 | CRD creation/watch/openapi | 8 | `context deadline exceeded` | **FIXED** #322 (retry + binary extraction) |
-| 3 | CRD field validation | 6 | `key must be a string` / strict decode | **FIXED** (binary body detection + strict validation) |
-| 4 | Deployment pods not ready | 7 | `ReadyReplicas:0` / `missing field 'kind'` | **FIXED** #313 + #319 + #317 |
-| 5 | Job completion / SuccessPolicy | 10 | `Timed out` / assertion failures | **FIXED** #319 (CAS re-reads verified) |
-| 6 | Watch DELETE events | 4 | `Timed out waiting for {DELETED}` / RV mismatch | **FIXED** #315 |
-| 7 | ResourceQuota | 6 | `Expected an error` / scoped quota / status timeout | **FIXED** (scoped quotas + service quotas + status calc) |
-| 8 | StatefulSet scaling | 5 | `scaled 3 -> 2` / timeouts | **FIXED** (filter Failed/Succeeded pods + CAS) |
-| 9 | RC issues | 5 | `never added failure condition` / timeouts | **FIXED** #314 + #319 |
-| 10 | ReplicaSet scaling | 4 | `failed to scale` / timeouts | **FIXED** #319 (verified: RS filters terminated pods) |
-| 11 | Init containers | 2 | `PodCondition nil` / timeout | **FIXED** #319 (verified: kubelet sets Initialized condition) |
-| 12 | Pod runtime status | 5 | `container statuses []` / timeouts | **FIXED** #319 + pod resize support |
-| 13 | SA token extra info | 4 | `missing pod-name extra` / method not allowed | **FIXED** (TokenRequest metadata + expiration fix) |
-| 14 | LimitRange defaults | 1 | `cpu expected 300m actual 100m` | **FIXED** #321 |
-| 15 | Network/service | 11 | service not reachable / curl fail / timeouts | **FIXED** #319 (pods reach Ready, endpoints populated) |
-| 16 | /etc/hosts | 1 | `not kubelet managed` | **FIXED** #323 |
-| 17 | kubectl builder | 8 | `mime: unexpected content` | **FIXED** #318 |
-| 18 | Scheduler preemption/predicates | 7 | `context deadline exceeded` / timeout | **FIXED** (preemption logic verified + CAS) |
-| 19 | EmptyDir permissions | 5 | `-rwxr-xr-x expected -rwxrwxrwx` | **FIXED** #321 |
-| 20 | Aggregated discovery | 3 | `context deadline exceeded` | **FIXED** #323 |
-| 21 | ConfigMap/secrets volume | 3 | `ConfigMap is immutable` / volume issues | **FIXED** #320 + VAP integration |
-| 22 | DaemonSet / ControllerRevision | 4 | controller revisions not created / timeouts | **FIXED** (ControllerRevision creation implemented) |
-| 23 | Garbage Collector / Orphan | 1 | RS ownerRef not removed on orphan delete | **FIXED** (orphan ownerRef removal verified) |
-| 24 | Namespace lifecycle | 2 | namespace deleted unexpectedly | **FIXED** (PATCH content-type normalization) |
-| 25 | ValidatingAdmissionPolicy | 2 | VAP policy not enforced | **FIXED** (VAP checks on Pod + ConfigMap creation) |
-| 26 | PodDisruptionBudget / Eviction | 2 | pod eviction timeout / not evicted | **FIXED** (eviction handler checks PDB + CAS) |
-| 27 | Taints / Tolerations | 1 | pods not evicted | **FIXED** (taint eviction controller verified) |
-| 28 | Service latency | 1 | `missing field 'selector'` | **FIXED** (ServiceSpec Default derive + serde default) |
-| 29 | Conformance framework | 1 | resourceclaims status patch missing | **FIXED** (JSON Patch support for status endpoint) |
-
-### Detail: Previously listed misc items
-- `expansion.go:419` (x2) - **FIXED** by #319 (CAS re-reads, pods now reach Ready)
-- `runtimeclass.go:153` - **FIXED** by #319 (pod status persisted, RuntimeClass pod runs)
-- `kubelet.go:127` - **FIXED** by #319 (CAS re-reads)
-- `pods.go:600, 575` - **FIXED** by #319 (CAS re-reads)
-- `events.go:124`, `core_events.go:144` - **FIXED** by #317 (TypeMeta in responses)
-- `empty_dir_wrapper.go:406` - **FIXED** by #321 (tmpfs for emptyDir)
-- `csistoragecapacity.go:190` - **FIXED** (CSIStorageCapacity CRUD endpoints exist)
-- `aggregator.go:359` - **FIXED** (API aggregator endpoint exists at /apis/apiregistration.k8s.io)
-
-## Critical Fix Details
-
-### #313: Hostname truncation (52bafcb)
-Pod names > 63 chars (e.g. `sample-webhook-deployment-1ea22597-ec36f15a-8ae5-4dc4-8f3b-1da2641cef30` at 71 chars) caused `runc create` to fail with `sethostname: invalid argument`. All webhook deployment tests, many deployment tests, and any pod with a long generated name were affected. Fixed by truncating to 63 chars with trailing-dash removal.
-
-### #319: CAS re-reads (3147f7b)
-**Systemic bug.** All 15 pod status re-reads in the kubelet used `Ok(Some(p)) => p` but `storage.get()` returns `Result<T>`, not `Result<Option<T>>`. Every re-read silently fell through to using the stale pod copy, causing CAS update failures on every single pod status write. Pod readiness, container statuses, and conditions were never being persisted. Added retry logic for CAS conflicts.
-
-### #315: Watch event batching (8ecc830)
-etcd batches multiple events per watch response. Our `stream.map()` with early `return` only processed the first event, dropping subsequent events (including DELETE notifications). Fixed with `stream.flat_map()`.
-
-### #318: OpenAPI MIME (628911b)
-Protobuf OpenAPI response used `application/com.github.proto-openapi.spec.v2@v1.0+protobuf` — the `@` char is invalid per RFC 2045, causing Go's `mime.ParseMediaType` to fail. kubectl couldn't validate resources. Now returns 406 to force JSON fallback.
-
-## Estimated Post-Deploy Status
-
-| Category | Before | Expected After |
-|----------|--------|---------------|
-| Hostname truncation (#313) | ~20 | 0 |
-| CAS re-read (#319) | ~30 | 0 |
-| CRD/watch/OpenAPI (#315,#318,#322) | ~20 | 0 |
-| Pod lifecycle (#314,#317,#321,#323) | ~25 | 0 |
-| SA/auth/ConfigMap (#316,#320) | ~6 | 0 |
-| Agent fixes (quotas, CRD, GC, DS, VAP, resize) | ~40 | 0 |
-| PATCH/status/Service fixes | ~15 | 0 |
-| Remaining edge cases | ~22 | ~10-15 |
-
-**Expected: ~10-15 failures remaining (down from 178) — all known issues FIXED**
-
-## Remaining Feature Gaps (post-redeploy)
-
-All previously listed feature gaps have been addressed:
-- CSI storage — CRUD endpoints exist
-- API aggregator — endpoint exists
-- ResourceClaims — JSON Patch support for status added
-- Scoped ResourceQuotas — implemented (Terminating/NotTerminating/BestEffort/NotBestEffort/PriorityClass)
-- Pod resize — resize status tracking in kubelet
-- Sysctl — sysctls passed to pause container, safe/unsafe validation
-
 ## Progress
 | Round | Fail | Total | Rate |
 |-------|------|-------|------|
-| 104 | 36 | 441 | 92% |
-| 105 | 43 | 441 | 90% |
-| 106 | ~25 | 441 | ~94% |
-| 107 | 19 | ~430/441 | ~96% |
-| 108 | 178 | 441 | 60% (old code, pre-deploy) |
-| 109 | TBD | 441 | IN PROGRESS (Round 108 fixes deployed) |
+| 107 | 19 | ~430 | ~96% |
+| 108 | 178 | 441 | 60% |
+| 109 | 48* | 78* | 38%* |
+
+*incomplete — e2e container killed during skip phase, only 78/441 tests ran
