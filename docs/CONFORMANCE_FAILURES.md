@@ -33,17 +33,15 @@
 | RC watch | 1 | fba0a62 | Watch condition event |
 | Pod client | 1 | 7d40469 | Ephemeral PATCH content-type |
 
-## Failures NOT Fixed (need code changes) (~9)
+## Failures NOT Fixed (need code changes) (~6)
 
 | Category | Count | Error | Status |
 |----------|-------|-------|--------|
-| Runtime status | 2 | Container termination message wrong channel | Need SPDY channel fix |
-| VAP marker | 1 | Policy didn't deny request | VAP evaluation at admission time |
-| Volume perms | 2 | Expected "0" in output | emptyDir permission/mount issue |
+| Runtime status | 2 | Container termination message wrong channel | SPDY protocol issue |
+| VAP marker | 1 | Policy didn't deny request | CEL evaluation at admission |
 | Expansion | 1 | Pod env var | Downward API expansion |
 | Exec | 1 | Exec command failed | Container exec issue |
 | Pods SPDY | 1 | Channel 3 before channel 1 | WebSocket protocol |
-| DaemonSet status | 1 | Status field missing | DaemonSet numberReady |
 
 ## Recently Fixed
 | Category | Commit | Fix |
@@ -52,6 +50,8 @@
 | ControllerRevision (1) | a6a254f | Incremented revision numbers + SHA-256 |
 | Webhook panic (2) | 7d58174 | catch_unwind for CEL parser |
 | StatefulSet revision (4) | 78c79bb | SHA-256 deterministic hashing |
+| Volume perms (2) | 90cd952 | Prevent duplicate resolv.conf mount |
+| DaemonSet status (1) | 3efd08d | numberReady uses Ready condition |
 
 ## Timeout Failures (~24) — caused by pods not becoming Ready fast enough
 
