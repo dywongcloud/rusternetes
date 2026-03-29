@@ -262,8 +262,8 @@ impl Scheduler {
                 continue; // Skip nodes that violate hard topology spread constraints
             }
 
-            // Calculate resource-based score (accounting for pod overhead if specified)
-            let resource_score = self.calculate_resource_score_with_overhead(node, pod);
+            // Calculate resource-based score (accounting for pod overhead and existing pod usage)
+            let resource_score = self.calculate_resource_score_with_overhead(node, pod, all_pods);
 
             // If pod doesn't fit resource-wise, skip
             if resource_score == 0 {
@@ -479,11 +479,11 @@ impl Scheduler {
 
     /// Calculate resource score with pod overhead
     /// Pod overhead represents additional resources required beyond container requests
-    fn calculate_resource_score_with_overhead(&self, node: &Node, pod: &Pod) -> i32 {
-        use crate::advanced::calculate_resource_score;
+    fn calculate_resource_score_with_overhead(&self, node: &Node, pod: &Pod, all_pods: &[Pod]) -> i32 {
+        use crate::advanced::calculate_resource_score_with_pods;
 
-        // Get base resource score
-        let base_score = calculate_resource_score(node, pod);
+        // Get base resource score accounting for existing pod usage
+        let base_score = calculate_resource_score_with_pods(node, pod, all_pods);
 
         // If no overhead specified, return base score
         let overhead = match &pod.spec {

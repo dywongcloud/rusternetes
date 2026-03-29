@@ -424,10 +424,16 @@ fn matches_pod_affinity_term(
 
 /// Calculate resource-based node score
 pub fn calculate_resource_score(node: &Node, pod: &Pod) -> i32 {
+    calculate_resource_score_with_pods(node, pod, &[])
+}
+
+/// Calculate resource score accounting for pods already scheduled on the node.
+/// Returns 0 if the node can't fit the pod, otherwise a score 1-100.
+pub fn calculate_resource_score_with_pods(node: &Node, pod: &Pod, all_pods: &[Pod]) -> i32 {
     let allocatable = match &node.status {
         Some(status) => match &status.allocatable {
             Some(a) => a,
-            None => return 50, // Default score if no resource info
+            None => return 50,
         },
         None => return 50,
     };
@@ -436,28 +442,64 @@ pub fn calculate_resource_score(node: &Node, pod: &Pod) -> i32 {
     let mut cpu_request = 0i64;
     let mut memory_request = 0i64;
 
-    for container in &pod.spec.as_ref().unwrap().containers {
-        if let Some(ref resources) = container.resources {
-            if let Some(ref requests) = resources.requests {
-                if let Some(cpu) = requests.get("cpu") {
-                    cpu_request += parse_resource_quantity(cpu, "cpu");
-                }
-                if let Some(memory) = requests.get("memory") {
-                    memory_request += parse_resource_quantity(memory, "memory");
+    if let Some(spec) = &pod.spec {
+        for container in &spec.containers {
+            if let Some(ref resources) = container.resources {
+                if let Some(ref requests) = resources.requests {
+                    if let Some(cpu) = requests.get("cpu") {
+                        cpu_request += parse_resource_quantity(cpu, "cpu");
+                    }
+                    if let Some(memory) = requests.get("memory") {
+                        memory_request += parse_resource_quantity(memory, "memory");
+                    }
                 }
             }
         }
     }
 
-    // Calculate available resources
-    let available_cpu = allocatable
+    // Calculate total allocatable
+    let total_cpu = allocatable
         .get("cpu")
         .map(|s| parse_resource_quantity(s, "cpu"))
         .unwrap_or(0);
-    let available_memory = allocatable
+    let total_memory = allocatable
         .get("memory")
         .map(|s| parse_resource_quantity(s, "memory"))
         .unwrap_or(0);
+
+    // Subtract resources used by pods already scheduled on this node
+    let mut used_cpu = 0i64;
+    let mut used_memory = 0i64;
+    let node_name = &node.metadata.name;
+    for existing_pod in all_pods {
+        let scheduled_on_this_node = existing_pod.spec.as_ref()
+            .and_then(|s| s.node_name.as_ref())
+            .map(|n| n == node_name)
+            .unwrap_or(false);
+        if !scheduled_on_this_node { continue; }
+        // Skip terminated pods
+        let phase = existing_pod.status.as_ref().and_then(|s| s.phase.as_ref());
+        if matches!(phase, Some(rusternetes_common::types::Phase::Succeeded) | Some(rusternetes_common::types::Phase::Failed)) {
+            continue;
+        }
+        if let Some(spec) = &existing_pod.spec {
+            for container in &spec.containers {
+                if let Some(ref resources) = container.resources {
+                    if let Some(ref requests) = resources.requests {
+                        if let Some(cpu) = requests.get("cpu") {
+                            used_cpu += parse_resource_quantity(cpu, "cpu");
+                        }
+                        if let Some(memory) = requests.get("memory") {
+                            used_memory += parse_resource_quantity(memory, "memory");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let available_cpu = total_cpu - used_cpu;
+    let available_memory = total_memory - used_memory;
 
     // If node can't fit the pod, return 0
     if cpu_request > available_cpu || memory_request > available_memory {
