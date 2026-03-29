@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 110** | IN PROGRESS | 204/441 tests | 132 passed, 72 failed (64.7% pass)
+**Round 110** | IN PROGRESS | 214/441 tests | 139 passed, 75 failed (65% pass)
 
 ## Round 110 Live Failures by Category
 
@@ -41,6 +41,7 @@
 | f65ab7b | RC CAS retry, SA token validation, LimitRange defaults | 2 RC + 1 LR |
 | 7266a9e | Webhook: scheme lowercase + no_proxy + headers | 5 webhook |
 | 829ce94 | CRD sync update, SS partition, Job suspend, events field sel, logs tail, sysctl, validation | 15+ |
+| 0da0e57 | Field validation improvements, StatefulSet cleanup | 2 |
 
 ## Progress
 | Round | Fail | Total | Rate |
@@ -48,6 +49,6 @@
 | 107 | 19 | ~430 | ~96% |
 | 108 | 178 | 441 | 60% |
 | 109 | 48* | 78* | 38%* |
-| 110 | 72 | 204/441 | 65% pass (in progress) |
+| 110 | 75 | 214/441 | 65% pass (in progress) |
 
 *Round 109 incomplete
