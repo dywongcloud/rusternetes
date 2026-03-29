@@ -1,34 +1,30 @@
 # Conformance Issue Tracker
 
-**Round 110** | IN PROGRESS | 39/441 tests completed | 336 fixes deployed
+**Round 110** | IN PROGRESS | 41/441 tests completed | 336 fixes deployed
 
-## Round 110 Live Failures (24 failures, 15 passed)
+## Round 110 Live Failures (26 failures, 15 passed — 41/441 tests)
 
-| File | Count | Error |
-|------|-------|-------|
-| `custom_resource_definition.go` | 3 | CRD creation timeout (30s) |
-| `builder.go` | 3 | kubectl create/apply exit status 1 |
-| `statefulset.go` | 2 | scaled 3->2 replicas |
-| `webhook.go` | 2 | webhook config not ready timeout |
-| `crd_publish_openapi.go` | 1 | CRD creation timeout |
-| `expansion.go` | 1 | pod readiness timeout |
-| `runtime.go` | 1 | container status timeout (300s) |
-| `pod_resize.go` | 1 | pod resize PATCH issue |
-| `daemon_set.go` | 1 | DaemonSet timeout |
-| `proxy.go` | 1 | proxy test timeout |
-| `util.go` | 1 | network util timeout |
-| `pod_client.go` | 1 | ephemeral container |
-| `output.go` | 1 | volume permissions |
-| `service_accounts.go` | 1 | SA token rejected |
-| `job.go` | 1 | job issue |
-| `resource_quota.go` | 1 | quota status |
-| `aggregated_discovery.go` | 1 | discovery timeout |
-| `preemption.go` | 1 | scheduler preemption |
+| Category | Count | Files | Error |
+|----------|-------|-------|-------|
+| CRD timeout | 4 | `custom_resource_definition.go`, `crd_publish_openapi.go` | CRD created but Established watch times out |
+| kubectl builder | 3 | `builder.go:97` | `proto: cannot parse invalid wire-format data` — fix committed (5da5f98) |
+| Webhook not ready | 3 | `webhook.go:839,1194,1244` | webhook deployment pod never reaches Ready |
+| StatefulSet | 2 | `statefulset.go:2479,1092` | scaled 3->2 + other |
+| Timeout/readiness | 5 | `expansion.go`, `runtime.go`, `daemon_set.go`, `proxy.go`, `util.go` | pods slow to start |
+| Pod resize | 1 | `pod_resize.go:857` | PATCH issue |
+| DNS | 1 | `dns_common.go:476` | DNS resolution timeout |
+| Pod client | 1 | `pod_client.go:216` | ephemeral container |
+| Volume perms | 1 | `output.go:263` | permissions |
+| SA token | 1 | `service_accounts.go:898` | token rejected — fix committed (4624a26) |
+| Job | 1 | `job.go:623` | job issue |
+| Resource quota | 1 | `resource_quota.go:282` | quota status |
+| Discovery | 1 | `aggregated_discovery.go:282` | discovery timeout |
+| Preemption | 1 | `preemption.go:978` | scheduler |
 
-## Fixes committed (not yet deployed)
-- CRD: Fire 4 status updates without breaking (4624a26)
-- TokenRequest: Default derive on spec for protobuf resilience (4624a26)
-- ContainerPort: Added host_ip field to test (4624a26)
+## Fixes committed but not yet deployed
+- CRD status update timing: fire all 4 updates without breaking (4624a26)
+- TokenRequest defaults (4624a26)
+- OpenAPI protobuf envelope wrapping (5da5f98)
 
 ## Progress
 | Round | Fail | Total | Rate |
@@ -36,6 +32,6 @@
 | 107 | 19 | ~430 | ~96% |
 | 108 | 178 | 441 | 60% |
 | 109 | 48* | 78* | 38%* |
-| 110 | 24 | 39/441 | in progress |
+| 110 | 26 | 41/441 | in progress |
 
 *Round 109 incomplete
