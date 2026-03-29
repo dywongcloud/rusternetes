@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 110** | IN PROGRESS | 335/441 tests | 216 passed, 119 failed (64.5% pass)
+**Round 110** | IN PROGRESS | 363/441 tests | 234 passed, 129 failed (64.5% pass)
 
 ## Failures with Committed Fixes (~65 of 104)
 
@@ -76,4 +76,4 @@ These are NOT code bugs. They're caused by Docker Desktop latency in the kubelet
 |-------|------|-------|------|
 | 107 | 19 | ~430 | ~96% |
 | 108 | 178 | 441 | 60% |
-| 110 | 119 | 335/441 | 64.5% (in progress, 76% complete) |
+| 110 | 129 | 363/441 | 64.5% (in progress, 82% complete) |
