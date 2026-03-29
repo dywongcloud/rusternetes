@@ -67,16 +67,10 @@ pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
     let accept = headers.get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    if accept.contains("proto-openapi") || accept.contains("protobuf") {
-        // Return 406 Not Acceptable for protobuf requests to force clients to use JSON.
-        // The custom MIME type "application/com.github.proto-openapi.spec.v2@v1.0+protobuf"
-        // causes Go's mime.ParseMediaType to fail with "unexpected content after media subtype".
-        return Response::builder()
-            .status(StatusCode::NOT_ACCEPTABLE)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(r#"{"message":"protobuf OpenAPI not supported, use application/json"}"#))
-            .unwrap();
-    }
+    // When client requests protobuf, return JSON instead. kubectl falls back
+    // from OpenAPI v3 to v2 with protobuf Accept header. Returning 406 causes
+    // kubectl to fail entirely. Returning JSON lets it proceed with validation.
+    // (Previously returned 406 which broke kubectl create/apply from STDIN)
 
     Response::builder()
         .status(StatusCode::OK)
