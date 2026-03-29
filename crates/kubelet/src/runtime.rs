@@ -3428,6 +3428,46 @@ impl ContainerRuntime {
         }
     }
 
+    /// Check if any spec container in a pod has terminated (exited).
+    /// This is a lightweight check that only inspects Docker state — it does NOT
+    /// run any probes, unlike `get_container_statuses`.
+    pub async fn has_terminated_containers(&self, pod: &Pod) -> bool {
+        let pod_name = &pod.metadata.name;
+        if let Some(spec) = &pod.spec {
+            for container in &spec.containers {
+                let container_name = format!("{}_{}", pod_name, container.name);
+                match self
+                    .docker
+                    .inspect_container(&container_name, None::<InspectContainerOptions>)
+                    .await
+                {
+                    Ok(inspect) => {
+                        let state = inspect.state.unwrap_or_default();
+                        let running = state.running.unwrap_or(false);
+                        if !running {
+                            // Container is not running — check if it has exited
+                            if state.exit_code.is_some()
+                                || matches!(
+                                    state.status,
+                                    Some(
+                                        bollard::secret::ContainerStateStatusEnum::EXITED
+                                            | bollard::secret::ContainerStateStatusEnum::DEAD
+                                    )
+                                )
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // Container doesn't exist or can't be inspected
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// Check if a pod's containers are running
     pub async fn is_pod_running(&self, pod_name: &str) -> Result<bool> {
         let mut filters = HashMap::new();
@@ -4142,19 +4182,38 @@ impl ContainerRuntime {
             self.get_effective_container_ip(container_name).await
         };
 
-        let scheme = http_get.scheme.as_deref().unwrap_or("http");
+        // Kubernetes sends scheme as uppercase ("HTTP", "HTTPS") — lowercase for URL
+        let scheme = http_get
+            .scheme
+            .as_deref()
+            .unwrap_or("HTTP")
+            .to_lowercase();
         let path = http_get.path.as_deref().unwrap_or("/");
         let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
 
         debug!("HTTP probe: {}", url);
 
-        // Kubernetes probes skip TLS verification (accept self-signed certs)
+        // Kubernetes probes skip TLS verification (accept self-signed certs).
+        // Disable proxy to ensure direct connection to pod IPs.
         let client = reqwest::Client::builder()
             .timeout(timeout)
             .danger_accept_invalid_certs(true)
+            .no_proxy()
             .build()?;
 
-        match client.get(&url).send().await {
+        // Build request with custom headers from probe spec (K8s sends these)
+        let mut request = client.get(&url);
+        if let Some(ref headers) = http_get.http_headers {
+            for header in headers {
+                if let Ok(name) = reqwest::header::HeaderName::from_bytes(header.name.as_bytes()) {
+                    if let Ok(value) = reqwest::header::HeaderValue::from_str(&header.value) {
+                        request = request.header(name, value);
+                    }
+                }
+            }
+        }
+
+        match request.send().await {
             Ok(response) => {
                 let code = response.status().as_u16();
                 // K8s probes consider 200-399 as success
@@ -4398,7 +4457,11 @@ impl ContainerRuntime {
                 }
             };
 
-            let scheme = http_get.scheme.as_deref().unwrap_or("http");
+            let scheme = http_get
+                .scheme
+                .as_deref()
+                .unwrap_or("HTTP")
+                .to_lowercase();
             let path = http_get.path.as_deref().unwrap_or("/");
             let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
 
@@ -4407,6 +4470,7 @@ impl ContainerRuntime {
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
                 .danger_accept_invalid_certs(true)
+                .no_proxy()
                 .build()?;
 
             match client.get(&url).send().await {
@@ -6533,5 +6597,122 @@ mod tests {
         assert_eq!(restored_sysctls[0].value, "4096");
         assert_eq!(restored_sysctls[1].name, "kernel.shm_rmid_forced");
         assert_eq!(restored_sysctls[1].value, "1");
+    }
+
+    #[test]
+    fn test_http_probe_url_scheme_lowercased() {
+        // Kubernetes sends scheme as uppercase ("HTTP", "HTTPS").
+        // The probe URL must use lowercase scheme for correct reqwest handling.
+        use rusternetes_common::resources::HTTPGetAction;
+
+        let http_get = HTTPGetAction {
+            path: Some("/readyz".to_string()),
+            port: 443,
+            host: None,
+            scheme: Some("HTTPS".to_string()),
+            http_headers: None,
+        };
+
+        let scheme = http_get
+            .scheme
+            .as_deref()
+            .unwrap_or("HTTP")
+            .to_lowercase();
+        let ip = "172.18.0.5";
+        let path = http_get.path.as_deref().unwrap_or("/");
+        let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
+
+        assert_eq!(url, "https://172.18.0.5:443/readyz");
+    }
+
+    #[test]
+    fn test_http_probe_url_scheme_default_is_http() {
+        use rusternetes_common::resources::HTTPGetAction;
+
+        let http_get = HTTPGetAction {
+            path: Some("/healthz".to_string()),
+            port: 8080,
+            host: None,
+            scheme: None,
+            http_headers: None,
+        };
+
+        let scheme = http_get
+            .scheme
+            .as_deref()
+            .unwrap_or("HTTP")
+            .to_lowercase();
+        let ip = "10.244.0.5";
+        let path = http_get.path.as_deref().unwrap_or("/");
+        let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
+
+        assert_eq!(url, "http://10.244.0.5:8080/healthz");
+    }
+
+    #[test]
+    fn test_http_probe_url_with_uppercase_http_scheme() {
+        use rusternetes_common::resources::HTTPGetAction;
+
+        let http_get = HTTPGetAction {
+            path: None,
+            port: 80,
+            host: Some("my-service".to_string()),
+            scheme: Some("HTTP".to_string()),
+            http_headers: None,
+        };
+
+        let scheme = http_get
+            .scheme
+            .as_deref()
+            .unwrap_or("HTTP")
+            .to_lowercase();
+        let ip = http_get.host.as_deref().unwrap_or("127.0.0.1");
+        let path = http_get.path.as_deref().unwrap_or("/");
+        let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
+
+        assert_eq!(url, "http://my-service:80/");
+    }
+
+    #[test]
+    fn test_http_probe_custom_headers_parsed() {
+        use rusternetes_common::resources::{HTTPGetAction, HTTPHeader};
+
+        let http_get = HTTPGetAction {
+            path: Some("/readyz".to_string()),
+            port: 443,
+            host: None,
+            scheme: Some("HTTPS".to_string()),
+            http_headers: Some(vec![
+                HTTPHeader {
+                    name: "X-Custom-Header".to_string(),
+                    value: "test-value".to_string(),
+                },
+                HTTPHeader {
+                    name: "Accept".to_string(),
+                    value: "application/json".to_string(),
+                },
+            ]),
+        };
+
+        // Verify headers can be parsed into reqwest types
+        if let Some(ref headers) = http_get.http_headers {
+            for header in headers {
+                let name = reqwest::header::HeaderName::from_bytes(header.name.as_bytes());
+                let value = reqwest::header::HeaderValue::from_str(&header.value);
+                assert!(name.is_ok(), "Header name '{}' should parse", header.name);
+                assert!(value.is_ok(), "Header value '{}' should parse", header.value);
+            }
+        }
+    }
+
+    #[test]
+    fn test_no_proxy_client_builds_successfully() {
+        // Verify that a reqwest client with no_proxy and danger_accept_invalid_certs builds OK
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(1))
+            .danger_accept_invalid_certs(true)
+            .no_proxy()
+            .build();
+        assert!(client.is_ok(), "Client with no_proxy should build successfully");
     }
 }

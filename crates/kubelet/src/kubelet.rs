@@ -1121,6 +1121,11 @@ impl Kubelet {
 
                 // For restartPolicy=Always, detect exited containers and restart them.
                 // Track restart counts and set CrashLoopBackOff when appropriate.
+                // IMPORTANT: Use has_terminated_containers() instead of get_container_statuses()
+                // to avoid running readiness probes here. Running probes twice per sync cycle
+                // (once here and once in the readiness update below) causes the probe state
+                // machine to advance twice, which can make intermittent probe results flip
+                // the ready state from true to false within a single sync cycle.
                 {
                     let restart_policy = pod
                         .spec
@@ -1129,12 +1134,10 @@ impl Kubelet {
                         .unwrap_or("Always");
 
                     if restart_policy == "Always" {
-                        if let Ok(container_statuses) = self.runtime.get_container_statuses(pod).await {
-                            let any_terminated = container_statuses.iter().any(|cs| {
-                                matches!(cs.state, Some(ContainerState::Terminated { .. }))
-                            });
-
-                            if any_terminated {
+                        let any_terminated = self.runtime.has_terminated_containers(pod).await;
+                        if any_terminated {
+                            // Need full container statuses for restart count tracking
+                            if let Ok(container_statuses) = self.runtime.get_container_statuses(pod).await {
                                 // Get existing restart counts from pod status
                                 let prev_counts: std::collections::HashMap<String, u32> = pod
                                     .status
