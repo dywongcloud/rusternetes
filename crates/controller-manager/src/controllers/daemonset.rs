@@ -323,10 +323,10 @@ impl<S: Storage> DaemonSetController<S> {
         let number_ready = final_pods_by_node
             .values()
             .filter(|pod| {
-                pod.status
-                    .as_ref()
-                    .and_then(|s| s.phase.as_ref())
-                    .map(|phase| *phase == Phase::Running)
+                // K8s numberReady counts pods with Ready condition True, not just Running phase
+                pod.status.as_ref()
+                    .and_then(|s| s.conditions.as_ref())
+                    .map(|conditions| conditions.iter().any(|c| c.condition_type == "Ready" && c.status == "True"))
                     .unwrap_or(false)
             })
             .count() as i32;
