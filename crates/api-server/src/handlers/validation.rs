@@ -477,21 +477,21 @@ mod tests {
 
     #[test]
     fn test_duplicate_key_nested() {
-        // Duplicate "replicas" inside "spec" — should be detected
+        // Duplicate "replicas" inside "spec" — should be detected with dotted path
         let json = r#"{"metadata": {"name": "test"}, "spec": {"replicas": 1, "replicas": 2}}"#;
-        assert_eq!(find_duplicate_json_key(json), Some("replicas".to_string()));
+        assert_eq!(find_duplicate_json_key(json), Some("spec.replicas".to_string()));
     }
 
     #[test]
     fn test_duplicate_key_deeply_nested() {
         let json = r#"{"a": {"b": {"c": 1, "c": 2}}}"#;
-        assert_eq!(find_duplicate_json_key(json), Some("c".to_string()));
+        assert_eq!(find_duplicate_json_key(json), Some("a.b.c".to_string()));
     }
 
     #[test]
     fn test_duplicate_key_in_array_element() {
         let json = r#"{"items": [{"x": 1, "x": 2}]}"#;
-        assert_eq!(find_duplicate_json_key(json), Some("x".to_string()));
+        assert_eq!(find_duplicate_json_key(json), Some("items[0].x".to_string()));
     }
 
     #[test]
@@ -618,12 +618,12 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("duplicate field"), "Expected 'duplicate field' in error: {}", err_msg);
-        assert!(err_msg.contains("replicas"), "Expected 'replicas' in error: {}", err_msg);
+        assert!(err_msg.contains("spec.replicas"), "Expected 'spec.replicas' dotted path in error: {}", err_msg);
     }
 
     #[test]
     fn test_strict_validation_error_format_matches_k8s() {
-        // K8s returns: strict decoding error: json: duplicate field "fieldName"
+        // K8s returns: strict decoding error: duplicate field "fieldName"
         #[derive(serde::Serialize, serde::Deserialize)]
         struct Simple {
             name: String,
@@ -638,8 +638,62 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
-            err_msg.contains(r#"strict decoding error: json: duplicate field "name""#),
+            err_msg.contains(r#"strict decoding error: duplicate field "name""#),
             "Error format must match K8s: {}", err_msg
         );
+    }
+
+    #[test]
+    fn test_strict_validation_combined_unknown_and_duplicate() {
+        // K8s returns both unknown and duplicate field errors in a single message
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Outer {
+            spec: Inner,
+        }
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Inner {
+            replicas: i32,
+        }
+
+        // Body has unknown field "spec.unknownField" AND duplicate "spec.replicas"
+        let body = br#"{"spec": {"unknownField": "foo", "replicas": 1, "replicas": 2}}"#;
+        let parsed = Outer { spec: Inner { replicas: 2 } };
+        let mut params = HashMap::new();
+        params.insert("fieldValidation".to_string(), "Strict".to_string());
+
+        let result = validate_strict_fields(&params, body, &parsed);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        // Should contain both errors
+        assert!(
+            err_msg.contains(r#"unknown field "spec.unknownField""#),
+            "Expected unknown field error: {}", err_msg
+        );
+        assert!(
+            err_msg.contains(r#"duplicate field "spec.replicas""#),
+            "Expected duplicate field error: {}", err_msg
+        );
+        // Should be combined in a single strict decoding error
+        assert!(
+            err_msg.contains("strict decoding error:"),
+            "Expected strict decoding error prefix: {}", err_msg
+        );
+    }
+
+    #[test]
+    fn test_find_all_duplicate_json_keys_multiple() {
+        // Test that we find ALL duplicate keys, not just the first
+        let json = r#"{"a": 1, "a": 2, "b": {"c": 1, "c": 2}}"#;
+        let dups = find_all_duplicate_json_keys(json);
+        assert_eq!(dups.len(), 2, "Expected 2 duplicates, got: {:?}", dups);
+        assert!(dups.contains(&"a".to_string()));
+        assert!(dups.contains(&"b.c".to_string()));
+    }
+
+    #[test]
+    fn test_find_all_duplicate_json_keys_dotted_paths() {
+        let json = r#"{"spec": {"replicas": 1, "replicas": 2}}"#;
+        let dups = find_all_duplicate_json_keys(json);
+        assert_eq!(dups, vec!["spec.replicas".to_string()]);
     }
 }

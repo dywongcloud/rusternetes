@@ -180,12 +180,6 @@ impl<S: Storage> StatefulSetController<S> {
                 let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
                 self.storage.delete(&pod_key).await?;
                 info!("Deleted pod {}", pod_name);
-
-                // For OrderedReady policy, only delete one at a time per reconciliation cycle
-                // to ensure pods are terminated in reverse order. Parallel can delete all at once.
-                if is_ordered_ready {
-                    break;
-                }
             }
         }
 
