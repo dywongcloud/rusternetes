@@ -2995,8 +2995,10 @@ impl ContainerRuntime {
                     format!("Failed to write custom resolv.conf for pod {}", pod_name)
                 })?;
 
-                // Mount custom resolv.conf into container
-                binds.push(format!("{}:/etc/resolv.conf:ro", resolv_conf_path));
+                // Mount custom resolv.conf into container (avoid duplicate mounts)
+                if !binds.iter().any(|b| b.contains(":/etc/resolv.conf")) {
+                    binds.push(format!("{}:/etc/resolv.conf:ro", resolv_conf_path));
+                }
                 info!(
                     "Mounted custom resolv.conf for pod {} (dns_policy={})",
                     pod_name, dns_policy
