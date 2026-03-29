@@ -7,15 +7,13 @@ use rusternetes_common::resources::{
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_controller_manager::controllers::namespace::NamespaceController;
-use rusternetes_storage::{build_key, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, MemoryStorage, Storage};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_namespace_controller_creation() {
     let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
+        MemoryStorage::new(),
     );
     let _controller = NamespaceController::new(storage);
 }
@@ -23,9 +21,7 @@ async fn test_namespace_controller_creation() {
 #[tokio::test]
 async fn test_namespace_active_not_deleted() {
     let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
+        MemoryStorage::new(),
     );
     let controller = NamespaceController::new(storage.clone());
 
@@ -75,9 +71,7 @@ async fn test_namespace_active_not_deleted() {
 #[tokio::test]
 async fn test_namespace_with_finalizer_marked_for_deletion() {
     let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
+        MemoryStorage::new(),
     );
     let controller = NamespaceController::new(storage.clone());
 
@@ -132,9 +126,7 @@ async fn test_namespace_with_finalizer_marked_for_deletion() {
 #[tokio::test]
 async fn test_namespace_deletion_removes_finalizers() {
     let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
+        MemoryStorage::new(),
     );
     let controller = NamespaceController::new(storage.clone());
 
@@ -150,7 +142,7 @@ async fn test_namespace_deletion_removes_finalizers() {
             uid: uuid::Uuid::new_v4().to_string(),
             resource_version: None,
             deletion_grace_period_seconds: None,
-            finalizers: Some(vec!["test.finalizer.io".to_string()]),
+            finalizers: Some(vec!["kubernetes".to_string()]),
             owner_references: None,
             creation_timestamp: Some(Utc::now()),
             deletion_timestamp: Some(Utc::now()),
