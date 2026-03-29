@@ -32,134 +32,22 @@ impl EtcdStorage {
         serde_json::to_string(value).map_err(|e| Error::Serialization(e))
     }
 
-    /// Inject resourceVersion into a JSON string by modifying the metadata object directly.
-    /// This avoids a full parse→modify→reserialize cycle for the common case.
+    /// Inject resourceVersion into a JSON string by parsing, modifying, and re-serializing.
+    ///
+    /// This is a single parse→modify→reserialize pass (vs the old code which did
+    /// parse→Value→modify→reserialize→from_value = two full cycles). Still faster
+    /// than the original approach while being completely safe against edge cases.
     fn inject_resource_version(json: &str, mod_revision: i64) -> String {
         let rv_str = crate::concurrency::mod_revision_to_resource_version(mod_revision);
-        // Fast path: find "metadata":{...} and inject/replace resourceVersion
-        if let Some(meta_start) = json.find("\"metadata\"") {
-            if let Some(brace_pos) = json[meta_start..].find('{') {
-                let insert_pos = meta_start + brace_pos + 1;
-                // Check if resourceVersion already exists in metadata
-                let meta_end = find_matching_brace(json, meta_start + brace_pos);
-                let meta_section = &json[insert_pos..meta_end];
-                if let Some(rv_start) = meta_section.find("\"resourceVersion\"") {
-                    // Replace existing resourceVersion value
-                    let abs_rv_start = insert_pos + rv_start;
-                    // Find the colon after "resourceVersion"
-                    if let Some(colon_offset) = json[abs_rv_start..].find(':') {
-                        let value_start = abs_rv_start + colon_offset + 1;
-                        // Skip whitespace
-                        let trimmed_start = value_start + json[value_start..].len() - json[value_start..].trim_start().len();
-                        // Find end of value (next comma or closing brace)
-                        let value_end = find_json_value_end(json, trimmed_start);
-                        return format!(
-                            "{}\"{}\"{}",
-                            &json[..trimmed_start],
-                            rv_str,
-                            &json[value_end..]
-                        );
-                    }
-                }
-                // No existing resourceVersion, inject at start of metadata object
-                return format!(
-                    "{}\"resourceVersion\":\"{}\"{}{}",
-                    &json[..insert_pos],
-                    rv_str,
-                    if meta_section.trim().is_empty() { "" } else { "," },
-                    &json[insert_pos..]
-                );
-            }
-        }
-        // Fallback: parse and modify (handles edge cases)
         if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(json) {
             if let Some(metadata) = v.get_mut("metadata") {
-                metadata["resourceVersion"] = serde_json::json!(rv_str);
+                metadata["resourceVersion"] = serde_json::Value::String(rv_str);
             }
+            // serde_json::to_string on a Value is infallible in practice
             serde_json::to_string(&v).unwrap_or_else(|_| json.to_string())
         } else {
+            // Unparseable JSON — return as-is (should not happen with etcd data)
             json.to_string()
-        }
-    }
-}
-
-/// Find the position of the matching closing brace for an opening brace at `open_pos`.
-fn find_matching_brace(json: &str, open_pos: usize) -> usize {
-    let bytes = json.as_bytes();
-    let mut depth = 0;
-    let mut in_string = false;
-    let mut escape_next = false;
-    for i in open_pos..bytes.len() {
-        if escape_next {
-            escape_next = false;
-            continue;
-        }
-        match bytes[i] {
-            b'\\' if in_string => escape_next = true,
-            b'"' => in_string = !in_string,
-            b'{' if !in_string => depth += 1,
-            b'}' if !in_string => {
-                depth -= 1;
-                if depth == 0 {
-                    return i;
-                }
-            }
-            _ => {}
-        }
-    }
-    json.len()
-}
-
-/// Find the end of a JSON value starting at `start` (returns position after the value).
-fn find_json_value_end(json: &str, start: usize) -> usize {
-    let bytes = json.as_bytes();
-    let mut i = start;
-    if i >= bytes.len() {
-        return i;
-    }
-    match bytes[i] {
-        b'"' => {
-            // String value — find closing quote
-            i += 1;
-            while i < bytes.len() {
-                if bytes[i] == b'\\' {
-                    i += 2;
-                    continue;
-                }
-                if bytes[i] == b'"' {
-                    return i + 1;
-                }
-                i += 1;
-            }
-            i
-        }
-        b'{' => find_matching_brace(json, i) + 1,
-        b'[' => {
-            // Array
-            let mut depth = 0;
-            let mut in_string = false;
-            let mut escape_next = false;
-            for j in i..bytes.len() {
-                if escape_next { escape_next = false; continue; }
-                match bytes[j] {
-                    b'\\' if in_string => escape_next = true,
-                    b'"' => in_string = !in_string,
-                    b'[' if !in_string => depth += 1,
-                    b']' if !in_string => {
-                        depth -= 1;
-                        if depth == 0 { return j + 1; }
-                    }
-                    _ => {}
-                }
-            }
-            bytes.len()
-        }
-        _ => {
-            // Number, bool, null — find delimiter
-            while i < bytes.len() && bytes[i] != b',' && bytes[i] != b'}' && bytes[i] != b']' && bytes[i] != b' ' && bytes[i] != b'\n' && bytes[i] != b'\r' && bytes[i] != b'\t' {
-                i += 1;
-            }
-            i
         }
     }
 }
@@ -189,11 +77,14 @@ impl Storage for EtcdStorage {
             raw
         };
 
-        // Use a transaction to ensure the key doesn't already exist
-        // Request prev_kv to avoid a separate GET for the mod_revision
+        // Use a transaction to ensure the key doesn't already exist.
+        // Include a GET in the then branch to read back the exact mod_revision.
         let txn = etcd_client::Txn::new()
             .when(vec![Compare::version(key, CompareOp::Equal, 0)])
-            .and_then(vec![TxnOp::put(key, json.clone(), None)])
+            .and_then(vec![
+                TxnOp::put(key, json.clone(), None),
+                TxnOp::get(key, None),
+            ])
             .or_else(vec![]);
 
         let txn_resp = client
@@ -207,8 +98,18 @@ impl Storage for EtcdStorage {
 
         debug!("Created resource at key: {}", key);
 
-        // Get the mod_revision from the transaction response header
-        let mod_revision = txn_resp.header().map(|h| h.revision()).unwrap_or(0);
+        // Get the exact mod_revision from the GET in the then branch (2nd op)
+        let mod_revision = txn_resp
+            .op_responses()
+            .get(1)
+            .and_then(|resp| {
+                if let etcd_client::TxnOpResponse::Get(get_resp) = resp {
+                    get_resp.kvs().first().map(|kv| kv.mod_revision())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| txn_resp.header().map(|h| h.revision()).unwrap_or(0));
 
         // Inject resourceVersion and deserialize
         let json_with_rv = Self::inject_resource_version(&json, mod_revision);
@@ -260,13 +161,18 @@ impl Storage for EtcdStorage {
             // Use a transaction to ensure atomic update with version check
             let expected_mod_revision =
                 crate::concurrency::resource_version_to_mod_revision(incoming_rv)?;
+            // Transaction: if mod_revision matches, PUT then GET (to read back mod_revision).
+            // On failure, GET to report the current version in the error.
             let txn = etcd_client::Txn::new()
                 .when(vec![Compare::mod_revision(
                     key,
                     CompareOp::Equal,
                     expected_mod_revision,
                 )])
-                .and_then(vec![TxnOp::put(key, json.clone(), None)])
+                .and_then(vec![
+                    TxnOp::put(key, json.clone(), None),
+                    TxnOp::get(key, None),
+                ])
                 .or_else(vec![TxnOp::get(key, None)]);
 
             let txn_resp = client
@@ -280,7 +186,6 @@ impl Storage for EtcdStorage {
                     .op_responses()
                     .first()
                     .and_then(|resp| {
-                        // The else branch returns a get response
                         if let etcd_client::TxnOpResponse::Get(get_resp) = resp {
                             get_resp.kvs().first().map(|kv| {
                                 crate::concurrency::mod_revision_to_resource_version(kv.mod_revision())
@@ -298,8 +203,19 @@ impl Storage for EtcdStorage {
 
             debug!("Updated resource at key: {}", key);
 
-            // Get mod_revision from the transaction response header
-            let mod_revision = txn_resp.header().map(|h| h.revision()).unwrap_or(0);
+            // Get mod_revision from the GET in the then branch (2nd op response)
+            let mod_revision = txn_resp
+                .op_responses()
+                .get(1)
+                .and_then(|resp| {
+                    if let etcd_client::TxnOpResponse::Get(get_resp) = resp {
+                        get_resp.kvs().first().map(|kv| kv.mod_revision())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| txn_resp.header().map(|h| h.revision()).unwrap_or(0));
+
             let json_with_rv = Self::inject_resource_version(&json, mod_revision);
             serde_json::from_str(&json_with_rv).map_err(|e| Error::Serialization(e))
         } else {
@@ -313,17 +229,27 @@ impl Storage for EtcdStorage {
                 return Err(Error::NotFound(key.to_string()));
             }
 
-            let put_resp = client
+            client
                 .put(key, json.clone(), None)
                 .await
                 .map_err(|e| Error::Storage(format!("Failed to update resource: {}", e)))?;
 
             debug!("Updated resource at key: {}", key);
 
-            // Get mod_revision from put response header
-            let mod_revision = put_resp.header().map(|h| h.revision()).unwrap_or(0);
-            let json_with_rv = Self::inject_resource_version(&json, mod_revision);
-            serde_json::from_str(&json_with_rv).map_err(|e| Error::Serialization(e))
+            // Read back to get exact mod_revision
+            let get_resp = client
+                .get(key, None)
+                .await
+                .map_err(|e| Error::Storage(format!("Failed to get updated resource: {}", e)))?;
+
+            if let Some(kv) = get_resp.kvs().first() {
+                let mod_revision = kv.mod_revision();
+                let json_with_rv = Self::inject_resource_version(&json, mod_revision);
+                serde_json::from_str(&json_with_rv).map_err(|e| Error::Serialization(e))
+            } else {
+                // Key was deleted between put and get — shouldn't happen
+                serde_json::from_str(&json).map_err(|e| Error::Serialization(e))
+            }
         }
     }
 
