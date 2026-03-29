@@ -3659,8 +3659,15 @@ impl ContainerRuntime {
                     } else if matches!(state.status, Some(bollard::secret::ContainerStateStatusEnum::EXITED))
                         || state.finished_at.is_some()
                     {
-                        // Read termination message from /dev/termination-log
-                        let termination_msg = self.read_termination_message(&container_name, container).await;
+                        // Read termination message based on terminationMessagePolicy:
+                        // - "File" (default): always read from file
+                        // - "FallbackToLogsOnError": only read from file/logs if exit != 0
+                        let policy = container.termination_message_policy.as_deref().unwrap_or("File");
+                        let termination_msg = if policy == "FallbackToLogsOnError" && exit_code == 0 {
+                            None // Successful exit with FallbackToLogsOnError = no message
+                        } else {
+                            self.read_termination_message(&container_name, container).await
+                        };
 
                         // Container has exited (any exit code, including 0)
                         Some(ContainerState::Terminated {

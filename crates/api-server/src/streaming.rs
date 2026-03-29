@@ -101,7 +101,11 @@ pub async fn handle_ws_exec(
     }
 
     // Send empty stdout to signal EOF before status (K8s protocol expects ch1 before ch3)
+    // Also send empty stderr for completeness
     let _ = socket.send(Message::Binary(vec![1u8].into())).await;
+    let _ = socket.send(Message::Binary(vec![2u8].into())).await;
+    // Small delay to ensure the client processes stdout/stderr before status
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
     // Send exit code as status on error channel (channel 3)
     let exit_code = docker.inspect_exec(&exec.id).await
