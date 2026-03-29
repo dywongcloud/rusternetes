@@ -210,7 +210,7 @@ The flush-and-rebuild pattern is self-healing: process restarts, failed iptables
 
 ### Phase 1: Proven Safe, High Impact
 
-1. **Remove `log_request_body_middleware`** — purely diagnostic, gated by debug log level (which is off in production). Buffers entire request body a second time for no benefit at info level. Safe to remove entirely.
+1. **Remove `log_request_body_middleware`** — purely diagnostic, gated by `debug!()` log level (which is off at `RUST_LOG=info`). Buffers entire request body a second time (`to_bytes(body, usize::MAX)`) for no benefit at info level. It does NOT transform the body or affect downstream handlers. Safe to remove entirely. Note: the two middleware should NOT be merged — they serve different purposes and have different error handling. Just remove the log one.
 2. **Deduplicate LimitRange reads** in pod admission — listed twice (pod.rs:125 and admission.rs:306). Pure waste, no correctness concern.
 3. **Filtering: struct-level matching** — `apply_selectors()` calls `to_value()` per resource. Labels are already `HashMap<String, String>` on the struct. Match directly instead of serializing to Value. No correctness concern — same filtering logic, just avoids the intermediate serialization.
 4. **Bound watch channels** — replace `unbounded_channel()` with bounded channel + backpressure (`watch.rs:209,605`). Prevents memory leak with slow clients. Standard practice, no behavioral change for well-behaved clients.
