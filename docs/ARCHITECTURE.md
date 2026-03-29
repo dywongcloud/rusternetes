@@ -1,917 +1,416 @@
 # Rusternetes Architecture
 
-This document describes the architecture and design of Rusternetes, a Kubernetes reimplementation in Rust.
+Kubernetes reimplemented in Rust. 9 crates, 161,000+ lines of Rust, 929 tests.
 
-## Overview
-
-Rusternetes follows the standard Kubernetes architecture with a control plane and node components, all communicating through a shared etcd storage backend.
-
-### System Architecture Diagram
+## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          Control Plane                              │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌──────────────────────────┐         ┌─────────────────────────┐ │
-│  │   API Server (HTTPS)     │◄────────┤   kubectl CLI           │ │
-│  │  ┌────────────────────┐  │         └─────────────────────────┘ │
-│  │  │ TLS/mTLS Support   │  │                                      │
-│  │  │ - Self-signed      │  │         ┌─────────────────────────┐ │
-│  │  │ - Custom certs     │  │◄────────┤   Controller Manager    │ │
-│  │  │ - Client auth      │  │         │  ┌──────────────────┐   │ │
-│  │  └────────────────────┘  │         │  │ Deployment       │   │ │
-│  │  ┌────────────────────┐  │         │  │ StatefulSet      │   │ │
-│  │  │ RBAC Authorization │  │         │  │ DaemonSet        │   │ │
-│  │  │ - Roles/Bindings   │  │         │  │ Job              │   │ │
-│  │  │ - JWT tokens       │  │         │  │ CronJob          │   │ │
-│  │  └────────────────────┘  │         │  └──────────────────┘   │ │
-│  │  ┌────────────────────┐  │         │  (5 concurrent loops)   │ │
-│  │  │ RESTful API        │  │         └─────────────────────────┘ │
-│  │  │ - core/v1          │  │                                      │
-│  │  │ - apps/v1          │  │         ┌─────────────────────────┐ │
-│  │  │ - batch/v1         │  │◄────────┤   Scheduler             │ │
-│  │  │ - rbac/v1          │  │         │  ┌──────────────────┐   │ │
-│  │  │ - storage/v1       │  │         │  │ Filter Phase     │   │ │
-│  │  └────────────────────┘  │         │  │ - Taints         │   │ │
-│  └────────────┬─────────────┘         │  │ - Affinity       │   │ │
-│               │                       │  │ - Selectors      │   │ │
-│               │                       │  ├──────────────────┤   │ │
-│  ┌────────────▼─────────────┐         │  │ Scoring Phase    │   │ │
-│  │     etcd Storage         │         │  │ - Resources 40%  │   │ │
-│  │  ┌────────────────────┐  │         │  │ - Affinity 40%   │   │ │
-│  │  │ /registry/pods/    │  │         │  │ - Priority 20%   │   │ │
-│  │  │ /registry/pvs/     │  │         │  └──────────────────┘   │ │
-│  │  │ /registry/jobs/    │  │         └─────────────────────────┘ │
-│  │  │ /registry/...      │  │                                      │
-│  │  └────────────────────┘  │                                      │
-│  └──────────────────────────┘                                      │
-└─────────────────────────────────────────────────────────────────────┘
-                               │
-                               │ Watch pods assigned to node
-                               │
-┌─────────────────────────────────────────────────────────────────────┐
-│                          Worker Nodes                               │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌──────────────────────────┐         ┌─────────────────────────┐ │
-│  │   Kubelet (Node Agent)   │◄────────┤   Docker Engine         │ │
-│  │  ┌────────────────────┐  │         │  ┌──────────────────┐   │ │
-│  │  │ Pod Management     │  │         │  │ Containers       │   │ │
-│  │  │ - Container start  │  ├────────►│  │ - nginx          │   │ │
-│  │  │ - Health checks    │  │         │  │ - postgres       │   │ │
-│  │  │ - Status reporting │  │         │  │ - redis          │   │ │
-│  │  └────────────────────┘  │         │  └──────────────────┘   │ │
-│  │  ┌────────────────────┐  │         └─────────────────────────┘ │
-│  │  │ Volume mounting    │  │                                      │
-│  │  │ - PV/PVC support   │  │         ┌─────────────────────────┐ │
-│  │  │ - HostPath         │  │◄────────┤   Kube-proxy            │ │
-│  │  │ - NFS/iSCSI        │  │         │  - Service routing      │ │
-│  │  └────────────────────┘  │         │  - Load balancing       │ │
-│  └──────────────────────────┘         └─────────────────────────┘ │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-
-Legend:
-  ┌─────┐
-  │     │  Component
-  └─────┘
-     │     Communication/Dependency
-     ▼     Direction of data flow
+                              +-----------+
+                              |  kubectl  |
+                              +-----+-----+
+                                    |
+                                    v
++-------------------------------------------------------------------+
+|                         Control Plane                              |
+|                                                                    |
+|  +-------------------------+        +---------------------------+  |
+|  |    API Server (HTTPS)   |<-------| Controller Manager        |  |
+|  |                         |        |   31 reconciliation loops  |  |
+|  |  - Axum + TLS/mTLS     |        +---------------------------+  |
+|  |  - RBAC + Webhooks     |                                       |
+|  |  - Watch API (SSE)     |        +---------------------------+  |
+|  |  - Server-Side Apply   |<-------| Scheduler                 |  |
+|  |  - 75 handler files    |        |   Filter/Score plugins     |  |
+|  |  - OpenAPI discovery   |        +---------------------------+  |
+|  +-----------+-------------+                                      |
+|              |                                                     |
+|  +-----------v-------------+                                      |
+|  |     etcd Storage        |                                      |
+|  |  /registry/{type}/...   |                                      |
+|  +-------------------------+                                      |
++-------------------------------------------------------------------+
+        |                              |
+        | Watch pods                   | Watch services
+        v                              v
++-------------------+          +-------------------+
+| Kubelet (node-1)  |          | Kube-proxy        |
+| Kubelet (node-2)  |          |   iptables rules  |
+|                   |          |   host network     |
+| - bollard/Docker  |          +-------------------+
+| - pause container |
+| - probes          |          +-------------------+
+| - volumes         |          | CoreDNS           |
+| - CAS status      |          |   10.96.0.10      |
++-------------------+          +-------------------+
 ```
 
-### Key Features:
-- **30+ Resource Types**: Full workload, storage, networking, RBAC, and autoscaling support
-- **15+ Controllers**: Deployment, StatefulSet, DaemonSet, Job, CronJob, Endpoints, PV/PVC Binder, Dynamic Provisioner, Volume Snapshot, HPA, VPA, PDB, Garbage Collector, TTL, LoadBalancer
-- **TLS/HTTPS**: Self-signed or custom certificates with optional mTLS
-- **Advanced Scheduling**: Multi-phase filtering and scoring with node/pod affinity/anti-affinity, taints, tolerations, priority, preemption
-- **Persistent Storage**: PV/PVC/StorageClass with dynamic provisioning, snapshots, and volume expansion
-- **Networking**: ClusterIP, NodePort, LoadBalancer services, DNS, kube-proxy with iptables, CNI framework
-- **Security**: RBAC, admission webhooks, Pod Security Standards, secrets encryption, audit logging
-- **High Availability**: etcd clustering, multi-master API servers, leader election
-- **Production-Ready**: Comprehensive conformance with Kubernetes API, 1306+ tests passing
+All components communicate exclusively through the API server. Only the API server
+accesses etcd directly.
 
 ## Project Structure
 
 ```
 rusternetes/
-├── crates/
-│   ├── common/              # Shared types and resource definitions
-│   ├── storage/             # etcd storage abstraction layer
-│   ├── api-server/          # Kubernetes API server
-│   ├── scheduler/           # Pod scheduler
-│   ├── controller-manager/  # Resource controllers
-│   ├── kubelet/            # Node agent
-│   ├── kube-proxy/         # Network proxy
-│   └── kubectl/            # CLI tool
-├── examples/               # Example YAML manifests
-├── README.md
-├── GETTING_STARTED.md
-└── Cargo.toml             # Workspace configuration
+  crates/
+    common/                # Shared types, 36 resource files in src/resources/
+    storage/               # Storage trait, etcd + memory backends
+    api-server/            # Axum HTTPS API, 75 handler files
+    controller-manager/    # 31 controllers in src/controllers/
+    scheduler/             # Filter/Score plugin architecture
+    kubelet/               # Node agent, Docker via bollard
+    kube-proxy/            # iptables service routing
+    kubectl/               # CLI tool
+    cloud-providers/       # AWS/GCP/Azure integrations
 ```
 
-## Components
+## Crates
 
-### 1. Common Library (`rusternetes-common`)
+### 1. common
 
-The common library provides shared types and data structures:
+Shared types and resource definitions used by every other crate.
 
-**Resource Types:**
-- `Pod` - Smallest deployable unit (with affinity, tolerations, priority)
-- `Service` - Service abstraction for load balancing
-- `Deployment` - Declarative pod management
-- `StatefulSet` - Ordered, stable pod deployment
-- `DaemonSet` - Ensures pods run on all/selected nodes
-- `Job` - Batch job execution
-- `CronJob` - Time-based job scheduling
-- `Node` - Worker node representation (with taints)
-- `Namespace` - Resource isolation
-- `ConfigMap` - Configuration data storage
-- `Secret` - Sensitive data storage (base64 encoded)
-- `ServiceAccount` - Pod identity for authentication
-- `Ingress` - HTTP/HTTPS routing rules
+**36 resource type files** in `src/resources/`, including:
+Pod, Deployment, ReplicaSet, StatefulSet, DaemonSet, Job, CronJob, Service,
+Endpoints, EndpointSlice, ConfigMap, Secret, ServiceAccount, Node, Namespace,
+PersistentVolume, PersistentVolumeClaim, StorageClass, Ingress, NetworkPolicy,
+Role, RoleBinding, ClusterRole, ClusterRoleBinding, CustomResourceDefinition,
+HorizontalPodAutoscaler, VerticalPodAutoscaler, PodDisruptionBudget,
+LimitRange, ResourceQuota, RuntimeClass, PriorityClass, Lease,
+ValidatingAdmissionPolicy, FlowControl, Certificates, CSI, DRA, IPAddress,
+ServiceCIDR, ControllerRevision, and more.
 
-**Storage Resources:**
-- `PersistentVolume` - Cluster-wide storage resource with lifecycle management
-- `PersistentVolumeClaim` - User request for storage with capacity and access modes
-- `StorageClass` - Dynamic provisioning configuration with volume binding modes
+**Core types:** TypeMeta, ObjectMeta, LabelSelector, ResourceRequirements,
+Affinity, Toleration, Taint.
 
-**RBAC Resources:**
-- `Role` - Namespace-scoped permissions
-- `ClusterRole` - Cluster-wide permissions
-- `RoleBinding` - Binds roles to subjects in a namespace
-- `ClusterRoleBinding` - Binds cluster roles to subjects cluster-wide
+**Error handling:** Unified `Error` enum mapping to Kubernetes StatusReason.
+Each variant maps to the correct HTTP status code (404, 409, 422, etc.) via
+Axum's `IntoResponse`.
 
-**Core Types:**
-- `ObjectMeta` - Metadata for all resources
-- `TypeMeta` - API versioning information
-- `Phase` - Resource lifecycle states
-- `LabelSelector` - Label-based selection
-- `ResourceRequirements` - CPU/memory requirements
-- `Affinity` - Pod and node affinity/anti-affinity rules
-- `Toleration` - Allows pods to schedule on tainted nodes
-- `Taint` - Prevents pods from scheduling on nodes
+**Serialization conventions:**
+- `#[serde(rename_all = "camelCase")]` on all structs
+- `#[serde(skip_serializing_if = "Option::is_none")]` on optional fields
+- `#[serde(flatten)]` for TypeMeta
+- K8s-style abbreviations: `podIP`, `hostIP`, `containerID`
 
-**Authentication & Authorization:**
-- `TokenManager` - JWT token generation and validation for service accounts
-- `Authorizer` trait - Pluggable authorization mechanisms
-- `RBACAuthorizer` - Full RBAC authorization with policy rule matching
-- `UserInfo` - User identity extraction from tokens
+### 2. api-server
 
-**TLS/Security:**
-- `TlsConfig` - TLS certificate and key management
-- `generate_self_signed()` - Self-signed certificate generation for development
-- `from_pem_files()` - Load custom certificates for production
-- `into_server_config()` - Rustls server configuration
-- `into_mtls_server_config()` - Mutual TLS configuration for client authentication
-- `TlsClientConfig` - Client-side TLS verification
+Axum-based HTTPS REST API server. Router defined in `src/router.rs` (~2,135 lines).
+75 handler files in `src/handlers/`, one per resource type.
 
-**Observability:**
-- `MetricsRegistry` - Centralized Prometheus metrics collection
-- `ApiServerMetrics` - Request counters, latency histograms, error tracking
-- `SchedulerMetrics` - Scheduling attempts, duration, failures by reason
-- `KubeletMetrics` - Container lifecycle tracking, node capacity
-- `StorageMetrics` - Operation counters, latency, object counts
+**API surface:**
+- core/v1: pods, services, configmaps, secrets, serviceaccounts, nodes, namespaces,
+  endpoints, events, persistentvolumes, persistentvolumeclaims, limitranges,
+  resourcequotas, replicationcontrollers
+- apps/v1: deployments, replicasets, statefulsets, daemonsets, controllerrevisions
+- batch/v1: jobs, cronjobs
+- rbac.authorization.k8s.io/v1: roles, rolebindings, clusterroles, clusterrolebindings
+- networking.k8s.io/v1: ingresses, networkpolicies
+- storage.k8s.io/v1: storageclasses, csidrivers, csinodes, csistoragecapacities
+- policy/v1: poddisruptionbudgets
+- autoscaling/v1-v2: horizontalpodautoscalers
+- apiextensions.k8s.io/v1: customresourcedefinitions
+- certificates.k8s.io/v1: certificatesigningrequests
+- coordination.k8s.io/v1: leases
+- discovery.k8s.io/v1: endpointslices
+- scheduling.k8s.io/v1: priorityclasses
+- flowcontrol.apiserver.k8s.io/v1: flowschemas, prioritylevelconfigurations
+- resource.k8s.io/v1alpha3: resourceclaims
+- admissionregistration.k8s.io/v1: mutatingwebhookconfigurations, validatingwebhookconfigurations
 
-**Error Handling:**
-- Unified `Error` enum for all components
-- `Result<T>` type alias for error propagation
+**Key features:**
+- Watch API via Server-Sent Events (SSE). `rv=0` sends initial ADDED events;
+  `rv>0` watches from that etcd revision.
+- RBAC authorization with JWT-based service account authentication.
+- Admission webhooks (mutating and validating).
+- Server-Side Apply with field manager tracking and conflict detection.
+- PATCH support: JSON Patch, JSON Merge Patch, Strategic Merge Patch.
+- OpenAPI v2/v3 discovery endpoints.
+- Aggregated API discovery.
+- Table format responses for kubectl compatibility.
+- Subresource endpoints: `/status`, `/scale`, `/log`, `/exec`, `/attach`,
+  `/portforward`, `/eviction`, `/token`, `/finalize`, `/binding`.
 
-### 2. Storage Layer (`rusternetes-storage`)
+**State** (`src/state.rs`): Holds storage backend, auth configuration, ClusterIP
+allocator, webhook manager, and watch cache.
 
-The storage layer provides an abstraction over etcd:
+### 3. storage
 
-**Traits:**
-- `Storage` - Async CRUD operations for resources
+Defines the `Storage` trait in `src/lib.rs` with two backends:
 
-**Implementation:**
-- `EtcdStorage` - etcd-backed storage implementation
-- Watch support for real-time updates
-- Automatic JSON serialization/deserialization
+- **EtcdStorage** (`src/etcd.rs`): Production backend. Resource versions map to
+  etcd `mod_revision`. Watch support via etcd watch API.
+- **MemoryStorage** (`src/memory.rs`): In-memory backend for unit tests.
 
-**Key Structure:**
-```
-/registry/{resource_type}/{namespace}/{name}
-```
+**Key pattern:** `/registry/{resource_type}/{namespace}/{name}` for namespaced
+resources; `/registry/{resource_type}/{name}` for cluster-scoped resources.
 
-### 3. API Server (`rusternetes-api-server`)
+**Optimistic concurrency:** All updates use compare-and-swap (CAS) based on
+etcd `mod_revision`. Clients must send the current `resourceVersion` to update;
+conflicts return HTTP 409.
 
-The API server exposes RESTful APIs for all resources with full TLS/HTTPS support:
+### 4. controller-manager
 
-**TLS Configuration:**
-- **Development Mode**: `--tls --tls-self-signed` for auto-generated certificates
-- **Production Mode**: `--tls --tls-cert-file /path/to/cert.pem --tls-key-file /path/to/key.pem`
-- **HTTP Mode**: Default (no TLS flags) for development without encryption
-- **mTLS Support**: Optional client certificate authentication for maximum security
+31 controllers, each running as a concurrent tokio task with an independent
+reconciliation loop.
 
-**Endpoints:**
-```
-# Core v1 API
-GET/POST    /api/v1/namespaces
-GET/PUT/DELETE /api/v1/namespaces/{name}
-GET/POST    /api/v1/namespaces/{ns}/pods
-GET/PUT/DELETE /api/v1/namespaces/{ns}/pods/{name}
-GET/POST    /api/v1/namespaces/{ns}/services
-GET/PUT/DELETE /api/v1/namespaces/{ns}/services/{name}
-GET/POST    /api/v1/namespaces/{ns}/configmaps
-GET/PUT/DELETE /api/v1/namespaces/{ns}/configmaps/{name}
-GET/POST    /api/v1/namespaces/{ns}/secrets
-GET/PUT/DELETE /api/v1/namespaces/{ns}/secrets/{name}
-GET/POST    /api/v1/namespaces/{ns}/serviceaccounts
-GET/PUT/DELETE /api/v1/namespaces/{ns}/serviceaccounts/{name}
-GET/POST    /api/v1/nodes
-GET/PUT/DELETE /api/v1/nodes/{name}
-
-# Apps v1 API
-GET/POST    /apis/apps/v1/namespaces/{ns}/deployments
-GET/PUT/DELETE /apis/apps/v1/namespaces/{ns}/deployments/{name}
-GET/POST    /apis/apps/v1/namespaces/{ns}/statefulsets
-GET/PUT/DELETE /apis/apps/v1/namespaces/{ns}/statefulsets/{name}
-GET/POST    /apis/apps/v1/namespaces/{ns}/daemonsets
-GET/PUT/DELETE /apis/apps/v1/namespaces/{ns}/daemonsets/{name}
-
-# Batch v1 API
-GET/POST    /apis/batch/v1/namespaces/{ns}/jobs
-GET/PUT/DELETE /apis/batch/v1/namespaces/{ns}/jobs/{name}
-GET/POST    /apis/batch/v1/namespaces/{ns}/cronjobs
-GET/PUT/DELETE /apis/batch/v1/namespaces/{ns}/cronjobs/{name}
-
-# RBAC v1 API
-GET/POST    /apis/rbac.authorization.k8s.io/v1/namespaces/{ns}/roles
-GET/PUT/DELETE /apis/rbac.authorization.k8s.io/v1/namespaces/{ns}/roles/{name}
-GET/POST    /apis/rbac.authorization.k8s.io/v1/namespaces/{ns}/rolebindings
-GET/PUT/DELETE /apis/rbac.authorization.k8s.io/v1/namespaces/{ns}/rolebindings/{name}
-GET/POST    /apis/rbac.authorization.k8s.io/v1/clusterroles
-GET/PUT/DELETE /apis/rbac.authorization.k8s.io/v1/clusterroles/{name}
-GET/POST    /apis/rbac.authorization.k8s.io/v1/clusterrolebindings
-GET/PUT/DELETE /apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{name}
-
-# Networking v1 API
-GET/POST    /apis/networking.k8s.io/v1/namespaces/{ns}/ingresses
-GET/PUT/DELETE /apis/networking.k8s.io/v1/namespaces/{ns}/ingresses/{name}
-
-# Storage v1 API
-GET/POST    /api/v1/persistentvolumes
-GET/PUT/DELETE /api/v1/persistentvolumes/{name}
-GET/POST    /api/v1/namespaces/{ns}/persistentvolumeclaims
-GET/PUT/DELETE /api/v1/namespaces/{ns}/persistentvolumeclaims/{name}
-GET/POST    /storage.k8s.io/v1/storageclasses
-GET/PUT/DELETE /storage.k8s.io/v1/storageclasses/{name}
+**Controller pattern:**
+```rust
+pub struct FooController<S: Storage> {
+    storage: Arc<S>,
+    interval: Duration,
+}
+// run() loops forever: reconcile_all() then sleep(interval)
 ```
 
-**Technology:**
-- Built with Axum web framework
-- Tower middleware for tracing
-- JSON request/response serialization
-- axum-server for TLS support with rustls
-- Graceful shutdown on SIGINT/SIGTERM
+**All 31 controllers:**
 
-**Authentication & Authorization:**
-- JWT-based authentication for service accounts
-- Bearer token extraction from HTTP headers
-- RBAC authorization checks before resource operations
-- Support for anonymous access (configurable)
-- TLS/HTTPS with rustls for secure communication
-- Optional mTLS for client certificate authentication
+| Controller | Description |
+|---|---|
+| Deployment | Manages ReplicaSets for rolling updates |
+| ReplicaSet | Maintains desired pod replica count |
+| StatefulSet | Ordered pod deployment with stable identities |
+| DaemonSet | Ensures one pod per eligible node |
+| Job | Batch execution with completions and parallelism |
+| CronJob | Time-based job scheduling with cron syntax |
+| ReplicationController | Legacy replica management |
+| Endpoints | Populates Endpoints from pod IPs matching Services |
+| EndpointSlice | Populates EndpointSlices (modern endpoint API) |
+| Service | Manages Service lifecycle and defaults |
+| ServiceAccount | Creates default ServiceAccount per namespace |
+| Namespace | Handles namespace lifecycle and finalizers |
+| Node | Manages node status and conditions |
+| PV Binder | Binds PersistentVolumeClaims to PersistentVolumes |
+| Dynamic Provisioner | Creates PVs from StorageClass for unbound PVCs |
+| Volume Snapshot | Manages VolumeSnapshot lifecycle |
+| Volume Expansion | Handles PVC resize operations |
+| Garbage Collector | Owner-reference-based cascade deletion |
+| TTL Controller | Cleans up finished Jobs after TTL expiry |
+| Taint Eviction | Evicts pods from tainted nodes (NoExecute) |
+| HPA | Horizontal Pod Autoscaler (metrics-based scaling) |
+| VPA | Vertical Pod Autoscaler (resource right-sizing) |
+| PDB | Enforces PodDisruptionBudget constraints |
+| Events | Manages Event lifecycle and cleanup |
+| ResourceQuota | Enforces namespace resource quotas |
+| ResourceClaim | Manages DRA ResourceClaim lifecycle |
+| LoadBalancer | Assigns external IPs to LoadBalancer Services |
+| Ingress | Manages Ingress status |
+| Network Policy | Manages NetworkPolicy status |
+| CSR | Processes CertificateSigningRequests |
+| CRD | Manages CustomResourceDefinition status and conditions |
 
-### 4. Scheduler (`rusternetes-scheduler`)
+### 5. kubelet
 
-The scheduler assigns pods to nodes using an advanced multi-phase algorithm:
+Node agent managing pod lifecycle via Docker (bollard crate).
 
-**Scheduling Algorithm:**
-1. Watch for unscheduled pods (pods without `spec.nodeName`)
-2. **Filtering Phase:**
-   - Filter unschedulable nodes (marked unschedulable)
-   - Check taints and tolerations (NoSchedule, PreferNoSchedule, NoExecute)
-   - Match node selectors
-   - Evaluate hard node affinity requirements
-3. **Scoring Phase:**
-   - Resource availability scoring (CPU/memory, 30% weight)
-   - Node affinity preferences (25% weight)
-   - Pod affinity (20% weight)
-   - Pod priority (15% weight)
-   - Pod anti-affinity penalty (10% weight)
-4. Select best-fit node with highest combined score
-5. Bind pod to node by updating `spec.nodeName`
+**Container model:** Each pod starts a pause container first. Application
+containers attach to the pause container's network namespace via
+`container:pause` network mode. The pod IP comes from the pause container.
 
-**Advanced Features:**
-- **Taints and Tolerations**: Full support for NoSchedule, PreferNoSchedule, NoExecute effects
-- **Node Affinity**: Hard requirements (requiredDuringSchedulingIgnoredDuringExecution) and soft preferences (preferredDuringSchedulingIgnoredDuringExecution)
-- **Node Selectors**: Match expressions with operators (In, NotIn, Exists, DoesNotExist, Gt, Lt)
-- **Resource-Based Scheduling**: Considers CPU and memory availability
-- **Priority Scheduling**: Supports pod priority and priority classes
-- **Weighted Scoring**: Multi-criteria optimization for node selection
-- Pod affinity/anti-affinity types defined (evaluation pending)
+**Probes:** Liveness, readiness, and startup probes with HTTP, TCP, and exec
+checks. Readiness status is written back to the API server.
 
-**Resource Parsing:**
-- Support for CPU millicores (e.g., "500m")
-- Support for memory units (Ki, Mi, Gi)
+**Volumes:** emptyDir (tmpfs and on-disk via bind mounts), hostPath, projected
+volumes, configMap volumes, secret volumes.
 
-**Features:**
-- Periodic scheduling loop (default: 5 seconds)
-- Handles pending pods automatically
-- Comprehensive logging for scheduling decisions
+**Status reporting:** Pod status updates use CAS (compare-and-swap) against the
+API server. The kubelet re-reads the pod from storage before each update to get
+a fresh `resourceVersion`, avoiding write conflicts.
 
-### 5. Controller Manager (`rusternetes-controller-manager`)
+**Node registration:** On startup, the kubelet registers itself as a Node
+resource with capacity and allocatable fields.
 
-Runs five concurrent controllers that maintain desired state through reconciliation loops:
+### 6. kube-proxy
 
-**Deployment Controller:**
-1. Watches all Deployment resources
-2. Compares current vs desired replica count
-3. Creates or deletes pods to match desired state
-4. Uses label selectors to identify deployment pods
-5. Periodic sync (10 seconds)
+iptables-based service routing. Runs in host network mode with `CAP_NET_ADMIN`.
 
-**StatefulSet Controller:** ✅ (Implemented)
-1. Watches StatefulSet resources for stateful applications
-2. Creates pods with ordered, stable identities (web-0, web-1, web-2...)
-3. Supports pod management policies:
-   - **OrderedReady**: Wait for each pod to be ready before creating next (default)
-   - **Parallel**: Create/delete all pods simultaneously
-4. Implements graceful scaling:
-   - Scale up: Create pods in order from lowest to highest index
-   - Scale down: Delete pods in reverse order from highest to lowest index
-5. Status tracking: replicas, ready_replicas, current_replicas, updated_replicas
-6. Use cases: Databases (MySQL, PostgreSQL), distributed systems (Kafka, ZooKeeper)
-7. Periodic sync (5 seconds)
+- ClusterIP services: DNAT rules in RUSTERNETES-SERVICES chain.
+- NodePort services: Rules in RUSTERNETES-NODEPORTS chain (ports 30000-32767).
+- LoadBalancer services: External IP routing.
+- Probabilistic load balancing across endpoints.
+- Reads both Endpoints and EndpointSlices.
+- Automatic rule sync on a 30-second interval with cleanup on shutdown.
 
-**DaemonSet Controller:** ✅ (Implemented)
-1. Watches DaemonSet resources for node-level workloads
-2. Ensures exactly one pod per eligible node
-3. Node selector support for targeted deployment
-4. Automatic pod creation when nodes join cluster
-5. Automatic cleanup when nodes become ineligible (node selector mismatch)
-6. Label-based pod-to-node mapping
-7. Status tracking: desired_number_scheduled, current_number_scheduled, number_ready, number_misscheduled
-8. Comprehensive node affinity checking
-9. Use cases: Logging agents (Fluentd), monitoring (Node Exporter), CNI plugins
-10. Periodic sync (5 seconds)
+### 7. scheduler
 
-**Job Controller:** ✅ (Implemented)
-1. Watches Job resources for batch processing
-2. Manages job execution with completions tracking
-3. Parallelism control (maximum concurrent pods)
-4. Backoff limit for automatic retry on failure (default: 6)
-5. Success and failure pod counting
-6. Pod lifecycle management with "Never" restart policy
-7. Job conditions:
-   - **Complete**: All pods succeeded (succeeded >= completions)
-   - **Failed**: Too many failures (failed > backoffLimit)
-8. Status tracking: active, succeeded, failed pods
-9. Smart pod creation (calculates how many needed based on parallelism and progress)
-10. Use cases: Batch processing, data migration, cleanup tasks
-11. Periodic sync (5 seconds)
+Filter/Score plugin architecture for pod-to-node assignment.
 
-**CronJob Controller:** ✅ (Implemented)
-1. Watches CronJob resources for time-based scheduling
-2. Time-based job scheduling with cron syntax parsing
-3. Supported schedules:
-   - `*/N * * * *` - Every N minutes
-   - `@hourly` - Every hour
-   - `@daily` / `@midnight` - Daily at midnight
-   - `@weekly` - Weekly
-   - `@monthly` - Monthly (30 days)
-4. Concurrency policies:
-   - **Allow**: Run jobs concurrently (default)
-   - **Forbid**: Skip if previous job still running
-   - **Replace**: Kill old job and start new one
-5. Job history limits (successful and failed)
-6. Automatic cleanup of old completed jobs
-7. Suspend/resume support
-8. Last schedule time tracking
-9. Timestamp-based job naming for uniqueness
-10. Use cases: Backups, report generation, periodic cleanup
-11. Periodic sync (10 seconds)
+**Filter phase** (eliminates ineligible nodes):
+- Unschedulable nodes
+- Taint/toleration checks (NoSchedule, PreferNoSchedule, NoExecute)
+- Node selector matching
+- Node affinity hard requirements
+- Resource capacity (CPU/memory)
 
-**Controller Architecture:**
-```
-Controller Manager
-├── Deployment Controller    (10s loop)
-├── StatefulSet Controller   (5s loop)
-├── DaemonSet Controller     (5s loop)
-├── Job Controller           (5s loop)
-└── CronJob Controller       (10s loop)
+**Score phase** (ranks remaining nodes):
+- Resource availability
+- Node affinity preferences
+- Pod affinity/anti-affinity
+- Priority class weight
 
-All controllers run concurrently via tokio::spawn
-Each controller independently reconciles its resource type
-Proper error handling and logging for each controller
-Graceful shutdown on SIGINT/SIGTERM
-```
+**Additional features:** Priority-based scheduling, preemption of lower-priority
+pods, topology spread constraints.
 
-**Reconciliation Pattern:**
-1. List all resources of controller's type from etcd
-2. For each resource:
-   - Compare desired state (spec) vs current state (status)
-   - Take corrective actions (create/delete pods, update status)
-   - Handle errors gracefully without stopping other resources
-3. Update resource status in etcd
-4. Sleep for configured interval
-5. Repeat
+### 8. kubectl
 
-### 6. Kubelet (`rusternetes-kubelet`)
+CLI tool with the following commands:
 
-Node agent that manages containers:
+`get`, `create`, `apply`, `delete`, `describe`, `logs`, `exec`, `port-forward`,
+`scale`, `edit`, `patch`, `cp`
 
-**Responsibilities:**
-1. Register node with the API server
-2. Watch for pods assigned to this node
-3. Manage container lifecycle via Docker API
-4. Report node and pod status
+Supports YAML/JSON input, tabular/JSON/YAML output, `--namespace` and
+`--all-namespaces` flags, label selectors, field selectors, watch mode, and
+multi-document YAML files. Uses kubeconfig for cluster connection.
 
-**Container Runtime:**
-- Uses Docker via Bollard library
-- Container naming: `{pod_name}_{container_name}`
-- Automatic container start/stop based on pod phase
+### 9. cloud-providers
 
-**Sync Loop:**
-- Periodic reconciliation (default: 10 seconds)
-- Starts containers for Running pods
-- Stops containers for terminated pods
+AWS, GCP, and Azure integration modules for cloud-specific functionality
+(load balancer provisioning, storage backends, node management).
 
-**Observability (Integrated):**
-- Container lifecycle metrics (starts, failures, duration)
-- Running containers gauge
-- Node capacity and allocatable resource reporting
+## Key Architecture Patterns
 
-### 7. Kube-proxy (`rusternetes-kube-proxy`)
+### Optimistic Concurrency
 
-Network proxy component providing service networking and load balancing:
+Every resource carries a `resourceVersion` derived from etcd's `mod_revision`.
+Updates must include the current version. If the stored version has changed
+since the client last read it, the API server returns HTTP 409 Conflict. This
+prevents lost updates without pessimistic locking.
 
-**Features:**
-- ✅ Service and Endpoints watching from etcd
-- ✅ iptables-based service networking (NAT rules)
-- ✅ ClusterIP service support with load balancing
-- ✅ NodePort service support (ports 30000-32767)
-- ✅ Probabilistic load balancing across endpoints
-- ✅ Automatic iptables rule synchronization (30-second interval)
+### Watch API
 
-**Implementation:**
-- `IptablesManager` - Programs NAT rules for service routing
-- `ServiceProxy` - Watches services and endpoints, manages sync loop
-- Custom chains: RUSTERNETES-SERVICES, RUSTERNETES-NODEPORTS
-- Automatic cleanup on shutdown
+The Watch API uses Server-Sent Events. Behavior depends on the
+`resourceVersion` query parameter:
 
-### 8. CoreDNS
+- `rv=0`, `rv=1`, or omitted: The server sends an initial burst of ADDED events
+  for all existing resources, then streams subsequent changes.
+- `rv>1`: The server starts an etcd watch from that revision, streaming only
+  new changes.
 
-Standard Kubernetes DNS server for service discovery (deployed as a pod):
+Controllers and the kubelet use watches to react to state changes in near
+real-time rather than polling.
 
-**Features:**
-- ✅ Service DNS records (A/AAAA records for ClusterIP services)
-- ✅ Pod DNS records
-- ✅ SRV records for named ports
-- ✅ Headless service support
-- ✅ Kubernetes DNS naming conventions:
-  - `{service}.{namespace}.svc.cluster.local`
-  - `{pod-ip}.{namespace}.pod.cluster.local`
-- ✅ Standard Kubernetes DNS solution
-- ✅ Plugin ecosystem (caching, forwarding, metrics)
-- ✅ Forward to upstream DNS (8.8.8.8) for external resolution
+### Controller Reconciliation
 
-**Deployment:**
-- Deployed via `bootstrap-cluster.yaml`
-- Runs as a pod in kube-system namespace
-- ClusterIP: 10.96.0.10 (kube-dns service)
-- Kubelet automatically configures pod DNS to point to CoreDNS
+Every controller follows the same pattern:
 
-### 9. kubectl (`rusternetes-kubectl`)
+1. List all resources of its type from storage.
+2. For each resource, compare desired state (spec) against actual state (status).
+3. Take corrective action (create/delete pods, update status, etc.).
+4. Sleep for a configured interval (typically 5-10 seconds).
+5. Repeat.
 
-Command-line interface for cluster management:
+Errors in one resource do not stop reconciliation of others.
 
-**Commands:**
-- `get` - Retrieve resources (with field selectors and label selectors)
-- `create` - Create from YAML
-- `delete` - Remove resources
-- `apply` - Create or update from YAML
-- `describe` - Show detailed resource information
-- `logs` - Fetch pod logs
-- `exec` - Execute commands in containers
-- `port-forward` - Forward local ports to pods
-- `cp` - Copy files to/from containers
-- `scale` - Scale deployments/replicasets
-- `edit` - Edit resources in $EDITOR
-- `patch` - Update resources using strategic merge or JSON patch
+### Pause Container Networking
 
-**Supported Resource Types:**
-- Pods, Services, Deployments, ReplicaSets
-- StatefulSets, DaemonSets, Jobs, CronJobs
-- ConfigMaps, Secrets, ServiceAccounts
-- Nodes, Namespaces, Endpoints, Events
-- PersistentVolumes, PersistentVolumeClaims, StorageClasses
-- Ingresses, NetworkPolicies
-- Roles, RoleBindings, ClusterRoles, ClusterRoleBindings
-- HorizontalPodAutoscalers, VerticalPodAutoscalers
-- PodDisruptionBudgets, LimitRanges, ResourceQuotas
-- CustomResourceDefinitions and custom resources
+The kubelet creates a pause container for each pod before starting application
+containers. All application containers join the pause container's network
+namespace (`container:pause` mode), sharing a single IP address. This matches
+real Kubernetes networking semantics.
 
-**Features:**
-- YAML/JSON file parsing
-- Tabular output for lists with customizable columns
-- JSON/YAML output formats
-- Namespace support with --namespace flag or --all-namespaces
-- Multi-resource YAML support (with `---` separator)
-- Kubeconfig support for multiple clusters
-- Field selectors: `--field-selector status.phase=Running`
-- Label selectors: `--selector app=nginx`
-- Server-side apply with conflict detection
-- Watch mode for real-time updates
+## Docker Compose Cluster
 
-## Data Flow
+The development cluster runs via Docker Compose with the following services:
 
-### Creating a Deployment
+| Service | Description |
+|---|---|
+| etcd | Key-value store for all cluster state |
+| api-server | HTTPS on port 6443, TLS certs in `.rusternetes/certs/` |
+| scheduler | Assigns pods to nodes |
+| controller-manager | Runs all 31 controllers |
+| kubelet (node-1) | First worker node |
+| kubelet (node-2) | Second worker node |
+| kube-proxy | Host network mode for iptables access |
+| CoreDNS | Cluster DNS at 10.96.0.10 |
 
-1. User runs: `kubectl create -f deployment.yaml`
-2. kubectl parses YAML and POSTs to API server
-3. API server validates and stores in etcd
-4. Controller manager watches deployments
-5. Controller creates pods based on replicas
-6. Scheduler assigns pods to nodes
-7. Kubelet on node sees assigned pod
-8. Kubelet starts containers via Docker
-9. Pod status updated to Running
+TLS certificates are generated by `scripts/generate-certs.sh`. SANs must
+include Docker bridge IPs (172.18.0.2-5). The cluster is bootstrapped with
+`scripts/bootstrap-cluster.sh`, which creates CoreDNS, default services, and
+service account tokens.
 
-### Pod Lifecycle
-
-```
-Pending -> Scheduled -> Running -> Succeeded/Failed
-   ↓          ↓           ↓
-API Server  Scheduler  Kubelet
-```
-
-## Storage Architecture
-
-### Persistent Storage Model
-
-Rusternetes implements the full Kubernetes persistent storage abstraction with three primary resources:
-
-**PersistentVolume (PV):**
-- Cluster-wide storage resource provisioned by an administrator
-- Supports multiple backend types:
-  - **HostPath**: Local directory on the host (development)
-  - **NFS**: Network file system mount
-  - **iSCSI**: Block storage over IP SAN
-  - **Local**: Local storage with node affinity
-- Lifecycle independent of pods (data persists beyond pod lifetime)
-- Reclaim policies:
-  - **Retain**: Manual reclamation (data preserved)
-  - **Recycle**: Basic scrub (rm -rf) and reuse
-  - **Delete**: Delete underlying storage asset
-
-**PersistentVolumeClaim (PVC):**
-- User's request for storage (namespace-scoped)
-- Specifies size, access modes, and optional storage class
-- Bound to a matching PV based on capacity and access mode
-- Can specify label selectors for PV binding
-- Supports data source for volume cloning
-
-**StorageClass:**
-- Defines "classes" of storage with different QoS, backup policies, etc.
-- Enables dynamic provisioning of PVs
-- Volume binding modes:
-  - **Immediate**: PV binding happens immediately upon PVC creation
-  - **WaitForFirstConsumer**: Delay binding until pod using PVC is scheduled
-
-**Access Modes:**
-- **ReadWriteOnce (RWO)**: Volume can be mounted read-write by a single node
-- **ReadOnlyMany (ROX)**: Volume can be mounted read-only by many nodes
-- **ReadWriteMany (RWX)**: Volume can be mounted read-write by many nodes
-- **ReadWriteOncePod (RWOP)**: Volume can be mounted read-write by a single pod
-
-**Volume Phases:**
-- PV: Pending → Available → Bound → Released → Failed
-- PVC: Pending → Bound → Lost
+KUBECONFIG: `~/.kube/rusternetes-config`
 
 ## Storage Schema
 
-Resources are stored in etcd with the following key structure:
-
 ```
-# Core v1 resources
-/registry/pods/{namespace}/{pod-name}
-/registry/services/{namespace}/{service-name}
-/registry/configmaps/{namespace}/{configmap-name}
-/registry/secrets/{namespace}/{secret-name}
-/registry/serviceaccounts/{namespace}/{serviceaccount-name}
-/registry/nodes/{node-name}
-/registry/namespaces/{namespace-name}
-
-# Apps v1 resources
-/registry/deployments/{namespace}/{deployment-name}
-/registry/statefulsets/{namespace}/{statefulset-name}
-/registry/daemonsets/{namespace}/{daemonset-name}
-
-# Batch v1 resources
-/registry/jobs/{namespace}/{job-name}
-/registry/cronjobs/{namespace}/{cronjob-name}
-
-# Storage v1 resources
-/registry/persistentvolumes/{pv-name}
-/registry/persistentvolumeclaims/{namespace}/{pvc-name}
-/registry/storageclasses/{storageclass-name}
-
-# RBAC resources
-/registry/roles/{namespace}/{role-name}
-/registry/rolebindings/{namespace}/{rolebinding-name}
-/registry/clusterroles/{clusterrole-name}
-/registry/clusterrolebindings/{clusterrolebinding-name}
-
-# Networking resources
-/registry/ingresses/{namespace}/{ingress-name}
+/registry/pods/{namespace}/{name}
+/registry/services/{namespace}/{name}
+/registry/deployments/{namespace}/{name}
+/registry/statefulsets/{namespace}/{name}
+/registry/daemonsets/{namespace}/{name}
+/registry/jobs/{namespace}/{name}
+/registry/cronjobs/{namespace}/{name}
+/registry/configmaps/{namespace}/{name}
+/registry/secrets/{namespace}/{name}
+/registry/serviceaccounts/{namespace}/{name}
+/registry/nodes/{name}
+/registry/namespaces/{name}
+/registry/persistentvolumes/{name}
+/registry/persistentvolumeclaims/{namespace}/{name}
+/registry/storageclasses/{name}
+/registry/clusterroles/{name}
+/registry/clusterrolebindings/{name}
+/registry/roles/{namespace}/{name}
+/registry/rolebindings/{namespace}/{name}
+/registry/ingresses/{namespace}/{name}
+/registry/customresourcedefinitions/{name}
+...
 ```
 
-**Observability (Integrated):**
-- Storage operation metrics (counters, latency, errors)
-- Object count tracking by type and namespace
+## Data Flow: Creating a Deployment
 
-## Deployment Modes
-
-### TLS/HTTPS Configuration
-
-Rusternetes API server supports three deployment modes:
-
-**1. HTTP Mode (Development)**
-```bash
-# Start without TLS for local development
-./rusternetes-api-server
-# API available at: http://127.0.0.1:8080
-```
-- No encryption
-- Fastest startup
-- Not recommended for production
-
-**2. HTTPS with Self-Signed Certificates (Development/Testing)**
-```bash
-# Auto-generate self-signed certificate on startup
-./rusternetes-api-server --tls --tls-self-signed
-# API available at: https://127.0.0.1:8080
-```
-- TLS encryption enabled
-- Certificate auto-generated with rcgen
-- Subject Alternative Names (SANs): localhost, 127.0.0.1
-- Certificate valid for 365 days
-- Browser will show security warning (expected)
-
-**3. HTTPS with Custom Certificates (Production)**
-```bash
-# Load certificates from PEM files
-./rusternetes-api-server --tls \
-  --tls-cert-file /etc/rusternetes/tls/server.crt \
-  --tls-key-file /etc/rusternetes/tls/server.key
-# API available at: https://<your-domain>:8080
-```
-- TLS encryption with trusted certificates
-- Certificates signed by Certificate Authority
-- Production-ready configuration
-
-**4. Mutual TLS (mTLS) - Maximum Security**
-```bash
-# Require client certificates for authentication
-./rusternetes-api-server --tls \
-  --tls-cert-file /etc/rusternetes/tls/server.crt \
-  --tls-key-file /etc/rusternetes/tls/server.key \
-  --tls-client-ca-file /etc/rusternetes/tls/ca.crt
-# Clients must present valid certificates signed by CA
-```
-- Mutual authentication (server and client)
-- Strongest security model
-- Requires client certificate distribution
+1. `kubectl apply -f deployment.yaml` sends a POST/PATCH to the API server.
+2. The API server authenticates, authorizes (RBAC), runs admission webhooks,
+   validates the resource, and writes it to etcd.
+3. The Deployment controller detects the new Deployment and creates a ReplicaSet.
+4. The ReplicaSet controller detects the new ReplicaSet and creates Pods.
+5. The scheduler watches for unscheduled Pods, scores nodes, and binds each Pod
+   to a node by setting `spec.nodeName`.
+6. The kubelet on the assigned node watches for Pods bound to it, creates a
+   pause container, then starts application containers via Docker.
+7. The kubelet reports Pod status back to the API server (phase, conditions,
+   container statuses, pod IP).
+8. The Endpoints and EndpointSlice controllers update service endpoints to
+   include the new Pod IPs.
+9. kube-proxy programs iptables rules so cluster traffic reaches the new Pods.
 
 ## Concurrency Model
 
 All components use Tokio for async I/O:
 
-- **API Server**: Multiple concurrent HTTPS requests with TLS termination
-- **Scheduler**: Periodic async loop with storage operations
-- **Controller Manager**: Five controllers run concurrently via tokio::spawn
-- **Kubelet**: Async sync loop with Docker API calls
+- **API server**: Handles concurrent HTTPS requests. Each request is a Tokio task.
+- **Controller manager**: Each of the 31 controllers runs as an independent
+  `tokio::spawn` task.
+- **Scheduler**: Periodic async loop with storage reads and writes.
+- **Kubelet**: Async sync loop interleaving Docker API calls and status updates.
+- **Storage**: All etcd operations are async. CAS prevents concurrent write
+  conflicts.
 
-## Error Handling
+## Testing
 
-Unified error handling via `rusternetes_common::Error`:
+929 test functions across the workspace. All async tests use `#[tokio::test]`.
+Unit tests use `MemoryStorage` instead of etcd. Tests requiring shared mutable
+state use `#[serial_test::serial]`.
 
-```rust
-pub enum Error {
-    NotFound(String),
-    AlreadyExists(String),
-    InvalidResource(String),
-    Storage(String),
-    Network(String),
-    Authentication(String),
-    Authorization(String),
-    Serialization(SerdeError),
-    Internal(String),
-}
+```bash
+cargo test                                     # All tests
+cargo test -p rusternetes_api_server           # Single crate
+cargo test test_name -- --nocapture            # Single test with output
 ```
 
-HTTP status codes mapped from errors in API server.
-
-## Implemented Features
-
-### 1. Authentication & Authorization ✅ (Complete)
-- ✅ ServiceAccount resource type
-- ✅ RBAC resources (Role, RoleBinding, ClusterRole, ClusterRoleBinding)
-- ✅ JWT token generation and validation (HS256)
-- ✅ RBACAuthorizer with policy rule matching
-- ✅ Support for wildcard permissions and verb/resource matching
-- ✅ API server middleware integration
-- ✅ TLS/HTTPS support with rustls
-- ✅ Self-signed certificate generation (rcgen)
-- ✅ Custom certificate loading from PEM files
-- ✅ mTLS (mutual TLS) for client authentication
-
-### 2. Advanced Scheduling ✅ (Complete)
-- ✅ Taints and tolerations (NoSchedule, PreferNoSchedule, NoExecute)
-- ✅ Node affinity (hard and soft requirements)
-- ✅ Advanced node selectors with match expressions
-- ✅ Resource-based scheduling (CPU/memory availability)
-- ✅ Priority-based scheduling
-- ✅ Multi-phase filtering and scoring algorithm
-- ✅ Weighted scoring system (resources: 30%, node affinity: 25%, pod affinity: 20%, priority: 15%, anti-affinity: 10%)
-- 📋 Pod affinity/anti-affinity types defined (evaluation pending)
-
-### 3. Observability ✅ (Core Complete)
-- ✅ Prometheus metrics infrastructure
-- ✅ API Server metrics (requests, latency, errors)
-- ✅ Scheduler metrics (attempts, duration, failures by reason)
-- ✅ Kubelet metrics (container lifecycle, node capacity)
-- ✅ Storage metrics (operations, latency, object counts)
-- ✅ Structured logging via tracing-subscriber
-- ⏳ /metrics endpoint integration
-- ⏳ OpenTelemetry distributed tracing
-- ⏳ Audit logging for security events
-
-### 4. Workload Controllers ✅ (Complete)
-- ✅ Deployment Controller (replica management)
-- ✅ StatefulSet Controller (ordered deployment, stable identities)
-- ✅ DaemonSet Controller (node-wide pod deployment)
-- ✅ Job Controller (batch execution with completions/parallelism)
-- ✅ CronJob Controller (time-based scheduling)
-- ✅ All controllers run concurrently with independent reconciliation loops
-- ✅ Comprehensive status tracking for all workload types
-
-### 5. Storage Resources ✅ (Complete)
-- ✅ PersistentVolume (PV) with multiple volume sources
-  - HostPath, NFS, iSCSI, Local volume backends
-  - Access modes: ReadWriteOnce, ReadOnlyMany, ReadWriteMany, ReadWriteOncePod
-  - Reclaim policies: Retain, Recycle, Delete
-  - Volume modes: Filesystem, Block
-  - Node affinity for volume placement
-  - PV phases: Pending, Available, Bound, Released, Failed
-- ✅ PersistentVolumeClaim (PVC) for storage requests
-  - Resource requirements (requests/limits)
-  - Storage class integration
-  - Label selectors for PV binding
-  - Data source support for cloning
-  - PVC phases: Pending, Bound, Lost
-- ✅ StorageClass for dynamic provisioning
-  - Provisioner specification
-  - Volume binding modes (Immediate, WaitForFirstConsumer)
-  - Reclaim policy configuration
-  - Topology constraints
-  - Volume expansion support
-
-### 6. Configuration Resources ✅ (Complete)
-- ✅ ConfigMaps (with immutability support)
-- ✅ Secrets (base64 encoded, with immutability support)
-- ✅ Ingress (HTTP/HTTPS routing, TLS termination)
-
-## Recently Implemented Features
-
-### 7. Networking ✅ (Complete)
-   - ✅ ClusterIP, NodePort, LoadBalancer services
-   - ✅ Kube-proxy with iptables mode
-   - ✅ CoreDNS for service discovery (standard Kubernetes DNS)
-   - ✅ CNI framework integration
-   - ✅ Ingress resource type and API endpoints
-   - ✅ Endpoints controller
-   - ⏳ Network policies (resource defined, enforcement pending)
-   - ⏳ Service mesh integration (future)
-   - ⏳ Ingress controller implementation (future)
-
-### 8. Storage Controllers ✅ (Complete)
-   - ✅ PersistentVolume, PersistentVolumeClaim, StorageClass resource types
-   - ✅ PV/PVC Binder controller for automatic binding
-   - ✅ Dynamic provisioning controller
-   - ✅ Volume snapshots (VolumeSnapshot, VolumeSnapshotContent, VolumeSnapshotClass)
-   - ✅ Volume expansion controller
-
-### 9. High Availability ✅ (Complete)
-   - ✅ Multi-master API servers with HAProxy load balancing
-   - ✅ Leader election for controllers (etcd-based)
-   - ✅ etcd clustering (3-5 node clusters with quorum)
-   - ✅ API server health checks and automatic failover (~15s)
-   - ✅ Comprehensive liveness/readiness probes
-
-### 10. Autoscaling & Resource Management ✅ (Complete)
-   - ✅ HorizontalPodAutoscaler (HPA) - Metrics-based scaling
-   - ✅ VerticalPodAutoscaler (VPA) - Resource right-sizing
-   - ✅ PodDisruptionBudget (PDB) - Disruption protection
-   - ✅ LimitRange - Default/max resource limits
-   - ✅ ResourceQuota - Namespace quotas
-   - ✅ Init Containers - Pre-app initialization
-   - ✅ Ephemeral Containers - Debugging support
-   - ✅ Sidecar Containers - Service mesh patterns
-
-### 11. Advanced API Features ✅ (Complete)
-   - ✅ Server-Side Apply with field manager tracking
-   - ✅ Strategic Merge Patch, JSON Patch, Merge Patch
-   - ✅ Field Selectors for filtering
-   - ✅ Watch API for real-time updates
-   - ✅ Pagination support
-   - ✅ Custom Resource Definitions (CRDs)
-   - ✅ Admission Webhooks (mutating and validating)
-   - ✅ Pod Security Standards
-   - ✅ Garbage Collection with cascade deletion
-   - ✅ Finalizers for cleanup hooks
-   - ✅ TTL Controller for automatic cleanup
-
-## Future Enhancements
-
-### Observability
-   - ⏳ Complete OpenTelemetry distributed tracing
-   - ⏳ Enhanced audit logging with policy filtering
-   - ⏳ Metrics aggregation and dashboards
-
-### Advanced Networking
-   - ⏳ Network policy enforcement
-   - ⏳ Service mesh integration (Istio/Linkerd compatibility)
-   - ⏳ Ingress controller implementation
-   - ⏳ IPv6 dual-stack support
-
-### Multi-Tenancy
-   - ⏳ Namespace isolation policies
-   - ⏳ Multi-cluster federation
-   - ⏳ Hierarchical namespaces
-
-## Performance Considerations
-
-- **Storage**: All operations go through etcd - consider caching
-- **Watch**: Use etcd watch API for efficient event streaming
-- **Serialization**: JSON for API, could optimize with Protocol Buffers
-- **Concurrency**: Tokio enables efficient async I/O without thread overhead
-- **Scheduling**: Weighted scoring algorithm optimizes for balanced cluster utilization
-- **Metrics**: Low-overhead Prometheus metrics with appropriate histogram buckets
-
-## Testing Strategy
-
-1. **Unit Tests**: Test individual components and functions
-2. **Integration Tests**: Test component interactions
-3. **End-to-End Tests**: Full workflow testing with etcd
-4. **Load Tests**: Test scalability and performance
-
-## Contributing
-
-When adding new features:
-
-1. Define resource types in `common/resources/`
-2. Add storage operations if needed
-3. Implement API handlers in `api-server/handlers/`
-4. Add controller logic in `controller-manager/controllers/`
-5. Update kubectl commands as needed
-6. Add example YAML files
-7. Update documentation
+Conformance testing runs via Sonobuoy against the Docker Compose cluster.
 
 ## Dependencies
 
-**Core Dependencies:**
-- `tokio` - Async runtime for all components
-- `serde` / `serde_json` - Serialization for API and storage
-- `axum` - Web framework for API server
-- `axum-server` - TLS-enabled HTTP server with rustls
-- `etcd-client` - etcd storage backend
-- `bollard` - Docker API client for kubelet
-
-**Authentication & Authorization:**
-- `jsonwebtoken` - JWT token handling for service accounts
-- `rustls` / `tokio-rustls` - TLS implementation (fully integrated)
-- `rustls-pemfile` - PEM file parsing for certificates
-- `rcgen` - Self-signed certificate generation
-
-**Observability:**
-- `tracing` / `tracing-subscriber` - Structured logging
-- `prometheus` - Metrics collection and export
-- `opentelemetry` / `opentelemetry-prometheus` - Distributed tracing infrastructure
-
-**Additional Dependencies:**
-- `chrono` - Date/time handling for CronJob scheduling
-- `uuid` - Unique ID generation for resources
-
-## Implementation Statistics
-
-- **Resource Types Implemented**: 18 (Pod, Service, Deployment, StatefulSet, DaemonSet, Job, CronJob, ConfigMap, Secret, ServiceAccount, Ingress, Role, RoleBinding, ClusterRole, ClusterRoleBinding, Node, Namespace, PersistentVolume, PersistentVolumeClaim, StorageClass)
-- **API Groups**: 5 (core/v1, apps/v1, batch/v1, rbac.authorization.k8s.io/v1, networking.k8s.io/v1, storage.k8s.io/v1)
-- **Controllers Implemented**: 5 (Deployment, StatefulSet, DaemonSet, Job, CronJob)
-- **Lines of Code**: ~11,700+ (including Session 3: TLS, Storage, Controllers)
-  - Session 3 additions: 1,690+ lines (TLS: 215, Storage: 400+, Controllers: 1,075+)
-- **Test Coverage**: Unit tests for all modules (12 auth tests, controller tests)
-- **Kubernetes API Compliance**: Very High (87% of core features implemented)
-- **Production Readiness**: 98% (minor compilation fixes remaining)
-
-## References
-
-- [Kubernetes Architecture](https://kubernetes.io/docs/concepts/architecture/)
-- [Kubernetes API Conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md)
-- [etcd Documentation](https://etcd.io/docs/)
-- [Tokio Documentation](https://tokio.rs/)
-- [Prometheus Best Practices](https://prometheus.io/docs/practices/naming/)
-- [JWT RFC 7519](https://datatracker.ietf.org/doc/html/rfc7519)
+| Crate | Purpose |
+|---|---|
+| tokio | Async runtime |
+| axum | HTTP framework for the API server |
+| serde / serde_json | Serialization for API and storage |
+| etcd-client | etcd storage backend |
+| bollard | Docker API client for the kubelet |
+| rustls / tokio-rustls | TLS implementation |
+| rcgen | Self-signed certificate generation |
+| jsonwebtoken | JWT for service account tokens |
+| tracing / tracing-subscriber | Structured logging |
+| chrono | Date/time handling |
+| uuid | Resource UID generation |

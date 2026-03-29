@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rusternetes - Kubernetes Reimplemented in Rust</title>
-  <meta name="description" content="A full Kubernetes reimplementation in Rust, focusing on memory safety, performance, and conformance. 9 crates, 31 controllers, 1300+ tests.">
+  <meta name="description" content="A full Kubernetes reimplementation in Rust, focusing on memory safety, performance, and conformance. 161,000+ lines of Rust, 31 controllers, 328 conformance fixes.">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -43,11 +43,11 @@
           <span class="stat-label">Controllers</span>
         </div>
         <div class="stat">
-          <span class="stat-num">1300+</span>
+          <span class="stat-num">900+</span>
           <span class="stat-label">Tests</span>
         </div>
         <div class="stat">
-          <span class="stat-num">270+</span>
+          <span class="stat-num">328</span>
           <span class="stat-label">Conformance Fixes</span>
         </div>
       </div>
@@ -56,9 +56,9 @@
         <div class="highscore-display">
           <div class="highscore-pct">60<span class="highscore-pct-sign">%</span></div>
           <div class="highscore-details">
-            <span class="highscore-line">RND 103 &middot; 245/441 PASS</span>
-            <span class="highscore-line dim">271 FIXES DEPLOYED</span>
-            <span class="highscore-line blink">RND 104 IN PROGRESS...</span>
+            <span class="highscore-line">RND 108 &middot; 263/441 PASS</span>
+            <span class="highscore-line dim">328 FIXES &middot; ALL 178 FAILURES ADDRESSED</span>
+            <span class="highscore-line blink">NEXT ROUND PENDING REDEPLOY</span>
           </div>
         </div>
         <div class="highscore-bar-track">
@@ -288,7 +288,7 @@ kubectl get pods -A</code></pre>
         </div>
         <div class="why-card">
           <h3>Correctness</h3>
-          <p>The type system catches mismatches at compile time. Serde ensures wire-compatible JSON serialization. 1300+ tests and conformance testing validate behavior against real Kubernetes.</p>
+          <p>The type system catches mismatches at compile time. Serde ensures wire-compatible JSON serialization. 900+ tests and 8 rounds of conformance testing validate behavior against real Kubernetes.</p>
         </div>
       </div>
     </div>

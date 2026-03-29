@@ -1,107 +1,53 @@
 # Contributing to Rusternetes
 
-Thank you for your interest in contributing to Rusternetes! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to Rusternetes. This is a Rust reimplementation of Kubernetes spanning 9 crates, 161,000+ lines of code, and 929 tests. This document covers everything you need to get started.
 
-## Development Setup
+## Prerequisites
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed instructions on setting up your development environment.
+- Rust (stable toolchain)
+- Docker and Docker Compose (for integration testing)
+- `make` (for convenience targets)
 
-Quick start:
+## Pre-Commit Checks
+
+Run these before every commit:
+
 ```bash
-./scripts/dev-setup.sh
+cargo fmt --all
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
 ```
 
-## Before You Submit a PR
+Or run all three at once:
 
-1. **Format your code:**
-   ```bash
-   make fmt
-   ```
+```bash
+make pre-commit
+```
 
-2. **Run the linter:**
-   ```bash
-   make clippy
-   ```
+## Commit Messages
 
-3. **Run tests:**
-   ```bash
-   make test
-   ```
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
-4. **Or run all checks at once:**
-   ```bash
-   make pre-commit
-   ```
+- `feat:` -- New feature
+- `fix:` -- Bug fix
+- `docs:` -- Documentation changes
+- `test:` -- Test changes
+- `refactor:` -- Code refactoring
+- `chore:` -- Maintenance tasks
 
 ## Development Workflow
 
-1. **Fork and clone the repository**
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/rusternetes.git
-   cd rusternetes
-   ```
+1. Fork and clone the repository.
+2. Create a feature branch from `main`.
+3. Make your changes, add tests, and run `make pre-commit`.
+4. Push and open a Pull Request.
 
-2. **Create a feature branch**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
+## Testing
 
-3. **Make your changes**
-   - Write code
-   - Add tests
-   - Update documentation
+All async tests use `#[tokio::test]`. Unit tests should use `MemoryStorage` rather than etcd.
 
-4. **Test your changes**
-   ```bash
-   # Run unit tests
-   make test
+When tests must run sequentially, annotate them with `#[serial_test::serial]`.
 
-   # Test in containerized environment
-   make dev-full
-   make kubectl-create-example-pod
-
-   # Test locally
-   make run-api-server  # In one terminal
-   cargo run --bin kubectl -- --server http://localhost:6443 get pods
-   ```
-
-5. **Commit your changes**
-   ```bash
-   git add .
-   git commit -m "feat: add your feature description"
-   ```
-
-   Follow [Conventional Commits](https://www.conventionalcommits.org/):
-   - `feat:` - New feature
-   - `fix:` - Bug fix
-   - `docs:` - Documentation changes
-   - `test:` - Test changes
-   - `refactor:` - Code refactoring
-   - `chore:` - Maintenance tasks
-
-6. **Push and create a Pull Request**
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-## Code Style
-
-- Follow Rust standard naming conventions
-- Use `rustfmt` for formatting (run `make fmt`)
-- Use `clippy` for linting (run `make clippy`)
-- Write clear, self-documenting code
-- Add comments for complex logic
-- Keep functions focused and small
-
-## Testing Guidelines
-
-- Write unit tests for new functionality
-- Add integration tests where appropriate
-- Ensure tests are deterministic
-- Test error paths, not just happy paths
-- Mock external dependencies in tests
-
-Example test structure:
 ```rust
 #[cfg(test)]
 mod tests {
@@ -109,133 +55,123 @@ mod tests {
 
     #[tokio::test]
     async fn test_feature_works() {
-        // Arrange
-        let input = setup_test_data();
+        let storage = MemoryStorage::new();
 
-        // Act
-        let result = your_function(input).await;
+        let result = your_function(&storage).await;
 
-        // Assert
         assert!(result.is_ok());
     }
 }
 ```
 
-## Documentation
+To run tests for a single crate (note: use underscores in the package name):
 
-- Update README.md for user-facing changes
-- Update DEVELOPMENT.md for development workflow changes
-- Add inline documentation for public APIs
-- Include examples for complex features
-- Keep documentation up-to-date with code changes
+```bash
+cargo test -p rusternetes_api_server
+```
+
+To run a single test with output:
+
+```bash
+cargo test test_name -- --nocapture
+```
+
+## Serialization Conventions
+
+These are critical for Kubernetes API compatibility. Every resource struct must follow them:
+
+- `#[serde(rename_all = "camelCase")]` on all resource structs
+- `#[serde(skip_serializing_if = "Option::is_none")]` on optional fields
+- `#[serde(flatten)]` on the `TypeMeta` field
+- Kubernetes-style camelCase abbreviations: `podIP` (not `podIp`), `hostIP` (not `hostIp`), `containerID` (not `containerId`)
+
+## Adding a New Resource Type
+
+1. Define the struct in `crates/common/src/resources/{type}.rs`
+2. Add handlers in `crates/api-server/src/handlers/{type}.rs`
+3. Register routes in `crates/api-server/src/router.rs`
+4. Add a controller in `crates/controller-manager/src/controllers/` if the resource needs reconciliation
+
+## Controller Pattern
+
+Controllers follow a standard reconciliation loop pattern:
+
+```rust
+pub struct FooController<S: Storage> {
+    storage: Arc<S>,
+    interval: Duration,
+}
+
+impl<S: Storage> FooController<S> {
+    pub async fn run(&self) -> Result<()> {
+        loop {
+            self.reconcile_all().await?;
+            tokio::time::sleep(self.interval).await;
+        }
+    }
+}
+```
+
+New controllers go in `crates/controller-manager/src/controllers/` and are registered in the controller manager startup.
+
+## Running the Cluster
+
+For integration testing against a full cluster:
+
+```bash
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+docker compose build
+docker compose up -d
+bash scripts/bootstrap-cluster.sh
+```
+
+Then interact with it:
+
+```bash
+export KUBECONFIG=~/.kube/rusternetes-config
+kubectl get pods -A
+```
+
+The cluster runs etcd, the API server (port 6443 with TLS), a scheduler, a controller manager, two kubelets, and kube-proxy.
+
+## Running Conformance Tests
+
+```bash
+bash scripts/run-conformance.sh
+bash scripts/conformance-progress.sh
+```
+
+The e2e log is written to `/tmp/sonobuoy/results/e2e.log` inside the e2e container.
+
+## Crate Overview
+
+| Crate | Purpose |
+|---|---|
+| `common` | Shared resource types, error types, utilities |
+| `api-server` | Axum-based REST API with per-resource handler files |
+| `storage` | Storage trait with etcd and in-memory backends |
+| `controller-manager` | 31 controllers following the reconciliation loop pattern |
+| `kubelet` | Container runtime via bollard, pod lifecycle, volumes, probes |
+| `kube-proxy` | iptables-based service routing |
+| `scheduler` | Pod scheduling with affinity, taints, tolerations, preemption |
+| `kubectl` | CLI tool |
+| `cloud-providers` | AWS, GCP, and Azure integrations |
+
+## Code Style
+
+- Follow Rust standard naming conventions.
+- Use `cargo fmt` for formatting and `cargo clippy` for linting.
+- Write clear, self-documenting code. Add comments for complex logic.
+- Keep functions focused. Prefer small, testable units.
+- Avoid `unsafe` code unless absolutely necessary.
 
 ## Pull Request Process
 
-1. **Fill out the PR template** with:
-   - Description of changes
-   - Related issues
-   - Testing performed
-   - Screenshots (if UI changes)
-
-2. **Ensure CI passes**:
-   - All tests pass
-   - Code is formatted
-   - No clippy warnings
-
-3. **Request review** from maintainers
-
-4. **Address feedback** promptly
-
-5. **Squash commits** if requested before merging
-
-## Architecture Guidelines
-
-When adding new features, follow Kubernetes architecture patterns:
-
-- **API Server**: RESTful API, resource validation
-- **Controllers**: Reconciliation loops, eventual consistency
-- **Scheduler**: Resource-based pod placement
-- **Kubelet**: Container lifecycle management
-- **Storage**: etcd for persistent state
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
-
-## Component-Specific Guidelines
-
-### API Server
-- Add new resources in `crates/common/src/resources/`
-- Implement validation logic
-- Add API endpoints in `crates/api-server/src/handlers/`
-- Update OpenAPI specs (future)
-
-### Scheduler
-- Scheduling plugins go in `crates/scheduler/src/plugins/`
-- Follow the plugin interface
-- Add metrics for scheduling decisions
-
-### Controller Manager
-- New controllers in `crates/controller-manager/src/controllers/`
-- Implement the `Controller` trait
-- Use work queues for event processing
-
-### Kubelet
-- Container runtime logic in `crates/kubelet/src/runtime/`
-- Pod lifecycle in `crates/kubelet/src/pod/`
-- Node status updates in `crates/kubelet/src/status/`
-
-## Common Tasks
-
-### Adding a New Resource Type
-
-1. Define the resource struct in `crates/common/src/resources/`
-2. Implement serialization/deserialization
-3. Add API endpoints in API server
-4. Add controller logic if needed
-5. Update kubectl to support the resource
-6. Add examples to `examples/`
-
-### Adding a New Controller
-
-1. Create controller in `crates/controller-manager/src/controllers/`
-2. Implement the `Controller` trait
-3. Register controller in controller manager
-4. Add tests
-5. Document the controller's purpose
-
-### Adding a New CLI Command
-
-1. Add command in `crates/kubectl/src/commands/`
-2. Update CLI parser
-3. Add tests
-4. Update documentation
-
-## Performance Considerations
-
-- Use async/await for I/O operations
-- Avoid blocking the tokio runtime
-- Use appropriate data structures
-- Profile before optimizing
-- Cache when appropriate, but invalidate correctly
-
-## Security Considerations
-
-- Validate all user inputs
-- Use proper error handling (don't expose internals)
-- Follow principle of least privilege
-- Implement RBAC correctly
-- Be cautious with unsafe code (avoid if possible)
-
-## Getting Help
-
-- Open an issue for bugs or feature requests
-- Ask questions in discussions
-- Check existing issues and PRs first
-- Be respectful and follow the code of conduct
+1. Ensure `make pre-commit` passes with no errors.
+2. Provide a clear description of the changes and any related issues.
+3. Include the testing you performed.
+4. Address review feedback promptly.
 
 ## License
 
 By contributing to Rusternetes, you agree that your contributions will be licensed under the Apache-2.0 License.
-
-## Thank You!
-
-Your contributions make Rusternetes better for everyone. We appreciate your time and effort!
