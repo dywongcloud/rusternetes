@@ -2,16 +2,18 @@
 
 **Round 110** | IN PROGRESS | 336 fixes deployed
 
-## Round 110 Live Failures (6 failures / 11 tests so far)
+## Round 110 Live Failures (8 failures / 14 tests so far)
 
-| # | File | Line | Duration | Error |
-|---|------|------|----------|-------|
-| 1 | `statefulset.go` | 2479 | 62s | `scaled 3 -> 2 replicas` |
-| 2 | `crd_publish_openapi.go` | 202 | 30s | `failed to create CRD: context deadline exceeded` |
-| 3 | `builder.go` | 97 | 0.5s | `exit status 1` — kubectl create |
-| 4 | `builder.go` | 97 | 0.6s | `exit status 1` — kubectl create (2nd occurrence) |
-| 5 | `expansion.go` | 419 | 127s | env var expansion — pod readiness timeout |
-| 6 | `custom_resource_definition.go` | 288 | 30s | `creating CustomResourceDefinition: context deadline exceeded` |
+| # | File | Line | Error |
+|---|------|------|-------|
+| 1 | `statefulset.go` | 2479 | `scaled 3 -> 2 replicas` |
+| 2 | `crd_publish_openapi.go` | 202 | `failed to create CRD: context deadline exceeded` |
+| 3 | `builder.go` | 97 | `exit status 1` — kubectl create |
+| 4 | `builder.go` | 97 | `exit status 1` — kubectl create (2nd) |
+| 5 | `expansion.go` | 419 | env var expansion timeout (127s) |
+| 6 | `custom_resource_definition.go` | 288 | `creating CRD: context deadline exceeded` |
+| 7 | `runtime.go` | 115 | `context deadline exceeded` (300s) |
+| 8 | `daemon_set.go` | 473 | timeout |
 
 ## Root Cause Analysis
 
@@ -38,6 +40,6 @@ Pod env var expansion test timed out waiting for pod readiness. This happened du
 | 107 | 19 | ~430 | ~96% |
 | 108 | 178 | 441 | 60% |
 | 109 | 48* | 78* | 38%* |
-| 110 | 6 | 11 | 45% (in progress, early) |
+| 110 | 8 | 14 | 57% (in progress) |
 
 *Round 109 incomplete — e2e killed during skip phase
