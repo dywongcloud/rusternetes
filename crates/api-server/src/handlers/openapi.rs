@@ -67,10 +67,31 @@ pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
     let accept = headers.get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    // When client requests protobuf, return JSON instead. kubectl falls back
-    // from OpenAPI v3 to v2 with protobuf Accept header. Returning 406 causes
-    // kubectl to fail entirely. Returning JSON lets it proceed with validation.
-    // (Previously returned 406 which broke kubectl create/apply from STDIN)
+
+    if accept.contains("proto-openapi") || accept.contains("protobuf") {
+        // Wrap JSON in K8s protobuf Unknown envelope: "k8s\0" + field2(raw JSON)
+        // kubectl expects protobuf wire format and will fail if given plain JSON
+        let mut pb = Vec::with_capacity(json_bytes.len() + 20);
+        pb.extend_from_slice(b"k8s\0");
+        // Field 2 (raw bytes), wire type 2 (length-delimited): tag = (2 << 3) | 2 = 0x12
+        pb.push(0x12);
+        // Varint-encode the length of the JSON payload
+        let mut len = json_bytes.len();
+        loop {
+            let mut byte = (len & 0x7f) as u8;
+            len >>= 7;
+            if len > 0 { byte |= 0x80; }
+            pb.push(byte);
+            if len == 0 { break; }
+        }
+        pb.extend_from_slice(&json_bytes);
+
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "application/com.github.proto-openapi.spec.v2@v1.0+protobuf")
+            .body(Body::from(pb))
+            .unwrap();
+    }
 
     Response::builder()
         .status(StatusCode::OK)
