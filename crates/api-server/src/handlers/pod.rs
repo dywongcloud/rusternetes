@@ -959,9 +959,11 @@ pub async fn patch(
         }
     }
 
-    // Get Content-Type header
+    // Get Content-Type header — check X-Original-Content-Type first (set by middleware
+    // when normalizing patch content types to application/json for Axum compatibility)
     let content_type = headers
-        .get("content-type")
+        .get("x-original-content-type")
+        .or_else(|| headers.get("content-type"))
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/strategic-merge-patch+json");
 

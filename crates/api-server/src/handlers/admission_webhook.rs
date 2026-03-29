@@ -72,8 +72,12 @@ pub async fn create_validating_webhook(
                     ctx.add_variable("request".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
                     if let Err(e) = program.execute(&ctx) {
                         let err_str = format!("{}", e);
-                        // Allow "no such key" errors (valid expression, just empty test data)
-                        if !err_str.contains("no such key") && !err_str.contains("not found") {
+                        let err_lower = err_str.to_lowercase();
+                        // Allow "no such key" and "not found" errors — these are valid expressions
+                        // that reference keys like object.metadata which don't exist in our empty
+                        // test context. The expression is syntactically valid.
+                        if !err_lower.contains("no such key") && !err_lower.contains("not found")
+                            && !err_lower.contains("undeclared") && !err_lower.contains("undefined") {
                             return Err(rusternetes_common::Error::InvalidResource(format!(
                                 "matchConditions[{}].expression: compilation failed: {}",
                                 i, err_str
