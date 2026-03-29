@@ -165,18 +165,19 @@ pub async fn create_crd(
         let storage = state.storage.clone();
         let key_clone = key.clone();
         tokio::spawn(async move {
-            for delay_ms in [50, 200, 1000] {
-                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            // Fire multiple updates at increasing intervals to ensure the watch
+            // catches at least one MODIFIED event. The watch may not be established
+            // by the first update (50ms), so we keep firing. Do NOT break after
+            // first success — the watch needs a MODIFIED event AFTER it subscribes.
+            for (i, delay_ms) in [100, 500, 2000, 5000].iter().enumerate() {
+                tokio::time::sleep(std::time::Duration::from_millis(*delay_ms)).await;
                 if let Ok(mut crd_val) = storage.get::<serde_json::Value>(&key_clone).await {
-                    // Touch the status to trigger a MODIFIED watch event
                     if let Some(status) = crd_val.get_mut("status") {
                         if let Some(obj) = status.as_object_mut() {
-                            obj.insert("observedGeneration".to_string(), serde_json::json!(1));
+                            obj.insert("observedGeneration".to_string(), serde_json::json!(i as i64 + 1));
                         }
                     }
-                    if storage.update(&key_clone, &crd_val).await.is_ok() {
-                        break; // Update succeeded, stop retrying
-                    }
+                    let _ = storage.update(&key_clone, &crd_val).await;
                 }
             }
         });

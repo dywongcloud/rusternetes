@@ -66,3 +66,9 @@ warp = "0.3" # HTTP server framework for testing
 aws-config = "1.1"
 aws-sdk-elasticloadbalancingv2 = "1.14"
 aws-sdk-ec2 = "1.30"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+strip = "symbols"

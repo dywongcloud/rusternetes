@@ -1810,6 +1810,7 @@ mod tests {
                     name: Some("http".to_string()),
                     protocol: Some("TCP".to_string()),
                     host_port: None,
+                    host_ip: None,
                 }]),
                 env: None,
                 resources: None,

@@ -12,8 +12,10 @@ services:
       - --listen-client-urls=http://0.0.0.0:2379
       - --advertise-client-urls=http://etcd:2379
       - --listen-peer-urls=http://0.0.0.0:2380
-      - --auto-compaction-retention=5m
+      - --auto-compaction-retention=1m
       - --auto-compaction-mode=periodic
+      - --snapshot-count=5000
+      - --quota-backend-bytes=8589934592
     ports:
       - "2379:2379"
       - "2380:2380"
@@ -50,7 +52,7 @@ services:
       # Docker socket for exec/attach via bollard (shares same daemon as kubelet)
       - /var/run/docker.sock:/var/run/docker.sock:rw
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=info
       - DOCKER_HOST=unix:///var/run/docker.sock
     command:
       - "--bind-address"
@@ -64,7 +66,7 @@ services:
       - "/etc/kubernetes/pki/api-server.key"
       - "--skip-auth"
       - "--log-level"
-      - "debug"
+      - "info"
 
   # Scheduler - assigns pods to nodes
   scheduler:
@@ -136,7 +138,7 @@ services:
       # Uncomment to use config file approach:
       # - ./examples/configs/kubelet-config-dev.yaml:/etc/kubernetes/kubelet-config.yaml:ro
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=info
       - DOCKER_HOST=unix:///var/run/docker.sock
       # Use the API server's Docker DNS name so pods can reach it directly.
       # The ClusterIP (10.96.0.1) is not routable from Docker bridge containers.
@@ -167,7 +169,7 @@ services:
       - ${KUBELET_VOLUMES_PATH}:${KUBELET_VOLUMES_PATH}:rw
       - ./.rusternetes/certs:/root/.rusternetes/certs:ro
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=info
       - DOCKER_HOST=unix:///var/run/docker.sock
       - KUBERNETES_SERVICE_HOST_OVERRIDE=api-server
       - KUBELET_VOLUMES_PATH=${KUBELET_VOLUMES_PATH}

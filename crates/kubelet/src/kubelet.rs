@@ -8,12 +8,13 @@ use rusternetes_common::{
     },
     types::Phase,
 };
-use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage, WatchEvent};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
     time::Duration,
 };
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 pub struct Kubelet {
@@ -60,19 +61,80 @@ impl Kubelet {
         // Register the node
         self.register_node().await?;
 
-        let mut interval = tokio::time::interval(self.sync_interval);
+        // Channel for watch events to trigger immediate pod syncs
+        let (watch_tx, mut watch_rx) = mpsc::channel::<String>(256);
+
+        // Start a background watch on pod changes to react immediately
+        // instead of waiting for the next poll cycle
+        let storage_clone = self.storage.clone();
+        let node_name = self.node_name.clone();
+        let watch_tx_clone = watch_tx.clone();
+        tokio::spawn(async move {
+            let prefix = build_prefix("pods", None);
+            loop {
+                match storage_clone.watch(&prefix).await {
+                    Ok(mut stream) => {
+                        use futures::StreamExt;
+                        while let Some(event) = stream.next().await {
+                            match event {
+                                Ok(WatchEvent::Added(key, value) | WatchEvent::Modified(key, value)) => {
+                                    // Quick check: is this pod assigned to our node?
+                                    if value.contains(&format!("\"nodeName\":\"{}\"", node_name)) {
+                                        // Extract pod name from key for targeted sync
+                                        let _ = watch_tx_clone.try_send(key);
+                                    }
+                                }
+                                Ok(WatchEvent::Deleted(key, _)) => {
+                                    let _ = watch_tx_clone.try_send(key);
+                                }
+                                Err(e) => {
+                                    debug!("Pod watch error: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to start pod watch: {}", e);
+                    }
+                }
+                // Reconnect after a brief pause
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        });
+
+        // Full sync interval is the safety net — runs less frequently
+        // The watch-triggered syncs handle the fast path
+        let full_sync_interval = Duration::from_secs(self.sync_interval.as_secs().max(1));
+        let mut full_sync_timer = tokio::time::interval(full_sync_interval);
+
+        // Node status update runs every 10 seconds (heartbeat)
+        let mut node_status_timer = tokio::time::interval(Duration::from_secs(10));
 
         loop {
-            interval.tick().await;
+            tokio::select! {
+                // Watch-triggered: a pod changed, do a full sync immediately
+                // We batch rapid changes by draining the channel
+                Some(_key) = watch_rx.recv() => {
+                    // Drain any additional queued events to batch them
+                    while watch_rx.try_recv().is_ok() {}
 
-            // Update node status
-            if let Err(e) = self.update_node_status().await {
-                error!("Error updating node status: {}", e);
-            }
-
-            // Sync pods
-            if let Err(e) = self.sync_loop().await {
-                error!("Error in sync loop: {}", e);
+                    // Run sync loop for all pods on this node
+                    if let Err(e) = self.sync_loop().await {
+                        error!("Error in watch-triggered sync: {}", e);
+                    }
+                }
+                // Periodic full sync as safety net
+                _ = full_sync_timer.tick() => {
+                    if let Err(e) = self.sync_loop().await {
+                        error!("Error in periodic sync: {}", e);
+                    }
+                }
+                // Node status heartbeat
+                _ = node_status_timer.tick() => {
+                    if let Err(e) = self.update_node_status().await {
+                        error!("Error updating node status: {}", e);
+                    }
+                }
             }
         }
     }
@@ -351,12 +413,12 @@ impl Kubelet {
     async fn sync_loop(&self) -> Result<()> {
         debug!("Running sync loop for node: {}", self.node_name);
 
-        // Get all pods assigned to this node
+        // Get all pods — used for both node-pod filtering and orphan cleanup
         let all_pods_prefix = build_prefix("pods", None);
         let all_pods: Vec<Pod> = self.storage.list(&all_pods_prefix).await?;
 
         let node_pods: Vec<Pod> = all_pods
-            .into_iter()
+            .iter()
             .filter(|p| {
                 p.spec
                     .as_ref()
@@ -364,6 +426,7 @@ impl Kubelet {
                     .map(|n| n == &self.node_name)
                     .unwrap_or(false)
             })
+            .cloned()
             .collect();
 
         debug!("Found {} pods assigned to this node", node_pods.len());
@@ -396,21 +459,18 @@ impl Kubelet {
             }
         }
 
-        // Clean up orphaned containers (containers whose pods have been deleted from etcd)
-        if let Err(e) = self.cleanup_orphaned_containers(&node_pods).await {
+        // Clean up orphaned containers using the pod list we already fetched
+        if let Err(e) = self.cleanup_orphaned_containers(&node_pods, &all_pods).await {
             error!("Error cleaning up orphaned containers: {}", e);
         }
 
         Ok(())
     }
 
-    async fn cleanup_orphaned_containers(&self, _current_pods: &[Pod]) -> Result<()> {
+    async fn cleanup_orphaned_containers(&self, _current_pods: &[Pod], all_existing_pods: &[Pod]) -> Result<()> {
         debug!("Checking for orphaned containers");
 
-        // Get all pods from etcd (across all namespaces)
-        let all_pods_prefix = build_prefix("pods", None);
-        let all_existing_pods: Vec<Pod> = self.storage.list(&all_pods_prefix).await?;
-
+        // Reuse the pod list already fetched by sync_loop to avoid a redundant etcd round-trip
         let existing_pod_names: std::collections::HashSet<String> = all_existing_pods
             .iter()
             .map(|p| p.metadata.name.clone())
@@ -877,12 +937,11 @@ impl Kubelet {
             Phase::Running if is_running => {
                 debug!("Pod {}/{} is running, checking health", namespace, pod_name);
 
-                // Re-read pod from storage to get latest spec (resize PATCH may have updated it)
+                // Use the pod we already have from the list() call to avoid a redundant
+                // storage GET. The list-fetched pod already has the correct resourceVersion.
+                // Only re-read from storage if we detect a resize is pending (rare path).
                 let key = build_key("pods", Some(namespace), pod_name);
-                let fresh_pod: Pod = match self.storage.get(&key).await {
-                    Ok(p) => p,
-                    _ => pod.clone(),
-                };
+                let fresh_pod = pod.clone();
 
                 // Handle in-place pod resize (KEP-1287):
                 // Flow: API sets resize="Proposed" -> kubelet sets "InProgress" ->

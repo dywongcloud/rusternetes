@@ -109,6 +109,7 @@ pub struct TokenRequest {
     pub kind: String,
     #[serde(default)]
     pub metadata: ObjectMeta,
+    #[serde(default)]
     pub spec: TokenRequestSpec,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<TokenRequestStatus>,
@@ -123,7 +124,7 @@ fn default_kind_token_request() -> String {
 }
 
 /// TokenRequestSpec contains client provided parameters of a token request.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenRequestSpec {
     /// Audiences are the intendend audiences of the token. A recipient of a
