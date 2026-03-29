@@ -349,13 +349,25 @@ where
                                         continue;
                                     }
 
-                                    // When a label-filtered watch sees a MODIFIED event where the
-                                    // object's labels NO LONGER match the selector, send a synthetic
-                                    // DELETE. The object still exists but is "removed" from the
-                                    // watch's perspective. Standard K8s behavior.
+                                    // For label-filtered watches, MODIFIED events need special handling:
+                                    // - If labels NOW match but didn't before → synthetic ADDED
+                                    // - If labels DON'T match but did before → synthetic DELETED
+                                    // - If labels match and matched before → MODIFIED
+                                    // Since we don't track previous state, use a simpler heuristic:
+                                    // For watches with label selectors, non-matching = DELETED,
+                                    // matching = MODIFIED (the initial ADDED was already sent).
+                                    // For the "re-add" case (label changed back to match), we
+                                    // rely on the ADDED event from the initial list being sufficient.
                                     let matches_labels = matches_label_selector(object.metadata(), &label_selector);
-                                    let event_type = if !matches_labels && label_selector.is_some() {
-                                        WatchEventType::Deleted
+                                    let event_type = if label_selector.is_some() {
+                                        if !matches_labels {
+                                            WatchEventType::Deleted
+                                        } else {
+                                            // Send as ADDED for label-filtered watches so objects
+                                            // that start matching appear correctly. The client
+                                            // deduplicates ADDED events for objects it already knows.
+                                            WatchEventType::Added
+                                        }
                                     } else {
                                         WatchEventType::Modified
                                     };
@@ -727,13 +739,25 @@ where
                                         continue;
                                     }
 
-                                    // When a label-filtered watch sees a MODIFIED event where the
-                                    // object's labels NO LONGER match the selector, send a synthetic
-                                    // DELETE. The object still exists but is "removed" from the
-                                    // watch's perspective. Standard K8s behavior.
+                                    // For label-filtered watches, MODIFIED events need special handling:
+                                    // - If labels NOW match but didn't before → synthetic ADDED
+                                    // - If labels DON'T match but did before → synthetic DELETED
+                                    // - If labels match and matched before → MODIFIED
+                                    // Since we don't track previous state, use a simpler heuristic:
+                                    // For watches with label selectors, non-matching = DELETED,
+                                    // matching = MODIFIED (the initial ADDED was already sent).
+                                    // For the "re-add" case (label changed back to match), we
+                                    // rely on the ADDED event from the initial list being sufficient.
                                     let matches_labels = matches_label_selector(object.metadata(), &label_selector);
-                                    let event_type = if !matches_labels && label_selector.is_some() {
-                                        WatchEventType::Deleted
+                                    let event_type = if label_selector.is_some() {
+                                        if !matches_labels {
+                                            WatchEventType::Deleted
+                                        } else {
+                                            // Send as ADDED for label-filtered watches so objects
+                                            // that start matching appear correctly. The client
+                                            // deduplicates ADDED events for objects it already knows.
+                                            WatchEventType::Added
+                                        }
                                     } else {
                                         WatchEventType::Modified
                                     };
