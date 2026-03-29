@@ -1091,16 +1091,35 @@ impl ContainerRuntime {
                         None => continue,
                     };
                     let key = rusternetes_storage::build_key("secrets", Some(namespace), secret_name);
+                    let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
                     if let Ok(secret) = storage.get::<rusternetes_common::resources::Secret>(&key).await {
-                        let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+                        let mut expected_files: std::collections::HashSet<String> = std::collections::HashSet::new();
                         if let Some(data) = &secret.data {
                             for (k, v) in data {
                                 let file_path = format!("{}/{}", volume_dir, k);
+                                expected_files.insert(k.clone());
                                 // Only write if content changed
                                 if let Ok(existing) = std::fs::read(&file_path) {
                                     if existing == *v { continue; }
                                 }
                                 let _ = std::fs::write(&file_path, v);
+                            }
+                        }
+                        // Remove files that are no longer in the secret (key was deleted)
+                        if let Ok(entries) = std::fs::read_dir(&volume_dir) {
+                            for entry in entries.flatten() {
+                                if let Some(name) = entry.file_name().to_str() {
+                                    if !expected_files.contains(name) {
+                                        let _ = std::fs::remove_file(entry.path());
+                                    }
+                                }
+                            }
+                        }
+                    } else if secret_source.optional != Some(true) {
+                        // Secret was deleted entirely — remove all files if not optional
+                        if let Ok(entries) = std::fs::read_dir(&volume_dir) {
+                            for entry in entries.flatten() {
+                                let _ = std::fs::remove_file(entry.path());
                             }
                         }
                     }

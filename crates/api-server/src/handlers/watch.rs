@@ -344,16 +344,24 @@ where
                                         latest_resource_version = Some(rv.clone());
                                     }
 
-                                    // Don't filter MODIFIED events by label selector — the client
-                                    // needs to see all modifications to handle label changes correctly.
-                                    // Only filter by field selector (which doesn't change).
                                     if !matches_field_selector(object.metadata(), &field_selector)
                                     {
                                         continue;
                                     }
 
+                                    // When a label-filtered watch sees a MODIFIED event where the
+                                    // object's labels NO LONGER match the selector, send a synthetic
+                                    // DELETE. The object still exists but is "removed" from the
+                                    // watch's perspective. Standard K8s behavior.
+                                    let matches_labels = matches_label_selector(object.metadata(), &label_selector);
+                                    let event_type = if !matches_labels && label_selector.is_some() {
+                                        WatchEventType::Deleted
+                                    } else {
+                                        WatchEventType::Modified
+                                    };
+
                                     let k8s_event = K8sWatchEvent {
-                                        event_type: WatchEventType::Modified,
+                                        event_type,
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
@@ -714,16 +722,24 @@ where
                                         latest_resource_version = Some(rv.clone());
                                     }
 
-                                    // Don't filter MODIFIED events by label selector — the client
-                                    // needs to see all modifications to handle label changes correctly.
-                                    // Only filter by field selector (which doesn't change).
                                     if !matches_field_selector(object.metadata(), &field_selector)
                                     {
                                         continue;
                                     }
 
+                                    // When a label-filtered watch sees a MODIFIED event where the
+                                    // object's labels NO LONGER match the selector, send a synthetic
+                                    // DELETE. The object still exists but is "removed" from the
+                                    // watch's perspective. Standard K8s behavior.
+                                    let matches_labels = matches_label_selector(object.metadata(), &label_selector);
+                                    let event_type = if !matches_labels && label_selector.is_some() {
+                                        WatchEventType::Deleted
+                                    } else {
+                                        WatchEventType::Modified
+                                    };
+
                                     let k8s_event = K8sWatchEvent {
-                                        event_type: WatchEventType::Modified,
+                                        event_type,
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
