@@ -218,6 +218,18 @@ Audited every `.clone()` call. Most are REQUIRED by Rust's ownership model: code
 - Conformance tests create ~100-200 pods, not 10,000. Overhead of loading 200 pods is negligible.
 - Controllers need FULL lists for aggregation (counting, summing) — can't stream.
 
+### Scheduler watch conversion — REJECTED (all_pods dependency)
+- `select_node()` requires ALL pods (not just pending) for affinity/anti-affinity/topology scoring. Even with watches for pending pod detection, a full pod list is still needed for every scheduling decision.
+- Watch gaps risk stuck-pending pods — pods added during disconnection would never be re-evaluated without polling fallback.
+- The early-return optimization (skip node list when no pending pods) already exists at lines 93-96.
+
+### Fast resourceVersion injection (byte-level) — REJECTED (unsafe edge cases)
+- Annotations can contain `"resourceVersion"` as a key or value — a byte scanner could match the wrong occurrence.
+- Escaped characters in resource names (e.g., `\"metadata\":{`) can break pattern matching.
+- serde_json field ordering is not guaranteed — `"metadata"` could appear at any position in the top-level object.
+- Custom resources store arbitrary nested JSON in spec/status — `"resourceVersion"` could appear at any depth.
+- The current single parse→modify→reserialize is already one pass and is provably correct. The marginal performance gain does not justify the risk.
+
 ---
 
 ## Execution Order (Revised After Audit)
@@ -232,8 +244,7 @@ Audited every `.clone()` call. Most are REQUIRED by Rust's ownership model: code
 
 ### Phase 2: Moderate Risk, Validated Wins
 
-6. **Scheduler: early-return before node list** — move the "no pending pods" check (line 93-96) to BEFORE listing nodes and priority classes. Currently lists all nodes even when nothing is pending. Simple reorder, no behavioral change. (Full watch conversion deferred — affinity requires all pods, pending retry needs node watches, complexity exceeds benefit.)
-7. **Fast resourceVersion injection** — byte-level insertion of `,"resourceVersion":"NNN"` into metadata object instead of full JSON parse→modify→reserialize. Feasibility confirmed: all resource types have `metadata` as top-level field, TypeMeta flatten doesn't affect it, etcd always stores compact JSON. **Requires fuzz test harness** to validate against all resource types before deployment. Must search within metadata object bounds only (not globally) to avoid matching `"resourceVersion"` in annotation/label values.
+6. **(Scheduler early-return was already implemented — no change needed.)** Audit confirmed the early-return before node/priority-class listing is already at lines 93-96. Full watch conversion rejected: `select_node()` requires `all_pods` for affinity/topology scoring (lines 246, 253, 260), so the full pod list is unavoidable even with watches. Watch gaps would also risk stuck-pending pods.
 
 ### Phase 3: Highest Impact, Highest Risk
 
