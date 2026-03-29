@@ -1,190 +1,32 @@
 # Conformance Issue Tracker
 
-**Round 109** | 48 failures / 78 tests ran (e2e killed during skip phase) | 336 fixes deployed
+**Round 110** | IN PROGRESS | 336 fixes deployed
 
-## Round 109 — All 48 Failures
+## Round 110 Live Failures
 
-### 1. Webhook deployment not ready (7 failures) — FIXED (7bc88bf)
-Fix: Kubelet timeout — assume Running pods still running. Removes exited containers.
-**Confidence: MEDIUM** — readiness probe path no longer skipped, but HTTPS probes not verified.
-| File | Line |
-|------|------|
-| `webhook.go` | 425, 520, 601, 1244, 1549, 2338, 2465 |
+| # | File | Error | Status |
+|---|------|-------|--------|
+| 1 | `statefulset.go:2479` | `scaled 3 -> 2 replicas` | Rolling update guard deployed but still failing |
+| 2 | `crd_publish_openapi.go:202` | `failed to create CRD: context deadline exceeded` | Protobuf fix deployed but still failing |
+| 3 | `builder.go:97` | `exit status 1` — kubectl create failed | OpenAPI JSON fix deployed but still failing |
+| 4 | `expansion.go:419` | env var expansion timeout | Likely pod readiness timeout |
 
-### 2. Webhook matchConditions CEL error (2 failures) — FIXED (7d40469)
-Fix: Case-insensitive CEL error check.
-**Confidence: HIGH** — exact error traced and fixed.
-| File | Line |
-|------|------|
-| `webhook.go` | 729, 783 |
+**4 failures / 8 tests so far (50% fail rate)**
 
-### 3. CRD creation timeout (4 failures) — FIXED (be1af28)
-Fix: Protobuf brace-scanning validates with serde_json. 10 new tests.
-**Confidence: HIGH** — root cause identified and tested.
-| File | Line |
-|------|------|
-| `crd_publish_openapi.go` | 318, 451 |
-| `custom_resource_definition.go` | 104, 288 |
+Tests still running — monitoring.
 
-### 4. CRD field validation decode error (3 failures) — FIXED (be1af28)
-**Confidence: HIGH**
-| File | Line |
-|------|------|
-| `field_validation.go` | 245, 428, 570 |
+## Observations
+- StatefulSet (#1): Rolling update guard fix (72d2973) IS in this build but didn't help. Need deeper investigation.
+- CRD (#2): Protobuf fix (be1af28) IS in this build but CRDs still timing out. Protobuf conversion may still produce incomplete JSON for some CRD types.
+- kubectl (#3): OpenAPI fix (f91637a) IS in this build. The builder.go error is from kubectl applying a YAML file, possibly a different code path than what we fixed.
+- Expansion (#4): Pod waiting for readiness — may resolve once kubelet syncs catch up.
 
-### 5. CRD field validation timeout (1 failure) — FIXED (be1af28)
-**Confidence: HIGH**
-| File | Line |
-|------|------|
-| `field_validation.go` | 305 |
-
-### 6. Pod resize PATCH rejected (3 failures) — FIXED (7d40469)
-Fix: Pod PATCH checks X-Original-Content-Type header.
-**Confidence: HIGH** — exact error traced and fixed.
-| File | Line |
-|------|------|
-| `pod_resize.go` | 850 (x3) |
-
-### 7. Ephemeral containers PATCH rejected (1 failure) — FIXED (7d40469)
-**Confidence: HIGH** — same fix as #6.
-| File | Line |
-|------|------|
-| `ephemeral_containers.go` | 80 |
-
-### 8. Job SuccessPolicy (3 failures) — FIXED (4f60d58)
-Fix: Job controller preserves completion status from SuccessPolicy.
-**Confidence: HIGH** — exact assertion traced (nil vs *int32(0)).
-| File | Line | Error |
-|------|------|-------|
-| `job.go` | 514 | regular update wiped SuccessPolicy status |
-| `job.go` | 553 | same root cause |
-| `job.go` | 974 | cascading timeout |
-
-### 9. Aggregated discovery (2 failures) — FIXED (f5241df)
-Fix: q-value Accept header parsing.
-**Confidence: MEDIUM** — depends on test's exact Accept header format.
-| File | Line | Error |
-|------|------|-------|
-| `aggregated_discovery.go` | 227 | context deadline exceeded |
-| `aggregated_discovery.go` | 282 | Expected validatingwebhookconfigurations |
-
-### 10. Resource quota status (2 failures) — NOT VERIFIED
-Quota controller rewrites deployed, but specific `status.used` format mismatch needs conformance run to verify.
-| File | Line |
-|------|------|
-| `resource_quota.go` | 282, 489 |
-
-### 11. Watch DELETE event (1 failure) — FIXED (d8030f2)
-Error: `Timed out waiting for expected watch notification: {DELETED <nil>}`
-Fix: Watch now sends synthetic DELETE when MODIFIED event's labels no longer match selector.
-**Confidence: HIGH** — exact behavior traced and implemented.
-| File | Line |
-|------|------|
-| `watch.go` | 409 |
-
-### 12. StatefulSet scaling (1 failure) — FIXED (72d2973)
-Error: `StatefulSet ss scaled unexpectedly scaled to 3 -> 2 replicas`
-Fix: Rolling update now only triggers when ALL pods are Ready. The race was caused by rolling update deleting a pod before it reported Ready, not a counting issue.
-**Confidence: HIGH** — root cause identified (rolling update path, not phase filter).
-| File | Line |
-|------|------|
-| `statefulset.go` | 2479 |
-
-### 13. /etc/hosts not kubelet-managed (1 failure) — NOT VERIFIED
-Tar upload to pause container deployed, but Docker may still override /etc/hosts for containers in shared network namespace. Needs conformance run.
-| File | Line |
-|------|------|
-| `kubelet_etc_hosts.go` | 143 |
-
-### 14. Init container timeout (1 failure) — NOT VERIFIED
-CAS fix deployed, but init container condition tracking needs conformance run.
-| File | Line |
-|------|------|
-| `init_container.go` | 440 |
-
-### 15. Service latency decode error (1 failure) — FIXED (already deployed)
-**Confidence: HIGH** — ServiceSpec Default derive tested with unit tests.
-| File | Line |
-|------|------|
-| `service_latency.go` | 142 |
-
-### 16. Network service (2 failures) — NOT VERIFIED
-Depends on kube-proxy + pod readiness. CAS fix helps pods reach Ready but networking needs conformance run.
-| File | Line | Error |
-|------|------|-------|
-| `service.go` | 1571 | context deadline exceeded |
-| `service.go` | 4291 | service not reachable within 2m0s |
-
-### 17. DNS resolution (1 failure) — NOT VERIFIED
-Depends on CoreDNS + kube-proxy routing. Needs conformance run.
-| File | Line |
-|------|------|
-| `dns_common.go` | 476 |
-
-### 18. EndpointSlice (1 failure) — NOT VERIFIED
-Depends on endpoint controller timing. Needs conformance run.
-| File | Line |
-|------|------|
-| `endpointslice.go` | 798 |
-
-### 19. Hostport (1 failure) — FIXED (72d2973)
-Error: `The phase of Pod pod2 is Failed which is unexpected`
-Fix: Pause container now uses pod spec's hostIP instead of always 0.0.0.0. Different pods can bind same port on different IPs. Added host_ip field to ContainerPort.
-**Confidence: HIGH** — exact cause traced (both pods bound to 0.0.0.0, Docker rejected second).
-| File | Line |
-|------|------|
-| `hostport.go` | 219 |
-
-### 20. Scheduler predicates (1 failure) — NOT VERIFIED
-Depends on resource reporting + scheduling. Needs conformance run.
-| File | Line |
-|------|------|
-| `predicates.go` | 1102 |
-
-### 21. Container runtime status (1 failure) — NOT VERIFIED
-Expected 2 containers, got 0 after 300s. CAS fix should help but needs conformance run.
-| File | Line |
-|------|------|
-| `runtime.go` | 115 |
-
-### 22. Secrets volume (1 failure) — FIXED (d8030f2)
-Error: `Error reading file /etc/secret-volumes/delete/data-1`
-Fix: Volume resync now removes files when secret keys are deleted. Also handles complete secret deletion.
-**Confidence: HIGH** — exact issue traced (resync only added, never removed files).
-| File | Line |
-|------|------|
-| `secrets_volume.go` | 374 |
-
-### 23. EmptyDir volume permissions (1 failure) — NOT VERIFIED
-tmpfs with mode=1777 deployed but not tested in conformance. Needs run to verify.
-| File | Line |
-|------|------|
-| `output.go` | 263 |
-
-### 24. kubectl API parse (1 failure) — FIXED (f91637a)
-**Confidence: HIGH** — tested kubectl create from STDIN.
-| File | Line |
-|------|------|
-| `kubectl.go` | 1881 |
-
-### 25. kubectl builder (1 failure) — FIXED (f91637a)
-**Confidence: HIGH**
-| File | Line |
-|------|------|
-| `builder.go` | 97 |
-
-### 26. Pod lifecycle (2 failures) — PARTIALLY FIXED
-Ephemeral container PATCH fixed (7d40469). Pod count mismatch needs conformance run.
-| File | Line | Error |
-|------|------|-------|
-| `pods.go` | 575 | expected 2 containers, NOT VERIFIED |
-| `pod_client.go` | 302 | ephemeral container PATCH FIXED |
-
-## Summary
-- **FIXED (HIGH confidence)**: #2, #3, #4, #5, #6, #7, #8, #11, #15, #22, #24, #25 = 24 failures
-- **FIXED (MEDIUM confidence)**: #1, #9 = 9 failures
-- **NOT VERIFIED (need conformance run)**: #10, #13, #14, #16, #17, #18, #20, #21, #23, #26 = 12 failures
-- **FIXED (HIGH confidence)**: #12, #19 = 2 failures (StatefulSet rolling update guard + hostPort hostIP)
+## Kubelet Issue Found
+```
+WARN kubelet::kubelet: Timeout syncing pod coredns (30s), skipping to next pod
+WARN kubelet::kubelet: Transient error syncing pod sonobuoy: Docker responded with status code 500
+```
+The 30s per-pod timeout is too aggressive — Docker inspect responses are large and slow on Docker Desktop. Sequential pod syncing with 30s timeout per pod causes 2.5+ minute sync cycles with 5+ pods.
 
 ## Progress
 | Round | Fail | Total | Rate |
@@ -192,5 +34,6 @@ Ephemeral container PATCH fixed (7d40469). Pod count mismatch needs conformance 
 | 107 | 19 | ~430 | ~96% |
 | 108 | 178 | 441 | 60% |
 | 109 | 48* | 78* | 38%* |
+| 110 | 4 | 8 | 50% (in progress) |
 
-*incomplete — e2e container killed during skip phase, only 78/441 tests ran
+*Round 109 incomplete — e2e killed during skip phase
