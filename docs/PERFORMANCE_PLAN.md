@@ -188,30 +188,45 @@ List handlers load ALL resources into `Vec<T>`, apply selectors, then paginate (
 
 ---
 
-## Execution Order
+## Suggestions Evaluated and Rejected
 
-### Phase 1: Safe, High-Impact (do first)
+The following were initially proposed but rejected after deep code audit:
 
-1. **Kubelet: cache Docker results** — call `is_pod_running()` and `get_container_statuses()` once per pod, reuse result across all checks
-2. **Controller N+1 fixes** — pass list results to sub-methods (one controller at a time, easy to test)
-3. **Kube-proxy: diff before apply** — track last-known state, skip iptables when unchanged
-4. **API middleware: merge body buffering** — single read shared between normalize + log
-5. **Deduplicate LimitRange reads** in pod admission
+### Kubelet: cache `is_pod_running()` / `get_container_statuses()` — REJECTED
+`sync_pod()` mutates container state (start/stop/restart) between calls to these functions. For example, after `start_pod()` at line 663, `get_container_statuses()` at line 688 MUST see the newly started containers. Caching the pre-start result would report containers as not-running. Each call site depends on seeing real-time Docker state.
 
-### Phase 2: Medium Risk, Big Wins
+### Controller N+1: pass list results to sub-methods — REJECTED (most cases)
+Controllers CREATE or DELETE child resources between their repeated list calls. DeploymentController creates ReplicaSets between list #1 (line 121) and list #3 (line 540) — the status update needs to see the newly created RS. ReplicaSetController creates/deletes pods between list #1 (line 76) and list #2 (line 140). The re-list is intentional: it re-counts after mutations.
 
-6. **Scheduler: watch-driven queue** — watch for pending pods + node changes instead of polling
-7. **Watch handler: pass-through JSON** — skip deserialize→reserialize for unfiltered events
-8. **Filtering: struct-level matching** — check labels/fields on typed struct, not via to_value()
-9. **Reduce Pod cloning** — use references for read paths throughout kubelet and controllers
-10. **Cache admission lookups** — namespace, LimitRange, ResourceQuota rarely change
+### Watch handler: pass-through JSON — REJECTED
+Watch handlers FILTER events using label selectors and field selectors, which require the deserialized typed object (`metadata.labels`, `metadata.namespace`). The handler also does label-change detection (Modified→Deleted when labels no longer match). Raw JSON passthrough is architecturally blocked by the need to inspect object metadata.
 
-### Phase 3: Highest Impact, Hardest
+### Kube-proxy: diff before apply — DEFERRED (risky)
+The flush-and-rebuild pattern is self-healing: process restarts, failed iptables commands, and partial state all recover on the next cycle. A diff approach would need to handle stale in-memory state after restart, partial failures, and deleted services. The complexity/risk outweighs the benefit given kube-proxy only syncs every 30 seconds.
 
-11. **SharedInformer for controllers** — watch-driven cache + workqueue, reconcile only changed resources
-12. **Fast resourceVersion injection** — byte-level insertion with fuzz tests instead of full JSON parse
-13. **Streaming pagination** — push limit/offset to storage layer
-14. **Bound watch channels + targeted RV extraction** — prevent memory leaks
+---
+
+## Execution Order (Revised After Audit)
+
+### Phase 1: Proven Safe, High Impact
+
+1. **Remove `log_request_body_middleware`** — purely diagnostic, gated by debug log level (which is off in production). Buffers entire request body a second time for no benefit at info level. Safe to remove entirely.
+2. **Deduplicate LimitRange reads** in pod admission — listed twice (pod.rs:125 and admission.rs:306). Pure waste, no correctness concern.
+3. **Filtering: struct-level matching** — `apply_selectors()` calls `to_value()` per resource. Labels are already `HashMap<String, String>` on the struct. Match directly instead of serializing to Value. No correctness concern — same filtering logic, just avoids the intermediate serialization.
+4. **Bound watch channels** — replace `unbounded_channel()` with bounded channel + backpressure (`watch.rs:209,605`). Prevents memory leak with slow clients. Standard practice, no behavioral change for well-behaved clients.
+5. **Watch cache: targeted RV extraction** — replace full JSON parse in `extract_rv()` (`watch_cache.rs:93-98`) with a simple string search for `"resourceVersion":"NNN"`. Safe because the format is controlled by our own `inject_resource_version()`.
+
+### Phase 2: Moderate Risk, Big Wins
+
+6. **Scheduler: watch-driven queue** — watch pods for `phase=Pending` instead of listing ALL pods every second. List nodes only when a pending pod exists. Significant latency reduction.
+7. **Reduce Pod cloning in kubelet** — many clones are in read-only paths where `&Pod` would suffice. Must audit each clone individually; some are needed for storage writes.
+8. **Cache admission lookups** — namespace and LimitRange data change rarely. Cache with short TTL (e.g., 5 seconds). Must invalidate on write.
+
+### Phase 3: Highest Impact, Highest Risk
+
+9. **SharedInformer for controllers** — watch-driven cache + workqueue. This is the single biggest possible win (eliminates 30+ list calls/sec) but also the most complex. Requires careful cache coherency, watch reconnection handling, and extensive integration testing. The prior CachedStorage attempt was reverted for exactly these reasons.
+10. **Streaming pagination** — push limit/offset to storage layer instead of loading all resources into memory.
+11. **Fast resourceVersion injection** — byte-level insertion instead of full JSON parse. Requires fuzz testing to prove correctness across all resource types.
 
 ---
 
