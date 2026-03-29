@@ -1,8 +1,39 @@
 # Conformance Issue Tracker
 
-**328 total fixes** | Round 108 complete | 178 failures / 441 tests (60% pass) | 16 fixes pending redeploy
+**328 total fixes** | Round 109 INCOMPLETE (killed at 78/441 tests) | 48 failures / 78 tests (38% fail rate)
 
-## Deployed: #1-312 | Pending: #313-328
+## Deployed: #1-328
+
+## Round 109 Partial Results (78/441 tests, e2e container killed during skip phase)
+
+| Category | Count | Files | Notes |
+|----------|-------|-------|-------|
+| Webhook tests | 9 | webhook.go:425,520,601,729,783,1244,1549,2338,2465 | NEW — webhook deployments fail to start |
+| Field validation | 4 | field_validation.go:245,305,428,570 | CRD field validation still failing |
+| Pod resize | 3 | pod_resize.go:850 (x3) | Resize not fully working |
+| Job SuccessPolicy | 3 | job.go:514,553,974 | SuccessPolicy still failing |
+| CRD creation | 2 | crd_publish_openapi.go:318,451 | CRD timeout reduced from 8 to 2 |
+| CRD definition | 2 | custom_resource_definition.go:104,288 | CRD creation issues |
+| Aggregated discovery | 2 | aggregated_discovery.go:227,282 | Still timing out |
+| Resource quota | 2 | resource_quota.go:282,489 | Quota status format mismatch |
+| Network/service | 2 | service.go:1571,4291 | Service not reachable |
+| Service latency | 1 | service_latency.go:142 | missing field selector |
+| Hostport | 1 | hostport.go:219 | Hostport not working |
+| EndpointSlice | 1 | endpointslice.go:798 | Endpoint issue |
+| DNS | 1 | dns_common.go:476 | DNS resolution issue |
+| StatefulSet | 1 | statefulset.go:2479 | Still scaling 3->2 |
+| Watch | 1 | watch.go:409 | Watch DELETE still missing |
+| Scheduler | 1 | predicates.go:1102 | Scheduling timeout |
+| Init container | 1 | init_container.go:440 | Init container timeout |
+| Ephemeral containers | 1 | ephemeral_containers.go:80 | Not implemented |
+| Runtime status | 1 | runtime.go:115 | Container status timeout |
+| /etc/hosts | 1 | kubelet_etc_hosts.go:143 | Still not kubelet managed |
+| EmptyDir perms | 1 | output.go:263 | Permissions still wrong |
+| Secrets volume | 1 | secrets_volume.go:374 | Volume issue |
+| kubectl | 1 | kubectl.go:1881 | API output parse error |
+| kubectl builder | 1 | builder.go:97 | kubectl create failure |
+| Pod lifecycle | 1 | pods.go:575 | Pod status issue |
+| Pod client | 1 | pod_client.go:302 | Ephemeral container timeout |
 
 ## Round 108 Fixes Applied (11 commits, #313-323)
 
@@ -113,4 +144,4 @@ All previously listed feature gaps have been addressed:
 | 106 | ~25 | 441 | ~94% |
 | 107 | 19 | ~430/441 | ~96% |
 | 108 | 178 | 441 | 60% (old code, pre-deploy) |
-| 108 est | ~10-15 | 441 | ~96-98% (post-deploy estimate, all issues FIXED) |
+| 109 | TBD | 441 | IN PROGRESS (Round 108 fixes deployed) |
