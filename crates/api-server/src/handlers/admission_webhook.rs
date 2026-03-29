@@ -54,13 +54,24 @@ pub async fn create_validating_webhook(
                             "matchConditions[{}].name must be non-empty", i
                         )));
                     }
-                    // Compile the expression
-                    let program = match cel_interpreter::Program::compile(&condition.expression) {
-                        Ok(p) => p,
-                        Err(e) => {
+                    // Compile the expression — catch panics from antlr4rust parser
+                    // which panics on certain invalid expressions instead of returning Err
+                    let expr_clone = condition.expression.clone();
+                    let compile_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        cel_interpreter::Program::compile(&expr_clone)
+                    }));
+                    let program = match compile_result {
+                        Ok(Ok(p)) => p,
+                        Ok(Err(e)) => {
                             return Err(rusternetes_common::Error::InvalidResource(format!(
-                                "matchConditions[{}].expression: Invalid CEL expression '{}': {}",
-                                i, condition.expression, e
+                                "matchConditions[{}].expression: compilation failed: {}",
+                                i, e
+                            )));
+                        }
+                        Err(_panic) => {
+                            return Err(rusternetes_common::Error::InvalidResource(format!(
+                                "matchConditions[{}].expression: compilation failed: invalid CEL expression '{}'",
+                                i, condition.expression
                             )));
                         }
                     };
