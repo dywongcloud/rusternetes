@@ -33,13 +33,12 @@
 | RC watch | 1 | fba0a62 | Watch condition event |
 | Pod client | 1 | 7d40469 | Ephemeral PATCH content-type |
 
-## Failures NOT Fixed (need code changes) (~4)
+## Failures NOT Fixed (need code changes) (~3)
 
 | Category | Count | Error | Status |
 |----------|-------|-------|--------|
-| VAP marker | 1 | Policy didn't deny request | CEL evaluation at admission |
-| Expansion | 1 | SubPath validation timeout | Container error state detection |
-| Exec | 1 | Exec command exit code 1 | Container exec environment |
+| Expansion | 1 | SubPath validation — kubelet sync timing | Needs faster CAS write |
+| Exec | 1 | Exec command exit code 1 | Container exec environment issue |
 | Runtime | 1 | Container count mismatch | Container status reporting |
 
 ## Recently Fixed
@@ -52,6 +51,7 @@
 | Volume perms (2) | 90cd952 | Prevent duplicate resolv.conf mount |
 | DaemonSet status (1) | 3efd08d | numberReady uses Ready condition |
 | Runtime termination (2) | 6af1a31 | FallbackToLogsOnError policy + SPDY channel order |
+| VAP binding (1) | 8bcfeb2 | Remove 2-second binding age delay |
 
 ## Timeout Failures (~24) — caused by pods not becoming Ready fast enough
 
