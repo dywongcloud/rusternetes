@@ -1,30 +1,32 @@
 # Conformance Issue Tracker
 
-**Round 110** | IN PROGRESS | 41/441 tests completed | 336 fixes deployed
+**Round 110** | IN PROGRESS | 52/441 tests completed | 336 fixes deployed
 
-## Round 110 Live Failures (26 failures, 15 passed — 41/441 tests)
+## Round 110 Live Failures (33 failures, 19 passed — 52/441 tests)
 
-| Category | Count | Files | Error |
-|----------|-------|-------|-------|
-| CRD timeout | 4 | `custom_resource_definition.go`, `crd_publish_openapi.go` | CRD created but Established watch times out |
-| kubectl builder | 3 | `builder.go:97` | `proto: cannot parse invalid wire-format data` — fix committed (5da5f98) |
-| Webhook not ready | 3 | `webhook.go:839,1194,1244` | webhook deployment pod never reaches Ready |
-| StatefulSet | 2 | `statefulset.go:2479,1092` | scaled 3->2 + other |
-| Timeout/readiness | 5 | `expansion.go`, `runtime.go`, `daemon_set.go`, `proxy.go`, `util.go` | pods slow to start |
-| Pod resize | 1 | `pod_resize.go:857` | PATCH issue |
-| DNS | 1 | `dns_common.go:476` | DNS resolution timeout |
-| Pod client | 1 | `pod_client.go:216` | ephemeral container |
-| Volume perms | 1 | `output.go:263` | permissions |
-| SA token | 1 | `service_accounts.go:898` | token rejected — fix committed (4624a26) |
-| Job | 1 | `job.go:623` | job issue |
-| Resource quota | 1 | `resource_quota.go:282` | quota status |
-| Discovery | 1 | `aggregated_discovery.go:282` | discovery timeout |
-| Preemption | 1 | `preemption.go:978` | scheduler |
+| Category | Count | Error |
+|----------|-------|-------|
+| CRD timeout | 4 | CRD created but Established watch times out at 30s |
+| kubectl builder | 3 | `proto: cannot parse invalid wire-format data` — fix committed |
+| Webhook not ready | 3 | webhook deployment pod readiness timeout |
+| StatefulSet | 2 | scaled 3->2, SS ordering |
+| Service accounts | 2 | token request rejected |
+| Network/service | 2 | service not reachable |
+| Timeout/startup | 7 | expansion, runtime, daemon_set, proxy, util, DNS, runtimeclass |
+| Pod resize | 1 | PATCH issue |
+| Pod lifecycle | 2 | pod_client, pods |
+| Volume perms | 1 | output.go |
+| Job | 1 | job issue |
+| RC | 1 | replication controller |
+| Resource quota | 1 | quota status |
+| Discovery | 1 | aggregated discovery |
+| LimitRange | 1 | limit range |
+| Preemption | 1 | scheduler |
 
 ## Fixes committed but not yet deployed
-- CRD status update timing: fire all 4 updates without breaking (4624a26)
-- TokenRequest defaults (4624a26)
-- OpenAPI protobuf envelope wrapping (5da5f98)
+- CRD: Fire 4 status updates without breaking early (4624a26)
+- TokenRequest: Default derive on spec (4624a26)
+- OpenAPI: Protobuf envelope wrapping for kubectl (5da5f98)
 
 ## Progress
 | Round | Fail | Total | Rate |
@@ -32,6 +34,6 @@
 | 107 | 19 | ~430 | ~96% |
 | 108 | 178 | 441 | 60% |
 | 109 | 48* | 78* | 38%* |
-| 110 | 26 | 41/441 | in progress |
+| 110 | 33 | 52/441 | in progress |
 
 *Round 109 incomplete
