@@ -824,6 +824,36 @@ mod tests {
         assert_eq!(unavailable, 1);
     }
 
+    /// Helper to create a minimal Container for tests
+    fn test_container(name: &str, image: &str) -> rusternetes_common::resources::Container {
+        rusternetes_common::resources::Container {
+            name: name.to_string(),
+            image: image.to_string(),
+            command: None,
+            args: None,
+            working_dir: None,
+            ports: None,
+            env: None,
+            env_from: None,
+            resources: None,
+            volume_mounts: None,
+            volume_devices: None,
+            image_pull_policy: None,
+            liveness_probe: None,
+            readiness_probe: None,
+            startup_probe: None,
+            security_context: None,
+            restart_policy: None,
+            resize_policy: None,
+            lifecycle: None,
+            termination_message_path: None,
+            termination_message_policy: None,
+            stdin: None,
+            stdin_once: None,
+            tty: None,
+        }
+    }
+
     #[tokio::test]
     async fn test_deployment_status_aggregates_from_replicaset_status() {
         use rusternetes_common::resources::{ReplicaSetStatus, PodTemplateSpec};
@@ -853,11 +883,7 @@ mod tests {
                 template: PodTemplateSpec {
                     metadata: Some(ObjectMeta::new("").with_labels(labels.clone())),
                     spec: rusternetes_common::resources::PodSpec {
-                        containers: vec![rusternetes_common::resources::Container {
-                            name: "test".to_string(),
-                            image: Some("nginx:latest".to_string()),
-                            ..Default::default()
-                        }],
+                        containers: vec![test_container("test", "nginx:latest")],
                         ..Default::default()
                     },
                 },
@@ -964,11 +990,7 @@ mod tests {
                 template: PodTemplateSpec {
                     metadata: Some(ObjectMeta::new("").with_labels(labels.clone())),
                     spec: rusternetes_common::resources::PodSpec {
-                        containers: vec![rusternetes_common::resources::Container {
-                            name: "test".to_string(),
-                            image: Some("nginx:latest".to_string()),
-                            ..Default::default()
-                        }],
+                        containers: vec![test_container("test", "nginx:latest")],
                         ..Default::default()
                     },
                 },
@@ -1052,9 +1074,9 @@ mod tests {
                         condition_type: "Ready".to_string(),
                         status: "True".to_string(),
                         last_transition_time: None,
-                        last_probe_time: None,
                         reason: None,
                         message: None,
+                        observed_generation: None,
                     }]),
                     ..Default::default()
                 }),
