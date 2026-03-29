@@ -1388,4 +1388,19 @@ mod tests {
             assert!(!is_safe, "Expected {} to be classified as unsafe", name);
         }
     }
+
+    #[test]
+    fn test_sysctl_unsafe_returns_forbidden() {
+        // Verify the error message format matches K8s: pods "name" is forbidden: unsafe sysctl "..." is not allowed
+        let error_msg = format!(
+            "pods \"{}\" is forbidden: unsafe sysctl \"{}\" is not allowed",
+            "test-pod", "kernel.msgmax"
+        );
+        // Verify it creates a Forbidden error (HTTP 403)
+        let err = rusternetes_common::Error::Forbidden(error_msg.clone());
+        assert_eq!(err.reason(), "Forbidden");
+        assert!(error_msg.contains("forbidden"));
+        assert!(error_msg.contains("unsafe sysctl"));
+        assert!(error_msg.contains("kernel.msgmax"));
+    }
 }

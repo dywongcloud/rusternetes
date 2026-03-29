@@ -434,4 +434,46 @@ mod tests {
         assert_eq!(list.kind, "EventList");
         assert_eq!(list.items.len(), 0);
     }
+
+    #[test]
+    fn test_event_field_selector_involved_object() {
+        use crate::field_selector::FieldSelector;
+
+        let obj_ref = ObjectReference {
+            kind: Some("Pod".to_string()),
+            namespace: Some("default".to_string()),
+            name: Some("my-pod".to_string()),
+            uid: Some("uid-123".to_string()),
+            api_version: Some("v1".to_string()),
+            resource_version: None,
+            field_path: None,
+        };
+
+        let event = Event::new(
+            "test-event".to_string(),
+            "default".to_string(),
+            obj_ref,
+            "Started".to_string(),
+            "Pod started".to_string(),
+            EventType::Normal,
+        );
+
+        let json_val = serde_json::to_value(&event).unwrap();
+
+        // Field selector on involvedObject.name should work (camelCase serialization)
+        let selector = FieldSelector::parse("involvedObject.name=my-pod").unwrap();
+        assert!(selector.matches(&json_val), "involvedObject.name selector should match");
+
+        // Non-matching selector
+        let selector = FieldSelector::parse("involvedObject.name=other-pod").unwrap();
+        assert!(!selector.matches(&json_val), "Non-matching selector should not match");
+
+        // Field selector on metadata.namespace
+        let selector = FieldSelector::parse("metadata.namespace=default").unwrap();
+        assert!(selector.matches(&json_val), "metadata.namespace selector should match");
+
+        // Combined selectors
+        let selector = FieldSelector::parse("involvedObject.name=my-pod,involvedObject.kind=Pod").unwrap();
+        assert!(selector.matches(&json_val), "Combined selector should match");
+    }
 }

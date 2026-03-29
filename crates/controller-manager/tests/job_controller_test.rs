@@ -3,13 +3,11 @@
 
 use rusternetes_common::resources::pod::*;
 use rusternetes_common::resources::workloads::*;
-use rusternetes_common::resources::*;
 use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::job::JobController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
 
 async fn setup_test() -> Arc<MemoryStorage> {
     let storage = Arc::new(MemoryStorage::new());
@@ -442,4 +440,141 @@ async fn test_job_updates_status() {
     assert_eq!(status.active, Some(2));
     assert_eq!(status.succeeded, Some(0));
     assert_eq!(status.failed, Some(0));
+}
+
+#[tokio::test]
+async fn test_job_suspend_deletes_active_pods() {
+    let storage = setup_test().await;
+
+    // Create a job with 3 completions, parallelism 3
+    let mut job = create_test_job("suspend-test", "default", 3, 3);
+    let key = build_key("jobs", Some("default"), "suspend-test");
+    storage.create(&key, &job).await.unwrap();
+
+    let controller = JobController::new(storage.clone());
+
+    // First reconcile — creates 3 pods
+    controller.reconcile_all().await.unwrap();
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 3, "Should create 3 pods initially");
+
+    // Suspend the job
+    let mut fresh_job: Job = storage.get(&key).await.unwrap();
+    fresh_job.spec.suspend = Some(true);
+    storage.update(&key, &fresh_job).await.unwrap();
+
+    // Reconcile — should delete all active pods
+    controller.reconcile_all().await.unwrap();
+
+    let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods_after.len(), 0, "Suspended job should have no pods");
+
+    let updated_job: Job = storage.get(&key).await.unwrap();
+    let status = updated_job.status.unwrap();
+    assert_eq!(status.active, Some(0), "Suspended job should have 0 active pods");
+}
+
+#[tokio::test]
+async fn test_job_active_deadline_seconds() {
+    let storage = setup_test().await;
+
+    // Create a job with activeDeadlineSeconds of 1
+    let mut job = create_test_job("deadline-test", "default", 3, 1);
+    job.spec.active_deadline_seconds = Some(1);
+    let key = build_key("jobs", Some("default"), "deadline-test");
+    storage.create(&key, &job).await.unwrap();
+
+    let controller = JobController::new(storage.clone());
+
+    // First reconcile — creates 1 pod and sets start_time
+    controller.reconcile_all().await.unwrap();
+
+    // Set start_time to the past so the deadline is exceeded
+    let mut fresh_job: Job = storage.get(&key).await.unwrap();
+    if let Some(ref mut status) = fresh_job.status {
+        status.start_time = Some(chrono::Utc::now() - chrono::Duration::seconds(10));
+    }
+    storage.update(&key, &fresh_job).await.unwrap();
+
+    // Reconcile again — should detect deadline exceeded
+    controller.reconcile_all().await.unwrap();
+
+    let updated_job: Job = storage.get(&key).await.unwrap();
+    let status = updated_job.status.unwrap();
+
+    // Should have Failed condition with DeadlineExceeded reason
+    if let Some(conditions) = status.conditions {
+        let failed = conditions.iter().find(|c| c.condition_type == "Failed" && c.status == "True");
+        assert!(failed.is_some(), "Should have Failed condition");
+        assert_eq!(
+            failed.unwrap().reason.as_deref(),
+            Some("DeadlineExceeded"),
+            "Failed reason should be DeadlineExceeded"
+        );
+    } else {
+        panic!("Job should have conditions after deadline exceeded");
+    }
+}
+
+#[tokio::test]
+async fn test_job_does_not_recreate_pods_when_complete() {
+    let storage = setup_test().await;
+
+    // Create job with 1 completion
+    let job = create_test_job("once", "default", 1, 1);
+    let key = build_key("jobs", Some("default"), "once");
+    storage.create(&key, &job).await.unwrap();
+
+    let controller = JobController::new(storage.clone());
+    controller.reconcile_all().await.unwrap();
+
+    // Mark pod as succeeded
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 1);
+    let mut pod = pods[0].clone();
+    pod.status = Some(PodStatus {
+        phase: Some(Phase::Succeeded),
+        ..Default::default()
+    });
+    let pod_key = build_key("pods", Some("default"), &pod.metadata.name);
+    storage.update(&pod_key, &pod).await.unwrap();
+
+    // Reconcile — should mark job as Complete
+    controller.reconcile_all().await.unwrap();
+    let completed_job: Job = storage.get(&key).await.unwrap();
+    assert!(completed_job.status.as_ref().unwrap().conditions.as_ref().unwrap().iter()
+        .any(|c| c.condition_type == "Complete" && c.status == "True"));
+
+    // Reconcile again — should NOT create new pods or change status
+    controller.reconcile_all().await.unwrap();
+    let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods_after.len(), 1, "Should not create new pods after completion");
+}
+
+#[tokio::test]
+async fn test_job_unsuspend_resumes_pod_creation() {
+    let storage = setup_test().await;
+
+    // Create a suspended job
+    let mut job = create_test_job("resume-test", "default", 2, 2);
+    job.spec.suspend = Some(true);
+    let key = build_key("jobs", Some("default"), "resume-test");
+    storage.create(&key, &job).await.unwrap();
+
+    let controller = JobController::new(storage.clone());
+
+    // Reconcile — should NOT create pods while suspended
+    controller.reconcile_all().await.unwrap();
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 0, "Suspended job should not create pods");
+
+    // Unsuspend the job
+    let mut fresh_job: Job = storage.get(&key).await.unwrap();
+    fresh_job.spec.suspend = Some(false);
+    storage.update(&key, &fresh_job).await.unwrap();
+
+    // Reconcile — should now create pods
+    controller.reconcile_all().await.unwrap();
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 2, "Unsuspended job should create pods");
 }

@@ -884,4 +884,93 @@ mod tests {
         let exp_diff = validated.exp - validated.iat;
         assert!(exp_diff >= 590 && exp_diff <= 610, "Expected ~600s expiry, got {}s", exp_diff);
     }
+
+    #[test]
+    fn test_token_with_pod_binding() {
+        let secret = b"rusternetes-secret-change-in-production";
+        let manager = TokenManager::new(secret);
+
+        let now = Utc::now();
+        let claims = ServiceAccountClaims {
+            sub: "system:serviceaccount:test-ns:my-sa".to_string(),
+            namespace: "test-ns".to_string(),
+            uid: "sa-uid-123".to_string(),
+            iat: now.timestamp(),
+            exp: (now + Duration::hours(1)).timestamp(),
+            iss: "rusternetes-api-server".to_string(),
+            aud: vec!["rusternetes".to_string()],
+            pod_name: Some("my-pod".to_string()),
+            pod_uid: Some("pod-uid-456".to_string()),
+            node_name: Some("node-1".to_string()),
+        };
+
+        let token = manager.generate_token(claims).unwrap();
+        let validated = manager.validate_token(&token).unwrap();
+
+        // Verify pod binding info is preserved in the token
+        assert_eq!(validated.pod_name, Some("my-pod".to_string()));
+        assert_eq!(validated.pod_uid, Some("pod-uid-456".to_string()));
+        assert_eq!(validated.node_name, Some("node-1".to_string()));
+        assert_eq!(validated.sub, "system:serviceaccount:test-ns:my-sa");
+        assert_eq!(validated.namespace, "test-ns");
+    }
+
+    #[test]
+    fn test_token_review_includes_pod_extra_info() {
+        // Simulate what create_token_review does: validate a token with pod binding
+        // and verify the extra info contains pod-name, pod-uid, node-name
+        let secret = b"rusternetes-secret-change-in-production";
+        let manager = TokenManager::new(secret);
+
+        let now = Utc::now();
+        let claims = ServiceAccountClaims {
+            sub: "system:serviceaccount:default:test-sa".to_string(),
+            namespace: "default".to_string(),
+            uid: "sa-uid".to_string(),
+            iat: now.timestamp(),
+            exp: (now + Duration::hours(1)).timestamp(),
+            iss: "rusternetes-api-server".to_string(),
+            aud: vec!["rusternetes".to_string()],
+            pod_name: Some("pod-abc".to_string()),
+            pod_uid: Some("pod-uid-abc".to_string()),
+            node_name: Some("node-2".to_string()),
+        };
+
+        let token = manager.generate_token(claims).unwrap();
+        let validated = manager.validate_token(&token).unwrap();
+
+        // Build extra info the way create_token_review does
+        let mut extra = std::collections::HashMap::new();
+        if let Some(ref pod_name) = validated.pod_name {
+            extra.insert(
+                "authentication.kubernetes.io/pod-name".to_string(),
+                vec![pod_name.clone()],
+            );
+        }
+        if let Some(ref pod_uid) = validated.pod_uid {
+            extra.insert(
+                "authentication.kubernetes.io/pod-uid".to_string(),
+                vec![pod_uid.clone()],
+            );
+        }
+        if let Some(ref node_name) = validated.node_name {
+            extra.insert(
+                "authentication.kubernetes.io/node-name".to_string(),
+                vec![node_name.clone()],
+            );
+        }
+
+        assert_eq!(
+            extra.get("authentication.kubernetes.io/pod-name"),
+            Some(&vec!["pod-abc".to_string()])
+        );
+        assert_eq!(
+            extra.get("authentication.kubernetes.io/pod-uid"),
+            Some(&vec!["pod-uid-abc".to_string()])
+        );
+        assert_eq!(
+            extra.get("authentication.kubernetes.io/node-name"),
+            Some(&vec!["node-2".to_string()])
+        );
+    }
 }

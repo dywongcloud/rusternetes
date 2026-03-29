@@ -328,6 +328,57 @@ mod tests {
         assert_eq!(event.reason, "PodStarted");
         assert_eq!(event.count, 1);
     }
+
+    #[test]
+    fn test_event_field_selector_filtering() {
+        // Simulate what list_all does: filter events using apply_selectors
+        let mut events = vec![
+            Event::new(
+                "event-1".to_string(),
+                "default".to_string(),
+                ObjectReference {
+                    kind: Some("Pod".to_string()),
+                    namespace: Some("default".to_string()),
+                    name: Some("pod-a".to_string()),
+                    uid: Some("uid1".to_string()),
+                    api_version: Some("v1".to_string()),
+                    resource_version: None,
+                    field_path: None,
+                },
+                "Started".to_string(),
+                "Pod started".to_string(),
+                EventType::Normal,
+            ),
+            Event::new(
+                "event-2".to_string(),
+                "kube-system".to_string(),
+                ObjectReference {
+                    kind: Some("Pod".to_string()),
+                    namespace: Some("kube-system".to_string()),
+                    name: Some("pod-b".to_string()),
+                    uid: Some("uid2".to_string()),
+                    api_version: Some("v1".to_string()),
+                    resource_version: None,
+                    field_path: None,
+                },
+                "Failed".to_string(),
+                "Pod failed".to_string(),
+                EventType::Warning,
+            ),
+        ];
+
+        // Filter by involvedObject.name
+        let mut params = HashMap::new();
+        params.insert(
+            "fieldSelector".to_string(),
+            "involvedObject.name=pod-a".to_string(),
+        );
+        crate::handlers::filtering::apply_selectors(&mut events, &params).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].metadata.name, "event-1");
+        assert_eq!(events[0].involved_object.name, Some("pod-a".to_string()));
+    }
 }
 
 // Use the macro to create a PATCH handler

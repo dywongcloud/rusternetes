@@ -1,6 +1,7 @@
 use rusternetes_common::resources::{
     Container, Pod, PodSpec, PodStatus, PodTemplateSpec, ReplicaSet, ReplicaSetSpec,
 };
+use rusternetes_common::resources::pod::PodCondition;
 use rusternetes_common::types::{LabelSelector, ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::replicaset::ReplicaSetController;
 use rusternetes_storage::{build_key, MemoryStorage, Storage};
@@ -511,4 +512,119 @@ async fn test_replicaset_updates_status() {
         status.available_replicas >= 0,
         "Available replicas should be non-negative"
     );
+}
+
+#[tokio::test]
+async fn test_replicaset_status_with_ready_pods() {
+    let storage = Arc::new(MemoryStorage::new());
+    let controller = ReplicaSetController::new(storage.clone(), 10);
+
+    // Create replicaset with 3 replicas
+    let rs = create_test_replicaset("ready-test", "default", 3);
+    let key = build_key("replicasets", Some("default"), "ready-test");
+    storage.create(&key, &rs).await.unwrap();
+
+    // Create pods
+    controller.reconcile_all().await.unwrap();
+
+    // Mark all pods as Ready
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    for pod in &pods {
+        let mut updated = pod.clone();
+        updated.status = Some(PodStatus {
+            phase: Some(Phase::Running),
+            conditions: Some(vec![PodCondition {
+                condition_type: "Ready".to_string(),
+                status: "True".to_string(),
+                reason: None,
+                message: None,
+                last_transition_time: Some(chrono::Utc::now()),
+                observed_generation: None,
+            }]),
+            ..Default::default()
+        });
+        let pod_key = build_key("pods", Some("default"), &pod.metadata.name);
+        storage.update(&pod_key, &updated).await.unwrap();
+    }
+
+    // Reconcile again to update status
+    controller.reconcile_all().await.unwrap();
+
+    let updated_rs: ReplicaSet = storage.get(&key).await.unwrap();
+    let status = updated_rs.status.unwrap();
+    assert_eq!(status.replicas, 3, "Should have 3 replicas");
+    assert_eq!(status.ready_replicas, 3, "Should have 3 ready replicas");
+    assert_eq!(status.available_replicas, 3, "Should have 3 available replicas");
+    assert_eq!(status.fully_labeled_replicas, Some(3), "Should have 3 fully labeled replicas");
+    assert!(status.observed_generation.is_some(), "Should have observedGeneration");
+}
+
+#[tokio::test]
+async fn test_replicaset_skips_terminated_pods() {
+    let storage = Arc::new(MemoryStorage::new());
+    let controller = ReplicaSetController::new(storage.clone(), 10);
+
+    // Create replicaset with 3 replicas
+    let rs = create_test_replicaset("term-test", "default", 3);
+    let key = build_key("replicasets", Some("default"), "term-test");
+    storage.create(&key, &rs).await.unwrap();
+
+    // Create pods
+    controller.reconcile_all().await.unwrap();
+
+    // Mark one pod as Succeeded (terminated)
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 3);
+    let mut terminated_pod = pods[0].clone();
+    terminated_pod.status = Some(PodStatus {
+        phase: Some(Phase::Succeeded),
+        ..Default::default()
+    });
+    let pod_key = build_key("pods", Some("default"), &terminated_pod.metadata.name);
+    storage.update(&pod_key, &terminated_pod).await.unwrap();
+
+    // Reconcile — should create a replacement for the terminated pod
+    controller.reconcile_all().await.unwrap();
+
+    // Count active (non-terminated) pods matching the RS
+    let all_pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    let active_pods: Vec<&Pod> = all_pods.iter().filter(|p| {
+        !matches!(
+            p.status.as_ref().and_then(|s| s.phase.as_ref()),
+            Some(Phase::Failed) | Some(Phase::Succeeded)
+        )
+    }).collect();
+    assert_eq!(active_pods.len(), 3, "Should have 3 active pods after replacing terminated one");
+}
+
+#[tokio::test]
+async fn test_replicaset_skips_deleting_pods() {
+    let storage = Arc::new(MemoryStorage::new());
+    let controller = ReplicaSetController::new(storage.clone(), 10);
+
+    // Create replicaset with 3 replicas
+    let rs = create_test_replicaset("deleting-test", "default", 3);
+    let key = build_key("replicasets", Some("default"), "deleting-test");
+    storage.create(&key, &rs).await.unwrap();
+
+    // Create pods
+    controller.reconcile_all().await.unwrap();
+
+    // Mark one pod as being deleted
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 3);
+    let mut deleting_pod = pods[0].clone();
+    deleting_pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
+    let pod_key = build_key("pods", Some("default"), &deleting_pod.metadata.name);
+    storage.update(&pod_key, &deleting_pod).await.unwrap();
+
+    // Reconcile — the deleting pod should not be counted, so a replacement should be created
+    controller.reconcile_all().await.unwrap();
+
+    let all_pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    // Should have 4 pods: 3 active + 1 deleting
+    let non_deleting: Vec<&Pod> = all_pods.iter()
+        .filter(|p| p.metadata.deletion_timestamp.is_none())
+        .collect();
+    assert_eq!(non_deleting.len(), 3, "Should have 3 non-deleting pods");
 }

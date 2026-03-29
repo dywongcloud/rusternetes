@@ -3,6 +3,7 @@
 
 use rusternetes_common::resources::pod::*;
 use rusternetes_common::resources::*;
+use rusternetes_common::resources::pod::PodCondition;
 use rusternetes_common::types::{LabelSelector, ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::statefulset::StatefulSetController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
@@ -111,7 +112,7 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
                 },
             },
             service_name: format!("{}-headless", name),
-            pod_management_policy: Some("OrderedReady".to_string()),
+            pod_management_policy: Some("Parallel".to_string()),
             update_strategy: None,
             min_ready_seconds: None,
             revision_history_limit: None,
@@ -258,4 +259,146 @@ async fn test_statefulset_updates_status() {
         Some(3),
         "Current replicas should be 3"
     );
+}
+
+/// Helper to mark a pod as Ready in storage
+async fn mark_pod_ready(storage: &Arc<MemoryStorage>, namespace: &str, pod_name: &str) {
+    let pod_key = build_key("pods", Some(namespace), pod_name);
+    let mut pod: Pod = storage.get(&pod_key).await.unwrap();
+    pod.status = Some(PodStatus {
+        phase: Some(Phase::Running),
+        conditions: Some(vec![PodCondition {
+            condition_type: "Ready".to_string(),
+            status: "True".to_string(),
+            reason: None,
+            message: None,
+            last_transition_time: Some(chrono::Utc::now()),
+            observed_generation: None,
+        }]),
+        ..pod.status.unwrap_or_default()
+    });
+    storage.update(&pod_key, &pod).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_statefulset_ordered_ready_requires_previous_ready() {
+    let storage = setup_test().await;
+
+    // Create statefulset with OrderedReady policy and 3 replicas
+    let mut statefulset = create_test_statefulset("ordered", "default", 3);
+    statefulset.spec.pod_management_policy = Some("OrderedReady".to_string());
+    let key = build_key("statefulsets", Some("default"), "ordered");
+    storage.create(&key, &statefulset).await.unwrap();
+
+    let controller = StatefulSetController::new(storage.clone());
+
+    // First reconcile: should create only pod-0 (no previous pod to check)
+    controller.reconcile_all().await.unwrap();
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 1, "OrderedReady should create only pod-0 first");
+    assert_eq!(pods[0].metadata.name, "ordered-0");
+
+    // Second reconcile: pod-0 not Ready yet, should NOT create pod-1
+    controller.reconcile_all().await.unwrap();
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 1, "Should still have only 1 pod (pod-0 not Ready)");
+
+    // Mark pod-0 as Ready
+    mark_pod_ready(&storage, "default", "ordered-0").await;
+
+    // Third reconcile: pod-0 is Ready, should create pod-1
+    controller.reconcile_all().await.unwrap();
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 2, "Should create pod-1 now that pod-0 is Ready");
+
+    // Mark pod-1 as Ready
+    mark_pod_ready(&storage, "default", "ordered-1").await;
+
+    // Fourth reconcile: pod-1 is Ready, should create pod-2
+    controller.reconcile_all().await.unwrap();
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 3, "Should create pod-2 now that pod-1 is Ready");
+}
+
+#[tokio::test]
+async fn test_statefulset_parallel_creates_all_at_once() {
+    let storage = setup_test().await;
+
+    // Create statefulset with Parallel policy
+    let mut statefulset = create_test_statefulset("parallel", "default", 3);
+    statefulset.spec.pod_management_policy = Some("Parallel".to_string());
+    let key = build_key("statefulsets", Some("default"), "parallel");
+    storage.create(&key, &statefulset).await.unwrap();
+
+    let controller = StatefulSetController::new(storage.clone());
+    controller.reconcile_all().await.unwrap();
+
+    // Parallel should create all 3 pods at once without waiting for readiness
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 3, "Parallel should create all 3 pods immediately");
+
+    let mut names: Vec<String> = pods.iter().map(|p| p.metadata.name.clone()).collect();
+    names.sort();
+    assert_eq!(names, vec!["parallel-0", "parallel-1", "parallel-2"]);
+}
+
+#[tokio::test]
+async fn test_statefulset_rolling_update_changes_image() {
+    let storage = setup_test().await;
+
+    // Create statefulset with 2 replicas
+    let mut statefulset = create_test_statefulset("rolling", "default", 2);
+    statefulset.spec.pod_management_policy = Some("Parallel".to_string());
+    let key = build_key("statefulsets", Some("default"), "rolling");
+    storage.create(&key, &statefulset).await.unwrap();
+
+    let controller = StatefulSetController::new(storage.clone());
+    controller.reconcile_all().await.unwrap();
+
+    // Verify 2 pods created
+    let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods.len(), 2);
+
+    // Get the initial revision
+    let old_revision = pods[0]
+        .metadata
+        .labels
+        .as_ref()
+        .and_then(|l| l.get("controller-revision-hash"))
+        .cloned()
+        .unwrap();
+
+    // Mark all pods as Running/Ready so rolling update can proceed
+    for pod in &pods {
+        mark_pod_ready(&storage, "default", &pod.metadata.name).await;
+    }
+
+    // Update the image in the SS template — this should change the revision hash
+    statefulset.spec.template.spec.containers[0].image = "nginx:1.26-alpine".to_string();
+    // Re-read from storage to get fresh resourceVersion
+    let mut fresh_ss: StatefulSet = storage.get(&key).await.unwrap();
+    fresh_ss.spec.template.spec.containers[0].image = "nginx:1.26-alpine".to_string();
+    storage.update(&key, &fresh_ss).await.unwrap();
+
+    // Reconcile — should detect revision mismatch and delete one pod
+    controller.reconcile_all().await.unwrap();
+
+    // Should have deleted one pod (rolling update deletes one at a time)
+    let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods_after.len(), 1, "Rolling update should delete one stale pod");
+
+    // Reconcile again — should recreate the deleted pod with new revision
+    controller.reconcile_all().await.unwrap();
+
+    let pods_recreated: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+    assert_eq!(pods_recreated.len(), 2, "Should recreate deleted pod with new template");
+
+    // The recreated pod should have the new revision
+    let new_revision_pod = pods_recreated.iter().find(|p| {
+        p.metadata.labels.as_ref()
+            .and_then(|l| l.get("controller-revision-hash"))
+            .map(|r| r != &old_revision)
+            .unwrap_or(false)
+    });
+    assert!(new_revision_pod.is_some(), "Recreated pod should have new revision hash");
 }

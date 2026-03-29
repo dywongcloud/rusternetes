@@ -145,7 +145,13 @@ pub async fn update_status(
             }
         }
 
-        let saved: Value = state.storage.update(&key, &result).await?;
+        let mut saved: Value = state.storage.update(&key, &result).await?;
+        // Ensure kind/apiVersion in response
+        if let Some(obj) = saved.as_object_mut() {
+            let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
+            obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
+            obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+        }
         return Ok(Json(saved));
     }
 
@@ -235,7 +241,15 @@ pub async fn update_status(
     }
 
     // Save the updated resource
-    let saved: Value = state.storage.update(&key, &updated_resource).await?;
+    let mut saved: Value = state.storage.update(&key, &updated_resource).await?;
+
+    // Ensure kind/apiVersion are always present in the response — the storage round-trip
+    // may strip them if the original stored resource was missing TypeMeta fields.
+    if let Some(obj) = saved.as_object_mut() {
+        let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
+        obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
+        obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+    }
 
     info!(
         "Successfully updated status for {}/{}/{}",
@@ -316,7 +330,14 @@ pub async fn update_cluster_status(
     }
 
     // Save the updated resource
-    let saved: Value = state.storage.update(&key, &updated_resource).await?;
+    let mut saved: Value = state.storage.update(&key, &updated_resource).await?;
+
+    // Ensure kind/apiVersion are always present in the response
+    if let Some(obj) = saved.as_object_mut() {
+        let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
+        obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
+        obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+    }
 
     info!("Successfully updated status for {}/{}", resource_type, name);
 
@@ -350,7 +371,14 @@ pub async fn get_status(
     }
 
     let key = build_key(&resource_type, Some(&namespace), &name);
-    let resource: Value = state.storage.get(&key).await?;
+    let mut resource: Value = state.storage.get(&key).await?;
+
+    // Ensure kind/apiVersion are present in the response
+    if let Some(obj) = resource.as_object_mut() {
+        let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
+        obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
+        obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+    }
 
     Ok(Json(resource))
 }
@@ -378,7 +406,14 @@ pub async fn get_cluster_status(
     }
 
     let key = build_key(&resource_type, None, &name);
-    let resource: Value = state.storage.get(&key).await?;
+    let mut resource: Value = state.storage.get(&key).await?;
+
+    // Ensure kind/apiVersion are present in the response
+    if let Some(obj) = resource.as_object_mut() {
+        let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
+        obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
+        obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+    }
 
     Ok(Json(resource))
 }
@@ -538,5 +573,88 @@ mod tests {
         // Apps group: /apis/apps/v1/namespaces/{ns}/deployments/{name}/status
         let uri: Uri = "/apis/apps/v1/namespaces/default/deployments/my-deploy/status".parse().unwrap();
         assert_eq!(extract_resource_type_from_uri(&uri), "deployments");
+    }
+
+    #[test]
+    fn test_kind_injection_into_response_without_kind() {
+        // Simulate a stored resource that is missing kind/apiVersion
+        let mut resource = json!({
+            "metadata": {
+                "name": "test-deployment",
+                "namespace": "default",
+                "resourceVersion": "42"
+            },
+            "spec": { "replicas": 3 },
+            "status": { "readyReplicas": 3 }
+        });
+
+        // This is the logic the handler applies to the response
+        let resource_type = "deployments";
+        if let Some(obj) = resource.as_object_mut() {
+            let (kind, api_version) = resource_type_to_kind_api_version(resource_type);
+            obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
+            obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+        }
+
+        assert_eq!(resource["kind"], "Deployment");
+        assert_eq!(resource["apiVersion"], "apps/v1");
+    }
+
+    #[test]
+    fn test_kind_injection_preserves_existing_kind() {
+        // Resource that already has kind/apiVersion should not be overwritten
+        let mut resource = json!({
+            "kind": "Deployment",
+            "apiVersion": "apps/v1",
+            "metadata": { "name": "test" },
+            "status": { "replicas": 1 }
+        });
+
+        let resource_type = "deployments";
+        if let Some(obj) = resource.as_object_mut() {
+            let (kind, api_version) = resource_type_to_kind_api_version(resource_type);
+            obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
+            obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+        }
+
+        // Should keep the original values
+        assert_eq!(resource["kind"], "Deployment");
+        assert_eq!(resource["apiVersion"], "apps/v1");
+    }
+
+    #[test]
+    fn test_kind_injection_for_various_resource_types() {
+        // Test that kind injection works for all resource types
+        let test_cases = vec![
+            ("pods", "Pod", "v1"),
+            ("deployments", "Deployment", "apps/v1"),
+            ("replicasets", "ReplicaSet", "apps/v1"),
+            ("statefulsets", "StatefulSet", "apps/v1"),
+            ("jobs", "Job", "batch/v1"),
+            ("nodes", "Node", "v1"),
+            ("namespaces", "Namespace", "v1"),
+        ];
+
+        for (resource_type, expected_kind, expected_api_version) in test_cases {
+            let mut resource = json!({
+                "metadata": { "name": "test" },
+                "status": {}
+            });
+
+            if let Some(obj) = resource.as_object_mut() {
+                let (kind, api_version) = resource_type_to_kind_api_version(resource_type);
+                obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
+                obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+            }
+
+            assert_eq!(
+                resource["kind"], expected_kind,
+                "Failed for resource type: {}", resource_type
+            );
+            assert_eq!(
+                resource["apiVersion"], expected_api_version,
+                "Failed for resource type: {}", resource_type
+            );
+        }
     }
 }

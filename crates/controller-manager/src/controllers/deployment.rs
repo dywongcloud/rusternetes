@@ -1,6 +1,6 @@
 use chrono::Utc;
 use rusternetes_common::{
-    resources::{Deployment, DeploymentCondition, DeploymentStatus, ReplicaSet, ReplicaSetSpec},
+    resources::{Deployment, DeploymentCondition, DeploymentStatus, Pod, ReplicaSet, ReplicaSetSpec},
     types::{ObjectMeta, TypeMeta},
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
@@ -542,7 +542,9 @@ impl<S: Storage> DeploymentController<S> {
             .filter(|rs| self.is_owned_by_deployment(rs, deployment))
             .collect();
 
-        // Aggregate status from all ReplicaSets
+        // Aggregate status from all ReplicaSets.
+        // If a ReplicaSet has no status yet (controller hasn't run), fall back to
+        // counting its pods directly so the deployment status is never stuck at 0.
         let mut total_replicas = 0;
         let mut ready_replicas = 0;
         let mut available_replicas = 0;
@@ -557,6 +559,17 @@ impl<S: Storage> DeploymentController<S> {
                 // Count replicas from ReplicaSets matching current template as "updated"
                 if self.replicaset_matches_template(rs, deployment) {
                     updated_replicas += status.replicas;
+                }
+            } else {
+                // RS has no status yet — count pods directly as a fallback
+                let (pod_total, pod_ready, pod_available) =
+                    self.count_pods_for_replicaset(rs).await;
+                total_replicas += pod_total;
+                ready_replicas += pod_ready;
+                available_replicas += pod_available;
+
+                if self.replicaset_matches_template(rs, deployment) {
+                    updated_replicas += pod_total;
                 }
             }
         }
@@ -650,6 +663,103 @@ impl<S: Storage> DeploymentController<S> {
 
         Ok(())
     }
+
+    /// Count pods owned by a ReplicaSet directly from storage.
+    /// Returns (total, ready, available).
+    /// Used as a fallback when the RS has no status yet.
+    async fn count_pods_for_replicaset(&self, rs: &ReplicaSet) -> (i32, i32, i32) {
+        let namespace = rs.metadata.namespace.as_deref().unwrap_or("default");
+        let pods_prefix = build_prefix("pods", Some(namespace));
+        let all_pods: Vec<Pod> = self.storage.list(&pods_prefix).await.unwrap_or_default();
+
+        let mut total = 0i32;
+        let mut ready = 0i32;
+        let mut available = 0i32;
+
+        for pod in &all_pods {
+            // Skip terminated or deleting pods
+            if pod.metadata.deletion_timestamp.is_some() {
+                continue;
+            }
+            if let Some(ref status) = pod.status {
+                if let Some(ref phase) = status.phase {
+                    if matches!(
+                        phase,
+                        rusternetes_common::types::Phase::Failed
+                            | rusternetes_common::types::Phase::Succeeded
+                    ) {
+                        continue;
+                    }
+                }
+            }
+
+            // Check if pod is owned by this RS
+            let owned = pod
+                .metadata
+                .owner_references
+                .as_ref()
+                .map(|refs| {
+                    refs.iter()
+                        .any(|r| r.kind == "ReplicaSet" && r.name == rs.metadata.name)
+                })
+                .unwrap_or(false);
+
+            if !owned {
+                // Fallback: check label selector match
+                let labels_match = if let Some(match_labels) = rs
+                    .spec
+                    .selector
+                    .match_labels
+                    .as_ref()
+                {
+                    if let Some(pod_labels) = &pod.metadata.labels {
+                        match_labels
+                            .iter()
+                            .all(|(k, v)| pod_labels.get(k) == Some(v))
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if !labels_match {
+                    continue;
+                }
+            }
+
+            total += 1;
+
+            // Check readiness
+            let is_ready = pod
+                .status
+                .as_ref()
+                .and_then(|s| s.conditions.as_ref())
+                .map(|conds| {
+                    conds
+                        .iter()
+                        .any(|c| c.condition_type == "Ready" && c.status == "True")
+                })
+                .unwrap_or(false);
+
+            if is_ready {
+                ready += 1;
+                // Check availability (minReadySeconds)
+                let min_ready = rs.spec.min_ready_seconds.unwrap_or(0);
+                if min_ready > 0 {
+                    if let Some(creation) = pod.metadata.creation_timestamp {
+                        let elapsed = chrono::Utc::now().signed_duration_since(creation);
+                        if elapsed.num_seconds() >= min_ready as i64 {
+                            available += 1;
+                        }
+                    }
+                } else {
+                    available += 1;
+                }
+            }
+        }
+
+        (total, ready, available)
+    }
 }
 
 #[cfg(test)]
@@ -712,5 +822,256 @@ mod tests {
         let (surge, unavailable) = compute_rolling_update_counts(1, "25%", "25%");
         assert_eq!(surge, 1);
         assert_eq!(unavailable, 1);
+    }
+
+    #[tokio::test]
+    async fn test_deployment_status_aggregates_from_replicaset_status() {
+        use rusternetes_common::resources::{ReplicaSetStatus, PodTemplateSpec};
+        use rusternetes_common::types::LabelSelector;
+        use rusternetes_storage::memory::MemoryStorage;
+        use std::collections::HashMap;
+
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = DeploymentController::new(storage.clone(), 5);
+
+        let mut labels = HashMap::new();
+        labels.insert("app".to_string(), "test".to_string());
+
+        // Create a deployment
+        let deployment = Deployment {
+            type_meta: TypeMeta {
+                kind: "Deployment".to_string(),
+                api_version: "apps/v1".to_string(),
+            },
+            metadata: ObjectMeta::new("test-deploy").with_namespace("default"),
+            spec: rusternetes_common::resources::DeploymentSpec {
+                replicas: Some(3),
+                selector: LabelSelector {
+                    match_labels: Some(labels.clone()),
+                    match_expressions: None,
+                },
+                template: PodTemplateSpec {
+                    metadata: Some(ObjectMeta::new("").with_labels(labels.clone())),
+                    spec: rusternetes_common::resources::PodSpec {
+                        containers: vec![rusternetes_common::resources::Container {
+                            name: "test".to_string(),
+                            image: Some("nginx:latest".to_string()),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                },
+                strategy: None,
+                min_ready_seconds: None,
+                revision_history_limit: None,
+                paused: None,
+                progress_deadline_seconds: None,
+            },
+            status: None,
+        };
+
+        let dep_key = build_key("deployments", Some("default"), "test-deploy");
+        storage.create(&dep_key, &deployment).await.unwrap();
+
+        // Create an owned ReplicaSet with populated status
+        let mut rs_labels = labels.clone();
+        rs_labels.insert("pod-template-hash".to_string(), "abc123".to_string());
+
+        let rs = ReplicaSet {
+            type_meta: TypeMeta {
+                kind: "ReplicaSet".to_string(),
+                api_version: "apps/v1".to_string(),
+            },
+            metadata: ObjectMeta {
+                name: "test-deploy-abc123".to_string(),
+                namespace: Some("default".to_string()),
+                labels: Some(rs_labels.clone()),
+                owner_references: Some(vec![rusternetes_common::types::OwnerReference {
+                    api_version: "apps/v1".to_string(),
+                    kind: "Deployment".to_string(),
+                    name: "test-deploy".to_string(),
+                    uid: deployment.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                }]),
+                ..Default::default()
+            },
+            spec: ReplicaSetSpec {
+                replicas: 3,
+                selector: LabelSelector {
+                    match_labels: Some(rs_labels.clone()),
+                    match_expressions: None,
+                },
+                template: deployment.spec.template.clone(),
+                min_ready_seconds: None,
+            },
+            status: Some(ReplicaSetStatus {
+                replicas: 3,
+                ready_replicas: 3,
+                available_replicas: 3,
+                fully_labeled_replicas: Some(3),
+                observed_generation: None,
+                conditions: None,
+                terminating_replicas: None,
+            }),
+        };
+
+        let rs_key = build_key("replicasets", Some("default"), "test-deploy-abc123");
+        storage.create(&rs_key, &rs).await.unwrap();
+
+        // Run status update
+        controller.update_deployment_status(&deployment).await.unwrap();
+
+        // Read back the deployment and verify status
+        let updated: Deployment = storage.get(&dep_key).await.unwrap();
+        let status = updated.status.unwrap();
+        assert_eq!(status.replicas, Some(3));
+        assert_eq!(status.ready_replicas, Some(3));
+        assert_eq!(status.available_replicas, Some(3));
+        assert_eq!(status.updated_replicas, Some(3));
+
+        // Verify Available condition is True
+        let conditions = status.conditions.unwrap();
+        let available_cond = conditions.iter().find(|c| c.condition_type == "Available").unwrap();
+        assert_eq!(available_cond.status, "True");
+    }
+
+    #[tokio::test]
+    async fn test_deployment_status_fallback_to_pod_count_when_rs_has_no_status() {
+        use rusternetes_common::resources::{PodTemplateSpec, PodStatus, PodCondition};
+        use rusternetes_common::types::{LabelSelector, Phase};
+        use rusternetes_storage::memory::MemoryStorage;
+        use std::collections::HashMap;
+
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = DeploymentController::new(storage.clone(), 5);
+
+        let mut labels = HashMap::new();
+        labels.insert("app".to_string(), "test".to_string());
+
+        let deployment = Deployment {
+            type_meta: TypeMeta {
+                kind: "Deployment".to_string(),
+                api_version: "apps/v1".to_string(),
+            },
+            metadata: ObjectMeta::new("test-deploy").with_namespace("default"),
+            spec: rusternetes_common::resources::DeploymentSpec {
+                replicas: Some(2),
+                selector: LabelSelector {
+                    match_labels: Some(labels.clone()),
+                    match_expressions: None,
+                },
+                template: PodTemplateSpec {
+                    metadata: Some(ObjectMeta::new("").with_labels(labels.clone())),
+                    spec: rusternetes_common::resources::PodSpec {
+                        containers: vec![rusternetes_common::resources::Container {
+                            name: "test".to_string(),
+                            image: Some("nginx:latest".to_string()),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                },
+                strategy: None,
+                min_ready_seconds: None,
+                revision_history_limit: None,
+                paused: None,
+                progress_deadline_seconds: None,
+            },
+            status: None,
+        };
+
+        let dep_key = build_key("deployments", Some("default"), "test-deploy");
+        storage.create(&dep_key, &deployment).await.unwrap();
+
+        // Create an RS without status (simulates RS controller not having run yet)
+        let mut rs_labels = labels.clone();
+        rs_labels.insert("pod-template-hash".to_string(), "abc123".to_string());
+
+        let rs = ReplicaSet {
+            type_meta: TypeMeta {
+                kind: "ReplicaSet".to_string(),
+                api_version: "apps/v1".to_string(),
+            },
+            metadata: ObjectMeta {
+                name: "test-deploy-abc123".to_string(),
+                namespace: Some("default".to_string()),
+                labels: Some(rs_labels.clone()),
+                owner_references: Some(vec![rusternetes_common::types::OwnerReference {
+                    api_version: "apps/v1".to_string(),
+                    kind: "Deployment".to_string(),
+                    name: "test-deploy".to_string(),
+                    uid: deployment.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                }]),
+                ..Default::default()
+            },
+            spec: ReplicaSetSpec {
+                replicas: 2,
+                selector: LabelSelector {
+                    match_labels: Some(rs_labels.clone()),
+                    match_expressions: None,
+                },
+                template: deployment.spec.template.clone(),
+                min_ready_seconds: None,
+            },
+            status: None, // No status yet!
+        };
+
+        let rs_key = build_key("replicasets", Some("default"), "test-deploy-abc123");
+        storage.create(&rs_key, &rs).await.unwrap();
+
+        // Create 2 ready pods owned by the RS
+        for i in 0..2 {
+            let pod_name = format!("test-deploy-abc123-pod-{}", i);
+            let pod = Pod {
+                type_meta: TypeMeta {
+                    kind: "Pod".to_string(),
+                    api_version: "v1".to_string(),
+                },
+                metadata: ObjectMeta {
+                    name: pod_name.clone(),
+                    namespace: Some("default".to_string()),
+                    labels: Some(rs_labels.clone()),
+                    owner_references: Some(vec![rusternetes_common::types::OwnerReference {
+                        api_version: "apps/v1".to_string(),
+                        kind: "ReplicaSet".to_string(),
+                        name: "test-deploy-abc123".to_string(),
+                        uid: rs.metadata.uid.clone(),
+                        controller: Some(true),
+                        block_owner_deletion: Some(true),
+                    }]),
+                    creation_timestamp: Some(chrono::Utc::now() - chrono::Duration::minutes(5)),
+                    ..Default::default()
+                },
+                spec: None,
+                status: Some(PodStatus {
+                    phase: Some(Phase::Running),
+                    conditions: Some(vec![PodCondition {
+                        condition_type: "Ready".to_string(),
+                        status: "True".to_string(),
+                        last_transition_time: None,
+                        last_probe_time: None,
+                        reason: None,
+                        message: None,
+                    }]),
+                    ..Default::default()
+                }),
+            };
+            let pod_key = build_key("pods", Some("default"), &pod_name);
+            storage.create(&pod_key, &pod).await.unwrap();
+        }
+
+        // Run status update — should pick up pod counts via fallback
+        controller.update_deployment_status(&deployment).await.unwrap();
+
+        let updated: Deployment = storage.get(&dep_key).await.unwrap();
+        let status = updated.status.unwrap();
+
+        // Should have counted the pods directly
+        assert_eq!(status.replicas, Some(2));
+        assert_eq!(status.ready_replicas, Some(2));
+        assert_eq!(status.available_replicas, Some(2));
     }
 }
