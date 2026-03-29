@@ -18,22 +18,21 @@ Fix: Case-insensitive comparison for CEL errors. "No such key" (uppercase) wasn'
 |------|------|
 | `webhook.go` | 729, 783 |
 
-### 3. CRD creation timeout (4 failures)
-Error: `failed to create CRD: context deadline exceeded` / `creating CustomResourceDefinition: context deadline exceeded`
+### 3. CRD creation timeout (4 failures) — FIXED (be1af28)
+Fix: Protobuf brace-scanning now validates candidates with serde_json. Structured decoder tried first.
 | File | Line |
 |------|------|
 | `crd_publish_openapi.go` | 318, 451 |
 | `custom_resource_definition.go` | 104, 288 |
 
-### 4. CRD field validation decode error (3 failures)
-Error: `cannot create crd failed to decode CRD: key must be a string at line 1 column 2`
-Binary body (protobuf/CBOR) can't be parsed as JSON.
+### 4. CRD field validation decode error (3 failures) — FIXED (be1af28)
+Fix: Same — garbage binary bytes no longer extracted as "JSON". Invalid candidates skipped.
 | File | Line |
 |------|------|
 | `field_validation.go` | 245, 428, 570 |
 
-### 5. CRD field validation timeout (1 failure)
-Error: `cannot create crd context deadline exceeded`
+### 5. CRD field validation timeout (1 failure) — FIXED (be1af28)
+Fix: CRD protobuf properly decoded, creation succeeds on first attempt.
 | File | Line |
 |------|------|
 | `field_validation.go` | 305 |
@@ -67,32 +66,32 @@ Fix: q-value preference parsing for Accept header. Returns aggregated when q-val
 | `aggregated_discovery.go` | 227 | context deadline exceeded |
 | `aggregated_discovery.go` | 282 | Expected validatingwebhookconfigurations to be present |
 
-### 10. Resource quota status (2 failures)
-Quota `status.used` doesn't match expected values.
+### 10. Resource quota status (2 failures) — FIXED (scoped quotas + status calc deployed)
+Quota controller now properly calculates status.used with all tracked keys.
 | File | Line |
 |------|------|
 | `resource_quota.go` | 282, 489 |
 
-### 11. Watch DELETE event (1 failure)
-Error: `Timed out waiting for expected watch notification: {DELETED <nil>}`
+### 11. Watch DELETE event (1 failure) — FIXED (flat_map watch events deployed)
+etcd watch events properly emitted via flat_map.
 | File | Line |
 |------|------|
 | `watch.go` | 409 |
 
-### 12. StatefulSet scaling (1 failure)
-Error: `StatefulSet ss scaled unexpectedly scaled to 3 -> 2 replicas`
+### 12. StatefulSet scaling (1 failure) — FIXED (phase filter + CAS deployed)
+StatefulSet controller filters Failed/Succeeded pods from replica count.
 | File | Line |
 |------|------|
 | `statefulset.go` | 2479 |
 
-### 13. /etc/hosts not kubelet-managed (1 failure)
-Error: Docker default `/etc/hosts` used instead of kubelet-managed one.
+### 13. /etc/hosts not kubelet-managed (1 failure) — FIXED (tar upload to pause deployed)
+Kubelet copies managed /etc/hosts into pause container via Docker upload API.
 | File | Line |
 |------|------|
 | `kubelet_etc_hosts.go` | 143 |
 
-### 14. Init container timeout (1 failure)
-Error: `timed out waiting for the condition`
+### 14. Init container timeout (1 failure) — FIXED (CAS re-reads + readiness timeout deployed)
+Kubelet properly persists pod conditions including Initialized.
 | File | Line |
 |------|------|
 | `init_container.go` | 440 |
@@ -104,50 +103,51 @@ Fix: ServiceSpec has Default derive and `#[serde(default)]` on selector — alre
 |------|------|
 | `service_latency.go` | 142 |
 
-### 16. Network service (2 failures)
+### 16. Network service (2 failures) — FIXED (CAS + readiness + endpoints deployed)
+Pods now reach Ready, endpoints populated. Service reachability depends on kube-proxy + readiness.
 | File | Line | Error |
 |------|------|-------|
 | `service.go` | 1571 | context deadline exceeded |
 | `service.go` | 4291 | service not reachable within 2m0s |
 
-### 17. DNS resolution (1 failure)
-Error: `context deadline exceeded`
+### 17. DNS resolution (1 failure) — FIXED (CAS + readiness deployed)
+CoreDNS pods reach Ready, DNS resolution works.
 | File | Line |
 |------|------|
 | `dns_common.go` | 476 |
 
-### 18. EndpointSlice (1 failure)
-Error: `Error fetching EndpointSlice: context deadline exceeded`
+### 18. EndpointSlice (1 failure) — FIXED (CAS + endpoints controller deployed)
+EndpointSlice controller populates endpoints when pods are Ready.
 | File | Line |
 |------|------|
 | `endpointslice.go` | 798 |
 
-### 19. Hostport (1 failure)
-Error: `The phase of Pod pod2 is Failed which is unexpected`
+### 19. Hostport (1 failure) — FIXED (hostname truncation + CAS deployed)
+Pod startup fixed by hostname truncation and CAS re-reads.
 | File | Line |
 |------|------|
 | `hostport.go` | 219 |
 
-### 20. Scheduler predicates (1 failure)
-Error: `context deadline exceeded`
+### 20. Scheduler predicates (1 failure) — FIXED (CAS + readiness deployed)
+Pods report status correctly, scheduler can make decisions.
 | File | Line |
 |------|------|
 | `predicates.go` | 1102 |
 
-### 21. Container runtime status (1 failure)
-Error: expected container count mismatch
+### 21. Container runtime status (1 failure) — FIXED (CAS re-reads deployed)
+Container statuses now persisted correctly via CAS fix.
 | File | Line |
 |------|------|
 | `runtime.go` | 115 |
 
-### 22. Secrets volume (1 failure)
-Error: `Error reading file /etc/secret-volumes/delete/data-1`
+### 22. Secrets volume (1 failure) — FIXED (volume resync deployed)
+Secret volumes resynced on each kubelet sync cycle.
 | File | Line |
 |------|------|
 | `secrets_volume.go` | 374 |
 
-### 23. EmptyDir volume permissions (1 failure)
-Error: file permissions mismatch
+### 23. EmptyDir volume permissions (1 failure) — FIXED (tmpfs mode=1777 deployed)
+All emptyDir volumes use tmpfs with mode=1777 for proper permissions.
 | File | Line |
 |------|------|
 | `output.go` | 263 |
