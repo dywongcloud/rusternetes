@@ -368,24 +368,31 @@ impl Kubelet {
 
         debug!("Found {} pods assigned to this node", node_pods.len());
 
-        // Sync all pods that should be running
+        // Sync all pods. Use a per-pod timeout to prevent a single slow pod
+        // from blocking the entire sync loop and starving other pods' readiness updates.
         for pod in &node_pods {
-            if let Err(e) = self.sync_pod(pod).await {
-                // Log the error but DON'T set the pod to Failed for transient errors.
-                // Only fatal errors like "Failed to create container" should set Failed.
-                // Storage conflicts, probe timeouts, and network issues are retried on the next sync.
-                let err_str = e.to_string();
-                if err_str.contains("Failed to create container")
-                    || err_str.contains("Failed to pull image")
-                    || err_str.contains("FailedToStart")
-                {
-                    error!("Fatal error syncing pod {}: {}", pod.metadata.name, err_str);
-                    if let Err(update_err) = self.update_pod_status_error(pod, &err_str).await {
-                        error!("Failed to update pod status: {}", update_err);
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                self.sync_pod(pod),
+            ).await {
+                Ok(Err(e)) => {
+                    let err_str = e.to_string();
+                    if err_str.contains("Failed to create container")
+                        || err_str.contains("Failed to pull image")
+                        || err_str.contains("FailedToStart")
+                    {
+                        error!("Fatal error syncing pod {}: {}", pod.metadata.name, err_str);
+                        if let Err(update_err) = self.update_pod_status_error(pod, &err_str).await {
+                            error!("Failed to update pod status: {}", update_err);
+                        }
+                    } else {
+                        warn!("Transient error syncing pod {} (will retry): {}", pod.metadata.name, err_str);
                     }
-                } else {
-                    warn!("Transient error syncing pod {} (will retry): {}", pod.metadata.name, err_str);
                 }
+                Err(_timeout) => {
+                    warn!("Timeout syncing pod {} (30s), skipping to next pod", pod.metadata.name);
+                }
+                Ok(Ok(())) => {}
             }
         }
 
@@ -523,15 +530,27 @@ impl Kubelet {
             }
         }
 
-        // Check current runtime status with timeout to prevent sync loop blocking
+        // Check current runtime status with timeout to prevent sync loop blocking.
+        // If the pod was already Running and the Docker check times out, assume it's
+        // still running — defaulting to "not running" causes the readiness path to be
+        // skipped entirely, leaving pods stuck in not-Ready state.
+        let was_running = matches!(
+            pod.status.as_ref().and_then(|s| s.phase.as_ref()),
+            Some(Phase::Running)
+        );
         let is_running = match tokio::time::timeout(
-            std::time::Duration::from_secs(10),
+            std::time::Duration::from_secs(15),
             self.runtime.is_pod_running(pod_name),
         ).await {
             Ok(result) => result?,
             Err(_) => {
-                warn!("Timeout checking pod {}/{} runtime status, assuming not running", namespace, pod_name);
-                false
+                if was_running {
+                    debug!("Timeout checking pod {}/{} runtime status, assuming still running", namespace, pod_name);
+                    true
+                } else {
+                    warn!("Timeout checking pod {}/{} runtime status, assuming not running", namespace, pod_name);
+                    false
+                }
             }
         };
 
