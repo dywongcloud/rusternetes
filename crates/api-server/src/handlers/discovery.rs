@@ -78,16 +78,33 @@ fn wants_aggregated_discovery(headers: &HeaderMap) -> bool {
         if !accept.contains("apidiscovery.k8s.io") {
             return false;
         }
-        // Only return aggregated when the client EXCLUSIVELY requests it.
-        // Many clients (sonobuoy, kubectl) list both aggregated and plain JSON
-        // but can't actually parse the aggregated format. To be safe, only use
-        // aggregated when there's no plain application/json fallback.
-        let has_plain_json = accept.split(',').any(|mt| {
-            let mt = mt.trim();
-            (mt == "application/json" || (mt.starts_with("application/json") && !mt.contains("apidiscovery")))
-                && !mt.contains(";q=0")
-        });
-        !has_plain_json
+
+        // Parse q-values to determine preference.
+        // K8s conformance test sends aggregated with higher q-value than plain JSON.
+        // Sonobuoy sends both but can't parse aggregated — it puts plain JSON first.
+        let mut agg_q: f32 = 1.0;
+        let mut plain_q: f32 = -1.0;
+
+        for part in accept.split(',') {
+            let part = part.trim();
+            let q = part.split(";q=").nth(1)
+                .and_then(|q| q.trim().parse::<f32>().ok())
+                .unwrap_or(1.0);
+
+            if part.contains("apidiscovery.k8s.io") {
+                agg_q = q;
+            } else if part.starts_with("application/json") && !part.contains("apidiscovery") {
+                plain_q = q;
+            }
+        }
+
+        // Return aggregated if:
+        // - No plain JSON alternative (exclusive request), OR
+        // - Aggregated has strictly higher q-value than plain JSON
+        if plain_q < 0.0 {
+            return true; // No plain JSON at all
+        }
+        agg_q > plain_q
     } else {
         false
     }
