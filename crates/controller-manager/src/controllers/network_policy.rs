@@ -1,6 +1,6 @@
 use anyhow::Result;
 use rusternetes_common::resources::{NetworkPolicy, Pod};
-use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use rusternetes_storage::Storage;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -15,12 +15,12 @@ use tracing::{debug, error, info, warn};
 /// 3. Provides status updates on policy application
 ///
 /// For conformance testing, ensure a NetworkPolicy-capable CNI plugin is installed.
-pub struct NetworkPolicyController {
-    storage: Arc<EtcdStorage>,
+pub struct NetworkPolicyController<S: Storage> {
+    storage: Arc<S>,
 }
 
-impl NetworkPolicyController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> NetworkPolicyController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 

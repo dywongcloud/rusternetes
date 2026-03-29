@@ -96,8 +96,51 @@ async fn main() -> Result<()> {
         .map(|s| s.trim().to_string())
         .collect();
 
-    // Initialize storage
-    let storage = Arc::new(EtcdStorage::new(etcd_endpoints.clone()).await?);
+    // Initialize storage with in-memory cache layer.
+    // The CachedStorage wraps etcd and keeps an in-memory cache updated via watches.
+    // Controller list() calls are served from cache (zero etcd round-trips),
+    // while writes go through to etcd and update the cache.
+    let etcd_storage = Arc::new(EtcdStorage::new(etcd_endpoints.clone()).await?);
+    let storage = rusternetes_storage::CachedStorage::new(etcd_storage);
+
+    // Pre-populate caches for resource types used by controllers.
+    // Each watch_prefix() does an initial list + starts a background watch.
+    let prefixes_to_cache = [
+        "/registry/deployments/",
+        "/registry/replicasets/",
+        "/registry/pods/",
+        "/registry/services/",
+        "/registry/endpoints/",
+        "/registry/endpointslices/",
+        "/registry/nodes/",
+        "/registry/jobs/",
+        "/registry/cronjobs/",
+        "/registry/daemonsets/",
+        "/registry/statefulsets/",
+        "/registry/namespaces/",
+        "/registry/serviceaccounts/",
+        "/registry/configmaps/",
+        "/registry/secrets/",
+        "/registry/persistentvolumes/",
+        "/registry/persistentvolumeclaims/",
+        "/registry/storageclasses/",
+        "/registry/resourcequotas/",
+        "/registry/events/",
+        "/registry/networkpolicies/",
+        "/registry/ingresses/",
+        "/registry/customresourcedefinitions/",
+        "/registry/certificatesigningrequests/",
+        "/registry/poddisruptionbudgets/",
+        "/registry/horizontalpodautoscalers/",
+        "/registry/verticalpodautoscalers/",
+        "/registry/priorityclasses/",
+    ];
+    for prefix in &prefixes_to_cache {
+        if let Err(e) = storage.watch_prefix(prefix).await {
+            warn!("Failed to start cache for {}: {} (will use direct etcd reads)", prefix, e);
+        }
+    }
+    info!("In-memory cache initialized for {} resource types", prefixes_to_cache.len());
 
     // Initialize cloud provider if configured
     #[cfg(feature = "cloud-providers")]
@@ -420,7 +463,7 @@ async fn main() -> Result<()> {
 
     // Start Garbage Collector
     let garbage_collector =
-        Arc::new(GarbageCollector::<rusternetes_storage::etcd::EtcdStorage>::new(storage.clone()));
+        Arc::new(GarbageCollector::new(storage.clone()));
     spawn_controller!("Garbage Collector", leader_elector, {
         let controller = garbage_collector.clone();
         async move {
@@ -450,7 +493,7 @@ async fn main() -> Result<()> {
 
     // Start TTL controller
     let ttl_controller =
-        Arc::new(TTLController::<rusternetes_storage::etcd::EtcdStorage>::new(storage.clone()));
+        Arc::new(TTLController::new(storage.clone()));
     spawn_controller!("TTL controller", leader_elector, {
         let controller = ttl_controller.clone();
         async move {

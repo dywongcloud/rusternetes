@@ -2,12 +2,15 @@ use async_trait::async_trait;
 use rusternetes_common::Result;
 use serde::{de::DeserializeOwned, Serialize};
 
+pub mod cached;
 pub mod concurrency;
 pub mod etcd;
 pub mod memory;
 
 // Re-export MemoryStorage for convenient testing
 pub use memory::MemoryStorage;
+// Re-export CachedStorage for easy use
+pub use cached::CachedStorage;
 
 /// Storage trait for persisting Kubernetes resources
 #[async_trait]

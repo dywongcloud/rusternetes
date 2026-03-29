@@ -1,6 +1,6 @@
 use anyhow::Result;
 use rusternetes_common::resources::Namespace;
-use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -10,12 +10,12 @@ use tracing::{debug, error, info, warn};
 /// 2. Deletes all resources (respecting finalizers)
 /// 3. Removes finalizers from the namespace
 /// 4. Allows the namespace to be deleted
-pub struct NamespaceController {
-    storage: Arc<EtcdStorage>,
+pub struct NamespaceController<S: Storage> {
+    storage: Arc<S>,
 }
 
-impl NamespaceController {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+impl<S: Storage> NamespaceController<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 
