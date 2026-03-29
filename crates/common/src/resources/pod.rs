@@ -2326,4 +2326,377 @@ mod tests {
         let vol2: Volume = serde_json::from_value(serialized).expect("Failed round-trip");
         assert!(vol2.downward_api.is_some(), "downward_api should survive round-trip");
     }
+
+    #[test]
+    fn test_pod_resize_status_serialization() {
+        // Pod with resize="Proposed" should serialize/deserialize correctly
+        let json = r#"{
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": { "name": "resize-pod", "namespace": "default" },
+            "spec": {
+                "containers": [{
+                    "name": "app",
+                    "image": "nginx:latest",
+                    "resources": {
+                        "requests": { "cpu": "100m", "memory": "128Mi" },
+                        "limits": { "cpu": "200m", "memory": "256Mi" }
+                    },
+                    "resizePolicy": [
+                        { "resourceName": "cpu", "restartPolicy": "NotRequired" },
+                        { "resourceName": "memory", "restartPolicy": "RestartContainer" }
+                    ]
+                }]
+            },
+            "status": {
+                "phase": "Running",
+                "resize": "Proposed",
+                "containerStatuses": [{
+                    "name": "app",
+                    "ready": true,
+                    "restartCount": 0,
+                    "state": { "running": { "startedAt": "2024-01-01T00:00:00Z" } },
+                    "allocatedResources": {
+                        "cpu": "100m",
+                        "memory": "128Mi"
+                    },
+                    "resources": {
+                        "requests": { "cpu": "100m", "memory": "128Mi" },
+                        "limits": { "cpu": "200m", "memory": "256Mi" }
+                    }
+                }]
+            }
+        }"#;
+
+        let pod: Pod = serde_json::from_str(json).expect("Failed to deserialize pod with resize fields");
+
+        // Verify resize status field
+        let status = pod.status.as_ref().unwrap();
+        assert_eq!(status.resize.as_deref(), Some("Proposed"));
+
+        // Verify allocatedResources in container status
+        let cs = &status.container_statuses.as_ref().unwrap()[0];
+        let alloc = cs.allocated_resources.as_ref().unwrap();
+        assert_eq!(alloc.get("cpu"), Some(&"100m".to_string()));
+        assert_eq!(alloc.get("memory"), Some(&"128Mi".to_string()));
+
+        // Verify resources in container status
+        let res = cs.resources.as_ref().unwrap();
+        assert_eq!(
+            res.requests.as_ref().unwrap().get("cpu"),
+            Some(&"100m".to_string())
+        );
+
+        // Verify resizePolicy in spec container
+        let spec = pod.spec.as_ref().unwrap();
+        let resize_policy = spec.containers[0].resize_policy.as_ref().unwrap();
+        assert_eq!(resize_policy.len(), 2);
+        assert_eq!(resize_policy[0].resource_name, "cpu");
+        assert_eq!(resize_policy[0].restart_policy, "NotRequired");
+        assert_eq!(resize_policy[1].resource_name, "memory");
+        assert_eq!(resize_policy[1].restart_policy, "RestartContainer");
+    }
+
+    #[test]
+    fn test_pod_resize_status_roundtrip() {
+        use std::collections::HashMap;
+
+        let mut alloc = HashMap::new();
+        alloc.insert("cpu".to_string(), "250m".to_string());
+        alloc.insert("memory".to_string(), "512Mi".to_string());
+
+        let pod = Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta::new("resize-roundtrip").with_namespace("default"),
+            spec: Some(PodSpec {
+                containers: vec![Container {
+                    name: "app".to_string(),
+                    image: "nginx".to_string(),
+                    resize_policy: Some(vec![
+                        ContainerResizePolicy {
+                            resource_name: "cpu".to_string(),
+                            restart_policy: "NotRequired".to_string(),
+                        },
+                    ]),
+                    resources: Some(crate::types::ResourceRequirements {
+                        requests: Some({
+                            let mut m = HashMap::new();
+                            m.insert("cpu".to_string(), "500m".to_string());
+                            m
+                        }),
+                        limits: Some({
+                            let mut m = HashMap::new();
+                            m.insert("cpu".to_string(), "1".to_string());
+                            m
+                        }),
+                        claims: None,
+                    }),
+                    command: None,
+                    args: None,
+                    working_dir: None,
+                    ports: None,
+                    volume_mounts: None,
+                    image_pull_policy: None,
+                    liveness_probe: None,
+                    readiness_probe: None,
+                    startup_probe: None,
+                    security_context: None,
+                    restart_policy: None,
+                    lifecycle: None,
+                    termination_message_path: None,
+                    termination_message_policy: None,
+                    stdin: None,
+                    stdin_once: None,
+                    tty: None,
+                    env: None,
+                    env_from: None,
+                    volume_devices: None,
+                }],
+                init_containers: None,
+                ephemeral_containers: None,
+                volumes: None,
+                restart_policy: None,
+                node_name: None,
+                node_selector: None,
+                service_account_name: None,
+                service_account: None,
+                hostname: None,
+                subdomain: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                affinity: None,
+                tolerations: None,
+                priority: None,
+                priority_class_name: None,
+                automount_service_account_token: None,
+                topology_spread_constraints: None,
+                overhead: None,
+                scheduler_name: None,
+                resource_claims: None,
+                active_deadline_seconds: None,
+                dns_policy: None,
+                dns_config: None,
+                security_context: None,
+                image_pull_secrets: None,
+                share_process_namespace: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                enable_service_links: None,
+                preemption_policy: None,
+                host_users: None,
+                set_hostname_as_fqdn: None,
+                termination_grace_period_seconds: None,
+                host_aliases: None,
+                os: None,
+                scheduling_gates: None,
+                resources: None,
+            }),
+            status: Some(PodStatus {
+                phase: Some(Phase::Running),
+                message: None,
+                reason: None,
+                host_ip: Some("10.0.0.1".to_string()),
+                host_i_ps: None,
+                pod_ip: Some("10.244.0.5".to_string()),
+                pod_i_ps: None,
+                nominated_node_name: None,
+                qos_class: None,
+                start_time: None,
+                conditions: None,
+                container_statuses: Some(vec![ContainerStatus {
+                    name: "app".to_string(),
+                    ready: true,
+                    restart_count: 0,
+                    state: Some(ContainerState::Running {
+                        started_at: Some("2024-01-01T00:00:00Z".to_string()),
+                    }),
+                    last_state: None,
+                    image: Some("nginx".to_string()),
+                    image_id: None,
+                    container_id: Some("docker://abc123".to_string()),
+                    started: Some(true),
+                    allocated_resources: Some(alloc.clone()),
+                    allocated_resources_status: None,
+                    resources: Some(crate::types::ResourceRequirements {
+                        requests: Some({
+                            let mut m = HashMap::new();
+                            m.insert("cpu".to_string(), "250m".to_string());
+                            m
+                        }),
+                        limits: None,
+                        claims: None,
+                    }),
+                    user: None,
+                    volume_mounts: None,
+                    stop_signal: None,
+                }]),
+                init_container_statuses: None,
+                ephemeral_container_statuses: None,
+                resize: Some("InProgress".to_string()),
+                resource_claim_statuses: None,
+                observed_generation: None,
+            }),
+        };
+
+        // Serialize and deserialize
+        let json_str = serde_json::to_string(&pod).unwrap();
+        let deserialized: Pod = serde_json::from_str(&json_str).unwrap();
+
+        // Check resize status survived round-trip
+        let status = deserialized.status.as_ref().unwrap();
+        assert_eq!(status.resize.as_deref(), Some("InProgress"));
+
+        // Check allocatedResources survived round-trip
+        let cs = &status.container_statuses.as_ref().unwrap()[0];
+        let ar = cs.allocated_resources.as_ref().unwrap();
+        assert_eq!(ar.get("cpu"), Some(&"250m".to_string()));
+        assert_eq!(ar.get("memory"), Some(&"512Mi".to_string()));
+
+        // Check resizePolicy survived round-trip
+        let spec = deserialized.spec.as_ref().unwrap();
+        let rp = spec.containers[0].resize_policy.as_ref().unwrap();
+        assert_eq!(rp[0].resource_name, "cpu");
+        assert_eq!(rp[0].restart_policy, "NotRequired");
+
+        // Check JSON field names are camelCase
+        let json_val = serde_json::to_value(&pod).unwrap();
+        let status_val = &json_val["status"];
+        assert!(status_val.get("resize").is_some());
+        let cs_val = &status_val["containerStatuses"][0];
+        assert!(cs_val.get("allocatedResources").is_some());
+
+        let spec_val = &json_val["spec"]["containers"][0];
+        assert!(spec_val.get("resizePolicy").is_some());
+    }
+
+    #[test]
+    fn test_pod_resize_empty_string_means_complete() {
+        // When resize is empty string, it means resize is complete
+        let json = r#"{
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": { "name": "resize-done", "namespace": "default" },
+            "spec": {
+                "containers": [{ "name": "app", "image": "nginx" }]
+            },
+            "status": {
+                "phase": "Running",
+                "resize": ""
+            }
+        }"#;
+
+        let pod: Pod = serde_json::from_str(json).unwrap();
+        let status = pod.status.as_ref().unwrap();
+        assert_eq!(status.resize.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn test_pod_resize_omitted_when_none() {
+        // When resize is None, it should not appear in serialized JSON
+        let pod = Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta::new("no-resize").with_namespace("default"),
+            spec: Some(PodSpec {
+                containers: vec![Container {
+                    name: "app".to_string(),
+                    image: "nginx".to_string(),
+                    command: None,
+                    args: None,
+                    working_dir: None,
+                    ports: None,
+                    resources: None,
+                    volume_mounts: None,
+                    image_pull_policy: None,
+                    liveness_probe: None,
+                    readiness_probe: None,
+                    startup_probe: None,
+                    security_context: None,
+                    restart_policy: None,
+                    resize_policy: None,
+                    lifecycle: None,
+                    termination_message_path: None,
+                    termination_message_policy: None,
+                    stdin: None,
+                    stdin_once: None,
+                    tty: None,
+                    env: None,
+                    env_from: None,
+                    volume_devices: None,
+                }],
+                init_containers: None,
+                ephemeral_containers: None,
+                volumes: None,
+                restart_policy: None,
+                node_name: None,
+                node_selector: None,
+                service_account_name: None,
+                service_account: None,
+                hostname: None,
+                subdomain: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                affinity: None,
+                tolerations: None,
+                priority: None,
+                priority_class_name: None,
+                automount_service_account_token: None,
+                topology_spread_constraints: None,
+                overhead: None,
+                scheduler_name: None,
+                resource_claims: None,
+                active_deadline_seconds: None,
+                dns_policy: None,
+                dns_config: None,
+                security_context: None,
+                image_pull_secrets: None,
+                share_process_namespace: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                enable_service_links: None,
+                preemption_policy: None,
+                host_users: None,
+                set_hostname_as_fqdn: None,
+                termination_grace_period_seconds: None,
+                host_aliases: None,
+                os: None,
+                scheduling_gates: None,
+                resources: None,
+            }),
+            status: Some(PodStatus {
+                phase: Some(Phase::Running),
+                message: None,
+                reason: None,
+                host_ip: None,
+                host_i_ps: None,
+                pod_ip: None,
+                pod_i_ps: None,
+                nominated_node_name: None,
+                qos_class: None,
+                start_time: None,
+                conditions: None,
+                container_statuses: None,
+                init_container_statuses: None,
+                ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
+            }),
+        };
+
+        let json = serde_json::to_value(&pod).unwrap();
+        let status_val = &json["status"];
+        // resize should be omitted when None (skip_serializing_if)
+        assert!(
+            status_val.get("resize").is_none(),
+            "resize should be omitted from JSON when None"
+        );
+    }
 }

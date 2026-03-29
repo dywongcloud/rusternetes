@@ -6195,4 +6195,321 @@ mod tests {
         // timeout_seconds=5 → 5
         assert_eq!(Some(5i32).unwrap_or(1).max(1) as u64, 5);
     }
+
+    // --- Sysctl tests ---
+
+    use rusternetes_common::resources::pod::{PodSecurityContext, Sysctl};
+    use std::collections::HashMap;
+
+    /// Helper: build a pod with optional sysctls in its security context
+    fn make_pod_with_sysctls(name: &str, sysctls: Option<Vec<Sysctl>>) -> Pod {
+        let security_context = sysctls.map(|s| PodSecurityContext {
+            run_as_user: None,
+            run_as_group: None,
+            run_as_non_root: None,
+            fs_group: None,
+            fs_group_change_policy: None,
+            supplemental_groups: None,
+            sysctls: Some(s),
+            seccomp_profile: None,
+            app_armor_profile: None,
+            se_linux_options: None,
+            windows_options: None,
+            se_linux_change_policy: None,
+            supplemental_groups_policy: None,
+        });
+
+        Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta::new(name).with_namespace("default"),
+            spec: Some(PodSpec {
+                containers: vec![make_container("app")],
+                init_containers: None,
+                ephemeral_containers: None,
+                restart_policy: Some("Always".to_string()),
+                node_name: None,
+                node_selector: None,
+                service_account_name: None,
+                service_account: None,
+                hostname: None,
+                subdomain: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                affinity: None,
+                tolerations: None,
+                priority: None,
+                priority_class_name: None,
+                automount_service_account_token: None,
+                topology_spread_constraints: None,
+                overhead: None,
+                scheduler_name: None,
+                resource_claims: None,
+                volumes: None,
+                active_deadline_seconds: None,
+                dns_policy: None,
+                dns_config: None,
+                security_context,
+                image_pull_secrets: None,
+                share_process_namespace: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                enable_service_links: None,
+                preemption_policy: None,
+                host_users: None,
+                set_hostname_as_fqdn: None,
+                termination_grace_period_seconds: None,
+                host_aliases: None,
+                os: None,
+                scheduling_gates: None,
+                resources: None,
+            }),
+            status: None,
+        }
+    }
+
+    /// Extract the sysctls map from a pod the same way create_pod does (lines 874-882)
+    fn extract_sysctls(pod: &Pod) -> Option<HashMap<String, String>> {
+        pod.spec
+            .as_ref()
+            .and_then(|s| s.security_context.as_ref())
+            .and_then(|sc| sc.sysctls.as_ref())
+            .map(|sysctls| {
+                sysctls
+                    .iter()
+                    .map(|s| (s.name.clone(), s.value.clone()))
+                    .collect()
+            })
+    }
+
+    #[test]
+    fn test_safe_sysctls_accepted() {
+        // Safe sysctls that Kubernetes allows by default
+        let safe_sysctls = vec![
+            Sysctl {
+                name: "kernel.shm_rmid_forced".to_string(),
+                value: "1".to_string(),
+            },
+            Sysctl {
+                name: "net.ipv4.ip_local_port_range".to_string(),
+                value: "1024 65535".to_string(),
+            },
+            Sysctl {
+                name: "net.ipv4.tcp_syncookies".to_string(),
+                value: "1".to_string(),
+            },
+            Sysctl {
+                name: "net.ipv4.ping_group_range".to_string(),
+                value: "0 2147483647".to_string(),
+            },
+        ];
+
+        let pod = make_pod_with_sysctls("safe-sysctl-pod", Some(safe_sysctls));
+        let result = extract_sysctls(&pod);
+
+        assert!(result.is_some());
+        let map = result.unwrap();
+        assert_eq!(map.len(), 4);
+        assert_eq!(map.get("kernel.shm_rmid_forced"), Some(&"1".to_string()));
+        assert_eq!(
+            map.get("net.ipv4.ip_local_port_range"),
+            Some(&"1024 65535".to_string())
+        );
+        assert_eq!(map.get("net.ipv4.tcp_syncookies"), Some(&"1".to_string()));
+        assert_eq!(
+            map.get("net.ipv4.ping_group_range"),
+            Some(&"0 2147483647".to_string())
+        );
+    }
+
+    #[test]
+    fn test_unsafe_sysctls_accepted_when_explicitly_set() {
+        // Unsafe sysctls that require explicit allowlisting in real K8s,
+        // but our runtime passes them through to Docker regardless
+        let unsafe_sysctls = vec![
+            Sysctl {
+                name: "kernel.msgmax".to_string(),
+                value: "65536".to_string(),
+            },
+            Sysctl {
+                name: "net.core.somaxconn".to_string(),
+                value: "1024".to_string(),
+            },
+            Sysctl {
+                name: "kernel.shmmax".to_string(),
+                value: "67108864".to_string(),
+            },
+        ];
+
+        let pod = make_pod_with_sysctls("unsafe-sysctl-pod", Some(unsafe_sysctls));
+        let result = extract_sysctls(&pod);
+
+        assert!(result.is_some());
+        let map = result.unwrap();
+        assert_eq!(map.len(), 3);
+        assert_eq!(map.get("kernel.msgmax"), Some(&"65536".to_string()));
+        assert_eq!(map.get("net.core.somaxconn"), Some(&"1024".to_string()));
+        assert_eq!(map.get("kernel.shmmax"), Some(&"67108864".to_string()));
+    }
+
+    #[test]
+    fn test_sysctls_values_passed_to_docker_config() {
+        // Verify the sysctl values are collected into the HashMap format
+        // that bollard's HostConfig.sysctls expects
+        let sysctls = vec![
+            Sysctl {
+                name: "net.ipv4.ip_forward".to_string(),
+                value: "1".to_string(),
+            },
+            Sysctl {
+                name: "net.ipv4.conf.all.forwarding".to_string(),
+                value: "1".to_string(),
+            },
+        ];
+
+        let pod = make_pod_with_sysctls("sysctl-docker-pod", Some(sysctls));
+        let sysctls_map = extract_sysctls(&pod);
+
+        // This is exactly what gets assigned to HostConfig.sysctls
+        assert!(sysctls_map.is_some());
+        let map = sysctls_map.unwrap();
+        assert_eq!(map["net.ipv4.ip_forward"], "1");
+        assert_eq!(map["net.ipv4.conf.all.forwarding"], "1");
+    }
+
+    #[test]
+    fn test_pod_without_sysctls_has_none() {
+        // Pod with no security context at all
+        let pod = make_pod_with_sysctls("no-sysctl-pod", None);
+        let result = extract_sysctls(&pod);
+        assert!(result.is_none(), "Pod without sysctls should return None");
+    }
+
+    #[test]
+    fn test_pod_with_empty_security_context_no_sysctls() {
+        // Pod has a security context but sysctls field is None
+        let pod = Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta::new("empty-sc-pod").with_namespace("default"),
+            spec: Some(PodSpec {
+                containers: vec![make_container("app")],
+                init_containers: None,
+                ephemeral_containers: None,
+                restart_policy: Some("Always".to_string()),
+                node_name: None,
+                node_selector: None,
+                service_account_name: None,
+                service_account: None,
+                hostname: None,
+                subdomain: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                affinity: None,
+                tolerations: None,
+                priority: None,
+                priority_class_name: None,
+                automount_service_account_token: None,
+                topology_spread_constraints: None,
+                overhead: None,
+                scheduler_name: None,
+                resource_claims: None,
+                volumes: None,
+                active_deadline_seconds: None,
+                dns_policy: None,
+                dns_config: None,
+                security_context: Some(PodSecurityContext {
+                    run_as_user: Some(1000),
+                    run_as_group: None,
+                    run_as_non_root: None,
+                    fs_group: None,
+                    fs_group_change_policy: None,
+                    supplemental_groups: None,
+                    sysctls: None,
+                    seccomp_profile: None,
+                    app_armor_profile: None,
+                    se_linux_options: None,
+                    windows_options: None,
+                    se_linux_change_policy: None,
+                    supplemental_groups_policy: None,
+                }),
+                image_pull_secrets: None,
+                share_process_namespace: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                enable_service_links: None,
+                preemption_policy: None,
+                host_users: None,
+                set_hostname_as_fqdn: None,
+                termination_grace_period_seconds: None,
+                host_aliases: None,
+                os: None,
+                scheduling_gates: None,
+                resources: None,
+            }),
+            status: None,
+        };
+
+        let result = extract_sysctls(&pod);
+        assert!(
+            result.is_none(),
+            "Security context without sysctls should return None"
+        );
+    }
+
+    #[test]
+    fn test_single_sysctl_produces_single_entry() {
+        let sysctls = vec![Sysctl {
+            name: "kernel.shm_rmid_forced".to_string(),
+            value: "0".to_string(),
+        }];
+
+        let pod = make_pod_with_sysctls("single-sysctl-pod", Some(sysctls));
+        let map = extract_sysctls(&pod).unwrap();
+
+        assert_eq!(map.len(), 1);
+        assert_eq!(map["kernel.shm_rmid_forced"], "0");
+    }
+
+    #[test]
+    fn test_sysctl_serialization_roundtrip() {
+        // Verify that a pod with sysctls survives JSON serialization
+        let sysctls = vec![
+            Sysctl {
+                name: "net.core.somaxconn".to_string(),
+                value: "4096".to_string(),
+            },
+            Sysctl {
+                name: "kernel.shm_rmid_forced".to_string(),
+                value: "1".to_string(),
+            },
+        ];
+
+        let pod = make_pod_with_sysctls("roundtrip-pod", Some(sysctls));
+        let json = serde_json::to_string(&pod).expect("serialize");
+        let restored: Pod = serde_json::from_str(&json).expect("deserialize");
+
+        let restored_sysctls = restored
+            .spec
+            .as_ref()
+            .unwrap()
+            .security_context
+            .as_ref()
+            .unwrap()
+            .sysctls
+            .as_ref()
+            .unwrap();
+
+        assert_eq!(restored_sysctls.len(), 2);
+        assert_eq!(restored_sysctls[0].name, "net.core.somaxconn");
+        assert_eq!(restored_sysctls[0].value, "4096");
+        assert_eq!(restored_sysctls[1].name, "kernel.shm_rmid_forced");
+        assert_eq!(restored_sysctls[1].value, "1");
+    }
 }

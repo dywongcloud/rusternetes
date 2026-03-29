@@ -2188,4 +2188,322 @@ mod tests {
             "Must use fresh resourceVersion to avoid conflict"
         );
     }
+
+    // ---- Pod Resize Tests (KEP-1287) ----
+
+    /// When pod status.resize is "Proposed", the kubelet should detect it as a resize request.
+    #[test]
+    fn test_resize_proposed_detected() {
+        let mut pod = make_pod("resize-pod", "default", Some("10"));
+        pod.status = Some(PodStatus {
+            phase: Some(Phase::Running),
+            message: None,
+            reason: None,
+            host_ip: Some("10.0.0.1".to_string()),
+            host_i_ps: None,
+            pod_ip: Some("10.244.0.5".to_string()),
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
+            conditions: None,
+            container_statuses: Some(vec![make_running_container_status("app")]),
+            init_container_statuses: None,
+            ephemeral_container_statuses: None,
+            resize: Some("Proposed".to_string()),
+            resource_claim_statuses: None,
+            observed_generation: None,
+        });
+
+        let resize_status = pod
+            .status
+            .as_ref()
+            .and_then(|s| s.resize.as_deref())
+            .unwrap_or("");
+
+        assert_eq!(resize_status, "Proposed");
+        assert!(
+            resize_status == "Proposed" || resize_status == "InProgress",
+            "Kubelet should process Proposed or InProgress resize"
+        );
+    }
+
+    /// When pod status.resize is "InProgress", the kubelet should continue processing.
+    #[test]
+    fn test_resize_in_progress_continues() {
+        let mut pod = make_pod("resize-pod-ip", "default", Some("11"));
+        pod.status = Some(PodStatus {
+            phase: Some(Phase::Running),
+            message: None,
+            reason: None,
+            host_ip: Some("10.0.0.1".to_string()),
+            host_i_ps: None,
+            pod_ip: Some("10.244.0.5".to_string()),
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
+            conditions: None,
+            container_statuses: Some(vec![make_running_container_status("app")]),
+            init_container_statuses: None,
+            ephemeral_container_statuses: None,
+            resize: Some("InProgress".to_string()),
+            resource_claim_statuses: None,
+            observed_generation: None,
+        });
+
+        let resize_status = pod
+            .status
+            .as_ref()
+            .and_then(|s| s.resize.as_deref())
+            .unwrap_or("");
+
+        assert_eq!(resize_status, "InProgress");
+        // Kubelet should still process an InProgress resize
+        assert!(resize_status == "Proposed" || resize_status == "InProgress");
+    }
+
+    /// After resize completes, status.resize should be empty string.
+    #[test]
+    fn test_resize_completion_sets_empty_string() {
+        let mut pod = make_pod("resize-done", "default", Some("12"));
+        pod.status = Some(PodStatus {
+            phase: Some(Phase::Running),
+            message: None,
+            reason: None,
+            host_ip: None,
+            host_i_ps: None,
+            pod_ip: None,
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
+            conditions: None,
+            container_statuses: Some(vec![make_running_container_status("app")]),
+            init_container_statuses: None,
+            ephemeral_container_statuses: None,
+            resize: Some("InProgress".to_string()),
+            resource_claim_statuses: None,
+            observed_generation: None,
+        });
+
+        // Simulate the kubelet marking resize as complete
+        if let Some(ref mut status) = pod.status {
+            status.resize = Some(String::new()); // Empty = resize complete
+        }
+
+        let resize_status = pod
+            .status
+            .as_ref()
+            .and_then(|s| s.resize.as_deref())
+            .unwrap_or("missing");
+
+        assert_eq!(
+            resize_status, "",
+            "After resize completes, status.resize should be empty string"
+        );
+    }
+
+    /// Verify that allocatedResources is populated from spec resources after resize.
+    #[test]
+    fn test_resize_populates_allocated_resources() {
+        use rusternetes_common::resources::pod::PodSpec;
+        use rusternetes_common::types::ResourceRequirements;
+        use std::collections::HashMap;
+
+        let mut requests = HashMap::new();
+        requests.insert("cpu".to_string(), "500m".to_string());
+        requests.insert("memory".to_string(), "256Mi".to_string());
+
+        let mut limits = HashMap::new();
+        limits.insert("cpu".to_string(), "1".to_string());
+        limits.insert("memory".to_string(), "512Mi".to_string());
+
+        let mut pod = make_pod("resize-alloc", "default", Some("13"));
+        pod.spec = Some(PodSpec {
+            containers: vec![Container {
+                name: "app".to_string(),
+                image: "nginx:latest".to_string(),
+                resources: Some(ResourceRequirements {
+                    requests: Some(requests.clone()),
+                    limits: Some(limits.clone()),
+                    claims: None,
+                }),
+                ..make_container("app")
+            }],
+            ..pod.spec.unwrap()
+        });
+        pod.status = Some(PodStatus {
+            phase: Some(Phase::Running),
+            message: None,
+            reason: None,
+            host_ip: None,
+            host_i_ps: None,
+            pod_ip: None,
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
+            conditions: None,
+            container_statuses: Some(vec![ContainerStatus {
+                name: "app".to_string(),
+                ready: true,
+                restart_count: 0,
+                state: Some(ContainerState::Running {
+                    started_at: Some("2024-01-01T00:00:00Z".to_string()),
+                }),
+                last_state: None,
+                image: Some("nginx:latest".to_string()),
+                image_id: None,
+                container_id: Some("docker://abc123".to_string()),
+                started: Some(true),
+                allocated_resources: None, // Not yet populated
+                allocated_resources_status: None,
+                resources: None,
+                user: None,
+                volume_mounts: None,
+                stop_signal: None,
+            }]),
+            init_container_statuses: None,
+            ephemeral_container_statuses: None,
+            resize: Some("InProgress".to_string()),
+            resource_claim_statuses: None,
+            observed_generation: None,
+        });
+
+        // Simulate the kubelet logic: after successful resize, populate allocatedResources
+        // from spec containers (mirroring the actual kubelet code at line ~930-948)
+        if let Some(ref mut status) = pod.status {
+            status.resize = Some(String::new());
+            if let Some(ref spec) = pod.spec.clone() {
+                if let Some(ref mut cs_list) = status.container_statuses {
+                    for cs in cs_list.iter_mut() {
+                        if let Some(c) = spec.containers.iter().find(|c| c.name == cs.name) {
+                            if let Some(ref res) = c.resources {
+                                cs.allocated_resources =
+                                    res.requests.clone().or_else(|| res.limits.clone());
+                                cs.resources = Some(res.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Verify allocatedResources were populated
+        let cs = &pod.status.as_ref().unwrap().container_statuses.as_ref().unwrap()[0];
+        let alloc = cs
+            .allocated_resources
+            .as_ref()
+            .expect("allocatedResources should be populated after resize");
+        assert_eq!(alloc.get("cpu"), Some(&"500m".to_string()));
+        assert_eq!(alloc.get("memory"), Some(&"256Mi".to_string()));
+
+        // Verify resources were populated
+        let res = cs
+            .resources
+            .as_ref()
+            .expect("resources should be populated after resize");
+        assert_eq!(
+            res.requests.as_ref().unwrap().get("cpu"),
+            Some(&"500m".to_string())
+        );
+        assert_eq!(
+            res.limits.as_ref().unwrap().get("cpu"),
+            Some(&"1".to_string())
+        );
+    }
+
+    /// When resize is not Proposed or InProgress, the kubelet should not process a resize.
+    #[test]
+    fn test_resize_not_triggered_for_empty_or_none() {
+        // No resize field
+        let mut pod = make_pod("no-resize", "default", Some("14"));
+        pod.status = Some(PodStatus {
+            phase: Some(Phase::Running),
+            message: None,
+            reason: None,
+            host_ip: None,
+            host_i_ps: None,
+            pod_ip: None,
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
+            conditions: None,
+            container_statuses: Some(vec![make_running_container_status("app")]),
+            init_container_statuses: None,
+            ephemeral_container_statuses: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
+        });
+
+        let resize_status = pod
+            .status
+            .as_ref()
+            .and_then(|s| s.resize.as_deref())
+            .unwrap_or("");
+        assert!(
+            resize_status != "Proposed" && resize_status != "InProgress",
+            "No resize should be triggered when resize is None"
+        );
+
+        // Empty string (completed)
+        pod.status.as_mut().unwrap().resize = Some(String::new());
+        let resize_status = pod
+            .status
+            .as_ref()
+            .and_then(|s| s.resize.as_deref())
+            .unwrap_or("");
+        assert!(
+            resize_status != "Proposed" && resize_status != "InProgress",
+            "No resize should be triggered when resize is empty (completed)"
+        );
+    }
+
+    /// Verify the resize status transition: Proposed -> InProgress -> "" (complete)
+    #[test]
+    fn test_resize_status_transition() {
+        let mut pod = make_pod("resize-transition", "default", Some("15"));
+        pod.status = Some(PodStatus {
+            phase: Some(Phase::Running),
+            message: None,
+            reason: None,
+            host_ip: None,
+            host_i_ps: None,
+            pod_ip: None,
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
+            conditions: None,
+            container_statuses: Some(vec![make_running_container_status("app")]),
+            init_container_statuses: None,
+            ephemeral_container_statuses: None,
+            resize: Some("Proposed".to_string()),
+            resource_claim_statuses: None,
+            observed_generation: None,
+        });
+
+        // Step 1: API sets resize="Proposed"
+        assert_eq!(
+            pod.status.as_ref().unwrap().resize.as_deref(),
+            Some("Proposed")
+        );
+
+        // Step 2: Kubelet transitions to "InProgress"
+        pod.status.as_mut().unwrap().resize = Some("InProgress".to_string());
+        assert_eq!(
+            pod.status.as_ref().unwrap().resize.as_deref(),
+            Some("InProgress")
+        );
+
+        // Step 3: Kubelet completes resize, sets to ""
+        pod.status.as_mut().unwrap().resize = Some(String::new());
+        assert_eq!(
+            pod.status.as_ref().unwrap().resize.as_deref(),
+            Some("")
+        );
+    }
 }

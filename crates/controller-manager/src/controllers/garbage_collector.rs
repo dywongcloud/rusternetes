@@ -291,12 +291,23 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         resources: &[ResourceInfo],
         _owner_map: &HashMap<String, Vec<String>>,
     ) -> Vec<ResourceInfo> {
-        // Only count resources that are NOT being deleted as "existing" owners.
-        // A resource with a deletion timestamp should not prevent its dependents
-        // from being garbage-collected.
+        // Count resources as "existing" if they are either:
+        // 1. Not being deleted, OR
+        // 2. Being deleted but have orphan/foreground finalizers (their dependents
+        //    are handled by process_deletion, not orphan deletion)
         let existing_uids: HashSet<_> = resources
             .iter()
-            .filter(|r| !r.metadata.is_being_deleted())
+            .filter(|r| {
+                if !r.metadata.is_being_deleted() {
+                    return true;
+                }
+                // Resources being deleted with orphan or foreground finalizers
+                // still "own" their dependents until the finalizer is processed
+                r.metadata.finalizers.as_ref().map_or(false, |f| {
+                    f.contains(&"orphan".to_string())
+                        || f.contains(&"foregroundDeletion".to_string())
+                })
+            })
             .map(|r| r.metadata.uid.as_str())
             .collect();
         let mut orphans = Vec::new();
