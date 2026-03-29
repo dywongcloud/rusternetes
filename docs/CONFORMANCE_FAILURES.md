@@ -1,8 +1,8 @@
 # Conformance Issue Tracker
 
-**Round 110** | IN PROGRESS | 336 fixes deployed
+**Round 110** | IN PROGRESS | 22/441 tests completed so far | 336 fixes deployed
 
-## Round 110 Live Failures (13 failures / 22 tests — 59% fail rate)
+## Round 110 Live Failures (13 failures, 9 passed — 22/441 tests completed, early in run)
 
 | # | File | Count | Error |
 |---|------|-------|-------|
@@ -38,6 +38,6 @@ The `exit status 1` errors come from kubectl applying YAML files. Our OpenAPI v3
 | 107 | 19 | ~430 | ~96% |
 | 108 | 178 | 441 | 60% |
 | 109 | 48* | 78* | 38%* |
-| 110 | 13 | 22 | 59% (in progress) |
+| 110 | 13 | 22/441 | in progress (early — hard tests run first) |
 
 *Round 109 incomplete
