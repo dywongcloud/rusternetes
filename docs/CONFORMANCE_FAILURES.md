@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 110** | IN PROGRESS | 214/441 tests | 139 passed, 75 failed (65% pass)
+**Round 110** | IN PROGRESS | 225/441 tests | 148 passed, 77 failed (65.8% pass)
 
 ## Round 110 Live Failures by Category
 
@@ -49,6 +49,6 @@
 | 107 | 19 | ~430 | ~96% |
 | 108 | 178 | 441 | 60% |
 | 109 | 48* | 78* | 38%* |
-| 110 | 75 | 214/441 | 65% pass (in progress) |
+| 110 | 77 | 225/441 | 66% pass (in progress, past halfway) |
 
 *Round 109 incomplete
