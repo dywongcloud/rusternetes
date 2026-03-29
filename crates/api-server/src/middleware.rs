@@ -143,96 +143,52 @@ pub async fn normalize_content_type_middleware(
                 if let Some(json) = extracted {
                     json
                 } else {
-                    // Extraction failed — scan for JSON object with balanced braces
-                    let mut found_json = None;
-                    for i in 0..body_bytes.len() {
-                        if body_bytes[i] == b'{' {
-                            let mut depth = 0i32;
-                            let mut in_string = false;
-                            let mut escape = false;
-                            for j in i..body_bytes.len() {
-                                if escape { escape = false; continue; }
-                                match body_bytes[j] {
-                                    b'\\' if in_string => escape = true,
-                                    b'"' => in_string = !in_string,
-                                    b'{' if !in_string => depth += 1,
-                                    b'}' if !in_string => {
-                                        depth -= 1;
-                                        if depth == 0 {
-                                            found_json = Some(body_bytes[i..=j].to_vec());
-                                            break;
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            if found_json.is_some() { break; }
-                            // Unbalanced — use from { to end
-                            found_json = Some(body_bytes[i..].to_vec());
-                            break;
-                        }
-                    }
-                    if let Some(json) = found_json {
-                        json
-                    } else {
-                        // No JSON found in protobuf body. Try to construct minimal JSON
-                        // from the TypeMeta fields embedded in the protobuf envelope.
-                        // The K8s Unknown message has field 1 = TypeMeta (apiVersion, kind).
-                        // Log details about the protobuf body for debugging
-                        let hex_preview: String = body_bytes.iter().skip(4).take(80)
-                            .map(|b| format!("{:02x}", b))
-                            .collect::<Vec<_>>()
-                            .join(" ");
-                        warn!("Protobuf body has no JSON payload ({} bytes). Hex after k8s\\0: {}", body_bytes.len(), hex_preview);
-                        // Try to decode native K8s protobuf into JSON.
-                        // The K8s protobuf Unknown message has:
-                        //   field 1 = TypeMeta (apiVersion, kind)
-                        //   field 2 = raw object bytes (also protobuf-encoded)
-                        // We extract string fields from the raw bytes to construct JSON.
-                        if let Some(json_bytes) = decode_k8s_protobuf_to_json(&body_bytes) {
-                            // Verify the decoded JSON is valid
-                            if serde_json::from_slice::<serde_json::Value>(&json_bytes).is_ok() {
-                                info!("Decoded K8s protobuf to JSON ({} bytes)", json_bytes.len());
-                                json_bytes
-                            } else {
-                                warn!("Decoded protobuf produced invalid JSON, falling back to TypeMeta");
-                                let type_meta = extract_type_meta_from_protobuf(&body_bytes);
-                                if let Some((av, k)) = type_meta {
-                                    format!(r#"{{"apiVersion":"{}","kind":"{}","metadata":{{}}}}"#, av, k).into_bytes()
-                                } else {
-                                    b"{}".to_vec()
-                                }
-                            }
+                    // Extraction failed — the `raw` field contains native protobuf, not JSON.
+                    // First try the structured protobuf-to-JSON decoder.
+                    // Then fall back to brace-scanning, but always validate the result.
+                    let hex_preview: String = body_bytes.iter().skip(4).take(80)
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    debug!("Protobuf body has no JSON in raw field ({} bytes). Hex after k8s\\0: {}", body_bytes.len(), hex_preview);
+
+                    // Try structured protobuf-to-JSON decoder first (handles CRDs, etc.)
+                    if let Some(json_bytes) = decode_k8s_protobuf_to_json(&body_bytes) {
+                        if serde_json::from_slice::<serde_json::Value>(&json_bytes).is_ok() {
+                            info!("Decoded K8s protobuf to JSON ({} bytes)", json_bytes.len());
+                            json_bytes
                         } else {
-                            // Last resort: extract TypeMeta only
-                            let type_meta = extract_type_meta_from_protobuf(&body_bytes);
-                            if let Some((api_version, kind)) = type_meta {
-                                let minimal = format!(
-                                    r#"{{"apiVersion":"{}","kind":"{}","metadata":{{}}}}"#,
-                                    api_version, kind
-                                );
-                                info!("Extracted TypeMeta from protobuf: apiVersion={}, kind={}", api_version, kind);
-                                minimal.into_bytes()
-                            } else {
-                                warn!("Could not extract TypeMeta from protobuf, using empty object");
-                                b"{}".to_vec()
-                            }
+                            warn!("Decoded protobuf produced invalid JSON, trying brace scan");
+                            // Fall through to brace scan below
+                            try_brace_scan_or_type_meta(&body_bytes)
                         }
+                    } else {
+                        // Structured decode failed — try brace scan, then TypeMeta
+                        try_brace_scan_or_type_meta(&body_bytes)
                     }
                 }
             } else if body_bytes.starts_with(b"{") || body_bytes.starts_with(b"[") {
                 // Already JSON despite protobuf Content-Type
                 body_bytes.to_vec()
             } else {
-                // Unknown binary format — try to find JSON, else empty object
-                let mut found = None;
+                // Unknown binary format — might be K8s protobuf without k8s\0 magic,
+                // or CBOR, or another encoding.
+                // Try brace scan but validate the result is actual JSON.
+                let mut found_valid = None;
                 for i in 0..body_bytes.len() {
                     if body_bytes[i] == b'{' {
-                        found = Some(body_bytes[i..].to_vec());
-                        break;
+                        // Try to extract a balanced JSON object
+                        let candidate = scan_balanced_braces(&body_bytes[i..]);
+                        if let Some(ref c) = candidate {
+                            if serde_json::from_slice::<serde_json::Value>(c).is_ok() {
+                                found_valid = Some(c.clone());
+                                break;
+                            }
+                        }
+                        // This `{` wasn't valid JSON start, try next one
                     }
                 }
-                found.unwrap_or_else(|| b"{}".to_vec())
+                found_valid.unwrap_or_else(|| b"{}".to_vec())
             };
 
             let mut new_request = Request::from_parts(parts, axum::body::Body::from(json_body));
@@ -416,29 +372,13 @@ fn extract_json_from_k8s_protobuf(data: &[u8]) -> Option<Vec<u8>> {
         }
     }
 
-    // Fallback: scan for the first JSON object in the data
+    // Fallback: scan for the first valid JSON object in the data
     for i in 0..data.len() {
         if data[i] == b'{' {
-            // Try to find matching closing brace
-            let mut depth = 0i32;
-            let mut in_string = false;
-            let mut escape = false;
-            for j in i..data.len() {
-                if escape {
-                    escape = false;
-                    continue;
-                }
-                match data[j] {
-                    b'\\' if in_string => escape = true,
-                    b'"' => in_string = !in_string,
-                    b'{' if !in_string => depth += 1,
-                    b'}' if !in_string => {
-                        depth -= 1;
-                        if depth == 0 {
-                            return Some(data[i..=j].to_vec());
-                        }
-                    }
-                    _ => {}
+            if let Some(candidate) = scan_balanced_braces(&data[i..]) {
+                // Only return if this is actually valid JSON, not binary garbage
+                if serde_json::from_slice::<serde_json::Value>(&candidate).is_ok() {
+                    return Some(candidate);
                 }
             }
         }
@@ -906,4 +846,330 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
     });
 
     Some(serde_json::to_vec(&json).ok()?)
+}
+
+/// Scan for a balanced JSON object starting from data[0] which must be `{`.
+/// Returns the balanced slice as a Vec, or None if unbalanced.
+fn scan_balanced_braces(data: &[u8]) -> Option<Vec<u8>> {
+    if data.is_empty() || data[0] != b'{' {
+        return None;
+    }
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for j in 0..data.len() {
+        if escape {
+            escape = false;
+            continue;
+        }
+        match data[j] {
+            b'\\' if in_string => escape = true,
+            b'"' => in_string = !in_string,
+            b'{' if !in_string => depth += 1,
+            b'}' if !in_string => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(data[..=j].to_vec());
+                }
+            }
+            _ => {}
+        }
+    }
+    // Unbalanced — return from { to end as a last resort
+    Some(data.to_vec())
+}
+
+/// Try brace-scanning to find embedded JSON in a protobuf body, validating the
+/// result with serde_json. If no valid JSON is found, fall back to extracting
+/// TypeMeta (apiVersion/kind) to construct a minimal JSON object.
+fn try_brace_scan_or_type_meta(body_bytes: &[u8]) -> Vec<u8> {
+    // Scan for a valid JSON object embedded in the binary data
+    let skip = if body_bytes.starts_with(b"k8s\0") { 4 } else { 0 };
+    for i in skip..body_bytes.len() {
+        if body_bytes[i] == b'{' {
+            if let Some(candidate) = scan_balanced_braces(&body_bytes[i..]) {
+                if serde_json::from_slice::<serde_json::Value>(&candidate).is_ok() {
+                    info!("Found valid JSON via brace scan at offset {} ({} bytes)", i, candidate.len());
+                    return candidate;
+                }
+            }
+            // This `{` wasn't valid JSON, try next occurrence
+        }
+    }
+
+    // No valid JSON found — extract TypeMeta to construct minimal JSON
+    let type_meta = extract_type_meta_from_protobuf(body_bytes);
+    if let Some((api_version, kind)) = type_meta {
+        let minimal = format!(
+            r#"{{"apiVersion":"{}","kind":"{}","metadata":{{}}}}"#,
+            api_version, kind
+        );
+        info!(
+            "Extracted TypeMeta from protobuf: apiVersion={}, kind={}",
+            api_version, kind
+        );
+        minimal.into_bytes()
+    } else {
+        warn!("Could not extract TypeMeta from protobuf, using empty object");
+        b"{}".to_vec()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scan_balanced_braces_valid_json() {
+        let data = br#"{"key":"value"}"#;
+        let result = scan_balanced_braces(data);
+        assert_eq!(result, Some(data.to_vec()));
+    }
+
+    #[test]
+    fn test_scan_balanced_braces_nested() {
+        let data = br#"{"a":{"b":"c"}}"#;
+        let result = scan_balanced_braces(data);
+        assert_eq!(result, Some(data.to_vec()));
+    }
+
+    #[test]
+    fn test_scan_balanced_braces_with_trailing() {
+        let data = br#"{"key":"value"}extra"#;
+        let result = scan_balanced_braces(data);
+        assert_eq!(result, Some(br#"{"key":"value"}"#.to_vec()));
+    }
+
+    #[test]
+    fn test_extract_json_from_k8s_protobuf_with_json_payload() {
+        // Construct a K8s protobuf envelope wrapping JSON in field 2
+        let json = br#"{"apiVersion":"v1","kind":"Pod"}"#;
+        let mut data = Vec::new();
+        data.extend_from_slice(b"k8s\0");
+        // Field 1 (TypeMeta) — empty for simplicity
+        data.push(0x0a); // field 1, wire type 2
+        data.push(0x00); // length 0
+        // Field 2 (raw) — contains the JSON
+        data.push(0x12); // field 2, wire type 2
+        data.push(json.len() as u8); // length
+        data.extend_from_slice(json);
+
+        let result = extract_json_from_k8s_protobuf(&data);
+        assert!(result.is_some());
+        let extracted = result.unwrap();
+        assert_eq!(extracted, json.to_vec());
+    }
+
+    #[test]
+    fn test_extract_json_from_k8s_protobuf_with_native_protobuf() {
+        // Construct a K8s protobuf envelope where field 2 contains native protobuf (not JSON)
+        let native_pb = &[0x0a, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f]; // field 1, string "hello"
+        let mut data = Vec::new();
+        data.extend_from_slice(b"k8s\0");
+        // Field 1 (TypeMeta) — empty
+        data.push(0x0a); // field 1, wire type 2
+        data.push(0x00); // length 0
+        // Field 2 (raw) — native protobuf, not JSON
+        data.push(0x12); // field 2, wire type 2
+        data.push(native_pb.len() as u8);
+        data.extend_from_slice(native_pb);
+
+        let result = extract_json_from_k8s_protobuf(&data);
+        // Should return None because field 2 doesn't start with { or [
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_try_brace_scan_validates_json() {
+        // Binary data with a `{` byte that isn't valid JSON
+        let mut data = Vec::new();
+        data.extend_from_slice(b"k8s\0");
+        // Some binary with a { byte followed by non-JSON
+        data.push(0x0a);
+        data.push(b'{');
+        data.push(0x05);
+        data.push(b'}');
+        // The brace scan would find {0x05} which is balanced but not valid JSON
+        let result = try_brace_scan_or_type_meta(&data);
+        // Should fall through to TypeMeta extraction or empty object, not return {0x05}
+        // Since there's no valid TypeMeta, we get empty object
+        assert_eq!(result, b"{}".to_vec());
+    }
+
+    #[test]
+    fn test_try_brace_scan_finds_embedded_json() {
+        // Binary prefix followed by actual JSON
+        let mut data = Vec::new();
+        data.extend_from_slice(b"k8s\0");
+        data.extend_from_slice(&[0x0a, 0x10, 0x12]); // some protobuf prefix
+        data.extend_from_slice(br#"{"apiVersion":"v1"}"#);
+
+        let result = try_brace_scan_or_type_meta(&data);
+        assert_eq!(result, br#"{"apiVersion":"v1"}"#.to_vec());
+    }
+
+    #[test]
+    fn test_extract_type_meta_from_protobuf() {
+        // Build a protobuf with TypeMeta containing apiVersion and kind
+        let mut type_meta = Vec::new();
+        // field 1 = apiVersion = "apiextensions.k8s.io/v1"
+        let av = b"apiextensions.k8s.io/v1";
+        type_meta.push(0x0a); // field 1, wire type 2
+        type_meta.push(av.len() as u8);
+        type_meta.extend_from_slice(av);
+        // field 2 = kind = "CustomResourceDefinition"
+        let kind = b"CustomResourceDefinition";
+        type_meta.push(0x12); // field 2, wire type 2
+        type_meta.push(kind.len() as u8);
+        type_meta.extend_from_slice(kind);
+
+        let mut data = Vec::new();
+        data.extend_from_slice(b"k8s\0");
+        data.push(0x0a); // field 1, wire type 2 (TypeMeta wrapper)
+        data.push(type_meta.len() as u8);
+        data.extend_from_slice(&type_meta);
+
+        let result = extract_type_meta_from_protobuf(&data);
+        assert!(result.is_some());
+        let (api_v, k) = result.unwrap();
+        assert_eq!(api_v, "apiextensions.k8s.io/v1");
+        assert_eq!(k, "CustomResourceDefinition");
+    }
+
+    #[test]
+    fn test_decode_k8s_protobuf_to_json_crd() {
+        // Build a realistic CRD protobuf message
+        // TypeMeta: apiVersion="apiextensions.k8s.io/v1", kind="CustomResourceDefinition"
+        let mut type_meta = Vec::new();
+        let av = b"apiextensions.k8s.io/v1";
+        type_meta.push(0x0a);
+        type_meta.push(av.len() as u8);
+        type_meta.extend_from_slice(av);
+        let kind_str = b"CustomResourceDefinition";
+        type_meta.push(0x12);
+        type_meta.push(kind_str.len() as u8);
+        type_meta.extend_from_slice(kind_str);
+
+        // Build raw object (CRD body):
+        // Field 1 = ObjectMeta with name = "foos.example.com"
+        let mut obj_meta = Vec::new();
+        let name = b"foos.example.com";
+        obj_meta.push(0x0a); // field 1, wire type 2
+        obj_meta.push(name.len() as u8);
+        obj_meta.extend_from_slice(name);
+
+        // Field 2 = CRDSpec
+        let mut crd_spec = Vec::new();
+        // spec.group = "example.com" (field 1)
+        let group = b"example.com";
+        crd_spec.push(0x0a);
+        crd_spec.push(group.len() as u8);
+        crd_spec.extend_from_slice(group);
+        // spec.names (field 3) — submessage
+        let mut names_msg = Vec::new();
+        let plural = b"foos";
+        names_msg.push(0x0a); // field 1 = plural
+        names_msg.push(plural.len() as u8);
+        names_msg.extend_from_slice(plural);
+        let singular = b"foo";
+        names_msg.push(0x12); // field 2 = singular
+        names_msg.push(singular.len() as u8);
+        names_msg.extend_from_slice(singular);
+        let kind_name = b"Foo";
+        names_msg.push(0x22); // field 4 = kind
+        names_msg.push(kind_name.len() as u8);
+        names_msg.extend_from_slice(kind_name);
+        crd_spec.push(0x1a); // field 3, wire type 2
+        crd_spec.push(names_msg.len() as u8);
+        crd_spec.extend_from_slice(&names_msg);
+        // spec.scope = "Namespaced" (field 4)
+        let scope = b"Namespaced";
+        crd_spec.push(0x22); // field 4, wire type 2
+        crd_spec.push(scope.len() as u8);
+        crd_spec.extend_from_slice(scope);
+        // spec.versions (field 7) — one version "v1"
+        let mut ver_msg = Vec::new();
+        let ver_name = b"v1";
+        ver_msg.push(0x0a); // field 1 = name
+        ver_msg.push(ver_name.len() as u8);
+        ver_msg.extend_from_slice(ver_name);
+        crd_spec.push(0x3a); // field 7, wire type 2
+        crd_spec.push(ver_msg.len() as u8);
+        crd_spec.extend_from_slice(&ver_msg);
+
+        // Assemble raw object: field 1 = ObjectMeta, field 2 = CRDSpec
+        let mut raw = Vec::new();
+        raw.push(0x0a); // field 1, wire type 2
+        raw.push(obj_meta.len() as u8);
+        raw.extend_from_slice(&obj_meta);
+        raw.push(0x12); // field 2, wire type 2
+        raw.push(crd_spec.len() as u8);
+        raw.extend_from_slice(&crd_spec);
+
+        // Assemble Unknown message: field 1 = TypeMeta, field 2 = raw
+        let mut unknown = Vec::new();
+        unknown.extend_from_slice(b"k8s\0");
+        unknown.push(0x0a); // field 1 = TypeMeta
+        unknown.push(type_meta.len() as u8);
+        unknown.extend_from_slice(&type_meta);
+        unknown.push(0x12); // field 2 = raw
+        unknown.push(raw.len() as u8);
+        unknown.extend_from_slice(&raw);
+
+        let result = decode_k8s_protobuf_to_json(&unknown);
+        assert!(result.is_some(), "decode_k8s_protobuf_to_json returned None");
+        let json_bytes = result.unwrap();
+        let val: serde_json::Value = serde_json::from_slice(&json_bytes)
+            .expect("decoded protobuf should produce valid JSON");
+        assert_eq!(val["apiVersion"], "apiextensions.k8s.io/v1");
+        assert_eq!(val["kind"], "CustomResourceDefinition");
+        assert_eq!(val["metadata"]["name"], "foos.example.com");
+        assert_eq!(val["spec"]["group"], "example.com");
+        assert_eq!(val["spec"]["names"]["plural"], "foos");
+        assert_eq!(val["spec"]["names"]["kind"], "Foo");
+        assert_eq!(val["spec"]["scope"], "Namespaced");
+    }
+
+    #[test]
+    fn test_binary_body_with_false_brace_not_treated_as_json() {
+        // Simulate a protobuf body that contains 0x7b ({) and 0x7d (}) as part of
+        // binary data but isn't valid JSON. The middleware should NOT pass this
+        // through as-is.
+        let mut data = Vec::new();
+        data.extend_from_slice(b"k8s\0");
+        // TypeMeta
+        let mut type_meta = Vec::new();
+        let av = b"apiextensions.k8s.io/v1";
+        type_meta.push(0x0a);
+        type_meta.push(av.len() as u8);
+        type_meta.extend_from_slice(av);
+        let kind_str = b"CustomResourceDefinition";
+        type_meta.push(0x12);
+        type_meta.push(kind_str.len() as u8);
+        type_meta.extend_from_slice(kind_str);
+        data.push(0x0a);
+        data.push(type_meta.len() as u8);
+        data.extend_from_slice(&type_meta);
+        // Field 2 = raw bytes that happen to contain { and } but aren't JSON
+        let fake_raw: Vec<u8> = vec![0x0a, 0x03, b'{', 0x05, b'}', 0x12, 0x01, 0x00];
+        data.push(0x12);
+        data.push(fake_raw.len() as u8);
+        data.extend_from_slice(&fake_raw);
+
+        // extract_json_from_k8s_protobuf should NOT return the {0x05} garbage
+        let extracted = extract_json_from_k8s_protobuf(&data);
+        if let Some(ref e) = extracted {
+            // If it did extract something, it must be valid JSON
+            assert!(
+                serde_json::from_slice::<serde_json::Value>(e).is_ok(),
+                "extract_json_from_k8s_protobuf returned invalid JSON: {:?}",
+                e
+            );
+        }
+
+        // try_brace_scan_or_type_meta should produce valid JSON (TypeMeta fallback)
+        let result = try_brace_scan_or_type_meta(&data);
+        let parsed = serde_json::from_slice::<serde_json::Value>(&result);
+        assert!(parsed.is_ok(), "try_brace_scan_or_type_meta produced invalid JSON: {:?}", String::from_utf8_lossy(&result));
+    }
 }
