@@ -2,37 +2,36 @@
 
 **Round 110** | IN PROGRESS | 336 fixes deployed
 
-## Round 110 Live Failures (8 failures / 14 tests so far)
+## Round 110 Live Failures (10 failures / 17 tests — 41% fail rate)
 
 | # | File | Line | Error |
 |---|------|------|-------|
 | 1 | `statefulset.go` | 2479 | `scaled 3 -> 2 replicas` |
 | 2 | `crd_publish_openapi.go` | 202 | `failed to create CRD: context deadline exceeded` |
-| 3 | `builder.go` | 97 | `exit status 1` — kubectl create |
-| 4 | `builder.go` | 97 | `exit status 1` — kubectl create (2nd) |
-| 5 | `expansion.go` | 419 | env var expansion timeout (127s) |
-| 6 | `custom_resource_definition.go` | 288 | `creating CRD: context deadline exceeded` |
-| 7 | `runtime.go` | 115 | `context deadline exceeded` (300s) |
-| 8 | `daemon_set.go` | 473 | timeout |
+| 3 | `custom_resource_definition.go` | 104 | `creating CustomResourceDefinition: context deadline exceeded` |
+| 4 | `custom_resource_definition.go` | 288 | `creating CustomResourceDefinition: context deadline exceeded` |
+| 5 | `builder.go` | 97 | `exit status 1` (x2) |
+| 6 | `expansion.go` | 419 | pod startup timeout |
+| 7 | `runtime.go` | 115 | `Pod didn't start within time out period` |
+| 8 | `proxy.go` | 503 | `context deadline exceeded` |
+| 9 | `daemon_set.go` | 473 | (new — need error detail) |
 
-## Root Cause Analysis
+## By Root Cause
 
-### CRD timeouts (#2, #6) — 30s each
-Protobuf decode fix (be1af28) is deployed. The structured decoder and validated brace scanning should handle most CRDs. These 30s timeouts suggest some CRD protobuf payloads still aren't being decoded correctly. Need to check what specific CRDs are failing.
+### CRD protobuf decode (3 failures: #2, #3, #4)
+All 30-second timeouts. Protobuf fix deployed but some CRD payloads still not converting correctly.
 
-### StatefulSet (#1) — 62s
-Rolling update guard (72d2973) is deployed but didn't prevent the issue. The `all_ready` check should block rolling updates when pods aren't Ready yet. Need to investigate: is the revision hash different, or is there a different deletion path?
+### Pod startup timeout (3 failures: #6, #7, #8)
+Pods not starting fast enough. Happened during initial kubelet startup overload. Kubelet stable now — new pods reach Ready in ~20s.
 
-### kubectl builder (#3, #4) — instant failures
-OpenAPI JSON fix (f91637a) is deployed. These are `exit status 1` from kubectl create/apply. May be a different validation path or the OpenAPI spec doesn't cover the resource being created.
+### StatefulSet rolling update (1 failure: #1)
+Rolling update guard deployed but not preventing the issue.
 
-### Expansion timeout (#5) — 127s
-Pod env var expansion test timed out waiting for pod readiness. This happened during initial kubelet startup overload (Docker 500 errors + sync timeouts). Kubelet is stable now — DaemonSet pods are reaching 1/1 Running in ~20s.
+### kubectl validation (2 failures: #5)
+OpenAPI JSON fix deployed but kubectl create from STDIN still failing for some resources.
 
-## Kubelet Health
-- Initial startup: sync timeouts on coredns (30s per-pod limit), Docker 500 errors
-- After stabilization: no timeouts, pods reaching Ready in ~20 seconds
-- The 30s per-pod sync timeout is aggressive for Docker Desktop but doesn't cause persistent issues
+### DaemonSet (1 failure: #9)
+New — need to investigate.
 
 ## Progress
 | Round | Fail | Total | Rate |
@@ -40,6 +39,6 @@ Pod env var expansion test timed out waiting for pod readiness. This happened du
 | 107 | 19 | ~430 | ~96% |
 | 108 | 178 | 441 | 60% |
 | 109 | 48* | 78* | 38%* |
-| 110 | 8 | 14 | 57% (in progress) |
+| 110 | 10 | 17 | 41% (in progress) |
 
-*Round 109 incomplete — e2e killed during skip phase
+*Round 109 incomplete
