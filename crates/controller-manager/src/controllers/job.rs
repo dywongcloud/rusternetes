@@ -640,21 +640,31 @@ impl<S: Storage> JobController<S> {
                 }
             }
 
-            // Update status
-            job.status = Some(JobStatus {
-                active: Some(active),
-                succeeded: Some(succeeded),
-                failed: Some(failed),
-                conditions: None,
-                start_time,
-                completion_time: None,
-                ready: None,
-                terminating: None,
-                completed_indexes: completed_indexes.clone(),
-                failed_indexes: failed_indexes.clone(),
-                uncounted_terminated_pods: None,
-                observed_generation: job.metadata.generation,
-            });
+            // Update status — but preserve conditions and completion_time if job
+            // was already completed (e.g. by SuccessPolicy). Otherwise the regular
+            // update path overwrites the completion status.
+            let existing_conditions = job.status.as_ref().and_then(|s| s.conditions.clone());
+            let existing_completion = job.status.as_ref().and_then(|s| s.completion_time);
+            let already_complete = existing_conditions.as_ref()
+                .map(|c| c.iter().any(|cond| cond.condition_type == "Complete" && cond.status == "True"))
+                .unwrap_or(false);
+
+            if !already_complete {
+                job.status = Some(JobStatus {
+                    active: Some(active),
+                    succeeded: Some(succeeded),
+                    failed: Some(failed),
+                    conditions: existing_conditions,
+                    start_time,
+                    completion_time: existing_completion,
+                    ready: None,
+                    terminating: None,
+                    completed_indexes: completed_indexes.clone(),
+                    failed_indexes: failed_indexes.clone(),
+                    uncounted_terminated_pods: None,
+                    observed_generation: job.metadata.generation,
+                });
+            }
         }
 
         // Save updated status
