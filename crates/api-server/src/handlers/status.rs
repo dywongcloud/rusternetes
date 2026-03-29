@@ -385,6 +385,7 @@ pub async fn get_cluster_status(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use serde_json::json;
 
     #[test]
@@ -438,5 +439,104 @@ mod tests {
                 assert_eq!(version_num + 1, 101);
             }
         }
+    }
+
+    #[test]
+    fn test_resource_type_to_kind_api_version_core() {
+        let (kind, api) = resource_type_to_kind_api_version("pods");
+        assert_eq!(kind, "Pod");
+        assert_eq!(api, "v1");
+
+        let (kind, api) = resource_type_to_kind_api_version("services");
+        assert_eq!(kind, "Service");
+        assert_eq!(api, "v1");
+
+        let (kind, api) = resource_type_to_kind_api_version("namespaces");
+        assert_eq!(kind, "Namespace");
+        assert_eq!(api, "v1");
+
+        let (kind, api) = resource_type_to_kind_api_version("nodes");
+        assert_eq!(kind, "Node");
+        assert_eq!(api, "v1");
+
+        let (kind, api) = resource_type_to_kind_api_version("configmaps");
+        assert_eq!(kind, "ConfigMap");
+        assert_eq!(api, "v1");
+
+        let (kind, api) = resource_type_to_kind_api_version("replicationcontrollers");
+        assert_eq!(kind, "ReplicationController");
+        assert_eq!(api, "v1");
+
+        let (kind, api) = resource_type_to_kind_api_version("resourcequotas");
+        assert_eq!(kind, "ResourceQuota");
+        assert_eq!(api, "v1");
+    }
+
+    #[test]
+    fn test_resource_type_to_kind_api_version_apps() {
+        let (kind, api) = resource_type_to_kind_api_version("deployments");
+        assert_eq!(kind, "Deployment");
+        assert_eq!(api, "apps/v1");
+
+        let (kind, api) = resource_type_to_kind_api_version("replicasets");
+        assert_eq!(kind, "ReplicaSet");
+        assert_eq!(api, "apps/v1");
+
+        let (kind, api) = resource_type_to_kind_api_version("statefulsets");
+        assert_eq!(kind, "StatefulSet");
+        assert_eq!(api, "apps/v1");
+
+        let (kind, api) = resource_type_to_kind_api_version("daemonsets");
+        assert_eq!(kind, "DaemonSet");
+        assert_eq!(api, "apps/v1");
+    }
+
+    #[test]
+    fn test_resource_type_to_kind_api_version_batch() {
+        let (kind, api) = resource_type_to_kind_api_version("jobs");
+        assert_eq!(kind, "Job");
+        assert_eq!(api, "batch/v1");
+
+        let (kind, api) = resource_type_to_kind_api_version("cronjobs");
+        assert_eq!(kind, "CronJob");
+        assert_eq!(api, "batch/v1");
+    }
+
+    #[test]
+    fn test_resource_type_to_kind_api_version_extensions() {
+        let (kind, api) = resource_type_to_kind_api_version("customresourcedefinitions");
+        assert_eq!(kind, "CustomResourceDefinition");
+        assert_eq!(api, "apiextensions.k8s.io/v1");
+
+        let (kind, api) = resource_type_to_kind_api_version("endpointslices");
+        assert_eq!(kind, "EndpointSlice");
+        assert_eq!(api, "discovery.k8s.io/v1");
+    }
+
+    #[test]
+    fn test_resource_type_to_kind_api_version_fallback() {
+        // Unknown resource types use CamelCase heuristic
+        let (kind, api) = resource_type_to_kind_api_version("widgets");
+        assert_eq!(kind, "Widget");
+        assert_eq!(api, "v1");
+    }
+
+    #[test]
+    fn test_extract_resource_type_from_uri() {
+        // Namespaced: /api/v1/namespaces/{ns}/{resource}/{name}/status
+        let uri: Uri = "/api/v1/namespaces/default/pods/my-pod/status".parse().unwrap();
+        assert_eq!(extract_resource_type_from_uri(&uri), "pods");
+
+        // Cluster-scoped: /api/v1/namespaces/{name}/status
+        let uri: Uri = "/api/v1/namespaces/kube-system/status".parse().unwrap();
+        assert_eq!(extract_resource_type_from_uri(&uri), "namespaces");
+
+        // Cluster-scoped: /api/v1/nodes/{name}/status
+        let uri: Uri = "/api/v1/nodes/node-1/status".parse().unwrap();
+        assert_eq!(extract_resource_type_from_uri(&uri), "nodes");
+
+        // Apps group: /apis/apps/v1/namespaces/{ns}/deployments/{name}/status
+        let uri: Uri = "/apis/apps/v1/namespaces/default/deployments/my-deploy/status".parse().unwrap();
+        assert_eq!(extract_resource_type_from_uri(&uri), "deployments");
     }
 }

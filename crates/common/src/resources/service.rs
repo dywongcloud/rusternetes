@@ -351,4 +351,65 @@ mod tests {
         let json = serde_json::to_string(&svc).unwrap();
         assert!(json.contains("\"timeoutSeconds\":10800"));
     }
+
+    #[test]
+    fn test_service_spec_default() {
+        // ServiceSpec should have a Default impl
+        let spec = ServiceSpec::default();
+        assert!(spec.selector.is_none());
+        assert!(spec.ports.is_empty());
+        assert!(spec.service_type.is_none());
+        assert!(spec.cluster_ip.is_none());
+    }
+
+    #[test]
+    fn test_service_deserialize_without_selector() {
+        // A Service JSON without selector should deserialize correctly
+        let json = r#"{
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {"name": "test"},
+            "spec": {"ports": []}
+        }"#;
+        let svc: Service = serde_json::from_str(json).unwrap();
+        assert!(svc.spec.selector.is_none());
+    }
+
+    #[test]
+    fn test_service_deserialize_without_spec() {
+        // A Service JSON without spec should deserialize (uses Default)
+        let json = r#"{
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {"name": "test"}
+        }"#;
+        let svc: Service = serde_json::from_str(json).unwrap();
+        assert!(svc.spec.selector.is_none());
+        assert!(svc.spec.ports.is_empty());
+    }
+
+    #[test]
+    fn test_service_selector_none_serialization() {
+        // When selector is None, it should be omitted from JSON
+        let spec = ServiceSpec {
+            selector: None,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        assert!(!json.contains("selector"));
+    }
+
+    #[test]
+    fn test_service_selector_some_serialization() {
+        // When selector has values, it should be included
+        let mut sel = HashMap::new();
+        sel.insert("app".to_string(), "web".to_string());
+        let spec = ServiceSpec {
+            selector: Some(sel),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        assert!(json.contains("\"selector\""));
+        assert!(json.contains("\"app\":\"web\""));
+    }
 }

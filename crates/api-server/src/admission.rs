@@ -925,3 +925,150 @@ pub async fn check_count_quota<S: Storage>(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusternetes_common::types::ObjectMeta;
+
+    fn make_pod(name: &str, cpu_request: Option<&str>, cpu_limit: Option<&str>) -> Pod {
+        let mut resources = serde_json::Map::new();
+        if let Some(cpu) = cpu_request {
+            resources.insert("requests".to_string(), serde_json::json!({"cpu": cpu}));
+        }
+        if let Some(cpu) = cpu_limit {
+            resources.insert("limits".to_string(), serde_json::json!({"cpu": cpu}));
+        }
+        let resources_json = if resources.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::Value::Object(resources)
+        };
+        let pod_json = serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {"name": name},
+            "spec": {
+                "containers": [{
+                    "name": "main",
+                    "image": "busybox",
+                    "resources": resources_json
+                }]
+            }
+        });
+        serde_json::from_value(pod_json).unwrap()
+    }
+
+    #[test]
+    fn test_is_pod_best_effort_no_resources() {
+        let pod = make_pod("test", None, None);
+        assert!(is_pod_best_effort(&pod));
+    }
+
+    #[test]
+    fn test_is_pod_best_effort_with_requests() {
+        let pod = make_pod("test", Some("100m"), None);
+        assert!(!is_pod_best_effort(&pod));
+    }
+
+    #[test]
+    fn test_is_pod_best_effort_with_limits() {
+        let pod = make_pod("test", None, Some("200m"));
+        assert!(!is_pod_best_effort(&pod));
+    }
+
+    #[test]
+    fn test_pod_matches_quota_scopes_no_scopes() {
+        let pod = make_pod("test", Some("100m"), None);
+        let quota = ResourceQuota {
+            type_meta: rusternetes_common::types::TypeMeta {
+                api_version: "v1".to_string(),
+                kind: "ResourceQuota".to_string(),
+            },
+            metadata: ObjectMeta::new("quota"),
+            spec: rusternetes_common::resources::ResourceQuotaSpec {
+                hard: None,
+                scopes: None,
+                scope_selector: None,
+            },
+            status: None,
+        };
+        assert!(pod_matches_quota_scopes(&pod, &quota));
+    }
+
+    #[test]
+    fn test_pod_matches_quota_scopes_best_effort_match() {
+        let pod = make_pod("be", None, None);
+        let quota = ResourceQuota {
+            type_meta: rusternetes_common::types::TypeMeta {
+                api_version: "v1".to_string(),
+                kind: "ResourceQuota".to_string(),
+            },
+            metadata: ObjectMeta::new("quota"),
+            spec: rusternetes_common::resources::ResourceQuotaSpec {
+                hard: None,
+                scopes: Some(vec!["BestEffort".to_string()]),
+                scope_selector: None,
+            },
+            status: None,
+        };
+        assert!(pod_matches_quota_scopes(&pod, &quota));
+    }
+
+    #[test]
+    fn test_pod_matches_quota_scopes_best_effort_no_match() {
+        let pod = make_pod("not-be", Some("100m"), None);
+        let quota = ResourceQuota {
+            type_meta: rusternetes_common::types::TypeMeta {
+                api_version: "v1".to_string(),
+                kind: "ResourceQuota".to_string(),
+            },
+            metadata: ObjectMeta::new("quota"),
+            spec: rusternetes_common::resources::ResourceQuotaSpec {
+                hard: None,
+                scopes: Some(vec!["BestEffort".to_string()]),
+                scope_selector: None,
+            },
+            status: None,
+        };
+        assert!(!pod_matches_quota_scopes(&pod, &quota));
+    }
+
+    #[test]
+    fn test_pod_matches_quota_scopes_not_terminating() {
+        let pod = make_pod("test", Some("100m"), None);
+        let quota = ResourceQuota {
+            type_meta: rusternetes_common::types::TypeMeta {
+                api_version: "v1".to_string(),
+                kind: "ResourceQuota".to_string(),
+            },
+            metadata: ObjectMeta::new("quota"),
+            spec: rusternetes_common::resources::ResourceQuotaSpec {
+                hard: None,
+                scopes: Some(vec!["NotTerminating".to_string()]),
+                scope_selector: None,
+            },
+            status: None,
+        };
+        // Pod without activeDeadlineSeconds is NotTerminating
+        assert!(pod_matches_quota_scopes(&pod, &quota));
+    }
+
+    #[test]
+    fn test_parse_cpu_to_millicores_various() {
+        assert_eq!(parse_cpu_to_millicores("100m").unwrap(), 100);
+        assert_eq!(parse_cpu_to_millicores("1").unwrap(), 1000);
+        assert_eq!(parse_cpu_to_millicores("0.5").unwrap(), 500);
+        assert_eq!(parse_cpu_to_millicores("250m").unwrap(), 250);
+        assert_eq!(parse_cpu_to_millicores("2").unwrap(), 2000);
+    }
+
+    #[test]
+    fn test_parse_memory_to_bytes_various() {
+        assert_eq!(parse_memory_to_bytes("0").unwrap(), 0);
+        assert_eq!(parse_memory_to_bytes("1024").unwrap(), 1024);
+        assert_eq!(parse_memory_to_bytes("1Ki").unwrap(), 1024);
+        assert_eq!(parse_memory_to_bytes("1Mi").unwrap(), 1024 * 1024);
+        assert_eq!(parse_memory_to_bytes("1Gi").unwrap(), 1024 * 1024 * 1024);
+    }
+}
