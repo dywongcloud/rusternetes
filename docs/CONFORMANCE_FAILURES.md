@@ -52,12 +52,13 @@ Fix: Same as #6 — pod PATCH handler shared by ephemeral containers endpoint.
 |------|------|
 | `ephemeral_containers.go` | 80 |
 
-### 8. Job SuccessPolicy (3 failures)
+### 8. Job SuccessPolicy (3 failures) — FIXED (4f60d58)
+Fix: Job controller now preserves completion status from SuccessPolicy instead of overwriting on next reconcile.
 | File | Line | Error |
 |------|------|-------|
-| `job.go` | 514 | Expected 0, got non-zero |
-| `job.go` | 553 | Expected 0, got non-zero |
-| `job.go` | 974 | context deadline exceeded |
+| `job.go` | 514 | Expected 0, got nil — regular update wiped SuccessPolicy status |
+| `job.go` | 553 | Same root cause |
+| `job.go` | 974 | context deadline exceeded — cascading from status not set |
 
 ### 9. Aggregated discovery (2 failures) — FIXED (f5241df)
 Fix: q-value preference parsing for Accept header. Returns aggregated when q-value is higher.
