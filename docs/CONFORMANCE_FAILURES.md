@@ -33,20 +33,25 @@
 | RC watch | 1 | fba0a62 | Watch condition event |
 | Pod client | 1 | 7d40469 | Ephemeral PATCH content-type |
 
-## Failures NOT Fixed (need code changes) (~15)
+## Failures NOT Fixed (need code changes) (~9)
 
 | Category | Count | Error | Status |
 |----------|-------|-------|--------|
-| Preemption | 4 | Scheduler doesn't preempt — nodes have infinite capacity | Need resource tracking in scheduler |
 | Runtime status | 2 | Container termination message wrong channel | Need SPDY channel fix |
-| ControllerRevision | 1 | Expected 3 revisions, got 1 | DaemonSet revision tracking |
-| DaemonSet status | 1 | Status field missing | DaemonSet numberReady |
 | VAP marker | 1 | Policy didn't deny request | VAP evaluation at admission time |
 | Volume perms | 2 | Expected "0" in output | emptyDir permission/mount issue |
 | Expansion | 1 | Pod env var | Downward API expansion |
-| Kubelet status | 1 | Pod status timeout | Kubelet sync |
 | Exec | 1 | Exec command failed | Container exec issue |
 | Pods SPDY | 1 | Channel 3 before channel 1 | WebSocket protocol |
+| DaemonSet status | 1 | Status field missing | DaemonSet numberReady |
+
+## Recently Fixed
+| Category | Commit | Fix |
+|----------|--------|-----|
+| Preemption (4) | 2f1d98d | Scheduler tracks per-node resource usage |
+| ControllerRevision (1) | a6a254f | Incremented revision numbers + SHA-256 |
+| Webhook panic (2) | 7d58174 | catch_unwind for CEL parser |
+| StatefulSet revision (4) | 78c79bb | SHA-256 deterministic hashing |
 
 ## Timeout Failures (~24) — caused by pods not becoming Ready fast enough
 
