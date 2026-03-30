@@ -3,7 +3,7 @@ use rusternetes_common::resources::{EndpointSlice, Endpoints, Service, ServiceTy
 use rusternetes_storage::{etcd::EtcdStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::iptables::IptablesManager;
 
@@ -171,6 +171,15 @@ impl KubeProxy {
         // Check session affinity
         let use_session_affinity = service.spec.session_affinity.as_deref() == Some("ClientIP");
 
+        // Get session affinity timeout (default 10800 seconds = 3 hours, per K8s spec)
+        let affinity_timeout = service
+            .spec
+            .session_affinity_config
+            .as_ref()
+            .and_then(|c| c.client_ip.as_ref())
+            .and_then(|c| c.timeout_seconds)
+            .unwrap_or(10800);
+
         // Process each service port
         for service_port in &service.spec.ports {
             let protocol = service_port.protocol.as_deref().unwrap_or("TCP");
@@ -196,6 +205,7 @@ impl KubeProxy {
                     &endpoints_with_port,
                     protocol,
                     use_session_affinity,
+                    affinity_timeout,
                 )?;
             }
 
@@ -205,8 +215,13 @@ impl KubeProxy {
                 ServiceType::NodePort | ServiceType::LoadBalancer
             ) {
                 if let Some(node_port) = service_port.node_port {
-                    self.iptables
-                        .add_nodeport_rules(node_port, &endpoints_with_port, protocol)?;
+                    self.iptables.add_nodeport_rules(
+                        node_port,
+                        &endpoints_with_port,
+                        protocol,
+                        use_session_affinity,
+                        affinity_timeout,
+                    )?;
                 }
             }
         }
