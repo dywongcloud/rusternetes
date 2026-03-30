@@ -15,9 +15,25 @@ All previous conformance fixes deployed — see git log for full list. Key fixes
 - EmptyDir bind mount revert (add9c7d)
 - kube-proxy sync 5s + session affinity DNAT fixes (a37b4c3 + 80d5fb8)
 
-## Round 113 Failures
+## Round 113 Failures (36/441 = 55.6%, 20 passed, 16 failed)
 
-(monitoring — no results yet, tests initializing)
+### Timeouts (6)
+- StatefulSet scaling, InitContainer RestartAlways, Webhook timeout, RC scale, Preemption disruption, Service ClusterIP→ExternalName
+
+### Code Bugs Found and Fixed
+| Bug | Fix | Commit |
+|-----|-----|--------|
+| Volume files invisible in containers (virtiofs cache) | sync() after volume creation | 00fafbb |
+| DaemonSet template hash non-deterministic | Value normalization | fb12f97 |
+
+### Code Bugs Still Under Investigation
+| Bug | Error |
+|-----|-------|
+| Pod InPlace Resize | Resize state verification |
+| PriorityClass endpoints | Value mismatch (stale data?) |
+| Deployment proportional scaling | RS never reached replicas |
+| EmptyDir (root,0666,tmpfs) | File permissions wrong |
+| Downward API volume DefaultMode | File mode wrong |
 
 ## Progress
 | Round | Fail | Total | Rate |
