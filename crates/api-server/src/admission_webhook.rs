@@ -863,6 +863,28 @@ impl<S: Storage> AdmissionWebhookManager<S> {
             });
             let _ = context.add_json_variable("request", &request_val);
 
+            // Add namespaceObject — the Namespace object for the request's namespace.
+            // K8s conformance tests use expressions like `namespaceObject.metadata.name`.
+            if let Some(ns) = namespace {
+                if !ns.is_empty() {
+                    let ns_key = format!("/registry/namespaces/{}", ns);
+                    if let Ok(ns_val) = self.storage.get::<serde_json::Value>(&ns_key).await {
+                        let _ = context.add_json_variable("namespaceObject", &serde_json::to_value(&ns_val).unwrap_or(serde_json::Value::Null));
+                    } else {
+                        // If namespace not found in storage, provide a minimal object
+                        // so that expressions like namespaceObject.metadata.name don't error.
+                        let minimal_ns = serde_json::json!({
+                            "apiVersion": "v1",
+                            "kind": "Namespace",
+                            "metadata": {
+                                "name": ns,
+                            }
+                        });
+                        let _ = context.add_json_variable("namespaceObject", &minimal_ns);
+                    }
+                }
+            }
+
             // Evaluate spec.variables, building a "variables" Map for CEL access.
             // CEL expressions reference variables as `variables.NAME`, which means
             // "variables" must be a Map variable in the CEL context.
@@ -1865,5 +1887,218 @@ mod tests {
             &Operation::Create, &gvk, Some(&cm), None, Some("configmaps"), Some("default"),
         ).await;
         assert!(result.is_ok(), "Should pass with Ignore failure policy on CEL error");
+    }
+
+    /// Reproduces the K8s conformance test "should allow expressions to refer variables".
+    /// The policy defines:
+    ///   variables: [{name: "replicas", expression: "object.spec.replicas"},
+    ///               {name: "oddReplicas", expression: "variables.replicas % 2 == 1"}]
+    ///   validations: [{expression: "variables.replicas > 1"},
+    ///                 {expression: "variables.oddReplicas"}]
+    #[tokio::test]
+    async fn test_vap_variables_refer_conformance() {
+        let storage = Arc::new(MemoryStorage::new());
+        let manager = AdmissionWebhookManager::new(storage.clone());
+
+        let policy = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicy",
+            "metadata": {"name": "var-refer-policy"},
+            "spec": {
+                "matchConstraints": {
+                    "resourceRules": [{
+                        "apiGroups": ["apps"],
+                        "apiVersions": ["v1"],
+                        "resources": ["deployments"],
+                        "operations": ["CREATE"],
+                    }]
+                },
+                "variables": [
+                    {"name": "replicas", "expression": "object.spec.replicas"},
+                    {"name": "oddReplicas", "expression": "variables.replicas % 2 == 1"},
+                ],
+                "validations": [
+                    {"expression": "variables.replicas > 1"},
+                    {"expression": "variables.oddReplicas"},
+                ]
+            }
+        });
+
+        let policy_key = "/registry/validatingadmissionpolicies/var-refer-policy";
+        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+
+        let binding = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicyBinding",
+            "metadata": {"name": "var-refer-binding"},
+            "spec": {
+                "policyName": "var-refer-policy",
+                "validationActions": ["Deny"],
+            }
+        });
+        let binding_key = "/registry/validatingadmissionpolicybindings/var-refer-binding";
+        storage.create::<serde_json::Value>(binding_key, &binding).await.unwrap();
+
+        let gvk = GroupVersionKind {
+            group: "apps".to_string(),
+            version: "v1".to_string(),
+            kind: "Deployment".to_string(),
+        };
+
+        // 1-replica deployment should be denied (replicas > 1 fails)
+        let deploy_1 = json!({
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "marker", "namespace": "default"},
+            "spec": {
+                "replicas": 1,
+                "selector": {"matchLabels": {"app": "test"}},
+                "template": {
+                    "metadata": {"labels": {"app": "test"}},
+                    "spec": {"containers": [{"name": "c", "image": "nginx"}]}
+                }
+            }
+        });
+        let result = manager.run_validating_admission_policies_ext(
+            &Operation::Create, &gvk, Some(&deploy_1), None, Some("deployments"), Some("default"),
+        ).await;
+        assert!(result.is_err(), "1-replica deployment should be denied");
+
+        // 3-replica deployment should be allowed (replicas > 1 AND oddReplicas both true)
+        let deploy_3 = json!({
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "replicated", "namespace": "default"},
+            "spec": {
+                "replicas": 3,
+                "selector": {"matchLabels": {"app": "test"}},
+                "template": {
+                    "metadata": {"labels": {"app": "test"}},
+                    "spec": {"containers": [{"name": "c", "image": "nginx"}]}
+                }
+            }
+        });
+        let result = manager.run_validating_admission_policies_ext(
+            &Operation::Create, &gvk, Some(&deploy_3), None, Some("deployments"), Some("default"),
+        ).await;
+        assert!(result.is_ok(), "3-replica deployment should be allowed: {:?}", result.err());
+
+        // ReplicaSet should NOT be matched (policy targets deployments only)
+        let rs_gvk = GroupVersionKind {
+            group: "apps".to_string(),
+            version: "v1".to_string(),
+            kind: "ReplicaSet".to_string(),
+        };
+        let rs = json!({
+            "apiVersion": "apps/v1",
+            "kind": "ReplicaSet",
+            "metadata": {"name": "test-rs", "namespace": "default"},
+            "spec": {"replicas": 1}
+        });
+        let result = manager.run_validating_admission_policies_ext(
+            &Operation::Create, &rs_gvk, Some(&rs), None, Some("replicasets"), Some("default"),
+        ).await;
+        assert!(result.is_ok(), "ReplicaSet should not be matched by deployment policy");
+    }
+
+    /// Reproduces the K8s conformance test "should validate against a Deployment".
+    /// The policy uses namespaceObject.metadata.name in a validation expression.
+    #[tokio::test]
+    async fn test_vap_validate_deployment_with_namespace_object() {
+        let storage = Arc::new(MemoryStorage::new());
+        let manager = AdmissionWebhookManager::new(storage.clone());
+
+        let ns_name = "test-ns-unique";
+
+        // Create the namespace in storage so namespaceObject can be loaded
+        let namespace_obj = json!({
+            "apiVersion": "v1",
+            "kind": "Namespace",
+            "metadata": {
+                "name": ns_name,
+                "labels": {ns_name: "true"},
+            }
+        });
+        let ns_key = format!("/registry/namespaces/{}", ns_name);
+        storage.create::<serde_json::Value>(&ns_key, &namespace_obj).await.unwrap();
+
+        let policy = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicy",
+            "metadata": {"name": "deploy-ns-policy"},
+            "spec": {
+                "matchConstraints": {
+                    "resourceRules": [{
+                        "apiGroups": ["apps"],
+                        "apiVersions": ["v1"],
+                        "resources": ["deployments"],
+                        "operations": ["CREATE"],
+                    }]
+                },
+                "validations": [
+                    {"expression": "object.spec.replicas > 1", "messageExpression": "'wants replicas > 1, got ' + string(object.spec.replicas)"},
+                    {"expression": format!("namespaceObject.metadata.name == '{}'", ns_name), "message": "Wrong namespace"},
+                ]
+            }
+        });
+
+        let policy_key = "/registry/validatingadmissionpolicies/deploy-ns-policy";
+        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+
+        let binding = json!({
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicyBinding",
+            "metadata": {"name": "deploy-ns-binding"},
+            "spec": {
+                "policyName": "deploy-ns-policy",
+                "validationActions": ["Deny"],
+            }
+        });
+        let binding_key = "/registry/validatingadmissionpolicybindings/deploy-ns-binding";
+        storage.create::<serde_json::Value>(binding_key, &binding).await.unwrap();
+
+        let gvk = GroupVersionKind {
+            group: "apps".to_string(),
+            version: "v1".to_string(),
+            kind: "Deployment".to_string(),
+        };
+
+        // 1-replica deployment: denied (fails replicas > 1)
+        let deploy_1 = json!({
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "marker", "namespace": ns_name},
+            "spec": {
+                "replicas": 1,
+                "selector": {"matchLabels": {"app": "test"}},
+                "template": {
+                    "metadata": {"labels": {"app": "test"}},
+                    "spec": {"containers": [{"name": "c", "image": "nginx"}]}
+                }
+            }
+        });
+        let result = manager.run_validating_admission_policies_ext(
+            &Operation::Create, &gvk, Some(&deploy_1), None, Some("deployments"), Some(ns_name),
+        ).await;
+        assert!(result.is_err(), "1-replica deployment should be denied");
+
+        // 2-replica deployment in correct namespace: allowed
+        let deploy_2 = json!({
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "replicated", "namespace": ns_name},
+            "spec": {
+                "replicas": 2,
+                "selector": {"matchLabels": {"app": "test"}},
+                "template": {
+                    "metadata": {"labels": {"app": "test"}},
+                    "spec": {"containers": [{"name": "c", "image": "nginx"}]}
+                }
+            }
+        });
+        let result = manager.run_validating_admission_policies_ext(
+            &Operation::Create, &gvk, Some(&deploy_2), None, Some("deployments"), Some(ns_name),
+        ).await;
+        assert!(result.is_ok(), "2-replica deployment in correct namespace should be allowed: {:?}", result.err());
     }
 }
