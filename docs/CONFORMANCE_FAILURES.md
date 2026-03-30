@@ -7,7 +7,7 @@
 | Category | Count | Commit | Fix |
 |----------|-------|--------|-----|
 | kubectl create -f stdin | 8 | 5da5f98 | Protobuf envelope wrapping for OpenAPI |
-| Session affinity / svc routing | 5 | 80d5fb8 | Reduce kube-proxy sync interval 30s→5s |
+| Session affinity / svc routing | 5 | a37b4c3 + 80d5fb8 | Fix DNAT rules, SEP cleanup, NodePort affinity, sync 5s |
 | Pod resize PATCH | 4 | 7d40469 | X-Original-Content-Type header for PATCH |
 | StatefulSet canary/rollback | 3 | 0591bb2 | Revision tracking during rolling updates |
 | Webhook CEL panic | 2 | 7d58174 | catch_unwind for CEL parser panics |
