@@ -23,17 +23,19 @@ All previous conformance fixes deployed — see git log for full list. Key fixes
 ### Code Bugs Found and Fixed
 | Bug | Fix | Commit |
 |-----|-----|--------|
+| Pod logs returning synthetic fake output | Delay container cleanup 5 min | 7676966 |
 | Volume files invisible in containers (virtiofs cache) | sync() after volume creation | 00fafbb |
 | DaemonSet template hash non-deterministic | Value normalization | fb12f97 |
 
-### Code Bugs Still Under Investigation
+The fake logs fix addresses 8 failures: ConfigMap/Secret/Projected volume content, env vars, file modes, Downward API modes — all were returning "Container starting" fake output instead of real mounttest output.
+
+### Remaining Code Bugs
 | Bug | Error |
 |-----|-------|
-| Pod InPlace Resize | Resize state verification |
-| PriorityClass endpoints | Value mismatch (stale data?) |
+| Pod InPlace Resize | Resize state verification (complex) |
+| PriorityClass endpoints | Value mismatch (stale cluster data) |
 | Deployment proportional scaling | RS never reached replicas |
-| EmptyDir (root,0666,tmpfs) | File permissions wrong |
-| Downward API volume DefaultMode | File mode wrong |
+| StatefulSet rolling updates | Revision tracking |
 
 ## Progress
 | Round | Fail | Total | Rate |
