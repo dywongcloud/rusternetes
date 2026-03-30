@@ -15,6 +15,7 @@ pub struct TokenReview {
     pub api_version: String,
     #[serde(default = "default_kind_token_review")]
     pub kind: String,
+    #[serde(default)]
     pub metadata: ObjectMeta,
     pub spec: TokenReviewSpec,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -171,9 +172,13 @@ pub struct BoundObjectReference {
 #[serde(rename_all = "camelCase")]
 pub struct TokenRequestStatus {
     /// ExpirationTimestamp is the time of expiration of the returned token.
+    /// Go's metav1.Time serializes as null for the zero value, so we must
+    /// accept null gracefully during deserialization.
+    #[serde(default, deserialize_with = "crate::deserialize_null_default")]
     pub expiration_timestamp: String,
 
     /// Token is the opaque bearer token.
+    #[serde(default, deserialize_with = "crate::deserialize_null_default")]
     pub token: String,
 }
 
@@ -189,6 +194,7 @@ pub struct SelfSubjectReview {
     pub api_version: String,
     #[serde(default = "default_kind_self_subject_review")]
     pub kind: String,
+    #[serde(default)]
     pub metadata: ObjectMeta,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<SelfSubjectReviewStatus>,
@@ -319,6 +325,71 @@ mod tests {
 
         let token_request: TokenRequest = serde_json::from_str(json).unwrap();
         assert_eq!(token_request.spec.audiences.len(), 0);
+    }
+
+    #[test]
+    fn test_token_request_deserialization_go_style_null_status() {
+        // Go's encoding/json serializes zero-valued TokenRequestStatus as:
+        //   "status": {"token": "", "expirationTimestamp": null}
+        // because metav1.Time marshals to null for the zero time.
+        // Our deserialization must handle this without error.
+        let json = r#"{
+            "apiVersion": "authentication.k8s.io/v1",
+            "kind": "TokenRequest",
+            "metadata": {"creationTimestamp": null},
+            "spec": {
+                "audiences": ["https://kubernetes.default.svc"],
+                "expirationSeconds": 3607
+            },
+            "status": {
+                "token": "",
+                "expirationTimestamp": null
+            }
+        }"#;
+
+        let token_request: TokenRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(token_request.api_version, "authentication.k8s.io/v1");
+        assert_eq!(token_request.kind, "TokenRequest");
+        assert_eq!(
+            token_request.spec.audiences,
+            vec!["https://kubernetes.default.svc"]
+        );
+        assert_eq!(token_request.spec.expiration_seconds, Some(3607));
+        // Status should be Some with default/empty values for null fields
+        let status = token_request.status.unwrap();
+        assert_eq!(status.token, "");
+        assert_eq!(status.expiration_timestamp, "");
+    }
+
+    #[test]
+    fn test_token_request_deserialization_with_bound_object_ref() {
+        // The conformance test sends a TokenRequest with a boundObjectRef to a Pod.
+        // This must deserialize correctly so the handler can set pod binding info.
+        let json = r#"{
+            "apiVersion": "authentication.k8s.io/v1",
+            "kind": "TokenRequest",
+            "metadata": {"creationTimestamp": null},
+            "spec": {
+                "audiences": ["https://kubernetes.default.svc"],
+                "expirationSeconds": 600,
+                "boundObjectRef": {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "name": "pod-test-123",
+                    "uid": "pod-uid-456"
+                }
+            },
+            "status": {
+                "token": "",
+                "expirationTimestamp": null
+            }
+        }"#;
+
+        let token_request: TokenRequest = serde_json::from_str(json).unwrap();
+        let bound_ref = token_request.spec.bound_object_ref.unwrap();
+        assert_eq!(bound_ref.kind.as_deref(), Some("Pod"));
+        assert_eq!(bound_ref.name.as_deref(), Some("pod-test-123"));
+        assert_eq!(bound_ref.uid.as_deref(), Some("pod-uid-456"));
     }
 
     #[test]
