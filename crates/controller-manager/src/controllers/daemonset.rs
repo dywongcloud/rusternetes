@@ -115,7 +115,9 @@ impl<S: Storage> DaemonSetController<S> {
             let existing_revisions: Vec<ControllerRevision> = self.storage.list(&cr_prefix).await.unwrap_or_default();
             let max_revision = existing_revisions.iter()
                 .filter(|r| r.metadata.owner_references.as_ref()
-                    .map(|refs| refs.iter().any(|ref_| ref_.uid == daemonset.metadata.uid))
+                    .map(|refs| refs.iter().any(|ref_| {
+                        ref_.uid == daemonset.metadata.uid || ref_.name == daemonset.metadata.name
+                    }))
                     .unwrap_or(false))
                 .map(|r| r.revision)
                 .max()
