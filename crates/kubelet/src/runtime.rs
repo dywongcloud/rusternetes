@@ -1055,9 +1055,6 @@ impl ContainerRuntime {
             use std::os::unix::fs::PermissionsExt;
             for (_name, path) in &volume_paths {
                 // Skip Docker named volumes (they're not local paths)
-                if path.starts_with("docker-vol::") {
-                    continue;
-                }
                 // Recursively chown to fsGroup and chmod g+rwx
                 if let Ok(entries) = std::fs::read_dir(path) {
                     for entry in entries.flatten() {
@@ -1430,45 +1427,20 @@ impl ContainerRuntime {
         let pod_name = &pod.metadata.name;
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
 
-        // EmptyDir: create a Docker named volume for proper POSIX permission support.
-        // Docker Desktop uses virtiofs for bind mounts, which doesn't properly support
-        // chmod. Docker named volumes use the local driver (ext4 inside the VM), which
-        // supports full POSIX permissions including chmod 0777.
+        // EmptyDir: create a temporary directory with mode 0777
         if volume.empty_dir.is_some() {
-            let is_memory_medium = volume.empty_dir.as_ref()
-                .and_then(|ed| ed.medium.as_deref())
-                .map(|m| m == "Memory")
-                .unwrap_or(false);
-
-            if is_memory_medium {
-                // Memory-backed emptyDir: will use tmpfs mount directly on the container.
-                // Create a host directory as a fallback path (not actually used for tmpfs).
-                let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
-                std::fs::create_dir_all(&volume_dir).context("Failed to create emptyDir volume")?;
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::set_permissions(
-                        &volume_dir,
-                        std::fs::Permissions::from_mode(0o777),
-                    )?;
-                }
-                info!("Created emptyDir (Memory) volume {} at {}", volume.name, volume_dir);
-                return Ok(volume_dir);
-            } else {
-                // Default medium: create a Docker named volume for proper chmod support.
-                let docker_vol_name = format!("rusternetes-emptydir-{}-{}", pod_name, volume.name);
-                let create_opts = bollard::volume::CreateVolumeOptions {
-                    name: docker_vol_name.clone(),
-                    driver: "local".to_string(),
-                    ..Default::default()
-                };
-                self.docker.create_volume(create_opts).await
-                    .with_context(|| format!("Failed to create Docker volume for emptyDir {}", volume.name))?;
-                info!("Created Docker volume {} for emptyDir {}", docker_vol_name, volume.name);
-                // Return a sentinel path that start_container will recognize as a Docker volume
-                return Ok(format!("docker-vol::{}", docker_vol_name));
+            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+            std::fs::create_dir_all(&volume_dir).context("Failed to create emptyDir volume")?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    &volume_dir,
+                    std::fs::Permissions::from_mode(0o777),
+                )?;
             }
+            info!("Created emptyDir volume {} at {}", volume.name, volume_dir);
+            return Ok(volume_dir);
         }
 
         // HostPath: use the specified host path
@@ -2873,23 +2845,7 @@ impl ContainerRuntime {
                 if let Some(host_path) = volume_paths.get(&mount.name) {
                     let read_only = mount.read_only.unwrap_or(false);
 
-                    // Check if this is a Docker named volume (emptyDir with default medium)
-                    if let Some(docker_vol_name) = host_path.strip_prefix("docker-vol::") {
-                        // Use Docker named volume mount for proper POSIX permission support.
-                        // Docker named volumes use the local driver (ext4 inside the VM),
-                        // which supports full chmod unlike virtiofs bind mounts.
-                        docker_vol_mounts.push(bollard::models::Mount {
-                            target: Some(mount.mount_path.clone()),
-                            source: Some(docker_vol_name.to_string()),
-                            typ: Some(bollard::models::MountTypeEnum::VOLUME),
-                            read_only: Some(read_only),
-                            ..Default::default()
-                        });
-                        info!(
-                            "Mounting Docker volume {} at {} in container {}",
-                            docker_vol_name, mount.mount_path, container.name
-                        );
-                    } else {
+                    {
                         // Determine the effective host path, applying validated sub_path
                         let effective_host_path = if let Some(ref sub) = expanded_sub_path {
                             let full = format!("{}/{}", host_path, sub);
