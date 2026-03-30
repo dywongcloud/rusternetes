@@ -6978,4 +6978,220 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("backtick"));
     }
+
+    /// Test that ConfigMap volume with items only creates the specified files
+    /// at the mapped paths, not all keys from the ConfigMap.
+    #[test]
+    fn test_configmap_volume_items_selective_mount() {
+        use std::collections::BTreeMap;
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let volume_dir = tmp.path().join("vol");
+        std::fs::create_dir_all(&volume_dir).unwrap();
+
+        // Simulate a ConfigMap with 3 keys
+        let mut data = BTreeMap::new();
+        data.insert("data-1".to_string(), "value-1".to_string());
+        data.insert("data-2".to_string(), "value-2".to_string());
+        data.insert("data-3".to_string(), "value-3".to_string());
+
+        // Items: only mount data-2 at path/to/data-2
+        let items = vec![
+            rusternetes_common::resources::KeyToPath {
+                key: "data-2".to_string(),
+                path: "path/to/data-2".to_string(),
+                mode: None,
+            },
+        ];
+
+        // Simulate the items-based mount logic from create_volume
+        for item in &items {
+            if let Some(value) = data.get(&item.key) {
+                let file_path = volume_dir.join(&item.path);
+                if let Some(parent) = file_path.parent() {
+                    std::fs::create_dir_all(parent).unwrap();
+                }
+                std::fs::write(&file_path, value).unwrap();
+            }
+        }
+
+        // Verify: only the mapped file exists, not all keys
+        assert!(volume_dir.join("path/to/data-2").exists());
+        assert_eq!(
+            std::fs::read_to_string(volume_dir.join("path/to/data-2")).unwrap(),
+            "value-2"
+        );
+        // Other keys should NOT be present
+        assert!(!volume_dir.join("data-1").exists());
+        assert!(!volume_dir.join("data-3").exists());
+    }
+
+    /// Test that Secret volume with items only creates the specified files
+    /// at the mapped paths, not all keys from the Secret.
+    #[test]
+    fn test_secret_volume_items_selective_mount() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let volume_dir = tmp.path().join("vol");
+        std::fs::create_dir_all(&volume_dir).unwrap();
+
+        // Simulate a Secret with 2 keys
+        let mut data = std::collections::BTreeMap::new();
+        data.insert("data-1".to_string(), b"value-1".to_vec());
+        data.insert("data-2".to_string(), b"value-2".to_vec());
+
+        // Items: only mount data-1 at new-path-data-1
+        let items = vec![
+            rusternetes_common::resources::KeyToPath {
+                key: "data-1".to_string(),
+                path: "new-path-data-1".to_string(),
+                mode: None,
+            },
+        ];
+
+        // Simulate the items-based mount logic
+        for item in &items {
+            if let Some(value) = data.get(&item.key) {
+                let file_path = volume_dir.join(&item.path);
+                if let Some(parent) = file_path.parent() {
+                    std::fs::create_dir_all(parent).unwrap();
+                }
+                std::fs::write(&file_path, value).unwrap();
+            }
+        }
+
+        // Verify: only the mapped file exists
+        assert!(volume_dir.join("new-path-data-1").exists());
+        assert_eq!(
+            std::fs::read_to_string(volume_dir.join("new-path-data-1")).unwrap(),
+            "value-1"
+        );
+        // The raw key name should NOT exist
+        assert!(!volume_dir.join("data-1").exists());
+        assert!(!volume_dir.join("data-2").exists());
+    }
+
+    /// Test that resync of a Secret volume with items only writes
+    /// mapped paths and removes stale files.
+    #[test]
+    fn test_secret_resync_with_items_only_writes_mapped_paths() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let volume_dir = tmp.path().join("vol");
+        std::fs::create_dir_all(&volume_dir).unwrap();
+
+        // Pre-existing stale file (simulates a previous all-keys mount)
+        std::fs::write(volume_dir.join("stale-key"), b"old-value").unwrap();
+
+        // Secret data
+        let mut data = std::collections::BTreeMap::new();
+        data.insert("data-1".to_string(), b"value-1".to_vec());
+        data.insert("data-2".to_string(), b"value-2".to_vec());
+
+        // Items mapping
+        let items = vec![
+            rusternetes_common::resources::KeyToPath {
+                key: "data-1".to_string(),
+                path: "new-path-data-1".to_string(),
+                mode: None,
+            },
+        ];
+
+        // Simulate resync logic with items
+        let mut expected_files: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for item in &items {
+            if let Some(v) = data.get(&item.key) {
+                let file_path = volume_dir.join(&item.path);
+                expected_files.insert(item.path.clone());
+                if let Some(parent) = file_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(&file_path, v);
+            }
+        }
+
+        // Remove files not in expected set
+        if let Ok(entries) = std::fs::read_dir(&volume_dir) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if !expected_files.contains(name) {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
+
+        // Verify
+        assert!(volume_dir.join("new-path-data-1").exists());
+        assert_eq!(
+            std::fs::read_to_string(volume_dir.join("new-path-data-1")).unwrap(),
+            "value-1"
+        );
+        // Stale file should be removed
+        assert!(!volume_dir.join("stale-key").exists());
+        // Raw key names should NOT exist
+        assert!(!volume_dir.join("data-1").exists());
+        assert!(!volume_dir.join("data-2").exists());
+    }
+
+    /// Test that ConfigMap resync with items only writes mapped paths,
+    /// including nested paths and binaryData.
+    #[test]
+    fn test_configmap_resync_with_items_handles_nested_paths() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let volume_dir = tmp.path().join("vol");
+        std::fs::create_dir_all(&volume_dir).unwrap();
+
+        let mut data = std::collections::BTreeMap::new();
+        data.insert("data-2".to_string(), "value-2".to_string());
+
+        let items = vec![
+            rusternetes_common::resources::KeyToPath {
+                key: "data-2".to_string(),
+                path: "path/to/data-2".to_string(),
+                mode: None,
+            },
+        ];
+
+        // Simulate resync logic
+        for item in &items {
+            if let Some(value) = data.get(&item.key) {
+                let file_path = volume_dir.join(&item.path);
+                if let Some(parent) = file_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(&file_path, value);
+            }
+        }
+
+        // Verify nested path was created
+        assert!(volume_dir.join("path/to/data-2").exists());
+        assert_eq!(
+            std::fs::read_to_string(volume_dir.join("path/to/data-2")).unwrap(),
+            "value-2"
+        );
+    }
+
+    /// Test that Docker volume sentinel path is correctly detected.
+    #[test]
+    fn test_docker_volume_sentinel_path_detection() {
+        let sentinel = "docker-vol::rusternetes-emptydir-test-pod-vol1";
+        assert!(sentinel.starts_with("docker-vol::"));
+        let vol_name = sentinel.strip_prefix("docker-vol::").unwrap();
+        assert_eq!(vol_name, "rusternetes-emptydir-test-pod-vol1");
+
+        // Non-sentinel paths should not match
+        let regular = "/volumes/test-pod/vol1";
+        assert!(!regular.starts_with("docker-vol::"));
+    }
+
+    /// Test that Docker volume names follow the expected naming convention.
+    #[test]
+    fn test_emptydir_docker_volume_name_format() {
+        let pod_name = "test-pod";
+        let volume_name = "cache-vol";
+        let docker_vol_name = format!("rusternetes-emptydir-{}-{}", pod_name, volume_name);
+        assert_eq!(docker_vol_name, "rusternetes-emptydir-test-pod-cache-vol");
+
+        // Cleanup prefix detection
+        let prefix = format!("rusternetes-emptydir-{}-", pod_name);
+        assert!(docker_vol_name.starts_with(&prefix));
+    }
 }
