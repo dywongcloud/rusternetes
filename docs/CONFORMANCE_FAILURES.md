@@ -2,7 +2,7 @@
 
 **Round 110** | COMPLETE | 441/441 tests | 283 passed, 158 failed (64.2% pass)
 
-## Non-Timeout Failures with Committed Fixes (~77)
+## Non-Timeout Failures with Committed Fixes (~80)
 
 | Category | Count | Commit | Fix |
 |----------|-------|--------|-----|
@@ -19,6 +19,7 @@
 | Variable expansion subpath | 2 | c6dc16e | Backtick before expansion, component ".." |
 | SA TokenReview + pod extra | 2 | 44e23e0 | Handle Go-style null in TokenRequest |
 | Deployment rolling update | 1 | 27bb5f4 | SHA-256 pod-template-hash (not DefaultHasher) |
+| Deployment rollover | 1 | fa1908f | Scale down old RSes only when new RS available |
 | StatefulSet patch image | 1 | 0591bb2 | Revision hash comparison after patch |
 | StatefulSet scaling | 1 | 0591bb2 | Deterministic hash prevents spurious deletes |
 | Job backoffLimitPerIndex | 1 | 0591bb2 | Per-index failure tracking |
@@ -48,6 +49,7 @@
 | DaemonSet numberReady | 1 | 3efd08d | Count Ready condition, not Running phase |
 | DaemonSet rolling update | 1 | 5452f2c | Delete pods with old template hash |
 | ControllerRevision num | 1 | a6a254f | Incremented revision numbers |
+| ControllerRevision lifecycle | 1 | 2bf9592 | Match owner by name for max revision |
 | VAP binding delay | 1 | 8bcfeb2 | Remove 2-second age delay |
 | Pod generation | 1 | 172ffa3 | Bump generation on graceful delete |
 | RuntimeClass overhead | 1 | 172ffa3 | Inject overhead from RuntimeClass |
@@ -59,25 +61,24 @@
 | NoExecute taint eviction | 1 | 55c1e5a | tolerationSeconds expiry support |
 | SA OIDC discovery | 1 | b07715d | OIDC discovery endpoints |
 | CSIStorageCapacity | 1 | ba1c0d6 | Watch support for CSI list endpoint |
+| kubectl proxy | 1 | 3953ad1 | Content-Length header on /api response |
 
-## Non-Timeout Failures NOT Yet Fixed (~5)
+## Non-Timeout Failures NOT Yet Fixed (0 code bugs)
 
-| Category | Count | Error | Root Cause | Why Hard |
-|----------|------|-------|------------|----------|
-| Deployment rollover | 1 | "0 pods available" | Controller doesn't handle mid-rollout spec changes fast enough | maxSurge/maxUnavailable logic with multiple concurrent RS generations |
-| ControllerRevision lifecycle | 1 | "revision 1 expected 3" | DaemonSet controller's reconcile cycle races with test's manual update | Inherent poll-based controller timing; test modifies resources controller also manages |
-| kubectl proxy | 1 | "unexpected end of JSON" | kubectl proxy can't parse chunked API responses | Need Content-Length headers or HTTP/1.0 non-chunked response mode |
-| PriorityClass endpoints | 1 | "10 != 1" | Stale cluster-scoped PriorityClasses from previous conformance runs | Not a code bug — clean redeploy resolves |
-| Aggregator | 1 | "extension apiserver" | Test deploys a Deployment that doesn't become Ready in time | Actually a timeout — Docker Desktop latency |
+All non-timeout code bugs have been fixed. Remaining failures are:
+- **PriorityClass endpoints** (1): Stale cluster-scoped resources from prior runs. Resolved by clean redeploy.
+- **Aggregator** (1): Actually a timeout — sample API server deployment doesn't become Ready fast enough on Docker Desktop.
 
-## Not Code Bugs (~82)
+## Not Code Bugs (~84)
 
 | Category | Count | Notes |
 |----------|-------|-------|
 | Timeout failures | 79 | Docker Desktop latency — pods take 2-10s to Ready |
+| Aggregator timeout | 1 | Sample API server deployment timeout |
+| PriorityClass stale | 1 | Stale resources from prior conformance run |
 | /etc/hosts managed | 1 | Docker overrides /etc/hosts in container:pause mode |
-| emptyDir shared volume | 1 | Docker bind mount path visibility across container:pause containers |
-| DaemonSet rollback | 1 | Timeout (was miscategorized as code bug) |
+| emptyDir shared volume | 1 | Docker bind mount path visibility |
+| DaemonSet rollback | 1 | Timeout (was miscategorized) |
 
 ## Progress
 | Round | Fail | Total | Rate |
