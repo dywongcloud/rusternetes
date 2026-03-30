@@ -1054,6 +1054,10 @@ impl ContainerRuntime {
         {
             use std::os::unix::fs::PermissionsExt;
             for (_name, path) in &volume_paths {
+                // Skip Docker named volumes (they're not local paths)
+                if path.starts_with("docker-vol::") {
+                    continue;
+                }
                 // Recursively chown to fsGroup and chmod g+rwx
                 if let Ok(entries) = std::fs::read_dir(path) {
                     for entry in entries.flatten() {
@@ -1062,9 +1066,9 @@ impl ContainerRuntime {
                         let _ = std::process::Command::new("chown")
                             .args(&["-R", &format!(":{}", fs_group), fpath.to_str().unwrap_or("")])
                             .output();
-                        // chmod -R g+rX (K8s fsGroup adds group-read, NOT group-write)
+                        // chmod -R g+rwX (K8s fsGroup adds group-read-write + execute on dirs)
                         let _ = std::process::Command::new("chmod")
-                            .args(&["-R", "g+rX", fpath.to_str().unwrap_or("")])
+                            .args(&["-R", "g+rwX", fpath.to_str().unwrap_or("")])
                             .output();
                     }
                 }
@@ -1078,7 +1082,7 @@ impl ContainerRuntime {
                     .args(&[&format!(":{}", fs_group), path])
                     .output();
                 let _ = std::process::Command::new("chmod")
-                    .args(&["g+rx", path])
+                    .args(&["g+rwx", path])
                     .output();
             }
             info!("Applied fsGroup {} to {} volumes", fs_group, volume_paths.len());
@@ -1106,17 +1110,35 @@ impl ContainerRuntime {
                     if let Ok(secret) = storage.get::<rusternetes_common::resources::Secret>(&key).await {
                         let mut expected_files: std::collections::HashSet<String> = std::collections::HashSet::new();
                         if let Some(data) = &secret.data {
-                            for (k, v) in data {
-                                let file_path = format!("{}/{}", volume_dir, k);
-                                expected_files.insert(k.clone());
-                                // Only write if content changed
-                                if let Ok(existing) = std::fs::read(&file_path) {
-                                    if existing == *v { continue; }
+                            if let Some(ref items) = secret_source.items {
+                                // Only mount the specified keys at their mapped paths
+                                for item in items {
+                                    if let Some(v) = data.get(&item.key) {
+                                        let file_path = format!("{}/{}", volume_dir, item.path);
+                                        expected_files.insert(item.path.clone());
+                                        if let Ok(existing) = std::fs::read(&file_path) {
+                                            if existing == *v { continue; }
+                                        }
+                                        if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                                            let _ = std::fs::create_dir_all(parent);
+                                        }
+                                        let _ = std::fs::write(&file_path, v);
+                                    }
                                 }
-                                let _ = std::fs::write(&file_path, v);
+                            } else {
+                                // Mount all keys
+                                for (k, v) in data {
+                                    let file_path = format!("{}/{}", volume_dir, k);
+                                    expected_files.insert(k.clone());
+                                    // Only write if content changed
+                                    if let Ok(existing) = std::fs::read(&file_path) {
+                                        if existing == *v { continue; }
+                                    }
+                                    let _ = std::fs::write(&file_path, v);
+                                }
                             }
                         }
-                        // Remove files that are no longer in the secret (key was deleted)
+                        // Remove files that are no longer expected
                         if let Ok(entries) = std::fs::read_dir(&volume_dir) {
                             for entry in entries.flatten() {
                                 if let Some(name) = entry.file_name().to_str() {
@@ -1141,13 +1163,49 @@ impl ContainerRuntime {
                         let key = rusternetes_storage::build_key("configmaps", Some(namespace), cm_name);
                         if let Ok(cm) = storage.get::<rusternetes_common::resources::ConfigMap>(&key).await {
                             let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
-                            if let Some(data) = &cm.data {
-                                for (k, v) in data {
-                                    let file_path = format!("{}/{}", volume_dir, k);
-                                    if let Ok(existing) = std::fs::read_to_string(&file_path) {
-                                        if existing == *v { continue; }
+                            if let Some(ref items) = cm_source.items {
+                                // Only mount the specified keys at their mapped paths
+                                for item in items {
+                                    if let Some(value) = cm.data.as_ref().and_then(|d| d.get(&item.key)) {
+                                        let file_path = format!("{}/{}", volume_dir, item.path);
+                                        if let Ok(existing) = std::fs::read_to_string(&file_path) {
+                                            if existing == *value { continue; }
+                                        }
+                                        if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                                            let _ = std::fs::create_dir_all(parent);
+                                        }
+                                        let _ = std::fs::write(&file_path, value);
+                                    } else if let Some(value) = cm.binary_data.as_ref().and_then(|d| d.get(&item.key)) {
+                                        let file_path = format!("{}/{}", volume_dir, item.path);
+                                        if let Ok(existing) = std::fs::read(&file_path) {
+                                            if existing == *value { continue; }
+                                        }
+                                        if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                                            let _ = std::fs::create_dir_all(parent);
+                                        }
+                                        let _ = std::fs::write(&file_path, value);
                                     }
-                                    let _ = std::fs::write(&file_path, v);
+                                }
+                            } else {
+                                // Mount all keys from data
+                                if let Some(data) = &cm.data {
+                                    for (k, v) in data {
+                                        let file_path = format!("{}/{}", volume_dir, k);
+                                        if let Ok(existing) = std::fs::read_to_string(&file_path) {
+                                            if existing == *v { continue; }
+                                        }
+                                        let _ = std::fs::write(&file_path, v);
+                                    }
+                                }
+                                // Mount all keys from binaryData
+                                if let Some(binary_data) = &cm.binary_data {
+                                    for (k, v) in binary_data {
+                                        let file_path = format!("{}/{}", volume_dir, k);
+                                        if let Ok(existing) = std::fs::read(&file_path) {
+                                            if existing == *v { continue; }
+                                        }
+                                        let _ = std::fs::write(&file_path, v);
+                                    }
                                 }
                             }
                         }
@@ -1372,20 +1430,45 @@ impl ContainerRuntime {
         let pod_name = &pod.metadata.name;
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
 
-        // EmptyDir: create a temporary directory with mode 777
+        // EmptyDir: create a Docker named volume for proper POSIX permission support.
+        // Docker Desktop uses virtiofs for bind mounts, which doesn't properly support
+        // chmod. Docker named volumes use the local driver (ext4 inside the VM), which
+        // supports full POSIX permissions including chmod 0777.
         if volume.empty_dir.is_some() {
-            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
-            std::fs::create_dir_all(&volume_dir).context("Failed to create emptyDir volume")?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(
-                    &volume_dir,
-                    std::fs::Permissions::from_mode(0o777),
-                )?;
+            let is_memory_medium = volume.empty_dir.as_ref()
+                .and_then(|ed| ed.medium.as_deref())
+                .map(|m| m == "Memory")
+                .unwrap_or(false);
+
+            if is_memory_medium {
+                // Memory-backed emptyDir: will use tmpfs mount directly on the container.
+                // Create a host directory as a fallback path (not actually used for tmpfs).
+                let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+                std::fs::create_dir_all(&volume_dir).context("Failed to create emptyDir volume")?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(
+                        &volume_dir,
+                        std::fs::Permissions::from_mode(0o777),
+                    )?;
+                }
+                info!("Created emptyDir (Memory) volume {} at {}", volume.name, volume_dir);
+                return Ok(volume_dir);
+            } else {
+                // Default medium: create a Docker named volume for proper chmod support.
+                let docker_vol_name = format!("rusternetes-emptydir-{}-{}", pod_name, volume.name);
+                let create_opts = bollard::volume::CreateVolumeOptions {
+                    name: docker_vol_name.clone(),
+                    driver: "local".to_string(),
+                    ..Default::default()
+                };
+                self.docker.create_volume(create_opts).await
+                    .with_context(|| format!("Failed to create Docker volume for emptyDir {}", volume.name))?;
+                info!("Created Docker volume {} for emptyDir {}", docker_vol_name, volume.name);
+                // Return a sentinel path that start_container will recognize as a Docker volume
+                return Ok(format!("docker-vol::{}", docker_vol_name));
             }
-            info!("Created emptyDir volume {} at {}", volume.name, volume_dir);
-            return Ok(volume_dir);
         }
 
         // HostPath: use the specified host path
@@ -2716,6 +2799,7 @@ impl ContainerRuntime {
         // Build volume bindings
         let mut binds = Vec::new();
         let mut tmpfs_mounts: HashMap<String, String> = HashMap::new();
+        let mut docker_vol_mounts: Vec<bollard::models::Mount> = Vec::new();
 
         // Identify which volumes are emptyDir (should use tmpfs)
         let empty_dir_volumes: std::collections::HashSet<String> = pod
@@ -2789,59 +2873,67 @@ impl ContainerRuntime {
                 if let Some(host_path) = volume_paths.get(&mount.name) {
                     let read_only = mount.read_only.unwrap_or(false);
 
-                    // Determine the effective host path, applying validated sub_path
-                    let effective_host_path = if let Some(ref sub) = expanded_sub_path {
-                        let full = format!("{}/{}", host_path, sub);
-                        let sub_meta = std::fs::metadata(&full);
-                        if sub_meta.is_err() {
-                            if let Err(e) = std::fs::create_dir_all(&full) {
-                                warn!("Failed to create subPath dir {}: {}", full, e);
+                    // Check if this is a Docker named volume (emptyDir with default medium)
+                    if let Some(docker_vol_name) = host_path.strip_prefix("docker-vol::") {
+                        // Use Docker named volume mount for proper POSIX permission support.
+                        // Docker named volumes use the local driver (ext4 inside the VM),
+                        // which supports full chmod unlike virtiofs bind mounts.
+                        docker_vol_mounts.push(bollard::models::Mount {
+                            target: Some(mount.mount_path.clone()),
+                            source: Some(docker_vol_name.to_string()),
+                            typ: Some(bollard::models::MountTypeEnum::VOLUME),
+                            read_only: Some(read_only),
+                            ..Default::default()
+                        });
+                        info!(
+                            "Mounting Docker volume {} at {} in container {}",
+                            docker_vol_name, mount.mount_path, container.name
+                        );
+                    } else {
+                        // Determine the effective host path, applying validated sub_path
+                        let effective_host_path = if let Some(ref sub) = expanded_sub_path {
+                            let full = format!("{}/{}", host_path, sub);
+                            let sub_meta = std::fs::metadata(&full);
+                            if sub_meta.is_err() {
+                                if let Err(e) = std::fs::create_dir_all(&full) {
+                                    warn!("Failed to create subPath dir {}: {}", full, e);
+                                }
                             }
-                        }
-                        full
-                    } else {
-                        host_path.clone()
-                    };
-                    // emptyDir with medium: Memory uses tmpfs (in-memory filesystem).
-                    // emptyDir without medium uses bind mounts for cross-container sharing.
-                    let is_memory_medium = pod.spec.as_ref()
-                        .and_then(|s| s.volumes.as_ref())
-                        .and_then(|vols| vols.iter().find(|v| v.name == mount.name))
-                        .and_then(|v| v.empty_dir.as_ref())
-                        .and_then(|ed| ed.medium.as_deref())
-                        .map(|m| m == "Memory")
-                        .unwrap_or(false);
-
-                    // Use tmpfs for emptyDir when:
-                    // - medium: Memory (explicit tmpfs request)
-                    // - fsGroup is set (needs proper chmod support that virtiofs lacks)
-                    // - Any emptyDir volume (virtiofs on Docker Desktop doesn't support chmod,
-                    //   causing permission tests to fail; tmpfs supports full POSIX permissions)
-                    // Only use tmpfs for emptyDir with medium: Memory.
-                    // Default medium must use bind mounts for cross-container sharing.
-                    // tmpfs mounts are per-container in Docker — containers sharing the
-                    // same emptyDir volume wouldn't see each other's writes with tmpfs.
-                    let use_tmpfs = is_memory_medium && empty_dir_volumes.contains(&mount.name) && expanded_sub_path.is_none();
-
-                    if use_tmpfs {
-                        // Use tmpfs — supports proper chmod unlike virtiofs bind mounts.
-                        // Set mode=1777 (world-writable + sticky bit) to match K8s emptyDir behavior.
-                        let opts = if read_only {
-                            "ro,mode=1777".to_string()
+                            full
                         } else {
-                            "mode=1777".to_string()
+                            host_path.clone()
                         };
-                        tmpfs_mounts.insert(mount.mount_path.clone(), opts);
-                    } else {
-                        let ro_suffix = if read_only { ":ro" } else { "" };
-                        let bind =
-                            format!("{}:{}{}", effective_host_path, mount.mount_path, ro_suffix);
-                        binds.push(bind);
+                        // emptyDir with medium: Memory uses tmpfs (in-memory filesystem).
+                        let is_memory_medium = pod.spec.as_ref()
+                            .and_then(|s| s.volumes.as_ref())
+                            .and_then(|vols| vols.iter().find(|v| v.name == mount.name))
+                            .and_then(|v| v.empty_dir.as_ref())
+                            .and_then(|ed| ed.medium.as_deref())
+                            .map(|m| m == "Memory")
+                            .unwrap_or(false);
+
+                        let use_tmpfs = is_memory_medium && empty_dir_volumes.contains(&mount.name) && expanded_sub_path.is_none();
+
+                        if use_tmpfs {
+                            // Use tmpfs for medium: Memory emptyDir volumes.
+                            // Set mode=1777 (world-writable + sticky bit) to match K8s emptyDir behavior.
+                            let opts = if read_only {
+                                "ro,mode=1777".to_string()
+                            } else {
+                                "mode=1777".to_string()
+                            };
+                            tmpfs_mounts.insert(mount.mount_path.clone(), opts);
+                        } else {
+                            let ro_suffix = if read_only { ":ro" } else { "" };
+                            let bind =
+                                format!("{}:{}{}", effective_host_path, mount.mount_path, ro_suffix);
+                            binds.push(bind);
+                        }
+                        info!(
+                            "Mounting volume {} at {} in container {}",
+                            mount.name, mount.mount_path, container.name
+                        );
                     }
-                    info!(
-                        "Mounting volume {} at {} in container {}",
-                        mount.name, mount.mount_path, container.name
-                    );
                 }
             }
         }
@@ -3207,6 +3299,7 @@ impl ContainerRuntime {
                 },
                 binds: if binds.is_empty() { None } else { Some(binds) },
                 tmpfs: if tmpfs_mounts.is_empty() { None } else { Some(tmpfs_mounts) },
+                mounts: if docker_vol_mounts.is_empty() { None } else { Some(docker_vol_mounts) },
                 // Configure DNS to use kube-dns service
                 // CoreDNS uses default/host DNS to avoid circular dependency
                 dns: dns_servers,
@@ -3472,6 +3565,22 @@ impl ContainerRuntime {
             }
         }
 
+        // Clean up Docker named volumes created for emptyDir volumes.
+        // These are named rusternetes-emptydir-{pod_name}-{volume_name}.
+        let prefix = format!("rusternetes-emptydir-{}-", pod_name);
+        if let Ok(volumes) = self.docker.list_volumes::<String>(None).await {
+            if let Some(volume_list) = volumes.volumes {
+                for vol in volume_list {
+                    if vol.name.starts_with(&prefix) {
+                        if let Err(e) = self.docker.remove_volume(&vol.name, None).await {
+                            warn!("Failed to remove Docker volume {}: {}", vol.name, e);
+                        } else {
+                            info!("Removed Docker volume {}", vol.name);
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(())
     }
