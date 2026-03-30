@@ -867,9 +867,20 @@ impl Kubelet {
                             let mut new_pod = fresh_pod;
                             // Set proper conditions for failed init containers
                             let failed_conditions = Self::init_failed_pod_conditions();
+                            // Build K8s-style message listing incomplete init containers
+                            let incomplete_inits: Vec<String> = new_pod.spec.as_ref()
+                                .and_then(|s| s.init_containers.as_ref())
+                                .map(|ics| ics.iter().map(|c| c.name.clone()).collect())
+                                .unwrap_or_default();
+                            let status_msg = if !incomplete_inits.is_empty() {
+                                format!("containers with incomplete status: [{}]",
+                                    incomplete_inits.join(" "))
+                            } else {
+                                err_msg.clone()
+                            };
                             new_pod.status = Some(PodStatus {
                                 phase: Some(Phase::Failed),
-                                message: Some(err_msg),
+                                message: Some(status_msg),
                                 reason: Some("FailedToStart".to_string()),
                                 host_ip: Some("127.0.0.1".to_string()),
                                 pod_ip: None,
