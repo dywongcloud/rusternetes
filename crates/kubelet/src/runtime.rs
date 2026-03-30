@@ -99,6 +99,21 @@ pub struct ContainerRuntime {
     probe_states: Mutex<HashMap<String, ProbeState>>,
 }
 
+/// Join a list of strings into a shell-safe command string.
+/// Wraps arguments containing spaces or special characters in single quotes.
+fn shell_join(args: &[String]) -> String {
+    args.iter()
+        .map(|a| {
+            if a.contains(' ') || a.contains('\'') || a.contains('"') || a.contains('$') || a.contains('\\') {
+                format!("'{}'", a.replace('\'', "'\\''"))
+            } else {
+                a.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 impl ContainerRuntime {
     pub async fn new(
         volumes_base_path: String,
@@ -3352,32 +3367,67 @@ impl ContainerRuntime {
             }).collect()
         };
 
+        // Check if this container mounts emptyDir volumes — if so, we need
+        // umask 0 so files created inside have the expected permissions (0777).
+        // Docker's default umask is 0022 which reduces 0777 to 0755.
+        // K8s uses the container runtime to set umask, but Docker doesn't support it,
+        // so we wrap the command with "umask 0 && exec <original>".
+        let needs_umask_fix = container.volume_mounts.as_ref()
+            .map(|mounts| mounts.iter().any(|m| empty_dir_volumes.contains(&m.name)))
+            .unwrap_or(false);
+
         if let Some(command) = &container.command {
             if let Some(args) = &container.args {
-                // Both command and args present
                 let expanded_cmd = expand_k8s_vars(command);
                 let expanded_args = expand_k8s_vars(args);
-                info!(
-                    "Container {} - setting entrypoint {:?} and cmd {:?}",
-                    container.name, expanded_cmd, expanded_args
-                );
-                config.entrypoint = Some(expanded_cmd);
-                config.cmd = Some(expanded_args);
+                if needs_umask_fix {
+                    let full = format!("umask 0000 && exec {} {}",
+                        shell_join(&expanded_cmd), shell_join(&expanded_args));
+                    info!("Container {} - wrapping with umask 0: {}", container.name, full);
+                    config.entrypoint = Some(vec!["/bin/sh".to_string(), "-c".to_string(), full]);
+                    config.cmd = Some(vec![]);
+                } else {
+                    info!("Container {} - setting entrypoint {:?} and cmd {:?}",
+                        container.name, expanded_cmd, expanded_args);
+                    config.entrypoint = Some(expanded_cmd);
+                    config.cmd = Some(expanded_args);
+                }
             } else {
-                // Only command present - overrides entrypoint, clears cmd
                 let expanded_cmd = expand_k8s_vars(command);
-                info!(
-                    "Container {} - setting entrypoint: {:?}",
-                    container.name, expanded_cmd
-                );
-                config.entrypoint = Some(expanded_cmd);
+                if needs_umask_fix {
+                    let full = format!("umask 0000 && exec {}", shell_join(&expanded_cmd));
+                    info!("Container {} - wrapping with umask 0: {}", container.name, full);
+                    config.entrypoint = Some(vec!["/bin/sh".to_string(), "-c".to_string(), full]);
+                } else {
+                    info!("Container {} - setting entrypoint: {:?}", container.name, expanded_cmd);
+                    config.entrypoint = Some(expanded_cmd);
+                }
                 config.cmd = Some(vec![]);
             }
         } else if let Some(args) = &container.args {
-            // Only args present - use container's default entrypoint + override cmd
             let expanded_args = expand_k8s_vars(args);
-            info!("Container {} - setting cmd (args): {:?}", container.name, expanded_args);
-            config.cmd = Some(expanded_args);
+            if needs_umask_fix {
+                // args-only: discover image entrypoint and wrap with umask
+                let image_entrypoint = self.docker
+                    .inspect_image(&container.image)
+                    .await
+                    .ok()
+                    .and_then(|info| info.config)
+                    .and_then(|cfg| cfg.entrypoint)
+                    .unwrap_or_default();
+                let ep_str = if image_entrypoint.is_empty() {
+                    String::new()
+                } else {
+                    shell_join(&image_entrypoint)
+                };
+                let full = format!("umask 0000 && exec {} {}", ep_str, shell_join(&expanded_args));
+                info!("Container {} - wrapping args with umask 0: {}", container.name, full);
+                config.entrypoint = Some(vec!["/bin/sh".to_string(), "-c".to_string(), full]);
+                config.cmd = Some(vec![]);
+            } else {
+                info!("Container {} - setting cmd (args): {:?}", container.name, expanded_args);
+                config.cmd = Some(expanded_args);
+            }
         }
 
         let options = CreateContainerOptions {
