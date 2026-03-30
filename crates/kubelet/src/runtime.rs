@@ -5055,6 +5055,26 @@ impl ContainerRuntime {
         Ok(pod_names.into_iter().collect())
     }
 
+    /// Get the age of a pod's pause container (time since creation).
+    /// Returns Duration::ZERO if the container can't be found.
+    pub async fn get_container_age(&self, pod_name: &str) -> Result<std::time::Duration> {
+        let pause_name = format!("{}_pause", pod_name);
+        match self.docker.inspect_container(&pause_name, None).await {
+            Ok(info) => {
+                if let Some(state) = info.state {
+                    if let Some(started_at) = state.started_at {
+                        if let Ok(started) = chrono::DateTime::parse_from_rfc3339(&started_at) {
+                            let age = chrono::Utc::now().signed_duration_since(started);
+                            return Ok(std::time::Duration::from_secs(age.num_seconds().max(0) as u64));
+                        }
+                    }
+                }
+                Ok(std::time::Duration::from_secs(0))
+            }
+            Err(_) => Ok(std::time::Duration::from_secs(0)),
+        }
+    }
+
     /// List containers stuck in "Created" state for more than 60 seconds
     pub async fn list_stale_created_containers(&self) -> Result<Vec<String>> {
         let options = ListContainersOptions::<String> {

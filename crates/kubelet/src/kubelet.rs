@@ -495,11 +495,24 @@ impl Kubelet {
             running_pods.len()
         );
 
-        // Check for orphaned pods (running in container runtime but not in etcd)
+        // Check for orphaned pods (running in container runtime but not in etcd).
+        // Use a grace period to avoid killing containers that were JUST started by
+        // a controller — there's a race between controller pod creation and kubelet
+        // orphan detection where the kubelet's etcd snapshot is stale.
         for running_pod_name in running_pods {
             if !existing_pod_names.contains(&running_pod_name) {
+                // Check container age — don't kill containers younger than 30s
+                let container_age = self.runtime.get_container_age(&running_pod_name).await
+                    .unwrap_or(std::time::Duration::from_secs(0));
+                if container_age < std::time::Duration::from_secs(30) {
+                    debug!(
+                        "Skipping recently started orphan {} (age {:?})",
+                        running_pod_name, container_age
+                    );
+                    continue;
+                }
                 info!(
-                    "Found orphaned pod {} - not in etcd, stopping and removing containers",
+                    "Found orphaned pod {} - not in etcd for >30s, stopping and removing containers",
                     running_pod_name
                 );
                 // For orphans, stop and then force-remove since the pod is gone
