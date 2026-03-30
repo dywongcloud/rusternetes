@@ -74,7 +74,7 @@
 | emptyDir shared volume | 1 | "command terminated exit 1" | Docker bind mount issue |
 | PriorityClass endpoints | 1 | value mismatch | Immutability check |
 | CSIStorageCapacity | 1 | (unknown) | CSI API operations |
-| DaemonSet rolling update | 1 | "0 pods updated, expected 1" | Rolling update pod recreation |
+| DaemonSet rolling update | 1 | "0 pods updated, expected 1" | FIXED — 5452f2c delete pods with old hash |
 | DaemonSet rollback | 1 | context deadline exceeded | TIMEOUT (miscategorized) |
 
 ## Timeout Failures (~79) — Docker Desktop latency
