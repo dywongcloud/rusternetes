@@ -252,14 +252,28 @@ impl<S: Storage> DeploymentController<S> {
                     .await?;
                 }
 
-                // Scale down old ReplicaSets to 0
-                for rs in owned_replicasets.iter() {
-                    if rs.metadata.name != active_name && rs.spec.replicas > 0 {
-                        info!(
-                            "Scaling down old ReplicaSet {}/{} to 0",
-                            namespace, rs.metadata.name
-                        );
-                        self.update_replicaset_replicas(rs, 0).await?;
+                // Scale down old ReplicaSets gradually — only remove old pods
+                // when the new RS has enough available replicas to maintain
+                // the minimum availability guarantee.
+                let new_rs_available = self.count_available_pods_for_rs(
+                    &active_name, namespace
+                ).await;
+                let min_available = (desired_replicas - max_unavailable).max(0);
+                let can_scale_down = (new_rs_available - min_available).max(0);
+
+                if can_scale_down > 0 {
+                    let mut remaining = can_scale_down;
+                    for rs in owned_replicasets.iter() {
+                        if rs.metadata.name != active_name && rs.spec.replicas > 0 && remaining > 0 {
+                            let remove = rs.spec.replicas.min(remaining);
+                            let new_replicas = rs.spec.replicas - remove;
+                            info!(
+                                "Scaling down old ReplicaSet {}/{} from {} to {} (available={})",
+                                namespace, rs.metadata.name, rs.spec.replicas, new_replicas, new_rs_available
+                            );
+                            self.update_replicaset_replicas(rs, new_replicas).await?;
+                            remaining -= remove;
+                        }
                     }
                 }
             }
@@ -520,6 +534,26 @@ impl<S: Storage> DeploymentController<S> {
         );
 
         Ok(())
+    }
+
+    /// Count pods that are Ready for a given ReplicaSet
+    async fn count_available_pods_for_rs(&self, rs_name: &str, namespace: &str) -> i32 {
+        let pod_prefix = build_prefix("pods", Some(namespace));
+        let pods: Vec<Pod> = self.storage.list(&pod_prefix).await.unwrap_or_default();
+        pods.iter()
+            .filter(|pod| {
+                // Pod must be owned by this RS
+                let owned = pod.metadata.owner_references.as_ref()
+                    .map(|refs| refs.iter().any(|r| r.name == rs_name))
+                    .unwrap_or(false);
+                if !owned { return false; }
+                // Pod must be Ready
+                pod.status.as_ref()
+                    .and_then(|s| s.conditions.as_ref())
+                    .map(|c| c.iter().any(|cond| cond.condition_type == "Ready" && cond.status == "True"))
+                    .unwrap_or(false)
+            })
+            .count() as i32
     }
 
     async fn update_deployment_status(
