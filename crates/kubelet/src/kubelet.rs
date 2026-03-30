@@ -531,17 +531,27 @@ impl Kubelet {
             }
         }
 
-        // Clean up containers for completed/failed pods.
-        // Conformance tests create hundreds of pods that run to completion.
-        // Leaving their exited containers wastes Docker daemon resources.
+        // Clean up containers for completed/failed pods that have been terminal
+        // for more than 5 minutes. We delay cleanup because tests may read pod logs
+        // after the pod completes — Docker can only return logs for containers that
+        // still exist. Cleaning up too early causes the logs API to return synthetic
+        // (fake) logs instead of real container output.
         for pod in all_existing_pods {
             let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
             let is_terminal = matches!(phase, Some(Phase::Succeeded) | Some(Phase::Failed));
             if is_terminal {
-                let pod_name = &pod.metadata.name;
-                // Only remove containers, don't delete from etcd (the controller manages lifecycle)
-                if let Err(e) = self.runtime.stop_and_remove_pod(pod_name).await {
-                    debug!("Error cleaning up terminal pod {}: {}", pod_name, e);
+                // Check if the pod has been terminal long enough (5 minutes)
+                let start_time = pod.status.as_ref()
+                    .and_then(|s| s.start_time.as_ref())
+                    .copied();
+                let age = start_time
+                    .map(|t| (chrono::Utc::now() - t).num_seconds())
+                    .unwrap_or(0);
+                if age > 300 { // 5 minutes
+                    let pod_name = &pod.metadata.name;
+                    if let Err(e) = self.runtime.stop_and_remove_pod(pod_name).await {
+                        debug!("Error cleaning up terminal pod {}: {}", pod_name, e);
+                    }
                 }
             }
         }
