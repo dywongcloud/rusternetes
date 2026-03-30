@@ -2,11 +2,12 @@
 
 **Round 110** | COMPLETE | 441/441 tests | 283 passed, 158 failed (64.2% pass)
 
-## Non-Timeout Failures with Committed Fixes (~73)
+## Non-Timeout Failures with Committed Fixes (~76)
 
 | Category | Count | Commit | Fix |
 |----------|-------|--------|-----|
 | kubectl create -f stdin | 8 | 5da5f98 | Protobuf envelope wrapping for OpenAPI |
+| Session affinity / svc routing | 5 | 80d5fb8 | Reduce kube-proxy sync interval 30s→5s |
 | Pod resize PATCH | 4 | 7d40469 | X-Original-Content-Type header for PATCH |
 | StatefulSet canary/rollback | 3 | 0591bb2 | Revision tracking during rolling updates |
 | Webhook CEL panic | 2 | 7d58174 | catch_unwind for CEL parser panics |
@@ -16,6 +17,8 @@
 | Scheduler preemption | 2 | 2f1d98d | Per-node resource tracking |
 | StatefulSet SHA-256 | 2 | 78c79bb | Deterministic revision hashing |
 | Variable expansion subpath | 2 | c6dc16e | Backtick before expansion, component ".." |
+| SA TokenReview + pod extra | 2 | 44e23e0 | Handle Go-style null in TokenRequest |
+| Deployment rolling update | 1 | 27bb5f4 | SHA-256 pod-template-hash (not DefaultHasher) |
 | StatefulSet patch image | 1 | 0591bb2 | Revision hash comparison after patch |
 | StatefulSet scaling | 1 | 0591bb2 | Deterministic hash prevents spurious deletes |
 | Job backoffLimitPerIndex | 1 | 0591bb2 | Per-index failure tracking |
@@ -54,22 +57,18 @@
 | FieldValidation duplicate | 1 | 55c1e5a | "json: unknown field" format |
 | NoExecute taint eviction | 1 | 55c1e5a | tolerationSeconds expiry support |
 | SA OIDC discovery | 1 | b07715d | OIDC discovery endpoints |
-| SA TokenReview | 1 | 44e23e0 | Handle Go-style null in TokenRequest |
 | CSIStorageCapacity | 1 | ba1c0d6 | Watch support for CSI list endpoint |
-| SA pod extra info | 1 | 44e23e0 | Cascading fix — TokenRequest null handling |
 
-## Non-Timeout Failures NOT Yet Fixed (~10)
+## Non-Timeout Failures NOT Yet Fixed (~7)
 
-| Category | Count | Error | Status |
-|----------|------|-------|--------|
-| Session affinity | 4 | "service not reachable" | kube-proxy networking — services unreachable |
-| Deployment rolling update | 1 | "revision mismatch" | RS revision annotation propagation |
+| Category | Count | Error | Root Cause |
+|----------|------|-------|------------|
 | Deployment rollover | 1 | "0 pods available" | Rollover availability timing |
-| Events lifecycle | 1 | "event wasn't updated" | Chrono timestamp precision loss |
-| ControllerRevision lifecycle | 1 | "revision 1 expected 3" | Controller overwrites test update |
-| kubectl proxy | 1 | "unexpected end of JSON" | Proxy response format |
-| PriorityClass endpoints | 1 | "10 != 1" | Value field mismatch |
-| Aggregator | 1 | "extension apiserver" | API aggregation — not feasible |
+| Events lifecycle | 1 | "event wasn't updated" | Chrono timestamp precision loss on round-trip |
+| ControllerRevision lifecycle | 1 | "revision 1 expected 3" | DaemonSet controller overwrites test's manual update |
+| kubectl proxy | 1 | "unexpected end of JSON" | Proxy response chunking/format |
+| PriorityClass endpoints | 1 | "10 != 1" | Stale cluster-scoped resources from prior tests |
+| Aggregator | 1 | "extension apiserver" | API aggregation — requires full implementation |
 
 ## Not Code Bugs (~82)
 
