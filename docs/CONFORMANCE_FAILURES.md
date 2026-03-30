@@ -7,8 +7,8 @@
 ### Code Bugs (2)
 | Test | Error | Status |
 |------|-------|--------|
-| StatefulSet Scaling predictable order | "scaled 3 -> 0 replicas" | Investigating — all pods deleted during rolling update |
-| Service ExternalName → NodePort | "not reachable within 2m0s" | Service type change not routing |
+| StatefulSet Scaling predictable order | "scaled 3 -> 0 replicas" | FIXED (6d625c9) — scale down one pod at a time |
+| Service ExternalName → NodePort | "not reachable within 2m0s" | Timing — endpoints/kube-proxy sync delay |
 
 ### Timeouts (6)
 | Test | Error |
