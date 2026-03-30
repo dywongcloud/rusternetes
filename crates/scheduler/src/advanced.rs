@@ -860,6 +860,7 @@ mod tests {
             key: "key1".to_string(),
             value: Some("value1".to_string()),
             effect: "NoSchedule".to_string(),
+            time_added: None,
         };
 
         let toleration = Toleration {

@@ -242,6 +242,7 @@ async fn test_taint_toleration_scheduling() {
         key: "dedicated".to_string(),
         value: Some("gpu".to_string()),
         effect: "NoSchedule".to_string(),
+        time_added: None,
     }];
     create_test_node(&storage, "gpu-node", None, "8", "16Gi", Some(taints)).await;
 

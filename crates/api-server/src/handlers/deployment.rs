@@ -70,10 +70,13 @@ pub async fn create(
         version: "v1".to_string(),
         kind: "Deployment".to_string(),
     };
-    if let Err(e) = state.webhook_manager.run_validating_admission_policies(
+    if let Err(e) = state.webhook_manager.run_validating_admission_policies_ext(
         &rusternetes_common::admission::Operation::Create,
         &gvk,
         deploy_value.as_ref(),
+        None,
+        Some("deployments"),
+        Some(&namespace),
     ).await {
         return Err(e);
     }

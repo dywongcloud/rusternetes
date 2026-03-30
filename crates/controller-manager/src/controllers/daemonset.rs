@@ -763,6 +763,7 @@ mod tests {
             key: "node-role.kubernetes.io/control-plane".to_string(),
             value: None,
             effect: "NoSchedule".to_string(),
+            time_added: None,
         }];
         assert!(!pod_tolerates_node_taints(&tolerations, &taints));
     }
@@ -780,6 +781,7 @@ mod tests {
             key: "node-role.kubernetes.io/control-plane".to_string(),
             value: None,
             effect: "NoSchedule".to_string(),
+            time_added: None,
         }];
         assert!(pod_tolerates_node_taints(&tolerations, &taints));
     }
@@ -797,6 +799,7 @@ mod tests {
             key: "dedicated".to_string(),
             value: Some("gpu".to_string()),
             effect: "NoSchedule".to_string(),
+            time_added: None,
         }];
         assert!(pod_tolerates_node_taints(&tolerations, &taints));
     }
@@ -814,6 +817,7 @@ mod tests {
             key: "dedicated".to_string(),
             value: Some("gpu".to_string()),
             effect: "NoSchedule".to_string(),
+            time_added: None,
         }];
         assert!(!pod_tolerates_node_taints(&tolerations, &taints));
     }
@@ -833,11 +837,13 @@ mod tests {
                 key: "key1".to_string(),
                 value: Some("val1".to_string()),
                 effect: "NoSchedule".to_string(),
+                time_added: None,
             },
             Taint {
                 key: "key2".to_string(),
                 value: None,
                 effect: "NoExecute".to_string(),
+                time_added: None,
             },
         ];
         assert!(pod_tolerates_node_taints(&tolerations, &taints));
@@ -851,6 +857,7 @@ mod tests {
             key: "preference".to_string(),
             value: None,
             effect: "PreferNoSchedule".to_string(),
+            time_added: None,
         }];
         assert!(pod_tolerates_node_taints(&tolerations, &taints));
     }
@@ -869,6 +876,7 @@ mod tests {
             key: "key1".to_string(),
             value: None,
             effect: "NoExecute".to_string(),
+            time_added: None,
         }];
         assert!(pod_tolerates_node_taints(&tolerations, &taints));
     }
@@ -888,11 +896,13 @@ mod tests {
                 key: "key1".to_string(),
                 value: None,
                 effect: "NoSchedule".to_string(),
+                time_added: None,
             },
             Taint {
                 key: "key2".to_string(),
                 value: None,
                 effect: "NoSchedule".to_string(),
+                time_added: None,
             },
         ];
         assert!(!pod_tolerates_node_taints(&tolerations, &taints));

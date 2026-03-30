@@ -313,16 +313,42 @@ impl<S: Storage> StatefulSetController<S> {
                 .unwrap_or(false)
         }).count() as i32;
 
+        // Count how many pods match the current revision
+        let current_rev_count = statefulset_pods_after.iter().filter(|pod| {
+            pod.metadata.labels.as_ref()
+                .and_then(|l| l.get("controller-revision-hash"))
+                .map(|h| h == &current_revision)
+                .unwrap_or(false)
+        }).count() as i32;
+
+        // Determine the final current_revision:
+        // Only advance current_revision to update_revision when ALL pods have been
+        // updated (updated_count >= desired_replicas). This ensures that during a
+        // rolling update, currentRevision != updateRevision, which conformance tests verify.
+        let final_current_revision = if updated_count >= desired_replicas {
+            update_revision.clone()
+        } else {
+            current_revision.clone()
+        };
+
         // Update status with accurate counts
+        // current_replicas = pods matching currentRevision (K8s semantics)
+        // updated_replicas = pods matching updateRevision
         statefulset.status = Some(StatefulSetStatus {
             replicas: final_current_replicas,
             ready_replicas: Some(final_ready_pods),
-            current_replicas: Some(final_current_replicas),
+            current_replicas: Some(if final_current_revision == update_revision {
+                // All pods are on the same (current) revision
+                final_current_replicas
+            } else {
+                // During rolling update: count pods on the old (current) revision
+                current_rev_count
+            }),
             updated_replicas: Some(updated_count),
             available_replicas: Some(final_ready_pods),
             collision_count: None,
             observed_generation: statefulset.metadata.generation,
-            current_revision: Some(if updated_count >= desired_replicas { update_revision.clone() } else { current_revision }),
+            current_revision: Some(final_current_revision),
             update_revision: Some(update_revision),
             conditions: None,
         });
@@ -439,13 +465,18 @@ impl<S: Storage> StatefulSetController<S> {
     }
 
     /// Compute a revision string from the pod template spec.
-    /// This produces a deterministic hash like "controller-revision-hash-<hash>".
+    /// This produces a deterministic hash that captures template changes.
+    ///
+    /// IMPORTANT: We must convert to serde_json::Value first before serializing
+    /// to string. Direct `to_string` on the struct iterates HashMap fields in
+    /// arbitrary order (HashMap has no guaranteed iteration order), producing
+    /// non-deterministic output. Converting to Value first normalizes all maps
+    /// into BTreeMap-backed serde_json::Map, which iterates in sorted key order.
     fn compute_revision(template: &rusternetes_common::resources::PodTemplateSpec) -> String {
-        // Use SHA-256 for deterministic hashing that captures template changes.
-        // DefaultHasher is NOT deterministic across program restarts and may
-        // produce the same hash for different inputs within the same run.
         use sha2::{Sha256, Digest};
-        let serialized = serde_json::to_string(&template).unwrap_or_default();
+        // Convert to Value first to normalize HashMap ordering to sorted BTreeMap
+        let value = serde_json::to_value(template).unwrap_or_default();
+        let serialized = serde_json::to_string(&value).unwrap_or_default();
         let hash = Sha256::digest(serialized.as_bytes());
         // Format as a 10-char hex string from the hash
         format!("{:010x}", u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8])))
@@ -534,6 +565,16 @@ impl<S: Storage> StatefulSetController<S> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use rusternetes_common::resources::{Container, PodSpec, PodTemplateSpec, StatefulSetSpec,
+        PodCondition};
+    use rusternetes_common::resources::workloads::{
+        StatefulSetUpdateStrategy, RollingUpdateStatefulSetStrategy,
+    };
+    use rusternetes_common::types::LabelSelector;
+    use rusternetes_storage::MemoryStorage;
+    use std::collections::HashMap;
+
     #[test]
     fn test_pod_name_generation() {
         let statefulset_name = "web";
@@ -550,5 +591,335 @@ mod tests {
             .and_then(|(_, idx)| idx.parse().ok())
             .unwrap();
         assert_eq!(ordinal, 5);
+    }
+
+    /// Verify compute_revision is deterministic even with HashMap-backed labels
+    #[test]
+    fn test_compute_revision_deterministic() {
+        let mut labels = HashMap::new();
+        labels.insert("app".to_string(), "web".to_string());
+        labels.insert("version".to_string(), "v1".to_string());
+        labels.insert("tier".to_string(), "frontend".to_string());
+
+        let template = PodTemplateSpec {
+            metadata: Some(ObjectMeta::new("").with_labels(labels.clone())),
+            spec: PodSpec {
+                containers: vec![test_container("nginx", "nginx:1.19")],
+                ..Default::default()
+            },
+        };
+
+        // Compute multiple times — must always produce the same result
+        let rev1 = StatefulSetController::<MemoryStorage>::compute_revision(&template);
+        let rev2 = StatefulSetController::<MemoryStorage>::compute_revision(&template);
+        let rev3 = StatefulSetController::<MemoryStorage>::compute_revision(&template);
+        assert_eq!(rev1, rev2, "Revision should be deterministic across calls");
+        assert_eq!(rev2, rev3, "Revision should be deterministic across calls");
+    }
+
+    /// Verify compute_revision changes when image changes
+    #[test]
+    fn test_compute_revision_changes_on_image_change() {
+        let mut labels = HashMap::new();
+        labels.insert("app".to_string(), "web".to_string());
+
+        let template_v1 = PodTemplateSpec {
+            metadata: Some(ObjectMeta::new("").with_labels(labels.clone())),
+            spec: PodSpec {
+                containers: vec![test_container("nginx", "nginx:1.19")],
+                ..Default::default()
+            },
+        };
+
+        let template_v2 = PodTemplateSpec {
+            metadata: Some(ObjectMeta::new("").with_labels(labels.clone())),
+            spec: PodSpec {
+                containers: vec![test_container("nginx", "nginx:1.20")],
+                ..Default::default()
+            },
+        };
+
+        let rev1 = StatefulSetController::<MemoryStorage>::compute_revision(&template_v1);
+        let rev2 = StatefulSetController::<MemoryStorage>::compute_revision(&template_v2);
+        assert_ne!(rev1, rev2, "Revision should change when image changes");
+    }
+
+    fn test_container(name: &str, image: &str) -> Container {
+        Container {
+            name: name.to_string(),
+            image: image.to_string(),
+            command: None,
+            args: None,
+            working_dir: None,
+            ports: None,
+            env: None,
+            env_from: None,
+            resources: None,
+            volume_mounts: None,
+            volume_devices: None,
+            image_pull_policy: None,
+            liveness_probe: None,
+            readiness_probe: None,
+            startup_probe: None,
+            security_context: None,
+            restart_policy: None,
+            resize_policy: None,
+            lifecycle: None,
+            termination_message_path: None,
+            termination_message_policy: None,
+            stdin: None,
+            stdin_once: None,
+            tty: None,
+        }
+    }
+
+    fn make_statefulset(name: &str, namespace: &str, replicas: i32, image: &str) -> StatefulSet {
+        let mut labels = HashMap::new();
+        labels.insert("app".to_string(), name.to_string());
+
+        StatefulSet {
+            type_meta: TypeMeta {
+                kind: "StatefulSet".to_string(),
+                api_version: "apps/v1".to_string(),
+            },
+            metadata: ObjectMeta::new(name).with_namespace(namespace.to_string()),
+            spec: StatefulSetSpec {
+                replicas: Some(replicas),
+                selector: LabelSelector {
+                    match_labels: Some(labels.clone()),
+                    match_expressions: None,
+                },
+                service_name: format!("{}-svc", name),
+                template: PodTemplateSpec {
+                    metadata: Some(ObjectMeta::new("").with_labels(labels)),
+                    spec: PodSpec {
+                        containers: vec![test_container("main", image)],
+                        ..Default::default()
+                    },
+                },
+                update_strategy: None,
+                pod_management_policy: Some("Parallel".to_string()),
+                min_ready_seconds: None,
+                revision_history_limit: None,
+                volume_claim_templates: None,
+                persistent_volume_claim_retention_policy: None,
+                ordinals: None,
+            },
+            status: None,
+        }
+    }
+
+    /// Make a pod look like it's Running and Ready
+    async fn make_pod_ready(storage: &Arc<MemoryStorage>, namespace: &str, pod_name: &str) {
+        let key = format!("/registry/pods/{}/{}", namespace, pod_name);
+        if let Ok(mut pod) = storage.get::<Pod>(&key).await {
+            pod.status = Some(PodStatus {
+                phase: Some(Phase::Running),
+                conditions: Some(vec![PodCondition {
+                    condition_type: "Ready".to_string(),
+                    status: "True".to_string(),
+                    reason: None,
+                    message: None,
+                    last_transition_time: None,
+                }]),
+                ..Default::default()
+            });
+            let _ = storage.update(&key, &pod).await;
+        }
+    }
+
+    /// During a rolling update, currentRevision != updateRevision.
+    /// After all pods are updated, currentRevision == updateRevision.
+    #[tokio::test]
+    async fn test_rolling_update_revision_tracking() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = StatefulSetController::new(storage.clone());
+
+        let ns = "default";
+        let ss = make_statefulset("web", ns, 3, "nginx:1.19");
+
+        // Store the StatefulSet
+        let key = format!("/registry/statefulsets/{}/{}", ns, "web");
+        storage.create(&key, &ss).await.unwrap();
+
+        // First reconcile: creates 3 pods with revision hash for nginx:1.19
+        let mut ss: StatefulSet = storage.get(&key).await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        // Make all pods Running+Ready
+        for i in 0..3 {
+            make_pod_ready(&storage, ns, &format!("web-{}", i)).await;
+        }
+
+        // Reconcile again so status reflects ready pods
+        let mut ss: StatefulSet = storage.get(&key).await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        // Verify initial state: currentRevision == updateRevision
+        let ss: StatefulSet = storage.get(&key).await.unwrap();
+        let status = ss.status.as_ref().unwrap();
+        assert_eq!(
+            status.current_revision, status.update_revision,
+            "Before update: currentRevision should equal updateRevision"
+        );
+        let old_revision = status.current_revision.clone().unwrap();
+
+        // Now patch the StatefulSet to use a new image (simulate a rolling update)
+        let mut ss: StatefulSet = storage.get(&key).await.unwrap();
+        ss.spec.template.spec.containers[0].image = "nginx:1.20".to_string();
+        storage.update(&key, &ss).await.unwrap();
+
+        // Reconcile: should detect template change and begin rolling update
+        let mut ss: StatefulSet = storage.get(&key).await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        // Check that currentRevision != updateRevision during rolling update
+        let ss: StatefulSet = storage.get(&key).await.unwrap();
+        let status = ss.status.as_ref().unwrap();
+        let new_revision = status.update_revision.clone().unwrap();
+
+        assert_ne!(
+            old_revision, new_revision,
+            "Update revision should differ from old revision after template change"
+        );
+        assert_ne!(
+            status.current_revision, status.update_revision,
+            "During rolling update: currentRevision should NOT equal updateRevision"
+        );
+        assert_eq!(
+            status.current_revision.as_ref().unwrap(), &old_revision,
+            "currentRevision should still be the old revision during rolling update"
+        );
+
+        // Now simulate completing the rolling update:
+        // Make all remaining pods ready, reconcile until all pods have new revision
+        for _ in 0..10 {
+            // Make all pods ready
+            let pod_prefix = format!("/registry/pods/{}/", ns);
+            let pods: Vec<Pod> = storage.list(&pod_prefix).await.unwrap();
+            for pod in &pods {
+                if pod.metadata.labels.as_ref()
+                    .and_then(|l| l.get("app"))
+                    .map(|a| a == "web")
+                    .unwrap_or(false)
+                {
+                    make_pod_ready(&storage, ns, &pod.metadata.name).await;
+                }
+            }
+
+            let mut ss: StatefulSet = storage.get(&key).await.unwrap();
+            controller.reconcile(&mut ss).await.unwrap();
+
+            let ss: StatefulSet = storage.get(&key).await.unwrap();
+            let status = ss.status.as_ref().unwrap();
+            if status.current_revision == status.update_revision {
+                break;
+            }
+        }
+
+        // After rollout completes, currentRevision == updateRevision
+        let ss: StatefulSet = storage.get(&key).await.unwrap();
+        let status = ss.status.as_ref().unwrap();
+        assert_eq!(
+            status.current_revision, status.update_revision,
+            "After rollout completes: currentRevision should equal updateRevision"
+        );
+        assert_eq!(
+            status.updated_replicas, Some(3),
+            "All replicas should be updated"
+        );
+    }
+
+    /// Partition should be respected: only pods with ordinal >= partition are updated.
+    #[tokio::test]
+    async fn test_canary_update_respects_partition() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = StatefulSetController::new(storage.clone());
+
+        let ns = "default";
+        let mut ss = make_statefulset("web", ns, 3, "nginx:1.19");
+        // Set partition=2 so only pod web-2 should be updated
+        ss.spec.update_strategy = Some(StatefulSetUpdateStrategy {
+            strategy_type: Some("RollingUpdate".to_string()),
+            rolling_update: Some(RollingUpdateStatefulSetStrategy {
+                partition: Some(2),
+                max_unavailable: None,
+            }),
+        });
+
+        let key = format!("/registry/statefulsets/{}/{}", ns, "web");
+        storage.create(&key, &ss).await.unwrap();
+
+        // Create pods and make them ready
+        let mut ss: StatefulSet = storage.get(&key).await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        for i in 0..3 {
+            make_pod_ready(&storage, ns, &format!("web-{}", i)).await;
+        }
+
+        let mut ss: StatefulSet = storage.get(&key).await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        // Record the old revision from pod-0
+        let pod0: Pod = storage.get(&format!("/registry/pods/{}/web-0", ns)).await.unwrap();
+        let old_rev = pod0.metadata.labels.as_ref()
+            .and_then(|l| l.get("controller-revision-hash"))
+            .cloned()
+            .unwrap();
+
+        // Patch image
+        let mut ss: StatefulSet = storage.get(&key).await.unwrap();
+        ss.spec.template.spec.containers[0].image = "nginx:1.20".to_string();
+        storage.update(&key, &ss).await.unwrap();
+
+        // Run several reconcile cycles
+        for _ in 0..5 {
+            let pod_prefix = format!("/registry/pods/{}/", ns);
+            let pods: Vec<Pod> = storage.list(&pod_prefix).await.unwrap();
+            for pod in &pods {
+                if pod.metadata.labels.as_ref()
+                    .and_then(|l| l.get("app"))
+                    .map(|a| a == "web")
+                    .unwrap_or(false)
+                {
+                    make_pod_ready(&storage, ns, &pod.metadata.name).await;
+                }
+            }
+
+            let mut ss: StatefulSet = storage.get(&key).await.unwrap();
+            controller.reconcile(&mut ss).await.unwrap();
+        }
+
+        // Check that pod-0 and pod-1 still have the old revision (partition=2 protects them)
+        let pod0: Pod = storage.get(&format!("/registry/pods/{}/web-0", ns)).await.unwrap();
+        let pod0_rev = pod0.metadata.labels.as_ref()
+            .and_then(|l| l.get("controller-revision-hash"))
+            .cloned()
+            .unwrap();
+        assert_eq!(pod0_rev, old_rev, "Pod-0 should keep old revision (below partition)");
+
+        let pod1: Pod = storage.get(&format!("/registry/pods/{}/web-1", ns)).await.unwrap();
+        let pod1_rev = pod1.metadata.labels.as_ref()
+            .and_then(|l| l.get("controller-revision-hash"))
+            .cloned()
+            .unwrap();
+        assert_eq!(pod1_rev, old_rev, "Pod-1 should keep old revision (below partition)");
+
+        // Pod-2 should have the new revision
+        let pod2: Pod = storage.get(&format!("/registry/pods/{}/web-2", ns)).await.unwrap();
+        let pod2_rev = pod2.metadata.labels.as_ref()
+            .and_then(|l| l.get("controller-revision-hash"))
+            .cloned()
+            .unwrap();
+        assert_ne!(pod2_rev, old_rev, "Pod-2 should have new revision (at or above partition)");
+
+        // currentRevision should NOT equal updateRevision (partition prevents full rollout)
+        let ss: StatefulSet = storage.get(&key).await.unwrap();
+        let status = ss.status.as_ref().unwrap();
+        assert_ne!(
+            status.current_revision, status.update_revision,
+            "With partition, currentRevision should not equal updateRevision"
+        );
     }
 }

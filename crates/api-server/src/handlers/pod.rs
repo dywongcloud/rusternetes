@@ -415,10 +415,13 @@ pub async fn create(
 
     // Run ValidatingAdmissionPolicy checks
     let pod_value_for_vap = serde_json::to_value(&pod).ok();
-    if let Err(e) = state.webhook_manager.run_validating_admission_policies(
+    if let Err(e) = state.webhook_manager.run_validating_admission_policies_ext(
         &Operation::Create,
         &gvk,
         pod_value_for_vap.as_ref(),
+        None,
+        Some("pods"),
+        Some(&namespace),
     ).await {
         return Err(e);
     }

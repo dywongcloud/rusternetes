@@ -56,7 +56,7 @@ fn is_unschedulable_none(value: &Option<bool>) -> bool {
     value.is_none()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Taint {
     #[serde(default)]

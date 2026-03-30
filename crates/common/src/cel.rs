@@ -347,4 +347,136 @@ mod tests {
         // Note: Invalid expression testing skipped due to CEL library internals
         // The CEL library will catch syntax errors at runtime
     }
+
+    /// Reproduces the K8s conformance test "should allow expressions to refer variables".
+    /// A VAP defines:
+    ///   variables: [{name: "replicas", expression: "object.spec.replicas"},
+    ///               {name: "oddReplicas", expression: "variables.replicas % 2 == 1"}]
+    ///   validations: [{expression: "variables.replicas > 1"},
+    ///                 {expression: "variables.oddReplicas"}]
+    /// With a 3-replica deployment, both validations should pass.
+    #[test]
+    fn test_cel_vap_variables_refer() {
+        let mut evaluator = CELEvaluator::new();
+
+        // Simulate a Deployment with 3 replicas
+        let deployment = serde_json::json!({
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "test-deploy", "namespace": "default"},
+            "spec": {
+                "replicas": 3,
+                "selector": {"matchLabels": {"app": "test"}},
+                "template": {
+                    "metadata": {"labels": {"app": "test"}},
+                    "spec": {"containers": [{"name": "c1", "image": "nginx"}]}
+                }
+            }
+        });
+
+        let mut context = CELContext::new();
+        context.add_json_variable("object", &deployment).unwrap();
+
+        // Step 1: Evaluate variable "replicas" = object.spec.replicas
+        let replicas_val = evaluator
+            .evaluate_to_value("object.spec.replicas", &context)
+            .expect("should evaluate object.spec.replicas");
+        assert_eq!(replicas_val, Value::Int(3));
+
+        // Build the variables map incrementally (like the VAP code does)
+        let mut var_map: HashMap<Key, Value> = HashMap::new();
+        var_map.insert(
+            Key::String(Arc::new("replicas".to_string())),
+            replicas_val,
+        );
+        context.add_variable(
+            "variables".to_string(),
+            Value::Map(Map {
+                map: Arc::new(var_map.clone()),
+            }),
+        );
+
+        // Step 2: Evaluate variable "oddReplicas" = variables.replicas % 2 == 1
+        let odd_val = evaluator
+            .evaluate_to_value("variables.replicas % 2 == 1", &context)
+            .expect("should evaluate variables.replicas % 2 == 1");
+        assert_eq!(odd_val, Value::Bool(true));
+
+        var_map.insert(
+            Key::String(Arc::new("oddReplicas".to_string())),
+            odd_val,
+        );
+        context.add_variable(
+            "variables".to_string(),
+            Value::Map(Map {
+                map: Arc::new(var_map),
+            }),
+        );
+
+        // Step 3: Evaluate validations
+        let v1 = evaluator
+            .evaluate("variables.replicas > 1", &context)
+            .expect("should evaluate variables.replicas > 1");
+        assert!(v1, "3 > 1 should be true");
+
+        let v2 = evaluator
+            .evaluate("variables.oddReplicas", &context)
+            .expect("should evaluate variables.oddReplicas");
+        assert!(v2, "oddReplicas (3 % 2 == 1) should be true");
+    }
+
+    /// Test that 1-replica deployment fails variables-based validation.
+    #[test]
+    fn test_cel_vap_variables_reject_low_replicas() {
+        let mut evaluator = CELEvaluator::new();
+
+        let deployment = serde_json::json!({
+            "spec": {"replicas": 1}
+        });
+
+        let mut context = CELContext::new();
+        context.add_json_variable("object", &deployment).unwrap();
+
+        let replicas_val = evaluator
+            .evaluate_to_value("object.spec.replicas", &context)
+            .unwrap();
+
+        let mut var_map: HashMap<Key, Value> = HashMap::new();
+        var_map.insert(
+            Key::String(Arc::new("replicas".to_string())),
+            replicas_val,
+        );
+        context.add_variable(
+            "variables".to_string(),
+            Value::Map(Map {
+                map: Arc::new(var_map),
+            }),
+        );
+
+        // 1 > 1 should be false
+        let v1 = evaluator
+            .evaluate("variables.replicas > 1", &context)
+            .unwrap();
+        assert!(!v1, "1 > 1 should be false");
+    }
+
+    /// Test namespaceObject in CEL context (used by "should validate against a Deployment").
+    #[test]
+    fn test_cel_namespace_object() {
+        let mut evaluator = CELEvaluator::new();
+
+        let ns = serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "Namespace",
+            "metadata": {"name": "test-ns"}
+        });
+
+        let mut context = CELContext::new();
+        context.add_json_variable("namespaceObject", &ns).unwrap();
+
+        let result = evaluator
+            .evaluate("namespaceObject.metadata.name == 'test-ns'", &context)
+            .unwrap();
+        assert!(result);
+    }
 }
