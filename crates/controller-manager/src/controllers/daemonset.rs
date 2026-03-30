@@ -270,6 +270,31 @@ impl<S: Storage> DaemonSetController<S> {
             }
         }
 
+        // Rolling update: delete pods with old template hash (one at a time for RollingUpdate strategy)
+        let update_strategy = daemonset.spec.update_strategy.as_ref()
+            .and_then(|s| s.strategy_type.as_deref())
+            .unwrap_or("RollingUpdate");
+        if update_strategy == "RollingUpdate" {
+            let mut updated_one = false;
+            for (node_name, pod) in pods_by_node.iter() {
+                let pod_hash = pod.metadata.labels.as_ref()
+                    .and_then(|l| l.get("controller-revision-hash"))
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                if !pod_hash.is_empty() && pod_hash != template_hash && !updated_one {
+                    let pod_name = &pod.metadata.name;
+                    let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
+                    if let Ok(()) = self.storage.delete(&pod_key).await {
+                        info!(
+                            "Rolling update: deleted DaemonSet pod {} on node {} (hash {} != {})",
+                            pod_name, node_name, pod_hash, template_hash
+                        );
+                        updated_one = true; // Only delete one pod per reconcile cycle
+                    }
+                }
+            }
+        }
+
         // Remove pods from nodes that are no longer eligible
         let eligible_node_names: std::collections::HashSet<_> = eligible_nodes
             .iter()
