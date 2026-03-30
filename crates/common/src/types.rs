@@ -197,9 +197,11 @@ impl ObjectMeta {
 #[serde(rename_all = "camelCase")]
 pub struct TypeMeta {
     /// Kind is the object's type
+    #[serde(default)]
     pub kind: String,
 
     /// APIVersion defines the versioned schema of the object
+    #[serde(default)]
     pub api_version: String,
 }
 

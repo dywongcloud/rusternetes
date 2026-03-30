@@ -60,9 +60,23 @@ pub async fn create_validating_webhook(
                     let compile_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         cel_interpreter::Program::compile(&expr_clone)
                     }));
-                    let program = match compile_result {
+                    let _program = match compile_result {
                         Ok(Ok(p)) => p,
                         Ok(Err(e)) => {
+                            let err_str = format!("{}", e);
+                            let err_lower = err_str.to_lowercase();
+                            // Allow "no such key" errors — the CEL library does
+                            // type-checking at compile time and rejects references
+                            // to undeclared variables like `object.metadata`. These
+                            // are valid K8s matchCondition expressions that will work
+                            // at runtime when the actual object is provided.
+                            if err_lower.contains("no such key")
+                                || err_lower.contains("not found")
+                                || err_lower.contains("undeclared")
+                                || err_lower.contains("undefined")
+                            {
+                                continue;
+                            }
                             return Err(rusternetes_common::Error::InvalidResource(format!(
                                 "matchConditions[{}].expression: compilation failed: {}",
                                 i, e
@@ -75,26 +89,6 @@ pub async fn create_validating_webhook(
                             )));
                         }
                     };
-                    // Type-check by evaluating with admission context variables
-                    // This catches references to undefined variables
-                    let mut ctx = cel_interpreter::Context::default();
-                    ctx.add_variable("object".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
-                    ctx.add_variable("oldObject".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
-                    ctx.add_variable("request".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
-                    if let Err(e) = program.execute(&ctx) {
-                        let err_str = format!("{}", e);
-                        let err_lower = err_str.to_lowercase();
-                        // Allow "no such key" and "not found" errors — these are valid expressions
-                        // that reference keys like object.metadata which don't exist in our empty
-                        // test context. The expression is syntactically valid.
-                        if !err_lower.contains("no such key") && !err_lower.contains("not found")
-                            && !err_lower.contains("undeclared") && !err_lower.contains("undefined") {
-                            return Err(rusternetes_common::Error::InvalidResource(format!(
-                                "matchConditions[{}].expression: compilation failed: {}",
-                                i, err_str
-                            )));
-                        }
-                    }
                 }
             }
         }
@@ -322,25 +316,30 @@ pub async fn create_mutating_webhook(
                             "matchConditions[{}].name must be non-empty", i
                         )));
                     }
-                    let program = match cel_interpreter::Program::compile(&condition.expression) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            return Err(rusternetes_common::Error::InvalidResource(format!(
-                                "matchConditions[{}].expression: Invalid CEL expression '{}': {}",
-                                i, condition.expression, e
-                            )));
+                    let expr_clone = condition.expression.clone();
+                    let compile_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        cel_interpreter::Program::compile(&expr_clone)
+                    }));
+                    match compile_result {
+                        Ok(Ok(_p)) => {}
+                        Ok(Err(e)) => {
+                            let err_str = format!("{}", e);
+                            let err_lower = err_str.to_lowercase();
+                            if !err_lower.contains("no such key")
+                                && !err_lower.contains("not found")
+                                && !err_lower.contains("undeclared")
+                                && !err_lower.contains("undefined")
+                            {
+                                return Err(rusternetes_common::Error::InvalidResource(format!(
+                                    "matchConditions[{}].expression: Invalid CEL expression '{}': {}",
+                                    i, condition.expression, e
+                                )));
+                            }
                         }
-                    };
-                    let mut ctx = cel_interpreter::Context::default();
-                    ctx.add_variable("object".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
-                    ctx.add_variable("oldObject".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
-                    ctx.add_variable("request".to_string(), cel_interpreter::Value::Map(cel_interpreter::objects::Map { map: std::sync::Arc::new(std::collections::HashMap::new()) }));
-                    if let Err(e) = program.execute(&ctx) {
-                        let err_str = format!("{}", e);
-                        if !err_str.contains("no such key") && !err_str.contains("not found") {
+                        Err(_panic) => {
                             return Err(rusternetes_common::Error::InvalidResource(format!(
-                                "matchConditions[{}].expression: compilation failed: {}",
-                                i, err_str
+                                "matchConditions[{}].expression: compilation failed: invalid CEL expression '{}'",
+                                i, condition.expression
                             )));
                         }
                     }

@@ -1278,6 +1278,12 @@ impl ContainerRuntime {
         expr: &str,
         env_vars: &[(String, String)],
     ) -> std::result::Result<String, String> {
+        // Check for backticks in the expression BEFORE expansion (K8s validates
+        // this at admission time, but we do it here for safety).
+        if expr.contains('`') {
+            return Err("subPath must not contain backticks".to_string());
+        }
+
         let mut result = expr.to_string();
         // Find all $(VAR_NAME) references and expand them
         loop {
@@ -1302,16 +1308,16 @@ impl ContainerRuntime {
                 return Err(format!("variable {} not found", var_name));
             }
         }
-        // Reject absolute paths
+        // Reject absolute paths in the expanded result
         if result.starts_with('/') {
             return Err(format!("subPath must not be an absolute path (expr='{}' result='{}')", expr, result));
         }
-        // Reject path traversal
-        if result.contains("..") {
-            return Err("subPath must not contain '..'".to_string());
-        }
-        if result.contains('`') {
-            return Err("subPath must not contain backticks".to_string());
+        // Reject path traversal — check for ".." as a path component, not substring.
+        // This matches K8s behavior: "foo..bar" is valid, but "foo/../bar" is not.
+        for component in result.split('/') {
+            if component == ".." {
+                return Err("subPath must not contain '..'".to_string());
+            }
         }
         Ok(result)
     }
@@ -2766,7 +2772,7 @@ impl ContainerRuntime {
                                     container.name
                                 ));
                             }
-                            if sub_path.contains("..") {
+                            if sub_path.split('/').any(|c| c == "..") {
                                 return Err(anyhow::anyhow!(
                                     "CreateContainerError: subPath must not contain '..' in container {}",
                                     container.name
@@ -6773,5 +6779,74 @@ mod tests {
             .no_proxy()
             .build();
         assert!(client.is_ok(), "Client with no_proxy should build successfully");
+    }
+
+    #[test]
+    fn test_expand_subpath_expr_basic() {
+        use super::ContainerRuntime;
+        let env = vec![
+            ("POD_NAME".to_string(), "my-pod".to_string()),
+            ("NAMESPACE".to_string(), "default".to_string()),
+        ];
+        let result = ContainerRuntime::expand_subpath_expr("$(POD_NAME)", &env);
+        assert_eq!(result.unwrap(), "my-pod");
+    }
+
+    #[test]
+    fn test_expand_subpath_expr_multiple_vars() {
+        use super::ContainerRuntime;
+        let env = vec![
+            ("POD_NAME".to_string(), "my-pod".to_string()),
+            ("NAMESPACE".to_string(), "default".to_string()),
+        ];
+        let result = ContainerRuntime::expand_subpath_expr("$(NAMESPACE)/$(POD_NAME)", &env);
+        assert_eq!(result.unwrap(), "default/my-pod");
+    }
+
+    #[test]
+    fn test_expand_subpath_expr_rejects_backticks_in_expr() {
+        use super::ContainerRuntime;
+        let env = vec![("POD_NAME".to_string(), "my-pod".to_string())];
+        let result = ContainerRuntime::expand_subpath_expr("$(POD_NAME)`echo hack`", &env);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("backtick"));
+    }
+
+    #[test]
+    fn test_expand_subpath_expr_rejects_absolute_path() {
+        use super::ContainerRuntime;
+        let env = vec![("DIR".to_string(), "/etc".to_string())];
+        let result = ContainerRuntime::expand_subpath_expr("$(DIR)/passwd", &env);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("absolute path"));
+    }
+
+    #[test]
+    fn test_expand_subpath_expr_rejects_dotdot_component() {
+        use super::ContainerRuntime;
+        let env = vec![("DIR".to_string(), "foo".to_string())];
+        let result = ContainerRuntime::expand_subpath_expr("$(DIR)/../secret", &env);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains(".."));
+    }
+
+    #[test]
+    fn test_expand_subpath_expr_allows_dots_in_name() {
+        use super::ContainerRuntime;
+        // "foo..bar" is NOT a path traversal — only ".." as a path component is
+        let env = vec![("POD_NAME".to_string(), "foo..bar".to_string())];
+        let result = ContainerRuntime::expand_subpath_expr("$(POD_NAME)", &env);
+        assert_eq!(result.unwrap(), "foo..bar");
+    }
+
+    #[test]
+    fn test_expand_subpath_expr_backtick_checked_before_expansion() {
+        use super::ContainerRuntime;
+        // Even if expansion would produce a valid path, backticks in the
+        // expression should be rejected first
+        let env = vec![("POD_NAME".to_string(), "/tmp".to_string())];
+        let result = ContainerRuntime::expand_subpath_expr("`$(POD_NAME)`", &env);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("backtick"));
     }
 }

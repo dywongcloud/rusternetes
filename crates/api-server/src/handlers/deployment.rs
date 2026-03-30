@@ -163,6 +163,13 @@ pub async fn update(
 
     deployment.metadata.name = name.clone();
     deployment.metadata.namespace = Some(namespace.clone());
+    // Ensure TypeMeta — clients may omit kind/apiVersion in PUT body
+    if deployment.type_meta.kind.is_empty() {
+        deployment.type_meta.kind = "Deployment".to_string();
+    }
+    if deployment.type_meta.api_version.is_empty() {
+        deployment.type_meta.api_version = "apps/v1".to_string();
+    }
 
     let key = build_key("deployments", Some(&namespace), &name);
 
