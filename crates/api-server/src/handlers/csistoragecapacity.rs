@@ -87,7 +87,24 @@ pub async fn list_csistoragecapacities(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<List<CSIStorageCapacity>>> {
+) -> Result<axum::response::Response> {
+    use axum::response::IntoResponse;
+    // Handle watch requests
+    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+        let watch_params = crate::handlers::watch::WatchParams {
+            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
+            watch: Some(true),
+            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        };
+        return crate::handlers::watch::watch_namespaced::<CSIStorageCapacity>(
+            state, auth_ctx, namespace, "csistoragecapacities", "storage.k8s.io", watch_params,
+        ).await;
+    }
+
     info!("Listing CSIStorageCapacities in namespace: {}", namespace);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "csistoragecapacities")
@@ -102,13 +119,13 @@ pub async fn list_csistoragecapacities(
     }
 
     let prefix = build_prefix("csistoragecapacities", Some(&namespace));
-    let mut cscs = state.storage.list(&prefix).await?;
+    let mut cscs: Vec<CSIStorageCapacity> = state.storage.list(&prefix).await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut cscs, &params)?;
 
     let list = List::new("CSIStorageCapacityList", "storage.k8s.io/v1", cscs);
-    Ok(Json(list))
+    Ok(Json(list).into_response())
 }
 
 pub async fn list_all_csistoragecapacities(
