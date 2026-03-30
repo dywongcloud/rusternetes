@@ -495,6 +495,12 @@ impl ContainerRuntime {
         // Create volumes first (includes service account token volumes)
         let volume_binds = self.create_pod_volumes(pod).await?;
 
+        // Sync filesystem to ensure volume files are visible to Docker containers.
+        // Docker Desktop uses virtiofs which may not immediately see newly written
+        // files from the host. A sync ensures all writes are flushed before we
+        // bind-mount the volume directories into containers.
+        let _ = std::process::Command::new("sync").output();
+
         // Get pod IP. For CNI mode, IP is available right after network setup.
         // For non-CNI (Docker bridge) mode, we start a pause container first so we
         // can learn the pod's IP before creating real containers (which need the IP
