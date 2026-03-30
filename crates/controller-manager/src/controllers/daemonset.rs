@@ -90,7 +90,9 @@ impl<S: Storage> DaemonSetController<S> {
         // Ensure a ControllerRevision exists for the current template
         let template_hash = {
             use sha2::{Sha256, Digest};
-            let serialized = serde_json::to_string(&daemonset.spec.template).unwrap_or_default();
+            // Normalize via serde_json::Value to sort HashMap keys deterministically
+            let value = serde_json::to_value(&daemonset.spec.template).unwrap_or_default();
+            let serialized = serde_json::to_string(&value).unwrap_or_default();
             let hash = Sha256::digest(serialized.as_bytes());
             format!("{:010x}", u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8])))
         };
@@ -428,7 +430,8 @@ impl<S: Storage> DaemonSetController<S> {
         // Add controller-revision-hash label (computed from template)
         let template_hash = {
             use sha2::{Sha256, Digest};
-            let serialized = serde_json::to_string(&daemonset.spec.template).unwrap_or_default();
+            let value = serde_json::to_value(&daemonset.spec.template).unwrap_or_default();
+            let serialized = serde_json::to_string(&value).unwrap_or_default();
             let hash = Sha256::digest(serialized.as_bytes());
             format!("{:010x}", u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8])))
         };
