@@ -2,7 +2,7 @@
 
 **Round 110** | COMPLETE | 441/441 tests | 283 passed, 158 failed (64.2% pass)
 
-## Non-Timeout Failures with Committed Fixes (~72)
+## Non-Timeout Failures with Committed Fixes (~73)
 
 | Category | Count | Commit | Fix |
 |----------|-------|--------|-----|
@@ -56,15 +56,15 @@
 | SA OIDC discovery | 1 | b07715d | OIDC discovery endpoints |
 | SA TokenReview | 1 | 44e23e0 | Handle Go-style null in TokenRequest |
 | CSIStorageCapacity | 1 | ba1c0d6 | Watch support for CSI list endpoint |
+| SA pod extra info | 1 | 44e23e0 | Cascading fix — TokenRequest null handling |
 
-## Non-Timeout Failures NOT Yet Fixed (~11)
+## Non-Timeout Failures NOT Yet Fixed (~10)
 
 | Category | Count | Error | Status |
 |----------|------|-------|--------|
 | Session affinity | 4 | "service not reachable" | kube-proxy networking — services unreachable |
 | Deployment rolling update | 1 | "revision mismatch" | RS revision annotation propagation |
 | Deployment rollover | 1 | "0 pods available" | Rollover availability timing |
-| SA pod extra info | 1 | "pod-name not in extra" | Kubelet token binding info |
 | Events lifecycle | 1 | "event wasn't updated" | Chrono timestamp precision loss |
 | ControllerRevision lifecycle | 1 | "revision 1 expected 3" | Controller overwrites test update |
 | kubectl proxy | 1 | "unexpected end of JSON" | Proxy response format |
