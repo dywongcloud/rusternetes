@@ -178,7 +178,19 @@ impl fmt::Display for FieldOperator {
 ///
 /// Supports nested fields like "status.phase" or "metadata.namespace"
 fn extract_field_value(resource: &Value, field_path: &str) -> Option<String> {
-    let parts: Vec<&str> = field_path.split('.').collect();
+    // K8s field selector aliases — some fields are shorthands for nested paths
+    let resolved_path = match field_path {
+        // Event source.component is queried as just "source"
+        "source" => "source.component",
+        // Event type is at top level
+        "type" => "type",
+        // Event reason
+        "reason" => "reason",
+        // involvedObject fields stay as-is (already dotted paths)
+        _ => field_path,
+    };
+
+    let parts: Vec<&str> = resolved_path.split('.').collect();
     let mut current = resource;
 
     for part in parts {

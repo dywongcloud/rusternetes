@@ -82,10 +82,19 @@ pub async fn create(
         }
     }
 
-    // Validate sysctls — reject unsafe sysctls unless explicitly allowed
+    // Validate sysctls — check name format and reject unsafe sysctls
     if let Some(ref spec) = pod.spec {
         if let Some(ref security_context) = spec.security_context {
             if let Some(ref sysctls) = security_context.sysctls {
+                // Validate sysctl names first (K8s rejects invalid names)
+                for sysctl in sysctls {
+                    if !is_valid_sysctl_name(&sysctl.name) {
+                        return Err(rusternetes_common::Error::InvalidResource(format!(
+                            "spec.securityContext.sysctls: Invalid value: \"{}\": must have at most 253 characters and match regex {}",
+                            sysctl.name, "^([a-z0-9][-_a-z0-9]*[a-z0-9]?\\.)*[a-z0-9][-_a-z0-9]*[a-z0-9]?$"
+                        )));
+                    }
+                }
                 let safe_sysctls = [
                     "kernel.shm_rmid_forced",
                     "net.ipv4.ip_local_port_range",
@@ -1209,6 +1218,29 @@ pub async fn deletecollection_pods(
 
     info!("DeleteCollection completed: {} pods deleted", deleted_count);
     Ok(StatusCode::OK)
+}
+
+/// Validate sysctl name matches K8s allowed pattern.
+/// Names must be dot-separated segments of lowercase alphanumeric with hyphens/underscores.
+fn is_valid_sysctl_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > 253 {
+        return false;
+    }
+    for segment in name.split('.') {
+        if segment.is_empty() {
+            return false;
+        }
+        for (i, c) in segment.chars().enumerate() {
+            if i == 0 {
+                if !c.is_ascii_lowercase() && !c.is_ascii_digit() {
+                    return false;
+                }
+            } else if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_' {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Detect if container resource requests/limits changed between old and new pod specs.

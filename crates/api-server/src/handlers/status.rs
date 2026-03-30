@@ -130,11 +130,22 @@ pub async fn update_status(
             crate::patch::PatchType::JsonPatch,
         ).map_err(|e| rusternetes_common::Error::Internal(format!("Failed to apply JSON patch: {}", e)))?;
 
-        // Only keep the status changes — preserve current spec and metadata
+        // Keep status changes and metadata changes (annotations/labels) from patch
         let mut result = current_resource.clone();
         if let (Some(result_obj), Some(patched_obj)) = (result.as_object_mut(), patched.as_object()) {
             if let Some(new_status) = patched_obj.get("status") {
                 result_obj.insert("status".to_string(), new_status.clone());
+            }
+            // Merge metadata changes from patch (annotations, labels)
+            if let Some(patched_meta) = patched_obj.get("metadata").and_then(|m| m.as_object()) {
+                if let Some(result_meta) = result_obj.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+                    if let Some(annotations) = patched_meta.get("annotations") {
+                        result_meta.insert("annotations".to_string(), annotations.clone());
+                    }
+                    if let Some(labels) = patched_meta.get("labels") {
+                        result_meta.insert("labels".to_string(), labels.clone());
+                    }
+                }
             }
             result_obj.remove("resourceVersion");
             // Ensure TypeMeta

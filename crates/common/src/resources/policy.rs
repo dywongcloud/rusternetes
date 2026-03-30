@@ -278,6 +278,15 @@ pub enum IntOrString {
     String(String),
 }
 
+impl std::fmt::Display for IntOrString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IntOrString::Int(i) => write!(f, "{}", i),
+            IntOrString::String(s) => write!(f, "{}", s),
+        }
+    }
+}
+
 /// PodDisruptionBudgetStatus represents the current status of a PDB
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

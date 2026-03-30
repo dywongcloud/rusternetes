@@ -826,13 +826,15 @@ impl Kubelet {
                             let observed_gen = fresh_pod.metadata.generation;
 
                             let mut new_pod = fresh_pod;
+                            // Set proper conditions for failed init containers
+                            let failed_conditions = Self::init_failed_pod_conditions();
                             new_pod.status = Some(PodStatus {
                                 phase: Some(Phase::Failed),
                                 message: Some(err_msg),
                                 reason: Some("FailedToStart".to_string()),
                                 host_ip: Some("127.0.0.1".to_string()),
                                 pod_ip: None,
-                                conditions: None,
+                                conditions: Some(failed_conditions),
                                 container_statuses: None,
                                 init_container_statuses,
                                 ephemeral_container_statuses: None,
@@ -1766,6 +1768,45 @@ impl Kubelet {
                 status: "False".to_string(),
                 reason: Some("ContainersNotReady".to_string()),
                 message: Some("Not all containers are ready".to_string()),
+                last_transition_time: now,
+                observed_generation: None,
+            },
+        ]
+    }
+
+    /// Build conditions for a pod whose init containers failed.
+    fn init_failed_pod_conditions() -> Vec<PodCondition> {
+        let now = Some(chrono::Utc::now());
+        vec![
+            PodCondition {
+                condition_type: "Initialized".to_string(),
+                status: "False".to_string(),
+                reason: Some("ContainersNotInitialized".to_string()),
+                message: Some("Init container failed".to_string()),
+                last_transition_time: now,
+                observed_generation: None,
+            },
+            PodCondition {
+                condition_type: "PodScheduled".to_string(),
+                status: "True".to_string(),
+                reason: None,
+                message: None,
+                last_transition_time: now,
+                observed_generation: None,
+            },
+            PodCondition {
+                condition_type: "ContainersReady".to_string(),
+                status: "False".to_string(),
+                reason: Some("ContainersNotReady".to_string()),
+                message: Some("Init container failed".to_string()),
+                last_transition_time: now,
+                observed_generation: None,
+            },
+            PodCondition {
+                condition_type: "Ready".to_string(),
+                status: "False".to_string(),
+                reason: Some("ContainersNotReady".to_string()),
+                message: Some("Init container failed".to_string()),
                 last_transition_time: now,
                 observed_generation: None,
             },

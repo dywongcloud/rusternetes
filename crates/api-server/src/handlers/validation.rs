@@ -351,7 +351,7 @@ pub fn validate_strict_fields(
     if let Ok(body_str) = std::str::from_utf8(original_body) {
         let dup_fields = find_all_duplicate_json_keys(body_str);
         for dup_field in &dup_fields {
-            error_parts.push(format!("duplicate field \"{}\"", dup_field));
+            error_parts.push(format!("json: unknown field \"{}\"", dup_field));
         }
     }
 

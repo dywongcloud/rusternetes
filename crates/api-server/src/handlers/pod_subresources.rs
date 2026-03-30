@@ -909,16 +909,22 @@ pub async fn create_eviction(
             // This PDB applies to our pod - check if eviction is allowed
             if let Some(ref status) = pdb.status {
                 if status.disruptions_allowed <= 0 {
+                    let min_avail_str = pdb.spec.min_available.as_ref()
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "<nil>".to_string());
+                    let max_unavail_str = pdb.spec.max_unavailable.as_ref()
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "<nil>".to_string());
                     return Err(Error::TooManyRequests(format!(
                         "Cannot evict pod {}/{}: PodDisruptionBudget {} does not allow any disruptions. \
-                        Current healthy: {}, Desired healthy: {}, Min available: {:?}, Max unavailable: {:?}",
+                        Current healthy: {}, Desired healthy: {}, Min available: {}, Max unavailable: {}",
                         namespace,
                         name,
                         pdb.metadata.name,
                         status.current_healthy,
                         status.desired_healthy,
-                        pdb.spec.min_available,
-                        pdb.spec.max_unavailable
+                        min_avail_str,
+                        max_unavail_str
                     )));
                 }
 

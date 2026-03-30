@@ -64,6 +64,8 @@ pub struct Taint {
     pub value: Option<String>,
     #[serde(default)]
     pub effect: String, // NoSchedule, PreferNoSchedule, NoExecute
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_added: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

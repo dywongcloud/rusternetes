@@ -1,6 +1,7 @@
 use anyhow::Result;
+use chrono::Utc;
 use rusternetes_common::resources::{Node, Pod};
-use rusternetes_storage::{build_key, build_prefix, Storage};
+use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -51,7 +52,6 @@ impl<S: Storage> TaintEvictionController<S> {
         }
 
         // Find all pods on this node
-        // We need to scan all namespaces for pods assigned to this node
         let all_pods: Vec<Pod> = self.storage.list::<Pod>("/registry/pods/").await.unwrap_or_default();
 
         let node_pods: Vec<&Pod> = all_pods
@@ -64,16 +64,45 @@ impl<S: Storage> TaintEvictionController<S> {
             })
             .collect();
 
-        for pod in node_pods {
-            // Check if pod tolerates all NoExecute taints
-            let tolerates_all = no_execute_taints.iter().all(|taint| {
-                self.pod_tolerates_taint(pod, taint)
-            });
+        let now = Utc::now();
 
-            if !tolerates_all {
-                // Pod doesn't tolerate a NoExecute taint — evict it
+        for pod in node_pods {
+            // Check each NoExecute taint against pod tolerations
+            let mut should_evict = false;
+
+            for taint in &no_execute_taints {
+                match self.pod_toleration_for_taint(pod, taint) {
+                    TolerationResult::NotTolerated => {
+                        // Pod doesn't tolerate this taint — evict immediately
+                        should_evict = true;
+                        break;
+                    }
+                    TolerationResult::ToleratedForever => {
+                        // Pod tolerates this taint indefinitely — skip
+                    }
+                    TolerationResult::ToleratedFor(seconds) => {
+                        // Pod tolerates for a limited time — check if time expired
+                        // Use taint's timeAdded or the pod's creation time as baseline
+                        let taint_added = taint.time_added
+                            .or(pod.metadata.creation_timestamp)
+                            .unwrap_or(now);
+                        let elapsed = (now - taint_added).num_seconds();
+                        if elapsed >= seconds {
+                            should_evict = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if should_evict {
                 let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
                 let pod_name = &pod.metadata.name;
+
+                // Skip already-deleting pods
+                if pod.metadata.deletion_timestamp.is_some() {
+                    continue;
+                }
 
                 // Skip system pods (kube-system namespace)
                 if namespace == "kube-system" {
@@ -104,58 +133,82 @@ impl<S: Storage> TaintEvictionController<S> {
         Ok(())
     }
 
-    fn pod_tolerates_taint(&self, pod: &Pod, taint: &rusternetes_common::resources::Taint) -> bool {
-        let tolerations = pod
-            .spec
-            .as_ref()
-            .and_then(|s| s.tolerations.as_ref());
-
-        let tolerations = match tolerations {
+    /// Check how a pod tolerates a specific taint
+    fn pod_toleration_for_taint(
+        &self,
+        pod: &Pod,
+        taint: &rusternetes_common::resources::Taint,
+    ) -> TolerationResult {
+        let tolerations = match pod.spec.as_ref().and_then(|s| s.tolerations.as_ref()) {
             Some(t) => t,
-            None => return false, // No tolerations = doesn't tolerate any taint
+            None => return TolerationResult::NotTolerated,
         };
 
-        tolerations.iter().any(|toleration| {
-            // Empty key with Exists operator matches all taints
-            if toleration.key.as_ref().map_or(false, |k| k.is_empty())
-                || toleration.key.is_none()
-            {
-                if toleration.operator.as_deref() == Some("Exists") {
-                    return true;
-                }
+        for toleration in tolerations {
+            // Check if this toleration matches the taint
+            if !self.toleration_matches_taint(toleration, taint) {
+                continue;
             }
 
-            // Key must match
-            let key_matches = toleration
-                .key
-                .as_ref()
-                .map_or(false, |k| k == &taint.key);
-
-            if !key_matches {
-                return false;
+            // Toleration matches — check if it has a time limit
+            if let Some(seconds) = toleration.toleration_seconds {
+                return TolerationResult::ToleratedFor(seconds);
             }
 
-            // Effect must match (or be empty which matches all effects)
-            let effect_matches = toleration
-                .effect
-                .as_ref()
-                .map_or(true, |e| e.is_empty() || e == &taint.effect);
+            return TolerationResult::ToleratedForever;
+        }
 
-            if !effect_matches {
-                return false;
-            }
-
-            // Operator check
-            match toleration.operator.as_deref() {
-                Some("Exists") => true, // Key match is sufficient
-                Some("Equal") | None => {
-                    // Value must match
-                    let taint_value = taint.value.as_deref().unwrap_or("");
-                    let toleration_value = toleration.value.as_deref().unwrap_or("");
-                    taint_value == toleration_value
-                }
-                _ => false,
-            }
-        })
+        TolerationResult::NotTolerated
     }
+
+    fn toleration_matches_taint(
+        &self,
+        toleration: &rusternetes_common::resources::Toleration,
+        taint: &rusternetes_common::resources::Taint,
+    ) -> bool {
+        // Empty key with Exists operator matches all taints
+        if toleration.key.as_ref().map_or(true, |k| k.is_empty()) {
+            if toleration.operator.as_deref() == Some("Exists") {
+                return true;
+            }
+        }
+
+        // Key must match
+        let key_matches = toleration
+            .key
+            .as_ref()
+            .map_or(false, |k| k == &taint.key);
+        if !key_matches {
+            return false;
+        }
+
+        // Effect must match (or be empty which matches all effects)
+        let effect_matches = toleration
+            .effect
+            .as_ref()
+            .map_or(true, |e| e.is_empty() || e == &taint.effect);
+        if !effect_matches {
+            return false;
+        }
+
+        // Operator check
+        match toleration.operator.as_deref() {
+            Some("Exists") => true,
+            Some("Equal") | None => {
+                let taint_value = taint.value.as_deref().unwrap_or("");
+                let toleration_value = toleration.value.as_deref().unwrap_or("");
+                taint_value == toleration_value
+            }
+            _ => false,
+        }
+    }
+}
+
+enum TolerationResult {
+    /// Pod doesn't tolerate this taint
+    NotTolerated,
+    /// Pod tolerates this taint indefinitely
+    ToleratedForever,
+    /// Pod tolerates this taint for N seconds
+    ToleratedFor(i64),
 }
