@@ -1,40 +1,23 @@
 # Conformance Issue Tracker
 
-**Round 111** | IN PROGRESS (compromised by kubelet restart mid-run)
+**Round 113** | IN PROGRESS | All fixes deployed from clean start
 
-## Analysis: Most Round 111 failures are restart artifacts
+## Deployed Fixes (85 total)
 
-The kubelet was restarted at ~15:12 to deploy the orphan cleanup fix. This killed running test pods, causing cascading failures. Genuine new failures vs restart artifacts:
+All previous conformance fixes deployed — see git log for full list. Key fixes this cycle:
+- 80 non-timeout fixes from Round 110 analysis
+- DaemonSet deterministic pod names (f2e521d)
+- DaemonSet deterministic template hash (fb12f97) — fixes pod thrashing
+- Orphan cleanup 60s grace period + all-pod check (2b82b7f)
+- Terminal pod container cleanup (044767d)
+- fsGroup g+rwX permissions (cc2f8b8)
+- ConfigMap/Secret volume resync items fix (de78bc8)
+- EmptyDir bind mount revert (add9c7d)
+- kube-proxy sync 5s + session affinity DNAT fixes (a37b4c3 + 80d5fb8)
 
-### Restart Artifacts (will pass in clean Round 112)
-- Secret env vars, Projected secret/downwardAPI volumes — pods killed mid-test
-- CronJob API ADDED vs MODIFIED — watch connection reset
-- ConfigMap env prefixes, volume mappings — pods recreated without data
+## Round 113 Failures
 
-### Recurring from Round 110 (fixes deployed, need clean run to verify)
-| Category | R110 Fix | Commit |
-|----------|---------|--------|
-| StatefulSet scaling | Deterministic revision hash | 0591bb2 |
-| Job FailIndex | Per-index failure tracking | 0591bb2 |
-| Job successPolicy | SuccessPolicy evaluation | 0591bb2 |
-| VAP variables | Variable evaluation | 818922f |
-| Sysctl reject | Name validation format | 55c1e5a |
-| Session affinity | kube-proxy DNAT fixes | a37b4c3 |
-| Termination message | FallbackToLogsOnError | 6af1a31 |
-
-### Genuinely New (all fixed)
-| Category | Error | Fix | Commit |
-|----------|-------|-----|--------|
-| EmptyDir permissions | File perms not 0777 | fsGroup g+rwX + Docker named volumes for POSIX perms | cc2f8b8 + de78bc8 |
-| Secret volume resync items | Wrote ALL keys, not mapped ones | Resync respects items field | de78bc8 |
-| ConfigMap volume resync items | Wrote ALL keys, not mapped ones | Resync respects items field | de78bc8 |
-
-## Fixes Deployed This Round
-| Fix | Commit |
-|-----|--------|
-| Orphan cleanup 30s grace period | 41b37f4 |
-| Terminal pod container cleanup | 044767d |
-| All 80 Round 110 fixes | Various |
+(monitoring — no results yet, tests initializing)
 
 ## Progress
 | Round | Fail | Total | Rate |
@@ -42,5 +25,4 @@ The kubelet was restarted at ~15:12 to deploy the orphan cleanup fix. This kille
 | 107 | 19 | ~430 | ~96% |
 | 108 | 178 | 441 | 60% |
 | 110 | 158 | 441 | 64.2% |
-| 111 | 27+ | 48/441 | 43.8% (COMPROMISED — restart mid-run) |
-| 112 | 1 | 5/441 | 80.0% (early — 83 fixes deployed) |
+| 113 | ? | 0/441 | IN PROGRESS |
