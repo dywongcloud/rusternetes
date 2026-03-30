@@ -108,6 +108,11 @@ pub async fn create(
         }
     }
 
+    // Fetch LimitRanges once for this request (used for defaults and validation)
+    let lr_prefix = rusternetes_storage::build_prefix("limitranges", Some(&namespace));
+    let limit_ranges: Vec<rusternetes_common::resources::LimitRange> =
+        state.storage.list(&lr_prefix).await.unwrap_or_default();
+
     // Set defaults
     if let Some(ref mut spec) = pod.spec {
         if spec.restart_policy.is_none() {
@@ -119,10 +124,7 @@ pub async fn create(
         if spec.termination_grace_period_seconds.is_none() {
             spec.termination_grace_period_seconds = Some(30);
         }
-        // Apply LimitRange defaults to containers
-        let lr_prefix = rusternetes_storage::build_prefix("limitranges", Some(&namespace));
-        let limit_ranges: Vec<rusternetes_common::resources::LimitRange> =
-            state.storage.list(&lr_prefix).await.unwrap_or_default();
+        // Apply LimitRange defaults to containers (using pre-fetched list)
         for lr in &limit_ranges {
             {
                 let limits = &lr.spec.limits;
@@ -253,8 +255,8 @@ pub async fn create(
         // Continue anyway - don't fail pod creation if SA injection fails
     }
 
-    // Apply LimitRange defaults and validate constraints
-    match crate::admission::apply_limit_range(&state.storage, &namespace, &mut pod).await {
+    // Apply LimitRange defaults and validate constraints (reuse already-fetched list)
+    match crate::admission::apply_limit_range_with(&mut pod, &limit_ranges) {
         Ok(true) => {
             info!(
                 "LimitRange admission passed for pod {}/{}",
@@ -312,15 +314,34 @@ pub async fn create(
         }
     }
 
-    // Check RuntimeClass exists if specified
+    // Check RuntimeClass exists if specified, and inject overhead
     if let Some(rc_name) = pod.spec.as_ref().and_then(|s| s.runtime_class_name.as_deref()) {
         if !rc_name.is_empty() {
             let rc_key = rusternetes_storage::build_key("runtimeclasses", None, rc_name);
-            if state.storage.get::<serde_json::Value>(&rc_key).await.is_err() {
-                return Err(rusternetes_common::Error::Forbidden(format!(
-                    "pod {} references non-existent RuntimeClass \"{}\"",
-                    pod.metadata.name, rc_name
-                )));
+            match state.storage.get::<serde_json::Value>(&rc_key).await {
+                Ok(rc_value) => {
+                    // Set pod overhead from RuntimeClass overhead.podFixed
+                    if let Some(overhead) = rc_value.get("overhead")
+                        .and_then(|o| o.get("podFixed"))
+                        .and_then(|pf| pf.as_object())
+                    {
+                        let overhead_map: std::collections::HashMap<String, String> = overhead
+                            .iter()
+                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                            .collect();
+                        if !overhead_map.is_empty() {
+                            if let Some(spec) = pod.spec.as_mut() {
+                                spec.overhead = Some(overhead_map);
+                            }
+                        }
+                    }
+                }
+                Err(_) => {
+                    return Err(rusternetes_common::Error::Forbidden(format!(
+                        "pod {} references non-existent RuntimeClass \"{}\"",
+                        pod.metadata.name, rc_name
+                    )));
+                }
             }
         }
     }
@@ -717,6 +738,11 @@ pub async fn delete_pod(
         state.storage.delete(&key).await?;
         return Ok(Json(updated_pod));
     }
+
+    // Bump generation — setting deletionTimestamp is a metadata change
+    // that K8s considers a generation bump.
+    let current_gen = updated_pod.metadata.generation.unwrap_or(1);
+    updated_pod.metadata.generation = Some(current_gen + 1);
 
     // Update the pod in storage with deletionTimestamp set
     // The kubelet will detect this and handle graceful shutdown

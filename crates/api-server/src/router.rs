@@ -2108,18 +2108,12 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             .layer(axum_middleware::from_fn(
                 middleware::normalize_content_type_middleware,
             ))
-            .layer(axum_middleware::from_fn(
-                middleware::log_request_body_middleware,
-            ))
             .layer(axum_middleware::from_fn(middleware::skip_auth_middleware));
     } else {
         // In normal mode, apply full authentication
         protected_routes = protected_routes
             .layer(axum_middleware::from_fn(
                 middleware::normalize_content_type_middleware,
-            ))
-            .layer(axum_middleware::from_fn(
-                middleware::log_request_body_middleware,
             ))
             .layer(axum_middleware::from_fn(middleware::auth_middleware))
             .layer(Extension(state.token_manager.clone()))

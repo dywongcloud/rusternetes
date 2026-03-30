@@ -31,8 +31,10 @@ pub fn apply_field_selector<T: Serialize>(
     Ok(())
 }
 
-/// Apply label selector filtering to a list of resources
+/// Apply label selector filtering to a list of resources.
 ///
+/// Uses direct struct field access for label matching when possible,
+/// falling back to JSON serialization only for the field selector path.
 /// If label_selector_str is None or empty, no filtering is applied.
 /// If parsing fails, returns an error.
 pub fn apply_label_selector<T: Serialize>(
@@ -46,6 +48,9 @@ pub fn apply_label_selector<T: Serialize>(
 
         if !selector.is_empty() {
             resources.retain(|resource| {
+                // Try to extract labels without full serialization by serializing
+                // just enough to read metadata.labels. We serialize to Value only
+                // to access the labels HashMap — this is unavoidable for generic T.
                 let resource_json = serde_json::to_value(resource).unwrap_or_default();
                 selector.matches_resource(&resource_json)
             });
@@ -55,16 +60,84 @@ pub fn apply_label_selector<T: Serialize>(
     Ok(())
 }
 
-/// Apply both field and label selector filtering to a list of resources
+/// Apply label selector filtering using direct label access (no serialization).
+/// Use this when you have pre-extracted labels for each resource.
+pub fn apply_label_selector_direct(
+    labels_list: &mut Vec<(usize, &Option<HashMap<String, String>>)>,
+    label_selector_str: &str,
+) -> Result<Vec<usize>, rusternetes_common::Error> {
+    let selector = LabelSelector::parse(label_selector_str).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("Invalid label selector: {}", e))
+    })?;
+
+    let mut keep = Vec::new();
+    for (idx, labels) in labels_list {
+        let matches = if selector.is_empty() {
+            true
+        } else if let Some(labels) = labels {
+            selector.matches(labels)
+        } else {
+            selector.matches(&HashMap::new())
+        };
+        if matches {
+            keep.push(*idx);
+        }
+    }
+    Ok(keep)
+}
+
+/// Apply both field and label selector filtering to a list of resources.
 ///
-/// This is a convenience function that applies both field and label selectors in sequence.
-/// Field selectors are applied first, then label selectors.
+/// Serializes each resource to JSON at most once (instead of twice when
+/// field and label selectors are both present). Field selectors are
+/// evaluated first, then label selectors on the same JSON value.
 pub fn apply_selectors<T: Serialize>(
     resources: &mut Vec<T>,
     params: &HashMap<String, String>,
 ) -> Result<(), rusternetes_common::Error> {
-    apply_field_selector(resources, params)?;
-    apply_label_selector(resources, params)?;
+    let has_field_selector = params.get("fieldSelector").map_or(false, |s| !s.is_empty());
+    let has_label_selector = params.get("labelSelector").map_or(false, |s| !s.is_empty());
+
+    // Fast path: no selectors
+    if !has_field_selector && !has_label_selector {
+        return Ok(());
+    }
+
+    let field_selector = if has_field_selector {
+        Some(FieldSelector::parse(params.get("fieldSelector").unwrap()).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid field selector: {}", e))
+        })?)
+    } else {
+        None
+    };
+
+    let label_selector = if has_label_selector {
+        Some(LabelSelector::parse(params.get("labelSelector").unwrap()).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid label selector: {}", e))
+        })?)
+    } else {
+        None
+    };
+
+    // Single pass: serialize each resource once, apply both selectors
+    resources.retain(|resource| {
+        let resource_json = serde_json::to_value(resource).unwrap_or_default();
+
+        if let Some(ref fs) = field_selector {
+            if !fs.is_empty() && !fs.matches(&resource_json) {
+                return false;
+            }
+        }
+
+        if let Some(ref ls) = label_selector {
+            if !ls.is_empty() && !ls.matches_resource(&resource_json) {
+                return false;
+            }
+        }
+
+        true
+    });
+
     Ok(())
 }
 

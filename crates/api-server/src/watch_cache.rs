@@ -89,12 +89,20 @@ impl WatchCache {
                         use futures::StreamExt;
                         while let Some(event_result) = stream.next().await {
                             // Extract the resourceVersion from the event value's metadata.
-                            // This gives us the actual etcd mod_revision, NOT a timestamp.
+                            // Uses string search instead of full JSON parse since the format
+                            // is controlled by our inject_resource_version() and is always
+                            // "resourceVersion":"<digits>".
                             fn extract_rv(value: &str) -> i64 {
-                                serde_json::from_str::<serde_json::Value>(value).ok()
-                                    .and_then(|v| v.get("metadata")?.get("resourceVersion")?.as_str().map(String::from))
-                                    .and_then(|rv| rv.parse::<i64>().ok())
-                                    .unwrap_or(0) // Never use timestamps — 0 is safe fallback
+                                const NEEDLE: &str = "\"resourceVersion\":\"";
+                                if let Some(start) = value.find(NEEDLE) {
+                                    let num_start = start + NEEDLE.len();
+                                    if let Some(end) = value[num_start..].find('"') {
+                                        return value[num_start..num_start + end]
+                                            .parse::<i64>()
+                                            .unwrap_or(0);
+                                    }
+                                }
+                                0
                             }
 
                             let cached = match event_result {

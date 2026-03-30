@@ -19,7 +19,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::{interval, timeout};
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, info};
 
 /// Kubernetes watch event types
@@ -206,7 +206,7 @@ where
 
     // Create channel for sending events to client
     let (tx, rx) =
-        tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
+        tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(8192);
 
     // Determine whether to send initial ADDED events:
     // - If sendInitialEvents=true: always send
@@ -252,7 +252,7 @@ where
                 object,
             };
             if let Ok(json) = serde_json::to_string(&k8s_event) {
-                if tx.send(Ok(format!("{}\n", json))).is_err() {
+                if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                     return; // Client disconnected
                 }
             }
@@ -286,7 +286,7 @@ where
                 object: bookmark,
             };
             if let Ok(json) = serde_json::to_string(&k8s_event) {
-                let _ = tx.send(Ok(format!("{}\n", json)));
+                let _ = tx.try_send(Ok(format!("{}\n", json)));
             }
             debug!("Sent initial-events-end bookmark with resourceVersion: {}", rv);
             // Ensure latest_resource_version is set so periodic bookmarks work
@@ -329,7 +329,7 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
                                         }
@@ -377,7 +377,7 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
                                         }
@@ -405,7 +405,7 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
                                         }
@@ -453,7 +453,7 @@ where
                                     object: bookmark,
                                 };
                                 if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                    let _ = tx.send(Ok(format!("{}\n", json)));
+                                    let _ = tx.try_send(Ok(format!("{}\n", json)));
                                     // Don't break on bookmark send failure — the client
                                     // might have reset just the bookmark stream but the
                                     // watch connection is still alive.
@@ -489,7 +489,7 @@ where
                                 object: bookmark,
                             };
                             if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                let _ = tx.send(Ok(format!("{}\n", json)));
+                                let _ = tx.try_send(Ok(format!("{}\n", json)));
                             }
                         }
                     }
@@ -502,7 +502,7 @@ where
     });
 
     // Convert receiver to stream
-    let stream = UnboundedReceiverStream::new(rx);
+    let stream = ReceiverStream::new(rx);
 
     // Build response with proper headers for streaming
     let response = Response::builder()
@@ -602,7 +602,7 @@ where
 
     // Create channel for sending events to client
     let (tx, rx) =
-        tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
+        tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(8192);
 
     // Determine whether to send initial ADDED events
     let should_send_initial = send_initial_events
@@ -642,7 +642,7 @@ where
                 object,
             };
             if let Ok(json) = serde_json::to_string(&k8s_event) {
-                if tx.send(Ok(format!("{}\n", json))).is_err() {
+                if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                     return; // Client disconnected
                 }
             }
@@ -676,7 +676,7 @@ where
                 object: bookmark,
             };
             if let Ok(json) = serde_json::to_string(&k8s_event) {
-                let _ = tx.send(Ok(format!("{}\n", json)));
+                let _ = tx.try_send(Ok(format!("{}\n", json)));
             }
             debug!("Sent initial-events-end bookmark with resourceVersion: {}", rv);
             // Ensure latest_resource_version is set so periodic bookmarks work
@@ -719,7 +719,7 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
                                         }
@@ -767,7 +767,7 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
                                         }
@@ -795,7 +795,7 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
                                         }
@@ -843,7 +843,7 @@ where
                                     object: bookmark,
                                 };
                                 if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                    let _ = tx.send(Ok(format!("{}\n", json)));
+                                    let _ = tx.try_send(Ok(format!("{}\n", json)));
                                     // Don't break on bookmark send failure — the client
                                     // might have reset just the bookmark stream but the
                                     // watch connection is still alive.
@@ -879,7 +879,7 @@ where
                                 object: bookmark,
                             };
                             if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                let _ = tx.send(Ok(format!("{}\n", json)));
+                                let _ = tx.try_send(Ok(format!("{}\n", json)));
                             }
                         }
                     }
@@ -892,7 +892,7 @@ where
     });
 
     // Convert receiver to stream
-    let stream = UnboundedReceiverStream::new(rx);
+    let stream = ReceiverStream::new(rx);
 
     // Build response with proper headers for streaming
     let response = Response::builder()
@@ -1876,7 +1876,7 @@ pub async fn watch_cluster_scoped_json(
     let current_rev = state.storage.current_revision().await.unwrap_or(1);
     let current_rev_str = current_rev.to_string();
 
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(8192);
 
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
@@ -1902,7 +1902,7 @@ pub async fn watch_cluster_scoped_json(
                     "object": object
                 });
                 if let Ok(json) = serde_json::to_string(&k8s_event) {
-                    if tx.send(Ok(format!("{}\n", json))).is_err() {
+                    if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                         return;
                     }
                 }
@@ -1925,7 +1925,7 @@ pub async fn watch_cluster_scoped_json(
                     }
                 });
                 if let Ok(json) = serde_json::to_string(&bookmark) {
-                    let _ = tx.send(Ok(format!("{}\n", json)));
+                    let _ = tx.try_send(Ok(format!("{}\n", json)));
                 }
             }
         }
@@ -1958,7 +1958,7 @@ pub async fn watch_cluster_scoped_json(
                                         "object": object
                                     });
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                                             return;
                                         }
                                     }
@@ -1993,7 +1993,7 @@ pub async fn watch_cluster_scoped_json(
                                 }
                             });
                             if let Ok(json) = serde_json::to_string(&bookmark) {
-                                if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                                     return;
                                 }
                             }
@@ -2010,7 +2010,7 @@ pub async fn watch_cluster_scoped_json(
         }
     });
 
-    let stream = UnboundedReceiverStream::new(rx);
+    let stream = ReceiverStream::new(rx);
     let body = Body::from_stream(stream);
 
     Ok(Response::builder()
@@ -2050,7 +2050,7 @@ pub async fn watch_namespaced_json(
     let current_rev = state.storage.current_revision().await.unwrap_or(1);
     let current_rev_str = current_rev.to_string();
 
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<std::result::Result<String, std::io::Error>>();
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(8192);
 
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
@@ -2076,7 +2076,7 @@ pub async fn watch_namespaced_json(
                     "object": object
                 });
                 if let Ok(json) = serde_json::to_string(&k8s_event) {
-                    if tx.send(Ok(format!("{}\n", json))).is_err() {
+                    if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                         return;
                     }
                 }
@@ -2099,7 +2099,7 @@ pub async fn watch_namespaced_json(
                     }
                 });
                 if let Ok(json) = serde_json::to_string(&bookmark) {
-                    let _ = tx.send(Ok(format!("{}\n", json)));
+                    let _ = tx.try_send(Ok(format!("{}\n", json)));
                 }
             }
         }
@@ -2132,7 +2132,7 @@ pub async fn watch_namespaced_json(
                                         "object": object
                                     });
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                                             return;
                                         }
                                     }
@@ -2167,7 +2167,7 @@ pub async fn watch_namespaced_json(
                                 }
                             });
                             if let Ok(json) = serde_json::to_string(&bookmark) {
-                                if tx.send(Ok(format!("{}\n", json))).is_err() {
+                                if tx.try_send(Ok(format!("{}\n", json))).is_err() {
                                     return;
                                 }
                             }
@@ -2184,7 +2184,7 @@ pub async fn watch_namespaced_json(
         }
     });
 
-    let stream = UnboundedReceiverStream::new(rx);
+    let stream = ReceiverStream::new(rx);
     let body = Body::from_stream(stream);
 
     Ok(Response::builder()

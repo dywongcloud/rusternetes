@@ -301,10 +301,17 @@ pub async fn apply_limit_range<S: Storage>(
     namespace: &str,
     pod: &mut Pod,
 ) -> anyhow::Result<bool> {
-    // Get all LimitRanges for this namespace
     let limit_prefix = format!("/registry/limitranges/{}/", namespace);
     let limit_ranges: Vec<LimitRange> = storage.list(&limit_prefix).await?;
+    apply_limit_range_with(pod, &limit_ranges)
+}
 
+/// Apply LimitRange defaults and validate constraints using pre-fetched LimitRanges.
+/// Use this when the caller already has the LimitRange list to avoid a redundant storage read.
+pub fn apply_limit_range_with(
+    pod: &mut Pod,
+    limit_ranges: &Vec<LimitRange>,
+) -> anyhow::Result<bool> {
     if limit_ranges.is_empty() {
         // No limits to apply
         return Ok(true);
@@ -313,7 +320,7 @@ pub async fn apply_limit_range<S: Storage>(
     // Apply defaults and validate for each container
     if let Some(spec) = &mut pod.spec {
         for container in &mut spec.containers {
-            for limit_range in &limit_ranges {
+            for limit_range in limit_ranges {
                 for limit_item in &limit_range.spec.limits {
                     // Only apply Container limits to containers
                     if limit_item.item_type == "Container" {
