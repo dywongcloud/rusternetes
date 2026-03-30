@@ -406,8 +406,14 @@ impl<S: Storage> DaemonSetController<S> {
         namespace: &str,
     ) -> Result<()> {
         let daemonset_name = &daemonset.metadata.name;
-        // Use a short random suffix to avoid name collisions when recreating after failed pods
-        let suffix: String = uuid::Uuid::new_v4().to_string()[..5].to_string();
+        // Use a deterministic hash suffix based on daemonset UID + node name.
+        // This ensures the same pod name is generated for the same node,
+        // preventing orphan cleanup from killing pods that the controller
+        // will just recreate with a different name.
+        use sha2::{Sha256, Digest};
+        let hash_input = format!("{}-{}", daemonset.metadata.uid, node_name);
+        let hash = Sha256::digest(hash_input.as_bytes());
+        let suffix = format!("{:05x}", u32::from_be_bytes(hash[..4].try_into().unwrap_or([0u8; 4])) & 0xFFFFF);
         let pod_name = format!("{}-{}-{}", daemonset_name, &node_name.replace('.', "-"), suffix);
 
         // Create pod from template
