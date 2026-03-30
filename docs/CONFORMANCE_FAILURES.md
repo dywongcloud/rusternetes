@@ -43,3 +43,4 @@ The kubelet was restarted at ~15:12 to deploy the orphan cleanup fix. This kille
 | 108 | 178 | 441 | 60% |
 | 110 | 158 | 441 | 64.2% |
 | 111 | 27+ | 48/441 | 43.8% (COMPROMISED — restart mid-run) |
+| 112 | 1 | 5/441 | 80.0% (early — 83 fixes deployed) |
