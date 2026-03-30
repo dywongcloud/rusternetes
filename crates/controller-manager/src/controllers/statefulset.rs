@@ -172,13 +172,14 @@ impl<S: Storage> StatefulSetController<S> {
                 info!("Created pod {}-{}", name, i);
             }
         } else if current_replicas > desired_replicas {
-            // Scale down: delete pods in reverse order
-            for i in (desired_replicas..current_replicas).rev() {
-                let pod_name = format!("{}-{}", name, i);
-                let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
-                self.storage.delete(&pod_key).await?;
-                info!("Deleted pod {}", pod_name);
-            }
+            // Scale down: delete ONE pod at a time in reverse order.
+            // K8s StatefulSet scales down one pod per reconcile cycle,
+            // waiting for each to fully terminate before deleting the next.
+            let i = current_replicas - 1;
+            let pod_name = format!("{}-{}", name, i);
+            let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
+            self.storage.delete(&pod_key).await?;
+            info!("Scale down: deleted pod {} ({} -> {})", pod_name, current_replicas, current_replicas - 1);
         }
 
         // Rolling update: if replica count matches but pods have old revision, delete one at a time.
