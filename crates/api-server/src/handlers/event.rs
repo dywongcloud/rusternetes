@@ -229,6 +229,19 @@ pub async fn update(
 
     let key = build_key("events", Some(&namespace), &name);
 
+    // Preserve creation_timestamp from the existing resource — the client
+    // may send a truncated version (Go's time.Time loses nanosecond precision
+    // during JSON round-trip in some cases).
+    if let Ok(existing) = state.storage.get::<Event>(&key).await {
+        if existing.metadata.creation_timestamp.is_some() {
+            event.metadata.creation_timestamp = existing.metadata.creation_timestamp;
+        }
+        // Also preserve UID — must not change on update
+        if !existing.metadata.uid.is_empty() {
+            event.metadata.uid = existing.metadata.uid;
+        }
+    }
+
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
         info!(
