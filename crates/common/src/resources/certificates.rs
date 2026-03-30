@@ -28,9 +28,11 @@ fn default_kind() -> String {
 #[serde(rename_all = "camelCase")]
 pub struct CertificateSigningRequestSpec {
     /// Base64-encoded PKCS#10 CSR data
+    #[serde(default)]
     pub request: String,
 
     /// signerName indicates the requested signer
+    #[serde(default)]
     pub signer_name: String,
 
     /// expirationSeconds is the requested duration of validity
@@ -38,6 +40,7 @@ pub struct CertificateSigningRequestSpec {
     pub expiration_seconds: Option<i32>,
 
     /// usages specifies a set of key usages requested in the issued certificate
+    #[serde(default)]
     pub usages: Vec<KeyUsage>,
 
     /// username contains the name of the user that created the CertificateSigningRequest
