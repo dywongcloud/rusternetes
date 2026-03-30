@@ -158,6 +158,7 @@ pub async fn get_core_api(headers: HeaderMap) -> Response {
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_LENGTH, json_bytes.len().to_string())
         .body(Body::from(json_bytes))
         .unwrap()
 }
