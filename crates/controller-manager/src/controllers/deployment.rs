@@ -4,8 +4,6 @@ use rusternetes_common::{
     types::{ObjectMeta, TypeMeta},
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info};
 
@@ -365,14 +363,15 @@ impl<S: Storage> DeploymentController<S> {
             .await
     }
 
-    /// Generate a pod-template-hash from the pod template spec.
+    /// Generate a deterministic pod-template-hash from the pod template spec.
+    /// Uses SHA-256 via serde_json::Value normalization (sorts HashMap keys).
     fn compute_pod_template_hash(deployment: &Deployment) -> String {
-        let template_json = serde_json::to_string(&deployment.spec.template)
-            .unwrap_or_default();
-        let mut hasher = DefaultHasher::new();
-        template_json.hash(&mut hasher);
-        let hash = hasher.finish();
-        format!("{:x}", hash as u32 & 0xFFFFFFFF)
+        use sha2::{Sha256, Digest};
+        // Convert to Value first to normalize HashMap key ordering
+        let value = serde_json::to_value(&deployment.spec.template).unwrap_or_default();
+        let template_json = serde_json::to_string(&value).unwrap_or_default();
+        let hash = Sha256::digest(template_json.as_bytes());
+        format!("{:08x}", u32::from_be_bytes(hash[..4].try_into().unwrap_or([0u8; 4])))
     }
 
     async fn create_replicaset_with_replicas(
