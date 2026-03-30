@@ -56,12 +56,12 @@
 
 | Category | Count | Error | Status |
 |----------|------|-------|--------|
-| StatefulSet scaling | 1 | "scaled unexpectedly 3→2" | Scale down ordering |
-| StatefulSet eviction | 1 | "expected to be re-created" | Pod eviction recreation |
+| StatefulSet scaling | 1 | "scaled unexpectedly 3→2" | LIKELY FIXED — deterministic revision hash prevents spurious deletes |
+| StatefulSet eviction | 1 | "expected to be re-created" | Pod eviction + controller recreation |
 | Deployment rolling update | 1 | "got 1 / expected image" | RS image propagation timing |
 | Deployment rollover | 1 | "total pods available: 0" | Rollover availability timing |
-| SA TokenReview | 1 | "rejected our request" | TokenRequest API handling |
-| SA pod extra info | 1 | "pod-name not in extra" | Token extra fields |
+| SA TokenReview | 1 | "rejected our request" | FIXED — 44e23e0 handle Go-style null in TokenRequest |
+| SA pod extra info | 1 | "pod-name not in extra" | Token extra fields (needs kubelet token gen) |
 | SA OIDC discovery | 1 | "Told to stop trying" | FIXED — b07715d OIDC discovery endpoints |
 | Aggregator | 1 | "deploying extension apiserver" | API aggregation (not feasible) |
 | Events lifecycle | 1 | "event wasn't properly updated" | Timestamp precision |
@@ -73,7 +73,7 @@
 | kubectl proxy | 1 | "unexpected end of JSON" | Proxy empty response |
 | emptyDir shared volume | 1 | "command terminated exit 1" | Docker bind mount issue |
 | PriorityClass endpoints | 1 | value mismatch | Immutability check |
-| CSIStorageCapacity | 1 | (unknown) | CSI API operations |
+| CSIStorageCapacity | 1 | "watch channel closed" | FIXED — ba1c0d6 watch support for CSI list |
 | DaemonSet rolling update | 1 | "0 pods updated, expected 1" | FIXED — 5452f2c delete pods with old hash |
 | DaemonSet rollback | 1 | context deadline exceeded | TIMEOUT (miscategorized) |
 
