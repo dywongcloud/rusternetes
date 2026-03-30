@@ -517,6 +517,21 @@ impl Kubelet {
             }
         }
 
+        // Clean up containers for completed/failed pods.
+        // Conformance tests create hundreds of pods that run to completion.
+        // Leaving their exited containers wastes Docker daemon resources.
+        for pod in all_existing_pods {
+            let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
+            let is_terminal = matches!(phase, Some(Phase::Succeeded) | Some(Phase::Failed));
+            if is_terminal {
+                let pod_name = &pod.metadata.name;
+                // Only remove containers, don't delete from etcd (the controller manages lifecycle)
+                if let Err(e) = self.runtime.stop_and_remove_pod(pod_name).await {
+                    debug!("Error cleaning up terminal pod {}: {}", pod_name, e);
+                }
+            }
+        }
+
         Ok(())
     }
 
