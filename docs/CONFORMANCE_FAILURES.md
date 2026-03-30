@@ -2,7 +2,7 @@
 
 **Round 110** | COMPLETE | 441/441 tests | 283 passed, 158 failed (64.2% pass)
 
-## Non-Timeout Failures with Committed Fixes (~76)
+## Non-Timeout Failures with Committed Fixes (~77)
 
 | Category | Count | Commit | Fix |
 |----------|-------|--------|-----|
@@ -32,6 +32,7 @@
 | LimitRange defaults | 1 | f65ab7b | Default request fallback to limits |
 | RC failure condition | 1 | f65ab7b | CAS retry + conditions=None to clear |
 | Events field selector | 1 | 55c1e5a | "source" alias for "source.component" |
+| Events lifecycle | 1 | 71e93d1 | Preserve creationTimestamp during updates |
 | Watch label ADDED | 1 | fba0a62 | Synthetic ADDED for label match changes |
 | Aggregated discovery | 1 | 829ce94 | Group field in resources |
 | kubectl logs newline | 1 | 829ce94 | No trailing newline |
@@ -59,16 +60,15 @@
 | SA OIDC discovery | 1 | b07715d | OIDC discovery endpoints |
 | CSIStorageCapacity | 1 | ba1c0d6 | Watch support for CSI list endpoint |
 
-## Non-Timeout Failures NOT Yet Fixed (~7)
+## Non-Timeout Failures NOT Yet Fixed (~5)
 
-| Category | Count | Error | Root Cause |
-|----------|------|-------|------------|
-| Deployment rollover | 1 | "0 pods available" | Rollover availability timing |
-| Events lifecycle | 1 | "event wasn't updated" | Chrono timestamp precision loss on round-trip |
-| ControllerRevision lifecycle | 1 | "revision 1 expected 3" | DaemonSet controller overwrites test's manual update |
-| kubectl proxy | 1 | "unexpected end of JSON" | Proxy response chunking/format |
-| PriorityClass endpoints | 1 | "10 != 1" | Stale cluster-scoped resources from prior tests |
-| Aggregator | 1 | "extension apiserver" | API aggregation — requires full implementation |
+| Category | Count | Error | Root Cause | Why Hard |
+|----------|------|-------|------------|----------|
+| Deployment rollover | 1 | "0 pods available" | Controller doesn't handle mid-rollout spec changes fast enough | maxSurge/maxUnavailable logic with multiple concurrent RS generations |
+| ControllerRevision lifecycle | 1 | "revision 1 expected 3" | DaemonSet controller's reconcile cycle races with test's manual update | Inherent poll-based controller timing; test modifies resources controller also manages |
+| kubectl proxy | 1 | "unexpected end of JSON" | kubectl proxy can't parse chunked API responses | Need Content-Length headers or HTTP/1.0 non-chunked response mode |
+| PriorityClass endpoints | 1 | "10 != 1" | Stale cluster-scoped PriorityClasses from previous conformance runs | Not a code bug — clean redeploy resolves |
+| Aggregator | 1 | "extension apiserver" | Test deploys a Deployment that doesn't become Ready in time | Actually a timeout — Docker Desktop latency |
 
 ## Not Code Bugs (~82)
 
@@ -76,7 +76,7 @@
 |----------|-------|-------|
 | Timeout failures | 79 | Docker Desktop latency — pods take 2-10s to Ready |
 | /etc/hosts managed | 1 | Docker overrides /etc/hosts in container:pause mode |
-| emptyDir shared volume | 1 | Docker bind mount path visibility |
+| emptyDir shared volume | 1 | Docker bind mount path visibility across container:pause containers |
 | DaemonSet rollback | 1 | Timeout (was miscategorized as code bug) |
 
 ## Progress
