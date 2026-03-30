@@ -1,12 +1,10 @@
 use anyhow::Result;
 use rusternetes_common::resources::{
-    PersistentVolumeClaim, PersistentVolumeClaimSpec, Pod, PodStatus, StatefulSet,
+    PersistentVolumeClaim, Pod, PodStatus, StatefulSet,
     StatefulSetStatus,
 };
 use rusternetes_common::types::{ObjectMeta, OwnerReference, Phase, TypeMeta};
 use rusternetes_storage::{build_key, Storage};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
@@ -721,6 +719,7 @@ mod tests {
                     reason: None,
                     message: None,
                     last_transition_time: None,
+                    observed_generation: None,
                 }]),
                 ..Default::default()
             });
