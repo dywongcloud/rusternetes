@@ -454,6 +454,9 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route("/livez", get(handlers::health::healthz))
         .route("/readyz", get(handlers::health::readyz))
         .route("/metrics", get(handlers::health::metrics))
+        // OIDC discovery endpoints for service account issuer
+        .route("/.well-known/openid-configuration", get(handlers::health::openid_configuration))
+        .route("/openid/v1/jwks", get(handlers::health::openid_jwks))
         // Discovery API endpoints
         .route("/api", get(handlers::discovery::get_core_api))
         .route("/api/v1", get(handlers::discovery::get_core_resources))

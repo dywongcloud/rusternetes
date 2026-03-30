@@ -241,3 +241,24 @@ pub async fn pprof_trace() -> Result<String, (StatusCode, String)> {
             .to_string(),
     )
 }
+
+/// OpenID Connect discovery endpoint
+/// Returns the OIDC provider metadata for service account issuer discovery
+pub async fn openid_configuration() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "issuer": "https://kubernetes.default.svc.cluster.local",
+        "jwks_uri": "https://kubernetes.default.svc.cluster.local/openid/v1/jwks",
+        "response_types_supported": ["id_token"],
+        "subject_types_supported": ["public"],
+        "id_token_signing_alg_values_supported": ["RS256"]
+    }))
+}
+
+/// JSON Web Key Set endpoint
+/// Returns the public keys used to verify service account tokens
+pub async fn openid_jwks() -> Json<serde_json::Value> {
+    // Return an empty JWKS — real implementation would include the SA signing key
+    Json(serde_json::json!({
+        "keys": []
+    }))
+}
