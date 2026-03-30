@@ -71,6 +71,11 @@ pub async fn handle_ws_exec(
 
     // Stream output to WebSocket using v5.channel.k8s.io protocol
     // Channel prefix: 0=stdin, 1=stdout, 2=stderr, 3=error
+    // K8s protocol requires channel 1 (stdout) to appear before channel 3 (status).
+    // Send an initial empty stdout frame so the client sees ch1 first, even if the
+    // exec command produces no output or finishes before we read from the stream.
+    let _ = socket.send(Message::Binary(vec![1u8].into())).await;
+
     if let StartExecResults::Attached { output: mut stream, .. } = output {
         loop {
             match tokio::time::timeout(std::time::Duration::from_secs(1), stream.next()).await {
