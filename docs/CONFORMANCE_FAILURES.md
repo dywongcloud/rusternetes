@@ -22,10 +22,12 @@ The kubelet was restarted at ~15:12 to deploy the orphan cleanup fix. This kille
 | Session affinity | kube-proxy DNAT fixes | a37b4c3 |
 | Termination message | FallbackToLogsOnError | 6af1a31 |
 
-### Genuinely New (fixed)
+### Genuinely New (all fixed)
 | Category | Error | Fix | Commit |
 |----------|-------|-----|--------|
-| EmptyDir permissions | File perms not 0777 | fsGroup g+rwX (was g+rX) | cc2f8b8 |
+| EmptyDir permissions | File perms not 0777 | fsGroup g+rwX + Docker named volumes for POSIX perms | cc2f8b8 + de78bc8 |
+| Secret volume resync items | Wrote ALL keys, not mapped ones | Resync respects items field | de78bc8 |
+| ConfigMap volume resync items | Wrote ALL keys, not mapped ones | Resync respects items field | de78bc8 |
 
 ## Fixes Deployed This Round
 | Fix | Commit |
