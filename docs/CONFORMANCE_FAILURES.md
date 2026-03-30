@@ -62,7 +62,7 @@
 | Deployment rollover | 1 | "total pods available: 0" | Rollover availability timing |
 | SA TokenReview | 1 | "rejected our request" | TokenRequest API handling |
 | SA pod extra info | 1 | "pod-name not in extra" | Token extra fields |
-| SA OIDC discovery | 1 | "Told to stop trying" | OIDC discovery endpoint |
+| SA OIDC discovery | 1 | "Told to stop trying" | FIXED — b07715d OIDC discovery endpoints |
 | Aggregator | 1 | "deploying extension apiserver" | API aggregation (not feasible) |
 | Events lifecycle | 1 | "event wasn't properly updated" | Timestamp precision |
 | /etc/hosts managed | 1 | Docker /etc/hosts override | Docker networking limitation |
@@ -74,7 +74,8 @@
 | emptyDir shared volume | 1 | "command terminated exit 1" | Docker bind mount issue |
 | PriorityClass endpoints | 1 | value mismatch | Immutability check |
 | CSIStorageCapacity | 1 | (unknown) | CSI API operations |
-| DaemonSet rolling update | 1 | Expected | Rolling update revision |
+| DaemonSet rolling update | 1 | "0 pods updated, expected 1" | Rolling update pod recreation |
+| DaemonSet rollback | 1 | context deadline exceeded | TIMEOUT (miscategorized) |
 
 ## Timeout Failures (~79) — Docker Desktop latency
 
