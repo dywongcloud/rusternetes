@@ -3389,9 +3389,45 @@ impl ContainerRuntime {
         // Docker's default umask is 0022 which reduces 0777 to 0755.
         // K8s uses the container runtime to set umask, but Docker doesn't support it,
         // so we wrap the command with "umask 0 && exec <original>".
-        let needs_umask_fix = container.volume_mounts.as_ref()
+        // However, distroless/scratch images don't have /bin/sh, so we probe
+        // the image first by creating+starting a test container.
+        let has_emptydir_mount = container.volume_mounts.as_ref()
             .map(|mounts| mounts.iter().any(|m| empty_dir_volumes.contains(&m.name)))
             .unwrap_or(false);
+        let has_shell = if has_emptydir_mount {
+            let probe_name = format!("{}_sh_probe", container_name);
+            let probe_config = bollard::container::Config {
+                image: Some(container.image.clone()),
+                entrypoint: Some(vec!["/bin/sh".to_string(), "-c".to_string(), "true".to_string()]),
+                cmd: Some(vec![]),
+                ..Default::default()
+            };
+            let probe_opts = CreateContainerOptions {
+                name: probe_name.clone(),
+                ..Default::default()
+            };
+            let shell_ok = match self.docker.create_container(Some(probe_opts), probe_config).await {
+                Ok(_) => {
+                    let start_ok = self.docker
+                        .start_container(&probe_name, None::<StartContainerOptions<String>>)
+                        .await
+                        .is_ok();
+                    start_ok
+                }
+                Err(_) => false,
+            };
+            let _ = self.docker.remove_container(
+                &probe_name,
+                Some(bollard::container::RemoveContainerOptions { force: true, ..Default::default() }),
+            ).await;
+            if !shell_ok {
+                info!("Container {} - image lacks /bin/sh, skipping umask wrapper", container.name);
+            }
+            shell_ok
+        } else {
+            false
+        };
+        let needs_umask_fix = has_emptydir_mount && has_shell;
 
         if let Some(command) = &container.command {
             if let Some(args) = &container.args {
@@ -3679,7 +3715,16 @@ impl ContainerRuntime {
         };
 
         let containers = self.docker.list_containers(Some(options)).await?;
-        Ok(!containers.is_empty())
+        // Check that at least one non-pause container is running.
+        // Just the pause container running doesn't count — the app containers may have
+        // failed to start (e.g., CreateContainerError from subpath validation).
+        let pause_suffix = format!("{}_pause", pod_name);
+        let has_app_container = containers.iter().any(|c| {
+            c.names.as_ref()
+                .map(|names| names.iter().any(|n| !n.contains(&pause_suffix)))
+                .unwrap_or(false)
+        });
+        Ok(has_app_container)
     }
 
     /// Get detailed status of init containers by inspecting actual Docker container state.

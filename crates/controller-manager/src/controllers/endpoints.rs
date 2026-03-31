@@ -62,14 +62,16 @@ impl<S: Storage> EndpointsController<S> {
         );
 
         // Skip services without selectors (headless services without selector)
-        if service.spec.selector.is_empty() {
-            debug!(
-                "Service {}/{} has no selector, skipping endpoint creation",
-                namespace, service_name
-            );
-            return Ok(());
-        }
-        let selector = &service.spec.selector;
+        let selector = match &service.spec.selector {
+            Some(s) if !s.is_empty() => s,
+            _ => {
+                debug!(
+                    "Service {}/{} has no selector, skipping endpoint creation",
+                    namespace, service_name
+                );
+                return Ok(());
+            }
+        };
 
         // Find all pods in the same namespace
         let pod_prefix = format!("/registry/pods/{}/", namespace);
@@ -229,33 +231,122 @@ impl<S: Storage> EndpointsController<S> {
             }
         }
 
-        // Convert service ports to endpoint ports
-        let endpoint_ports: Vec<EndpointPort> = service_ports
-            .iter()
-            .map(|sp| EndpointPort {
-                name: sp.name.clone(),
-                port: match &sp.target_port {
-                    Some(rusternetes_common::resources::IntOrString::Int(p)) => *p as u16,
-                    Some(rusternetes_common::resources::IntOrString::String(s)) => {
-                        s.parse::<u16>().unwrap_or(sp.port)
-                    }
-                    None => sp.port,
-                },
-                protocol: sp.protocol.clone(),
-                app_protocol: None,
-            })
-            .collect();
+        // Check if any service port uses a named targetPort — if so, we need to
+        // resolve per-pod and group by resolved port tuple to create separate subsets.
+        let has_named_target_port = service_ports.iter().any(|sp| {
+            matches!(&sp.target_port, Some(rusternetes_common::resources::IntOrString::String(s)) if s.parse::<u16>().is_err())
+        });
 
-        // Kubernetes puts ready and not-ready addresses in ONE subset
-        let mut subsets = Vec::new();
-        if !ready_addresses.is_empty() || !not_ready_addresses.is_empty() {
-            subsets.push(EndpointSubset {
-                addresses: if ready_addresses.is_empty() { None } else { Some(ready_addresses) },
-                not_ready_addresses: if not_ready_addresses.is_empty() { None } else { Some(not_ready_addresses) },
-                ports: if endpoint_ports.is_empty() { None } else { Some(endpoint_ports) },
-            });
+        if has_named_target_port {
+            // Group pods by their resolved port tuple, since different pods may have
+            // different containerPort values for the same named port.
+            let mut port_groups: std::collections::HashMap<Vec<u16>, (Vec<EndpointAddress>, Vec<EndpointAddress>)> = std::collections::HashMap::new();
+
+            for pod in pods {
+                let pod_ip = match &pod.status {
+                    Some(status) => match &status.pod_ip {
+                        Some(ip) if !ip.is_empty() => ip.clone(),
+                        _ => continue,
+                    },
+                    None => continue,
+                };
+
+                // Resolve each service port for this pod
+                let resolved_ports: Vec<u16> = service_ports.iter().map(|sp| {
+                    match &sp.target_port {
+                        Some(rusternetes_common::resources::IntOrString::Int(p)) => *p as u16,
+                        Some(rusternetes_common::resources::IntOrString::String(s)) => {
+                            if let Ok(p) = s.parse::<u16>() {
+                                p
+                            } else {
+                                // Look up named port in pod's containers
+                                Self::resolve_named_port(pod, s).unwrap_or(sp.port)
+                            }
+                        }
+                        None => sp.port,
+                    }
+                }).collect();
+
+                let address = EndpointAddress {
+                    ip: pod_ip,
+                    hostname: None,
+                    node_name: pod.spec.as_ref().and_then(|s| s.node_name.clone()),
+                    target_ref: Some(EndpointReference {
+                        kind: Some("Pod".to_string()),
+                        namespace: pod.metadata.namespace.clone(),
+                        name: Some(pod.metadata.name.clone()),
+                        uid: Some(pod.metadata.uid.clone()),
+                    }),
+                };
+
+                let entry = port_groups.entry(resolved_ports).or_insert_with(|| (Vec::new(), Vec::new()));
+                if self.is_pod_ready(pod) {
+                    entry.0.push(address);
+                } else {
+                    entry.1.push(address);
+                }
+            }
+
+            // Create one subset per unique port combination
+            let mut subsets = Vec::new();
+            for (resolved_ports, (ready, not_ready)) in port_groups {
+                if ready.is_empty() && not_ready.is_empty() {
+                    continue;
+                }
+                let endpoint_ports: Vec<EndpointPort> = service_ports.iter().zip(resolved_ports.iter()).map(|(sp, &port)| {
+                    EndpointPort {
+                        name: sp.name.clone(),
+                        port,
+                        protocol: sp.protocol.clone(),
+                        app_protocol: None,
+                    }
+                }).collect();
+                subsets.push(EndpointSubset {
+                    addresses: if ready.is_empty() { None } else { Some(ready) },
+                    not_ready_addresses: if not_ready.is_empty() { None } else { Some(not_ready) },
+                    ports: if endpoint_ports.is_empty() { None } else { Some(endpoint_ports) },
+                });
+            }
+            subsets
+        } else {
+            // No named ports — simple path: all pods share the same port tuple
+            let endpoint_ports: Vec<EndpointPort> = service_ports
+                .iter()
+                .map(|sp| EndpointPort {
+                    name: sp.name.clone(),
+                    port: match &sp.target_port {
+                        Some(rusternetes_common::resources::IntOrString::Int(p)) => *p as u16,
+                        None => sp.port,
+                        _ => sp.port,
+                    },
+                    protocol: sp.protocol.clone(),
+                    app_protocol: None,
+                })
+                .collect();
+
+            let mut subsets = Vec::new();
+            if !ready_addresses.is_empty() || !not_ready_addresses.is_empty() {
+                subsets.push(EndpointSubset {
+                    addresses: if ready_addresses.is_empty() { None } else { Some(ready_addresses) },
+                    not_ready_addresses: if not_ready_addresses.is_empty() { None } else { Some(not_ready_addresses) },
+                    ports: if endpoint_ports.is_empty() { None } else { Some(endpoint_ports) },
+                });
+            }
+            subsets
         }
-        subsets
+    }
+
+    /// Resolve a named port to its containerPort value by searching the pod's containers.
+    fn resolve_named_port(pod: &Pod, port_name: &str) -> Option<u16> {
+        pod.spec.as_ref()?.containers.iter().find_map(|c| {
+            c.ports.as_ref()?.iter().find_map(|p| {
+                if p.name.as_deref() == Some(port_name) {
+                    Some(p.container_port as u16)
+                } else {
+                    None
+                }
+            })
+        })
     }
 
     /// Check if a pod is ready by examining its conditions
@@ -583,11 +674,11 @@ mod tests {
             metadata: rusternetes_common::types::ObjectMeta::new("test-svc")
                 .with_namespace("default"),
             spec: ServiceSpec {
-                selector: {
+                selector: Some({
                     let mut m = HashMap::new();
                     m.insert("app".to_string(), "web".to_string());
                     m
-                },
+                }),
                 ports: vec![ServicePort {
                     name: Some("http".to_string()),
                     port: 80,
@@ -663,11 +754,11 @@ mod tests {
             metadata: rusternetes_common::types::ObjectMeta::new("test-svc")
                 .with_namespace("default"),
             spec: ServiceSpec {
-                selector: {
+                selector: Some({
                     let mut m = HashMap::new();
                     m.insert("app".to_string(), "web".to_string());
                     m
-                },
+                }),
                 ports: vec![ServicePort {
                     name: Some("http".to_string()),
                     port: 80,

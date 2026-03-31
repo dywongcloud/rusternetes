@@ -409,7 +409,7 @@ mod tests {
                 managed_fields: None,
             },
             spec: ServiceSpec {
-                selector: std::collections::HashMap::new(),
+                selector: Some(std::collections::HashMap::new()),
                 ports: vec![ServicePort {
                     name: Some("http".to_string()),
                     port: 80,
@@ -484,7 +484,7 @@ mod tests {
                 managed_fields: None,
             },
             spec: ServiceSpec {
-                selector: std::collections::HashMap::new(),
+                selector: Some(std::collections::HashMap::new()),
                 ports: vec![ServicePort {
                     name: Some("http".to_string()),
                     port: 80,

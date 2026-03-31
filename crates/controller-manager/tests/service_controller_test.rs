@@ -44,7 +44,7 @@ async fn test_service_clusterip_allocation() {
             managed_fields: None,
         },
         spec: ServiceSpec {
-            selector: std::collections::HashMap::new(),
+            selector: Some(std::collections::HashMap::new()),
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 port: 80,
@@ -123,7 +123,7 @@ async fn test_service_nodeport_allocation() {
             managed_fields: None,
         },
         spec: ServiceSpec {
-            selector: std::collections::HashMap::new(),
+            selector: Some(std::collections::HashMap::new()),
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 port: 80,
@@ -202,7 +202,7 @@ async fn test_service_headless_no_clusterip() {
             managed_fields: None,
         },
         spec: ServiceSpec {
-            selector: std::collections::HashMap::new(),
+            selector: Some(std::collections::HashMap::new()),
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 port: 80,
@@ -278,7 +278,7 @@ async fn test_service_multiple_allocations_unique() {
                 managed_fields: None,
             },
             spec: ServiceSpec {
-                selector: std::collections::HashMap::new(),
+                selector: Some(std::collections::HashMap::new()),
                 ports: vec![ServicePort {
                     name: Some("http".to_string()),
                     port: 80,

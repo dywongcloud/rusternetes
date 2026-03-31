@@ -423,7 +423,11 @@ impl Storage for EtcdStorage {
                                 // version=1 means first write (create), >1 means update.
                                 // This is more reliable than prev_kv() which may be absent
                                 // after etcd compaction.
-                                if event.kv().map(|kv| kv.version()).unwrap_or(0) == 1 {
+                                let kv_version = event.kv().map(|kv| kv.version()).unwrap_or(0);
+                                info!("etcd watch_from_rev event: key={} mod_rev={} version={} type={}",
+                                    key, mod_revision, kv_version,
+                                    if kv_version == 1 { "ADDED" } else { "MODIFIED" });
+                                if kv_version == 1 {
                                     Ok(WatchEvent::Added(key, value))
                                 } else {
                                     Ok(WatchEvent::Modified(key, value))

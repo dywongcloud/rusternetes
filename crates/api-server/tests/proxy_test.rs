@@ -99,7 +99,7 @@ async fn test_proxy_service_missing_clusterip() {
             managed_fields: None,
         },
         spec: ServiceSpec {
-            selector: std::collections::HashMap::new(),
+            selector: Some(std::collections::HashMap::new()),
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 port: 80,

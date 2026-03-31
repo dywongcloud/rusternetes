@@ -33,10 +33,8 @@ impl Service {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceSpec {
-    /// Selector is always serialized (even empty) because K8s clients
-    /// require the field to be present in the JSON response.
     #[serde(default)]
-    pub selector: HashMap<String, String>,
+    pub selector: Option<HashMap<String, String>>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub ports: Vec<ServicePort>,
@@ -323,7 +321,7 @@ mod tests {
         let svc = Service::new(
             "test-svc",
             ServiceSpec {
-                selector: HashMap::new(),
+                selector: Some(HashMap::new()),
                 ports: vec![],
                 service_type: None,
                 cluster_ip: None,
@@ -358,7 +356,7 @@ mod tests {
     fn test_service_spec_default() {
         // ServiceSpec should have a Default impl
         let spec = ServiceSpec::default();
-        assert!(spec.selector.is_empty());
+        assert!(spec.selector.is_none());
         assert!(spec.ports.is_empty());
         assert!(spec.service_type.is_none());
         assert!(spec.cluster_ip.is_none());
@@ -374,7 +372,7 @@ mod tests {
             "spec": {"ports": []}
         }"#;
         let svc: Service = serde_json::from_str(json).unwrap();
-        assert!(svc.spec.selector.is_empty());
+        assert!(svc.spec.selector.is_none());
     }
 
     #[test]
@@ -386,7 +384,7 @@ mod tests {
             "metadata": {"name": "test"}
         }"#;
         let svc: Service = serde_json::from_str(json).unwrap();
-        assert!(svc.spec.selector.is_empty());
+        assert!(svc.spec.selector.is_none());
         assert!(svc.spec.ports.is_empty());
     }
 
@@ -394,7 +392,7 @@ mod tests {
     fn test_service_selector_empty_serialization() {
         // Empty selector should be serialized as {} (K8s clients require the field present)
         let spec = ServiceSpec {
-            selector: HashMap::new(),
+            selector: Some(HashMap::new()),
             ..Default::default()
         };
         let json = serde_json::to_string(&spec).unwrap();
@@ -407,11 +405,24 @@ mod tests {
         let mut sel = HashMap::new();
         sel.insert("app".to_string(), "web".to_string());
         let spec = ServiceSpec {
-            selector: sel,
+            selector: Some(sel),
             ..Default::default()
         };
         let json = serde_json::to_string(&spec).unwrap();
         assert!(json.contains("\"selector\""));
         assert!(json.contains("\"app\":\"web\""));
+    }
+
+    #[test]
+    fn test_service_selector_null_deserialization() {
+        // A Service with "selector": null should deserialize correctly
+        let json = r#"{
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {"name": "test"},
+            "spec": {"selector": null, "ports": []}
+        }"#;
+        let svc: Service = serde_json::from_str(json).unwrap();
+        assert!(svc.spec.selector.is_none());
     }
 }

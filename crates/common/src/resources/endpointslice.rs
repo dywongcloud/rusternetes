@@ -46,22 +46,11 @@ impl EndpointSlice {
     pub fn from_endpoints(endpoints: &crate::resources::Endpoints) -> Vec<Self> {
         let mut slices = Vec::new();
 
-        // Create a base slice with all endpoints, then duplicate per port
-        // if the subset has multiple ports (K8s creates separate slices for scalability)
+        // Create one EndpointSlice per subset. Each subset has its own port list
+        // and endpoint list. K8s keeps all ports together in one slice per subset.
         for subset in &endpoints.subsets {
-            let port_count = subset.ports.as_ref().map(|p| p.len()).unwrap_or(0);
-
-            // If multiple ports, create one slice per port
-            let port_groups: Vec<Vec<&crate::resources::EndpointPort>> = if port_count > 1 {
-                subset.ports.as_ref()
-                    .map(|ports| ports.iter().map(|p| vec![p]).collect())
-                    .unwrap_or_default()
-            } else {
-                // Single port or no ports — one slice
-                vec![subset.ports.as_ref().map(|p| p.iter().collect()).unwrap_or_default()]
-            };
-
-            for (port_idx, port_group) in port_groups.iter().enumerate() {
+            let port_group: Vec<&crate::resources::EndpointPort> =
+                subset.ports.as_ref().map(|p| p.iter().collect()).unwrap_or_default();
             let mut slice = Self::new(
                 &endpoints.metadata.name,
                 "IPv4", // Default to IPv4
@@ -154,7 +143,6 @@ impl EndpointSlice {
             if !slice.endpoints.is_empty() {
                 slices.push(slice);
             }
-            } // end for port_groups
         }
 
         // If no subsets, create an empty slice

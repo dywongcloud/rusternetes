@@ -15,11 +15,11 @@ use std::collections::HashMap;
 
 fn create_basic_service_spec() -> ServiceSpec {
     ServiceSpec {
-        selector: {
+        selector: Some({
             let mut selector = HashMap::new();
             selector.insert("app".to_string(), "test".to_string());
             selector
-        },
+        }),
         ports: vec![ServicePort {
             name: Some("http".to_string()),
             port: 80,
@@ -90,11 +90,11 @@ fn create_dual_stack_service(name: &str, namespace: &str) -> Service {
         },
         metadata: ObjectMeta::new(name).with_namespace(namespace),
         spec: ServiceSpec {
-            selector: {
+            selector: Some({
                 let mut selector = HashMap::new();
                 selector.insert("app".to_string(), "dual-stack-app".to_string());
                 selector
-            },
+            }),
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 port: 80,
@@ -134,7 +134,7 @@ fn test_external_name_service_has_external_name() {
 
     assert_eq!(service.spec.service_type, Some(ServiceType::ExternalName));
     assert_eq!(service.spec.external_name, Some("example.com".to_string()));
-    assert!(service.spec.selector.is_empty());
+    assert!(service.spec.selector.is_none());
     assert!(service.spec.ports.is_empty());
 }
 

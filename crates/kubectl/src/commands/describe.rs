@@ -239,15 +239,17 @@ fn describe_service(service: &Service) {
             .join("\n              ")
     );
 
-    if !service.spec.selector.is_empty() {
-        println!(
-            "Selector:     {}",
-            service.spec.selector
-                .iter()
-                .map(|(k, v)| format!("{}={}", k, v))
-                .collect::<Vec<_>>()
-                .join(",")
-        );
+    if let Some(selector) = &service.spec.selector {
+        if !selector.is_empty() {
+            println!(
+                "Selector:     {}",
+                selector
+                    .iter()
+                    .map(|(k, v)| format!("{}={}", k, v))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+        }
     }
 
     if let Some(ts) = service.metadata.creation_timestamp {
