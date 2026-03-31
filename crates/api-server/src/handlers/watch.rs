@@ -1092,6 +1092,22 @@ fn resource_type_to_kind_and_version(resource_type: &str, api_group: &str) -> (S
         "customresourcedefinitions" => "CustomResourceDefinition",
         "poddisruptionbudgets" => "PodDisruptionBudget",
         "ipaddresses" => "IPAddress",
+        "limitranges" => "LimitRange",
+        "resourcequotas" => "ResourceQuota",
+        "runtimeclasses" => "RuntimeClass",
+        "ingressclasses" => "IngressClass",
+        "priorityclasses" => "PriorityClass",
+        "validatingwebhookconfigurations" => "ValidatingWebhookConfiguration",
+        "mutatingwebhookconfigurations" => "MutatingWebhookConfiguration",
+        "validatingadmissionpolicies" => "ValidatingAdmissionPolicy",
+        "validatingadmissionpolicybindings" => "ValidatingAdmissionPolicyBinding",
+        "certificatesigningrequests" => "CertificateSigningRequest",
+        "flowschemas" => "FlowSchema",
+        "prioritylevelconfigurations" => "PriorityLevelConfiguration",
+        "servicecidrs" => "ServiceCIDR",
+        "replicationcontrollers" => "ReplicationController",
+        "horizontalpodautoscalers" => "HorizontalPodAutoscaler",
+        "controllerrevisions" => "ControllerRevision",
         other => {
             // CamelCase heuristic: capitalize first letter, remove trailing 's'
             let s = other.strip_suffix('s').unwrap_or(other);
