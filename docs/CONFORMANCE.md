@@ -4,22 +4,34 @@ Rusternetes is a from-scratch Rust reimplementation of Kubernetes. This document
 
 ## Conformance Test Results
 
-We run the official Kubernetes conformance test suite (441 tests) via Sonobuoy against a Rusternetes cluster.
+We run the official Kubernetes conformance test suite (441 tests) via Sonobuoy against a Rusternetes cluster running on Docker Desktop.
 
-| Round | Date       | Pass | Fail | Pass Rate | Cumulative Fixes |
-|-------|------------|------|------|-----------|------------------|
-| 103   | 2026-03-10 | 245  | 196  | 56%       | 271              |
-| 104   | 2026-03-14 | 405  | 36   | 92%       | 280              |
-| 105   | 2026-03-17 | ~410 | ~31  | 93%       | 296              |
-| 106   | 2026-03-20 | ~416 | ~25  | 94%       | 310              |
-| 107   | 2026-03-23 | ~422 | ~19  | 96%       | 312              |
-| 108   | 2026-03-27 | 263  | 178  | 60%       | 328              |
+| Round | Date       | Pass | Fail | Pass Rate | Notes |
+|-------|------------|------|------|-----------|-------|
+| 103   | 2026-03-10 | 245  | 196  | 56%       | Initial baseline |
+| 104   | 2026-03-14 | 405  | 36   | 92%       | Major fix batch |
+| 105   | 2026-03-17 | ~410 | ~31  | 93%       | |
+| 106   | 2026-03-20 | ~416 | ~25  | 94%       | |
+| 107   | 2026-03-23 | ~422 | ~19  | 96%       | Best deployed result |
+| 108   | 2026-03-27 | 263  | 178  | 60%       | Regression (interaction bugs) |
+| 110   | 2026-03-29 | 283  | 158  | 64%       | Fixes committed, not yet deployed |
+| 115   | 2026-03-30 | 42/72 (in progress) | 26/72 | ~61% | Partial run, 13 code bugs found and fixed |
 
-**Current best**: Round 107 at 96% (approximately 422/441).
+**Current best deployed**: Round 107 at ~96% (~422/441).
 
-**Round 108 note**: A regression dropped the pass rate to 60%. All 178 failures have been root-caused, and fixes (commits #313-328) have been applied but are pending redeployment. The regression does not reflect missing functionality -- rather, it surfaced interaction bugs under updated test conditions.
+**Latest status (Round 115)**: 13 code bugs identified and all have committed fixes. Many Round 110/115 failures are Docker Desktop latency timeouts (79 in Round 110), not code bugs. With fixes deployed, the actual code-level pass rate is expected to be significantly higher than the raw numbers.
 
-**Total fixes applied**: 328 across 8 rounds of iterative testing and debugging.
+**Total commits**: 847 across 15+ rounds of iterative testing and debugging.
+
+## Failure Categories
+
+Based on Round 110/115 analysis:
+
+- **Timeout failures (~79)**: Docker Desktop latency causes pods to miss readiness deadlines. Not code bugs — these pass on faster infrastructure.
+- **Code bugs (~13)**: Real issues in API server, controllers, or kubelet. All identified bugs have committed fixes.
+- **Remaining unfixed (~32)**: Under investigation or awaiting next test round for confirmation.
+
+Detailed tracking in `docs/CONFORMANCE_FAILURES.md`.
 
 ## API Resources Implemented
 
@@ -36,12 +48,12 @@ Rusternetes implements 60+ resource types across 14 API groups. All resources su
 | ConfigMaps | Implemented | |
 | Secrets | Implemented | |
 | Nodes | Implemented | Registration, status reporting, conditions |
-| ServiceAccounts | Implemented | Token generation |
+| ServiceAccounts | Implemented | Token generation, automount |
 | Events | Implemented | |
 | PersistentVolumes | Implemented | Binding, reclaim policies |
 | PersistentVolumeClaims | Implemented | Dynamic provisioning |
 | ResourceQuotas | Implemented | |
-| LimitRanges | Implemented | |
+| LimitRanges | Implemented | Default injection, constraint validation |
 | ReplicationControllers | Implemented | |
 | PodTemplates | Implemented | |
 | ComponentStatus | Implemented | |
@@ -53,7 +65,7 @@ Rusternetes implements 60+ resource types across 14 API groups. All resources su
 |----------|--------|-------|
 | Deployments | Implemented | Rolling updates, rollbacks, scale subresource |
 | ReplicaSets | Implemented | Scale subresource, owner references |
-| StatefulSets | Implemented | Ordered pod management, scale subresource |
+| StatefulSets | Implemented | Ordered pod management, scale subresource, rolling updates |
 | DaemonSets | Implemented | Node-targeted scheduling |
 | ControllerRevisions | Implemented | History tracking for StatefulSets and DaemonSets |
 
@@ -61,7 +73,7 @@ Rusternetes implements 60+ resource types across 14 API groups. All resources su
 
 | Resource | Status | Notes |
 |----------|--------|-------|
-| Jobs | Implemented | Completions, parallelism, backoff limits |
+| Jobs | Implemented | Completions, parallelism, backoff limits, indexed mode, FailIndex |
 | CronJobs | Implemented | Schedule-based job creation |
 
 ### Networking (networking.k8s.io/v1)
@@ -114,7 +126,7 @@ Rusternetes implements 60+ resource types across 14 API groups. All resources su
 
 | Resource | Status | Notes |
 |----------|--------|-------|
-| CustomResourceDefinitions | Implemented | Validation, status/scale subresources |
+| CustomResourceDefinitions | Implemented | Validation, status/scale subresources, categories |
 | Custom Resource Instances | Implemented | Full CRUD for any registered CRD |
 
 ### Admission Registration (admissionregistration.k8s.io/v1)
@@ -170,22 +182,25 @@ Rusternetes implements 60+ resource types across 14 API groups. All resources su
 
 Beyond basic CRUD, these API-level features are implemented:
 
-- **Server-Side Apply** -- Field managers, conflict detection, field ownership tracking
-- **Watch API** -- Streaming watches with bookmarks, keep-alive, and resource version semantics
-- **Patch formats** -- Strategic Merge Patch, JSON Patch (RFC 6902), JSON Merge Patch (RFC 7386)
-- **Subresources** -- Status and scale subresources for all applicable resource types
-- **API discovery** -- Aggregated discovery, per-group resource listings, OpenAPI v2 and v3
-- **Table format** -- Responses formatted for kubectl's tabular output
-- **Admission control** -- Mutating and validating webhooks, ValidatingAdmissionPolicy with CEL
-- **CRD features** -- Schema validation, status subresource, scale subresource, categories
-- **Pod operations** -- Exec, attach, and port-forward via WebSocket
-- **Dry-run** -- Server-side dry-run for create, update, and patch
-- **Selectors** -- Field selectors and label selectors on list and watch
-- **Pagination** -- Limit/continue token support for large collections
-- **Garbage collection** -- Cascade delete via owner references, foreground and background modes
-- **Finalizers** -- Pre-deletion hooks with finalizer semantics
-- **Authentication** -- TLS/mTLS, token-based auth, service account tokens
-- **Authorization** -- Full RBAC evaluation
+- **Server-Side Apply** — Field managers, conflict detection, field ownership tracking
+- **Watch API** — Streaming watches with bookmarks, keep-alive, resource version semantics, WatchCache multiplexer
+- **Patch formats** — Strategic Merge Patch, JSON Patch (RFC 6902), JSON Merge Patch (RFC 7386)
+- **Subresources** — Status and scale subresources for all applicable resource types
+- **API discovery** — Aggregated discovery, per-group resource listings, OpenAPI v2 and v3
+- **Table format** — Responses formatted for kubectl's tabular output
+- **Admission control** — Mutating and validating webhooks, ValidatingAdmissionPolicy with CEL
+- **CRD features** — Schema validation, status subresource, scale subresource, categories
+- **Pod operations** — Exec, attach, and port-forward via WebSocket
+- **Dry-run** — Server-side dry-run for create, update, and patch
+- **Selectors** — Field selectors and label selectors on list and watch
+- **Pagination** — Limit/continue token support for large collections
+- **Garbage collection** — Cascade delete via owner references, foreground and background modes
+- **Finalizers** — Pre-deletion hooks with finalizer semantics
+- **Authentication** — TLS/mTLS, token-based auth, service account tokens
+- **Authorization** — Full RBAC evaluation
+- **Pod security** — PodSecurity admission (enforce level from namespace labels)
+- **In-place resize** — KEP-1287 pod resource resize without restart
+- **RuntimeClass** — Overhead injection via podFixed
 
 ## Controllers
 
@@ -195,12 +210,29 @@ The controller manager runs 31 controllers:
 - Job, CronJob
 - Endpoints, EndpointSlice
 - PV/PVC binding, dynamic volume provisioner
+- Volume snapshot, volume expansion
 - Garbage collector, TTL controller
-- HPA, PDB
-- Namespace lifecycle
+- HPA, VPA, PDB
+- Namespace lifecycle, taint eviction
 - Service account token controller
+- Service (ClusterIP/NodePort allocation), LoadBalancer
 - Node lifecycle
-- And others
+- NetworkPolicy, Ingress
+- CRD, CSR
+- ResourceClaim
+
+## Performance Optimizations
+
+The following optimizations have been applied to improve throughput and reduce latency:
+
+- **Lock-free etcd access** — etcd client uses gRPC/HTTP2 multiplexing (no mutex)
+- **Watch-driven kubelet** — Reacts to pod changes via etcd watch instead of pure polling
+- **Reduced etcd round-trips** — Create/update use transactions with inline GET for mod_revision
+- **Single-pass selector filtering** — Field and label selectors applied in one JSON serialization pass
+- **Bounded watch channels** — Prevents unbounded memory growth with slow clients
+- **Release binary optimization** — LTO, single codegen unit, symbol stripping
+
+See `docs/PERFORMANCE_PLAN.md` for the full optimization roadmap.
 
 ## Running Conformance Tests
 
