@@ -106,10 +106,12 @@ pub struct ContainerRuntime {
 fn shell_join(args: &[String]) -> String {
     args.iter()
         .map(|a| {
-            if a.contains('$') {
+            if a.is_empty() {
+                "''".to_string()
+            } else if a.contains('$') {
                 // Use double quotes to allow variable expansion
                 format!("\"{}\"", a.replace('\\', "\\\\").replace('"', "\\\""))
-            } else if a.contains(' ') || a.contains('\'') || a.contains('"') || a.contains('\\') {
+            } else if needs_shell_quoting(a) {
                 format!("'{}'", a.replace('\'', "'\\''"))
             } else {
                 a.clone()
@@ -117,6 +119,15 @@ fn shell_join(args: &[String]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Check if a string contains any shell metacharacters that require quoting
+fn needs_shell_quoting(s: &str) -> bool {
+    s.chars().any(|c| matches!(c,
+        ' ' | '\'' | '"' | '\\' | ';' | '&' | '|' | '(' | ')' |
+        '{' | '}' | '<' | '>' | '!' | '?' | '*' | '[' | ']' |
+        '#' | '~' | '`' | '\n' | '\t'
+    ))
 }
 
 impl ContainerRuntime {
