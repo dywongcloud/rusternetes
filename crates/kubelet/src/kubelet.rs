@@ -122,9 +122,10 @@ impl Kubelet {
 
         // Debounce watch-triggered syncs to prevent feedback loops:
         // sync_pod writes status -> triggers watch event -> triggers sync_pod -> ...
-        // Minimum 3 seconds between watch-triggered syncs.
+        // Minimum 1 second between watch-triggered syncs (reduced from 3s for
+        // faster pod startup — conformance tests have tight timeouts).
         let mut last_watch_sync = tokio::time::Instant::now() - Duration::from_secs(10);
-        let watch_sync_cooldown = Duration::from_secs(3);
+        let watch_sync_cooldown = Duration::from_secs(1);
 
         loop {
             tokio::select! {
