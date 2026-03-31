@@ -302,16 +302,9 @@ pub async fn delete_ns(
         let _ = state.storage.update(&key, &namespace).await;
     }
 
-    info!(
-        "Namespace {} marked for deletion (Terminating)",
-        name
-    );
+    info!("Namespace {} marked for deletion (Terminating)", name);
     // Return the namespace in Terminating state
-    let updated: Namespace = state
-        .storage
-        .get(&key)
-        .await
-        .unwrap_or(namespace);
+    let updated: Namespace = state.storage.get(&key).await.unwrap_or(namespace);
     Ok(Json(updated))
 }
 

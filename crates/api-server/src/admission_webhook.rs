@@ -319,19 +319,16 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     if let Some(ref svc) = webhook.client_config.service {
                         let ns_key =
                             rusternetes_storage::build_key("namespaces", None, &svc.namespace);
-                        let ns_gone = match self
-                            .storage
-                            .get::<serde_json::Value>(&ns_key)
-                            .await
-                        {
+                        let ns_gone = match self.storage.get::<serde_json::Value>(&ns_key).await {
                             Err(_) => true,
                             Ok(ns_val) => {
                                 // Also skip if namespace is Terminating
-                                ns_val
-                                    .pointer("/status/phase")
-                                    .and_then(|p| p.as_str())
+                                ns_val.pointer("/status/phase").and_then(|p| p.as_str())
                                     == Some("Terminating")
-                                    || ns_val.get("metadata").and_then(|m| m.get("deletionTimestamp")).is_some()
+                                    || ns_val
+                                        .get("metadata")
+                                        .and_then(|m| m.get("deletionTimestamp"))
+                                        .is_some()
                             }
                         };
                         if ns_gone {
@@ -464,18 +461,15 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     if let Some(ref svc) = webhook.client_config.service {
                         let ns_key =
                             rusternetes_storage::build_key("namespaces", None, &svc.namespace);
-                        let ns_gone = match self
-                            .storage
-                            .get::<serde_json::Value>(&ns_key)
-                            .await
-                        {
+                        let ns_gone = match self.storage.get::<serde_json::Value>(&ns_key).await {
                             Err(_) => true,
                             Ok(ns_val) => {
-                                ns_val
-                                    .pointer("/status/phase")
-                                    .and_then(|p| p.as_str())
+                                ns_val.pointer("/status/phase").and_then(|p| p.as_str())
                                     == Some("Terminating")
-                                    || ns_val.get("metadata").and_then(|m| m.get("deletionTimestamp")).is_some()
+                                    || ns_val
+                                        .get("metadata")
+                                        .and_then(|m| m.get("deletionTimestamp"))
+                                        .is_some()
                             }
                         };
                         if ns_gone {

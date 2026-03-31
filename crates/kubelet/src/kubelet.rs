@@ -1398,10 +1398,8 @@ impl Kubelet {
                                 if let Some(spec) = &pod.spec {
                                     for c in &spec.containers {
                                         let cname = format!("{}_{}", pod_name, c.name);
-                                        let _ = self
-                                            .runtime
-                                            .remove_terminated_container(&cname)
-                                            .await;
+                                        let _ =
+                                            self.runtime.remove_terminated_container(&cname).await;
                                     }
                                 }
 

@@ -3701,55 +3701,58 @@ impl ContainerRuntime {
             if let Some(&cached) = self.shell_cache.lock().unwrap().get(&container.image) {
                 cached
             } else {
-            let probe_name = format!("{}_sh_probe", container_name);
-            let probe_config = bollard::container::Config {
-                image: Some(container.image.clone()),
-                entrypoint: Some(vec![
-                    "/bin/sh".to_string(),
-                    "-c".to_string(),
-                    "true".to_string(),
-                ]),
-                cmd: Some(vec![]),
-                ..Default::default()
-            };
-            let probe_opts = CreateContainerOptions {
-                name: probe_name.clone(),
-                ..Default::default()
-            };
-            let shell_ok = match self
-                .docker
-                .create_container(Some(probe_opts), probe_config)
-                .await
-            {
-                Ok(_) => {
-                    let start_ok = self
-                        .docker
-                        .start_container(&probe_name, None::<StartContainerOptions<String>>)
-                        .await
-                        .is_ok();
-                    start_ok
+                let probe_name = format!("{}_sh_probe", container_name);
+                let probe_config = bollard::container::Config {
+                    image: Some(container.image.clone()),
+                    entrypoint: Some(vec![
+                        "/bin/sh".to_string(),
+                        "-c".to_string(),
+                        "true".to_string(),
+                    ]),
+                    cmd: Some(vec![]),
+                    ..Default::default()
+                };
+                let probe_opts = CreateContainerOptions {
+                    name: probe_name.clone(),
+                    ..Default::default()
+                };
+                let shell_ok = match self
+                    .docker
+                    .create_container(Some(probe_opts), probe_config)
+                    .await
+                {
+                    Ok(_) => {
+                        let start_ok = self
+                            .docker
+                            .start_container(&probe_name, None::<StartContainerOptions<String>>)
+                            .await
+                            .is_ok();
+                        start_ok
+                    }
+                    Err(_) => false,
+                };
+                let _ = self
+                    .docker
+                    .remove_container(
+                        &probe_name,
+                        Some(bollard::container::RemoveContainerOptions {
+                            force: true,
+                            ..Default::default()
+                        }),
+                    )
+                    .await;
+                if !shell_ok {
+                    info!(
+                        "Container {} - image lacks /bin/sh, skipping umask wrapper",
+                        container.name
+                    );
                 }
-                Err(_) => false,
-            };
-            let _ = self
-                .docker
-                .remove_container(
-                    &probe_name,
-                    Some(bollard::container::RemoveContainerOptions {
-                        force: true,
-                        ..Default::default()
-                    }),
-                )
-                .await;
-            if !shell_ok {
-                info!(
-                    "Container {} - image lacks /bin/sh, skipping umask wrapper",
-                    container.name
-                );
-            }
-            // Cache the result
-            self.shell_cache.lock().unwrap().insert(container.image.clone(), shell_ok);
-            shell_ok
+                // Cache the result
+                self.shell_cache
+                    .lock()
+                    .unwrap()
+                    .insert(container.image.clone(), shell_ok);
+                shell_ok
             } // end else (cache miss)
         } else {
             false
@@ -5340,11 +5343,7 @@ impl ContainerRuntime {
             .await
         {
             Ok(info) => {
-                let running = info
-                    .state
-                    .as_ref()
-                    .and_then(|s| s.running)
-                    .unwrap_or(false);
+                let running = info.state.as_ref().and_then(|s| s.running).unwrap_or(false);
                 if !running {
                     let opts = bollard::container::RemoveContainerOptions {
                         force: true,
@@ -5353,7 +5352,10 @@ impl ContainerRuntime {
                     self.docker
                         .remove_container(container_name, Some(opts))
                         .await?;
-                    debug!("Removed terminated container {} for restart", container_name);
+                    debug!(
+                        "Removed terminated container {} for restart",
+                        container_name
+                    );
                 }
             }
             Err(_) => {} // Container doesn't exist, nothing to remove

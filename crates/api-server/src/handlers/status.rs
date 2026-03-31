@@ -355,7 +355,9 @@ pub async fn update_cluster_status(
             merged_metadata.remove("resourceVersion");
             // Merge annotations from the request
             if let Some(new_meta) = new_resource.get("metadata").and_then(|m| m.as_object()) {
-                if let Some(new_annotations) = new_meta.get("annotations").and_then(|a| a.as_object()) {
+                if let Some(new_annotations) =
+                    new_meta.get("annotations").and_then(|a| a.as_object())
+                {
                     let annotations = merged_metadata
                         .entry("annotations")
                         .or_insert_with(|| Value::Object(serde_json::Map::new()));
