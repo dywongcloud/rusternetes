@@ -7,10 +7,12 @@ Counts via `scripts/conformance-progress.sh` (Ginkgo bullet markers)
 
 | Fix | Commit | Impact |
 |-----|--------|--------|
-| Shell probe for umask wrapper (distroless images) | uncommitted | Sonobuoy/sonobuoy-worker now start |
-| is_pod_running excludes pause-only containers | uncommitted | Fixes subpath retry bypassing validation |
-| Endpoints controller resolves named ports per-pod | uncommitted | Fixes EndpointSlice splitting for named ports |
-| EndpointSlice keeps all ports in one slice | uncommitted | Fixes port splitting bug in from_endpoints |
+| Shell probe for umask wrapper (distroless images) | 6c190e6 | Sonobuoy/sonobuoy-worker now start |
+| is_pod_running excludes pause-only containers | 6c190e6 | Fixes subpath retry bypassing validation (#1) |
+| Endpoints controller resolves named ports per-pod | 6c190e6 | Fixes EndpointSlice splitting for named ports (#8) |
+| EndpointSlice keeps all ports in one slice | 6c190e6 | Fixes port splitting bug in from_endpoints |
+| Service selector Optional for null/missing | 6c190e6 | Fixes service_latency decode error (#28) |
+| LimitRange: requests inherit from explicit limits | e356d79 | Fixes CPU 300m expected, got 100m (#15) |
 
 ## Code Bugs (Round 116)
 
@@ -28,7 +30,7 @@ Counts via `scripts/conformance-progress.sh` (Ginkgo bullet markers)
 | 10 | Webhook configuration ready | webhook.go:1269 | Timed out waiting | api-server | Webhook readiness check |
 | 11 | Deployment rolling update | deployment.go:781 | Error waiting for deployment | controller | Rolling update issue |
 | 12 | HostPort no conflict | hostport.go:219 | Pod not starting | kubelet | HostPort pod start failure |
-| 13 | EmptyDir (non-root,0777,default) | output.go:263 | Perms -rwxr-xr-x not -rwxrwxrwx | kubelet | Umask not applied (shell probe skip?) |
+| 13 | EmptyDir (non-root,0777,default) | output.go:263 | Perms -rwxr-xr-x not -rwxrwxrwx | kubelet | Docker Desktop macOS bind mount umask limitation |
 | 14 | InitContainer RestartNever fail | init_container.go:565 | Wrong status | kubelet | Init container failure handling |
 | 15 | LimitRange defaults applied to pod | limit_range.go:162 | CPU 300m expected, got 100m | api-server | LimitRange default injection |
 | 16 | Job FailIndex | job.go:1251 | Unknown | controller | Job failure handling |
