@@ -20,13 +20,13 @@
 | CSR PATCH | Request rejected | FIXED — serde defaults (e7e95f5) |
 | EndpointSlice API operations | ADDED instead of MODIFIED | FIXED — etcd key version (2b4e496) |
 | Pod InPlace Resize | Resize state | Complex feature |
-| StatefulSet rolling update | Revision mismatch | Need investigation |
+| StatefulSet rolling update | Revision mismatch | Likely fixed by watch event fix (2b4e496) |
 | FieldValidation duplicate | Wrong format | Fix deployed but may need rebuild |
 | Job FailIndex | Completion timeout | Fix deployed but still failing |
 | Service endpoints latency | Missing selector field | FIXED — HashMap not Option (cf279a3) |
 | VAP validate Deployment | Denied | Fix deployed but still failing |
 | HostPort pod2 timeout | Pod not starting | Timing |
-| kubectl replace | Error running replace | Protobuf/content type |
+| kubectl replace | MIME validation error | FIXED — OpenAPI JSON (286e31c) |
 
 ## Progress
 | Round | Fail | Total | Rate |
