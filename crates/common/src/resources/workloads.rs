@@ -257,14 +257,14 @@ impl StatefulSet {
 #[serde(rename_all = "camelCase")]
 pub struct StatefulSetSpec {
     /// Number of desired pods (defaults to 1)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replicas: Option<i32>,
 
     /// Selector for pods
     pub selector: LabelSelector,
 
     /// Service name for network identity
-    #[serde(alias = "serviceName")]
+    #[serde(default, alias = "serviceName")]
     pub service_name: String,
 
     /// Template for pod creation
