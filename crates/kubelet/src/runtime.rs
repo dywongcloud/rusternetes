@@ -2530,39 +2530,78 @@ impl ContainerRuntime {
         std::fs::create_dir_all(&volume_dir)
             .context("Failed to create ServiceAccount token volume directory")?;
 
-        // Write token file
-        if let Some(secret) = secret {
-            if let Some(data) = &secret.data {
-                // Write token
-                if let Some(token) = data.get("token") {
-                    let token_path = format!("{}/token", volume_dir);
-                    std::fs::write(&token_path, token)
-                        .context("Failed to write ServiceAccount token")?;
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        std::fs::set_permissions(
-                            &token_path,
-                            std::fs::Permissions::from_mode(0o600),
-                        )?;
-                    }
-                    info!("Wrote ServiceAccount token to {}", token_path);
-                }
+        // Generate a bound projected token with pod reference.
+        // This creates a JWT with pod_name, pod_uid, and node_name claims so that
+        // TokenReview returns these in the extra info, matching real K8s behavior.
+        let sa_key = build_key("serviceaccounts", Some(namespace), sa_name);
+        let sa_uid = storage
+            .get::<serde_json::Value>(&sa_key)
+            .await
+            .ok()
+            .and_then(|v| {
+                v.get("metadata")
+                    .and_then(|m| m.get("uid"))
+                    .and_then(|u| u.as_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_default();
 
-                // Write namespace
-                if let Some(ns_bytes) = data.get("namespace") {
-                    let ns_path = format!("{}/namespace", volume_dir);
-                    std::fs::write(&ns_path, ns_bytes).context("Failed to write namespace file")?;
-                    info!("Wrote namespace file to {}", ns_path);
-                } else {
-                    // If not in secret, write the pod's namespace
-                    let ns_path = format!("{}/namespace", volume_dir);
-                    std::fs::write(&ns_path, namespace)
-                        .context("Failed to write namespace file")?;
-                }
+        let node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
+
+        let now = chrono::Utc::now();
+        let claims = rusternetes_common::auth::ServiceAccountClaims {
+            sub: format!("system:serviceaccount:{}:{}", namespace, sa_name),
+            namespace: namespace.to_string(),
+            uid: sa_uid,
+            iat: now.timestamp(),
+            exp: (now + chrono::Duration::hours(1)).timestamp(),
+            iss: "rusternetes-api-server".to_string(),
+            aud: vec!["rusternetes".to_string()],
+            pod_name: Some(pod_name.clone()),
+            pod_uid: Some(pod.metadata.uid.clone()),
+            node_name,
+        };
+
+        let token = match self.token_manager.generate_token(claims) {
+            Ok(t) => t,
+            Err(e) => {
+                warn!(
+                    "Failed to generate bound token, falling back to static: {}",
+                    e
+                );
+                let secret_name = format!("{}-token", sa_name);
+                let skey = build_key("secrets", Some(namespace), &secret_name);
+                storage
+                    .get::<Secret>(&skey)
+                    .await
+                    .ok()
+                    .and_then(|s| {
+                        s.data.as_ref().and_then(|d| {
+                            d.get("token")
+                                .map(|v| String::from_utf8_lossy(v).to_string())
+                        })
+                    })
+                    .unwrap_or_default()
             }
-        } else {
-            // Create minimal files even without a secret
+        };
+
+        // Write token file
+        {
+            let token_path = format!("{}/token", volume_dir);
+            std::fs::write(&token_path, &token).context("Failed to write ServiceAccount token")?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&token_path, std::fs::Permissions::from_mode(0o600))?;
+            }
+            info!(
+                "Wrote bound ServiceAccount token for pod {} to {}",
+                pod_name, token_path
+            );
+        }
+
+        // Write namespace file
+        {
             let ns_path = format!("{}/namespace", volume_dir);
             std::fs::write(&ns_path, namespace).context("Failed to write namespace file")?;
         }
