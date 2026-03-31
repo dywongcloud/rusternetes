@@ -15,6 +15,7 @@ Counts via `scripts/conformance-progress.sh` (Ginkgo bullet markers)
 | LimitRange: requests inherit from explicit limits | e356d79 | Fixes CPU 300m expected, got 100m (#15) |
 | Kubelet watch cooldown 3s→1s | 0102b4b | Faster pod startup for timeout tests |
 | Scheduler 5s→2s, controller-manager 10s→5s | ac17291 | Reduce convergence latency |
+| Watch kind mappings for 16 resource types | cdc276a | Fixes watch cancel loops for IngressClass, PriorityClass, LimitRange, RC, etc. |
 
 ## Code Bugs (Round 116)
 
