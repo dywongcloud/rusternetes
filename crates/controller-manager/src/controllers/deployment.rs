@@ -450,19 +450,31 @@ impl<S: Storage> DeploymentController<S> {
                 new_revision.clone(),
             );
 
-        // Also update the deployment's revision annotation
+        // Also update the deployment's revision annotation (with CAS retry)
         {
-            let mut updated_deployment = deployment.clone();
-            updated_deployment
-                .metadata
-                .annotations
-                .get_or_insert_with(std::collections::HashMap::new)
-                .insert(
-                    "deployment.kubernetes.io/revision".to_string(),
-                    new_revision,
-                );
             let dep_key = build_key("deployments", Some(namespace), &deployment.metadata.name);
-            let _ = self.storage.update(&dep_key, &updated_deployment).await;
+            let new_rev = new_revision.clone();
+            for _ in 0..3 {
+                match self.storage.get::<Deployment>(&dep_key).await {
+                    Ok(mut dep) => {
+                        dep.metadata
+                            .annotations
+                            .get_or_insert_with(std::collections::HashMap::new)
+                            .insert(
+                                "deployment.kubernetes.io/revision".to_string(),
+                                new_rev.clone(),
+                            );
+                        match self.storage.update(&dep_key, &dep).await {
+                            Ok(_) => break,
+                            Err(e) => {
+                                debug!("CAS retry updating deployment revision: {}", e);
+                                continue;
+                            }
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
         }
 
         // Set owner reference to the deployment
