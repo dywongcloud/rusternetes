@@ -123,7 +123,7 @@ pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
             .status(StatusCode::OK)
             .header(
                 header::CONTENT_TYPE,
-                "application/com.github.proto-openapi.spec.v2@v1.0+protobuf",
+                "application/octet-stream",
             )
             .body(Body::from(proto))
             .unwrap();
