@@ -348,12 +348,35 @@ pub async fn update_cluster_status(
         // Update status
         obj.insert("status".to_string(), new_status);
 
-        // Preserve metadata but clear resourceVersion to avoid conflicts
-        // with concurrent updates. The storage layer assigns a new version.
+        // Merge metadata: start with current, then apply annotations/labels
+        // from the request. K8s status updates can modify metadata annotations.
         if let Some(metadata_obj) = current_metadata.as_object() {
-            let mut new_metadata = metadata_obj.clone();
-            new_metadata.remove("resourceVersion");
-            obj.insert("metadata".to_string(), Value::Object(new_metadata));
+            let mut merged_metadata = metadata_obj.clone();
+            merged_metadata.remove("resourceVersion");
+            // Merge annotations from the request
+            if let Some(new_meta) = new_resource.get("metadata").and_then(|m| m.as_object()) {
+                if let Some(new_annotations) = new_meta.get("annotations").and_then(|a| a.as_object()) {
+                    let annotations = merged_metadata
+                        .entry("annotations")
+                        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+                    if let Some(ann_obj) = annotations.as_object_mut() {
+                        for (k, v) in new_annotations {
+                            ann_obj.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+                if let Some(new_labels) = new_meta.get("labels").and_then(|l| l.as_object()) {
+                    let labels = merged_metadata
+                        .entry("labels")
+                        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+                    if let Some(lbl_obj) = labels.as_object_mut() {
+                        for (k, v) in new_labels {
+                            lbl_obj.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+            }
+            obj.insert("metadata".to_string(), Value::Object(merged_metadata));
         }
     }
 
