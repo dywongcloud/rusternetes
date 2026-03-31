@@ -1,7 +1,10 @@
 # Conformance Issue Tracker
 
-**Round 116** | IN PROGRESS | 142/441 done | 78 passed, 64 failed (54.9%)
+**Round 116** | IN PROGRESS | ~146/441 done | ~80 passed, ~66 failed (~55%)
 Counts via `scripts/conformance-progress.sh` (Ginkgo bullet markers)
+
+**8 fixes committed, not yet deployed.** The watch kind mapping fix (cdc276a) is
+expected to resolve many timeout failures caused by client-go watch cancel loops.
 
 ## Fixes Committed (not yet deployed)
 
