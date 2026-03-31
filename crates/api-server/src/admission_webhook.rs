@@ -315,17 +315,27 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         continue;
                     }
 
-                    // Skip webhooks whose service namespace no longer exists
+                    // Skip webhooks whose service no longer exists or namespace is terminating
                     if let Some(ref svc) = webhook.client_config.service {
                         let ns_key =
                             rusternetes_storage::build_key("namespaces", None, &svc.namespace);
-                        if self
+                        let ns_gone = match self
                             .storage
                             .get::<serde_json::Value>(&ns_key)
                             .await
-                            .is_err()
                         {
-                            warn!("Skipping validating webhook {} — service namespace {} no longer exists", webhook.name, svc.namespace);
+                            Err(_) => true,
+                            Ok(ns_val) => {
+                                // Also skip if namespace is Terminating
+                                ns_val
+                                    .pointer("/status/phase")
+                                    .and_then(|p| p.as_str())
+                                    == Some("Terminating")
+                                    || ns_val.get("metadata").and_then(|m| m.get("deletionTimestamp")).is_some()
+                            }
+                        };
+                        if ns_gone {
+                            warn!("Skipping validating webhook {} — service namespace {} no longer exists or is terminating", webhook.name, svc.namespace);
                             continue;
                         }
                     }
@@ -450,16 +460,25 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         continue;
                     }
 
-                    // Skip webhooks whose service namespace no longer exists
+                    // Skip webhooks whose service no longer exists or namespace is terminating
                     if let Some(ref svc) = webhook.client_config.service {
                         let ns_key =
                             rusternetes_storage::build_key("namespaces", None, &svc.namespace);
-                        if self
+                        let ns_gone = match self
                             .storage
                             .get::<serde_json::Value>(&ns_key)
                             .await
-                            .is_err()
                         {
+                            Err(_) => true,
+                            Ok(ns_val) => {
+                                ns_val
+                                    .pointer("/status/phase")
+                                    .and_then(|p| p.as_str())
+                                    == Some("Terminating")
+                                    || ns_val.get("metadata").and_then(|m| m.get("deletionTimestamp")).is_some()
+                            }
+                        };
+                        if ns_gone {
                             warn!(
                                 "Skipping webhook {} — service namespace {} no longer exists",
                                 webhook.name, svc.namespace
