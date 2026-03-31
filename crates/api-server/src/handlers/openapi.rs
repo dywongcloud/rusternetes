@@ -6,6 +6,20 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
+/// Encode a u64 as a protobuf varint
+fn encode_varint(buf: &mut Vec<u8>, mut value: u64) {
+    loop {
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.push(byte);
+            break;
+        } else {
+            buf.push(byte | 0x80);
+        }
+    }
+}
+
 /// GET /openapi/v3
 /// Get the OpenAPI v3 root document listing available paths
 pub async fn get_openapi_spec() -> Response {
@@ -83,10 +97,37 @@ pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    // Always return JSON for OpenAPI spec. kubectl's protobuf path fails
-    // on our protobuf envelope, causing "mime: unexpected content after media
-    // subtype" errors during validation. JSON is universally accepted.
-    // kubectl will fall back to JSON if protobuf decoding fails.
+    if accept.contains("protobuf") {
+        // Encode as K8s protobuf envelope (runtime.Unknown wrapper).
+        // Format: 4-byte magic "k8s\0" + protobuf Unknown message containing JSON.
+        // Field 2 (content_type) = "application/json"
+        // Field 3 (content_encoding) = "" (no encoding)
+        // Field 1 (raw) = JSON bytes
+        let content_type = b"application/json";
+        let mut proto = Vec::new();
+        // Magic header
+        proto.extend_from_slice(&[0x6b, 0x38, 0x73, 0x00]);
+        // Protobuf Unknown message fields:
+        // Field 2 (content_type, string, wire type 2): tag = (2 << 3) | 2 = 18
+        proto.push(18);
+        encode_varint(&mut proto, content_type.len() as u64);
+        proto.extend_from_slice(content_type);
+        // Field 3 (content_encoding, string, wire type 2): tag = (3 << 3) | 2 = 26
+        // Empty string, skip
+        // Field 1 (raw, bytes, wire type 2): tag = (1 << 3) | 2 = 10
+        proto.push(10);
+        encode_varint(&mut proto, json_bytes.len() as u64);
+        proto.extend_from_slice(&json_bytes);
+
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(
+                header::CONTENT_TYPE,
+                "application/com.github.proto-openapi.spec.v2@v1.0+protobuf",
+            )
+            .body(Body::from(proto))
+            .unwrap();
+    }
 
     Response::builder()
         .status(StatusCode::OK)
