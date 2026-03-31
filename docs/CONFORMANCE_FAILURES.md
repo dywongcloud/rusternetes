@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 116** | IN PROGRESS | 69/441 done | 38 passed, 31 failed (55.1%)
+**Round 116** | IN PROGRESS | 142/441 done | 78 passed, 64 failed (54.9%)
 Counts via `scripts/conformance-progress.sh` (Ginkgo bullet markers)
 
 ## Fixes Committed (not yet deployed)
@@ -13,6 +13,8 @@ Counts via `scripts/conformance-progress.sh` (Ginkgo bullet markers)
 | EndpointSlice keeps all ports in one slice | 6c190e6 | Fixes port splitting bug in from_endpoints |
 | Service selector Optional for null/missing | 6c190e6 | Fixes service_latency decode error (#28) |
 | LimitRange: requests inherit from explicit limits | e356d79 | Fixes CPU 300m expected, got 100m (#15) |
+| Kubelet watch cooldown 3s→1s | 0102b4b | Faster pod startup for timeout tests |
+| Scheduler 5s→2s, controller-manager 10s→5s | ac17291 | Reduce convergence latency |
 
 ## Code Bugs (Round 116)
 
