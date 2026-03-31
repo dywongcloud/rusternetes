@@ -60,14 +60,18 @@ pub async fn create(
         kind: "ConfigMap".to_string(),
     };
     let cm_value = serde_json::to_value(&configmap).ok();
-    if let Err(e) = state.webhook_manager.run_validating_admission_policies_ext(
-        &Operation::Create,
-        &gvk,
-        cm_value.as_ref(),
-        None,
-        Some("configmaps"),
-        Some(&namespace),
-    ).await {
+    if let Err(e) = state
+        .webhook_manager
+        .run_validating_admission_policies_ext(
+            &Operation::Create,
+            &gvk,
+            cm_value.as_ref(),
+            None,
+            Some("configmaps"),
+            Some(&namespace),
+        )
+        .await
+    {
         return Err(e);
     }
 
@@ -148,14 +152,18 @@ pub async fn update(
         kind: "ConfigMap".to_string(),
     };
     let cm_value = serde_json::to_value(&configmap).ok();
-    if let Err(e) = state.webhook_manager.run_validating_admission_policies_ext(
-        &Operation::Update,
-        &gvk,
-        cm_value.as_ref(),
-        None,
-        Some("configmaps"),
-        Some(&namespace),
-    ).await {
+    if let Err(e) = state
+        .webhook_manager
+        .run_validating_admission_policies_ext(
+            &Operation::Update,
+            &gvk,
+            cm_value.as_ref(),
+            None,
+            Some("configmaps"),
+            Some(&namespace),
+        )
+        .await
+    {
         return Err(e);
     }
 
@@ -168,10 +176,12 @@ pub async fn update(
         if existing.immutable == Some(true) {
             let data_changed = existing.data != configmap.data;
             let binary_data_changed = existing.binary_data != configmap.binary_data;
-            let immutable_changed = configmap.immutable != Some(true) && configmap.immutable != existing.immutable;
+            let immutable_changed =
+                configmap.immutable != Some(true) && configmap.immutable != existing.immutable;
             if data_changed || binary_data_changed || immutable_changed {
                 return Err(rusternetes_common::Error::InvalidResource(format!(
-                    "ConfigMap \"{}/{}\" is immutable", namespace, name
+                    "ConfigMap \"{}/{}\" is immutable",
+                    namespace, name
                 )));
             }
         }
@@ -260,19 +270,37 @@ pub async fn list(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_namespaced::<ConfigMap>(
-            state, auth_ctx, namespace, "configmaps", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "configmaps",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing configmaps in namespace: {}", namespace);
@@ -306,19 +334,36 @@ pub async fn list_all_configmaps(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_cluster_scoped::<ConfigMap>(
-            state, auth_ctx, "configmaps", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "configmaps",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all configmaps");

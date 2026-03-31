@@ -23,19 +23,37 @@ pub async fn list(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_namespaced::<Event>(
-            state, auth_ctx, namespace, "events", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "events",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing events in namespace: {}", namespace);
@@ -63,7 +81,8 @@ pub async fn list(
         kind: "EventList".to_string(),
         metadata: rusternetes_common::types::ListMeta::default(),
         items: events,
-    }).into_response())
+    })
+    .into_response())
 }
 
 /// List all events across all namespaces
@@ -73,19 +92,36 @@ pub async fn list_all(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_cluster_scoped::<Event>(
-            state, auth_ctx, "events", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "events",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all events across all namespaces");
@@ -111,7 +147,8 @@ pub async fn list_all(
         kind: "EventList".to_string(),
         metadata: rusternetes_common::types::ListMeta::default(),
         items: events,
-    }).into_response())
+    })
+    .into_response())
 }
 
 /// Get a specific event
@@ -470,19 +507,37 @@ pub async fn list_events_v1(
     Path(namespace): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_namespaced::<Event>(
-            state, auth_ctx, namespace, "events", "events.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "events",
+            "events.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "events")
@@ -510,7 +565,8 @@ pub async fn list_events_v1(
         kind: "EventList".to_string(),
         metadata: rusternetes_common::types::ListMeta::default(),
         items: events,
-    }).into_response())
+    })
+    .into_response())
 }
 
 /// List all events via events.k8s.io/v1 (cluster-scoped)
@@ -519,23 +575,40 @@ pub async fn list_all_events_v1(
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_cluster_scoped::<Event>(
-            state, auth_ctx, "events", "events.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "events",
+            "events.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
-    let attrs = RequestAttributes::new(auth_ctx.user, "list", "events")
-        .with_api_group("events.k8s.io");
+    let attrs =
+        RequestAttributes::new(auth_ctx.user, "list", "events").with_api_group("events.k8s.io");
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -559,7 +632,8 @@ pub async fn list_all_events_v1(
         kind: "EventList".to_string(),
         metadata: rusternetes_common::types::ListMeta::default(),
         items: events,
-    }).into_response())
+    })
+    .into_response())
 }
 
 /// Get a single event via events.k8s.io/v1

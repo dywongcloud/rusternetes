@@ -189,9 +189,8 @@ impl<S: Storage> ReplicaSetController<S> {
             .owner_references
             .as_ref()
             .map(|refs| {
-                refs.iter().any(|r| {
-                    r.kind == "ReplicaSet" && r.name == replicaset.metadata.name
-                })
+                refs.iter()
+                    .any(|r| r.kind == "ReplicaSet" && r.name == replicaset.metadata.name)
             })
             .unwrap_or(false);
 

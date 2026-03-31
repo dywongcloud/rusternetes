@@ -269,19 +269,37 @@ pub async fn list(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_namespaced::<ServiceAccount>(
-            state, auth_ctx, namespace, "serviceaccounts", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "serviceaccounts",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing service accounts in namespace: {}", namespace);
@@ -315,19 +333,36 @@ pub async fn list_all_serviceaccounts(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_cluster_scoped::<ServiceAccount>(
-            state, auth_ctx, "serviceaccounts", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "serviceaccounts",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all serviceaccounts");
@@ -444,7 +479,8 @@ pub async fn create_token(
         pod_uid: None,
         node_name: None,
     };
-    let token = state.token_manager
+    let token = state
+        .token_manager
         .generate_token(claims)
         .unwrap_or_else(|_| format!("sa-token-{}-{}", namespace, name));
 

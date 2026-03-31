@@ -182,10 +182,9 @@ pub use volume::{
     DeletionPolicy, ISCSIVolumeSource, NFSVolumeSource, PersistentVolume,
     PersistentVolumeAccessMode, PersistentVolumeClaim, PersistentVolumeClaimSpec,
     PersistentVolumeClaimStatus, PersistentVolumePhase, PersistentVolumeSpec,
-    PersistentVolumeStatus, StorageClass,
-    TypedObjectReference, VolumeBindingMode, VolumeSnapshot, VolumeSnapshotClass,
-    VolumeSnapshotContent, VolumeSnapshotContentSpec, VolumeSnapshotContentStatus,
-    VolumeSnapshotSource, VolumeSnapshotSpec, VolumeSnapshotStatus,
+    PersistentVolumeStatus, StorageClass, TypedObjectReference, VolumeBindingMode, VolumeSnapshot,
+    VolumeSnapshotClass, VolumeSnapshotContent, VolumeSnapshotContentSpec,
+    VolumeSnapshotContentStatus, VolumeSnapshotSource, VolumeSnapshotSpec, VolumeSnapshotStatus,
 };
 pub use workloads::{
     CronJob, CronJobSpec, CronJobStatus, DaemonSet, DaemonSetSpec, DaemonSetStatus, Job, JobSpec,

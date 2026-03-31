@@ -259,8 +259,7 @@ impl<S: Storage> EventsController<S> {
 
         for event in all_events {
             // Use last_timestamp, falling back to creation_timestamp
-            let event_time = event.last_timestamp
-                .or(event.metadata.creation_timestamp);
+            let event_time = event.last_timestamp.or(event.metadata.creation_timestamp);
             if event_time.map_or(false, |t| t < one_hour_ago) {
                 let namespace = event.metadata.namespace.as_deref().unwrap_or("default");
                 let name = &event.metadata.name;

@@ -191,12 +191,19 @@ impl AdmissionWebhookClient {
     /// endpoint IPs from storage instead.
     async fn resolve_service_url<S2: Storage>(url: &str, storage: &Arc<S2>) -> String {
         // Parse service name and namespace from URL like https://name.ns.svc:port/path
-        let url_without_scheme = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")).unwrap_or(url);
+        let url_without_scheme = url
+            .strip_prefix("https://")
+            .or_else(|| url.strip_prefix("http://"))
+            .unwrap_or(url);
         let host_and_rest: Vec<&str> = url_without_scheme.splitn(2, '/').collect();
         let host_port: Vec<&str> = host_and_rest[0].splitn(2, ':').collect();
         let host = host_port[0];
         let port = host_port.get(1).unwrap_or(&"443");
-        let path = if host_and_rest.len() > 1 { format!("/{}", host_and_rest[1]) } else { "/".to_string() };
+        let path = if host_and_rest.len() > 1 {
+            format!("/{}", host_and_rest[1])
+        } else {
+            "/".to_string()
+        };
 
         // Check if host ends with .svc (K8s service)
         if !host.ends_with(".svc") {
@@ -204,7 +211,11 @@ impl AdmissionWebhookClient {
         }
 
         // Parse name.namespace.svc
-        let parts: Vec<&str> = host.strip_suffix(".svc").unwrap_or(host).splitn(2, '.').collect();
+        let parts: Vec<&str> = host
+            .strip_suffix(".svc")
+            .unwrap_or(host)
+            .splitn(2, '.')
+            .collect();
         if parts.len() != 2 {
             return url.to_string();
         }
@@ -213,13 +224,21 @@ impl AdmissionWebhookClient {
 
         // Look up endpoint IPs from EndpointSlices
         let es_prefix = format!("/registry/endpointslices/{}/", svc_namespace);
-        if let Ok(slices) = storage.list::<rusternetes_common::resources::EndpointSlice>(&es_prefix).await {
+        if let Ok(slices) = storage
+            .list::<rusternetes_common::resources::EndpointSlice>(&es_prefix)
+            .await
+        {
             for slice in &slices {
-                let matches = slice.metadata.labels.as_ref()
+                let matches = slice
+                    .metadata
+                    .labels
+                    .as_ref()
                     .and_then(|l| l.get("kubernetes.io/service-name"))
                     .map(|n| n == svc_name)
                     .unwrap_or(false);
-                if !matches { continue; }
+                if !matches {
+                    continue;
+                }
                 for ep in &slice.endpoints {
                     if ep.conditions.as_ref().and_then(|c| c.ready).unwrap_or(true) {
                         if let Some(addr) = ep.addresses.first() {
@@ -232,7 +251,10 @@ impl AdmissionWebhookClient {
 
         // Fall back to ClusterIP
         let svc_key = format!("/registry/services/{}/{}", svc_namespace, svc_name);
-        if let Ok(svc) = storage.get::<rusternetes_common::resources::Service>(&svc_key).await {
+        if let Ok(svc) = storage
+            .get::<rusternetes_common::resources::Service>(&svc_key)
+            .await
+        {
             if let Some(cluster_ip) = &svc.spec.cluster_ip {
                 if !cluster_ip.is_empty() && cluster_ip != "None" {
                     return format!("https://{}:{}{}", cluster_ip, port, path);
@@ -295,8 +317,14 @@ impl<S: Storage> AdmissionWebhookManager<S> {
 
                     // Skip webhooks whose service namespace no longer exists
                     if let Some(ref svc) = webhook.client_config.service {
-                        let ns_key = rusternetes_storage::build_key("namespaces", None, &svc.namespace);
-                        if self.storage.get::<serde_json::Value>(&ns_key).await.is_err() {
+                        let ns_key =
+                            rusternetes_storage::build_key("namespaces", None, &svc.namespace);
+                        if self
+                            .storage
+                            .get::<serde_json::Value>(&ns_key)
+                            .await
+                            .is_err()
+                        {
                             warn!("Skipping validating webhook {} — service namespace {} no longer exists", webhook.name, svc.namespace);
                             continue;
                         }
@@ -329,19 +357,36 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     // Call the webhook
                     // Resolve webhook URL — K8s service names need endpoint IP lookup
                     let raw_url = self.client.build_webhook_url(&webhook.client_config)?;
-                    let resolved_url = AdmissionWebhookClient::resolve_service_url(&raw_url, &self.storage).await;
-                    let timeout = webhook.timeout_seconds
+                    let resolved_url =
+                        AdmissionWebhookClient::resolve_service_url(&raw_url, &self.storage).await;
+                    let timeout = webhook
+                        .timeout_seconds
                         .map(|t| Duration::from_secs(t as u64))
                         .unwrap_or(Duration::from_secs(10));
                     let review = AdmissionReview::new_request(request.clone());
-                    let response = match self.client.call_webhook(&resolved_url, &review, timeout).await {
+                    let response = match self
+                        .client
+                        .call_webhook(&resolved_url, &review, timeout)
+                        .await
+                    {
                         Ok(resp) => resp,
                         Err(e) => {
-                            let fp = webhook.failure_policy.as_ref().unwrap_or(&FailurePolicy::Fail);
+                            let fp = webhook
+                                .failure_policy
+                                .as_ref()
+                                .unwrap_or(&FailurePolicy::Fail);
                             match fp {
                                 FailurePolicy::Ignore => {
                                     warn!("Webhook {} failed (Ignore): {}", webhook.name, e);
-                                    AdmissionReviewResponse { uid: request.uid.clone(), allowed: true, status: None, patch: None, patch_type: None, audit_annotations: None, warnings: None }
+                                    AdmissionReviewResponse {
+                                        uid: request.uid.clone(),
+                                        allowed: true,
+                                        status: None,
+                                        patch: None,
+                                        patch_type: None,
+                                        audit_annotations: None,
+                                        warnings: None,
+                                    }
                                 }
                                 _ => return Err(e),
                             }
@@ -407,9 +452,18 @@ impl<S: Storage> AdmissionWebhookManager<S> {
 
                     // Skip webhooks whose service namespace no longer exists
                     if let Some(ref svc) = webhook.client_config.service {
-                        let ns_key = rusternetes_storage::build_key("namespaces", None, &svc.namespace);
-                        if self.storage.get::<serde_json::Value>(&ns_key).await.is_err() {
-                            warn!("Skipping webhook {} — service namespace {} no longer exists", webhook.name, svc.namespace);
+                        let ns_key =
+                            rusternetes_storage::build_key("namespaces", None, &svc.namespace);
+                        if self
+                            .storage
+                            .get::<serde_json::Value>(&ns_key)
+                            .await
+                            .is_err()
+                        {
+                            warn!(
+                                "Skipping webhook {} — service namespace {} no longer exists",
+                                webhook.name, svc.namespace
+                            );
                             continue;
                         }
                     }
@@ -440,19 +494,39 @@ impl<S: Storage> AdmissionWebhookManager<S> {
 
                     // Resolve webhook URL — K8s service names need endpoint IP lookup
                     let raw_url = self.client.build_webhook_url(&webhook.client_config)?;
-                    let resolved_url = AdmissionWebhookClient::resolve_service_url(&raw_url, &self.storage).await;
-                    let timeout = webhook.timeout_seconds
+                    let resolved_url =
+                        AdmissionWebhookClient::resolve_service_url(&raw_url, &self.storage).await;
+                    let timeout = webhook
+                        .timeout_seconds
                         .map(|t| Duration::from_secs(t as u64))
                         .unwrap_or(Duration::from_secs(10));
                     let review = AdmissionReview::new_request(request.clone());
-                    let response = match self.client.call_webhook(&resolved_url, &review, timeout).await {
+                    let response = match self
+                        .client
+                        .call_webhook(&resolved_url, &review, timeout)
+                        .await
+                    {
                         Ok(resp) => resp,
                         Err(e) => {
-                            let fp = webhook.failure_policy.as_ref().unwrap_or(&FailurePolicy::Fail);
+                            let fp = webhook
+                                .failure_policy
+                                .as_ref()
+                                .unwrap_or(&FailurePolicy::Fail);
                             match fp {
                                 FailurePolicy::Ignore => {
-                                    warn!("Mutating webhook {} failed (Ignore): {}", webhook.name, e);
-                                    AdmissionReviewResponse { uid: request.uid.clone(), allowed: true, status: None, patch: None, patch_type: None, audit_annotations: None, warnings: None }
+                                    warn!(
+                                        "Mutating webhook {} failed (Ignore): {}",
+                                        webhook.name, e
+                                    );
+                                    AdmissionReviewResponse {
+                                        uid: request.uid.clone(),
+                                        allowed: true,
+                                        status: None,
+                                        patch: None,
+                                        patch_type: None,
+                                        audit_annotations: None,
+                                        warnings: None,
+                                    }
                                 }
                                 _ => return Err(e),
                             }
@@ -713,7 +787,8 @@ impl<S: Storage> AdmissionWebhookManager<S> {
         gvk: &GroupVersionKind,
         object: Option<&Value>,
     ) -> Result<()> {
-        self.run_validating_admission_policies_ext(operation, gvk, object, None, None, None).await
+        self.run_validating_admission_policies_ext(operation, gvk, object, None, None, None)
+            .await
     }
 
     /// Extended VAP evaluation with resource name and namespace for precise matching.
@@ -729,7 +804,8 @@ impl<S: Storage> AdmissionWebhookManager<S> {
         use rusternetes_common::CELEvaluator;
 
         // Load all ValidatingAdmissionPolicies
-        let policies: Vec<Value> = self.storage
+        let policies: Vec<Value> = self
+            .storage
             .list("/registry/validatingadmissionpolicies/")
             .await
             .unwrap_or_default();
@@ -739,7 +815,8 @@ impl<S: Storage> AdmissionWebhookManager<S> {
         }
 
         // Load all ValidatingAdmissionPolicyBindings
-        let bindings: Vec<Value> = self.storage
+        let bindings: Vec<Value> = self
+            .storage
             .list("/registry/validatingadmissionpolicybindings/")
             .await
             .unwrap_or_default();
@@ -747,9 +824,9 @@ impl<S: Storage> AdmissionWebhookManager<S> {
         let mut evaluator = CELEvaluator::new();
 
         // Derive resource name from kind if not provided
-        let derived_resource = resource.map(|s| s.to_string()).unwrap_or_else(|| {
-            format!("{}s", gvk.kind.to_lowercase())
-        });
+        let derived_resource = resource
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("{}s", gvk.kind.to_lowercase()));
 
         let op_str = match operation {
             Operation::Create => "CREATE",
@@ -759,7 +836,8 @@ impl<S: Storage> AdmissionWebhookManager<S> {
         };
 
         for policy in &policies {
-            let policy_name = policy.get("metadata")
+            let policy_name = policy
+                .get("metadata")
                 .and_then(|m| m.get("name"))
                 .and_then(|n| n.as_str())
                 .unwrap_or("");
@@ -777,7 +855,8 @@ impl<S: Storage> AdmissionWebhookManager<S> {
             let binding = matching_binding.unwrap();
 
             // Check match conditions from spec.matchConstraints
-            let match_resources = policy.get("spec")
+            let match_resources = policy
+                .get("spec")
                 .and_then(|s| s.get("matchConstraints"))
                 .and_then(|m| m.get("resourceRules"));
             if let Some(rules) = match_resources {
@@ -815,7 +894,13 @@ impl<S: Storage> AdmissionWebhookManager<S> {
 
             // Check matchConditions from the policy spec
             let match_conditions_pass = self.evaluate_match_conditions(
-                policy, object, old_object, operation, gvk, namespace, &mut evaluator,
+                policy,
+                object,
+                old_object,
+                operation,
+                gvk,
+                namespace,
+                &mut evaluator,
             );
             if !match_conditions_pass {
                 continue;
@@ -858,14 +943,17 @@ impl<S: Storage> AdmissionWebhookManager<S> {
             let _ = context.add_json_variable("request", &request_val);
 
             // Add params from the binding's paramRef (if present)
-            if let Some(param_ref) = binding.get("spec")
-                .and_then(|s| s.get("paramRef"))
-            {
-                let param_ns = param_ref.get("namespace").and_then(|n| n.as_str())
+            if let Some(param_ref) = binding.get("spec").and_then(|s| s.get("paramRef")) {
+                let param_ns = param_ref
+                    .get("namespace")
+                    .and_then(|n| n.as_str())
                     .or(namespace);
                 let param_name = param_ref.get("name").and_then(|n| n.as_str()).unwrap_or("");
                 let param_kind = param_ref.get("kind").and_then(|k| k.as_str()).unwrap_or("");
-                let param_api_group = param_ref.get("apiGroup").and_then(|g| g.as_str()).unwrap_or("");
+                let param_api_group = param_ref
+                    .get("apiGroup")
+                    .and_then(|g| g.as_str())
+                    .unwrap_or("");
 
                 if !param_name.is_empty() {
                     // Try to load the param resource from storage
@@ -879,9 +967,15 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         let _ = context.add_json_variable("params", &param_val);
                     } else {
                         // Try as CRD instance
-                        let crd_key = format!("/registry/{}.{}/{}/{}", resource_type, param_api_group,
-                            param_ns.unwrap_or(""), param_name);
-                        if let Ok(param_val) = self.storage.get::<serde_json::Value>(&crd_key).await {
+                        let crd_key = format!(
+                            "/registry/{}.{}/{}/{}",
+                            resource_type,
+                            param_api_group,
+                            param_ns.unwrap_or(""),
+                            param_name
+                        );
+                        if let Ok(param_val) = self.storage.get::<serde_json::Value>(&crd_key).await
+                        {
                             let _ = context.add_json_variable("params", &param_val);
                         } else {
                             let _ = context.add_json_variable("params", &serde_json::Value::Null);
@@ -900,7 +994,10 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                 if !ns.is_empty() {
                     let ns_key = format!("/registry/namespaces/{}", ns);
                     if let Ok(ns_val) = self.storage.get::<serde_json::Value>(&ns_key).await {
-                        let _ = context.add_json_variable("namespaceObject", &serde_json::to_value(&ns_val).unwrap_or(serde_json::Value::Null));
+                        let _ = context.add_json_variable(
+                            "namespaceObject",
+                            &serde_json::to_value(&ns_val).unwrap_or(serde_json::Value::Null),
+                        );
                     } else {
                         // If namespace not found in storage, provide a minimal object
                         // so that expressions like namespaceObject.metadata.name don't error.
@@ -919,11 +1016,21 @@ impl<S: Storage> AdmissionWebhookManager<S> {
             // Evaluate spec.variables, building a "variables" Map for CEL access.
             // CEL expressions reference variables as `variables.NAME`, which means
             // "variables" must be a Map variable in the CEL context.
-            if let Some(vars) = policy.get("spec").and_then(|s| s.get("variables")).and_then(|v| v.as_array()) {
-                let mut var_map: std::collections::HashMap<cel_interpreter::objects::Key, cel_interpreter::Value> = std::collections::HashMap::new();
+            if let Some(vars) = policy
+                .get("spec")
+                .and_then(|s| s.get("variables"))
+                .and_then(|v| v.as_array())
+            {
+                let mut var_map: std::collections::HashMap<
+                    cel_interpreter::objects::Key,
+                    cel_interpreter::Value,
+                > = std::collections::HashMap::new();
                 for var_def in vars {
                     let var_name = var_def.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                    let var_expr = var_def.get("expression").and_then(|e| e.as_str()).unwrap_or("");
+                    let var_expr = var_def
+                        .get("expression")
+                        .and_then(|e| e.as_str())
+                        .unwrap_or("");
                     if var_name.is_empty() || var_expr.is_empty() {
                         continue;
                     }
@@ -931,7 +1038,9 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     match evaluator.evaluate_to_value(var_expr, &context) {
                         Ok(val) => {
                             var_map.insert(
-                                cel_interpreter::objects::Key::String(std::sync::Arc::new(var_name.to_string())),
+                                cel_interpreter::objects::Key::String(std::sync::Arc::new(
+                                    var_name.to_string(),
+                                )),
                                 val,
                             );
                             // Re-add the updated variables map to context after each variable
@@ -944,22 +1053,35 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                             );
                         }
                         Err(e) => {
-                            tracing::warn!("CEL variable {} evaluation error for policy {}: {}", var_name, policy_name, e);
+                            tracing::warn!(
+                                "CEL variable {} evaluation error for policy {}: {}",
+                                var_name,
+                                policy_name,
+                                e
+                            );
                         }
                     }
                 }
             }
 
             // Check failure policy
-            let failure_policy = policy.get("spec")
+            let failure_policy = policy
+                .get("spec")
                 .and_then(|s| s.get("failurePolicy"))
                 .and_then(|f| f.as_str())
                 .unwrap_or("Fail");
 
             // Evaluate validations
-            if let Some(validations) = policy.get("spec").and_then(|s| s.get("validations")).and_then(|v| v.as_array()) {
+            if let Some(validations) = policy
+                .get("spec")
+                .and_then(|s| s.get("validations"))
+                .and_then(|v| v.as_array())
+            {
                 for validation in validations {
-                    let expression = validation.get("expression").and_then(|e| e.as_str()).unwrap_or("");
+                    let expression = validation
+                        .get("expression")
+                        .and_then(|e| e.as_str())
+                        .unwrap_or("");
                     if expression.is_empty() {
                         continue;
                     }
@@ -967,31 +1089,47 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     // Evaluate
                     match evaluator.evaluate(expression, &context) {
                         Ok(true) => {
-                            tracing::debug!("VAP {} expression '{}' passed", policy_name, expression);
+                            tracing::debug!(
+                                "VAP {} expression '{}' passed",
+                                policy_name,
+                                expression
+                            );
                         }
                         Ok(false) => {
-                            tracing::info!("VAP {} expression '{}' DENIED for {} in ns {:?}",
-                                policy_name, expression, derived_resource, namespace);
+                            tracing::info!(
+                                "VAP {} expression '{}' DENIED for {} in ns {:?}",
+                                policy_name,
+                                expression,
+                                derived_resource,
+                                namespace
+                            );
                             // Check validation actions (from validation rule or binding)
-                            let actions = validation.get("validationActions")
+                            let actions = validation
+                                .get("validationActions")
                                 .and_then(|a| a.as_array());
                             let has_deny = actions.map_or(true, |acts| {
                                 acts.iter().any(|a| a.as_str() == Some("Deny"))
                             });
                             if has_deny {
                                 // Use messageExpression (CEL) if present, otherwise static message
-                                let message = if let Some(msg_expr) = validation.get("messageExpression").and_then(|m| m.as_str()) {
+                                let message = if let Some(msg_expr) =
+                                    validation.get("messageExpression").and_then(|m| m.as_str())
+                                {
                                     match evaluator.evaluate_to_value(msg_expr, &context) {
                                         Ok(cel_interpreter::Value::String(s)) => s.to_string(),
                                         Ok(other) => format!("{:?}", other),
-                                        Err(_) => validation.get("message")
+                                        Err(_) => validation
+                                            .get("message")
                                             .and_then(|m| m.as_str())
-                                            .unwrap_or("Validation failed").to_string(),
+                                            .unwrap_or("Validation failed")
+                                            .to_string(),
                                     }
                                 } else {
-                                    validation.get("message")
+                                    validation
+                                        .get("message")
                                         .and_then(|m| m.as_str())
-                                        .unwrap_or("Validation failed").to_string()
+                                        .unwrap_or("Validation failed")
+                                        .to_string()
                                 };
                                 return Err(rusternetes_common::Error::Forbidden(format!(
                                     "ValidatingAdmissionPolicy {} denied: {}",
@@ -1000,7 +1138,12 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                             }
                         }
                         Err(e) => {
-                            tracing::warn!("CEL evaluation error for policy {} expression '{}': {}", policy_name, expression, e);
+                            tracing::warn!(
+                                "CEL evaluation error for policy {} expression '{}': {}",
+                                policy_name,
+                                expression,
+                                e
+                            );
                             // On error, check failure policy
                             if failure_policy == "Fail" {
                                 return Err(rusternetes_common::Error::Forbidden(format!(
@@ -1027,7 +1170,8 @@ impl<S: Storage> AdmissionWebhookManager<S> {
         namespace: Option<&str>,
         evaluator: &mut rusternetes_common::CELEvaluator,
     ) -> bool {
-        let conditions = match policy.get("spec")
+        let conditions = match policy
+            .get("spec")
             .and_then(|s| s.get("matchConditions"))
             .and_then(|c| c.as_array())
         {
@@ -1063,14 +1207,17 @@ impl<S: Storage> AdmissionWebhookManager<S> {
         let _ = context.add_json_variable("request", &request_val);
 
         for cond in conditions {
-            let expr = cond.get("expression").and_then(|e| e.as_str()).unwrap_or("");
+            let expr = cond
+                .get("expression")
+                .and_then(|e| e.as_str())
+                .unwrap_or("");
             if expr.is_empty() {
                 continue;
             }
             match evaluator.evaluate(expr, &context) {
                 Ok(true) => { /* condition matched, continue */ }
                 Ok(false) => return false, // condition not met, skip this policy
-                Err(_) => return false, // error evaluating = skip
+                Err(_) => return false,    // error evaluating = skip
             }
         }
         true
@@ -1622,7 +1769,10 @@ mod tests {
 
         // Store the policy
         let policy_key = "/registry/validatingadmissionpolicies/deny-configmaps";
-        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+        storage
+            .create::<serde_json::Value>(policy_key, &policy)
+            .await
+            .unwrap();
 
         // Create a binding for the policy (with old timestamp so it's "ready")
         let old_time = (chrono::Utc::now() - chrono::Duration::seconds(10)).to_rfc3339();
@@ -1640,7 +1790,10 @@ mod tests {
         });
 
         let binding_key = "/registry/validatingadmissionpolicybindings/deny-configmaps-binding";
-        storage.create::<serde_json::Value>(binding_key, &binding).await.unwrap();
+        storage
+            .create::<serde_json::Value>(binding_key, &binding)
+            .await
+            .unwrap();
 
         // Test: Creating a configmap with name "deny-test" should be denied
         let gvk = GroupVersionKind {
@@ -1653,18 +1806,27 @@ mod tests {
             "data": {"key": "value"},
         });
 
-        let result = manager.run_validating_admission_policies_ext(
-            &Operation::Create,
-            &gvk,
-            Some(&deny_cm),
-            None,
-            Some("configmaps"),
-            Some("default"),
-        ).await;
+        let result = manager
+            .run_validating_admission_policies_ext(
+                &Operation::Create,
+                &gvk,
+                Some(&deny_cm),
+                None,
+                Some("configmaps"),
+                Some("default"),
+            )
+            .await;
 
-        assert!(result.is_err(), "Should deny configmap with name starting with 'deny-'");
+        assert!(
+            result.is_err(),
+            "Should deny configmap with name starting with 'deny-'"
+        );
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("ValidatingAdmissionPolicy"), "Error should mention VAP: {}", err_msg);
+        assert!(
+            err_msg.contains("ValidatingAdmissionPolicy"),
+            "Error should mention VAP: {}",
+            err_msg
+        );
 
         // Test: Creating a configmap with a different name should be allowed
         let allow_cm = json!({
@@ -1672,16 +1834,21 @@ mod tests {
             "data": {"key": "value"},
         });
 
-        let result = manager.run_validating_admission_policies_ext(
-            &Operation::Create,
-            &gvk,
-            Some(&allow_cm),
-            None,
-            Some("configmaps"),
-            Some("default"),
-        ).await;
+        let result = manager
+            .run_validating_admission_policies_ext(
+                &Operation::Create,
+                &gvk,
+                Some(&allow_cm),
+                None,
+                Some("configmaps"),
+                Some("default"),
+            )
+            .await;
 
-        assert!(result.is_ok(), "Should allow configmap with name 'allowed-cm'");
+        assert!(
+            result.is_ok(),
+            "Should allow configmap with name 'allowed-cm'"
+        );
     }
 
     #[tokio::test]
@@ -1717,7 +1884,10 @@ mod tests {
         });
 
         let policy_key = "/registry/validatingadmissionpolicies/var-policy";
-        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+        storage
+            .create::<serde_json::Value>(policy_key, &policy)
+            .await
+            .unwrap();
 
         let old_time = (chrono::Utc::now() - chrono::Duration::seconds(10)).to_rfc3339();
         let binding = json!({
@@ -1733,7 +1903,10 @@ mod tests {
         });
 
         let binding_key = "/registry/validatingadmissionpolicybindings/var-policy-binding";
-        storage.create::<serde_json::Value>(binding_key, &binding).await.unwrap();
+        storage
+            .create::<serde_json::Value>(binding_key, &binding)
+            .await
+            .unwrap();
 
         let gvk = GroupVersionKind {
             group: "".to_string(),
@@ -1743,16 +1916,30 @@ mod tests {
 
         // Short name should pass
         let short_cm = json!({"metadata": {"name": "short"}});
-        let result = manager.run_validating_admission_policies_ext(
-            &Operation::Create, &gvk, Some(&short_cm), None, Some("configmaps"), Some("default"),
-        ).await;
+        let result = manager
+            .run_validating_admission_policies_ext(
+                &Operation::Create,
+                &gvk,
+                Some(&short_cm),
+                None,
+                Some("configmaps"),
+                Some("default"),
+            )
+            .await;
         assert!(result.is_ok(), "Short name should be allowed");
 
         // Long name should be denied
         let long_cm = json!({"metadata": {"name": "this-name-is-way-too-long"}});
-        let result = manager.run_validating_admission_policies_ext(
-            &Operation::Create, &gvk, Some(&long_cm), None, Some("configmaps"), Some("default"),
-        ).await;
+        let result = manager
+            .run_validating_admission_policies_ext(
+                &Operation::Create,
+                &gvk,
+                Some(&long_cm),
+                None,
+                Some("configmaps"),
+                Some("default"),
+            )
+            .await;
         assert!(result.is_err(), "Long name should be denied");
     }
 
@@ -1785,7 +1972,10 @@ mod tests {
         });
 
         let policy_key = "/registry/validatingadmissionpolicies/unbound-policy";
-        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+        storage
+            .create::<serde_json::Value>(policy_key, &policy)
+            .await
+            .unwrap();
 
         let gvk = GroupVersionKind {
             group: "".to_string(),
@@ -1795,9 +1985,16 @@ mod tests {
         let cm = json!({"metadata": {"name": "test"}});
 
         // Should pass because there's no binding
-        let result = manager.run_validating_admission_policies_ext(
-            &Operation::Create, &gvk, Some(&cm), None, Some("configmaps"), Some("default"),
-        ).await;
+        let result = manager
+            .run_validating_admission_policies_ext(
+                &Operation::Create,
+                &gvk,
+                Some(&cm),
+                None,
+                Some("configmaps"),
+                Some("default"),
+            )
+            .await;
         assert!(result.is_ok(), "Should pass because no binding exists");
     }
 
@@ -1830,7 +2027,10 @@ mod tests {
         });
 
         let policy_key = "/registry/validatingadmissionpolicies/pod-only";
-        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+        storage
+            .create::<serde_json::Value>(policy_key, &policy)
+            .await
+            .unwrap();
 
         let old_time = (chrono::Utc::now() - chrono::Duration::seconds(10)).to_rfc3339();
         let binding = json!({
@@ -1846,7 +2046,10 @@ mod tests {
         });
 
         let binding_key = "/registry/validatingadmissionpolicybindings/pod-only-binding";
-        storage.create::<serde_json::Value>(binding_key, &binding).await.unwrap();
+        storage
+            .create::<serde_json::Value>(binding_key, &binding)
+            .await
+            .unwrap();
 
         // Creating a configmap should NOT be denied (resource mismatch)
         let gvk = GroupVersionKind {
@@ -1856,10 +2059,20 @@ mod tests {
         };
         let cm = json!({"metadata": {"name": "test"}});
 
-        let result = manager.run_validating_admission_policies_ext(
-            &Operation::Create, &gvk, Some(&cm), None, Some("configmaps"), Some("default"),
-        ).await;
-        assert!(result.is_ok(), "Should pass because resource type doesn't match");
+        let result = manager
+            .run_validating_admission_policies_ext(
+                &Operation::Create,
+                &gvk,
+                Some(&cm),
+                None,
+                Some("configmaps"),
+                Some("default"),
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "Should pass because resource type doesn't match"
+        );
     }
 
     #[tokio::test]
@@ -1892,7 +2105,10 @@ mod tests {
         });
 
         let policy_key = "/registry/validatingadmissionpolicies/ignore-errors";
-        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+        storage
+            .create::<serde_json::Value>(policy_key, &policy)
+            .await
+            .unwrap();
 
         let old_time = (chrono::Utc::now() - chrono::Duration::seconds(10)).to_rfc3339();
         let binding = json!({
@@ -1908,7 +2124,10 @@ mod tests {
         });
 
         let binding_key = "/registry/validatingadmissionpolicybindings/ignore-errors-binding";
-        storage.create::<serde_json::Value>(binding_key, &binding).await.unwrap();
+        storage
+            .create::<serde_json::Value>(binding_key, &binding)
+            .await
+            .unwrap();
 
         let gvk = GroupVersionKind {
             group: "".to_string(),
@@ -1918,10 +2137,20 @@ mod tests {
         let cm = json!({"metadata": {"name": "test"}});
 
         // Should pass because failurePolicy is Ignore
-        let result = manager.run_validating_admission_policies_ext(
-            &Operation::Create, &gvk, Some(&cm), None, Some("configmaps"), Some("default"),
-        ).await;
-        assert!(result.is_ok(), "Should pass with Ignore failure policy on CEL error");
+        let result = manager
+            .run_validating_admission_policies_ext(
+                &Operation::Create,
+                &gvk,
+                Some(&cm),
+                None,
+                Some("configmaps"),
+                Some("default"),
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "Should pass with Ignore failure policy on CEL error"
+        );
     }
 
     /// Reproduces the K8s conformance test "should allow expressions to refer variables".
@@ -1960,7 +2189,10 @@ mod tests {
         });
 
         let policy_key = "/registry/validatingadmissionpolicies/var-refer-policy";
-        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+        storage
+            .create::<serde_json::Value>(policy_key, &policy)
+            .await
+            .unwrap();
 
         let binding = json!({
             "apiVersion": "admissionregistration.k8s.io/v1",
@@ -1972,7 +2204,10 @@ mod tests {
             }
         });
         let binding_key = "/registry/validatingadmissionpolicybindings/var-refer-binding";
-        storage.create::<serde_json::Value>(binding_key, &binding).await.unwrap();
+        storage
+            .create::<serde_json::Value>(binding_key, &binding)
+            .await
+            .unwrap();
 
         let gvk = GroupVersionKind {
             group: "apps".to_string(),
@@ -1994,9 +2229,16 @@ mod tests {
                 }
             }
         });
-        let result = manager.run_validating_admission_policies_ext(
-            &Operation::Create, &gvk, Some(&deploy_1), None, Some("deployments"), Some("default"),
-        ).await;
+        let result = manager
+            .run_validating_admission_policies_ext(
+                &Operation::Create,
+                &gvk,
+                Some(&deploy_1),
+                None,
+                Some("deployments"),
+                Some("default"),
+            )
+            .await;
         assert!(result.is_err(), "1-replica deployment should be denied");
 
         // 3-replica deployment should be allowed (replicas > 1 AND oddReplicas both true)
@@ -2013,10 +2255,21 @@ mod tests {
                 }
             }
         });
-        let result = manager.run_validating_admission_policies_ext(
-            &Operation::Create, &gvk, Some(&deploy_3), None, Some("deployments"), Some("default"),
-        ).await;
-        assert!(result.is_ok(), "3-replica deployment should be allowed: {:?}", result.err());
+        let result = manager
+            .run_validating_admission_policies_ext(
+                &Operation::Create,
+                &gvk,
+                Some(&deploy_3),
+                None,
+                Some("deployments"),
+                Some("default"),
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "3-replica deployment should be allowed: {:?}",
+            result.err()
+        );
 
         // ReplicaSet should NOT be matched (policy targets deployments only)
         let rs_gvk = GroupVersionKind {
@@ -2030,10 +2283,20 @@ mod tests {
             "metadata": {"name": "test-rs", "namespace": "default"},
             "spec": {"replicas": 1}
         });
-        let result = manager.run_validating_admission_policies_ext(
-            &Operation::Create, &rs_gvk, Some(&rs), None, Some("replicasets"), Some("default"),
-        ).await;
-        assert!(result.is_ok(), "ReplicaSet should not be matched by deployment policy");
+        let result = manager
+            .run_validating_admission_policies_ext(
+                &Operation::Create,
+                &rs_gvk,
+                Some(&rs),
+                None,
+                Some("replicasets"),
+                Some("default"),
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "ReplicaSet should not be matched by deployment policy"
+        );
     }
 
     /// Reproduces the K8s conformance test "should validate against a Deployment".
@@ -2055,7 +2318,10 @@ mod tests {
             }
         });
         let ns_key = format!("/registry/namespaces/{}", ns_name);
-        storage.create::<serde_json::Value>(&ns_key, &namespace_obj).await.unwrap();
+        storage
+            .create::<serde_json::Value>(&ns_key, &namespace_obj)
+            .await
+            .unwrap();
 
         let policy = json!({
             "apiVersion": "admissionregistration.k8s.io/v1",
@@ -2078,7 +2344,10 @@ mod tests {
         });
 
         let policy_key = "/registry/validatingadmissionpolicies/deploy-ns-policy";
-        storage.create::<serde_json::Value>(policy_key, &policy).await.unwrap();
+        storage
+            .create::<serde_json::Value>(policy_key, &policy)
+            .await
+            .unwrap();
 
         let binding = json!({
             "apiVersion": "admissionregistration.k8s.io/v1",
@@ -2090,7 +2359,10 @@ mod tests {
             }
         });
         let binding_key = "/registry/validatingadmissionpolicybindings/deploy-ns-binding";
-        storage.create::<serde_json::Value>(binding_key, &binding).await.unwrap();
+        storage
+            .create::<serde_json::Value>(binding_key, &binding)
+            .await
+            .unwrap();
 
         let gvk = GroupVersionKind {
             group: "apps".to_string(),
@@ -2112,9 +2384,16 @@ mod tests {
                 }
             }
         });
-        let result = manager.run_validating_admission_policies_ext(
-            &Operation::Create, &gvk, Some(&deploy_1), None, Some("deployments"), Some(ns_name),
-        ).await;
+        let result = manager
+            .run_validating_admission_policies_ext(
+                &Operation::Create,
+                &gvk,
+                Some(&deploy_1),
+                None,
+                Some("deployments"),
+                Some(ns_name),
+            )
+            .await;
         assert!(result.is_err(), "1-replica deployment should be denied");
 
         // 2-replica deployment in correct namespace: allowed
@@ -2131,9 +2410,20 @@ mod tests {
                 }
             }
         });
-        let result = manager.run_validating_admission_policies_ext(
-            &Operation::Create, &gvk, Some(&deploy_2), None, Some("deployments"), Some(ns_name),
-        ).await;
-        assert!(result.is_ok(), "2-replica deployment in correct namespace should be allowed: {:?}", result.err());
+        let result = manager
+            .run_validating_admission_policies_ext(
+                &Operation::Create,
+                &gvk,
+                Some(&deploy_2),
+                None,
+                Some("deployments"),
+                Some(ns_name),
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "2-replica deployment in correct namespace should be allowed: {:?}",
+            result.err()
+        );
     }
 }

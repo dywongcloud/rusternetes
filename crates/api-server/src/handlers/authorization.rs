@@ -105,7 +105,10 @@ pub async fn create_self_subject_access_review(
 
     // SelfSubjectAccessReview does not support Table/PartialObjectMetadata format.
     // Return 406 Not Acceptable when client requests it.
-    if let Some(accept) = headers.get(axum::http::header::ACCEPT).and_then(|v| v.to_str().ok()) {
+    if let Some(accept) = headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+    {
         if accept.contains("as=Table") || accept.contains("as=PartialObjectMetadata") {
             return Err(rusternetes_common::Error::NotAcceptable(
                 "the resource does not support the requested content type".to_string(),

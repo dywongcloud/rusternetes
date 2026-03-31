@@ -96,19 +96,28 @@ pub fn normalize_resource_version(rv: Option<String>) -> Option<String> {
 
 /// Check if a query param map indicates a watch request
 pub fn is_watch_request(params: &std::collections::HashMap<String, String>) -> bool {
-    params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false)
+    params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
 }
 
 /// Convert query parameters to WatchParams
 pub fn watch_params_from_query(params: &std::collections::HashMap<String, String>) -> WatchParams {
     WatchParams {
         resource_version: normalize_resource_version(params.get("resourceVersion").cloned()),
-        timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+        timeout_seconds: params
+            .get("timeoutSeconds")
+            .and_then(|v| v.parse::<u64>().ok()),
         label_selector: params.get("labelSelector").cloned(),
         field_selector: params.get("fieldSelector").cloned(),
         watch: Some(true),
-        allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-        send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+        allow_watch_bookmarks: params
+            .get("allowWatchBookmarks")
+            .and_then(|v| v.parse::<bool>().ok()),
+        send_initial_events: params
+            .get("sendInitialEvents")
+            .and_then(|v| v.parse::<bool>().ok()),
     }
 }
 
@@ -176,7 +185,11 @@ where
     let watch_stream = if let Some(since_rev) = replay_revision {
         // Use etcd watch_from_revision for reliable history replay.
         // Add 1 because etcd start_revision is inclusive and we want events AFTER since_rev.
-        match state.storage.watch_from_revision(&prefix, since_rev + 1).await {
+        match state
+            .storage
+            .watch_from_revision(&prefix, since_rev + 1)
+            .await
+        {
             Ok(stream) => {
                 debug!(
                     "Started etcd watch from revision {} for prefix {}",
@@ -186,7 +199,10 @@ where
                 stream
             }
             Err(e) => {
-                error!("Failed to create watch from revision {}: {}, falling back to cache", since_rev, e);
+                error!(
+                    "Failed to create watch from revision {}: {}, falling back to cache",
+                    since_rev, e
+                );
                 let (history, rx) = state.watch_cache.subscribe_from(&prefix, since_rev).await;
                 crate::watch_cache::broadcast_to_stream_with_history(history, rx)
             }
@@ -205,8 +221,7 @@ where
     let current_rev_str = current_rev.to_string();
 
     // Create channel for sending events to client
-    let (tx, rx) =
-        tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(8192);
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(8192);
 
     // Determine whether to send initial ADDED events:
     // - If sendInitialEvents=true: always send
@@ -225,7 +240,8 @@ where
         // Initialize to MAX of current revision and requested RV so bookmarks
         // never report a lower RV than what the client already knows.
         let mut latest_resource_version: Option<String> = {
-            let rv = requested_rv.as_deref()
+            let rv = requested_rv
+                .as_deref()
                 .and_then(|rv| rv.parse::<i64>().ok())
                 .unwrap_or(0)
                 .max(current_rev);
@@ -234,29 +250,29 @@ where
 
         // Send initial state as ADDED events (only when appropriate)
         if should_send_initial {
-        for object in existing_resources {
-            // Update latest resourceVersion
-            if let Some(rv) = object.metadata().resource_version.as_ref() {
-                latest_resource_version = Some(rv.clone());
-            }
+            for object in existing_resources {
+                // Update latest resourceVersion
+                if let Some(rv) = object.metadata().resource_version.as_ref() {
+                    latest_resource_version = Some(rv.clone());
+                }
 
-            // Filter by label and field selectors
-            if !matches_label_selector(object.metadata(), &label_selector)
-                || !matches_field_selector(object.metadata(), &field_selector)
-            {
-                continue;
-            }
+                // Filter by label and field selectors
+                if !matches_label_selector(object.metadata(), &label_selector)
+                    || !matches_field_selector(object.metadata(), &field_selector)
+                {
+                    continue;
+                }
 
-            let k8s_event = K8sWatchEvent {
-                event_type: WatchEventType::Added,
-                object,
-            };
-            if let Ok(json) = serde_json::to_string(&k8s_event) {
-                if tx.try_send(Ok(format!("{}\n", json))).is_err() {
-                    return; // Client disconnected
+                let k8s_event = K8sWatchEvent {
+                    event_type: WatchEventType::Added,
+                    object,
+                };
+                if let Ok(json) = serde_json::to_string(&k8s_event) {
+                    if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                        return; // Client disconnected
+                    }
                 }
             }
-        }
         } // end should_send_initial
 
         // When sendInitialEvents=true, send an initial BOOKMARK after the ADDED
@@ -266,12 +282,11 @@ where
         if send_initial_events {
             // MUST send initial-events-end bookmark — client hangs without it.
             // Use latest resourceVersion from initial resources, or "0" as fallback.
-            let rv = latest_resource_version.clone().unwrap_or_else(|| "1".to_string());
+            let rv = latest_resource_version
+                .clone()
+                .unwrap_or_else(|| "1".to_string());
             let mut annotations = std::collections::HashMap::new();
-            annotations.insert(
-                "k8s.io/initial-events-end".to_string(),
-                "true".to_string(),
-            );
+            annotations.insert("k8s.io/initial-events-end".to_string(), "true".to_string());
             let bookmark = BookmarkObject {
                 kind: Some(bookmark_kind.clone()),
                 api_version: Some(bookmark_api_version.clone()),
@@ -288,7 +303,10 @@ where
             if let Ok(json) = serde_json::to_string(&k8s_event) {
                 let _ = tx.try_send(Ok(format!("{}\n", json)));
             }
-            debug!("Sent initial-events-end bookmark with resourceVersion: {}", rv);
+            debug!(
+                "Sent initial-events-end bookmark with resourceVersion: {}",
+                rv
+            );
             // Ensure latest_resource_version is set so periodic bookmarks work
             if latest_resource_version.is_none() {
                 latest_resource_version = Some(rv);
@@ -300,7 +318,9 @@ where
         let mut bookmark_interval = Some(interval(Duration::from_secs(15)));
 
         // Box-pin the watch stream so it can be replaced on reconnect
-        let mut watch_stream: std::pin::Pin<Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>> = Box::pin(watch_stream);
+        let mut watch_stream: std::pin::Pin<
+            Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>,
+        > = Box::pin(watch_stream);
 
         // Watch loop with timeout support
         let watch_future = async {
@@ -477,9 +497,9 @@ where
                     if allow_bookmarks || send_initial_events {
                         if let Some(ref rv) = latest_resource_version {
                             let bookmark = BookmarkObject {
-                                    kind: Some(bookmark_kind.clone()),
-                                    api_version: Some(bookmark_api_version.clone()),
-                                    metadata: ObjectMeta {
+                                kind: Some(bookmark_kind.clone()),
+                                api_version: Some(bookmark_api_version.clone()),
+                                metadata: ObjectMeta {
                                     resource_version: Some(rv.clone()),
                                     ..Default::default()
                                 },
@@ -573,7 +593,11 @@ where
     // If a specific resourceVersion was given, use etcd's watch_from_revision
     // directly to replay ALL events since that revision from etcd's history.
     let watch_stream = if let Some(since_rev) = replay_revision {
-        match state.storage.watch_from_revision(&prefix, since_rev + 1).await {
+        match state
+            .storage
+            .watch_from_revision(&prefix, since_rev + 1)
+            .await
+        {
             Ok(stream) => {
                 debug!(
                     "Started etcd watch from revision {} for prefix {}",
@@ -583,7 +607,10 @@ where
                 stream
             }
             Err(e) => {
-                error!("Failed to create watch from revision {}: {}, falling back to cache", since_rev, e);
+                error!(
+                    "Failed to create watch from revision {}: {}, falling back to cache",
+                    since_rev, e
+                );
                 let (history, rx) = state.watch_cache.subscribe_from(&prefix, since_rev).await;
                 crate::watch_cache::broadcast_to_stream_with_history(history, rx)
             }
@@ -601,13 +628,11 @@ where
     let current_rev_str = current_rev.to_string();
 
     // Create channel for sending events to client
-    let (tx, rx) =
-        tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(8192);
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(8192);
 
     // Determine whether to send initial ADDED events
-    let should_send_initial = send_initial_events
-        || requested_rv.as_deref() == Some("0")
-        || requested_rv.is_none();
+    let should_send_initial =
+        send_initial_events || requested_rv.as_deref() == Some("0") || requested_rv.is_none();
 
     // Spawn task to convert watch events to HTTP response
     tokio::spawn(async move {
@@ -615,7 +640,8 @@ where
         // Initialize to MAX of current revision and requested RV so bookmarks
         // never report a lower RV than what the client already knows.
         let mut latest_resource_version: Option<String> = {
-            let rv = requested_rv.as_deref()
+            let rv = requested_rv
+                .as_deref()
                 .and_then(|rv| rv.parse::<i64>().ok())
                 .unwrap_or(0)
                 .max(current_rev);
@@ -624,29 +650,29 @@ where
 
         // Send initial state as ADDED events (only when appropriate)
         if should_send_initial {
-        for object in existing_resources {
-            // Update latest resourceVersion
-            if let Some(rv) = object.metadata().resource_version.as_ref() {
-                latest_resource_version = Some(rv.clone());
-            }
+            for object in existing_resources {
+                // Update latest resourceVersion
+                if let Some(rv) = object.metadata().resource_version.as_ref() {
+                    latest_resource_version = Some(rv.clone());
+                }
 
-            // Filter by label and field selectors
-            if !matches_label_selector(object.metadata(), &label_selector)
-                || !matches_field_selector(object.metadata(), &field_selector)
-            {
-                continue;
-            }
+                // Filter by label and field selectors
+                if !matches_label_selector(object.metadata(), &label_selector)
+                    || !matches_field_selector(object.metadata(), &field_selector)
+                {
+                    continue;
+                }
 
-            let k8s_event = K8sWatchEvent {
-                event_type: WatchEventType::Added,
-                object,
-            };
-            if let Ok(json) = serde_json::to_string(&k8s_event) {
-                if tx.try_send(Ok(format!("{}\n", json))).is_err() {
-                    return; // Client disconnected
+                let k8s_event = K8sWatchEvent {
+                    event_type: WatchEventType::Added,
+                    object,
+                };
+                if let Ok(json) = serde_json::to_string(&k8s_event) {
+                    if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                        return; // Client disconnected
+                    }
                 }
             }
-        }
         } // end should_send_initial
 
         // When sendInitialEvents=true, send an initial BOOKMARK after the ADDED
@@ -656,12 +682,11 @@ where
         if send_initial_events {
             // MUST send initial-events-end bookmark — client hangs without it.
             // Use latest resourceVersion from initial resources, or "0" as fallback.
-            let rv = latest_resource_version.clone().unwrap_or_else(|| "1".to_string());
+            let rv = latest_resource_version
+                .clone()
+                .unwrap_or_else(|| "1".to_string());
             let mut annotations = std::collections::HashMap::new();
-            annotations.insert(
-                "k8s.io/initial-events-end".to_string(),
-                "true".to_string(),
-            );
+            annotations.insert("k8s.io/initial-events-end".to_string(), "true".to_string());
             let bookmark = BookmarkObject {
                 kind: Some(bookmark_kind.clone()),
                 api_version: Some(bookmark_api_version.clone()),
@@ -678,7 +703,10 @@ where
             if let Ok(json) = serde_json::to_string(&k8s_event) {
                 let _ = tx.try_send(Ok(format!("{}\n", json)));
             }
-            debug!("Sent initial-events-end bookmark with resourceVersion: {}", rv);
+            debug!(
+                "Sent initial-events-end bookmark with resourceVersion: {}",
+                rv
+            );
             // Ensure latest_resource_version is set so periodic bookmarks work
             if latest_resource_version.is_none() {
                 latest_resource_version = Some(rv);
@@ -690,7 +718,9 @@ where
         let mut bookmark_interval = Some(interval(Duration::from_secs(15)));
 
         // Box-pin the watch stream so it can be replaced on reconnect
-        let mut watch_stream: std::pin::Pin<Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>> = Box::pin(watch_stream);
+        let mut watch_stream: std::pin::Pin<
+            Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>,
+        > = Box::pin(watch_stream);
 
         // Watch loop with timeout support
         let watch_future = async {
@@ -867,9 +897,9 @@ where
                     if allow_bookmarks || send_initial_events {
                         if let Some(ref rv) = latest_resource_version {
                             let bookmark = BookmarkObject {
-                                    kind: Some(bookmark_kind.clone()),
-                                    api_version: Some(bookmark_api_version.clone()),
-                                    metadata: ObjectMeta {
+                                kind: Some(bookmark_kind.clone()),
+                                api_version: Some(bookmark_api_version.clone()),
+                                metadata: ObjectMeta {
                                     resource_version: Some(rv.clone()),
                                     ..Default::default()
                                 },
@@ -1590,8 +1620,13 @@ pub async fn watch_crds(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::CustomResourceDefinition>(
-        state, auth_ctx, "customresourcedefinitions", "apiextensions.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        "customresourcedefinitions",
+        "apiextensions.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch validatingwebhookconfigurations (cluster-scoped)
@@ -1601,8 +1636,13 @@ pub async fn watch_validatingwebhookconfigurations(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::ValidatingWebhookConfiguration>(
-        state, auth_ctx, "validatingwebhookconfigurations", "admissionregistration.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        "validatingwebhookconfigurations",
+        "admissionregistration.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch mutatingwebhookconfigurations (cluster-scoped)
@@ -1612,8 +1652,13 @@ pub async fn watch_mutatingwebhookconfigurations(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::MutatingWebhookConfiguration>(
-        state, auth_ctx, "mutatingwebhookconfigurations", "admissionregistration.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        "mutatingwebhookconfigurations",
+        "admissionregistration.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch validatingadmissionpolicies (cluster-scoped)
@@ -1623,8 +1668,13 @@ pub async fn watch_validatingadmissionpolicies(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::ValidatingAdmissionPolicy>(
-        state, auth_ctx, "validatingadmissionpolicies", "admissionregistration.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        "validatingadmissionpolicies",
+        "admissionregistration.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch validatingadmissionpolicybindings (cluster-scoped)
@@ -1634,8 +1684,13 @@ pub async fn watch_validatingadmissionpolicybindings(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::ValidatingAdmissionPolicyBinding>(
-        state, auth_ctx, "validatingadmissionpolicybindings", "admissionregistration.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        "validatingadmissionpolicybindings",
+        "admissionregistration.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch poddisruptionbudgets in a namespace
@@ -1646,8 +1701,14 @@ pub async fn watch_poddisruptionbudgets(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::PodDisruptionBudget>(
-        state, auth_ctx, namespace, "poddisruptionbudgets", "policy", params,
-    ).await
+        state,
+        auth_ctx,
+        namespace,
+        "poddisruptionbudgets",
+        "policy",
+        params,
+    )
+    .await
 }
 
 /// Watch poddisruptionbudgets across all namespaces
@@ -1657,8 +1718,13 @@ pub async fn watch_poddisruptionbudgets_all(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::PodDisruptionBudget>(
-        state, auth_ctx, "poddisruptionbudgets", "policy", params,
-    ).await
+        state,
+        auth_ctx,
+        "poddisruptionbudgets",
+        "policy",
+        params,
+    )
+    .await
 }
 
 /// Watch limitranges in a namespace
@@ -1669,8 +1735,14 @@ pub async fn watch_limitranges(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::LimitRange>(
-        state, auth_ctx, namespace, "limitranges", "", params,
-    ).await
+        state,
+        auth_ctx,
+        namespace,
+        "limitranges",
+        "",
+        params,
+    )
+    .await
 }
 
 /// Watch replicationcontrollers in a namespace
@@ -1681,8 +1753,14 @@ pub async fn watch_replicationcontrollers(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::ReplicationController>(
-        state, auth_ctx, namespace, "replicationcontrollers", "", params,
-    ).await
+        state,
+        auth_ctx,
+        namespace,
+        "replicationcontrollers",
+        "",
+        params,
+    )
+    .await
 }
 
 /// Watch priorityclasses (cluster-scoped)
@@ -1692,8 +1770,13 @@ pub async fn watch_priorityclasses(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::PriorityClass>(
-        state, auth_ctx, "priorityclasses", "scheduling.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        "priorityclasses",
+        "scheduling.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch storageclasses (cluster-scoped)
@@ -1703,8 +1786,13 @@ pub async fn watch_storageclasses(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::StorageClass>(
-        state, auth_ctx, "storageclasses", "storage.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        "storageclasses",
+        "storage.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch horizontalpodautoscalers in a namespace
@@ -1715,8 +1803,14 @@ pub async fn watch_horizontalpodautoscalers(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::HorizontalPodAutoscaler>(
-        state, auth_ctx, namespace, "horizontalpodautoscalers", "autoscaling", params,
-    ).await
+        state,
+        auth_ctx,
+        namespace,
+        "horizontalpodautoscalers",
+        "autoscaling",
+        params,
+    )
+    .await
 }
 
 /// Watch clusterroles (cluster-scoped)
@@ -1726,8 +1820,13 @@ pub async fn watch_clusterroles(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::ClusterRole>(
-        state, auth_ctx, "clusterroles", "rbac.authorization.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        "clusterroles",
+        "rbac.authorization.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch clusterrolebindings (cluster-scoped)
@@ -1737,8 +1836,13 @@ pub async fn watch_clusterrolebindings(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::ClusterRoleBinding>(
-        state, auth_ctx, "clusterrolebindings", "rbac.authorization.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        "clusterrolebindings",
+        "rbac.authorization.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch roles in a namespace
@@ -1749,8 +1853,14 @@ pub async fn watch_roles(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::Role>(
-        state, auth_ctx, namespace, "roles", "rbac.authorization.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        namespace,
+        "roles",
+        "rbac.authorization.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch rolebindings in a namespace
@@ -1761,8 +1871,14 @@ pub async fn watch_rolebindings(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::RoleBinding>(
-        state, auth_ctx, namespace, "rolebindings", "rbac.authorization.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        namespace,
+        "rolebindings",
+        "rbac.authorization.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch leases in a namespace
@@ -1773,8 +1889,14 @@ pub async fn watch_leases(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::Lease>(
-        state, auth_ctx, namespace, "leases", "coordination.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        namespace,
+        "leases",
+        "coordination.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch ingresses in a namespace
@@ -1785,8 +1907,14 @@ pub async fn watch_ingresses(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::Ingress>(
-        state, auth_ctx, namespace, "ingresses", "networking.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        namespace,
+        "ingresses",
+        "networking.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch networkpolicies in a namespace
@@ -1797,8 +1925,14 @@ pub async fn watch_networkpolicies(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::NetworkPolicy>(
-        state, auth_ctx, namespace, "networkpolicies", "networking.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        namespace,
+        "networkpolicies",
+        "networking.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch certificatesigningrequests (cluster-scoped)
@@ -1808,8 +1942,13 @@ pub async fn watch_certificatesigningrequests(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::CertificateSigningRequest>(
-        state, auth_ctx, "certificatesigningrequests", "certificates.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        "certificatesigningrequests",
+        "certificates.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch flowschemas (cluster-scoped)
@@ -1819,8 +1958,13 @@ pub async fn watch_flowschemas(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::FlowSchema>(
-        state, auth_ctx, "flowschemas", "flowcontrol.apiserver.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        "flowschemas",
+        "flowcontrol.apiserver.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch prioritylevelconfigurations (cluster-scoped)
@@ -1830,8 +1974,13 @@ pub async fn watch_prioritylevelconfigurations(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_cluster_scoped::<rusternetes_common::resources::PriorityLevelConfiguration>(
-        state, auth_ctx, "prioritylevelconfigurations", "flowcontrol.apiserver.k8s.io", params,
-    ).await
+        state,
+        auth_ctx,
+        "prioritylevelconfigurations",
+        "flowcontrol.apiserver.k8s.io",
+        params,
+    )
+    .await
 }
 
 /// Watch podtemplates in a namespace
@@ -1842,8 +1991,14 @@ pub async fn watch_podtemplates(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::PodTemplate>(
-        state, auth_ctx, namespace, "podtemplates", "", params,
-    ).await
+        state,
+        auth_ctx,
+        namespace,
+        "podtemplates",
+        "",
+        params,
+    )
+    .await
 }
 
 /// Watch controllerrevisions in a namespace
@@ -1854,8 +2009,14 @@ pub async fn watch_controllerrevisions(
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
     watch_namespaced::<rusternetes_common::resources::ControllerRevision>(
-        state, auth_ctx, namespace, "controllerrevisions", "apps", params,
-    ).await
+        state,
+        auth_ctx,
+        namespace,
+        "controllerrevisions",
+        "apps",
+        params,
+    )
+    .await
 }
 
 /// Helper to extract metadata fields from a serde_json::Value
@@ -1902,9 +2063,8 @@ pub async fn watch_cluster_scoped_json(
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
-    let should_send_initial = send_initial_events
-        || requested_rv.as_deref() == Some("0")
-        || requested_rv.is_none();
+    let should_send_initial =
+        send_initial_events || requested_rv.as_deref() == Some("0") || requested_rv.is_none();
 
     tokio::spawn(async move {
         let mut latest_resource_version: Option<String> = Some(current_rev_str);
@@ -1953,7 +2113,9 @@ pub async fn watch_cluster_scoped_json(
             None
         };
 
-        let mut watch_stream: std::pin::Pin<Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>> = Box::pin(watch_stream);
+        let mut watch_stream: std::pin::Pin<
+            Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>,
+        > = Box::pin(watch_stream);
 
         let watch_future = async {
             loop {
@@ -2047,7 +2209,10 @@ pub async fn watch_namespaced_json(
     api_group: &str,
     params: WatchParams,
 ) -> Result<Response> {
-    info!("Starting JSON watch for namespaced {}/{}", namespace, resource_type);
+    info!(
+        "Starting JSON watch for namespaced {}/{}",
+        namespace, resource_type
+    );
 
     let attrs = RequestAttributes::new(auth_ctx.user.clone(), "watch", resource_type)
         .with_api_group(api_group)
@@ -2076,9 +2241,8 @@ pub async fn watch_namespaced_json(
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
-    let should_send_initial = send_initial_events
-        || requested_rv.as_deref() == Some("0")
-        || requested_rv.is_none();
+    let should_send_initial =
+        send_initial_events || requested_rv.as_deref() == Some("0") || requested_rv.is_none();
 
     tokio::spawn(async move {
         let mut latest_resource_version: Option<String> = Some(current_rev_str);
@@ -2127,7 +2291,9 @@ pub async fn watch_namespaced_json(
             None
         };
 
-        let mut watch_stream: std::pin::Pin<Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>> = Box::pin(watch_stream);
+        let mut watch_stream: std::pin::Pin<
+            Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>,
+        > = Box::pin(watch_stream);
 
         let watch_future = async {
             loop {

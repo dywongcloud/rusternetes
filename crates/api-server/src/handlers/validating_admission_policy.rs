@@ -179,8 +179,13 @@ pub async fn list_validating_admission_policies(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<ValidatingAdmissionPolicy>(
-            state, auth_ctx, "validatingadmissionpolicies", "admissionregistration.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "validatingadmissionpolicies",
+            "admissionregistration.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing ValidatingAdmissionPolicies");
@@ -197,7 +202,10 @@ pub async fn list_validating_admission_policies(
     }
 
     let prefix = build_prefix("validatingadmissionpolicies", None);
-    let mut policies = state.storage.list::<ValidatingAdmissionPolicy>(&prefix).await?;
+    let mut policies = state
+        .storage
+        .list::<ValidatingAdmissionPolicy>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut policies, &params)?;
@@ -389,8 +397,13 @@ pub async fn list_validating_admission_policy_bindings(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<ValidatingAdmissionPolicyBinding>(
-            state, auth_ctx, "validatingadmissionpolicybindings", "admissionregistration.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "validatingadmissionpolicybindings",
+            "admissionregistration.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing ValidatingAdmissionPolicyBindings");
@@ -407,7 +420,10 @@ pub async fn list_validating_admission_policy_bindings(
     }
 
     let prefix = build_prefix("validatingadmissionpolicybindings", None);
-    let mut bindings = state.storage.list::<ValidatingAdmissionPolicyBinding>(&prefix).await?;
+    let mut bindings = state
+        .storage
+        .list::<ValidatingAdmissionPolicyBinding>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut bindings, &params)?;

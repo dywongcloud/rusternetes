@@ -85,7 +85,8 @@ impl axum::response::IntoResponse for Error {
                 // Sanitize internal storage paths from error messages
                 let clean_msg = if msg.starts_with("/registry/") {
                     // Convert /registry/resources/namespace/name to "resources \"name\" not found"
-                    let parts: Vec<&str> = msg.trim_start_matches("/registry/").split('/').collect();
+                    let parts: Vec<&str> =
+                        msg.trim_start_matches("/registry/").split('/').collect();
                     match parts.len() {
                         3 => format!("{} \"{}\" not found", parts[0], parts[2]),
                         2 => format!("{} \"{}\" not found", parts[0], parts[1]),
@@ -116,24 +117,32 @@ impl axum::response::IntoResponse for Error {
                 (StatusCode::TOO_MANY_REQUESTS, msg, "TooManyRequests", None)
             }
             Error::Gone(msg) => (StatusCode::GONE, msg, "Gone", None),
-            Error::Storage(msg) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, msg, "InternalError", None)
-            }
-            Error::Network(msg) => {
-                (StatusCode::SERVICE_UNAVAILABLE, msg, "ServiceUnavailable", None)
-            }
-            Error::Serialization(e) => {
-                (StatusCode::BAD_REQUEST, e.to_string(), "BadRequest", None)
-            }
-            Error::UnsupportedMediaType(msg) => {
-                (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg, "UnsupportedMediaType", None)
-            }
-            Error::NotAcceptable(msg) => {
-                (StatusCode::NOT_ACCEPTABLE, msg, "NotAcceptable", None)
-            }
-            Error::Internal(msg) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, msg, "InternalError", None)
-            }
+            Error::Storage(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                msg,
+                "InternalError",
+                None,
+            ),
+            Error::Network(msg) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                msg,
+                "ServiceUnavailable",
+                None,
+            ),
+            Error::Serialization(e) => (StatusCode::BAD_REQUEST, e.to_string(), "BadRequest", None),
+            Error::UnsupportedMediaType(msg) => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                msg,
+                "UnsupportedMediaType",
+                None,
+            ),
+            Error::NotAcceptable(msg) => (StatusCode::NOT_ACCEPTABLE, msg, "NotAcceptable", None),
+            Error::Internal(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                msg,
+                "InternalError",
+                None,
+            ),
         };
 
         let status_obj = if let Some(details) = details {

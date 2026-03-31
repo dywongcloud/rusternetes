@@ -1,6 +1,8 @@
 use chrono::Utc;
 use rusternetes_common::{
-    resources::{Deployment, DeploymentCondition, DeploymentStatus, Pod, ReplicaSet, ReplicaSetSpec},
+    resources::{
+        Deployment, DeploymentCondition, DeploymentStatus, Pod, ReplicaSet, ReplicaSetSpec,
+    },
     types::{ObjectMeta, TypeMeta},
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
@@ -108,8 +110,7 @@ impl<S: Storage> DeploymentController<S> {
                         "deployment.kubernetes.io/revision".to_string(),
                         "1".to_string(),
                     );
-                let key =
-                    build_key("deployments", Some(namespace), &deployment.metadata.name);
+                let key = build_key("deployments", Some(namespace), &deployment.metadata.name);
                 let _ = self.storage.update(&key, &updated).await;
             }
         }
@@ -152,11 +153,23 @@ impl<S: Storage> DeploymentController<S> {
             .as_ref()
             .and_then(|s| s.rolling_update.as_ref())
             .map(|ru| {
-                let surge = ru.max_surge.as_ref()
-                    .and_then(|v| v.as_str().map(|s| s.to_string()).or_else(|| v.as_i64().map(|n| n.to_string())))
+                let surge = ru
+                    .max_surge
+                    .as_ref()
+                    .and_then(|v| {
+                        v.as_str()
+                            .map(|s| s.to_string())
+                            .or_else(|| v.as_i64().map(|n| n.to_string()))
+                    })
                     .unwrap_or_else(|| "25%".to_string());
-                let unavail = ru.max_unavailable.as_ref()
-                    .and_then(|v| v.as_str().map(|s| s.to_string()).or_else(|| v.as_i64().map(|n| n.to_string())))
+                let unavail = ru
+                    .max_unavailable
+                    .as_ref()
+                    .and_then(|v| {
+                        v.as_str()
+                            .map(|s| s.to_string())
+                            .or_else(|| v.as_i64().map(|n| n.to_string()))
+                    })
                     .unwrap_or_else(|| "25%".to_string());
                 (surge, unavail)
             })
@@ -255,21 +268,26 @@ impl<S: Storage> DeploymentController<S> {
                 // Scale down old ReplicaSets gradually — only remove old pods
                 // when the new RS has enough available replicas to maintain
                 // the minimum availability guarantee.
-                let new_rs_available = self.count_available_pods_for_rs(
-                    &active_name, namespace
-                ).await;
+                let new_rs_available = self
+                    .count_available_pods_for_rs(&active_name, namespace)
+                    .await;
                 let min_available = (desired_replicas - max_unavailable).max(0);
                 let can_scale_down = (new_rs_available - min_available).max(0);
 
                 if can_scale_down > 0 {
                     let mut remaining = can_scale_down;
                     for rs in owned_replicasets.iter() {
-                        if rs.metadata.name != active_name && rs.spec.replicas > 0 && remaining > 0 {
+                        if rs.metadata.name != active_name && rs.spec.replicas > 0 && remaining > 0
+                        {
                             let remove = rs.spec.replicas.min(remaining);
                             let new_replicas = rs.spec.replicas - remove;
                             info!(
                                 "Scaling down old ReplicaSet {}/{} from {} to {} (available={})",
-                                namespace, rs.metadata.name, rs.spec.replicas, new_replicas, new_rs_available
+                                namespace,
+                                rs.metadata.name,
+                                rs.spec.replicas,
+                                new_replicas,
+                                new_rs_available
                             );
                             self.update_replicaset_replicas(rs, new_replicas).await?;
                             remaining -= remove;
@@ -380,12 +398,15 @@ impl<S: Storage> DeploymentController<S> {
     /// Generate a deterministic pod-template-hash from the pod template spec.
     /// Uses SHA-256 via serde_json::Value normalization (sorts HashMap keys).
     fn compute_pod_template_hash(deployment: &Deployment) -> String {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         // Convert to Value first to normalize HashMap key ordering
         let value = serde_json::to_value(&deployment.spec.template).unwrap_or_default();
         let template_json = serde_json::to_string(&value).unwrap_or_default();
         let hash = Sha256::digest(template_json.as_bytes());
-        format!("{:08x}", u32::from_be_bytes(hash[..4].try_into().unwrap_or([0u8; 4])))
+        format!(
+            "{:08x}",
+            u32::from_be_bytes(hash[..4].try_into().unwrap_or([0u8; 4]))
+        )
     }
 
     async fn create_replicaset_with_replicas(
@@ -403,11 +424,7 @@ impl<S: Storage> DeploymentController<S> {
         let pod_template_hash = Self::compute_pod_template_hash(deployment);
 
         // Generate ReplicaSet name using the pod-template-hash
-        let rs_name = format!(
-            "{}-{}",
-            deployment.metadata.name,
-            &pod_template_hash
-        );
+        let rs_name = format!("{}-{}", deployment.metadata.name, &pod_template_hash);
 
         let mut metadata = ObjectMeta::new(&rs_name);
         metadata.namespace = Some(namespace.to_string());
@@ -427,14 +444,19 @@ impl<S: Storage> DeploymentController<S> {
         // Compute the next revision by finding the max among existing ReplicaSets + 1.
         let rs_prefix = build_prefix("replicasets", Some(namespace));
         let all_rs: Vec<ReplicaSet> = self.storage.list(&rs_prefix).await.unwrap_or_default();
-        let max_existing_revision = all_rs.iter()
+        let max_existing_revision = all_rs
+            .iter()
             .filter(|rs| {
-                rs.metadata.owner_references.as_ref()
+                rs.metadata
+                    .owner_references
+                    .as_ref()
                     .map(|refs| refs.iter().any(|r| r.name == deployment.metadata.name))
                     .unwrap_or(false)
             })
             .filter_map(|rs| {
-                rs.metadata.annotations.as_ref()
+                rs.metadata
+                    .annotations
+                    .as_ref()
                     .and_then(|a| a.get("deployment.kubernetes.io/revision"))
                     .and_then(|v| v.parse::<i64>().ok())
             })
@@ -555,14 +577,23 @@ impl<S: Storage> DeploymentController<S> {
         pods.iter()
             .filter(|pod| {
                 // Pod must be owned by this RS
-                let owned = pod.metadata.owner_references.as_ref()
+                let owned = pod
+                    .metadata
+                    .owner_references
+                    .as_ref()
                     .map(|refs| refs.iter().any(|r| r.name == rs_name))
                     .unwrap_or(false);
-                if !owned { return false; }
+                if !owned {
+                    return false;
+                }
                 // Pod must be Ready
-                pod.status.as_ref()
+                pod.status
+                    .as_ref()
                     .and_then(|s| s.conditions.as_ref())
-                    .map(|c| c.iter().any(|cond| cond.condition_type == "Ready" && cond.status == "True"))
+                    .map(|c| {
+                        c.iter()
+                            .any(|cond| cond.condition_type == "Ready" && cond.status == "True")
+                    })
                     .unwrap_or(false)
             })
             .count() as i32
@@ -680,17 +711,25 @@ impl<S: Storage> DeploymentController<S> {
         updated_deployment.status = Some(status);
 
         // Ensure the deployment's revision annotation matches the latest ReplicaSet's revision
-        let max_revision = owned_replicasets.iter()
+        let max_revision = owned_replicasets
+            .iter()
             .filter_map(|rs| {
-                rs.metadata.annotations.as_ref()
+                rs.metadata
+                    .annotations
+                    .as_ref()
                     .and_then(|a| a.get("deployment.kubernetes.io/revision"))
                     .and_then(|v| v.parse::<i64>().ok())
             })
             .max();
         if let Some(rev) = max_revision {
-            updated_deployment.metadata.annotations
+            updated_deployment
+                .metadata
+                .annotations
                 .get_or_insert_with(std::collections::HashMap::new)
-                .insert("deployment.kubernetes.io/revision".to_string(), rev.to_string());
+                .insert(
+                    "deployment.kubernetes.io/revision".to_string(),
+                    rev.to_string(),
+                );
         }
 
         let key = build_key("deployments", Some(namespace), &deployment.metadata.name);
@@ -751,22 +790,18 @@ impl<S: Storage> DeploymentController<S> {
 
             if !owned {
                 // Fallback: check label selector match
-                let labels_match = if let Some(match_labels) = rs
-                    .spec
-                    .selector
-                    .match_labels
-                    .as_ref()
-                {
-                    if let Some(pod_labels) = &pod.metadata.labels {
-                        match_labels
-                            .iter()
-                            .all(|(k, v)| pod_labels.get(k) == Some(v))
+                let labels_match =
+                    if let Some(match_labels) = rs.spec.selector.match_labels.as_ref() {
+                        if let Some(pod_labels) = &pod.metadata.labels {
+                            match_labels
+                                .iter()
+                                .all(|(k, v)| pod_labels.get(k) == Some(v))
+                        } else {
+                            false
+                        }
                     } else {
                         false
-                    }
-                } else {
-                    false
-                };
+                    };
                 if !labels_match {
                     continue;
                 }
@@ -901,7 +936,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_deployment_status_aggregates_from_replicaset_status() {
-        use rusternetes_common::resources::{ReplicaSetStatus, PodTemplateSpec};
+        use rusternetes_common::resources::{PodTemplateSpec, ReplicaSetStatus};
         use rusternetes_common::types::LabelSelector;
         use rusternetes_storage::memory::MemoryStorage;
         use std::collections::HashMap;
@@ -991,7 +1026,10 @@ mod tests {
         storage.create(&rs_key, &rs).await.unwrap();
 
         // Run status update
-        controller.update_deployment_status(&deployment).await.unwrap();
+        controller
+            .update_deployment_status(&deployment)
+            .await
+            .unwrap();
 
         // Read back the deployment and verify status
         let updated: Deployment = storage.get(&dep_key).await.unwrap();
@@ -1003,13 +1041,16 @@ mod tests {
 
         // Verify Available condition is True
         let conditions = status.conditions.unwrap();
-        let available_cond = conditions.iter().find(|c| c.condition_type == "Available").unwrap();
+        let available_cond = conditions
+            .iter()
+            .find(|c| c.condition_type == "Available")
+            .unwrap();
         assert_eq!(available_cond.status, "True");
     }
 
     #[tokio::test]
     async fn test_deployment_status_fallback_to_pod_count_when_rs_has_no_status() {
-        use rusternetes_common::resources::{PodTemplateSpec, PodStatus, PodCondition};
+        use rusternetes_common::resources::{PodCondition, PodStatus, PodTemplateSpec};
         use rusternetes_common::types::{LabelSelector, Phase};
         use rusternetes_storage::memory::MemoryStorage;
         use std::collections::HashMap;
@@ -1131,7 +1172,10 @@ mod tests {
         }
 
         // Run status update — should pick up pod counts via fallback
-        controller.update_deployment_status(&deployment).await.unwrap();
+        controller
+            .update_deployment_status(&deployment)
+            .await
+            .unwrap();
 
         let updated: Deployment = storage.get(&dep_key).await.unwrap();
         let status = updated.status.unwrap();

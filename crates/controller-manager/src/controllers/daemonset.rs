@@ -1,7 +1,9 @@
 use anyhow::Result;
 use rusternetes_common::resources::node::Taint;
 use rusternetes_common::resources::pod::{SecretVolumeSource, Toleration, Volume, VolumeMount};
-use rusternetes_common::resources::{ControllerRevision, DaemonSet, DaemonSetStatus, Node, Pod, PodStatus};
+use rusternetes_common::resources::{
+    ControllerRevision, DaemonSet, DaemonSetStatus, Node, Pod, PodStatus,
+};
 use rusternetes_common::types::{OwnerReference, Phase};
 use rusternetes_storage::Storage;
 use std::sync::Arc;
@@ -89,21 +91,36 @@ impl<S: Storage> DaemonSetController<S> {
 
         // Ensure a ControllerRevision exists for the current template
         let template_hash = {
-            use sha2::{Sha256, Digest};
+            use sha2::{Digest, Sha256};
             // Normalize via serde_json::Value to sort HashMap keys deterministically
             let value = serde_json::to_value(&daemonset.spec.template).unwrap_or_default();
             let serialized = serde_json::to_string(&value).unwrap_or_default();
             let hash = Sha256::digest(serialized.as_bytes());
-            format!("{:010x}", u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8])))
+            format!(
+                "{:010x}",
+                u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8]))
+            )
         };
         let cr_name = format!("{}-{}", name, &template_hash[..10]);
 
         // Check if ControllerRevision already exists before creating
-        let cr_key = rusternetes_storage::build_key("controllerrevisions", Some(namespace), &cr_name);
-        if self.storage.get::<ControllerRevision>(&cr_key).await.is_err() {
+        let cr_key =
+            rusternetes_storage::build_key("controllerrevisions", Some(namespace), &cr_name);
+        if self
+            .storage
+            .get::<ControllerRevision>(&cr_key)
+            .await
+            .is_err()
+        {
             let mut cr_labels = std::collections::HashMap::new();
-            cr_labels.insert("controller-revision-hash".to_string(), template_hash.clone());
-            cr_labels.insert("controller.kubernetes.io/hash".to_string(), template_hash.clone());
+            cr_labels.insert(
+                "controller-revision-hash".to_string(),
+                template_hash.clone(),
+            );
+            cr_labels.insert(
+                "controller.kubernetes.io/hash".to_string(),
+                template_hash.clone(),
+            );
 
             // Copy DaemonSet's matchLabels to ControllerRevision labels for label selector matching
             if let Some(match_labels) = &daemonset.spec.selector.match_labels {
@@ -113,18 +130,29 @@ impl<S: Storage> DaemonSetController<S> {
             }
 
             // Count existing revisions to get the next revision number
-            let cr_prefix = rusternetes_storage::build_prefix("controllerrevisions", Some(namespace));
-            let existing_revisions: Vec<ControllerRevision> = self.storage.list(&cr_prefix).await.unwrap_or_default();
-            let max_revision = existing_revisions.iter()
-                .filter(|r| r.metadata.owner_references.as_ref()
-                    .map(|refs| refs.iter().any(|ref_| {
-                        ref_.uid == daemonset.metadata.uid || ref_.name == daemonset.metadata.name
-                    }))
-                    .unwrap_or(false))
+            let cr_prefix =
+                rusternetes_storage::build_prefix("controllerrevisions", Some(namespace));
+            let existing_revisions: Vec<ControllerRevision> =
+                self.storage.list(&cr_prefix).await.unwrap_or_default();
+            let max_revision = existing_revisions
+                .iter()
+                .filter(|r| {
+                    r.metadata
+                        .owner_references
+                        .as_ref()
+                        .map(|refs| {
+                            refs.iter().any(|ref_| {
+                                ref_.uid == daemonset.metadata.uid
+                                    || ref_.name == daemonset.metadata.name
+                            })
+                        })
+                        .unwrap_or(false)
+                })
                 .map(|r| r.revision)
                 .max()
                 .unwrap_or(0);
-            let mut cr = ControllerRevision::new(cr_name.clone(), namespace.clone(), max_revision + 1);
+            let mut cr =
+                ControllerRevision::new(cr_name.clone(), namespace.clone(), max_revision + 1);
             cr.metadata.labels = Some(cr_labels);
             cr.metadata.ensure_uid();
             cr.metadata.ensure_creation_timestamp();
@@ -141,7 +169,10 @@ impl<S: Storage> DaemonSetController<S> {
             cr.data = serde_json::to_value(&daemonset.spec.template).ok();
 
             if self.storage.create(&cr_key, &cr).await.is_ok() {
-                info!("Created ControllerRevision {} for DaemonSet {}/{}", cr_name, namespace, name);
+                info!(
+                    "Created ControllerRevision {} for DaemonSet {}/{}",
+                    cr_name, namespace, name
+                );
             }
         }
 
@@ -232,9 +263,16 @@ impl<S: Storage> DaemonSetController<S> {
                     let pod_name = &pod.metadata.name;
                     let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
                     if let Err(e) = self.storage.delete(&pod_key).await {
-                        warn!("Failed to delete terminal DaemonSet pod {}: {}", pod_name, e);
+                        warn!(
+                            "Failed to delete terminal DaemonSet pod {}: {}",
+                            pod_name, e
+                        );
                     } else {
-                        info!("Deleted terminal ({:?}) DaemonSet pod {}", pod.status.as_ref().and_then(|s| s.phase.as_ref()), pod_name);
+                        info!(
+                            "Deleted terminal ({:?}) DaemonSet pod {}",
+                            pod.status.as_ref().and_then(|s| s.phase.as_ref()),
+                            pod_name
+                        );
                     }
                     // Track this node so we don't immediately recreate in this cycle
                     // (allows the deletion to be observed by watchers before recreation)
@@ -259,9 +297,7 @@ impl<S: Storage> DaemonSetController<S> {
                     }
                     Err(e) => {
                         let err_str = format!("{}", e);
-                        if err_str.contains("already exists")
-                            || err_str.contains("AlreadyExists")
-                        {
+                        if err_str.contains("already exists") || err_str.contains("AlreadyExists") {
                             info!(
                                 "DaemonSet pod on node {} already exists, skipping",
                                 node_name
@@ -275,13 +311,19 @@ impl<S: Storage> DaemonSetController<S> {
         }
 
         // Rolling update: delete pods with old template hash (one at a time for RollingUpdate strategy)
-        let update_strategy = daemonset.spec.update_strategy.as_ref()
+        let update_strategy = daemonset
+            .spec
+            .update_strategy
+            .as_ref()
             .and_then(|s| s.strategy_type.as_deref())
             .unwrap_or("RollingUpdate");
         if update_strategy == "RollingUpdate" {
             let mut updated_one = false;
             for (node_name, pod) in pods_by_node.iter() {
-                let pod_hash = pod.metadata.labels.as_ref()
+                let pod_hash = pod
+                    .metadata
+                    .labels
+                    .as_ref()
                     .and_then(|l| l.get("controller-revision-hash"))
                     .map(|s| s.as_str())
                     .unwrap_or("");
@@ -353,9 +395,14 @@ impl<S: Storage> DaemonSetController<S> {
             .values()
             .filter(|pod| {
                 // K8s numberReady counts pods with Ready condition True, not just Running phase
-                pod.status.as_ref()
+                pod.status
+                    .as_ref()
                     .and_then(|s| s.conditions.as_ref())
-                    .map(|conditions| conditions.iter().any(|c| c.condition_type == "Ready" && c.status == "True"))
+                    .map(|conditions| {
+                        conditions
+                            .iter()
+                            .any(|c| c.condition_type == "Ready" && c.status == "True")
+                    })
                     .unwrap_or(false)
             })
             .count() as i32;
@@ -412,11 +459,19 @@ impl<S: Storage> DaemonSetController<S> {
         // This ensures the same pod name is generated for the same node,
         // preventing orphan cleanup from killing pods that the controller
         // will just recreate with a different name.
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let hash_input = format!("{}-{}", daemonset.metadata.uid, node_name);
         let hash = Sha256::digest(hash_input.as_bytes());
-        let suffix = format!("{:05x}", u32::from_be_bytes(hash[..4].try_into().unwrap_or([0u8; 4])) & 0xFFFFF);
-        let pod_name = format!("{}-{}-{}", daemonset_name, &node_name.replace('.', "-"), suffix);
+        let suffix = format!(
+            "{:05x}",
+            u32::from_be_bytes(hash[..4].try_into().unwrap_or([0u8; 4])) & 0xFFFFF
+        );
+        let pod_name = format!(
+            "{}-{}-{}",
+            daemonset_name,
+            &node_name.replace('.', "-"),
+            suffix
+        );
 
         // Create pod from template
         let template = &daemonset.spec.template;
@@ -429,11 +484,14 @@ impl<S: Storage> DaemonSetController<S> {
         labels.insert("controller-uid".to_string(), daemonset.metadata.uid.clone());
         // Add controller-revision-hash label (computed from template)
         let template_hash = {
-            use sha2::{Sha256, Digest};
+            use sha2::{Digest, Sha256};
             let value = serde_json::to_value(&daemonset.spec.template).unwrap_or_default();
             let serialized = serde_json::to_string(&value).unwrap_or_default();
             let hash = Sha256::digest(serialized.as_bytes());
-            format!("{:010x}", u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8])))
+            format!(
+                "{:010x}",
+                u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8]))
+            )
         };
         labels.insert("controller-revision-hash".to_string(), template_hash);
 
@@ -1089,11 +1147,17 @@ mod tests {
 
         // Create a node
         let node = make_test_node("test-node-1");
-        storage.create("/registry/nodes/test-node-1", &node).await.unwrap();
+        storage
+            .create("/registry/nodes/test-node-1", &node)
+            .await
+            .unwrap();
 
         // Create a DaemonSet
         let mut ds = make_test_daemonset("my-ds", "default");
-        storage.create("/registry/daemonsets/default/my-ds", &ds).await.unwrap();
+        storage
+            .create("/registry/daemonsets/default/my-ds", &ds)
+            .await
+            .unwrap();
 
         // Reconcile
         controller.reconcile(&mut ds).await.unwrap();
@@ -1101,14 +1165,23 @@ mod tests {
         // Verify a ControllerRevision was created
         let cr_prefix = "/registry/controllerrevisions/default/";
         let revisions: Vec<ControllerRevision> = storage.list(cr_prefix).await.unwrap();
-        assert!(!revisions.is_empty(), "ControllerRevision should be created");
+        assert!(
+            !revisions.is_empty(),
+            "ControllerRevision should be created"
+        );
 
         let cr = &revisions[0];
         assert_eq!(cr.type_meta.kind, "ControllerRevision");
         assert_eq!(cr.type_meta.api_version, "apps/v1");
         assert_eq!(cr.revision, 1);
-        assert!(!cr.metadata.uid.is_empty(), "ControllerRevision should have a UID");
-        assert!(cr.metadata.creation_timestamp.is_some(), "Should have creation timestamp");
+        assert!(
+            !cr.metadata.uid.is_empty(),
+            "ControllerRevision should have a UID"
+        );
+        assert!(
+            cr.metadata.creation_timestamp.is_some(),
+            "Should have creation timestamp"
+        );
 
         // Verify owner reference
         let owner_refs = cr.metadata.owner_references.as_ref().unwrap();
@@ -1130,22 +1203,32 @@ mod tests {
 
         // Create a node
         let node = make_test_node("test-node-2");
-        storage.create("/registry/nodes/test-node-2", &node).await.unwrap();
+        storage
+            .create("/registry/nodes/test-node-2", &node)
+            .await
+            .unwrap();
 
         // Create a DaemonSet
         let mut ds = make_test_daemonset("fail-ds", "default");
-        storage.create("/registry/daemonsets/default/fail-ds", &ds).await.unwrap();
+        storage
+            .create("/registry/daemonsets/default/fail-ds", &ds)
+            .await
+            .unwrap();
 
         // Reconcile once to create pods
         controller.reconcile(&mut ds).await.unwrap();
 
         // Verify a pod was created
         let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-        let ds_pods: Vec<&Pod> = pods.iter().filter(|p| {
-            p.metadata.owner_references.as_ref().map_or(false, |refs| {
-                refs.iter().any(|r| r.name == "fail-ds")
+        let ds_pods: Vec<&Pod> = pods
+            .iter()
+            .filter(|p| {
+                p.metadata
+                    .owner_references
+                    .as_ref()
+                    .map_or(false, |refs| refs.iter().any(|r| r.name == "fail-ds"))
             })
-        }).collect();
+            .collect();
         assert_eq!(ds_pods.len(), 1, "Should have 1 DS pod");
         let pod_name = ds_pods[0].metadata.name.clone();
 
@@ -1158,7 +1241,10 @@ mod tests {
         storage.update(&pod_key, &failed_pod).await.unwrap();
 
         // Re-read DaemonSet (status was updated)
-        let mut ds: DaemonSet = storage.get("/registry/daemonsets/default/fail-ds").await.unwrap();
+        let mut ds: DaemonSet = storage
+            .get("/registry/daemonsets/default/fail-ds")
+            .await
+            .unwrap();
 
         // Reconcile again — should delete the failed pod but NOT recreate in this cycle
         controller.reconcile(&mut ds).await.unwrap();
@@ -1169,23 +1255,42 @@ mod tests {
 
         // But no new pod should be created in this reconcile cycle
         let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-        let ds_pods_after: Vec<&Pod> = pods_after.iter().filter(|p| {
-            p.metadata.owner_references.as_ref().map_or(false, |refs| {
-                refs.iter().any(|r| r.name == "fail-ds")
+        let ds_pods_after: Vec<&Pod> = pods_after
+            .iter()
+            .filter(|p| {
+                p.metadata
+                    .owner_references
+                    .as_ref()
+                    .map_or(false, |refs| refs.iter().any(|r| r.name == "fail-ds"))
             })
-        }).collect();
-        assert_eq!(ds_pods_after.len(), 0, "No DS pods should exist after terminal pod deletion in same cycle");
+            .collect();
+        assert_eq!(
+            ds_pods_after.len(),
+            0,
+            "No DS pods should exist after terminal pod deletion in same cycle"
+        );
 
         // Next reconcile should create a new pod
-        let mut ds: DaemonSet = storage.get("/registry/daemonsets/default/fail-ds").await.unwrap();
+        let mut ds: DaemonSet = storage
+            .get("/registry/daemonsets/default/fail-ds")
+            .await
+            .unwrap();
         controller.reconcile(&mut ds).await.unwrap();
         let pods_next: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-        let ds_pods_next: Vec<&Pod> = pods_next.iter().filter(|p| {
-            p.metadata.owner_references.as_ref().map_or(false, |refs| {
-                refs.iter().any(|r| r.name == "fail-ds")
+        let ds_pods_next: Vec<&Pod> = pods_next
+            .iter()
+            .filter(|p| {
+                p.metadata
+                    .owner_references
+                    .as_ref()
+                    .map_or(false, |refs| refs.iter().any(|r| r.name == "fail-ds"))
             })
-        }).collect();
-        assert_eq!(ds_pods_next.len(), 1, "A new DS pod should be created in the next cycle");
+            .collect();
+        assert_eq!(
+            ds_pods_next.len(),
+            1,
+            "A new DS pod should be created in the next cycle"
+        );
     }
 
     #[tokio::test]
@@ -1195,25 +1300,40 @@ mod tests {
 
         // Create a node
         let node = make_test_node("test-node-3");
-        storage.create("/registry/nodes/test-node-3", &node).await.unwrap();
+        storage
+            .create("/registry/nodes/test-node-3", &node)
+            .await
+            .unwrap();
 
         // Create a DaemonSet
         let mut ds = make_test_daemonset("avail-ds", "default");
-        storage.create("/registry/daemonsets/default/avail-ds", &ds).await.unwrap();
+        storage
+            .create("/registry/daemonsets/default/avail-ds", &ds)
+            .await
+            .unwrap();
 
         // Reconcile
         controller.reconcile(&mut ds).await.unwrap();
 
         // Read back the updated DS
-        let updated_ds: DaemonSet = storage.get("/registry/daemonsets/default/avail-ds").await.unwrap();
+        let updated_ds: DaemonSet = storage
+            .get("/registry/daemonsets/default/avail-ds")
+            .await
+            .unwrap();
         let status = updated_ds.status.as_ref().unwrap();
 
         assert_eq!(status.desired_number_scheduled, 1);
         assert_eq!(status.current_number_scheduled, 1);
         // Pod is Pending, not Running, so number_ready should be 0
         assert_eq!(status.number_ready, 0);
-        assert!(status.number_available.is_some(), "number_available should be set");
-        assert!(status.updated_number_scheduled.is_some(), "updated_number_scheduled should be set");
+        assert!(
+            status.number_available.is_some(),
+            "number_available should be set"
+        );
+        assert!(
+            status.updated_number_scheduled.is_some(),
+            "updated_number_scheduled should be set"
+        );
         assert_eq!(status.updated_number_scheduled, Some(1));
     }
 }

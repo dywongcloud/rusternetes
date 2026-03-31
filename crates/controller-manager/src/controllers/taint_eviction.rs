@@ -24,7 +24,10 @@ impl<S: Storage> TaintEvictionController<S> {
 
         for node in &nodes {
             if let Err(e) = self.reconcile_node(node).await {
-                warn!("Taint eviction error for node {}: {}", node.metadata.name, e);
+                warn!(
+                    "Taint eviction error for node {}: {}",
+                    node.metadata.name, e
+                );
             }
         }
 
@@ -39,12 +42,7 @@ impl<S: Storage> TaintEvictionController<S> {
             .spec
             .as_ref()
             .and_then(|s| s.taints.as_ref())
-            .map(|taints| {
-                taints
-                    .iter()
-                    .filter(|t| t.effect == "NoExecute")
-                    .collect()
-            })
+            .map(|taints| taints.iter().filter(|t| t.effect == "NoExecute").collect())
             .unwrap_or_default();
 
         if no_execute_taints.is_empty() {
@@ -52,16 +50,15 @@ impl<S: Storage> TaintEvictionController<S> {
         }
 
         // Find all pods on this node
-        let all_pods: Vec<Pod> = self.storage.list::<Pod>("/registry/pods/").await.unwrap_or_default();
+        let all_pods: Vec<Pod> = self
+            .storage
+            .list::<Pod>("/registry/pods/")
+            .await
+            .unwrap_or_default();
 
         let node_pods: Vec<&Pod> = all_pods
             .iter()
-            .filter(|pod| {
-                pod.spec
-                    .as_ref()
-                    .and_then(|s| s.node_name.as_deref())
-                    == Some(node_name)
-            })
+            .filter(|pod| pod.spec.as_ref().and_then(|s| s.node_name.as_deref()) == Some(node_name))
             .collect();
 
         let now = Utc::now();
@@ -83,7 +80,8 @@ impl<S: Storage> TaintEvictionController<S> {
                     TolerationResult::ToleratedFor(seconds) => {
                         // Pod tolerates for a limited time — check if time expired
                         // Use taint's timeAdded or the pod's creation time as baseline
-                        let taint_added = taint.time_added
+                        let taint_added = taint
+                            .time_added
                             .or(pod.metadata.creation_timestamp)
                             .unwrap_or(now);
                         let elapsed = (now - taint_added).num_seconds();
@@ -118,7 +116,10 @@ impl<S: Storage> TaintEvictionController<S> {
                 let key = build_key("pods", Some(namespace), pod_name);
                 match self.storage.delete(&key).await {
                     Ok(_) => {
-                        info!("Evicted pod {}/{} from node {}", namespace, pod_name, node_name);
+                        info!(
+                            "Evicted pod {}/{} from node {}",
+                            namespace, pod_name, node_name
+                        );
                     }
                     Err(rusternetes_common::Error::NotFound(_)) => {
                         // Already deleted
@@ -174,10 +175,7 @@ impl<S: Storage> TaintEvictionController<S> {
         }
 
         // Key must match
-        let key_matches = toleration
-            .key
-            .as_ref()
-            .map_or(false, |k| k == &taint.key);
+        let key_matches = toleration.key.as_ref().map_or(false, |k| k == &taint.key);
         if !key_matches {
             return false;
         }

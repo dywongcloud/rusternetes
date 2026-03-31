@@ -104,17 +104,21 @@ pub fn apply_selectors<T: Serialize>(
     }
 
     let field_selector = if has_field_selector {
-        Some(FieldSelector::parse(params.get("fieldSelector").unwrap()).map_err(|e| {
-            rusternetes_common::Error::InvalidResource(format!("Invalid field selector: {}", e))
-        })?)
+        Some(
+            FieldSelector::parse(params.get("fieldSelector").unwrap()).map_err(|e| {
+                rusternetes_common::Error::InvalidResource(format!("Invalid field selector: {}", e))
+            })?,
+        )
     } else {
         None
     };
 
     let label_selector = if has_label_selector {
-        Some(LabelSelector::parse(params.get("labelSelector").unwrap()).map_err(|e| {
-            rusternetes_common::Error::InvalidResource(format!("Invalid label selector: {}", e))
-        })?)
+        Some(
+            LabelSelector::parse(params.get("labelSelector").unwrap()).map_err(|e| {
+                rusternetes_common::Error::InvalidResource(format!("Invalid label selector: {}", e))
+            })?,
+        )
     } else {
         None
     };

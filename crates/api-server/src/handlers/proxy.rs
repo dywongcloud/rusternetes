@@ -88,10 +88,15 @@ pub async fn proxy_service_root(
     body: Body,
 ) -> Result<Response> {
     proxy_service(
-        State(state), Extension(auth_ctx),
+        State(state),
+        Extension(auth_ctx),
         Path((namespace, service_name, String::new())),
-        method, headers, Query(params), body,
-    ).await
+        method,
+        headers,
+        Query(params),
+        body,
+    )
+    .await
 }
 
 /// Proxy HTTP requests to a service
@@ -132,7 +137,8 @@ pub async fn proxy_service(
     };
 
     // Get the service to find its ClusterIP and port
-    let service_key = rusternetes_storage::build_key("services", Some(&namespace), actual_service_name);
+    let service_key =
+        rusternetes_storage::build_key("services", Some(&namespace), actual_service_name);
     let service: rusternetes_common::resources::Service = state.storage.get(&service_key).await?;
 
     // Get ClusterIP
@@ -145,7 +151,10 @@ pub async fn proxy_service(
 
     // Find the port — by name if specified, otherwise first port
     let port = if let Some(pn) = port_name {
-        service.spec.ports.iter()
+        service
+            .spec
+            .ports
+            .iter()
             .find(|p| p.name.as_deref() == Some(pn))
             .map(|p| p.port)
             .or_else(|| pn.parse::<u16>().ok())
@@ -155,12 +164,17 @@ pub async fn proxy_service(
     };
 
     // Try to find a pod endpoint IP for direct proxying (more reliable than ClusterIP DNAT)
-    let target_port = match service.spec.ports.iter().find(|p| {
-        port_name.map_or(true, |pn| p.name.as_deref() == Some(pn))
-    }) {
+    let target_port = match service
+        .spec
+        .ports
+        .iter()
+        .find(|p| port_name.map_or(true, |pn| p.name.as_deref() == Some(pn)))
+    {
         Some(sp) => match &sp.target_port {
             Some(rusternetes_common::resources::IntOrString::Int(p)) => *p as u16,
-            Some(rusternetes_common::resources::IntOrString::String(s)) => s.parse::<u16>().unwrap_or(port),
+            Some(rusternetes_common::resources::IntOrString::String(s)) => {
+                s.parse::<u16>().unwrap_or(port)
+            }
             None => port,
         },
         None => port,
@@ -172,7 +186,10 @@ pub async fn proxy_service(
         state.storage.list(&es_prefix).await.unwrap_or_default();
     let mut endpoint_ip = None;
     for es in &endpoint_slices {
-        let svc = es.metadata.labels.as_ref()
+        let svc = es
+            .metadata
+            .labels
+            .as_ref()
             .and_then(|l| l.get("kubernetes.io/service-name"));
         if svc.map(|s| s == actual_service_name).unwrap_or(false) {
             for ep in &es.endpoints {
@@ -183,7 +200,9 @@ pub async fn proxy_service(
                     }
                 }
             }
-            if endpoint_ip.is_some() { break; }
+            if endpoint_ip.is_some() {
+                break;
+            }
         }
     }
 

@@ -24,15 +24,19 @@ pub async fn handle_ws_exec(
     debug!("WS exec direct Docker for container: {}", container_id);
 
     // Execute directly via Docker (API server has Docker socket mounted)
-    use bollard::Docker;
     use bollard::exec::{CreateExecOptions, StartExecResults};
+    use bollard::Docker;
 
     let docker = match Docker::connect_with_local_defaults() {
         Ok(d) => d,
         Err(e) => {
-            let _ = socket.send(Message::Binary(
-                std::iter::once(3u8).chain(format!("Docker error: {}", e).bytes()).collect()
-            )).await;
+            let _ = socket
+                .send(Message::Binary(
+                    std::iter::once(3u8)
+                        .chain(format!("Docker error: {}", e).bytes())
+                        .collect(),
+                ))
+                .await;
             let _ = socket.close().await;
             return;
         }
@@ -50,20 +54,37 @@ pub async fn handle_ws_exec(
     let exec = match docker.create_exec(&container_id, exec_config).await {
         Ok(e) => e,
         Err(e) => {
-            let _ = socket.send(Message::Binary(
-                std::iter::once(3u8).chain(format!("Exec error: {}", e).bytes()).collect()
-            )).await;
+            let _ = socket
+                .send(Message::Binary(
+                    std::iter::once(3u8)
+                        .chain(format!("Exec error: {}", e).bytes())
+                        .collect(),
+                ))
+                .await;
             let _ = socket.close().await;
             return;
         }
     };
 
-    let output = match docker.start_exec(&exec.id, Some(bollard::exec::StartExecOptions { detach: false, ..Default::default() })).await {
+    let output = match docker
+        .start_exec(
+            &exec.id,
+            Some(bollard::exec::StartExecOptions {
+                detach: false,
+                ..Default::default()
+            }),
+        )
+        .await
+    {
         Ok(o) => o,
         Err(e) => {
-            let _ = socket.send(Message::Binary(
-                std::iter::once(3u8).chain(format!("Start exec error: {}", e).bytes()).collect()
-            )).await;
+            let _ = socket
+                .send(Message::Binary(
+                    std::iter::once(3u8)
+                        .chain(format!("Start exec error: {}", e).bytes())
+                        .collect(),
+                ))
+                .await;
             let _ = socket.close().await;
             return;
         }
@@ -76,7 +97,10 @@ pub async fn handle_ws_exec(
     // exec command produces no output or finishes before we read from the stream.
     let _ = socket.send(Message::Binary(vec![1u8].into())).await;
 
-    if let StartExecResults::Attached { output: mut stream, .. } = output {
+    if let StartExecResults::Attached {
+        output: mut stream, ..
+    } = output
+    {
         loop {
             match tokio::time::timeout(std::time::Duration::from_secs(1), stream.next()).await {
                 Ok(Some(Ok(msg))) => {
@@ -84,12 +108,16 @@ pub async fn handle_ws_exec(
                         bollard::container::LogOutput::StdOut { message } => {
                             let mut data = vec![1u8]; // stdout channel
                             data.extend_from_slice(&message);
-                            if socket.send(Message::Binary(data.into())).await.is_err() { break; }
+                            if socket.send(Message::Binary(data.into())).await.is_err() {
+                                break;
+                            }
                         }
                         bollard::container::LogOutput::StdErr { message } => {
                             let mut data = vec![2u8]; // stderr channel
                             data.extend_from_slice(&message);
-                            if socket.send(Message::Binary(data.into())).await.is_err() { break; }
+                            if socket.send(Message::Binary(data.into())).await.is_err() {
+                                break;
+                            }
                         }
                         _ => {}
                     }
@@ -98,8 +126,12 @@ pub async fn handle_ws_exec(
                 Err(_) => {
                     // 1s timeout hit — check if command finished
                     if let Ok(info) = docker.inspect_exec(&exec.id).await {
-                        if !info.running.unwrap_or(false) { break; }
-                    } else { break; }
+                        if !info.running.unwrap_or(false) {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
                 }
             }
         }
@@ -113,7 +145,9 @@ pub async fn handle_ws_exec(
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
     // Send exit code as status on error channel (channel 3)
-    let exit_code = docker.inspect_exec(&exec.id).await
+    let exit_code = docker
+        .inspect_exec(&exec.id)
+        .await
         .ok()
         .and_then(|info| info.exit_code)
         .unwrap_or(0);
@@ -122,7 +156,10 @@ pub async fn handle_ws_exec(
     let status_json = if exit_code == 0 {
         r#"{"status":"Success"}"#
     } else {
-        &format!(r#"{{"status":"Failure","message":"command terminated with exit code {}","reason":"NonZeroExitCode","details":{{"causes":[{{"reason":"ExitCode","message":"{}"}}]}}}}"#, exit_code, exit_code)
+        &format!(
+            r#"{{"status":"Failure","message":"command terminated with exit code {}","reason":"NonZeroExitCode","details":{{"causes":[{{"reason":"ExitCode","message":"{}"}}]}}}}"#,
+            exit_code, exit_code
+        )
     };
     // Send status on channel 3 first (v4/v5 compatible)
     let mut status_data = vec![3u8];
@@ -130,7 +167,11 @@ pub async fn handle_ws_exec(
     let _ = socket.send(Message::Binary(status_data.into())).await;
 
     // Close with a short reason (WebSocket close frames max 125 bytes)
-    let short_reason = if exit_code == 0 { "Success" } else { "NonZeroExitCode" };
+    let short_reason = if exit_code == 0 {
+        "Success"
+    } else {
+        "NonZeroExitCode"
+    };
     let close_frame = axum::extract::ws::CloseFrame {
         code: 1000,
         reason: short_reason.to_string().into(),
@@ -185,7 +226,17 @@ pub async fn handle_exec_websocket(
     stderr: bool,
     tty: bool,
 ) {
-    handle_ws_exec(socket, pod, container_name, command, stdin, stdout, stderr, tty).await
+    handle_ws_exec(
+        socket,
+        pod,
+        container_name,
+        command,
+        stdin,
+        stdout,
+        stderr,
+        tty,
+    )
+    .await
 }
 
 /// Alias for backward compatibility
@@ -202,11 +253,7 @@ pub async fn handle_attach_websocket(
 }
 
 /// Handle WebSocket port-forward
-pub async fn handle_portforward_websocket(
-    mut socket: WebSocket,
-    pod: Pod,
-    ports: Vec<u16>,
-) {
+pub async fn handle_portforward_websocket(mut socket: WebSocket, pod: Pod, ports: Vec<u16>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
 
@@ -230,7 +277,11 @@ pub async fn handle_portforward_websocket(
                     match tcp_read.read(&mut buf).await {
                         Ok(0) => break,
                         Ok(n) => {
-                            if socket.send(Message::Binary(buf[..n].to_vec().into())).await.is_err() {
+                            if socket
+                                .send(Message::Binary(buf[..n].to_vec().into()))
+                                .await
+                                .is_err()
+                            {
                                 break;
                             }
                         }
@@ -239,7 +290,11 @@ pub async fn handle_portforward_websocket(
                 }
             }
             Err(e) => {
-                let _ = socket.send(Message::Text(format!("Failed to connect to {}: {}", target, e).into())).await;
+                let _ = socket
+                    .send(Message::Text(
+                        format!("Failed to connect to {}: {}", target, e).into(),
+                    ))
+                    .await;
             }
         }
     }

@@ -177,8 +177,13 @@ pub async fn list_certificate_signing_requests(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<CertificateSigningRequest>(
-            state, auth_ctx, "certificatesigningrequests", "certificates.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "certificatesigningrequests",
+            "certificates.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing CertificateSigningRequests");
@@ -192,7 +197,10 @@ pub async fn list_certificate_signing_requests(
     }
 
     let prefix = build_prefix("certificatesigningrequests", None);
-    let mut items = state.storage.list::<CertificateSigningRequest>(&prefix).await?;
+    let mut items = state
+        .storage
+        .list::<CertificateSigningRequest>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;

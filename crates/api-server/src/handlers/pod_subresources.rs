@@ -241,7 +241,10 @@ async fn get_container_logs(
     // Try to get logs - first by exact name, then search all containers
     // (the container might have a slightly different name or be stopped)
     let container_exists = docker
-        .inspect_container(&full_container_name, None::<bollard::container::InspectContainerOptions>)
+        .inspect_container(
+            &full_container_name,
+            None::<bollard::container::InspectContainerOptions>,
+        )
         .await
         .is_ok();
 
@@ -419,9 +422,21 @@ pub async fn exec(
     };
 
     // Log request headers for debugging exec protocol
-    let upgrade_header = req.headers().get("upgrade").and_then(|v| v.to_str().ok()).unwrap_or("none");
-    let connection_header = req.headers().get("connection").and_then(|v| v.to_str().ok()).unwrap_or("none");
-    let sec_ws_protocol = req.headers().get("sec-websocket-protocol").and_then(|v| v.to_str().ok()).unwrap_or("none");
+    let upgrade_header = req
+        .headers()
+        .get("upgrade")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("none");
+    let connection_header = req
+        .headers()
+        .get("connection")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("none");
+    let sec_ws_protocol = req
+        .headers()
+        .get("sec-websocket-protocol")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("none");
     info!(
         "Exec {}/{}: cmd={:?} upgrade={} connection={} ws-protocol={}",
         namespace, name, query.command, upgrade_header, connection_header, sec_ws_protocol
@@ -493,10 +508,13 @@ pub async fn exec(
 
     // For SPDY requests and plain HTTP: execute directly and return output
     // kubectl will receive the output as the HTTP response body
-    info!("Direct exec for pod {}/{}: {:?}", namespace, name, query.command);
+    info!(
+        "Direct exec for pod {}/{}: {:?}",
+        namespace, name, query.command
+    );
 
-    use bollard::Docker;
     use bollard::exec::{CreateExecOptions, StartExecResults};
+    use bollard::Docker;
     use futures::StreamExt;
 
     let docker = Docker::connect_with_local_defaults()
@@ -512,34 +530,57 @@ pub async fn exec(
         ..Default::default()
     };
 
-    let exec = docker.create_exec(&container_id, exec_config).await
+    let exec = docker
+        .create_exec(&container_id, exec_config)
+        .await
         .map_err(|e| Error::Internal(format!("Create exec: {}", e)))?;
 
-    let output = docker.start_exec(&exec.id, Some(bollard::exec::StartExecOptions { detach: false, ..Default::default() })).await
+    let output = docker
+        .start_exec(
+            &exec.id,
+            Some(bollard::exec::StartExecOptions {
+                detach: false,
+                ..Default::default()
+            }),
+        )
+        .await
         .map_err(|e| Error::Internal(format!("Start exec: {}", e)))?;
 
     let mut stdout_data = Vec::new();
     let mut stderr_data = Vec::new();
-    if let StartExecResults::Attached { output: mut stream, .. } = output {
+    if let StartExecResults::Attached {
+        output: mut stream, ..
+    } = output
+    {
         loop {
             match tokio::time::timeout(std::time::Duration::from_secs(5), stream.next()).await {
                 Ok(Some(Ok(msg))) => match msg {
-                    bollard::container::LogOutput::StdOut { message } => stdout_data.extend_from_slice(&message),
-                    bollard::container::LogOutput::StdErr { message } => stderr_data.extend_from_slice(&message),
+                    bollard::container::LogOutput::StdOut { message } => {
+                        stdout_data.extend_from_slice(&message)
+                    }
+                    bollard::container::LogOutput::StdErr { message } => {
+                        stderr_data.extend_from_slice(&message)
+                    }
                     _ => {}
                 },
                 Ok(Some(Err(_))) | Ok(None) => break,
                 Err(_) => {
                     if let Ok(info) = docker.inspect_exec(&exec.id).await {
-                        if !info.running.unwrap_or(false) { break; }
-                    } else { break; }
+                        if !info.running.unwrap_or(false) {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
                 }
             }
         }
     }
 
     // Get exit code
-    let exit_code = docker.inspect_exec(&exec.id).await
+    let exit_code = docker
+        .inspect_exec(&exec.id)
+        .await
         .ok()
         .and_then(|info| info.exit_code)
         .unwrap_or(0);
@@ -553,7 +594,11 @@ pub async fn exec(
         output_str.push_str(&String::from_utf8_lossy(&stderr_data));
     }
     Ok(Response::builder()
-        .status(if exit_code == 0 { StatusCode::OK } else { StatusCode::INTERNAL_SERVER_ERROR })
+        .status(if exit_code == 0 {
+            StatusCode::OK
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
         .header("Content-Type", "text/plain")
         .body(Body::from(output_str))
         .unwrap())
@@ -909,10 +954,16 @@ pub async fn create_eviction(
             // This PDB applies to our pod - check if eviction is allowed
             if let Some(ref status) = pdb.status {
                 if status.disruptions_allowed <= 0 {
-                    let min_avail_str = pdb.spec.min_available.as_ref()
+                    let min_avail_str = pdb
+                        .spec
+                        .min_available
+                        .as_ref()
                         .map(|v| v.to_string())
                         .unwrap_or_else(|| "<nil>".to_string());
-                    let max_unavail_str = pdb.spec.max_unavailable.as_ref()
+                    let max_unavail_str = pdb
+                        .spec
+                        .max_unavailable
+                        .as_ref()
                         .map(|v| v.to_string())
                         .unwrap_or_else(|| "<nil>".to_string());
                     return Err(Error::TooManyRequests(format!(

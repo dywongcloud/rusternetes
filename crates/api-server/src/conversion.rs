@@ -147,24 +147,24 @@ impl ConversionWebhookClient {
         // Call webhook
         debug!("Sending conversion request: {:?}", review);
 
-        let response = match self
-            .client
-            .post(&url)
-            .json(&review)
-            .send()
-            .await
-        {
+        let response = match self.client.post(&url).json(&review).send().await {
             Ok(r) => r,
             Err(e) => {
                 // Webhook unreachable — return objects unconverted
-                warn!("Conversion webhook unreachable, returning unconverted: {}", e);
+                warn!(
+                    "Conversion webhook unreachable, returning unconverted: {}",
+                    e
+                );
                 return Ok(objects.to_vec());
             }
         };
 
         if !response.status().is_success() {
             // Webhook returned error — return objects unconverted
-            warn!("Conversion webhook returned {}, returning unconverted", response.status());
+            warn!(
+                "Conversion webhook returned {}, returning unconverted",
+                response.status()
+            );
             return Ok(objects.to_vec());
         }
 

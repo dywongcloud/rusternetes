@@ -238,10 +238,7 @@ async fn handle_exec(
         .map(|c| c.split(',').map(|s| s.to_string()).collect())
         .unwrap_or_default();
     let stdin_data = if body.is_empty() { None } else { Some(body) };
-    let tty = params
-        .get("tty")
-        .map(|v| v == "true")
-        .unwrap_or(false);
+    let tty = params.get("tty").map(|v| v == "true").unwrap_or(false);
 
     let docker = Docker::connect_with_socket_defaults()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -280,17 +277,12 @@ async fn handle_exec(
     } = output
     {
         loop {
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(1),
-                stream.next(),
-            ).await {
-                Ok(Some(Ok(msg))) => {
-                    match msg {
-                        LogOutput::StdOut { message } => stdout.extend_from_slice(&message),
-                        LogOutput::StdErr { message } => stderr.extend_from_slice(&message),
-                        _ => {}
-                    }
-                }
+            match tokio::time::timeout(std::time::Duration::from_secs(1), stream.next()).await {
+                Ok(Some(Ok(msg))) => match msg {
+                    LogOutput::StdOut { message } => stdout.extend_from_slice(&message),
+                    LogOutput::StdErr { message } => stderr.extend_from_slice(&message),
+                    _ => {}
+                },
                 Ok(Some(Err(_))) | Ok(None) => break, // stream ended or error
                 Err(_) => {
                     // Timeout — check if exec is still running
@@ -308,8 +300,12 @@ async fn handle_exec(
         }
     }
 
-    info!("Exec completed: container={}, stdout_len={}, stderr_len={}",
-        container_id, stdout.len(), stderr.len());
+    info!(
+        "Exec completed: container={}, stdout_len={}, stderr_len={}",
+        container_id,
+        stdout.len(),
+        stderr.len()
+    );
 
     Ok(Json(serde_json::json!({
         "stdout": String::from_utf8_lossy(&stdout),

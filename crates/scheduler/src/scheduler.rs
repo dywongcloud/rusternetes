@@ -365,7 +365,10 @@ impl Scheduler {
             status.message = Some("Pod scheduled".to_string());
             // Add or update PodScheduled condition
             let conditions = status.conditions.get_or_insert_with(Vec::new);
-            if let Some(existing) = conditions.iter_mut().find(|c| c.condition_type == "PodScheduled") {
+            if let Some(existing) = conditions
+                .iter_mut()
+                .find(|c| c.condition_type == "PodScheduled")
+            {
                 *existing = scheduled_condition;
             } else {
                 conditions.push(scheduled_condition);
@@ -479,7 +482,12 @@ impl Scheduler {
 
     /// Calculate resource score with pod overhead
     /// Pod overhead represents additional resources required beyond container requests
-    fn calculate_resource_score_with_overhead(&self, node: &Node, pod: &Pod, all_pods: &[Pod]) -> i32 {
+    fn calculate_resource_score_with_overhead(
+        &self,
+        node: &Node,
+        pod: &Pod,
+        all_pods: &[Pod],
+    ) -> i32 {
         use crate::advanced::calculate_resource_score_with_pods;
 
         // Get base resource score accounting for existing pod usage

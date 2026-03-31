@@ -122,7 +122,8 @@ pub async fn normalize_content_type_middleware(
         if content_type.starts_with("application/vnd.kubernetes.protobuf") {
             debug!(
                 "Converting protobuf to JSON for: {} {}",
-                request.method(), request.uri()
+                request.method(),
+                request.uri()
             );
 
             // Read the body
@@ -146,11 +147,18 @@ pub async fn normalize_content_type_middleware(
                     // Extraction failed — the `raw` field contains native protobuf, not JSON.
                     // First try the structured protobuf-to-JSON decoder.
                     // Then fall back to brace-scanning, but always validate the result.
-                    let hex_preview: String = body_bytes.iter().skip(4).take(80)
+                    let hex_preview: String = body_bytes
+                        .iter()
+                        .skip(4)
+                        .take(80)
                         .map(|b| format!("{:02x}", b))
                         .collect::<Vec<_>>()
                         .join(" ");
-                    debug!("Protobuf body has no JSON in raw field ({} bytes). Hex after k8s\\0: {}", body_bytes.len(), hex_preview);
+                    debug!(
+                        "Protobuf body has no JSON in raw field ({} bytes). Hex after k8s\\0: {}",
+                        body_bytes.len(),
+                        hex_preview
+                    );
 
                     // Try structured protobuf-to-JSON decoder first (handles CRDs, etc.)
                     if let Some(json_bytes) = decode_k8s_protobuf_to_json(&body_bytes) {
@@ -250,7 +258,9 @@ fn extract_json_from_k8s_protobuf(data: &[u8]) -> Option<Vec<u8>> {
             let b = data[pos] as u64;
             pos += 1;
             tag |= (b & 0x7f) << shift;
-            if b & 0x80 == 0 { break; }
+            if b & 0x80 == 0 {
+                break;
+            }
             shift += 7;
         }
         let field_number = tag >> 3;
@@ -259,8 +269,12 @@ fn extract_json_from_k8s_protobuf(data: &[u8]) -> Option<Vec<u8>> {
         match wire_type {
             0 => {
                 // Varint — skip
-                while pos < data.len() && data[pos] & 0x80 != 0 { pos += 1; }
-                if pos < data.len() { pos += 1; }
+                while pos < data.len() && data[pos] & 0x80 != 0 {
+                    pos += 1;
+                }
+                if pos < data.len() {
+                    pos += 1;
+                }
             }
             1 => {
                 // 64-bit fixed — skip 8 bytes
@@ -274,7 +288,9 @@ fn extract_json_from_k8s_protobuf(data: &[u8]) -> Option<Vec<u8>> {
                     let b = data[pos] as usize;
                     pos += 1;
                     len |= (b & 0x7f) << shift;
-                    if b & 0x80 == 0 { break; }
+                    if b & 0x80 == 0 {
+                        break;
+                    }
                     shift += 7;
                 }
                 if (field_number == 2 || field_number == 3) && pos + len <= data.len() {
@@ -285,14 +301,22 @@ fn extract_json_from_k8s_protobuf(data: &[u8]) -> Option<Vec<u8>> {
                     }
                     // Log what field 2 contains if it's not JSON
                     if field_number == 2 && !raw.is_empty() {
-                        let preview: String = raw.iter().take(40)
+                        let preview: String = raw
+                            .iter()
+                            .take(40)
                             .map(|b| format!("{:02x}", b))
                             .collect::<Vec<_>>()
                             .join(" ");
-                        tracing::debug!("Protobuf field 2 ({} bytes, not JSON): first bytes: {}", len, preview);
+                        tracing::debug!(
+                            "Protobuf field 2 ({} bytes, not JSON): first bytes: {}",
+                            len,
+                            preview
+                        );
                     }
                 }
-                if pos + len > data.len() { return None; }
+                if pos + len > data.len() {
+                    return None;
+                }
                 pos += len;
             }
             5 => {
@@ -330,7 +354,9 @@ fn extract_type_meta_from_protobuf(data: &[u8]) -> Option<(String, String)> {
 
     // Read field 1 (TypeMeta) — tag 0x0a, wire type 2
     let mut pos = 0;
-    if pos >= data.len() || data[pos] != 0x0a { return None; }
+    if pos >= data.len() || data[pos] != 0x0a {
+        return None;
+    }
     pos += 1;
 
     // Read length varint
@@ -340,11 +366,15 @@ fn extract_type_meta_from_protobuf(data: &[u8]) -> Option<(String, String)> {
         let b = data[pos] as usize;
         pos += 1;
         type_meta_len |= (b & 0x7f) << shift;
-        if b & 0x80 == 0 { break; }
+        if b & 0x80 == 0 {
+            break;
+        }
         shift += 7;
     }
 
-    if pos + type_meta_len > data.len() { return None; }
+    if pos + type_meta_len > data.len() {
+        return None;
+    }
     let type_meta = &data[pos..pos + type_meta_len];
 
     // Parse TypeMeta: field 1 = apiVersion, field 2 = kind
@@ -365,7 +395,9 @@ fn extract_type_meta_from_protobuf(data: &[u8]) -> Option<(String, String)> {
                 let b = type_meta[tpos] as usize;
                 tpos += 1;
                 slen |= (b & 0x7f) << sshift;
-                if b & 0x80 == 0 { break; }
+                if b & 0x80 == 0 {
+                    break;
+                }
                 sshift += 7;
             }
             if tpos + slen <= type_meta.len() {
@@ -420,10 +452,14 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                 let b = data[pos] as usize;
                 pos += 1;
                 len |= (b & 0x7f) << shift;
-                if b & 0x80 == 0 { break; }
+                if b & 0x80 == 0 {
+                    break;
+                }
                 shift += 7;
             }
-            if pos + len > data.len() { break; }
+            if pos + len > data.len() {
+                break;
+            }
             let field_data = &data[pos..pos + len];
             pos += len;
 
@@ -437,19 +473,31 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                         let fnum = t >> 3;
                         let twire = t & 0x07;
                         if twire == 0 {
-                            while tpos < field_data.len() && field_data[tpos] & 0x80 != 0 { tpos += 1; }
-                            if tpos < field_data.len() { tpos += 1; }
+                            while tpos < field_data.len() && field_data[tpos] & 0x80 != 0 {
+                                tpos += 1;
+                            }
+                            if tpos < field_data.len() {
+                                tpos += 1;
+                            }
                             continue;
-                        } else if twire == 1 { tpos += 8; continue;
-                        } else if twire == 5 { tpos += 4; continue;
-                        } else if twire != 2 { break; }
+                        } else if twire == 1 {
+                            tpos += 8;
+                            continue;
+                        } else if twire == 5 {
+                            tpos += 4;
+                            continue;
+                        } else if twire != 2 {
+                            break;
+                        }
                         let mut slen: usize = 0;
                         let mut ss = 0;
                         while tpos < field_data.len() {
                             let b = field_data[tpos] as usize;
                             tpos += 1;
                             slen |= (b & 0x7f) << ss;
-                            if b & 0x80 == 0 { break; }
+                            if b & 0x80 == 0 {
+                                break;
+                            }
                             ss += 7;
                         }
                         if tpos + slen <= field_data.len() {
@@ -469,15 +517,24 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
             }
         } else if wire_type == 0 {
             // Varint — skip
-            while pos < data.len() && data[pos] & 0x80 != 0 { pos += 1; }
-            if pos < data.len() { pos += 1; }
+            while pos < data.len() && data[pos] & 0x80 != 0 {
+                pos += 1;
+            }
+            if pos < data.len() {
+                pos += 1;
+            }
         } else {
             break;
         }
     }
 
     if api_version.is_empty() || kind.is_empty() {
-        tracing::warn!("Protobuf decode: api_version='{}' kind='{}' raw_bytes={}", api_version, kind, raw_bytes.map(|r| r.len()).unwrap_or(0));
+        tracing::warn!(
+            "Protobuf decode: api_version='{}' kind='{}' raw_bytes={}",
+            api_version,
+            kind,
+            raw_bytes.map(|r| r.len()).unwrap_or(0)
+        );
         return None;
     }
 
@@ -509,7 +566,9 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
             let b = raw[rpos] as u64;
             rpos += 1;
             tag |= (b & 0x7f) << tag_shift;
-            if b & 0x80 == 0 { break; }
+            if b & 0x80 == 0 {
+                break;
+            }
             tag_shift += 7;
         }
         let field_num = (tag >> 3) as u8;
@@ -522,10 +581,14 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                 let b = raw[rpos] as usize;
                 rpos += 1;
                 len |= (b & 0x7f) << shift;
-                if b & 0x80 == 0 { break; }
+                if b & 0x80 == 0 {
+                    break;
+                }
                 shift += 7;
             }
-            if rpos + len > raw.len() { break; }
+            if rpos + len > raw.len() {
+                break;
+            }
             let field_data = &raw[rpos..rpos + len];
             rpos += len;
 
@@ -540,7 +603,9 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                             let b = field_data[mpos] as u64;
                             mpos += 1;
                             mt |= (b & 0x7f) << mt_shift;
-                            if b & 0x80 == 0 { break; }
+                            if b & 0x80 == 0 {
+                                break;
+                            }
                             mt_shift += 7;
                         }
                         let mfnum = (mt >> 3) as u8;
@@ -552,7 +617,9 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                 let b = field_data[mpos] as usize;
                                 mpos += 1;
                                 mlen |= (b & 0x7f) << ms;
-                                if b & 0x80 == 0 { break; }
+                                if b & 0x80 == 0 {
+                                    break;
+                                }
                                 ms += 7;
                             }
                             if mpos + mlen <= field_data.len() {
@@ -566,8 +633,12 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                             }
                             mpos += mlen;
                         } else if mwire == 0 {
-                            while mpos < field_data.len() && field_data[mpos] & 0x80 != 0 { mpos += 1; }
-                            if mpos < field_data.len() { mpos += 1; }
+                            while mpos < field_data.len() && field_data[mpos] & 0x80 != 0 {
+                                mpos += 1;
+                            }
+                            if mpos < field_data.len() {
+                                mpos += 1;
+                            }
                         } else if mwire == 1 {
                             mpos += 8; // 64-bit fixed
                         } else if mwire == 5 {
@@ -587,7 +658,9 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                             let b = field_data[spos] as u64;
                             spos += 1;
                             st |= (b & 0x7f) << st_shift;
-                            if b & 0x80 == 0 { break; }
+                            if b & 0x80 == 0 {
+                                break;
+                            }
                             st_shift += 7;
                         }
                         let sfnum = (st >> 3) as u8;
@@ -599,12 +672,18 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                 let b = field_data[spos] as usize;
                                 spos += 1;
                                 slen |= (b & 0x7f) << ss;
-                                if b & 0x80 == 0 { break; }
+                                if b & 0x80 == 0 {
+                                    break;
+                                }
                                 ss += 7;
                             }
                             if spos + slen <= field_data.len() {
                                 match sfnum {
-                                    1 => { spec_group = String::from_utf8_lossy(&field_data[spos..spos + slen]).to_string(); }
+                                    1 => {
+                                        spec_group =
+                                            String::from_utf8_lossy(&field_data[spos..spos + slen])
+                                                .to_string();
+                                    }
                                     3 => {
                                         // Names submessage — parse plural, singular, kind, listKind
                                         let names = &field_data[spos..spos + slen];
@@ -616,7 +695,9 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                                 let b = names[npos] as u64;
                                                 npos += 1;
                                                 nt |= (b & 0x7f) << nt_shift;
-                                                if b & 0x80 == 0 { break; }
+                                                if b & 0x80 == 0 {
+                                                    break;
+                                                }
                                                 nt_shift += 7;
                                             }
                                             let nfnum = (nt >> 3) as u8;
@@ -624,11 +705,21 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                                 // Skip non-length-delimited fields
                                                 let nwire = (nt & 0x07) as u8;
                                                 if nwire == 0 {
-                                                    while npos < names.len() && names[npos] & 0x80 != 0 { npos += 1; }
-                                                    if npos < names.len() { npos += 1; }
+                                                    while npos < names.len()
+                                                        && names[npos] & 0x80 != 0
+                                                    {
+                                                        npos += 1;
+                                                    }
+                                                    if npos < names.len() {
+                                                        npos += 1;
+                                                    }
                                                     continue;
-                                                } else if nwire == 1 { npos += 8; continue;
-                                                } else if nwire == 5 { npos += 4; continue;
+                                                } else if nwire == 1 {
+                                                    npos += 8;
+                                                    continue;
+                                                } else if nwire == 5 {
+                                                    npos += 4;
+                                                    continue;
                                                 }
                                                 break;
                                             }
@@ -638,11 +729,15 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                                 let b = names[npos] as usize;
                                                 npos += 1;
                                                 nlen |= (b & 0x7f) << ns;
-                                                if b & 0x80 == 0 { break; }
+                                                if b & 0x80 == 0 {
+                                                    break;
+                                                }
                                                 ns += 7;
                                             }
                                             if npos + nlen <= names.len() {
-                                                if let Ok(s) = std::str::from_utf8(&names[npos..npos + nlen]) {
+                                                if let Ok(s) =
+                                                    std::str::from_utf8(&names[npos..npos + nlen])
+                                                {
                                                     match nfnum {
                                                         1 => spec_names_plural = s.to_string(),
                                                         2 => spec_names_singular = s.to_string(),
@@ -656,7 +751,11 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                             npos += nlen;
                                         }
                                     }
-                                    4 => { spec_scope = String::from_utf8_lossy(&field_data[spos..spos + slen]).to_string(); }
+                                    4 => {
+                                        spec_scope =
+                                            String::from_utf8_lossy(&field_data[spos..spos + slen])
+                                                .to_string();
+                                    }
                                     7 => {
                                         // Version submessage — extract name (field 1)
                                         let ver = &field_data[spos..spos + slen];
@@ -668,7 +767,9 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                                 let b = ver[vpos] as u64;
                                                 vpos += 1;
                                                 vt |= (b & 0x7f) << vt_shift;
-                                                if b & 0x80 == 0 { break; }
+                                                if b & 0x80 == 0 {
+                                                    break;
+                                                }
                                                 vt_shift += 7;
                                             }
                                             let vfnum = (vt >> 3) as u8;
@@ -680,21 +781,37 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                                                     let b = ver[vpos] as usize;
                                                     vpos += 1;
                                                     vlen |= (b & 0x7f) << vs;
-                                                    if b & 0x80 == 0 { break; }
+                                                    if b & 0x80 == 0 {
+                                                        break;
+                                                    }
                                                     vs += 7;
                                                 }
                                                 if vfnum == 1 && vpos + vlen <= ver.len() {
-                                                    if let Ok(vname) = std::str::from_utf8(&ver[vpos..vpos + vlen]) {
+                                                    if let Ok(vname) =
+                                                        std::str::from_utf8(&ver[vpos..vpos + vlen])
+                                                    {
                                                         spec_version_names.push(vname.to_string());
                                                     }
                                                 }
-                                                if vpos + vlen <= ver.len() { vpos += vlen; } else { break; }
+                                                if vpos + vlen <= ver.len() {
+                                                    vpos += vlen;
+                                                } else {
+                                                    break;
+                                                }
                                             } else if vwire == 0 {
-                                                while vpos < ver.len() && ver[vpos] & 0x80 != 0 { vpos += 1; }
-                                                if vpos < ver.len() { vpos += 1; }
-                                            } else if vwire == 1 { vpos += 8; // 64-bit
-                                            } else if vwire == 5 { vpos += 4; // 32-bit
-                                            } else { break; }
+                                                while vpos < ver.len() && ver[vpos] & 0x80 != 0 {
+                                                    vpos += 1;
+                                                }
+                                                if vpos < ver.len() {
+                                                    vpos += 1;
+                                                }
+                                            } else if vwire == 1 {
+                                                vpos += 8; // 64-bit
+                                            } else if vwire == 5 {
+                                                vpos += 4; // 32-bit
+                                            } else {
+                                                break;
+                                            }
                                         }
                                     }
                                     _ => {}
@@ -702,8 +819,12 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
                             }
                             spos += slen;
                         } else if swire == 0 {
-                            while spos < field_data.len() && field_data[spos] & 0x80 != 0 { spos += 1; }
-                            if spos < field_data.len() { spos += 1; }
+                            while spos < field_data.len() && field_data[spos] & 0x80 != 0 {
+                                spos += 1;
+                            }
+                            if spos < field_data.len() {
+                                spos += 1;
+                            }
                         } else if swire == 1 {
                             spos += 8; // 64-bit fixed
                         } else if swire == 5 {
@@ -717,8 +838,12 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
             }
         } else if wire_type == 0 {
             // Varint — skip
-            while rpos < raw.len() && raw[rpos] & 0x80 != 0 { rpos += 1; }
-            if rpos < raw.len() { rpos += 1; }
+            while rpos < raw.len() && raw[rpos] & 0x80 != 0 {
+                rpos += 1;
+            }
+            if rpos < raw.len() {
+                rpos += 1;
+            }
         } else if wire_type == 1 {
             // 64-bit fixed (double, fixed64, sfixed64) — skip 8 bytes
             rpos += 8;
@@ -734,25 +859,42 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
         // Try extracting name from the raw bytes directly (string search)
         if let Ok(raw_str) = std::str::from_utf8(raw) {
             // Look for strings that look like CRD names (contain dots)
-            for word in raw_str.split(|c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '-') {
-                if word.contains('.') && word.len() > 5 && !word.starts_with('.') && !word.ends_with('.') {
+            for word in raw_str.split(|c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '-')
+            {
+                if word.contains('.')
+                    && word.len() > 5
+                    && !word.starts_with('.')
+                    && !word.ends_with('.')
+                {
                     // Likely a CRD name like "foos.example.com"
                     if spec_group.is_empty() || word.ends_with(&format!(".{}", spec_group)) {
                         metadata_name = word.to_string();
-                        tracing::info!("CRD protobuf: extracted name '{}' via string search", metadata_name);
+                        tracing::info!(
+                            "CRD protobuf: extracted name '{}' via string search",
+                            metadata_name
+                        );
                         break;
                     }
                 }
             }
         }
         if metadata_name.is_empty() {
-            tracing::warn!("CRD protobuf decode: metadata_name empty, group='{}', plural='{}', versions={:?}", spec_group, spec_names_plural, spec_version_names);
+            tracing::warn!(
+                "CRD protobuf decode: metadata_name empty, group='{}', plural='{}', versions={:?}",
+                spec_group,
+                spec_names_plural,
+                spec_version_names
+            );
             return None;
         }
     }
 
     // Construct a JSON CRD with the extracted fields
-    let scope = if spec_scope.is_empty() { "Namespaced" } else { &spec_scope };
+    let scope = if spec_scope.is_empty() {
+        "Namespaced"
+    } else {
+        &spec_scope
+    };
     let json = serde_json::json!({
         "apiVersion": api_version,
         "kind": kind,
@@ -818,12 +960,20 @@ fn scan_balanced_braces(data: &[u8]) -> Option<Vec<u8>> {
 /// TypeMeta (apiVersion/kind) to construct a minimal JSON object.
 fn try_brace_scan_or_type_meta(body_bytes: &[u8]) -> Vec<u8> {
     // Scan for a valid JSON object embedded in the binary data
-    let skip = if body_bytes.starts_with(b"k8s\0") { 4 } else { 0 };
+    let skip = if body_bytes.starts_with(b"k8s\0") {
+        4
+    } else {
+        0
+    };
     for i in skip..body_bytes.len() {
         if body_bytes[i] == b'{' {
             if let Some(candidate) = scan_balanced_braces(&body_bytes[i..]) {
                 if serde_json::from_slice::<serde_json::Value>(&candidate).is_ok() {
-                    info!("Found valid JSON via brace scan at offset {} ({} bytes)", i, candidate.len());
+                    info!(
+                        "Found valid JSON via brace scan at offset {} ({} bytes)",
+                        i,
+                        candidate.len()
+                    );
                     return candidate;
                 }
             }
@@ -883,7 +1033,7 @@ mod tests {
         // Field 1 (TypeMeta) — empty for simplicity
         data.push(0x0a); // field 1, wire type 2
         data.push(0x00); // length 0
-        // Field 2 (raw) — contains the JSON
+                         // Field 2 (raw) — contains the JSON
         data.push(0x12); // field 2, wire type 2
         data.push(json.len() as u8); // length
         data.extend_from_slice(json);
@@ -903,7 +1053,7 @@ mod tests {
         // Field 1 (TypeMeta) — empty
         data.push(0x0a); // field 1, wire type 2
         data.push(0x00); // length 0
-        // Field 2 (raw) — native protobuf, not JSON
+                         // Field 2 (raw) — native protobuf, not JSON
         data.push(0x12); // field 2, wire type 2
         data.push(native_pb.len() as u8);
         data.extend_from_slice(native_pb);
@@ -1051,7 +1201,10 @@ mod tests {
         unknown.extend_from_slice(&raw);
 
         let result = decode_k8s_protobuf_to_json(&unknown);
-        assert!(result.is_some(), "decode_k8s_protobuf_to_json returned None");
+        assert!(
+            result.is_some(),
+            "decode_k8s_protobuf_to_json returned None"
+        );
         let json_bytes = result.unwrap();
         let val: serde_json::Value = serde_json::from_slice(&json_bytes)
             .expect("decoded protobuf should produce valid JSON");
@@ -1104,6 +1257,10 @@ mod tests {
         // try_brace_scan_or_type_meta should produce valid JSON (TypeMeta fallback)
         let result = try_brace_scan_or_type_meta(&data);
         let parsed = serde_json::from_slice::<serde_json::Value>(&result);
-        assert!(parsed.is_ok(), "try_brace_scan_or_type_meta produced invalid JSON: {:?}", String::from_utf8_lossy(&result));
+        assert!(
+            parsed.is_ok(),
+            "try_brace_scan_or_type_meta produced invalid JSON: {:?}",
+            String::from_utf8_lossy(&result)
+        );
     }
 }

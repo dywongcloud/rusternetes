@@ -8,7 +8,10 @@ use axum::{
     response::IntoResponse,
     Extension, Json,
 };
-use rusternetes_common::{authz::{Decision, RequestAttributes}, List};
+use rusternetes_common::{
+    authz::{Decision, RequestAttributes},
+    List,
+};
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -22,7 +25,12 @@ pub async fn create_apiservice(
     Extension(auth_ctx): Extension<AuthContext>,
     Json(mut value): Json<Value>,
 ) -> rusternetes_common::Result<(StatusCode, Json<Value>)> {
-    let name = value.get("metadata").and_then(|m| m.get("name")).and_then(|n| n.as_str()).unwrap_or("").to_string();
+    let name = value
+        .get("metadata")
+        .and_then(|m| m.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("")
+        .to_string();
     info!("Creating APIService: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "apiservices")
@@ -37,7 +45,11 @@ pub async fn create_apiservice(
     if value.get("metadata").and_then(|m| m.get("uid")).is_none() {
         value["metadata"]["uid"] = Value::String(uuid::Uuid::new_v4().to_string());
     }
-    if value.get("metadata").and_then(|m| m.get("creationTimestamp")).is_none() {
+    if value
+        .get("metadata")
+        .and_then(|m| m.get("creationTimestamp"))
+        .is_none()
+    {
         value["metadata"]["creationTimestamp"] = Value::String(chrono::Utc::now().to_rfc3339());
     }
 
@@ -144,19 +156,36 @@ pub async fn list_apiservices(
     Query(params): Query<HashMap<String, String>>,
 ) -> rusternetes_common::Result<axum::response::Response> {
     // Intercept watch
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").cloned(),
             field_selector: params.get("fieldSelector").cloned(),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_cluster_scoped_json(
-            state, auth_ctx, "apiservices", "apiregistration.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "apiservices",
+            "apiregistration.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "apiservices")

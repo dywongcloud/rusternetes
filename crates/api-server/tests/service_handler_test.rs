@@ -354,7 +354,12 @@ async fn test_service_selector() {
 
     // Create with selector
     let created: Service = storage.create(&key, &service).await.unwrap();
-    assert!(created.spec.selector.as_ref().map(|s| !s.is_empty()).unwrap_or(false));
+    assert!(created
+        .spec
+        .selector
+        .as_ref()
+        .map(|s| !s.is_empty())
+        .unwrap_or(false));
 
     let created_selector = created.spec.selector.clone().unwrap();
     assert_eq!(created_selector.get("app"), Some(&"backend".to_string()));

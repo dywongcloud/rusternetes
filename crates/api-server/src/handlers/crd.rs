@@ -35,7 +35,12 @@ pub async fn create_crd(
 
     // Detect binary (protobuf/CBOR) bodies early — before attempting JSON parse.
     // If the first byte isn't a valid JSON start character, reject immediately.
-    if !body.is_empty() && !matches!(body[0], b'{' | b'[' | b'"' | b'0'..=b'9' | b't' | b'f' | b'n' | b' ' | b'\t' | b'\n' | b'\r') {
+    if !body.is_empty()
+        && !matches!(
+            body[0],
+            b'{' | b'[' | b'"' | b'0'..=b'9' | b't' | b'f' | b'n' | b' ' | b'\t' | b'\n' | b'\r'
+        )
+    {
         return Err(rusternetes_common::Error::UnsupportedMediaType(
             "the body is not valid JSON (protobuf/CBOR content type is not supported for this resource)".to_string(),
         ));
@@ -45,39 +50,51 @@ pub async fn create_crd(
     let is_strict = params.get("fieldValidation").map(|v| v.as_str()) == Some("Strict");
 
     // Try to parse the body as JSON. If it fails, return appropriate error.
-    let mut crd: CustomResourceDefinition = match serde_json::from_slice::<CustomResourceDefinition>(&body) {
-        Ok(c) => c,
-        Err(e) => {
-            // If strict mode, check for duplicate fields before falling through
-            if is_strict {
-                if let Ok(body_str) = std::str::from_utf8(&body) {
-                    if let Some(dup_field) = crate::handlers::validation::find_duplicate_json_key_public(body_str) {
-                        return Err(rusternetes_common::Error::InvalidResource(format!(
-                            "strict decoding error: json: duplicate field \"{}\"", dup_field
-                        )));
+    let mut crd: CustomResourceDefinition =
+        match serde_json::from_slice::<CustomResourceDefinition>(&body) {
+            Ok(c) => c,
+            Err(e) => {
+                // If strict mode, check for duplicate fields before falling through
+                if is_strict {
+                    if let Ok(body_str) = std::str::from_utf8(&body) {
+                        if let Some(dup_field) =
+                            crate::handlers::validation::find_duplicate_json_key_public(body_str)
+                        {
+                            return Err(rusternetes_common::Error::InvalidResource(format!(
+                                "strict decoding error: json: duplicate field \"{}\"",
+                                dup_field
+                            )));
+                        }
                     }
                 }
-            }
 
-            // Try parsing as Value first and inject missing defaults
-            if let Ok(mut val) = serde_json::from_slice::<serde_json::Value>(&body) {
-                if val.get("apiVersion").is_none() {
-                    val["apiVersion"] = serde_json::Value::String("apiextensions.k8s.io/v1".to_string());
+                // Try parsing as Value first and inject missing defaults
+                if let Ok(mut val) = serde_json::from_slice::<serde_json::Value>(&body) {
+                    if val.get("apiVersion").is_none() {
+                        val["apiVersion"] =
+                            serde_json::Value::String("apiextensions.k8s.io/v1".to_string());
+                    }
+                    if val.get("kind").is_none() {
+                        val["kind"] =
+                            serde_json::Value::String("CustomResourceDefinition".to_string());
+                    }
+                    if val.get("metadata").is_none() {
+                        val["metadata"] = serde_json::json!({});
+                    }
+                    serde_json::from_value(val).map_err(|e2| {
+                        rusternetes_common::Error::InvalidResource(format!(
+                            "failed to decode CRD: {}",
+                            e2
+                        ))
+                    })?
+                } else {
+                    return Err(rusternetes_common::Error::InvalidResource(format!(
+                        "failed to decode CRD: {}",
+                        e
+                    )));
                 }
-                if val.get("kind").is_none() {
-                    val["kind"] = serde_json::Value::String("CustomResourceDefinition".to_string());
-                }
-                if val.get("metadata").is_none() {
-                    val["metadata"] = serde_json::json!({});
-                }
-                serde_json::from_value(val).map_err(|e2| {
-                    rusternetes_common::Error::InvalidResource(format!("failed to decode CRD: {}", e2))
-                })?
-            } else {
-                return Err(rusternetes_common::Error::InvalidResource(format!("failed to decode CRD: {}", e)));
             }
-        }
-    };
+        };
 
     // Strict field validation: reject unknown or duplicate fields when requested
     crate::handlers::validation::validate_strict_fields(&params, &body, &crd)?;
@@ -215,8 +232,13 @@ pub async fn list_crds(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped_json(
-            state, auth_ctx, "customresourcedefinitions", "apiextensions.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "customresourcedefinitions",
+            "apiextensions.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all CustomResourceDefinitions");
@@ -232,7 +254,10 @@ pub async fn list_crds(
     }
 
     let prefix = build_prefix("customresourcedefinitions", None);
-    let mut crds = state.storage.list::<CustomResourceDefinition>(&prefix).await?;
+    let mut crds = state
+        .storage
+        .list::<CustomResourceDefinition>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut crds, &params)?;
@@ -260,7 +285,10 @@ pub async fn update_crd(
             "request body must not be empty".to_string(),
         ));
     }
-    if !matches!(body[0], b'{' | b'[' | b'"' | b'0'..=b'9' | b't' | b'f' | b'n' | b' ' | b'\t' | b'\n' | b'\r') {
+    if !matches!(
+        body[0],
+        b'{' | b'[' | b'"' | b'0'..=b'9' | b't' | b'f' | b'n' | b' ' | b'\t' | b'\n' | b'\r'
+    ) {
         return Err(rusternetes_common::Error::UnsupportedMediaType(
             "request body is not valid JSON; protobuf content type is not supported".to_string(),
         ));
@@ -275,16 +303,20 @@ pub async fn update_crd(
         if is_strict && msg.contains("duplicate field") {
             if let Some(field) = msg.split('`').nth(1) {
                 return rusternetes_common::Error::InvalidResource(format!(
-                    "strict decoding error: json: duplicate field \"{}\"", field
+                    "strict decoding error: json: duplicate field \"{}\"",
+                    field
                 ));
             }
         }
         // Also check with our manual duplicate detector
         if is_strict {
             if let Ok(body_str) = std::str::from_utf8(&body) {
-                if let Some(dup_field) = crate::handlers::validation::find_duplicate_json_key_public(body_str) {
+                if let Some(dup_field) =
+                    crate::handlers::validation::find_duplicate_json_key_public(body_str)
+                {
                     return rusternetes_common::Error::InvalidResource(format!(
-                        "strict decoding error: json: duplicate field \"{}\"", dup_field
+                        "strict decoding error: json: duplicate field \"{}\"",
+                        dup_field
                     ));
                 }
             }

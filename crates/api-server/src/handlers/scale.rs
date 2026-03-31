@@ -225,10 +225,7 @@ pub async fn patch_scale(
         // Update the replicas in the resource spec
         if let Some(spec) = resource_obj.get_mut("spec") {
             if let Some(spec_obj) = spec.as_object_mut() {
-                spec_obj.insert(
-                    "replicas".to_string(),
-                    Value::Number(replicas.into()),
-                );
+                spec_obj.insert("replicas".to_string(), Value::Number(replicas.into()));
             }
         }
     }

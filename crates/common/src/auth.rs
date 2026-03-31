@@ -112,7 +112,11 @@ impl TokenManager {
     }
 
     /// Validate and decode a JWT token against specific audiences
-    pub fn validate_token_with_audiences(&self, token: &str, audiences: &[String]) -> Result<ServiceAccountClaims> {
+    pub fn validate_token_with_audiences(
+        &self,
+        token: &str,
+        audiences: &[String],
+    ) -> Result<ServiceAccountClaims> {
         let mut validation = Validation::new(Algorithm::HS256);
         if !audiences.is_empty() {
             validation.set_audience(audiences);
@@ -804,7 +808,10 @@ mod tests {
             iat: now.timestamp(),
             exp: (now + Duration::hours(1)).timestamp(),
             iss: "rusternetes-api-server".to_string(),
-            aud: vec!["https://kubernetes.default.svc".to_string(), "api".to_string()],
+            aud: vec![
+                "https://kubernetes.default.svc".to_string(),
+                "api".to_string(),
+            ],
             pod_name: None,
             pod_uid: None,
             node_name: None,
@@ -816,7 +823,9 @@ mod tests {
         let validated = manager.validate_token(&token).unwrap();
         assert_eq!(validated.sub, "system:serviceaccount:default:my-sa");
         assert_eq!(validated.namespace, "default");
-        assert!(validated.aud.contains(&"https://kubernetes.default.svc".to_string()));
+        assert!(validated
+            .aud
+            .contains(&"https://kubernetes.default.svc".to_string()));
     }
 
     #[test]
@@ -841,17 +850,13 @@ mod tests {
         let token = manager.generate_token(claims).unwrap();
 
         // validate_token_with_audiences should work with matching audience
-        let validated = manager.validate_token_with_audiences(
-            &token,
-            &["api".to_string()],
-        ).unwrap();
+        let validated = manager
+            .validate_token_with_audiences(&token, &["api".to_string()])
+            .unwrap();
         assert_eq!(validated.sub, "system:serviceaccount:default:my-sa");
 
         // Should fail with non-matching audience
-        let result = manager.validate_token_with_audiences(
-            &token,
-            &["wrong-audience".to_string()],
-        );
+        let result = manager.validate_token_with_audiences(&token, &["wrong-audience".to_string()]);
         assert!(result.is_err());
     }
 
@@ -882,7 +887,11 @@ mod tests {
         assert_eq!(validated.sub, "system:serviceaccount:default:short-lived");
         // Expiry should be ~600 seconds from now
         let exp_diff = validated.exp - validated.iat;
-        assert!(exp_diff >= 590 && exp_diff <= 610, "Expected ~600s expiry, got {}s", exp_diff);
+        assert!(
+            exp_diff >= 590 && exp_diff <= 610,
+            "Expected ~600s expiry, got {}s",
+            exp_diff
+        );
     }
 
     #[test]

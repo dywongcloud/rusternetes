@@ -24,7 +24,11 @@ pub struct EndpointSlice {
     pub endpoints: Vec<Endpoint>,
 
     /// ports specifies the list of network ports exposed by each endpoint in this slice.
-    #[serde(default, deserialize_with = "crate::deserialize_null_default", skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "crate::deserialize_null_default",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub ports: Vec<EndpointPort>,
 }
 
@@ -49,8 +53,11 @@ impl EndpointSlice {
         // Create one EndpointSlice per subset. Each subset has its own port list
         // and endpoint list. K8s keeps all ports together in one slice per subset.
         for subset in &endpoints.subsets {
-            let port_group: Vec<&crate::resources::EndpointPort> =
-                subset.ports.as_ref().map(|p| p.iter().collect()).unwrap_or_default();
+            let port_group: Vec<&crate::resources::EndpointPort> = subset
+                .ports
+                .as_ref()
+                .map(|p| p.iter().collect())
+                .unwrap_or_default();
             let mut slice = Self::new(
                 &endpoints.metadata.name,
                 "IPv4", // Default to IPv4
@@ -62,10 +69,7 @@ impl EndpointSlice {
             }
 
             // Add label to link back to the service
-            let labels = slice
-                .metadata
-                .labels
-                .get_or_insert_with(Default::default);
+            let labels = slice.metadata.labels.get_or_insert_with(Default::default);
             labels.insert(
                 "kubernetes.io/service-name".to_string(),
                 endpoints.metadata.name.clone(),
@@ -151,10 +155,7 @@ impl EndpointSlice {
             if let Some(ns) = &endpoints.metadata.namespace {
                 slice.metadata.namespace = Some(ns.clone());
             }
-            let labels = slice
-                .metadata
-                .labels
-                .get_or_insert_with(Default::default);
+            let labels = slice.metadata.labels.get_or_insert_with(Default::default);
             labels.insert(
                 "kubernetes.io/service-name".to_string(),
                 endpoints.metadata.name.clone(),

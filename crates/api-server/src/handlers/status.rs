@@ -69,7 +69,10 @@ fn resource_type_to_kind_api_version(resource_type: &str) -> (String, String) {
         "cronjobs" => ("CronJob".into(), "batch/v1".into()),
         "ingresses" => ("Ingress".into(), "networking.k8s.io/v1".into()),
         "networkpolicies" => ("NetworkPolicy".into(), "networking.k8s.io/v1".into()),
-        "customresourcedefinitions" => ("CustomResourceDefinition".into(), "apiextensions.k8s.io/v1".into()),
+        "customresourcedefinitions" => (
+            "CustomResourceDefinition".into(),
+            "apiextensions.k8s.io/v1".into(),
+        ),
         "endpointslices" => ("EndpointSlice".into(), "discovery.k8s.io/v1".into()),
         _ => {
             let s = resource_type.strip_suffix('s').unwrap_or(resource_type);
@@ -93,7 +96,8 @@ pub async fn update_status(
     body: axum::body::Bytes,
 ) -> Result<Json<Value>> {
     // Determine content type — check X-Original-Content-Type for middleware-normalized requests
-    let content_type = headers.get("x-original-content-type")
+    let content_type = headers
+        .get("x-original-content-type")
         .or_else(|| headers.get("content-type"))
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/json");
@@ -121,24 +125,32 @@ pub async fn update_status(
     if content_type.contains("json-patch") {
         let key = build_key(&resource_type, Some(&namespace), &name);
         let current_resource: Value = state.storage.get(&key).await?;
-        let patch_ops: Value = serde_json::from_slice(&body).map_err(|e|
-            rusternetes_common::Error::InvalidResource(format!("Invalid JSON patch: {}", e)))?;
+        let patch_ops: Value = serde_json::from_slice(&body).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid JSON patch: {}", e))
+        })?;
 
         let patched = crate::patch::apply_patch(
             &current_resource,
             &patch_ops,
             crate::patch::PatchType::JsonPatch,
-        ).map_err(|e| rusternetes_common::Error::Internal(format!("Failed to apply JSON patch: {}", e)))?;
+        )
+        .map_err(|e| {
+            rusternetes_common::Error::Internal(format!("Failed to apply JSON patch: {}", e))
+        })?;
 
         // Keep status changes and metadata changes (annotations/labels) from patch
         let mut result = current_resource.clone();
-        if let (Some(result_obj), Some(patched_obj)) = (result.as_object_mut(), patched.as_object()) {
+        if let (Some(result_obj), Some(patched_obj)) = (result.as_object_mut(), patched.as_object())
+        {
             if let Some(new_status) = patched_obj.get("status") {
                 result_obj.insert("status".to_string(), new_status.clone());
             }
             // Merge metadata changes from patch (annotations, labels)
             if let Some(patched_meta) = patched_obj.get("metadata").and_then(|m| m.as_object()) {
-                if let Some(result_meta) = result_obj.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+                if let Some(result_meta) = result_obj
+                    .get_mut("metadata")
+                    .and_then(|m| m.as_object_mut())
+                {
                     if let Some(annotations) = patched_meta.get("annotations") {
                         result_meta.insert("annotations".to_string(), annotations.clone());
                     }
@@ -151,8 +163,12 @@ pub async fn update_status(
             // Ensure TypeMeta
             if !result_obj.contains_key("kind") || !result_obj.contains_key("apiVersion") {
                 let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
-                result_obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
-                result_obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+                result_obj
+                    .entry("kind".to_string())
+                    .or_insert_with(|| Value::String(kind));
+                result_obj
+                    .entry("apiVersion".to_string())
+                    .or_insert_with(|| Value::String(api_version));
             }
         }
 
@@ -160,19 +176,23 @@ pub async fn update_status(
         // Ensure kind/apiVersion in response
         if let Some(obj) = saved.as_object_mut() {
             let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
-            obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
-            obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+            obj.entry("kind".to_string())
+                .or_insert_with(|| Value::String(kind));
+            obj.entry("apiVersion".to_string())
+                .or_insert_with(|| Value::String(api_version));
         }
         return Ok(Json(saved));
     }
 
     // Parse body as JSON or YAML (for PUT / merge-patch / apply-patch requests)
     let new_resource: Value = if content_type.contains("yaml") {
-        serde_yaml::from_slice(&body).map_err(|e|
-            rusternetes_common::Error::InvalidResource(format!("Invalid YAML: {}", e)))?
+        serde_yaml::from_slice(&body).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid YAML: {}", e))
+        })?
     } else {
-        serde_json::from_slice(&body).map_err(|e|
-            rusternetes_common::Error::InvalidResource(format!("Invalid JSON: {}", e)))?
+        serde_json::from_slice(&body).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid JSON: {}", e))
+        })?
     };
 
     // Get the current resource
@@ -215,7 +235,9 @@ pub async fn update_status(
 
             // Merge annotations and labels from the new resource
             if let Some(new_meta) = new_resource.get("metadata").and_then(|m| m.as_object()) {
-                if let Some(new_annotations) = new_meta.get("annotations").and_then(|a| a.as_object()) {
+                if let Some(new_annotations) =
+                    new_meta.get("annotations").and_then(|a| a.as_object())
+                {
                     let annotations = merged_metadata
                         .entry("annotations")
                         .or_insert_with(|| Value::Object(serde_json::Map::new()));
@@ -246,8 +268,10 @@ pub async fn update_status(
     if let Some(obj) = updated_resource.as_object_mut() {
         if !obj.contains_key("kind") || !obj.contains_key("apiVersion") {
             let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
-            obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
-            obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+            obj.entry("kind".to_string())
+                .or_insert_with(|| Value::String(kind));
+            obj.entry("apiVersion".to_string())
+                .or_insert_with(|| Value::String(api_version));
         }
     }
 
@@ -258,8 +282,10 @@ pub async fn update_status(
     // may strip them if the original stored resource was missing TypeMeta fields.
     if let Some(obj) = saved.as_object_mut() {
         let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
-        obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
-        obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+        obj.entry("kind".to_string())
+            .or_insert_with(|| Value::String(kind));
+        obj.entry("apiVersion".to_string())
+            .or_insert_with(|| Value::String(api_version));
     }
 
     info!(
@@ -335,8 +361,10 @@ pub async fn update_cluster_status(
     if let Some(obj) = updated_resource.as_object_mut() {
         if !obj.contains_key("kind") || !obj.contains_key("apiVersion") {
             let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
-            obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
-            obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+            obj.entry("kind".to_string())
+                .or_insert_with(|| Value::String(kind));
+            obj.entry("apiVersion".to_string())
+                .or_insert_with(|| Value::String(api_version));
         }
     }
 
@@ -346,8 +374,10 @@ pub async fn update_cluster_status(
     // Ensure kind/apiVersion are always present in the response
     if let Some(obj) = saved.as_object_mut() {
         let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
-        obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
-        obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+        obj.entry("kind".to_string())
+            .or_insert_with(|| Value::String(kind));
+        obj.entry("apiVersion".to_string())
+            .or_insert_with(|| Value::String(api_version));
     }
 
     info!("Successfully updated status for {}/{}", resource_type, name);
@@ -387,8 +417,10 @@ pub async fn get_status(
     // Ensure kind/apiVersion are present in the response
     if let Some(obj) = resource.as_object_mut() {
         let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
-        obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
-        obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+        obj.entry("kind".to_string())
+            .or_insert_with(|| Value::String(kind));
+        obj.entry("apiVersion".to_string())
+            .or_insert_with(|| Value::String(api_version));
     }
 
     Ok(Json(resource))
@@ -422,8 +454,10 @@ pub async fn get_cluster_status(
     // Ensure kind/apiVersion are present in the response
     if let Some(obj) = resource.as_object_mut() {
         let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
-        obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
-        obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+        obj.entry("kind".to_string())
+            .or_insert_with(|| Value::String(kind));
+        obj.entry("apiVersion".to_string())
+            .or_insert_with(|| Value::String(api_version));
     }
 
     Ok(Json(resource))
@@ -570,7 +604,9 @@ mod tests {
     #[test]
     fn test_extract_resource_type_from_uri() {
         // Namespaced: /api/v1/namespaces/{ns}/{resource}/{name}/status
-        let uri: Uri = "/api/v1/namespaces/default/pods/my-pod/status".parse().unwrap();
+        let uri: Uri = "/api/v1/namespaces/default/pods/my-pod/status"
+            .parse()
+            .unwrap();
         assert_eq!(extract_resource_type_from_uri(&uri), "pods");
 
         // Cluster-scoped: /api/v1/namespaces/{name}/status
@@ -582,7 +618,9 @@ mod tests {
         assert_eq!(extract_resource_type_from_uri(&uri), "nodes");
 
         // Apps group: /apis/apps/v1/namespaces/{ns}/deployments/{name}/status
-        let uri: Uri = "/apis/apps/v1/namespaces/default/deployments/my-deploy/status".parse().unwrap();
+        let uri: Uri = "/apis/apps/v1/namespaces/default/deployments/my-deploy/status"
+            .parse()
+            .unwrap();
         assert_eq!(extract_resource_type_from_uri(&uri), "deployments");
     }
 
@@ -603,8 +641,10 @@ mod tests {
         let resource_type = "deployments";
         if let Some(obj) = resource.as_object_mut() {
             let (kind, api_version) = resource_type_to_kind_api_version(resource_type);
-            obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
-            obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+            obj.entry("kind".to_string())
+                .or_insert_with(|| Value::String(kind));
+            obj.entry("apiVersion".to_string())
+                .or_insert_with(|| Value::String(api_version));
         }
 
         assert_eq!(resource["kind"], "Deployment");
@@ -624,8 +664,10 @@ mod tests {
         let resource_type = "deployments";
         if let Some(obj) = resource.as_object_mut() {
             let (kind, api_version) = resource_type_to_kind_api_version(resource_type);
-            obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
-            obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+            obj.entry("kind".to_string())
+                .or_insert_with(|| Value::String(kind));
+            obj.entry("apiVersion".to_string())
+                .or_insert_with(|| Value::String(api_version));
         }
 
         // Should keep the original values
@@ -654,17 +696,21 @@ mod tests {
 
             if let Some(obj) = resource.as_object_mut() {
                 let (kind, api_version) = resource_type_to_kind_api_version(resource_type);
-                obj.entry("kind".to_string()).or_insert_with(|| Value::String(kind));
-                obj.entry("apiVersion".to_string()).or_insert_with(|| Value::String(api_version));
+                obj.entry("kind".to_string())
+                    .or_insert_with(|| Value::String(kind));
+                obj.entry("apiVersion".to_string())
+                    .or_insert_with(|| Value::String(api_version));
             }
 
             assert_eq!(
                 resource["kind"], expected_kind,
-                "Failed for resource type: {}", resource_type
+                "Failed for resource type: {}",
+                resource_type
             );
             assert_eq!(
                 resource["apiVersion"], expected_api_version,
-                "Failed for resource type: {}", resource_type
+                "Failed for resource type: {}",
+                resource_type
             );
         }
     }

@@ -358,9 +358,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_policy_valid() {
-        let storage = Arc::new(
-            MemoryStorage::new(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = NetworkPolicyController::new(storage);
 
         let policy = NetworkPolicy {
@@ -385,9 +383,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_policy_invalid_type() {
-        let storage = Arc::new(
-            MemoryStorage::new(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = NetworkPolicyController::new(storage);
 
         let policy = NetworkPolicy {
@@ -412,9 +408,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_ingress_rule() {
-        let storage = Arc::new(
-            MemoryStorage::new(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = NetworkPolicyController::new(storage);
 
         let rule = NetworkPolicyIngressRule {
@@ -438,9 +432,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_port_invalid_protocol() {
-        let storage = Arc::new(
-            MemoryStorage::new(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = NetworkPolicyController::new(storage);
 
         let port = NetworkPolicyPort {
@@ -456,9 +448,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_pod_matches_selector_empty() {
-        let storage = Arc::new(
-            MemoryStorage::new(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = NetworkPolicyController::new(storage);
 
         let pod = Pod {
@@ -482,9 +472,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_pod_matches_selector_with_labels() {
-        let storage = Arc::new(
-            MemoryStorage::new(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = NetworkPolicyController::new(storage);
 
         let mut pod_labels = HashMap::new();
@@ -516,9 +504,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_pod_matches_expression() {
-        let storage = Arc::new(
-            MemoryStorage::new(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let controller = NetworkPolicyController::new(storage);
 
         let mut pod_labels = HashMap::new();

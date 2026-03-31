@@ -361,7 +361,9 @@ pub fn apply_limit_range_with(
 
                         // Apply default requests from LimitRange for any resource that
                         // still doesn't have a request value set.
-                        let effective_request_defaults = limit_item.default_request.as_ref()
+                        let effective_request_defaults = limit_item
+                            .default_request
+                            .as_ref()
                             .or(limit_item.default.as_ref());
                         if let Some(default_requests) = effective_request_defaults {
                             if resources.requests.is_none() {
@@ -796,8 +798,8 @@ pub async fn inject_service_account_token<S: Storage>(
     // Pod-level setting takes precedence over SA-level.
     let pod_automount = spec.automount_service_account_token;
     let should_mount = match pod_automount {
-        Some(false) => false, // Pod explicitly disabled
-        Some(true) => true,   // Pod explicitly enabled
+        Some(false) => false,                 // Pod explicitly disabled
+        Some(true) => true,                   // Pod explicitly enabled
         None => sa_automount.unwrap_or(true), // Use SA setting, default true
     };
 
@@ -922,11 +924,14 @@ pub async fn check_count_quota<S: Storage>(
                     let limit: i64 = limit_str.parse().unwrap_or(i64::MAX);
                     // Count current resources
                     let prefix = format!("/registry/{}/{}/", resource_type, namespace);
-                    let current: Vec<serde_json::Value> = storage.list(&prefix).await.unwrap_or_default();
+                    let current: Vec<serde_json::Value> =
+                        storage.list(&prefix).await.unwrap_or_default();
                     if current.len() as i64 >= limit {
                         return Err(rusternetes_common::Error::Forbidden(format!(
                             "exceeded quota: {}, requested: 1, used: {}, limited: {}",
-                            limit_key, current.len(), limit_str
+                            limit_key,
+                            current.len(),
+                            limit_str
                         )));
                     }
                 }
@@ -1116,8 +1121,16 @@ mod tests {
             spec: rusternetes_common::resources::LimitRangeSpec {
                 limits: vec![rusternetes_common::resources::LimitRangeItem {
                     item_type: "Container".to_string(),
-                    default: if default.is_empty() { None } else { Some(default) },
-                    default_request: if default_request.is_empty() { None } else { Some(default_request) },
+                    default: if default.is_empty() {
+                        None
+                    } else {
+                        Some(default)
+                    },
+                    default_request: if default_request.is_empty() {
+                        None
+                    } else {
+                        Some(default_request)
+                    },
                     min: if min.is_empty() { None } else { Some(min) },
                     max: if max.is_empty() { None } else { Some(max) },
                     max_limit_request_ratio: None,
@@ -1136,17 +1149,28 @@ mod tests {
         storage.create(lr_key, &lr).await.unwrap();
 
         let mut pod = make_pod("test-pod", None, None);
-        let result = apply_limit_range(&storage, "default", &mut pod).await.unwrap();
+        let result = apply_limit_range(&storage, "default", &mut pod)
+            .await
+            .unwrap();
         assert!(result, "LimitRange admission should pass");
 
-        let resources = pod.spec.as_ref().unwrap().containers[0].resources.as_ref().unwrap();
+        let resources = pod.spec.as_ref().unwrap().containers[0]
+            .resources
+            .as_ref()
+            .unwrap();
         let requests = resources.requests.as_ref().expect("requests should be set");
         let limits = resources.limits.as_ref().expect("limits should be set");
 
-        assert_eq!(requests.get("cpu").unwrap(), "300m",
-            "requests.cpu should be 300m from defaultRequest, not from default limits");
-        assert_eq!(limits.get("cpu").unwrap(), "500m",
-            "limits.cpu should be 500m from default");
+        assert_eq!(
+            requests.get("cpu").unwrap(),
+            "300m",
+            "requests.cpu should be 300m from defaultRequest, not from default limits"
+        );
+        assert_eq!(
+            limits.get("cpu").unwrap(),
+            "500m",
+            "limits.cpu should be 500m from default"
+        );
     }
 
     #[tokio::test]
@@ -1159,16 +1183,24 @@ mod tests {
         storage.create(lr_key, &lr).await.unwrap();
 
         let mut pod = make_pod("test-pod", None, None);
-        let result = apply_limit_range(&storage, "default", &mut pod).await.unwrap();
+        let result = apply_limit_range(&storage, "default", &mut pod)
+            .await
+            .unwrap();
         assert!(result);
 
-        let resources = pod.spec.as_ref().unwrap().containers[0].resources.as_ref().unwrap();
+        let resources = pod.spec.as_ref().unwrap().containers[0]
+            .resources
+            .as_ref()
+            .unwrap();
         let requests = resources.requests.as_ref().expect("requests should be set");
         let limits = resources.limits.as_ref().expect("limits should be set");
 
         assert_eq!(limits.get("cpu").unwrap(), "500m");
-        assert_eq!(requests.get("cpu").unwrap(), "500m",
-            "requests.cpu should fall back to default limits (500m) when defaultRequest not set");
+        assert_eq!(
+            requests.get("cpu").unwrap(),
+            "500m",
+            "requests.cpu should fall back to default limits (500m) when defaultRequest not set"
+        );
     }
 
     #[tokio::test]
@@ -1180,13 +1212,21 @@ mod tests {
         storage.create(lr_key, &lr).await.unwrap();
 
         let mut pod = make_pod("test-pod", Some("200m"), None);
-        let result = apply_limit_range(&storage, "default", &mut pod).await.unwrap();
+        let result = apply_limit_range(&storage, "default", &mut pod)
+            .await
+            .unwrap();
         assert!(result);
 
-        let resources = pod.spec.as_ref().unwrap().containers[0].resources.as_ref().unwrap();
+        let resources = pod.spec.as_ref().unwrap().containers[0]
+            .resources
+            .as_ref()
+            .unwrap();
         let requests = resources.requests.as_ref().expect("requests should be set");
-        assert_eq!(requests.get("cpu").unwrap(), "200m",
-            "explicit requests.cpu=200m should not be overridden by defaultRequest=300m");
+        assert_eq!(
+            requests.get("cpu").unwrap(),
+            "200m",
+            "explicit requests.cpu=200m should not be overridden by defaultRequest=300m"
+        );
     }
 
     #[tokio::test]
@@ -1200,16 +1240,24 @@ mod tests {
         storage.create(lr_key, &lr).await.unwrap();
 
         let mut pod = make_pod("test-pod", None, None);
-        let result = apply_limit_range(&storage, "default", &mut pod).await.unwrap();
+        let result = apply_limit_range(&storage, "default", &mut pod)
+            .await
+            .unwrap();
         assert!(result);
 
-        let resources = pod.spec.as_ref().unwrap().containers[0].resources.as_ref().unwrap();
+        let resources = pod.spec.as_ref().unwrap().containers[0]
+            .resources
+            .as_ref()
+            .unwrap();
         let requests = resources.requests.as_ref().expect("requests should be set");
         let limits = resources.limits.as_ref().expect("limits should be set");
 
         assert_eq!(limits.get("cpu").unwrap(), "400m");
-        assert_eq!(requests.get("cpu").unwrap(), "400m",
-            "requests.cpu should default to limits.cpu when no defaultRequest");
+        assert_eq!(
+            requests.get("cpu").unwrap(),
+            "400m",
+            "requests.cpu should default to limits.cpu when no defaultRequest"
+        );
     }
 
     #[tokio::test]
@@ -1223,16 +1271,27 @@ mod tests {
         storage.create(lr_key, &lr).await.unwrap();
 
         let mut pod = make_pod("test-pod", None, Some("300m"));
-        let result = apply_limit_range(&storage, "default", &mut pod).await.unwrap();
+        let result = apply_limit_range(&storage, "default", &mut pod)
+            .await
+            .unwrap();
         assert!(result);
 
-        let resources = pod.spec.as_ref().unwrap().containers[0].resources.as_ref().unwrap();
+        let resources = pod.spec.as_ref().unwrap().containers[0]
+            .resources
+            .as_ref()
+            .unwrap();
         let requests = resources.requests.as_ref().expect("requests should be set");
         let limits = resources.limits.as_ref().expect("limits should be set");
 
-        assert_eq!(limits.get("cpu").unwrap(), "300m",
-            "explicit limits.cpu=300m should be preserved");
-        assert_eq!(requests.get("cpu").unwrap(), "300m",
-            "requests.cpu should default to explicit limits.cpu (300m), not defaultRequest (100m)");
+        assert_eq!(
+            limits.get("cpu").unwrap(),
+            "300m",
+            "explicit limits.cpu=300m should be preserved"
+        );
+        assert_eq!(
+            requests.get("cpu").unwrap(),
+            "300m",
+            "requests.cpu should default to explicit limits.cpu (300m), not defaultRequest (100m)"
+        );
     }
 }

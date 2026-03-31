@@ -149,7 +149,9 @@ pub async fn create(
                             });
                             // Apply default limits first
                             if let Some(ref default_limits) = limit.default {
-                                let limits = resources.limits.get_or_insert_with(std::collections::HashMap::new);
+                                let limits = resources
+                                    .limits
+                                    .get_or_insert_with(std::collections::HashMap::new);
                                 for (k, v) in default_limits {
                                     if !limits.contains_key(k) {
                                         limits.insert(k.clone(), v.clone());
@@ -158,10 +160,12 @@ pub async fn create(
                             }
                             // Apply default requests — use defaultRequest if set,
                             // otherwise fall back to default (limits) values per K8s spec
-                            let effective_defaults = limit.default_request.as_ref()
-                                .or(limit.default.as_ref());
+                            let effective_defaults =
+                                limit.default_request.as_ref().or(limit.default.as_ref());
                             if let Some(defaults) = effective_defaults {
-                                let requests = resources.requests.get_or_insert_with(std::collections::HashMap::new);
+                                let requests = resources
+                                    .requests
+                                    .get_or_insert_with(std::collections::HashMap::new);
                                 for (k, v) in defaults {
                                     if !requests.contains_key(k) {
                                         requests.insert(k.clone(), v.clone());
@@ -293,8 +297,15 @@ pub async fn create(
     // Check PodSecurity admission — enforce namespace pod security standard
     {
         let ns_key = rusternetes_storage::build_key("namespaces", None, &namespace);
-        if let Ok(ns) = state.storage.get::<rusternetes_common::resources::Namespace>(&ns_key).await {
-            let enforce_level = ns.metadata.labels.as_ref()
+        if let Ok(ns) = state
+            .storage
+            .get::<rusternetes_common::resources::Namespace>(&ns_key)
+            .await
+        {
+            let enforce_level = ns
+                .metadata
+                .labels
+                .as_ref()
                 .and_then(|l| l.get("pod-security.kubernetes.io/enforce"))
                 .map(|s| s.as_str())
                 .unwrap_or("privileged");
@@ -312,7 +323,10 @@ pub async fn create(
                         }
                     }
                     // Check for host namespaces
-                    if spec.host_network == Some(true) || spec.host_pid == Some(true) || spec.host_ipc == Some(true) {
+                    if spec.host_network == Some(true)
+                        || spec.host_pid == Some(true)
+                        || spec.host_ipc == Some(true)
+                    {
                         return Err(rusternetes_common::Error::Forbidden(format!(
                             "pod {} violates PodSecurity \"{}\": host namespaces are not allowed",
                             pod.metadata.name, enforce_level
@@ -324,13 +338,18 @@ pub async fn create(
     }
 
     // Check RuntimeClass exists if specified, and inject overhead
-    if let Some(rc_name) = pod.spec.as_ref().and_then(|s| s.runtime_class_name.as_deref()) {
+    if let Some(rc_name) = pod
+        .spec
+        .as_ref()
+        .and_then(|s| s.runtime_class_name.as_deref())
+    {
         if !rc_name.is_empty() {
             let rc_key = rusternetes_storage::build_key("runtimeclasses", None, rc_name);
             match state.storage.get::<serde_json::Value>(&rc_key).await {
                 Ok(rc_value) => {
                     // Set pod overhead from RuntimeClass overhead.podFixed
-                    if let Some(overhead) = rc_value.get("overhead")
+                    if let Some(overhead) = rc_value
+                        .get("overhead")
                         .and_then(|o| o.get("podFixed"))
                         .and_then(|pf| pf.as_object())
                     {
@@ -415,14 +434,18 @@ pub async fn create(
 
     // Run ValidatingAdmissionPolicy checks
     let pod_value_for_vap = serde_json::to_value(&pod).ok();
-    if let Err(e) = state.webhook_manager.run_validating_admission_policies_ext(
-        &Operation::Create,
-        &gvk,
-        pod_value_for_vap.as_ref(),
-        None,
-        Some("pods"),
-        Some(&namespace),
-    ).await {
+    if let Err(e) = state
+        .webhook_manager
+        .run_validating_admission_policies_ext(
+            &Operation::Create,
+            &gvk,
+            pod_value_for_vap.as_ref(),
+            None,
+            Some("pods"),
+            Some(&namespace),
+        )
+        .await
+    {
         return Err(e);
     }
 
@@ -431,13 +454,7 @@ pub async fn create(
     crate::handlers::lifecycle::set_initial_generation(&mut pod.metadata);
 
     // Set initial status to Pending (Kubernetes always sets this on creation)
-    if pod.status.is_none()
-        || pod
-            .status
-            .as_ref()
-            .and_then(|s| s.phase.as_ref())
-            .is_none()
-    {
+    if pod.status.is_none() || pod.status.as_ref().and_then(|s| s.phase.as_ref()).is_none() {
         let mut status = pod.status.take().unwrap_or_default();
         status.phase = Some(rusternetes_common::types::Phase::Pending);
         pod.status = Some(status);
@@ -450,16 +467,34 @@ pub async fn create(
             let mut any_resources = false;
             for c in &spec.containers {
                 if let Some(res) = &c.resources {
-                    let has_limits = res.limits.as_ref().map_or(false, |l| l.contains_key("cpu") && l.contains_key("memory"));
-                    let has_requests = res.requests.as_ref().map_or(false, |r| r.contains_key("cpu") && r.contains_key("memory"));
-                    if has_limits || has_requests { any_resources = true; }
-                    if !has_limits || (has_requests && res.limits != res.requests) { all_guaranteed = false; }
+                    let has_limits = res
+                        .limits
+                        .as_ref()
+                        .map_or(false, |l| l.contains_key("cpu") && l.contains_key("memory"));
+                    let has_requests = res
+                        .requests
+                        .as_ref()
+                        .map_or(false, |r| r.contains_key("cpu") && r.contains_key("memory"));
+                    if has_limits || has_requests {
+                        any_resources = true;
+                    }
+                    if !has_limits || (has_requests && res.limits != res.requests) {
+                        all_guaranteed = false;
+                    }
                 } else {
                     all_guaranteed = false;
                 }
             }
-            if !any_resources { "BestEffort" } else if all_guaranteed { "Guaranteed" } else { "Burstable" }
-        } else { "BestEffort" };
+            if !any_resources {
+                "BestEffort"
+            } else if all_guaranteed {
+                "Guaranteed"
+            } else {
+                "Burstable"
+            }
+        } else {
+            "BestEffort"
+        };
         let status = pod.status.get_or_insert_with(Default::default);
         status.qos_class = Some(qos.to_string());
     }
@@ -667,7 +702,10 @@ pub async fn update(
     {
         let resources_changed = detect_container_resource_change(&old_pod, &pod);
         if resources_changed {
-            info!("Pod {}/{} resource resize detected (update), setting status.resize=Proposed", namespace, name);
+            info!(
+                "Pod {}/{} resource resize detected (update), setting status.resize=Proposed",
+                namespace, name
+            );
             if let Some(ref mut status) = pod.status {
                 status.resize = Some("Proposed".to_string());
             }
@@ -741,7 +779,10 @@ pub async fn delete_pod(
     let grace_period = params
         .get("gracePeriodSeconds")
         .and_then(|v| v.parse::<i64>().ok())
-        .or(updated_pod.spec.as_ref().and_then(|s| s.termination_grace_period_seconds))
+        .or(updated_pod
+            .spec
+            .as_ref()
+            .and_then(|s| s.termination_grace_period_seconds))
         .unwrap_or(30);
     updated_pod.metadata.deletion_grace_period_seconds = Some(grace_period);
 
@@ -778,7 +819,9 @@ pub async fn list(
         info!("Starting watch for pods in namespace: {}", namespace);
         // Parse WatchParams from the query parameters
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
             timeout_seconds: params
                 .get("timeoutSeconds")
                 .and_then(|v| v.parse::<u64>().ok()),
@@ -789,7 +832,10 @@ pub async fn list(
                 .get("allowWatchBookmarks")
                 .and_then(|v| v.parse::<bool>().ok()),
 
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),        };
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
+        };
         return crate::handlers::watch::watch_namespaced::<Pod>(
             state,
             auth_ctx,
@@ -886,7 +932,9 @@ pub async fn list_all_pods(
         info!("Watch request for all pods");
         // Parse WatchParams from the query parameters
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
             timeout_seconds: params
                 .get("timeoutSeconds")
                 .and_then(|v| v.parse::<u64>().ok()),
@@ -897,7 +945,10 @@ pub async fn list_all_pods(
                 .get("allowWatchBookmarks")
                 .and_then(|v| v.parse::<bool>().ok()),
 
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),        };
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
+        };
         return crate::handlers::watch::watch_cluster_scoped::<Pod>(
             state,
             auth_ctx,
@@ -1071,7 +1122,10 @@ pub async fn patch(
                 // Check dry-run before persisting
                 let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
                 if is_dry_run {
-                    info!("Dry-run: Pod {}/{} server-side apply validated (not persisted)", namespace, name);
+                    info!(
+                        "Dry-run: Pod {}/{} server-side apply validated (not persisted)",
+                        namespace, name
+                    );
                     return Ok(Json(applied_pod));
                 }
 
@@ -1141,7 +1195,10 @@ pub async fn patch(
     {
         let resources_changed = detect_container_resource_change(&current_pod, &patched_pod);
         if resources_changed {
-            info!("Pod {}/{} resource resize detected, setting status.resize=Proposed", namespace, name);
+            info!(
+                "Pod {}/{} resource resize detected, setting status.resize=Proposed",
+                namespace, name
+            );
             if let Some(ref mut status) = patched_pod.status {
                 status.resize = Some("Proposed".to_string());
             }
@@ -1151,7 +1208,10 @@ pub async fn patch(
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
-        info!("Dry-run: Pod {}/{} patch validated successfully (not applied)", namespace, name);
+        info!(
+            "Dry-run: Pod {}/{} patch validated successfully (not applied)",
+            namespace, name
+        );
         return Ok(Json(patched_pod));
     }
 
@@ -1338,11 +1398,19 @@ mod tests {
     fn test_detect_resource_change_no_change() {
         let pod1 = make_pod_with_containers(
             "p",
-            vec![make_container_with_resources("c1", Some("100m"), Some("128Mi"))],
+            vec![make_container_with_resources(
+                "c1",
+                Some("100m"),
+                Some("128Mi"),
+            )],
         );
         let pod2 = make_pod_with_containers(
             "p",
-            vec![make_container_with_resources("c1", Some("100m"), Some("128Mi"))],
+            vec![make_container_with_resources(
+                "c1",
+                Some("100m"),
+                Some("128Mi"),
+            )],
         );
         assert!(!detect_container_resource_change(&pod1, &pod2));
     }
@@ -1351,11 +1419,19 @@ mod tests {
     fn test_detect_resource_change_cpu_changed() {
         let pod1 = make_pod_with_containers(
             "p",
-            vec![make_container_with_resources("c1", Some("100m"), Some("128Mi"))],
+            vec![make_container_with_resources(
+                "c1",
+                Some("100m"),
+                Some("128Mi"),
+            )],
         );
         let pod2 = make_pod_with_containers(
             "p",
-            vec![make_container_with_resources("c1", Some("200m"), Some("128Mi"))],
+            vec![make_container_with_resources(
+                "c1",
+                Some("200m"),
+                Some("128Mi"),
+            )],
         );
         assert!(detect_container_resource_change(&pod1, &pod2));
     }
@@ -1364,21 +1440,27 @@ mod tests {
     fn test_detect_resource_change_memory_changed() {
         let pod1 = make_pod_with_containers(
             "p",
-            vec![make_container_with_resources("c1", Some("100m"), Some("128Mi"))],
+            vec![make_container_with_resources(
+                "c1",
+                Some("100m"),
+                Some("128Mi"),
+            )],
         );
         let pod2 = make_pod_with_containers(
             "p",
-            vec![make_container_with_resources("c1", Some("100m"), Some("256Mi"))],
+            vec![make_container_with_resources(
+                "c1",
+                Some("100m"),
+                Some("256Mi"),
+            )],
         );
         assert!(detect_container_resource_change(&pod1, &pod2));
     }
 
     #[test]
     fn test_detect_resource_change_no_resources_to_some() {
-        let pod1 = make_pod_with_containers(
-            "p",
-            vec![make_container_with_resources("c1", None, None)],
-        );
+        let pod1 =
+            make_pod_with_containers("p", vec![make_container_with_resources("c1", None, None)]);
         let pod2 = make_pod_with_containers(
             "p",
             vec![make_container_with_resources("c1", Some("100m"), None)],
@@ -1388,14 +1470,10 @@ mod tests {
 
     #[test]
     fn test_detect_resource_change_both_no_resources() {
-        let pod1 = make_pod_with_containers(
-            "p",
-            vec![make_container_with_resources("c1", None, None)],
-        );
-        let pod2 = make_pod_with_containers(
-            "p",
-            vec![make_container_with_resources("c1", None, None)],
-        );
+        let pod1 =
+            make_pod_with_containers("p", vec![make_container_with_resources("c1", None, None)]);
+        let pod2 =
+            make_pod_with_containers("p", vec![make_container_with_resources("c1", None, None)]);
         assert!(!detect_container_resource_change(&pod1, &pod2));
     }
 

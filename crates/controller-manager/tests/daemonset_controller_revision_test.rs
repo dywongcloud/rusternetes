@@ -153,10 +153,7 @@ async fn test_controller_revision_created_on_reconcile() {
     // Create a DaemonSet
     let ds = create_test_daemonset("my-ds", "default");
     storage
-        .create(
-            &build_key("daemonsets", Some("default"), "my-ds"),
-            &ds,
-        )
+        .create(&build_key("daemonsets", Some("default"), "my-ds"), &ds)
         .await
         .unwrap();
 
@@ -245,10 +242,7 @@ async fn test_controller_revision_has_expected_labels() {
 
     let ds = create_test_daemonset("labeled-ds", "default");
     storage
-        .create(
-            &build_key("daemonsets", Some("default"), "labeled-ds"),
-            &ds,
-        )
+        .create(&build_key("daemonsets", Some("default"), "labeled-ds"), &ds)
         .await
         .unwrap();
 
@@ -307,10 +301,7 @@ async fn test_controller_revision_has_uid_and_timestamp() {
 
     let ds = create_test_daemonset("uid-ds", "default");
     storage
-        .create(
-            &build_key("daemonsets", Some("default"), "uid-ds"),
-            &ds,
-        )
+        .create(&build_key("daemonsets", Some("default"), "uid-ds"), &ds)
         .await
         .unwrap();
 
@@ -346,10 +337,7 @@ async fn test_controller_revision_contains_template_data() {
 
     let ds = create_test_daemonset("data-ds", "default");
     storage
-        .create(
-            &build_key("daemonsets", Some("default"), "data-ds"),
-            &ds,
-        )
+        .create(&build_key("daemonsets", Some("default"), "data-ds"), &ds)
         .await
         .unwrap();
 
@@ -428,10 +416,7 @@ async fn test_controller_revision_name_includes_hash() {
 
     let ds = create_test_daemonset("hash-ds", "default");
     storage
-        .create(
-            &build_key("daemonsets", Some("default"), "hash-ds"),
-            &ds,
-        )
+        .create(&build_key("daemonsets", Some("default"), "hash-ds"), &ds)
         .await
         .unwrap();
 
@@ -475,10 +460,7 @@ async fn test_controller_revision_namespace_matches_daemonset() {
     // Create DaemonSet in a non-default namespace
     let ds = create_test_daemonset("ns-ds", "kube-system");
     storage
-        .create(
-            &build_key("daemonsets", Some("kube-system"), "ns-ds"),
-            &ds,
-        )
+        .create(&build_key("daemonsets", Some("kube-system"), "ns-ds"), &ds)
         .await
         .unwrap();
 

@@ -282,13 +282,14 @@ pub async fn delete_ns(
 
     // Handle deletion with finalizers and propagation policy
     let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str());
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
-        &state.storage,
-        &key,
-        &namespace,
-        propagation_policy,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
+            &state.storage,
+            &key,
+            &namespace,
+            propagation_policy,
+        )
+        .await?;
 
     if deleted_immediately {
         info!("Namespace {} deleted successfully (no finalizers)", name);
@@ -413,7 +414,9 @@ pub async fn list(
         info!("Watching namespaces");
         // Parse WatchParams from the query parameters
         let watch_params = watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
             timeout_seconds: params
                 .get("timeoutSeconds")
                 .and_then(|v| v.parse::<u64>().ok()),
@@ -424,7 +427,10 @@ pub async fn list(
                 .get("allowWatchBookmarks")
                 .and_then(|v| v.parse::<bool>().ok()),
 
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),        };
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
+        };
         return watch::watch_cluster_scoped::<Namespace>(
             state,
             auth_ctx,

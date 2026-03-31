@@ -455,7 +455,10 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         .route("/readyz", get(handlers::health::readyz))
         .route("/metrics", get(handlers::health::metrics))
         // OIDC discovery endpoints for service account issuer
-        .route("/.well-known/openid-configuration", get(handlers::health::openid_configuration))
+        .route(
+            "/.well-known/openid-configuration",
+            get(handlers::health::openid_configuration),
+        )
         .route("/openid/v1/jwks", get(handlers::health::openid_jwks))
         // Discovery API endpoints
         .route("/api", get(handlers::discovery::get_core_api))
@@ -561,8 +564,7 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         )
         .route(
             "/apis/apiregistration.k8s.io/v1/apiservices",
-            get(handlers::generic::list_apiservices)
-                .post(handlers::generic::create_apiservice),
+            get(handlers::generic::list_apiservices).post(handlers::generic::create_apiservice),
         )
         .route(
             "/apis/apiregistration.k8s.io/v1/apiservices/:name",
@@ -572,14 +574,16 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         )
         .route(
             "/apis/apiregistration.k8s.io/v1/apiservices/:name/status",
-            get(handlers::generic::get_apiservice)
-                .put(handlers::generic::update_apiservice_status),
+            get(handlers::generic::get_apiservice).put(handlers::generic::update_apiservice_status),
         )
         .route("/version", get(handlers::discovery::get_version))
         // OpenAPI spec endpoints
         .route("/openapi/v2", get(handlers::openapi::get_swagger_spec))
         .route("/openapi/v3", get(handlers::openapi::get_openapi_spec))
-        .route("/openapi/v3/*path", get(handlers::openapi::get_openapi_spec_path))
+        .route(
+            "/openapi/v3/*path",
+            get(handlers::openapi::get_openapi_spec_path),
+        )
         .route("/swagger.json", get(handlers::openapi::get_swagger_spec));
 
     // Routes that require authentication (unless skip_auth is enabled)

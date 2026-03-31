@@ -168,16 +168,26 @@ pub async fn delete_replicationcontroller(
     let body_propagation: Option<String> = if !body.is_empty() {
         serde_json::from_slice::<serde_json::Value>(&body)
             .ok()
-            .and_then(|v| v.get("propagationPolicy").and_then(|p| p.as_str()).map(|s| s.to_string()))
+            .and_then(|v| {
+                v.get("propagationPolicy")
+                    .and_then(|p| p.as_str())
+                    .map(|s| s.to_string())
+            })
     } else {
         None
     };
-    let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str())
+    let propagation_policy = params
+        .get("propagationPolicy")
+        .map(|s| s.as_str())
         .or(body_propagation.as_deref());
     let has_finalizers =
         crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
-            &*state.storage, &key, &rc, propagation_policy,
-        ).await?;
+            &*state.storage,
+            &key,
+            &rc,
+            propagation_policy,
+        )
+        .await?;
 
     if has_finalizers {
         // Resource has finalizers, re-read to get updated version with deletionTimestamp
@@ -197,8 +207,14 @@ pub async fn list_replicationcontrollers(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_namespaced::<ReplicationController>(
-            state, auth_ctx, namespace, "replicationcontrollers", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "replicationcontrollers",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing replicationcontrollers in namespace: {}", namespace);
@@ -231,8 +247,13 @@ pub async fn list_all_replicationcontrollers(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<ReplicationController>(
-            state, auth_ctx, "replicationcontrollers", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "replicationcontrollers",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all replicationcontrollers");

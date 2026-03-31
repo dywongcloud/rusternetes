@@ -230,19 +230,18 @@ impl<S: Storage> ResourceQuotaController<S> {
                             .as_ref()
                             .and_then(|s| s.priority_class_name.as_deref())
                             .unwrap_or("");
-                        let matches = match req.operator.as_str() {
-                            "In" => req
-                                .values
-                                .as_ref()
-                                .map_or(false, |v| v.iter().any(|val| val == pod_priority_class)),
-                            "NotIn" => req
-                                .values
-                                .as_ref()
-                                .map_or(true, |v| !v.iter().any(|val| val == pod_priority_class)),
-                            "Exists" => !pod_priority_class.is_empty(),
-                            "DoesNotExist" => pod_priority_class.is_empty(),
-                            _ => true,
-                        };
+                        let matches =
+                            match req.operator.as_str() {
+                                "In" => req.values.as_ref().map_or(false, |v| {
+                                    v.iter().any(|val| val == pod_priority_class)
+                                }),
+                                "NotIn" => req.values.as_ref().map_or(true, |v| {
+                                    !v.iter().any(|val| val == pod_priority_class)
+                                }),
+                                "Exists" => !pod_priority_class.is_empty(),
+                                "DoesNotExist" => pod_priority_class.is_empty(),
+                                _ => true,
+                            };
                         if !matches {
                             return false;
                         }
@@ -401,20 +400,14 @@ impl<S: Storage> ResourceQuotaController<S> {
                     )
                 })
                 .count();
-            usage.insert(
-                "services.loadbalancers".to_string(),
-                lb_count.to_string(),
-            );
+            usage.insert("services.loadbalancers".to_string(), lb_count.to_string());
         }
 
         if needs_configmaps {
             let count_prefix = format!("/registry/configmaps/{}/", namespace);
             let configmaps: Vec<serde_json::Value> =
                 self.storage.list(&count_prefix).await.unwrap_or_default();
-            usage.insert(
-                "count/configmaps".to_string(),
-                configmaps.len().to_string(),
-            );
+            usage.insert("count/configmaps".to_string(), configmaps.len().to_string());
             usage.insert("configmaps".to_string(), configmaps.len().to_string());
         }
 
@@ -441,10 +434,7 @@ impl<S: Storage> ResourceQuotaController<S> {
             let pvc_prefix = format!("/registry/persistentvolumeclaims/{}/", namespace);
             let pvcs: Vec<serde_json::Value> =
                 self.storage.list(&pvc_prefix).await.unwrap_or_default();
-            usage.insert(
-                "persistentvolumeclaims".to_string(),
-                pvcs.len().to_string(),
-            );
+            usage.insert("persistentvolumeclaims".to_string(), pvcs.len().to_string());
             usage.insert(
                 "count/persistentvolumeclaims".to_string(),
                 pvcs.len().to_string(),
@@ -455,10 +445,7 @@ impl<S: Storage> ResourceQuotaController<S> {
             let rc_prefix = format!("/registry/replicationcontrollers/{}/", namespace);
             let rcs: Vec<serde_json::Value> =
                 self.storage.list(&rc_prefix).await.unwrap_or_default();
-            usage.insert(
-                "replicationcontrollers".to_string(),
-                rcs.len().to_string(),
-            );
+            usage.insert("replicationcontrollers".to_string(), rcs.len().to_string());
             usage.insert(
                 "count/replicationcontrollers".to_string(),
                 rcs.len().to_string(),
@@ -470,10 +457,7 @@ impl<S: Storage> ResourceQuotaController<S> {
             let rqs: Vec<serde_json::Value> =
                 self.storage.list(&rq_prefix).await.unwrap_or_default();
             usage.insert("resourcequotas".to_string(), rqs.len().to_string());
-            usage.insert(
-                "count/resourcequotas".to_string(),
-                rqs.len().to_string(),
-            );
+            usage.insert("count/resourcequotas".to_string(), rqs.len().to_string());
         }
 
         Ok(usage)
@@ -632,11 +616,7 @@ mod tests {
         }
     }
 
-    fn make_pod_with_deadline(
-        name: &str,
-        namespace: &str,
-        active_deadline: Option<i64>,
-    ) -> Pod {
+    fn make_pod_with_deadline(name: &str, namespace: &str, active_deadline: Option<i64>) -> Pod {
         let mut pod = make_pod(name, namespace, None);
         if let Some(spec) = &mut pod.spec {
             spec.active_deadline_seconds = active_deadline;
@@ -707,45 +687,57 @@ mod tests {
     fn test_pod_matches_scopes_terminating() {
         // Pod with active_deadline_seconds is Terminating
         let pod = make_pod_with_deadline("test", "default", Some(30));
-        assert!(ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
-            &pod,
-            &["Terminating".to_string()],
-            None
-        ));
-        assert!(!ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
-            &pod,
-            &["NotTerminating".to_string()],
-            None
-        ));
+        assert!(
+            ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+                &pod,
+                &["Terminating".to_string()],
+                None
+            )
+        );
+        assert!(
+            !ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+                &pod,
+                &["NotTerminating".to_string()],
+                None
+            )
+        );
 
         // Pod without active_deadline_seconds is NotTerminating
         let pod = make_pod_with_deadline("test", "default", None);
-        assert!(!ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
-            &pod,
-            &["Terminating".to_string()],
-            None
-        ));
-        assert!(ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
-            &pod,
-            &["NotTerminating".to_string()],
-            None
-        ));
+        assert!(
+            !ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+                &pod,
+                &["Terminating".to_string()],
+                None
+            )
+        );
+        assert!(
+            ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+                &pod,
+                &["NotTerminating".to_string()],
+                None
+            )
+        );
     }
 
     #[test]
     fn test_pod_matches_scopes_best_effort() {
         // Pod with no resources = BestEffort
         let pod = make_pod("test", "default", None);
-        assert!(ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
-            &pod,
-            &["BestEffort".to_string()],
-            None
-        ));
-        assert!(!ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
-            &pod,
-            &["NotBestEffort".to_string()],
-            None
-        ));
+        assert!(
+            ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+                &pod,
+                &["BestEffort".to_string()],
+                None
+            )
+        );
+        assert!(
+            !ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+                &pod,
+                &["NotBestEffort".to_string()],
+                None
+            )
+        );
 
         // Pod with resources = NotBestEffort
         let mut reqs = HashMap::new();
@@ -759,16 +751,20 @@ mod tests {
                 claims: None,
             }),
         );
-        assert!(!ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
-            &pod,
-            &["BestEffort".to_string()],
-            None
-        ));
-        assert!(ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
-            &pod,
-            &["NotBestEffort".to_string()],
-            None
-        ));
+        assert!(
+            !ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+                &pod,
+                &["BestEffort".to_string()],
+                None
+            )
+        );
+        assert!(
+            ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+                &pod,
+                &["NotBestEffort".to_string()],
+                None
+            )
+        );
     }
 
     #[test]
@@ -781,11 +777,13 @@ mod tests {
                 values: None,
             }],
         };
-        assert!(ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
-            &pod,
-            &[],
-            Some(&selector)
-        ));
+        assert!(
+            ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+                &pod,
+                &[],
+                Some(&selector)
+            )
+        );
 
         let selector_not = ScopeSelector {
             match_expressions: vec![ScopedResourceSelectorRequirement {
@@ -794,11 +792,13 @@ mod tests {
                 values: None,
             }],
         };
-        assert!(!ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
-            &pod,
-            &[],
-            Some(&selector_not)
-        ));
+        assert!(
+            !ResourceQuotaController::<MemoryStorage>::pod_matches_scopes(
+                &pod,
+                &[],
+                Some(&selector_not)
+            )
+        );
     }
 
     #[tokio::test]

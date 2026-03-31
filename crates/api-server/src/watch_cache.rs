@@ -4,8 +4,8 @@
 //! to all subscribed client watches. This avoids creating N etcd watches
 //! for N clients, which overwhelms etcd and exhausts HTTP/2 stream limits.
 
-use rusternetes_storage::{WatchEvent, WatchStream, Storage};
 use rusternetes_storage::etcd::EtcdStorage;
+use rusternetes_storage::{Storage, WatchEvent, WatchStream};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
@@ -82,7 +82,10 @@ impl WatchCache {
         let history_ref = self.history.clone();
 
         tokio::spawn(async move {
-            info!("WatchCache: starting shared watch for prefix {}", prefix_owned);
+            info!(
+                "WatchCache: starting shared watch for prefix {}",
+                prefix_owned
+            );
             loop {
                 match storage.watch(&prefix_owned).await {
                     Ok(mut stream) => {
@@ -135,8 +138,13 @@ impl WatchCache {
 
                             // Append to history ring buffer
                             {
-                                let mut hist: tokio::sync::RwLockWriteGuard<'_, HashMap<String, VecDeque<CachedWatchEvent>>> = history_ref.write().await;
-                                let buf = hist.entry(prefix_owned.clone()).or_insert_with(VecDeque::new);
+                                let mut hist: tokio::sync::RwLockWriteGuard<
+                                    '_,
+                                    HashMap<String, VecDeque<CachedWatchEvent>>,
+                                > = history_ref.write().await;
+                                let buf = hist
+                                    .entry(prefix_owned.clone())
+                                    .or_insert_with(VecDeque::new);
                                 buf.push_back(cached.clone());
                                 while buf.len() > HISTORY_CAPACITY {
                                     buf.pop_front();
@@ -148,11 +156,17 @@ impl WatchCache {
                         }
                         // Stream ended, reconnect after brief pause
                         // Don't check subscriber count here — new subscribers may arrive
-                        debug!("WatchCache: stream ended for {}, reconnecting", prefix_owned);
+                        debug!(
+                            "WatchCache: stream ended for {}, reconnecting",
+                            prefix_owned
+                        );
                         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     }
                     Err(e) => {
-                        error!("WatchCache: failed to create watch for {}: {}", prefix_owned, e);
+                        error!(
+                            "WatchCache: failed to create watch for {}: {}",
+                            prefix_owned, e
+                        );
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     }
                 }
@@ -197,9 +211,7 @@ impl WatchCache {
 }
 
 /// Convert a broadcast receiver into a WatchStream compatible with existing handlers.
-pub fn broadcast_to_stream(
-    mut rx: broadcast::Receiver<CachedWatchEvent>,
-) -> WatchStream {
+pub fn broadcast_to_stream(mut rx: broadcast::Receiver<CachedWatchEvent>) -> WatchStream {
     let stream = async_stream::stream! {
         loop {
             match rx.recv().await {

@@ -1,9 +1,9 @@
 // StatefulSet Controller Integration Tests
 // Tests the StatefulSet controller's ability to manage stateful workloads with stable identities
 
+use rusternetes_common::resources::pod::PodCondition;
 use rusternetes_common::resources::pod::*;
 use rusternetes_common::resources::*;
-use rusternetes_common::resources::pod::PodCondition;
 use rusternetes_common::types::{LabelSelector, ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::statefulset::StatefulSetController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
@@ -301,7 +301,11 @@ async fn test_statefulset_ordered_ready_requires_previous_ready() {
     // Second reconcile: pod-0 not Ready yet, should NOT create pod-1
     controller.reconcile_all().await.unwrap();
     let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-    assert_eq!(pods.len(), 1, "Should still have only 1 pod (pod-0 not Ready)");
+    assert_eq!(
+        pods.len(),
+        1,
+        "Should still have only 1 pod (pod-0 not Ready)"
+    );
 
     // Mark pod-0 as Ready
     mark_pod_ready(&storage, "default", "ordered-0").await;
@@ -335,7 +339,11 @@ async fn test_statefulset_parallel_creates_all_at_once() {
 
     // Parallel should create all 3 pods at once without waiting for readiness
     let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-    assert_eq!(pods.len(), 3, "Parallel should create all 3 pods immediately");
+    assert_eq!(
+        pods.len(),
+        3,
+        "Parallel should create all 3 pods immediately"
+    );
 
     let mut names: Vec<String> = pods.iter().map(|p| p.metadata.name.clone()).collect();
     names.sort();
@@ -385,20 +393,33 @@ async fn test_statefulset_rolling_update_changes_image() {
 
     // Should have deleted one pod (rolling update deletes one at a time)
     let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-    assert_eq!(pods_after.len(), 1, "Rolling update should delete one stale pod");
+    assert_eq!(
+        pods_after.len(),
+        1,
+        "Rolling update should delete one stale pod"
+    );
 
     // Reconcile again — should recreate the deleted pod with new revision
     controller.reconcile_all().await.unwrap();
 
     let pods_recreated: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-    assert_eq!(pods_recreated.len(), 2, "Should recreate deleted pod with new template");
+    assert_eq!(
+        pods_recreated.len(),
+        2,
+        "Should recreate deleted pod with new template"
+    );
 
     // The recreated pod should have the new revision
     let new_revision_pod = pods_recreated.iter().find(|p| {
-        p.metadata.labels.as_ref()
+        p.metadata
+            .labels
+            .as_ref()
             .and_then(|l| l.get("controller-revision-hash"))
             .map(|r| r != &old_revision)
             .unwrap_or(false)
     });
-    assert!(new_revision_pod.is_some(), "Recreated pod should have new revision hash");
+    assert!(
+        new_revision_pod.is_some(),
+        "Recreated pod should have new revision hash"
+    );
 }

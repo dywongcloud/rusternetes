@@ -1,7 +1,6 @@
 use anyhow::Result;
 use rusternetes_common::resources::{
-    PersistentVolumeClaim, Pod, PodStatus, StatefulSet,
-    StatefulSetStatus,
+    PersistentVolumeClaim, Pod, PodStatus, StatefulSet, StatefulSetStatus,
 };
 use rusternetes_common::types::{ObjectMeta, OwnerReference, Phase, TypeMeta};
 use rusternetes_storage::{build_key, Storage};
@@ -133,13 +132,14 @@ impl<S: Storage> StatefulSetController<S> {
                     let pod_key = build_key("pods", Some(namespace), &pod_name);
                     self.storage.get::<Pod>(&pod_key).await.is_ok()
                 };
-                if pod_exists { continue; }
+                if pod_exists {
+                    continue;
+                }
                 // For OrderedReady policy, check that the previous pod is Ready before
                 // creating the next one. If it's not ready, halt scaling.
                 if is_ordered_ready && i > 0 {
                     let prev_pod_name = format!("{}-{}", name, i - 1);
-                    let prev_pod_key =
-                        build_key("pods", Some(namespace), &prev_pod_name);
+                    let prev_pod_key = build_key("pods", Some(namespace), &prev_pod_name);
                     match self.storage.get::<Pod>(&prev_pod_key).await {
                         Ok(prev_pod) => {
                             let is_ready = prev_pod
@@ -147,10 +147,9 @@ impl<S: Storage> StatefulSetController<S> {
                                 .as_ref()
                                 .and_then(|s| s.conditions.as_ref())
                                 .map(|conditions| {
-                                    conditions.iter().any(|c| {
-                                        c.condition_type == "Ready"
-                                            && c.status == "True"
-                                    })
+                                    conditions
+                                        .iter()
+                                        .any(|c| c.condition_type == "Ready" && c.status == "True")
                                 })
                                 .unwrap_or(false);
 
@@ -187,22 +186,36 @@ impl<S: Storage> StatefulSetController<S> {
             let pod_name = format!("{}-{}", name, i);
             let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
             self.storage.delete(&pod_key).await?;
-            info!("Scale down: deleted pod {} ({} -> {})", pod_name, current_replicas, current_replicas - 1);
+            info!(
+                "Scale down: deleted pod {} ({} -> {})",
+                pod_name,
+                current_replicas,
+                current_replicas - 1
+            );
         }
 
         // Rolling update: if replica count matches but pods have old revision, delete one at a time.
         // The controller will recreate them with the new template on the next reconcile.
         // Skip if updateStrategy is OnDelete (user must manually delete pods to trigger update).
-        let update_strategy = statefulset.spec.update_strategy.as_ref()
+        let update_strategy = statefulset
+            .spec
+            .update_strategy
+            .as_ref()
             .and_then(|s| s.strategy_type.as_deref())
             .unwrap_or("RollingUpdate");
 
-        let partition = statefulset.spec.update_strategy.as_ref()
+        let partition = statefulset
+            .spec
+            .update_strategy
+            .as_ref()
             .and_then(|s| s.rolling_update.as_ref())
             .and_then(|ru| ru.partition)
             .unwrap_or(0);
 
-        if current_replicas == desired_replicas && desired_replicas > 0 && update_strategy == "RollingUpdate" {
+        if current_replicas == desired_replicas
+            && desired_replicas > 0
+            && update_strategy == "RollingUpdate"
+        {
             let update_revision = Self::compute_revision(&statefulset.spec.template);
 
             // Check pods in reverse order for rolling update.
@@ -213,7 +226,10 @@ impl<S: Storage> StatefulSetController<S> {
             // deleting the next one.
             let mut deleted_one = false;
             for pod in statefulset_pods.iter().rev() {
-                let ordinal = pod.metadata.name.rsplit_once('-')
+                let ordinal = pod
+                    .metadata
+                    .name
+                    .rsplit_once('-')
                     .and_then(|(_, idx)| idx.parse::<i32>().ok())
                     .unwrap_or(0);
 
@@ -222,7 +238,10 @@ impl<S: Storage> StatefulSetController<S> {
                     continue;
                 }
 
-                let pod_revision = pod.metadata.labels.as_ref()
+                let pod_revision = pod
+                    .metadata
+                    .labels
+                    .as_ref()
                     .and_then(|l| l.get("controller-revision-hash"))
                     .map(|s| s.as_str())
                     .unwrap_or("");
@@ -230,10 +249,16 @@ impl<S: Storage> StatefulSetController<S> {
                     // Check if this pod is at least Running or Ready — don't delete pods
                     // that haven't even started yet (prevents cascading deletions during initial creation)
                     let pod_phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
-                    let pod_is_active = matches!(pod_phase, Some(Phase::Running) | Some(Phase::Pending));
-                    let pod_is_ready = pod.status.as_ref()
+                    let pod_is_active =
+                        matches!(pod_phase, Some(Phase::Running) | Some(Phase::Pending));
+                    let pod_is_ready = pod
+                        .status
+                        .as_ref()
                         .and_then(|s| s.conditions.as_ref())
-                        .map(|c| c.iter().any(|cond| cond.condition_type == "Ready" && cond.status == "True"))
+                        .map(|c| {
+                            c.iter()
+                                .any(|cond| cond.condition_type == "Ready" && cond.status == "True")
+                        })
                         .unwrap_or(false);
 
                     // Delete pods with stale revision if they have a revision label
@@ -241,7 +266,10 @@ impl<S: Storage> StatefulSetController<S> {
                     if !pod_revision.is_empty() && (pod_is_ready || pod_is_active) {
                         let pod_key = format!("/registry/pods/{}/{}", namespace, pod.metadata.name);
                         self.storage.delete(&pod_key).await?;
-                        info!("Rolling update: deleted pod {} (old revision {}, update revision {})", pod.metadata.name, pod_revision, update_revision);
+                        info!(
+                            "Rolling update: deleted pod {} (old revision {}, update revision {})",
+                            pod.metadata.name, pod_revision, update_revision
+                        );
                         deleted_one = true;
                         break; // Delete one at a time for OrderedReady rolling updates
                     }
@@ -288,7 +316,9 @@ impl<S: Storage> StatefulSetController<S> {
                     .as_ref()
                     .and_then(|s| s.conditions.as_ref())
                     .map(|conditions| {
-                        conditions.iter().any(|c| c.condition_type == "Ready" && c.status == "True")
+                        conditions
+                            .iter()
+                            .any(|c| c.condition_type == "Ready" && c.status == "True")
                     })
                     .unwrap_or(false)
             })
@@ -300,33 +330,47 @@ impl<S: Storage> StatefulSetController<S> {
         // The current_revision is the revision that existing pods are running.
         // During a rolling update, this differs from update_revision.
         // Preserve the existing current_revision if set, otherwise derive from pods.
-        let current_revision = statefulset.status
+        let current_revision = statefulset
+            .status
             .as_ref()
             .and_then(|s| s.current_revision.clone())
             .or_else(|| {
                 // No current_revision in status — derive from actual pod labels
-                statefulset_pods_after.iter()
-                    .find_map(|pod| pod.metadata.labels.as_ref()
+                statefulset_pods_after.iter().find_map(|pod| {
+                    pod.metadata
+                        .labels
+                        .as_ref()
                         .and_then(|l| l.get("controller-revision-hash"))
-                        .cloned())
+                        .cloned()
+                })
             })
             .unwrap_or_else(|| update_revision.clone());
 
         // Count how many pods match the update revision (have the matching controller-revision-hash label)
-        let updated_count = statefulset_pods_after.iter().filter(|pod| {
-            pod.metadata.labels.as_ref()
-                .and_then(|l| l.get("controller-revision-hash"))
-                .map(|h| h == &update_revision)
-                .unwrap_or(false)
-        }).count() as i32;
+        let updated_count = statefulset_pods_after
+            .iter()
+            .filter(|pod| {
+                pod.metadata
+                    .labels
+                    .as_ref()
+                    .and_then(|l| l.get("controller-revision-hash"))
+                    .map(|h| h == &update_revision)
+                    .unwrap_or(false)
+            })
+            .count() as i32;
 
         // Count how many pods match the current revision
-        let current_rev_count = statefulset_pods_after.iter().filter(|pod| {
-            pod.metadata.labels.as_ref()
-                .and_then(|l| l.get("controller-revision-hash"))
-                .map(|h| h == &current_revision)
-                .unwrap_or(false)
-        }).count() as i32;
+        let current_rev_count = statefulset_pods_after
+            .iter()
+            .filter(|pod| {
+                pod.metadata
+                    .labels
+                    .as_ref()
+                    .and_then(|l| l.get("controller-revision-hash"))
+                    .map(|h| h == &current_revision)
+                    .unwrap_or(false)
+            })
+            .count() as i32;
 
         // Determine the final current_revision:
         // Only advance current_revision to update_revision when ALL pods have been
@@ -366,11 +410,21 @@ impl<S: Storage> StatefulSetController<S> {
 
         // Ensure a ControllerRevision exists for the current template revision
         let revision = Self::compute_revision(&statefulset.spec.template);
-        let cr_name = format!("{}-{}", name, &revision[..std::cmp::min(10, revision.len())]);
+        let cr_name = format!(
+            "{}-{}",
+            name,
+            &revision[..std::cmp::min(10, revision.len())]
+        );
         let cr_key = format!("/registry/controllerrevisions/{}/{}", namespace, cr_name);
-        if self.storage.get::<serde_json::Value>(&cr_key).await.is_err() {
+        if self
+            .storage
+            .get::<serde_json::Value>(&cr_key)
+            .await
+            .is_err()
+        {
             // Create the ControllerRevision
-            let template_data = serde_json::to_value(&statefulset.spec.template).unwrap_or_default();
+            let template_data =
+                serde_json::to_value(&statefulset.spec.template).unwrap_or_default();
             let cr = serde_json::json!({
                 "apiVersion": "apps/v1",
                 "kind": "ControllerRevision",
@@ -396,9 +450,15 @@ impl<S: Storage> StatefulSetController<S> {
                 "revision": 1
             });
             if let Err(e) = self.storage.create(&cr_key, &cr).await {
-                debug!("ControllerRevision {} already exists or failed: {}", cr_name, e);
+                debug!(
+                    "ControllerRevision {} already exists or failed: {}",
+                    cr_name, e
+                );
             } else {
-                info!("Created ControllerRevision {} for StatefulSet {}/{}", cr_name, namespace, name);
+                info!(
+                    "Created ControllerRevision {} for StatefulSet {}/{}",
+                    cr_name, namespace, name
+                );
             }
         }
 
@@ -480,13 +540,16 @@ impl<S: Storage> StatefulSetController<S> {
     /// non-deterministic output. Converting to Value first normalizes all maps
     /// into BTreeMap-backed serde_json::Map, which iterates in sorted key order.
     fn compute_revision(template: &rusternetes_common::resources::PodTemplateSpec) -> String {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         // Convert to Value first to normalize HashMap ordering to sorted BTreeMap
         let value = serde_json::to_value(template).unwrap_or_default();
         let serialized = serde_json::to_string(&value).unwrap_or_default();
         let hash = Sha256::digest(serialized.as_bytes());
         // Format as a 10-char hex string from the hash
-        format!("{:010x}", u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8])))
+        format!(
+            "{:010x}",
+            u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8]))
+        )
     }
 
     async fn create_pod(
@@ -512,10 +575,7 @@ impl<S: Storage> StatefulSetController<S> {
         );
         // Set the controller-revision-hash label so tests can verify pod revision
         let revision = Self::compute_revision(&statefulset.spec.template);
-        labels.insert(
-            "controller-revision-hash".to_string(),
-            revision,
-        );
+        labels.insert("controller-revision-hash".to_string(), revision);
 
         let mut metadata = rusternetes_common::types::ObjectMeta::new(pod_name.clone())
             .with_namespace(namespace.to_string())
@@ -578,10 +638,11 @@ impl<S: Storage> StatefulSetController<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_common::resources::{Container, PodSpec, PodTemplateSpec, StatefulSetSpec,
-        PodCondition};
     use rusternetes_common::resources::workloads::{
-        StatefulSetUpdateStrategy, RollingUpdateStatefulSetStrategy,
+        RollingUpdateStatefulSetStrategy, StatefulSetUpdateStrategy,
+    };
+    use rusternetes_common::resources::{
+        Container, PodCondition, PodSpec, PodTemplateSpec, StatefulSetSpec,
     };
     use rusternetes_common::types::LabelSelector;
     use rusternetes_storage::MemoryStorage;
@@ -800,7 +861,8 @@ mod tests {
             "During rolling update: currentRevision should NOT equal updateRevision"
         );
         assert_eq!(
-            status.current_revision.as_ref().unwrap(), &old_revision,
+            status.current_revision.as_ref().unwrap(),
+            &old_revision,
             "currentRevision should still be the old revision during rolling update"
         );
 
@@ -836,7 +898,8 @@ mod tests {
             "After rollout completes: currentRevision should equal updateRevision"
         );
         assert_eq!(
-            status.updated_replicas, Some(3),
+            status.updated_replicas,
+            Some(3),
             "All replicas should be updated"
         );
     }
@@ -873,8 +936,14 @@ mod tests {
         controller.reconcile(&mut ss).await.unwrap();
 
         // Record the old revision from pod-0
-        let pod0: Pod = storage.get(&format!("/registry/pods/{}/web-0", ns)).await.unwrap();
-        let old_rev = pod0.metadata.labels.as_ref()
+        let pod0: Pod = storage
+            .get(&format!("/registry/pods/{}/web-0", ns))
+            .await
+            .unwrap();
+        let old_rev = pod0
+            .metadata
+            .labels
+            .as_ref()
             .and_then(|l| l.get("controller-revision-hash"))
             .cloned()
             .unwrap();
@@ -889,7 +958,10 @@ mod tests {
             let pod_prefix = format!("/registry/pods/{}/", ns);
             let pods: Vec<Pod> = storage.list(&pod_prefix).await.unwrap();
             for pod in &pods {
-                if pod.metadata.labels.as_ref()
+                if pod
+                    .metadata
+                    .labels
+                    .as_ref()
                     .and_then(|l| l.get("app"))
                     .map(|a| a == "web")
                     .unwrap_or(false)
@@ -903,27 +975,54 @@ mod tests {
         }
 
         // Check that pod-0 and pod-1 still have the old revision (partition=2 protects them)
-        let pod0: Pod = storage.get(&format!("/registry/pods/{}/web-0", ns)).await.unwrap();
-        let pod0_rev = pod0.metadata.labels.as_ref()
+        let pod0: Pod = storage
+            .get(&format!("/registry/pods/{}/web-0", ns))
+            .await
+            .unwrap();
+        let pod0_rev = pod0
+            .metadata
+            .labels
+            .as_ref()
             .and_then(|l| l.get("controller-revision-hash"))
             .cloned()
             .unwrap();
-        assert_eq!(pod0_rev, old_rev, "Pod-0 should keep old revision (below partition)");
+        assert_eq!(
+            pod0_rev, old_rev,
+            "Pod-0 should keep old revision (below partition)"
+        );
 
-        let pod1: Pod = storage.get(&format!("/registry/pods/{}/web-1", ns)).await.unwrap();
-        let pod1_rev = pod1.metadata.labels.as_ref()
+        let pod1: Pod = storage
+            .get(&format!("/registry/pods/{}/web-1", ns))
+            .await
+            .unwrap();
+        let pod1_rev = pod1
+            .metadata
+            .labels
+            .as_ref()
             .and_then(|l| l.get("controller-revision-hash"))
             .cloned()
             .unwrap();
-        assert_eq!(pod1_rev, old_rev, "Pod-1 should keep old revision (below partition)");
+        assert_eq!(
+            pod1_rev, old_rev,
+            "Pod-1 should keep old revision (below partition)"
+        );
 
         // Pod-2 should have the new revision
-        let pod2: Pod = storage.get(&format!("/registry/pods/{}/web-2", ns)).await.unwrap();
-        let pod2_rev = pod2.metadata.labels.as_ref()
+        let pod2: Pod = storage
+            .get(&format!("/registry/pods/{}/web-2", ns))
+            .await
+            .unwrap();
+        let pod2_rev = pod2
+            .metadata
+            .labels
+            .as_ref()
             .and_then(|l| l.get("controller-revision-hash"))
             .cloned()
             .unwrap();
-        assert_ne!(pod2_rev, old_rev, "Pod-2 should have new revision (at or above partition)");
+        assert_ne!(
+            pod2_rev, old_rev,
+            "Pod-2 should have new revision (at or above partition)"
+        );
 
         // currentRevision should NOT equal updateRevision (partition prevents full rollout)
         let ss: StatefulSet = storage.get(&key).await.unwrap();

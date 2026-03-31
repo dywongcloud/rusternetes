@@ -183,8 +183,13 @@ pub async fn list_priority_level_configurations(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<PriorityLevelConfiguration>(
-            state, auth_ctx, "prioritylevelconfigurations", "flowcontrol.apiserver.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "prioritylevelconfigurations",
+            "flowcontrol.apiserver.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing PriorityLevelConfigurations");
@@ -198,7 +203,10 @@ pub async fn list_priority_level_configurations(
     }
 
     let prefix = build_prefix("prioritylevelconfigurations", None);
-    let mut items = state.storage.list::<PriorityLevelConfiguration>(&prefix).await?;
+    let mut items = state
+        .storage
+        .list::<PriorityLevelConfiguration>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut items, &params)?;
@@ -366,8 +374,13 @@ pub async fn list_flow_schemas(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<FlowSchema>(
-            state, auth_ctx, "flowschemas", "flowcontrol.apiserver.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "flowschemas",
+            "flowcontrol.apiserver.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing FlowSchemas");
@@ -476,7 +489,9 @@ pub async fn deletecollection_flowschemas(
         Decision::Allow => {}
         Decision::Deny(reason) => return Err(rusternetes_common::Error::Forbidden(reason)),
     }
-    if crate::handlers::dryrun::is_dry_run(&params) { return Ok(StatusCode::OK); }
+    if crate::handlers::dryrun::is_dry_run(&params) {
+        return Ok(StatusCode::OK);
+    }
     let prefix = build_prefix("flowschemas", None);
     let items: Vec<FlowSchema> = state.storage.list(&prefix).await?;
     for item in items {

@@ -1,7 +1,7 @@
+use rusternetes_common::resources::pod::PodCondition;
 use rusternetes_common::resources::{
     Container, Pod, PodSpec, PodStatus, PodTemplateSpec, ReplicaSet, ReplicaSetSpec,
 };
-use rusternetes_common::resources::pod::PodCondition;
 use rusternetes_common::types::{LabelSelector, ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::replicaset::ReplicaSetController;
 use rusternetes_storage::{build_key, MemoryStorage, Storage};
@@ -554,8 +554,15 @@ async fn test_replicaset_status_with_ready_pods() {
     let status = updated_rs.status.unwrap();
     assert_eq!(status.replicas, 3, "Should have 3 replicas");
     assert_eq!(status.ready_replicas, 3, "Should have 3 ready replicas");
-    assert_eq!(status.available_replicas, 3, "Should have 3 available replicas");
-    assert_eq!(status.fully_labeled_replicas, Some(3), "Should have 3 fully labeled replicas");
+    assert_eq!(
+        status.available_replicas, 3,
+        "Should have 3 available replicas"
+    );
+    assert_eq!(
+        status.fully_labeled_replicas,
+        Some(3),
+        "Should have 3 fully labeled replicas"
+    );
     // observedGeneration is set from metadata.generation; if not set on creation, it will be None
     // This is acceptable — the API server sets generation on creation
 }
@@ -589,13 +596,20 @@ async fn test_replicaset_skips_terminated_pods() {
 
     // Count active (non-terminated) pods matching the RS
     let all_pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-    let active_pods: Vec<&Pod> = all_pods.iter().filter(|p| {
-        !matches!(
-            p.status.as_ref().and_then(|s| s.phase.as_ref()),
-            Some(Phase::Failed) | Some(Phase::Succeeded)
-        )
-    }).collect();
-    assert_eq!(active_pods.len(), 3, "Should have 3 active pods after replacing terminated one");
+    let active_pods: Vec<&Pod> = all_pods
+        .iter()
+        .filter(|p| {
+            !matches!(
+                p.status.as_ref().and_then(|s| s.phase.as_ref()),
+                Some(Phase::Failed) | Some(Phase::Succeeded)
+            )
+        })
+        .collect();
+    assert_eq!(
+        active_pods.len(),
+        3,
+        "Should have 3 active pods after replacing terminated one"
+    );
 }
 
 #[tokio::test]
@@ -624,7 +638,8 @@ async fn test_replicaset_skips_deleting_pods() {
 
     let all_pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
     // Should have 4 pods: 3 active + 1 deleting
-    let non_deleting: Vec<&Pod> = all_pods.iter()
+    let non_deleting: Vec<&Pod> = all_pods
+        .iter()
         .filter(|p| p.metadata.deletion_timestamp.is_none())
         .collect();
     assert_eq!(non_deleting.len(), 3, "Should have 3 non-deleting pods");

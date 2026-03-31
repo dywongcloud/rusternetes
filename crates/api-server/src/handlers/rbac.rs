@@ -53,12 +53,12 @@ pub async fn create_role(
     let key = build_key("roles", Some(&namespace), &role.metadata.name);
     match state.storage.create(&key, &role).await {
         Ok(created) => Ok((StatusCode::CREATED, Json(created))),
-        Err(rusternetes_common::Error::AlreadyExists(_)) => Err(
-            rusternetes_common::Error::AlreadyExists(format!(
+        Err(rusternetes_common::Error::AlreadyExists(_)) => {
+            Err(rusternetes_common::Error::AlreadyExists(format!(
                 "roles \"{}\" already exists",
                 role.metadata.name
-            )),
-        ),
+            )))
+        }
         Err(e) => Err(e),
     }
 }
@@ -183,8 +183,14 @@ pub async fn list_roles(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_namespaced::<Role>(
-            state, auth_ctx, namespace, "roles", "rbac.authorization.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "roles",
+            "rbac.authorization.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing roles in namespace: {}", namespace);
@@ -220,8 +226,13 @@ pub async fn list_all_roles(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<Role>(
-            state, auth_ctx, "roles", "rbac.authorization.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "roles",
+            "rbac.authorization.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all roles");
@@ -288,12 +299,12 @@ pub async fn create_rolebinding(
     let key = build_key("rolebindings", Some(&namespace), &rolebinding.metadata.name);
     match state.storage.create(&key, &rolebinding).await {
         Ok(created) => Ok((StatusCode::CREATED, Json(created))),
-        Err(rusternetes_common::Error::AlreadyExists(_)) => Err(
-            rusternetes_common::Error::AlreadyExists(format!(
+        Err(rusternetes_common::Error::AlreadyExists(_)) => {
+            Err(rusternetes_common::Error::AlreadyExists(format!(
                 "rolebindings \"{}\" already exists",
                 rolebinding.metadata.name
-            )),
-        ),
+            )))
+        }
         Err(e) => Err(e),
     }
 }
@@ -421,8 +432,14 @@ pub async fn list_rolebindings(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_namespaced::<RoleBinding>(
-            state, auth_ctx, namespace, "rolebindings", "rbac.authorization.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "rolebindings",
+            "rbac.authorization.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing rolebindings in namespace: {}", namespace);

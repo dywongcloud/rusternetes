@@ -189,19 +189,37 @@ pub async fn list_podtemplates(
     use axum::response::IntoResponse;
 
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").cloned(),
             field_selector: params.get("fieldSelector").cloned(),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_namespaced::<PodTemplate>(
-            state, auth_ctx, namespace, "podtemplates", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "podtemplates",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing podtemplates in namespace: {}", namespace);
@@ -227,26 +245,31 @@ pub async fn list_podtemplates(
     // Apply pagination
     let limit = params.get("limit").and_then(|l| l.parse::<i64>().ok());
     let continue_token = params.get("continue").cloned();
-    let pagination_params = rusternetes_common::PaginationParams { limit, continue_token };
+    let pagination_params = rusternetes_common::PaginationParams {
+        limit,
+        continue_token,
+    };
     let resource_version = chrono::Utc::now().timestamp().to_string();
 
-    let paginated = match rusternetes_common::paginate(podtemplates, pagination_params, &resource_version) {
-        Ok(p) => p,
-        Err(e) => {
-            if e.message.contains("410 Gone") {
-                let mut status = rusternetes_common::Status::failure(&e.message, "Expired", 410);
-                if let Some(token) = e.fresh_continue_token {
-                    status.metadata = Some(rusternetes_common::ListMeta {
-                        resource_version: Some(resource_version),
-                        continue_token: Some(token),
-                        remaining_item_count: None,
-                    });
+    let paginated =
+        match rusternetes_common::paginate(podtemplates, pagination_params, &resource_version) {
+            Ok(p) => p,
+            Err(e) => {
+                if e.message.contains("410 Gone") {
+                    let mut status =
+                        rusternetes_common::Status::failure(&e.message, "Expired", 410);
+                    if let Some(token) = e.fresh_continue_token {
+                        status.metadata = Some(rusternetes_common::ListMeta {
+                            resource_version: Some(resource_version),
+                            continue_token: Some(token),
+                            remaining_item_count: None,
+                        });
+                    }
+                    return Ok((axum::http::StatusCode::GONE, Json(status)).into_response());
                 }
-                return Ok((axum::http::StatusCode::GONE, Json(status)).into_response());
+                return Err(rusternetes_common::Error::InvalidResource(e.message));
             }
-            return Err(rusternetes_common::Error::InvalidResource(e.message));
-        }
-    };
+        };
 
     let mut list = List::new("PodTemplateList", "v1", paginated.items);
     list.metadata.continue_token = paginated.continue_token;
@@ -264,19 +287,36 @@ pub async fn list_all_podtemplates(
     use axum::response::IntoResponse;
 
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").cloned(),
             field_selector: params.get("fieldSelector").cloned(),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_cluster_scoped::<PodTemplate>(
-            state, auth_ctx, "podtemplates", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "podtemplates",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all podtemplates");
@@ -300,26 +340,31 @@ pub async fn list_all_podtemplates(
     // Apply pagination
     let limit = params.get("limit").and_then(|l| l.parse::<i64>().ok());
     let continue_token = params.get("continue").cloned();
-    let pagination_params = rusternetes_common::PaginationParams { limit, continue_token };
+    let pagination_params = rusternetes_common::PaginationParams {
+        limit,
+        continue_token,
+    };
     let resource_version = chrono::Utc::now().timestamp().to_string();
 
-    let paginated = match rusternetes_common::paginate(podtemplates, pagination_params, &resource_version) {
-        Ok(p) => p,
-        Err(e) => {
-            if e.message.contains("410 Gone") {
-                let mut status = rusternetes_common::Status::failure(&e.message, "Expired", 410);
-                if let Some(token) = e.fresh_continue_token {
-                    status.metadata = Some(rusternetes_common::ListMeta {
-                        resource_version: Some(resource_version),
-                        continue_token: Some(token),
-                        remaining_item_count: None,
-                    });
+    let paginated =
+        match rusternetes_common::paginate(podtemplates, pagination_params, &resource_version) {
+            Ok(p) => p,
+            Err(e) => {
+                if e.message.contains("410 Gone") {
+                    let mut status =
+                        rusternetes_common::Status::failure(&e.message, "Expired", 410);
+                    if let Some(token) = e.fresh_continue_token {
+                        status.metadata = Some(rusternetes_common::ListMeta {
+                            resource_version: Some(resource_version),
+                            continue_token: Some(token),
+                            remaining_item_count: None,
+                        });
+                    }
+                    return Ok((axum::http::StatusCode::GONE, Json(status)).into_response());
                 }
-                return Ok((axum::http::StatusCode::GONE, Json(status)).into_response());
+                return Err(rusternetes_common::Error::InvalidResource(e.message));
             }
-            return Err(rusternetes_common::Error::InvalidResource(e.message));
-        }
-    };
+        };
 
     let mut list = List::new("PodTemplateList", "v1", paginated.items);
     list.metadata.continue_token = paginated.continue_token;

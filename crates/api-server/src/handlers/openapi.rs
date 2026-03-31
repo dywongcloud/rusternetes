@@ -2,7 +2,7 @@
 use crate::openapi::generate_openapi_spec;
 use axum::{
     body::Body,
-    http::{HeaderMap, StatusCode, header},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 
@@ -12,19 +12,33 @@ pub async fn get_openapi_spec() -> Response {
     // Return the root document that lists all available OpenAPI paths
     // In real K8s, this returns {"paths": {"/apis/apps/v1": {...}, ...}}
     let mut paths = serde_json::Map::new();
-    let path_entry = |gv: &str| serde_json::json!({"serverRelativeURL": format!("/openapi/v3/{}", gv)});
+    let path_entry =
+        |gv: &str| serde_json::json!({"serverRelativeURL": format!("/openapi/v3/{}", gv)});
     paths.insert("api/v1".into(), path_entry("api/v1"));
     for (group, version) in &[
-        ("apps", "v1"), ("batch", "v1"), ("networking.k8s.io", "v1"),
-        ("rbac.authorization.k8s.io", "v1"), ("storage.k8s.io", "v1"),
-        ("scheduling.k8s.io", "v1"), ("apiextensions.k8s.io", "v1"),
-        ("admissionregistration.k8s.io", "v1"), ("coordination.k8s.io", "v1"),
-        ("flowcontrol.apiserver.k8s.io", "v1"), ("certificates.k8s.io", "v1"),
-        ("discovery.k8s.io", "v1"), ("node.k8s.io", "v1"),
-        ("autoscaling", "v1"), ("autoscaling", "v2"), ("policy", "v1"),
-        ("resource.k8s.io", "v1"), ("events.k8s.io", "v1"),
+        ("apps", "v1"),
+        ("batch", "v1"),
+        ("networking.k8s.io", "v1"),
+        ("rbac.authorization.k8s.io", "v1"),
+        ("storage.k8s.io", "v1"),
+        ("scheduling.k8s.io", "v1"),
+        ("apiextensions.k8s.io", "v1"),
+        ("admissionregistration.k8s.io", "v1"),
+        ("coordination.k8s.io", "v1"),
+        ("flowcontrol.apiserver.k8s.io", "v1"),
+        ("certificates.k8s.io", "v1"),
+        ("discovery.k8s.io", "v1"),
+        ("node.k8s.io", "v1"),
+        ("autoscaling", "v1"),
+        ("autoscaling", "v2"),
+        ("policy", "v1"),
+        ("resource.k8s.io", "v1"),
+        ("events.k8s.io", "v1"),
     ] {
-        paths.insert(format!("apis/{}/{}", group, version), path_entry(&format!("apis/{}/{}", group, version)));
+        paths.insert(
+            format!("apis/{}/{}", group, version),
+            path_entry(&format!("apis/{}/{}", group, version)),
+        );
     }
     let root = serde_json::json!({"paths": paths});
     Response::builder()
@@ -64,7 +78,8 @@ pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
     let json_bytes = serde_json::to_vec(&spec).unwrap_or_default();
 
     // Check if client requests protobuf OpenAPI
-    let accept = headers.get(header::ACCEPT)
+    let accept = headers
+        .get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 

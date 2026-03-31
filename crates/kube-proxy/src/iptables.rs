@@ -8,7 +8,10 @@ use tracing::{debug, error, info, warn};
 /// won't apply to container traffic.
 fn detect_iptables_cmd() -> &'static str {
     // Try `iptables` first (nftables backend, used by Docker Desktop)
-    if let Ok(output) = Command::new("/usr/sbin/iptables").args(["-t", "nat", "-L", "PREROUTING", "-n"]).output() {
+    if let Ok(output) = Command::new("/usr/sbin/iptables")
+        .args(["-t", "nat", "-L", "PREROUTING", "-n"])
+        .output()
+    {
         let stdout = String::from_utf8_lossy(&output.stdout);
         // If the DOCKER chain jump exists in iptables (nftables), Docker is using this backend
         if stdout.contains("DOCKER") {
@@ -43,8 +46,17 @@ impl IptablesManager {
         // which means the module loaded fine.
         let recent_available = Command::new(&iptables_cmd)
             .args([
-                "-t", "nat", "-C", "OUTPUT", "-m", "recent", "--name", "__probe__",
-                "--rcheck", "-j", "RETURN",
+                "-t",
+                "nat",
+                "-C",
+                "OUTPUT",
+                "-m",
+                "recent",
+                "--name",
+                "__probe__",
+                "--rcheck",
+                "-j",
+                "RETURN",
             ])
             .output()
             .map(|o| {
@@ -55,7 +67,9 @@ impl IptablesManager {
         if recent_available {
             info!("xt_recent module is available, session affinity will use it");
         } else {
-            warn!("xt_recent module is NOT available, session affinity will fall back to direct DNAT");
+            warn!(
+                "xt_recent module is NOT available, session affinity will fall back to direct DNAT"
+            );
         }
         Self {
             services_chain: "RUSTERNETES-SERVICES".to_string(),
@@ -109,26 +123,49 @@ impl IptablesManager {
         // rewritten, so the return path bypasses NAT and the connection fails.
         let masq_check = Command::new(&self.iptables_cmd)
             .args([
-                "-t", "nat", "-C", "POSTROUTING",
-                "-m", "comment", "--comment", "rusternetes service hairpin masquerade",
-                "-s", "172.18.0.0/16", "-d", "172.18.0.0/16",
-                "-j", "MASQUERADE",
+                "-t",
+                "nat",
+                "-C",
+                "POSTROUTING",
+                "-m",
+                "comment",
+                "--comment",
+                "rusternetes service hairpin masquerade",
+                "-s",
+                "172.18.0.0/16",
+                "-d",
+                "172.18.0.0/16",
+                "-j",
+                "MASQUERADE",
             ])
             .output();
         if masq_check.map_or(true, |o| !o.status.success()) {
             let output = Command::new(&self.iptables_cmd)
                 .args([
-                    "-t", "nat", "-A", "POSTROUTING",
-                    "-m", "comment", "--comment", "rusternetes service hairpin masquerade",
-                    "-s", "172.18.0.0/16", "-d", "172.18.0.0/16",
-                    "-j", "MASQUERADE",
+                    "-t",
+                    "nat",
+                    "-A",
+                    "POSTROUTING",
+                    "-m",
+                    "comment",
+                    "--comment",
+                    "rusternetes service hairpin masquerade",
+                    "-s",
+                    "172.18.0.0/16",
+                    "-d",
+                    "172.18.0.0/16",
+                    "-j",
+                    "MASQUERADE",
                 ])
                 .output()
                 .context("Failed to add hairpin MASQUERADE rule")?;
             if output.status.success() {
                 info!("Added hairpin MASQUERADE rule for service traffic within Docker network");
             } else {
-                warn!("Failed to add hairpin MASQUERADE: {}", String::from_utf8_lossy(&output.stderr));
+                warn!(
+                    "Failed to add hairpin MASQUERADE: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
         }
 
@@ -138,26 +175,49 @@ impl IptablesManager {
         // conntrack, and the connection breaks (asymmetric routing).
         let nodeport_masq_check = Command::new(&self.iptables_cmd)
             .args([
-                "-t", "nat", "-C", "POSTROUTING",
-                "-m", "comment", "--comment", "rusternetes nodeport masquerade",
-                "-m", "addrtype", "--src-type", "LOCAL",
-                "-j", "MASQUERADE",
+                "-t",
+                "nat",
+                "-C",
+                "POSTROUTING",
+                "-m",
+                "comment",
+                "--comment",
+                "rusternetes nodeport masquerade",
+                "-m",
+                "addrtype",
+                "--src-type",
+                "LOCAL",
+                "-j",
+                "MASQUERADE",
             ])
             .output();
         if nodeport_masq_check.map_or(true, |o| !o.status.success()) {
             let output = Command::new(&self.iptables_cmd)
                 .args([
-                    "-t", "nat", "-A", "POSTROUTING",
-                    "-m", "comment", "--comment", "rusternetes nodeport masquerade",
-                    "-m", "addrtype", "--src-type", "LOCAL",
-                    "-j", "MASQUERADE",
+                    "-t",
+                    "nat",
+                    "-A",
+                    "POSTROUTING",
+                    "-m",
+                    "comment",
+                    "--comment",
+                    "rusternetes nodeport masquerade",
+                    "-m",
+                    "addrtype",
+                    "--src-type",
+                    "LOCAL",
+                    "-j",
+                    "MASQUERADE",
                 ])
                 .output()
                 .context("Failed to add NodePort MASQUERADE rule")?;
             if output.status.success() {
                 info!("Added MASQUERADE rule for NodePort traffic (local source)");
             } else {
-                warn!("Failed to add NodePort MASQUERADE: {}", String::from_utf8_lossy(&output.stderr));
+                warn!(
+                    "Failed to add NodePort MASQUERADE: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
         }
 
@@ -167,26 +227,49 @@ impl IptablesManager {
         // proper connection tracking.
         let dnat_masq_check = Command::new(&self.iptables_cmd)
             .args([
-                "-t", "nat", "-C", "POSTROUTING",
-                "-m", "comment", "--comment", "rusternetes DNAT traffic masquerade",
-                "-m", "conntrack", "--ctstate", "DNAT",
-                "-j", "MASQUERADE",
+                "-t",
+                "nat",
+                "-C",
+                "POSTROUTING",
+                "-m",
+                "comment",
+                "--comment",
+                "rusternetes DNAT traffic masquerade",
+                "-m",
+                "conntrack",
+                "--ctstate",
+                "DNAT",
+                "-j",
+                "MASQUERADE",
             ])
             .output();
         if dnat_masq_check.map_or(true, |o| !o.status.success()) {
             let output = Command::new(&self.iptables_cmd)
                 .args([
-                    "-t", "nat", "-A", "POSTROUTING",
-                    "-m", "comment", "--comment", "rusternetes DNAT traffic masquerade",
-                    "-m", "conntrack", "--ctstate", "DNAT",
-                    "-j", "MASQUERADE",
+                    "-t",
+                    "nat",
+                    "-A",
+                    "POSTROUTING",
+                    "-m",
+                    "comment",
+                    "--comment",
+                    "rusternetes DNAT traffic masquerade",
+                    "-m",
+                    "conntrack",
+                    "--ctstate",
+                    "DNAT",
+                    "-j",
+                    "MASQUERADE",
                 ])
                 .output()
                 .context("Failed to add DNAT MASQUERADE rule")?;
             if output.status.success() {
                 info!("Added MASQUERADE rule for all DNAT'd traffic");
             } else {
-                warn!("Failed to add DNAT MASQUERADE: {}", String::from_utf8_lossy(&output.stderr));
+                warn!(
+                    "Failed to add DNAT MASQUERADE: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
         }
 
@@ -350,12 +433,16 @@ impl IptablesManager {
         {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
-                if let Some(rest) = line.strip_prefix("Chain KUBE-SEP-")
+                if let Some(rest) = line
+                    .strip_prefix("Chain KUBE-SEP-")
                     .or_else(|| line.strip_prefix("Chain KUBE-NP-SEP-"))
                 {
                     // Extract chain name: "Chain KUBE-SEP-xxx (N references)"
                     let full_line = if line.starts_with("Chain KUBE-NP-SEP-") {
-                        format!("KUBE-NP-SEP-{}", rest.split_whitespace().next().unwrap_or(""))
+                        format!(
+                            "KUBE-NP-SEP-{}",
+                            rest.split_whitespace().next().unwrap_or("")
+                        )
                     } else {
                         format!("KUBE-SEP-{}", rest.split_whitespace().next().unwrap_or(""))
                     };
@@ -466,18 +553,10 @@ impl IptablesManager {
             // Create per-endpoint chains with separate recent-set and DNAT rules.
             let timeout_str = affinity_timeout.to_string();
             for (idx, (endpoint_ip, endpoint_port)) in endpoints.iter().enumerate() {
-                let sep_chain = format!(
-                    "KUBE-SEP-{}-{}-{}",
-                    service_ip.replace('.', ""),
-                    port,
-                    idx
-                );
-                let recent_name = format!(
-                    "AFFINITY-{}-{}-{}",
-                    service_ip.replace('.', ""),
-                    port,
-                    idx
-                );
+                let sep_chain =
+                    format!("KUBE-SEP-{}-{}-{}", service_ip.replace('.', ""), port, idx);
+                let recent_name =
+                    format!("AFFINITY-{}-{}-{}", service_ip.replace('.', ""), port, idx);
                 let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
 
                 // Create the per-endpoint chain
@@ -491,8 +570,15 @@ impl IptablesManager {
                 // terminate — no -j target, so processing continues to next rule)
                 self.run_iptables_logged(
                     &[
-                        "-t", "nat", "-A", &sep_chain, "-m", "recent", "--name",
-                        &recent_name, "--set",
+                        "-t",
+                        "nat",
+                        "-A",
+                        &sep_chain,
+                        "-m",
+                        "recent",
+                        "--name",
+                        &recent_name,
+                        "--set",
                     ],
                     &format!("SEP {} recent set", sep_chain),
                 );
@@ -502,8 +588,14 @@ impl IptablesManager {
                 // even if the recent module has issues with a specific rule.
                 self.run_iptables_logged(
                     &[
-                        "-t", "nat", "-A", &sep_chain, "-j", "DNAT",
-                        "--to-destination", &dnat_target,
+                        "-t",
+                        "nat",
+                        "-A",
+                        &sep_chain,
+                        "-j",
+                        "DNAT",
+                        "--to-destination",
+                        &dnat_target,
                     ],
                     &format!("SEP {} DNAT -> {}", sep_chain, dnat_target),
                 );
@@ -513,9 +605,24 @@ impl IptablesManager {
                 let port_str = port.to_string();
                 self.run_iptables_logged(
                     &[
-                        "-t", "nat", "-A", &self.services_chain, "-d", service_ip,
-                        "-p", &proto, "--dport", &port_str, "-m", "recent", "--name",
-                        &recent_name, "--rcheck", "--seconds", &timeout_str, "-j",
+                        "-t",
+                        "nat",
+                        "-A",
+                        &self.services_chain,
+                        "-d",
+                        service_ip,
+                        "-p",
+                        &proto,
+                        "--dport",
+                        &port_str,
+                        "-m",
+                        "recent",
+                        "--name",
+                        &recent_name,
+                        "--rcheck",
+                        "--seconds",
+                        &timeout_str,
+                        "-j",
                         &sep_chain,
                     ],
                     &format!("affinity recent check for {}", sep_chain),
@@ -527,15 +634,19 @@ impl IptablesManager {
             let port_str = port.to_string();
             for (idx, _) in endpoints.iter().enumerate() {
                 let is_last = idx == n - 1;
-                let sep_chain = format!(
-                    "KUBE-SEP-{}-{}-{}",
-                    service_ip.replace('.', ""),
-                    port,
-                    idx
-                );
+                let sep_chain =
+                    format!("KUBE-SEP-{}-{}-{}", service_ip.replace('.', ""), port, idx);
                 let mut args = vec![
-                    "-t", "nat", "-A", &self.services_chain, "-d", service_ip, "-p",
-                    &proto, "--dport", &port_str,
+                    "-t",
+                    "nat",
+                    "-A",
+                    &self.services_chain,
+                    "-d",
+                    service_ip,
+                    "-p",
+                    &proto,
+                    "--dport",
+                    &port_str,
                 ];
                 let prob_str;
                 if !is_last {
@@ -543,7 +654,11 @@ impl IptablesManager {
                     let prob = 1.0 / (n - idx) as f64;
                     prob_str = format!("{:.10}", prob);
                     args.extend_from_slice(&[
-                        "-m", "statistic", "--mode", "random", "--probability",
+                        "-m",
+                        "statistic",
+                        "--mode",
+                        "random",
+                        "--probability",
                         &prob_str,
                     ]);
                 }
@@ -562,8 +677,16 @@ impl IptablesManager {
                 let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
 
                 let mut args = vec![
-                    "-t", "nat", "-A", &self.services_chain, "-d", service_ip, "-p",
-                    &proto, "--dport", &port_str,
+                    "-t",
+                    "nat",
+                    "-A",
+                    &self.services_chain,
+                    "-d",
+                    service_ip,
+                    "-p",
+                    &proto,
+                    "--dport",
+                    &port_str,
                 ];
                 let prob_str;
                 if !is_last {
@@ -571,14 +694,24 @@ impl IptablesManager {
                     let prob = 1.0 / (n - idx) as f64;
                     prob_str = format!("{:.10}", prob);
                     args.extend_from_slice(&[
-                        "-m", "statistic", "--mode", "random", "--probability",
+                        "-m",
+                        "statistic",
+                        "--mode",
+                        "random",
+                        "--probability",
                         &prob_str,
                     ]);
                 }
                 let comment = format!("rusternetes service {}:{}", service_ip, port);
                 args.extend_from_slice(&[
-                    "-j", "DNAT", "--to-destination", &dnat_target, "-m", "comment",
-                    "--comment", &comment,
+                    "-j",
+                    "DNAT",
+                    "--to-destination",
+                    &dnat_target,
+                    "-m",
+                    "comment",
+                    "--comment",
+                    &comment,
                 ]);
                 let output = Command::new(&self.iptables_cmd)
                     .args(&args)
@@ -642,8 +775,15 @@ impl IptablesManager {
                 // Rule 1: set recent mark (non-terminating)
                 self.run_iptables_logged(
                     &[
-                        "-t", "nat", "-A", &sep_chain, "-m", "recent", "--name",
-                        &recent_name, "--set",
+                        "-t",
+                        "nat",
+                        "-A",
+                        &sep_chain,
+                        "-m",
+                        "recent",
+                        "--name",
+                        &recent_name,
+                        "--set",
                     ],
                     &format!("NP SEP {} recent set", sep_chain),
                 );
@@ -651,8 +791,14 @@ impl IptablesManager {
                 // Rule 2: DNAT (terminating)
                 self.run_iptables_logged(
                     &[
-                        "-t", "nat", "-A", &sep_chain, "-j", "DNAT",
-                        "--to-destination", &dnat_target,
+                        "-t",
+                        "nat",
+                        "-A",
+                        &sep_chain,
+                        "-j",
+                        "DNAT",
+                        "--to-destination",
+                        &dnat_target,
                     ],
                     &format!("NP SEP {} DNAT -> {}", sep_chain, dnat_target),
                 );
@@ -661,9 +807,22 @@ impl IptablesManager {
                 let node_port_str = node_port.to_string();
                 self.run_iptables_logged(
                     &[
-                        "-t", "nat", "-A", &self.nodeports_chain, "-p", &proto,
-                        "--dport", &node_port_str, "-m", "recent", "--name",
-                        &recent_name, "--rcheck", "--seconds", &timeout_str, "-j",
+                        "-t",
+                        "nat",
+                        "-A",
+                        &self.nodeports_chain,
+                        "-p",
+                        &proto,
+                        "--dport",
+                        &node_port_str,
+                        "-m",
+                        "recent",
+                        "--name",
+                        &recent_name,
+                        "--rcheck",
+                        "--seconds",
+                        &timeout_str,
+                        "-j",
                         &sep_chain,
                     ],
                     &format!("NP affinity recent check for {}", sep_chain),
@@ -676,7 +835,13 @@ impl IptablesManager {
                 let is_last = idx == n - 1;
                 let sep_chain = format!("KUBE-NP-SEP-{}-{}", node_port, idx);
                 let mut args = vec![
-                    "-t", "nat", "-A", &self.nodeports_chain, "-p", &proto, "--dport",
+                    "-t",
+                    "nat",
+                    "-A",
+                    &self.nodeports_chain,
+                    "-p",
+                    &proto,
+                    "--dport",
                     &node_port_str,
                 ];
                 let prob_str;
@@ -684,7 +849,11 @@ impl IptablesManager {
                     let prob = 1.0 / (n - idx) as f64;
                     prob_str = format!("{:.10}", prob);
                     args.extend_from_slice(&[
-                        "-m", "statistic", "--mode", "random", "--probability",
+                        "-m",
+                        "statistic",
+                        "--mode",
+                        "random",
+                        "--probability",
                         &prob_str,
                     ]);
                 }
@@ -943,12 +1112,7 @@ mod tests {
         let service_ip = "10.96.0.1";
         let port: u16 = 80;
         let idx = 0;
-        let chain = format!(
-            "KUBE-SEP-{}-{}-{}",
-            service_ip.replace('.', ""),
-            port,
-            idx
-        );
+        let chain = format!("KUBE-SEP-{}-{}-{}", service_ip.replace('.', ""), port, idx);
         assert_eq!(chain, "KUBE-SEP-109601-80-0");
 
         // Verify chain name format for NodePort

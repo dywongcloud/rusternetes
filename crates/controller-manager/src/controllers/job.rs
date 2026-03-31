@@ -97,11 +97,16 @@ impl<S: Storage> JobController<S> {
             .collect();
 
         // Release pods whose labels no longer match the Job selector
-        let selector = job.spec.selector.as_ref().and_then(|s| s.match_labels.as_ref());
+        let selector = job
+            .spec
+            .selector
+            .as_ref()
+            .and_then(|s| s.match_labels.as_ref());
         for pod in &job_pods {
             if let Some(sel) = selector {
                 let labels = pod.metadata.labels.as_ref();
-                let matches = labels.map_or(false, |l| sel.iter().all(|(k, v)| l.get(k) == Some(v)));
+                let matches =
+                    labels.map_or(false, |l| sel.iter().all(|(k, v)| l.get(k) == Some(v)));
                 if !matches {
                     // Pod no longer matches selector — release it by removing ownerReference
                     let mut released = pod.clone();
@@ -112,7 +117,10 @@ impl<S: Storage> JobController<S> {
                     if let Err(e) = self.storage.update(&pod_key, &released).await {
                         tracing::warn!("Failed to release pod {}: {}", pod.metadata.name, e);
                     } else {
-                        info!("Released pod {} from job {}/{} (labels no longer match)", pod.metadata.name, namespace, name);
+                        info!(
+                            "Released pod {} from job {}/{} (labels no longer match)",
+                            pod.metadata.name, namespace, name
+                        );
                     }
                     continue;
                 }
@@ -121,7 +129,10 @@ impl<S: Storage> JobController<S> {
 
         // Adopt orphaned pods — re-add ownerReference if pod matches by label but not by ownerRef
         for pod in &job_pods {
-            let has_owner_ref = pod.metadata.owner_references.as_ref()
+            let has_owner_ref = pod
+                .metadata
+                .owner_references
+                .as_ref()
                 .map(|refs| refs.iter().any(|r| &r.uid == job_uid))
                 .unwrap_or(false);
             if !has_owner_ref {
@@ -134,14 +145,19 @@ impl<S: Storage> JobController<S> {
                     controller: Some(true),
                     block_owner_deletion: Some(true),
                 };
-                adopted_pod.metadata.owner_references
+                adopted_pod
+                    .metadata
+                    .owner_references
                     .get_or_insert_with(Vec::new)
                     .push(owner_ref);
                 let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
                 if let Err(e) = self.storage.update(&pod_key, &adopted_pod).await {
                     tracing::warn!("Failed to adopt pod {}: {}", pod.metadata.name, e);
                 } else {
-                    info!("Adopted orphaned pod {} for job {}/{}", pod.metadata.name, namespace, name);
+                    info!(
+                        "Adopted orphaned pod {} for job {}/{}",
+                        pod.metadata.name, namespace, name
+                    );
                 }
             }
         }
@@ -171,7 +187,10 @@ impl<S: Storage> JobController<S> {
                     if matches!(phase, Some(Phase::Running) | Some(Phase::Pending)) {
                         let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
                         let _ = self.storage.delete(&pod_key).await;
-                        info!("Suspended job {}/{}: deleted active pod {}", namespace, name, pod.metadata.name);
+                        info!(
+                            "Suspended job {}/{}: deleted active pod {}",
+                            namespace, name, pod.metadata.name
+                        );
                     }
                 }
             }
@@ -200,9 +219,14 @@ impl<S: Storage> JobController<S> {
         // Handle activeDeadlineSeconds — fail the job if it has been active too long
         if let Some(deadline) = job.spec.active_deadline_seconds {
             if let Some(start) = job.status.as_ref().and_then(|s| s.start_time) {
-                let elapsed = chrono::Utc::now().signed_duration_since(start).num_seconds();
+                let elapsed = chrono::Utc::now()
+                    .signed_duration_since(start)
+                    .num_seconds();
                 if elapsed > deadline {
-                    warn!("Job {}/{} exceeded activeDeadlineSeconds ({} > {})", namespace, name, elapsed, deadline);
+                    warn!(
+                        "Job {}/{} exceeded activeDeadlineSeconds ({} > {})",
+                        namespace, name, elapsed, deadline
+                    );
                     // Delete all active pods
                     for pod in job_pods.iter() {
                         let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
@@ -221,7 +245,10 @@ impl<S: Storage> JobController<S> {
                             last_probe_time: Some(chrono::Utc::now()),
                             last_transition_time: Some(chrono::Utc::now()),
                             reason: Some("DeadlineExceeded".to_string()),
-                            message: Some(format!("Job was active longer than specified deadline of {} seconds", deadline)),
+                            message: Some(format!(
+                                "Job was active longer than specified deadline of {} seconds",
+                                deadline
+                            )),
                         }]),
                         start_time: job.status.as_ref().and_then(|s| s.start_time),
                         completion_time: Some(chrono::Utc::now()),
@@ -241,11 +268,15 @@ impl<S: Storage> JobController<S> {
 
         // Helper: extract completion index from a pod
         fn get_pod_index(pod: &Pod) -> Option<i32> {
-            pod.metadata.annotations.as_ref()
+            pod.metadata
+                .annotations
+                .as_ref()
                 .and_then(|a| a.get("batch.kubernetes.io/job-completion-index"))
                 .and_then(|v| v.parse::<i32>().ok())
                 .or_else(|| {
-                    pod.metadata.labels.as_ref()
+                    pod.metadata
+                        .labels
+                        .as_ref()
                         .and_then(|l| l.get("batch.kubernetes.io/job-completion-index"))
                         .and_then(|v| v.parse::<i32>().ok())
                 })
@@ -305,14 +336,23 @@ impl<S: Storage> JobController<S> {
                         continue;
                     }
                     // Get container exit codes
-                    let exit_codes: Vec<i32> = pod.status.as_ref()
+                    let exit_codes: Vec<i32> = pod
+                        .status
+                        .as_ref()
                         .and_then(|s| s.container_statuses.as_ref())
-                        .map(|cs| cs.iter().filter_map(|c| {
-                            match &c.state {
-                                Some(rusternetes_common::resources::ContainerState::Terminated { exit_code, .. }) => Some(*exit_code),
-                                _ => None,
-                            }
-                        }).collect())
+                        .map(|cs| {
+                            cs.iter()
+                                .filter_map(|c| match &c.state {
+                                    Some(
+                                        rusternetes_common::resources::ContainerState::Terminated {
+                                            exit_code,
+                                            ..
+                                        },
+                                    ) => Some(*exit_code),
+                                    _ => None,
+                                })
+                                .collect()
+                        })
                         .unwrap_or_default();
 
                     for rule in rules {
@@ -322,17 +362,23 @@ impl<S: Storage> JobController<S> {
 
                         // Check onExitCodes
                         if let Some(on_exit) = rule.get("onExitCodes") {
-                            let operator = on_exit.get("operator").and_then(|o| o.as_str()).unwrap_or("In");
-                            let values: Vec<i32> = on_exit.get("values")
+                            let operator = on_exit
+                                .get("operator")
+                                .and_then(|o| o.as_str())
+                                .unwrap_or("In");
+                            let values: Vec<i32> = on_exit
+                                .get("values")
                                 .and_then(|v| v.as_array())
-                                .map(|arr| arr.iter().filter_map(|v| v.as_i64().map(|i| i as i32)).collect())
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_i64().map(|i| i as i32))
+                                        .collect()
+                                })
                                 .unwrap_or_default();
-                            rule_matched = exit_codes.iter().any(|code| {
-                                match operator {
-                                    "In" => values.contains(code),
-                                    "NotIn" => !values.contains(code),
-                                    _ => false,
-                                }
+                            rule_matched = exit_codes.iter().any(|code| match operator {
+                                "In" => values.contains(code),
+                                "NotIn" => !values.contains(code),
+                                _ => false,
                             });
                         }
 
@@ -340,14 +386,23 @@ impl<S: Storage> JobController<S> {
                         if !rule_matched {
                             if let Some(on_conditions) = rule.get("onPodConditions") {
                                 if let Some(conditions) = on_conditions.as_array() {
-                                    let pod_conditions = pod.status.as_ref()
-                                        .and_then(|s| s.conditions.as_ref());
+                                    let pod_conditions =
+                                        pod.status.as_ref().and_then(|s| s.conditions.as_ref());
                                     rule_matched = conditions.iter().any(|cond| {
-                                        let ctype = cond.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                                        let cstatus = cond.get("status").and_then(|s| s.as_str()).unwrap_or("True");
-                                        pod_conditions.map(|pcs| pcs.iter().any(|pc| {
-                                            pc.condition_type == ctype && pc.status == cstatus
-                                        })).unwrap_or(false)
+                                        let ctype =
+                                            cond.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                                        let cstatus = cond
+                                            .get("status")
+                                            .and_then(|s| s.as_str())
+                                            .unwrap_or("True");
+                                        pod_conditions
+                                            .map(|pcs| {
+                                                pcs.iter().any(|pc| {
+                                                    pc.condition_type == ctype
+                                                        && pc.status == cstatus
+                                                })
+                                            })
+                                            .unwrap_or(false)
                                     });
                                 }
                             }
@@ -357,7 +412,9 @@ impl<S: Storage> JobController<S> {
                             match action {
                                 "FailJob" => {
                                     pod_failure_policy_triggered = true;
-                                    pod_failure_message = "Pod failed with exit code matching FailJob rule".to_string();
+                                    pod_failure_message =
+                                        "Pod failed with exit code matching FailJob rule"
+                                            .to_string();
                                     break;
                                 }
                                 "FailIndex" => {
@@ -372,7 +429,9 @@ impl<S: Storage> JobController<S> {
                             }
                         }
                     }
-                    if pod_failure_policy_triggered { break; }
+                    if pod_failure_policy_triggered {
+                        break;
+                    }
                 }
             }
         }
@@ -402,7 +461,10 @@ impl<S: Storage> JobController<S> {
         }
 
         // Merge FailIndex and backoff-per-index failed sets
-        let all_failed_index_set: HashSet<i32> = fail_index_set.union(&backoff_failed_index_set).copied().collect();
+        let all_failed_index_set: HashSet<i32> = fail_index_set
+            .union(&backoff_failed_index_set)
+            .copied()
+            .collect();
 
         let failed_indexes: Option<String> = if !all_failed_index_set.is_empty() {
             let mut sorted: Vec<i32> = all_failed_index_set.iter().copied().collect();
@@ -416,7 +478,10 @@ impl<S: Storage> JobController<S> {
         let succeeded_index_count = if is_indexed {
             let mut idx_set: HashSet<i32> = HashSet::new();
             for pod in job_pods.iter() {
-                if matches!(pod.status.as_ref().and_then(|s| s.phase.as_ref()), Some(Phase::Succeeded)) {
+                if matches!(
+                    pod.status.as_ref().and_then(|s| s.phase.as_ref()),
+                    Some(Phase::Succeeded)
+                ) {
                     if let Some(idx) = get_pod_index(pod) {
                         idx_set.insert(idx);
                     }
@@ -448,7 +513,10 @@ impl<S: Storage> JobController<S> {
                 if backoff_limit_per_index.is_none() && fail_index_set.is_empty() {
                     let mut failed_idx_set: HashSet<i32> = HashSet::new();
                     for pod in job_pods.iter() {
-                        if matches!(pod.status.as_ref().and_then(|s| s.phase.as_ref()), Some(Phase::Failed)) {
+                        if matches!(
+                            pod.status.as_ref().and_then(|s| s.phase.as_ref()),
+                            Some(Phase::Failed)
+                        ) {
                             if let Some(index) = get_pod_index(pod) {
                                 failed_idx_set.insert(index);
                             }
@@ -466,19 +534,18 @@ impl<S: Storage> JobController<S> {
         };
 
         // For backoffLimitPerIndex, job fails when all indexes are either succeeded or failed
-        let is_failed = pod_failure_policy_triggered || max_failed_indexes_exceeded || if backoff_limit_per_index.is_some() && is_indexed {
-            let completed_count = succeeded_index_count;
-            let failed_count = all_failed_index_set.len() as i32;
-            (completed_count + failed_count) >= completions
-        } else {
-            failed > backoff_limit
-        };
+        let is_failed = pod_failure_policy_triggered
+            || max_failed_indexes_exceeded
+            || if backoff_limit_per_index.is_some() && is_indexed {
+                let completed_count = succeeded_index_count;
+                let failed_count = all_failed_index_set.len() as i32;
+                (completed_count + failed_count) >= completions
+            } else {
+                failed > backoff_limit
+            };
 
         // Preserve the existing start_time if the job was already started
-        let existing_start_time = job
-            .status
-            .as_ref()
-            .and_then(|s| s.start_time);
+        let existing_start_time = job.status.as_ref().and_then(|s| s.start_time);
 
         // Set start_time when the job first has any pods (active, succeeded, or failed)
         let start_time = if active > 0 || succeeded > 0 || failed > 0 {
@@ -491,7 +558,9 @@ impl<S: Storage> JobController<S> {
         let success_policy_met = if let Some(ref policy) = job.spec.success_policy {
             if let Some(rules) = policy.get("rules").and_then(|r| r.as_array()) {
                 rules.iter().any(|rule| {
-                    let indexes_ok = if let Some(succeeded_indexes_str) = rule.get("succeededIndexes").and_then(|s| s.as_str()) {
+                    let indexes_ok = if let Some(succeeded_indexes_str) =
+                        rule.get("succeededIndexes").and_then(|s| s.as_str())
+                    {
                         // Parse required indexes and check they are all in completed set
                         let completed = completed_indexes.as_deref().unwrap_or("");
                         let completed_set: HashSet<i32> = parse_index_ranges(completed);
@@ -501,14 +570,16 @@ impl<S: Storage> JobController<S> {
                         true // No index constraint
                     };
 
-                    let count_ok = if let Some(count) = rule.get("succeededCount").and_then(|c| c.as_i64()) {
-                        succeeded_index_count >= count as i32
-                    } else {
-                        true // No count constraint
-                    };
+                    let count_ok =
+                        if let Some(count) = rule.get("succeededCount").and_then(|c| c.as_i64()) {
+                            succeeded_index_count >= count as i32
+                        } else {
+                            true // No count constraint
+                        };
 
                     // If rule has neither succeededIndexes nor succeededCount, match on all completions
-                    let has_criteria = rule.get("succeededIndexes").is_some() || rule.get("succeededCount").is_some();
+                    let has_criteria = rule.get("succeededIndexes").is_some()
+                        || rule.get("succeededCount").is_some();
                     if has_criteria {
                         indexes_ok && count_ok
                     } else {
@@ -605,11 +676,23 @@ impl<S: Storage> JobController<S> {
             let (reason, message) = if pod_failure_policy_triggered {
                 ("PodFailurePolicy".to_string(), pod_failure_message.clone())
             } else if max_failed_indexes_exceeded {
-                ("MaxFailedIndexesExceeded".to_string(), "Job has exceeded the maximum number of failed indexes".to_string())
+                (
+                    "MaxFailedIndexesExceeded".to_string(),
+                    "Job has exceeded the maximum number of failed indexes".to_string(),
+                )
             } else if backoff_limit_per_index.is_some() && is_indexed {
-                ("FailedIndexes".to_string(), format!("Job has failed indexes: {}", failed_indexes.as_deref().unwrap_or("")))
+                (
+                    "FailedIndexes".to_string(),
+                    format!(
+                        "Job has failed indexes: {}",
+                        failed_indexes.as_deref().unwrap_or("")
+                    ),
+                )
             } else {
-                ("BackoffLimitExceeded".to_string(), format!("Job has reached backoff limit of {}", backoff_limit))
+                (
+                    "BackoffLimitExceeded".to_string(),
+                    format!("Job has reached backoff limit of {}", backoff_limit),
+                )
             };
 
             job.status = Some(JobStatus {
@@ -644,7 +727,10 @@ impl<S: Storage> JobController<S> {
                     let mut active_or_succeeded_indexes: HashSet<i32> = HashSet::new();
                     for pod in job_pods.iter() {
                         let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
-                        if matches!(phase, Some(Phase::Running) | Some(Phase::Pending) | Some(Phase::Succeeded)) {
+                        if matches!(
+                            phase,
+                            Some(Phase::Running) | Some(Phase::Pending) | Some(Phase::Succeeded)
+                        ) {
                             if let Some(idx) = get_pod_index(pod) {
                                 active_or_succeeded_indexes.insert(idx);
                             }
@@ -669,8 +755,7 @@ impl<S: Storage> JobController<S> {
                 };
 
                 for (i, idx) in indexes_to_create.iter().enumerate() {
-                    self.create_pod(job, namespace, *idx, is_indexed)
-                        .await?;
+                    self.create_pod(job, namespace, *idx, is_indexed).await?;
                     info!(
                         "Created pod for Job {}/{} ({}/{})",
                         namespace,
@@ -716,8 +801,12 @@ impl<S: Storage> JobController<S> {
             // update path overwrites the completion status.
             let existing_conditions = job.status.as_ref().and_then(|s| s.conditions.clone());
             let existing_completion = job.status.as_ref().and_then(|s| s.completion_time);
-            let already_complete = existing_conditions.as_ref()
-                .map(|c| c.iter().any(|cond| cond.condition_type == "Complete" && cond.status == "True"))
+            let already_complete = existing_conditions
+                .as_ref()
+                .map(|c| {
+                    c.iter()
+                        .any(|cond| cond.condition_type == "Complete" && cond.status == "True")
+                })
                 .unwrap_or(false);
 
             if !already_complete {
@@ -745,7 +834,13 @@ impl<S: Storage> JobController<S> {
         Ok(())
     }
 
-    async fn create_pod(&self, job: &Job, namespace: &str, index: i32, is_indexed: bool) -> Result<()> {
+    async fn create_pod(
+        &self,
+        job: &Job,
+        namespace: &str,
+        index: i32,
+        is_indexed: bool,
+    ) -> Result<()> {
         let job_name = &job.metadata.name;
         let pod_name = format!(
             "{}-{}",
@@ -763,7 +858,10 @@ impl<S: Storage> JobController<S> {
         labels.insert("job-name".to_string(), job_name.clone());
         labels.insert("controller-uid".to_string(), job.metadata.uid.clone());
         if is_indexed {
-            labels.insert("batch.kubernetes.io/job-completion-index".to_string(), index.to_string());
+            labels.insert(
+                "batch.kubernetes.io/job-completion-index".to_string(),
+                index.to_string(),
+            );
         }
 
         let mut annotations = template
@@ -772,7 +870,10 @@ impl<S: Storage> JobController<S> {
             .and_then(|m| m.annotations.clone())
             .unwrap_or_default();
         if is_indexed {
-            annotations.insert("batch.kubernetes.io/job-completion-index".to_string(), index.to_string());
+            annotations.insert(
+                "batch.kubernetes.io/job-completion-index".to_string(),
+                index.to_string(),
+            );
         }
 
         let mut spec = template.spec.clone();
@@ -867,7 +968,10 @@ fn parse_index_ranges(s: &str) -> HashSet<i32> {
         if part.contains('-') {
             let bounds: Vec<&str> = part.split('-').collect();
             if bounds.len() == 2 {
-                if let (Ok(start), Ok(end)) = (bounds[0].trim().parse::<i32>(), bounds[1].trim().parse::<i32>()) {
+                if let (Ok(start), Ok(end)) = (
+                    bounds[0].trim().parse::<i32>(),
+                    bounds[1].trim().parse::<i32>(),
+                ) {
                     for i in start..=end {
                         set.insert(i);
                     }
@@ -913,7 +1017,9 @@ fn format_index_ranges(indexes: &[i32]) -> String {
 mod tests {
     use super::*;
     use rusternetes_common::resources::workloads::{Job, JobSpec, PodTemplateSpec};
-    use rusternetes_common::resources::{ContainerState, ContainerStatus, Pod, PodSpec, PodStatus, Container};
+    use rusternetes_common::resources::{
+        Container, ContainerState, ContainerStatus, Pod, PodSpec, PodStatus,
+    };
     use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
     use rusternetes_storage::MemoryStorage;
     use std::collections::HashMap;
@@ -1025,20 +1131,40 @@ mod tests {
         }
     }
 
-    fn make_indexed_pod(name: &str, namespace: &str, phase: Phase, job_name: &str, job_uid: &str, index: i32) -> Pod {
+    fn make_indexed_pod(
+        name: &str,
+        namespace: &str,
+        phase: Phase,
+        job_name: &str,
+        job_uid: &str,
+        index: i32,
+    ) -> Pod {
         let mut pod = make_pod(name, namespace, phase, job_name, job_uid);
         pod.metadata.annotations = Some({
             let mut m = HashMap::new();
-            m.insert("batch.kubernetes.io/job-completion-index".to_string(), index.to_string());
+            m.insert(
+                "batch.kubernetes.io/job-completion-index".to_string(),
+                index.to_string(),
+            );
             m
         });
         if let Some(ref mut labels) = pod.metadata.labels {
-            labels.insert("batch.kubernetes.io/job-completion-index".to_string(), index.to_string());
+            labels.insert(
+                "batch.kubernetes.io/job-completion-index".to_string(),
+                index.to_string(),
+            );
         }
         pod
     }
 
-    fn make_failed_pod_with_exit_code(name: &str, namespace: &str, job_name: &str, job_uid: &str, index: i32, exit_code: i32) -> Pod {
+    fn make_failed_pod_with_exit_code(
+        name: &str,
+        namespace: &str,
+        job_name: &str,
+        job_uid: &str,
+        index: i32,
+        exit_code: i32,
+    ) -> Pod {
         let mut pod = make_indexed_pod(name, namespace, Phase::Failed, job_name, job_uid, index);
         if let Some(ref mut status) = pod.status {
             status.container_statuses = Some(vec![ContainerStatus {
@@ -1102,10 +1228,22 @@ mod tests {
     #[test]
     fn test_parse_index_ranges() {
         assert_eq!(parse_index_ranges(""), HashSet::new());
-        assert_eq!(parse_index_ranges("0"), [0].into_iter().collect::<HashSet<i32>>());
-        assert_eq!(parse_index_ranges("0,1,2"), [0, 1, 2].into_iter().collect::<HashSet<i32>>());
-        assert_eq!(parse_index_ranges("0-3"), [0, 1, 2, 3].into_iter().collect::<HashSet<i32>>());
-        assert_eq!(parse_index_ranges("0,2-4,7"), [0, 2, 3, 4, 7].into_iter().collect::<HashSet<i32>>());
+        assert_eq!(
+            parse_index_ranges("0"),
+            [0].into_iter().collect::<HashSet<i32>>()
+        );
+        assert_eq!(
+            parse_index_ranges("0,1,2"),
+            [0, 1, 2].into_iter().collect::<HashSet<i32>>()
+        );
+        assert_eq!(
+            parse_index_ranges("0-3"),
+            [0, 1, 2, 3].into_iter().collect::<HashSet<i32>>()
+        );
+        assert_eq!(
+            parse_index_ranges("0,2-4,7"),
+            [0, 2, 3, 4, 7].into_iter().collect::<HashSet<i32>>()
+        );
     }
 
     #[test]
@@ -1131,18 +1269,58 @@ mod tests {
         storage.create(job_key, &job).await.unwrap();
 
         // Index 0 succeeded
-        let pod0 = make_indexed_pod("pod-0", "default", Phase::Succeeded, "test-job", "job-uid-1", 0);
-        storage.create("/registry/pods/default/pod-0", &pod0).await.unwrap();
+        let pod0 = make_indexed_pod(
+            "pod-0",
+            "default",
+            Phase::Succeeded,
+            "test-job",
+            "job-uid-1",
+            0,
+        );
+        storage
+            .create("/registry/pods/default/pod-0", &pod0)
+            .await
+            .unwrap();
 
         // Index 1 failed twice (exceeds backoffLimitPerIndex=1)
-        let pod1a = make_indexed_pod("pod-1a", "default", Phase::Failed, "test-job", "job-uid-1", 1);
-        storage.create("/registry/pods/default/pod-1a", &pod1a).await.unwrap();
-        let pod1b = make_indexed_pod("pod-1b", "default", Phase::Failed, "test-job", "job-uid-1", 1);
-        storage.create("/registry/pods/default/pod-1b", &pod1b).await.unwrap();
+        let pod1a = make_indexed_pod(
+            "pod-1a",
+            "default",
+            Phase::Failed,
+            "test-job",
+            "job-uid-1",
+            1,
+        );
+        storage
+            .create("/registry/pods/default/pod-1a", &pod1a)
+            .await
+            .unwrap();
+        let pod1b = make_indexed_pod(
+            "pod-1b",
+            "default",
+            Phase::Failed,
+            "test-job",
+            "job-uid-1",
+            1,
+        );
+        storage
+            .create("/registry/pods/default/pod-1b", &pod1b)
+            .await
+            .unwrap();
 
         // Index 2 succeeded
-        let pod2 = make_indexed_pod("pod-2", "default", Phase::Succeeded, "test-job", "job-uid-1", 2);
-        storage.create("/registry/pods/default/pod-2", &pod2).await.unwrap();
+        let pod2 = make_indexed_pod(
+            "pod-2",
+            "default",
+            Phase::Succeeded,
+            "test-job",
+            "job-uid-1",
+            2,
+        );
+        storage
+            .create("/registry/pods/default/pod-2", &pod2)
+            .await
+            .unwrap();
 
         let controller = JobController::new(storage.clone());
         let mut job: Job = storage.get(job_key).await.unwrap();
@@ -1154,9 +1332,15 @@ mod tests {
 
         // Job should be failed because: succeeded(0,2) + failed(1) = 3 = completions
         // Index 1 exceeded backoffLimitPerIndex
-        assert!(status.conditions.as_ref().unwrap().iter().any(|c|
-            c.condition_type == "Failed" && c.status == "True"
-        ), "Job should be marked as Failed");
+        assert!(
+            status
+                .conditions
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|c| c.condition_type == "Failed" && c.status == "True"),
+            "Job should be marked as Failed"
+        );
 
         // Failed indexes should contain index 1
         assert!(status.failed_indexes.is_some());
@@ -1166,7 +1350,10 @@ mod tests {
         // Completed indexes should contain 0 and 2
         assert!(status.completed_indexes.is_some());
         let ci = parse_index_ranges(status.completed_indexes.as_deref().unwrap());
-        assert!(ci.contains(&0) && ci.contains(&2), "Completed indexes should have 0 and 2");
+        assert!(
+            ci.contains(&0) && ci.contains(&2),
+            "Completed indexes should have 0 and 2"
+        );
     }
 
     #[tokio::test]
@@ -1183,12 +1370,32 @@ mod tests {
         storage.create(job_key, &job).await.unwrap();
 
         // Index 0 failed once (exceeds limit of 0)
-        let pod0 = make_indexed_pod("pod-0", "default", Phase::Failed, "test-job2", "job-uid-1", 0);
-        storage.create("/registry/pods/default/pod-0", &pod0).await.unwrap();
+        let pod0 = make_indexed_pod(
+            "pod-0",
+            "default",
+            Phase::Failed,
+            "test-job2",
+            "job-uid-1",
+            0,
+        );
+        storage
+            .create("/registry/pods/default/pod-0", &pod0)
+            .await
+            .unwrap();
 
         // Index 1 running
-        let pod1 = make_indexed_pod("pod-1", "default", Phase::Running, "test-job2", "job-uid-1", 1);
-        storage.create("/registry/pods/default/pod-1", &pod1).await.unwrap();
+        let pod1 = make_indexed_pod(
+            "pod-1",
+            "default",
+            Phase::Running,
+            "test-job2",
+            "job-uid-1",
+            1,
+        );
+        storage
+            .create("/registry/pods/default/pod-1", &pod1)
+            .await
+            .unwrap();
 
         let controller = JobController::new(storage.clone());
         let mut job: Job = storage.get(job_key).await.unwrap();
@@ -1197,15 +1404,24 @@ mod tests {
         // After reconciliation, no new pod should be created for index 0
         // Check that no new pod with index 0 was created
         let all_pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-        let index_0_pods: Vec<&Pod> = all_pods.iter().filter(|p| {
-            p.metadata.annotations.as_ref()
-                .and_then(|a| a.get("batch.kubernetes.io/job-completion-index"))
-                .map(|v| v == "0")
-                .unwrap_or(false)
-        }).collect();
+        let index_0_pods: Vec<&Pod> = all_pods
+            .iter()
+            .filter(|p| {
+                p.metadata
+                    .annotations
+                    .as_ref()
+                    .and_then(|a| a.get("batch.kubernetes.io/job-completion-index"))
+                    .map(|v| v == "0")
+                    .unwrap_or(false)
+            })
+            .collect();
 
         // Should still be just the one failed pod for index 0, no retry
-        assert_eq!(index_0_pods.len(), 1, "Should not create a retry pod for exhausted index 0");
+        assert_eq!(
+            index_0_pods.len(),
+            1,
+            "Should not create a retry pod for exhausted index 0"
+        );
     }
 
     #[tokio::test]
@@ -1232,16 +1448,40 @@ mod tests {
         storage.create(job_key, &job).await.unwrap();
 
         // Index 0 succeeded
-        let pod0 = make_indexed_pod("pod-0", "default", Phase::Succeeded, "failindex-job", "job-uid-1", 0);
-        storage.create("/registry/pods/default/pod-0", &pod0).await.unwrap();
+        let pod0 = make_indexed_pod(
+            "pod-0",
+            "default",
+            Phase::Succeeded,
+            "failindex-job",
+            "job-uid-1",
+            0,
+        );
+        storage
+            .create("/registry/pods/default/pod-0", &pod0)
+            .await
+            .unwrap();
 
         // Index 1 failed with exit code 42 -> should trigger FailIndex
-        let pod1 = make_failed_pod_with_exit_code("pod-1", "default", "failindex-job", "job-uid-1", 1, 42);
-        storage.create("/registry/pods/default/pod-1", &pod1).await.unwrap();
+        let pod1 =
+            make_failed_pod_with_exit_code("pod-1", "default", "failindex-job", "job-uid-1", 1, 42);
+        storage
+            .create("/registry/pods/default/pod-1", &pod1)
+            .await
+            .unwrap();
 
         // Index 2 succeeded
-        let pod2 = make_indexed_pod("pod-2", "default", Phase::Succeeded, "failindex-job", "job-uid-1", 2);
-        storage.create("/registry/pods/default/pod-2", &pod2).await.unwrap();
+        let pod2 = make_indexed_pod(
+            "pod-2",
+            "default",
+            Phase::Succeeded,
+            "failindex-job",
+            "job-uid-1",
+            2,
+        );
+        storage
+            .create("/registry/pods/default/pod-2", &pod2)
+            .await
+            .unwrap();
 
         let controller = JobController::new(storage.clone());
         let mut job: Job = storage.get(job_key).await.unwrap();
@@ -1253,17 +1493,29 @@ mod tests {
         // Failed indexes should include index 1
         assert!(status.failed_indexes.is_some());
         let fi = parse_index_ranges(status.failed_indexes.as_deref().unwrap());
-        assert!(fi.contains(&1), "Index 1 should be in failed_indexes due to FailIndex policy");
+        assert!(
+            fi.contains(&1),
+            "Index 1 should be in failed_indexes due to FailIndex policy"
+        );
 
         // No new pod should be created for index 1
         let all_pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-        let index_1_pods: Vec<&Pod> = all_pods.iter().filter(|p| {
-            p.metadata.annotations.as_ref()
-                .and_then(|a| a.get("batch.kubernetes.io/job-completion-index"))
-                .map(|v| v == "1")
-                .unwrap_or(false)
-        }).collect();
-        assert_eq!(index_1_pods.len(), 1, "No retry pod for FailIndex-ed index 1");
+        let index_1_pods: Vec<&Pod> = all_pods
+            .iter()
+            .filter(|p| {
+                p.metadata
+                    .annotations
+                    .as_ref()
+                    .and_then(|a| a.get("batch.kubernetes.io/job-completion-index"))
+                    .map(|v| v == "1")
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(
+            index_1_pods.len(),
+            1,
+            "No retry pod for FailIndex-ed index 1"
+        );
     }
 
     #[tokio::test]
@@ -1288,8 +1540,18 @@ mod tests {
         storage.create(job_key, &job).await.unwrap();
 
         // One pod failed with exit code 99 -> should trigger FailJob
-        let pod = make_failed_pod_with_exit_code("pod-fail", "default", "failjob-job", "job-uid-1", 0, 99);
-        storage.create("/registry/pods/default/pod-fail", &pod).await.unwrap();
+        let pod = make_failed_pod_with_exit_code(
+            "pod-fail",
+            "default",
+            "failjob-job",
+            "job-uid-1",
+            0,
+            99,
+        );
+        storage
+            .create("/registry/pods/default/pod-fail", &pod)
+            .await
+            .unwrap();
 
         let controller = JobController::new(storage.clone());
         let mut job: Job = storage.get(job_key).await.unwrap();
@@ -1298,10 +1560,17 @@ mod tests {
         let updated_job: Job = storage.get(job_key).await.unwrap();
         let status = updated_job.status.unwrap();
 
-        assert!(status.conditions.as_ref().unwrap().iter().any(|c|
-            c.condition_type == "Failed" && c.status == "True" &&
-            c.reason.as_deref() == Some("PodFailurePolicy")
-        ), "Job should be Failed due to PodFailurePolicy");
+        assert!(
+            status
+                .conditions
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|c| c.condition_type == "Failed"
+                    && c.status == "True"
+                    && c.reason.as_deref() == Some("PodFailurePolicy")),
+            "Job should be Failed due to PodFailurePolicy"
+        );
     }
 
     #[tokio::test]
@@ -1316,7 +1585,13 @@ mod tests {
         storage.create(job_key, &job).await.unwrap();
 
         // Pod 1 succeeded (was restarted locally, restart_count > 0, now succeeded)
-        let mut pod1 = make_pod("pod-1", "default", Phase::Succeeded, "restart-job", "job-uid-1");
+        let mut pod1 = make_pod(
+            "pod-1",
+            "default",
+            Phase::Succeeded,
+            "restart-job",
+            "job-uid-1",
+        );
         if let Some(ref mut status) = pod1.status {
             status.container_statuses = Some(vec![ContainerStatus {
                 name: "test".to_string(),
@@ -1344,11 +1619,23 @@ mod tests {
                 user: None,
             }]);
         }
-        storage.create("/registry/pods/default/pod-1", &pod1).await.unwrap();
+        storage
+            .create("/registry/pods/default/pod-1", &pod1)
+            .await
+            .unwrap();
 
         // Pod 2 succeeded
-        let pod2 = make_pod("pod-2", "default", Phase::Succeeded, "restart-job", "job-uid-1");
-        storage.create("/registry/pods/default/pod-2", &pod2).await.unwrap();
+        let pod2 = make_pod(
+            "pod-2",
+            "default",
+            Phase::Succeeded,
+            "restart-job",
+            "job-uid-1",
+        );
+        storage
+            .create("/registry/pods/default/pod-2", &pod2)
+            .await
+            .unwrap();
 
         let controller = JobController::new(storage.clone());
         let mut job: Job = storage.get(job_key).await.unwrap();
@@ -1357,9 +1644,15 @@ mod tests {
         let updated_job: Job = storage.get(job_key).await.unwrap();
         let status = updated_job.status.unwrap();
 
-        assert!(status.conditions.as_ref().unwrap().iter().any(|c|
-            c.condition_type == "Complete" && c.status == "True"
-        ), "Job should be Complete when locally restarted pods succeed");
+        assert!(
+            status
+                .conditions
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|c| c.condition_type == "Complete" && c.status == "True"),
+            "Job should be Complete when locally restarted pods succeed"
+        );
         assert_eq!(status.succeeded, Some(2));
     }
 
@@ -1379,16 +1672,25 @@ mod tests {
 
         // Check that the created pod preserved the OnFailure restart policy
         let all_pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-        let job_pods: Vec<&Pod> = all_pods.iter().filter(|p| {
-            p.metadata.labels.as_ref()
-                .and_then(|l| l.get("job-name"))
-                .map(|v| v == "onfailure-job")
-                .unwrap_or(false)
-        }).collect();
+        let job_pods: Vec<&Pod> = all_pods
+            .iter()
+            .filter(|p| {
+                p.metadata
+                    .labels
+                    .as_ref()
+                    .and_then(|l| l.get("job-name"))
+                    .map(|v| v == "onfailure-job")
+                    .unwrap_or(false)
+            })
+            .collect();
 
         assert_eq!(job_pods.len(), 1);
         let restart_policy = job_pods[0].spec.as_ref().unwrap().restart_policy.as_deref();
-        assert_eq!(restart_policy, Some("OnFailure"), "Pod should preserve OnFailure restart policy from template");
+        assert_eq!(
+            restart_policy,
+            Some("OnFailure"),
+            "Pod should preserve OnFailure restart policy from template"
+        );
     }
 
     #[tokio::test]
@@ -1410,18 +1712,47 @@ mod tests {
         storage.create(job_key, &job).await.unwrap();
 
         // Index 0 and 1 succeeded
-        let pod0 = make_indexed_pod("pod-0", "default", Phase::Succeeded, "sp-job", "job-uid-1", 0);
-        storage.create("/registry/pods/default/pod-0", &pod0).await.unwrap();
-        let pod1 = make_indexed_pod("pod-1", "default", Phase::Succeeded, "sp-job", "job-uid-1", 1);
-        storage.create("/registry/pods/default/pod-1", &pod1).await.unwrap();
+        let pod0 = make_indexed_pod(
+            "pod-0",
+            "default",
+            Phase::Succeeded,
+            "sp-job",
+            "job-uid-1",
+            0,
+        );
+        storage
+            .create("/registry/pods/default/pod-0", &pod0)
+            .await
+            .unwrap();
+        let pod1 = make_indexed_pod(
+            "pod-1",
+            "default",
+            Phase::Succeeded,
+            "sp-job",
+            "job-uid-1",
+            1,
+        );
+        storage
+            .create("/registry/pods/default/pod-1", &pod1)
+            .await
+            .unwrap();
 
         // Indexes 2-4 are still pending
         let pod2 = make_indexed_pod("pod-2", "default", Phase::Pending, "sp-job", "job-uid-1", 2);
-        storage.create("/registry/pods/default/pod-2", &pod2).await.unwrap();
+        storage
+            .create("/registry/pods/default/pod-2", &pod2)
+            .await
+            .unwrap();
         let pod3 = make_indexed_pod("pod-3", "default", Phase::Pending, "sp-job", "job-uid-1", 3);
-        storage.create("/registry/pods/default/pod-3", &pod3).await.unwrap();
+        storage
+            .create("/registry/pods/default/pod-3", &pod3)
+            .await
+            .unwrap();
         let pod4 = make_indexed_pod("pod-4", "default", Phase::Pending, "sp-job", "job-uid-1", 4);
-        storage.create("/registry/pods/default/pod-4", &pod4).await.unwrap();
+        storage
+            .create("/registry/pods/default/pod-4", &pod4)
+            .await
+            .unwrap();
 
         let controller = JobController::new(storage.clone());
         let mut job: Job = storage.get(job_key).await.unwrap();
@@ -1431,12 +1762,24 @@ mod tests {
         let status = updated_job.status.unwrap();
 
         // Job should be complete via successPolicy even though indexes 2-4 are pending
-        assert!(status.conditions.as_ref().unwrap().iter().any(|c|
-            c.condition_type == "Complete" && c.status == "True"
-        ), "Job should be Complete via successPolicy");
-        assert!(status.conditions.as_ref().unwrap().iter().any(|c|
-            c.condition_type == "SuccessCriteriaMet" && c.status == "True"
-        ), "SuccessCriteriaMet condition should be set");
+        assert!(
+            status
+                .conditions
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|c| c.condition_type == "Complete" && c.status == "True"),
+            "Job should be Complete via successPolicy"
+        );
+        assert!(
+            status
+                .conditions
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|c| c.condition_type == "SuccessCriteriaMet" && c.status == "True"),
+            "SuccessCriteriaMet condition should be set"
+        );
         assert!(status.completion_time.is_some());
     }
 
@@ -1458,14 +1801,44 @@ mod tests {
         storage.create(job_key, &job).await.unwrap();
 
         // 2 indexes succeeded
-        let pod0 = make_indexed_pod("pod-0", "default", Phase::Succeeded, "sp-count-job", "job-uid-1", 0);
-        storage.create("/registry/pods/default/pod-0", &pod0).await.unwrap();
-        let pod1 = make_indexed_pod("pod-1", "default", Phase::Succeeded, "sp-count-job", "job-uid-1", 1);
-        storage.create("/registry/pods/default/pod-1", &pod1).await.unwrap();
+        let pod0 = make_indexed_pod(
+            "pod-0",
+            "default",
+            Phase::Succeeded,
+            "sp-count-job",
+            "job-uid-1",
+            0,
+        );
+        storage
+            .create("/registry/pods/default/pod-0", &pod0)
+            .await
+            .unwrap();
+        let pod1 = make_indexed_pod(
+            "pod-1",
+            "default",
+            Phase::Succeeded,
+            "sp-count-job",
+            "job-uid-1",
+            1,
+        );
+        storage
+            .create("/registry/pods/default/pod-1", &pod1)
+            .await
+            .unwrap();
 
         // Others still pending
-        let pod2 = make_indexed_pod("pod-2", "default", Phase::Pending, "sp-count-job", "job-uid-1", 2);
-        storage.create("/registry/pods/default/pod-2", &pod2).await.unwrap();
+        let pod2 = make_indexed_pod(
+            "pod-2",
+            "default",
+            Phase::Pending,
+            "sp-count-job",
+            "job-uid-1",
+            2,
+        );
+        storage
+            .create("/registry/pods/default/pod-2", &pod2)
+            .await
+            .unwrap();
 
         let controller = JobController::new(storage.clone());
         let mut job: Job = storage.get(job_key).await.unwrap();
@@ -1474,9 +1847,15 @@ mod tests {
         let updated_job: Job = storage.get(job_key).await.unwrap();
         let status = updated_job.status.unwrap();
 
-        assert!(status.conditions.as_ref().unwrap().iter().any(|c|
-            c.condition_type == "Complete" && c.status == "True"
-        ), "Job should be Complete via succeededCount successPolicy");
+        assert!(
+            status
+                .conditions
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|c| c.condition_type == "Complete" && c.status == "True"),
+            "Job should be Complete via succeededCount successPolicy"
+        );
     }
 
     #[tokio::test]
@@ -1497,10 +1876,30 @@ mod tests {
         storage.create(job_key, &job).await.unwrap();
 
         // Only index 0 succeeded — need 0, 1, 2
-        let pod0 = make_indexed_pod("pod-0", "default", Phase::Succeeded, "sp-notyet", "job-uid-1", 0);
-        storage.create("/registry/pods/default/pod-0", &pod0).await.unwrap();
-        let pod1 = make_indexed_pod("pod-1", "default", Phase::Running, "sp-notyet", "job-uid-1", 1);
-        storage.create("/registry/pods/default/pod-1", &pod1).await.unwrap();
+        let pod0 = make_indexed_pod(
+            "pod-0",
+            "default",
+            Phase::Succeeded,
+            "sp-notyet",
+            "job-uid-1",
+            0,
+        );
+        storage
+            .create("/registry/pods/default/pod-0", &pod0)
+            .await
+            .unwrap();
+        let pod1 = make_indexed_pod(
+            "pod-1",
+            "default",
+            Phase::Running,
+            "sp-notyet",
+            "job-uid-1",
+            1,
+        );
+        storage
+            .create("/registry/pods/default/pod-1", &pod1)
+            .await
+            .unwrap();
 
         let controller = JobController::new(storage.clone());
         let mut job: Job = storage.get(job_key).await.unwrap();
@@ -1510,9 +1909,17 @@ mod tests {
         let status = updated_job.status.unwrap();
 
         // Should NOT be complete yet
-        let is_complete = status.conditions.as_ref()
-            .map(|c| c.iter().any(|cond| cond.condition_type == "Complete" && cond.status == "True"))
+        let is_complete = status
+            .conditions
+            .as_ref()
+            .map(|c| {
+                c.iter()
+                    .any(|cond| cond.condition_type == "Complete" && cond.status == "True")
+            })
             .unwrap_or(false);
-        assert!(!is_complete, "Job should NOT be complete when not all required indexes succeeded");
+        assert!(
+            !is_complete,
+            "Job should NOT be complete when not all required indexes succeeded"
+        );
     }
 }

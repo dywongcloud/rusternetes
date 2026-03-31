@@ -29,8 +29,8 @@ use rusternetes_common::tls::TlsConfig;
 use rusternetes_storage::etcd::EtcdStorage;
 use rusternetes_storage::Storage;
 use state::ApiServerState;
-use tracing::debug;
 use std::sync::Arc;
+use tracing::debug;
 use tracing::{info, warn, Level};
 use tracing_subscriber;
 
@@ -236,21 +236,25 @@ async fn main() -> Result<()> {
 
     // Pre-allocate ClusterIPs from existing services to prevent collisions after restart
     {
-        let existing_services: Vec<rusternetes_common::resources::Service> = Storage::list(
-            state.storage.as_ref(),
-            "/registry/services/",
-        )
-        .await
-        .unwrap_or_default();
+        let existing_services: Vec<rusternetes_common::resources::Service> =
+            Storage::list(state.storage.as_ref(), "/registry/services/")
+                .await
+                .unwrap_or_default();
         for svc in &existing_services {
             if let Some(ref ip) = svc.spec.cluster_ip {
                 if ip != "None" && !ip.is_empty() {
                     state.ip_allocator.mark_allocated(ip.clone());
-                    debug!("Pre-allocated ClusterIP {} for existing service {}", ip, svc.metadata.name);
+                    debug!(
+                        "Pre-allocated ClusterIP {} for existing service {}",
+                        ip, svc.metadata.name
+                    );
                 }
             }
         }
-        info!("Pre-allocated {} ClusterIPs from existing services", existing_services.len());
+        info!(
+            "Pre-allocated {} ClusterIPs from existing services",
+            existing_services.len()
+        );
     }
 
     // Build router

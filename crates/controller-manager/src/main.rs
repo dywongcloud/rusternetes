@@ -419,8 +419,7 @@ async fn main() -> Result<()> {
     });
 
     // Start Garbage Collector
-    let garbage_collector =
-        Arc::new(GarbageCollector::new(storage.clone()));
+    let garbage_collector = Arc::new(GarbageCollector::new(storage.clone()));
     spawn_controller!("Garbage Collector", leader_elector, {
         let controller = garbage_collector.clone();
         async move {
@@ -449,8 +448,7 @@ async fn main() -> Result<()> {
     });
 
     // Start TTL controller
-    let ttl_controller =
-        Arc::new(TTLController::new(storage.clone()));
+    let ttl_controller = Arc::new(TTLController::new(storage.clone()));
     spawn_controller!("TTL controller", leader_elector, {
         let controller = ttl_controller.clone();
         async move {
@@ -545,9 +543,8 @@ async fn main() -> Result<()> {
     });
 
     // Start TaintEviction controller
-    let taint_eviction_controller = Arc::new(
-        crate::controllers::taint_eviction::TaintEvictionController::new(storage.clone()),
-    );
+    let taint_eviction_controller =
+        Arc::new(crate::controllers::taint_eviction::TaintEvictionController::new(storage.clone()));
     let sync_interval_secs_te = args.sync_interval;
     spawn_controller!("TaintEviction controller", leader_elector, {
         let controller = taint_eviction_controller.clone();

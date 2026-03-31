@@ -72,7 +72,10 @@ impl KubeProxy {
                 .cloned()
                 .unwrap_or_else(|| {
                     // Fall back: strip the random suffix from the EndpointSlice name
-                    es.metadata.name.rsplit_once('-').map(|(prefix, _)| prefix.to_string())
+                    es.metadata
+                        .name
+                        .rsplit_once('-')
+                        .map(|(prefix, _)| prefix.to_string())
                         .unwrap_or_else(|| es.metadata.name.clone())
                 });
             let key = format!("{}/{}", namespace, service_name);
@@ -83,14 +86,20 @@ impl KubeProxy {
                     }
                 }
                 for addr in &endpoint.addresses {
-                    endpointslice_map.entry(key.clone()).or_default().push(addr.clone());
+                    endpointslice_map
+                        .entry(key.clone())
+                        .or_default()
+                        .push(addr.clone());
                 }
             }
         }
 
         // Process each service
         for service in services {
-            if let Err(e) = self.sync_service(&service, &endpoints_map, &endpointslice_map).await {
+            if let Err(e) = self
+                .sync_service(&service, &endpoints_map, &endpointslice_map)
+                .await
+            {
                 let namespace = service.metadata.namespace.as_deref().unwrap_or("unknown");
                 let name = &service.metadata.name;
                 error!("Failed to sync service {}/{}: {}", namespace, name, e);
@@ -142,10 +151,15 @@ impl KubeProxy {
             namespace, name, service.spec
         );
         let has_valid_cluster_ip = cluster_ip
-            .map(|ip| !ip.is_empty() && ip.as_str() != "None" && ip.as_str() != "null" && ip.contains('.'))
+            .map(|ip| {
+                !ip.is_empty() && ip.as_str() != "None" && ip.as_str() != "null" && ip.contains('.')
+            })
             .unwrap_or(false);
         if !has_valid_cluster_ip {
-            debug!("Service {}/{} has no valid ClusterIP ({:?}), skipping", namespace, name, cluster_ip);
+            debug!(
+                "Service {}/{} has no valid ClusterIP ({:?}), skipping",
+                namespace, name, cluster_ip
+            );
             return Ok(());
         }
 
@@ -160,7 +174,10 @@ impl KubeProxy {
         if endpoint_addresses.is_empty() {
             if let Some(slice_addrs) = endpointslice_map.get(&endpoint_key) {
                 endpoint_addresses = slice_addrs.clone();
-                debug!("Using EndpointSlice addresses for {}/{}: {:?}", namespace, name, endpoint_addresses);
+                debug!(
+                    "Using EndpointSlice addresses for {}/{}: {:?}",
+                    namespace, name, endpoint_addresses
+                );
             }
         }
 

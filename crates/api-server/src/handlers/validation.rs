@@ -19,7 +19,9 @@ fn find_duplicate_json_key(json_str: &str) -> Option<String> {
 /// Returns dotted paths (e.g., "spec.replicas") for each duplicate found.
 fn find_all_duplicate_json_keys(json_str: &str) -> Vec<String> {
     let trimmed = json_str.trim();
-    if !trimmed.starts_with('{') { return Vec::new(); }
+    if !trimmed.starts_with('{') {
+        return Vec::new();
+    }
 
     let bytes = trimmed.as_bytes();
     let mut results = Vec::new();
@@ -30,7 +32,12 @@ fn find_all_duplicate_json_keys(json_str: &str) -> Vec<String> {
 /// Parse a JSON object starting at `start` (which should point to '{'),
 /// collecting all duplicate key paths into `results`.
 /// Returns the position after the closing '}', or None on parse error.
-fn find_duplicates_in_object(bytes: &[u8], start: usize, prefix: &str, results: &mut Vec<String>) -> Option<usize> {
+fn find_duplicates_in_object(
+    bytes: &[u8],
+    start: usize,
+    prefix: &str,
+    results: &mut Vec<String>,
+) -> Option<usize> {
     if start >= bytes.len() || bytes[start] != b'{' {
         return None;
     }
@@ -41,7 +48,9 @@ fn find_duplicates_in_object(bytes: &[u8], start: usize, prefix: &str, results: 
     loop {
         // Skip whitespace
         pos = skip_whitespace(bytes, pos);
-        if pos >= bytes.len() { return None; }
+        if pos >= bytes.len() {
+            return None;
+        }
 
         // Check for end of object
         if bytes[pos] == b'}' {
@@ -52,7 +61,9 @@ fn find_duplicates_in_object(bytes: &[u8], start: usize, prefix: &str, results: 
         if bytes[pos] == b',' {
             pos += 1;
             pos = skip_whitespace(bytes, pos);
-            if pos >= bytes.len() { return None; }
+            if pos >= bytes.len() {
+                return None;
+            }
         }
 
         // Check for end of object again (after comma)
@@ -82,7 +93,9 @@ fn find_duplicates_in_object(bytes: &[u8], start: usize, prefix: &str, results: 
 
         // Skip whitespace and colon
         pos = skip_whitespace(bytes, pos);
-        if pos >= bytes.len() || bytes[pos] != b':' { return None; }
+        if pos >= bytes.len() || bytes[pos] != b':' {
+            return None;
+        }
         pos += 1;
         pos = skip_whitespace(bytes, pos);
 
@@ -105,8 +118,15 @@ fn find_duplicates_in_object(bytes: &[u8], start: usize, prefix: &str, results: 
 /// Skip a JSON value starting at `pos`, also checking nested objects for duplicates.
 /// Collects all duplicate key paths into `results`.
 /// Returns the position after the value, or None on parse error.
-fn collect_value_duplicates(bytes: &[u8], pos: usize, prefix: &str, results: &mut Vec<String>) -> Option<usize> {
-    if pos >= bytes.len() { return None; }
+fn collect_value_duplicates(
+    bytes: &[u8],
+    pos: usize,
+    prefix: &str,
+    results: &mut Vec<String>,
+) -> Option<usize> {
+    if pos >= bytes.len() {
+        return None;
+    }
 
     match bytes[pos] {
         b'{' => {
@@ -119,9 +139,16 @@ fn collect_value_duplicates(bytes: &[u8], pos: usize, prefix: &str, results: &mu
             let mut idx = 0;
             loop {
                 p = skip_whitespace(bytes, p);
-                if p >= bytes.len() { return None; }
-                if bytes[p] == b']' { return Some(p + 1); }
-                if bytes[p] == b',' { p += 1; continue; }
+                if p >= bytes.len() {
+                    return None;
+                }
+                if bytes[p] == b']' {
+                    return Some(p + 1);
+                }
+                if bytes[p] == b',' {
+                    p += 1;
+                    continue;
+                }
 
                 let elem_prefix = format!("{}[{}]", prefix, idx);
                 match collect_value_duplicates(bytes, p, &elem_prefix, results) {
@@ -151,7 +178,9 @@ fn skip_whitespace(bytes: &[u8], mut pos: usize) -> usize {
 /// Extract a JSON string starting at `pos` (which should point to '"').
 /// Returns (string_content, position_after_closing_quote).
 fn extract_string(bytes: &[u8], pos: usize) -> Option<(String, usize)> {
-    if pos >= bytes.len() || bytes[pos] != b'"' { return None; }
+    if pos >= bytes.len() || bytes[pos] != b'"' {
+        return None;
+    }
     let mut i = pos + 1;
     let mut s = String::new();
     while i < bytes.len() {
@@ -174,14 +203,21 @@ fn extract_string(bytes: &[u8], pos: usize) -> Option<(String, usize)> {
 /// Skip an entire JSON value (string, number, object, array, bool, null)
 /// starting at `pos`. Returns the position after the value.
 fn skip_json_value(bytes: &[u8], pos: usize) -> Option<usize> {
-    if pos >= bytes.len() { return None; }
+    if pos >= bytes.len() {
+        return None;
+    }
     match bytes[pos] {
         b'"' => {
             // String
             let mut i = pos + 1;
             while i < bytes.len() {
-                if bytes[i] == b'\\' { i += 2; continue; }
-                if bytes[i] == b'"' { return Some(i + 1); }
+                if bytes[i] == b'\\' {
+                    i += 2;
+                    continue;
+                }
+                if bytes[i] == b'"' {
+                    return Some(i + 1);
+                }
                 i += 1;
             }
             None
@@ -193,8 +229,11 @@ fn skip_json_value(bytes: &[u8], pos: usize) -> Option<usize> {
             let mut in_str = false;
             while i < bytes.len() && depth > 0 {
                 if in_str {
-                    if bytes[i] == b'\\' { i += 1; }
-                    else if bytes[i] == b'"' { in_str = false; }
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    } else if bytes[i] == b'"' {
+                        in_str = false;
+                    }
                 } else {
                     match bytes[i] {
                         b'"' => in_str = true,
@@ -214,8 +253,11 @@ fn skip_json_value(bytes: &[u8], pos: usize) -> Option<usize> {
             let mut in_str = false;
             while i < bytes.len() && depth > 0 {
                 if in_str {
-                    if bytes[i] == b'\\' { i += 1; }
-                    else if bytes[i] == b'"' { in_str = false; }
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    } else if bytes[i] == b'"' {
+                        in_str = false;
+                    }
                 } else {
                     match bytes[i] {
                         b'"' => in_str = true,
@@ -228,28 +270,53 @@ fn skip_json_value(bytes: &[u8], pos: usize) -> Option<usize> {
             }
             Some(i)
         }
-        b't' => { // true
-            if pos + 4 <= bytes.len() { Some(pos + 4) } else { None }
+        b't' => {
+            // true
+            if pos + 4 <= bytes.len() {
+                Some(pos + 4)
+            } else {
+                None
+            }
         }
-        b'f' => { // false
-            if pos + 5 <= bytes.len() { Some(pos + 5) } else { None }
+        b'f' => {
+            // false
+            if pos + 5 <= bytes.len() {
+                Some(pos + 5)
+            } else {
+                None
+            }
         }
-        b'n' => { // null
-            if pos + 4 <= bytes.len() { Some(pos + 4) } else { None }
+        b'n' => {
+            // null
+            if pos + 4 <= bytes.len() {
+                Some(pos + 4)
+            } else {
+                None
+            }
         }
         b'-' | b'0'..=b'9' => {
             // Number
             let mut i = pos;
-            if i < bytes.len() && bytes[i] == b'-' { i += 1; }
-            while i < bytes.len() && bytes[i].is_ascii_digit() { i += 1; }
+            if i < bytes.len() && bytes[i] == b'-' {
+                i += 1;
+            }
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
             if i < bytes.len() && bytes[i] == b'.' {
                 i += 1;
-                while i < bytes.len() && bytes[i].is_ascii_digit() { i += 1; }
+                while i < bytes.len() && bytes[i].is_ascii_digit() {
+                    i += 1;
+                }
             }
             if i < bytes.len() && (bytes[i] == b'e' || bytes[i] == b'E') {
                 i += 1;
-                if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') { i += 1; }
-                while i < bytes.len() && bytes[i].is_ascii_digit() { i += 1; }
+                if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') {
+                    i += 1;
+                }
+                while i < bytes.len() && bytes[i].is_ascii_digit() {
+                    i += 1;
+                }
             }
             Some(i)
         }
@@ -289,9 +356,7 @@ fn find_unknown_fields_recursive(
         }
         (serde_json::Value::Array(orig_arr), serde_json::Value::Array(canon_arr)) => {
             // For arrays, check element-by-element if both have the same length
-            for (i, (orig_elem, canon_elem)) in
-                orig_arr.iter().zip(canon_arr.iter()).enumerate()
-            {
+            for (i, (orig_elem, canon_elem)) in orig_arr.iter().zip(canon_arr.iter()).enumerate() {
                 let field_path = format!("{}[{}]", prefix, i);
                 find_unknown_fields_recursive(orig_elem, canon_elem, &field_path, unknown);
             }
@@ -320,22 +385,22 @@ pub fn validate_strict_fields(
     let mut error_parts: Vec<String> = Vec::new();
 
     // Parse original as generic JSON
-    let original: serde_json::Value = serde_json::from_slice(original_body)
-        .map_err(|e| {
-            let msg = e.to_string();
-            if msg.contains("duplicate field") {
-                if let Some(field) = msg.split('`').nth(1) {
-                    return Error::InvalidResource(format!(
-                        "strict decoding error: json: unknown field \"{}\"", field
-                    ));
-                }
+    let original: serde_json::Value = serde_json::from_slice(original_body).map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("duplicate field") {
+            if let Some(field) = msg.split('`').nth(1) {
+                return Error::InvalidResource(format!(
+                    "strict decoding error: json: unknown field \"{}\"",
+                    field
+                ));
             }
-            Error::InvalidResource(msg)
-        })?;
+        }
+        Error::InvalidResource(msg)
+    })?;
 
     // Re-serialize the parsed struct to get canonical JSON
-    let canonical = serde_json::to_value(parsed_resource)
-        .map_err(|e| Error::Internal(e.to_string()))?;
+    let canonical =
+        serde_json::to_value(parsed_resource).map_err(|e| Error::Internal(e.to_string()))?;
 
     // Find unknown fields recursively
     let mut unknown = Vec::new();
@@ -376,9 +441,7 @@ pub fn validate_strict_fields(
 /// This is the standard validation for most Kubernetes resource names.
 pub fn validate_resource_name(name: &str) -> Result<(), Error> {
     if name.is_empty() {
-        return Err(Error::InvalidResource(
-            "name must be non-empty".to_string(),
-        ));
+        return Err(Error::InvalidResource("name must be non-empty".to_string()));
     }
 
     if name.len() > 253 {
@@ -479,7 +542,10 @@ mod tests {
     fn test_duplicate_key_nested() {
         // Duplicate "replicas" inside "spec" — should be detected with dotted path
         let json = r#"{"metadata": {"name": "test"}, "spec": {"replicas": 1, "replicas": 2}}"#;
-        assert_eq!(find_duplicate_json_key(json), Some("spec.replicas".to_string()));
+        assert_eq!(
+            find_duplicate_json_key(json),
+            Some("spec.replicas".to_string())
+        );
     }
 
     #[test]
@@ -491,7 +557,10 @@ mod tests {
     #[test]
     fn test_duplicate_key_in_array_element() {
         let json = r#"{"items": [{"x": 1, "x": 2}]}"#;
-        assert_eq!(find_duplicate_json_key(json), Some("items[0].x".to_string()));
+        assert_eq!(
+            find_duplicate_json_key(json),
+            Some("items[0].x".to_string())
+        );
     }
 
     #[test]
@@ -523,7 +592,10 @@ mod tests {
         }
 
         let body = br#"{"name": "test", "value": 42}"#;
-        let parsed = Simple { name: "test".to_string(), value: 42 };
+        let parsed = Simple {
+            name: "test".to_string(),
+            value: 42,
+        };
         let mut params = HashMap::new();
         params.insert("fieldValidation".to_string(), "Strict".to_string());
 
@@ -538,14 +610,20 @@ mod tests {
         }
 
         let body = br#"{"name": "test", "extra": "field"}"#;
-        let parsed = Simple { name: "test".to_string() };
+        let parsed = Simple {
+            name: "test".to_string(),
+        };
         let mut params = HashMap::new();
         params.insert("fieldValidation".to_string(), "Strict".to_string());
 
         let result = validate_strict_fields(&params, body, &parsed);
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
-        assert!(err_msg.contains("unknown field"), "Expected 'unknown field' in error: {}", err_msg);
+        assert!(
+            err_msg.contains("unknown field"),
+            "Expected 'unknown field' in error: {}",
+            err_msg
+        );
     }
 
     #[test]
@@ -556,15 +634,25 @@ mod tests {
         }
 
         let body = br#"{"name": "a", "name": "b"}"#;
-        let parsed = Simple { name: "b".to_string() };
+        let parsed = Simple {
+            name: "b".to_string(),
+        };
         let mut params = HashMap::new();
         params.insert("fieldValidation".to_string(), "Strict".to_string());
 
         let result = validate_strict_fields(&params, body, &parsed);
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
-        assert!(err_msg.contains("json: unknown field"), "Expected 'json: unknown field' in error: {}", err_msg);
-        assert!(err_msg.contains("name"), "Expected field name in error: {}", err_msg);
+        assert!(
+            err_msg.contains("json: unknown field"),
+            "Expected 'json: unknown field' in error: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("name"),
+            "Expected field name in error: {}",
+            err_msg
+        );
     }
 
     #[test]
@@ -575,7 +663,9 @@ mod tests {
         }
 
         let body = br#"{"name": "test", "extra": "field"}"#;
-        let parsed = Simple { name: "test".to_string() };
+        let parsed = Simple {
+            name: "test".to_string(),
+        };
         let params = HashMap::new(); // no fieldValidation param
 
         // Should pass since not in strict mode
@@ -590,7 +680,9 @@ mod tests {
         }
 
         let body = br#"{"name": "test", "extra": "field"}"#;
-        let parsed = Simple { name: "test".to_string() };
+        let parsed = Simple {
+            name: "test".to_string(),
+        };
         let mut params = HashMap::new();
         params.insert("fieldValidation".to_string(), "Warn".to_string());
 
@@ -610,15 +702,25 @@ mod tests {
         }
 
         let body = br#"{"spec": {"replicas": 1, "replicas": 2}}"#;
-        let parsed = Outer { spec: Inner { replicas: 2 } };
+        let parsed = Outer {
+            spec: Inner { replicas: 2 },
+        };
         let mut params = HashMap::new();
         params.insert("fieldValidation".to_string(), "Strict".to_string());
 
         let result = validate_strict_fields(&params, body, &parsed);
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
-        assert!(err_msg.contains("json: unknown field"), "Expected 'json: unknown field' in error: {}", err_msg);
-        assert!(err_msg.contains("spec.replicas"), "Expected 'spec.replicas' dotted path in error: {}", err_msg);
+        assert!(
+            err_msg.contains("json: unknown field"),
+            "Expected 'json: unknown field' in error: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("spec.replicas"),
+            "Expected 'spec.replicas' dotted path in error: {}",
+            err_msg
+        );
     }
 
     #[test]
@@ -630,7 +732,9 @@ mod tests {
         }
 
         let body = br#"{"name": "a", "name": "b"}"#;
-        let parsed = Simple { name: "b".to_string() };
+        let parsed = Simple {
+            name: "b".to_string(),
+        };
         let mut params = HashMap::new();
         params.insert("fieldValidation".to_string(), "Strict".to_string());
 
@@ -639,7 +743,8 @@ mod tests {
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
             err_msg.contains(r#"strict decoding error: json: unknown field "name""#),
-            "Error format must match K8s: {}", err_msg
+            "Error format must match K8s: {}",
+            err_msg
         );
     }
 
@@ -657,7 +762,9 @@ mod tests {
 
         // Body has unknown field "spec.unknownField" AND duplicate "spec.replicas"
         let body = br#"{"spec": {"unknownField": "foo", "replicas": 1, "replicas": 2}}"#;
-        let parsed = Outer { spec: Inner { replicas: 2 } };
+        let parsed = Outer {
+            spec: Inner { replicas: 2 },
+        };
         let mut params = HashMap::new();
         params.insert("fieldValidation".to_string(), "Strict".to_string());
 
@@ -667,16 +774,19 @@ mod tests {
         // Should contain both errors
         assert!(
             err_msg.contains(r#"unknown field "spec.unknownField""#),
-            "Expected unknown field error: {}", err_msg
+            "Expected unknown field error: {}",
+            err_msg
         );
         assert!(
             err_msg.contains(r#"json: unknown field "spec.replicas""#),
-            "Expected json: unknown field error: {}", err_msg
+            "Expected json: unknown field error: {}",
+            err_msg
         );
         // Should be combined in a single strict decoding error
         assert!(
             err_msg.contains("strict decoding error:"),
-            "Expected strict decoding error prefix: {}", err_msg
+            "Expected strict decoding error prefix: {}",
+            err_msg
         );
     }
 

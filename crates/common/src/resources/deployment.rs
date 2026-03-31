@@ -79,7 +79,9 @@ pub struct RollingUpdateDeployment {
 }
 
 /// Deserialize a value that can be either an integer or a string into Option<String>
-pub fn deserialize_int_or_string_opt<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
+pub fn deserialize_int_or_string_opt<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {

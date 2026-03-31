@@ -204,8 +204,14 @@ pub async fn list(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_namespaced::<LimitRange>(
-            state, auth_ctx, namespace, "limitranges", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "limitranges",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing LimitRanges in namespace: {}", namespace);
@@ -240,8 +246,13 @@ pub async fn list_all(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<LimitRange>(
-            state, auth_ctx, "limitranges", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "limitranges",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all LimitRanges");

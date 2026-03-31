@@ -123,11 +123,33 @@ fn shell_join(args: &[String]) -> String {
 
 /// Check if a string contains any shell metacharacters that require quoting
 fn needs_shell_quoting(s: &str) -> bool {
-    s.chars().any(|c| matches!(c,
-        ' ' | '\'' | '"' | '\\' | ';' | '&' | '|' | '(' | ')' |
-        '{' | '}' | '<' | '>' | '!' | '?' | '*' | '[' | ']' |
-        '#' | '~' | '`' | '\n' | '\t'
-    ))
+    s.chars().any(|c| {
+        matches!(
+            c,
+            ' ' | '\''
+                | '"'
+                | '\\'
+                | ';'
+                | '&'
+                | '|'
+                | '('
+                | ')'
+                | '{'
+                | '}'
+                | '<'
+                | '>'
+                | '!'
+                | '?'
+                | '*'
+                | '['
+                | ']'
+                | '#'
+                | '~'
+                | '`'
+                | '\n'
+                | '\t'
+        )
+    })
 }
 
 impl ContainerRuntime {
@@ -477,7 +499,10 @@ impl ContainerRuntime {
         // This prevents duplicate container creation when sync_pod is called
         // multiple times in rapid succession (e.g., watch feedback loops).
         if self.is_pod_running(pod_name).await.unwrap_or(false) {
-            debug!("Pod {}/{} containers already running, skipping start", namespace, pod_name);
+            debug!(
+                "Pod {}/{} containers already running, skipping start",
+                namespace, pod_name
+            );
             return Ok(());
         }
 
@@ -496,8 +521,13 @@ impl ContainerRuntime {
         // admission controller, so the SA token volume may not be injected.
         let mut pod_with_sa = pod.clone();
         if let Some(ref mut spec) = pod_with_sa.spec {
-            let has_sa_volume = spec.volumes.as_ref()
-                .map(|vols| vols.iter().any(|v| v.name.contains("kube-api-access") || v.name.contains("token")))
+            let has_sa_volume = spec
+                .volumes
+                .as_ref()
+                .map(|vols| {
+                    vols.iter()
+                        .any(|v| v.name.contains("kube-api-access") || v.name.contains("token"))
+                })
                 .unwrap_or(false);
             if !has_sa_volume {
                 // Add projected SA token volume
@@ -508,19 +538,19 @@ impl ContainerRuntime {
                     config_map: None,
                     secret: None,
                     projected: Some(rusternetes_common::resources::ProjectedVolumeSource {
-                        sources: Some(vec![
-                            rusternetes_common::resources::VolumeProjection {
-                                service_account_token: Some(rusternetes_common::resources::ServiceAccountTokenProjection {
+                        sources: Some(vec![rusternetes_common::resources::VolumeProjection {
+                            service_account_token: Some(
+                                rusternetes_common::resources::ServiceAccountTokenProjection {
                                     path: "token".to_string(),
                                     expiration_seconds: Some(3600),
                                     audience: None,
-                                }),
-                                config_map: None,
-                                secret: None,
-                                downward_api: None,
-                                cluster_trust_bundle: None,
-                            },
-                        ]),
+                                },
+                            ),
+                            config_map: None,
+                            secret: None,
+                            downward_api: None,
+                            cluster_trust_bundle: None,
+                        }]),
                         default_mode: Some(0o644),
                     }),
                     persistent_volume_claim: None,
@@ -626,9 +656,12 @@ impl ContainerRuntime {
 
                     // For restartPolicy=Always pods, retry failed init containers
                     // with exponential backoff (matching Kubernetes CrashLoopBackOff)
-                    let restart_always = pod.spec.as_ref()
+                    let restart_always = pod
+                        .spec
+                        .as_ref()
                         .and_then(|s| s.restart_policy.as_deref())
-                        .unwrap_or("Always") == "Always";
+                        .unwrap_or("Always")
+                        == "Always";
                     // For restartPolicy=Always, retry init containers up to 3 times
                     // in start_pod. Further retries happen via the kubelet sync loop
                     // which shows CrashLoopBackOff status.
@@ -657,7 +690,10 @@ impl ContainerRuntime {
                         }
 
                         // Wait for init container to complete
-                        match self.wait_for_container_completion(pod_name, &container.name).await {
+                        match self
+                            .wait_for_container_completion(pod_name, &container.name)
+                            .await
+                        {
                             Ok(()) => {
                                 info!("Init container {} completed successfully", container.name);
                                 break;
@@ -672,9 +708,16 @@ impl ContainerRuntime {
                                     );
                                     // Remove the failed container before retrying
                                     let full_name = format!("{}_{}", pod_name, container.name);
-                                    let _ = self.docker.remove_container(&full_name, Some(
-                                        RemoveContainerOptions { force: true, ..Default::default() }
-                                    )).await;
+                                    let _ = self
+                                        .docker
+                                        .remove_container(
+                                            &full_name,
+                                            Some(RemoveContainerOptions {
+                                                force: true,
+                                                ..Default::default()
+                                            }),
+                                        )
+                                        .await;
                                     tokio::time::sleep(Duration::from_secs(backoff)).await;
                                 } else {
                                     return Err(e);
@@ -875,7 +918,10 @@ impl ContainerRuntime {
                         if let Some(network_info) = networks.get(&self.network) {
                             if let Some(ip) = &network_info.ip_address {
                                 if !ip.is_empty() {
-                                    debug!("Pause container {} already running with IP {}", pause_name, ip);
+                                    debug!(
+                                        "Pause container {} already running with IP {}",
+                                        pause_name, ip
+                                    );
                                     return Ok(ip.clone());
                                 }
                             }
@@ -932,11 +978,14 @@ impl ContainerRuntime {
         // CoreDNS pods must NOT use cluster DNS (circular dependency).
         let is_coredns = pod_name == "coredns";
         // Collect sysctls from pod security context
-        let sysctls_map: Option<HashMap<String, String>> = pod.spec.as_ref()
+        let sysctls_map: Option<HashMap<String, String>> = pod
+            .spec
+            .as_ref()
             .and_then(|s| s.security_context.as_ref())
             .and_then(|sc| sc.sysctls.as_ref())
             .map(|sysctls| {
-                sysctls.iter()
+                sysctls
+                    .iter()
                     .map(|s| (s.name.clone(), s.value.clone()))
                     .collect()
             });
@@ -944,7 +993,9 @@ impl ContainerRuntime {
         // Set hostname on pause container (it owns the network namespace)
         // Linux hostnames are limited to 63 characters (POSIX HOST_NAME_MAX - 1).
         // Kubernetes truncates pod hostnames to 63 chars as well.
-        let raw_hostname = pod.spec.as_ref()
+        let raw_hostname = pod
+            .spec
+            .as_ref()
             .and_then(|s| s.hostname.as_deref())
             .unwrap_or(pod_name);
         let pause_hostname = if raw_hostname.len() > 63 {
@@ -966,8 +1017,16 @@ impl ContainerRuntime {
                 network_mode: Some(self.network.clone()),
                 // Shareable IPC so app containers can join via ipc_mode=container:pause
                 ipc_mode: Some("shareable".to_string()),
-                dns: if is_coredns { None } else { Some(vec![self.cluster_dns.clone()]) },
-                dns_options: if is_coredns { None } else { Some(vec!["ndots:5".to_string()]) },
+                dns: if is_coredns {
+                    None
+                } else {
+                    Some(vec![self.cluster_dns.clone()])
+                },
+                dns_options: if is_coredns {
+                    None
+                } else {
+                    Some(vec!["ndots:5".to_string()])
+                },
                 port_bindings: if port_bindings.is_empty() {
                     None
                 } else {
@@ -1097,7 +1156,9 @@ impl ContainerRuntime {
 
         // Apply fsGroup: change group ownership and set group-writable on all volume files
         #[cfg(unix)]
-        if let Some(fs_group) = pod.spec.as_ref()
+        if let Some(fs_group) = pod
+            .spec
+            .as_ref()
             .and_then(|s| s.security_context.as_ref())
             .and_then(|sc| sc.fs_group)
         {
@@ -1110,7 +1171,11 @@ impl ContainerRuntime {
                         let fpath = entry.path();
                         // chown -R :fsGroup
                         let _ = std::process::Command::new("chown")
-                            .args(&["-R", &format!(":{}", fs_group), fpath.to_str().unwrap_or("")])
+                            .args(&[
+                                "-R",
+                                &format!(":{}", fs_group),
+                                fpath.to_str().unwrap_or(""),
+                            ])
                             .output();
                         // chmod -R g+rwX (K8s fsGroup adds group-read-write + execute on dirs)
                         let _ = std::process::Command::new("chmod")
@@ -1121,7 +1186,10 @@ impl ContainerRuntime {
                 // Set setgid bit on the directory itself
                 if let Ok(meta) = std::fs::metadata(path) {
                     let mode = meta.permissions().mode();
-                    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode | 0o2000));
+                    let _ = std::fs::set_permissions(
+                        path,
+                        std::fs::Permissions::from_mode(mode | 0o2000),
+                    );
                 }
                 // chown the directory itself
                 let _ = std::process::Command::new("chown")
@@ -1131,7 +1199,11 @@ impl ContainerRuntime {
                     .args(&["g+rwx", path])
                     .output();
             }
-            info!("Applied fsGroup {} to {} volumes", fs_group, volume_paths.len());
+            info!(
+                "Applied fsGroup {} to {} volumes",
+                fs_group,
+                volume_paths.len()
+            );
         }
 
         Ok(volume_paths)
@@ -1139,7 +1211,11 @@ impl ContainerRuntime {
 
     /// Resync projected/secret/configmap volumes for a running pod.
     /// Re-reads source data from storage and updates volume files if changed.
-    pub async fn resync_volumes<S: rusternetes_storage::Storage>(&self, pod: &Pod, storage: &S) -> Result<()> {
+    pub async fn resync_volumes<S: rusternetes_storage::Storage>(
+        &self,
+        pod: &Pod,
+        storage: &S,
+    ) -> Result<()> {
         let pod_name = &pod.metadata.name;
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
 
@@ -1151,10 +1227,16 @@ impl ContainerRuntime {
                         Some(n) => n,
                         None => continue,
                     };
-                    let key = rusternetes_storage::build_key("secrets", Some(namespace), secret_name);
-                    let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
-                    if let Ok(secret) = storage.get::<rusternetes_common::resources::Secret>(&key).await {
-                        let mut expected_files: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    let key =
+                        rusternetes_storage::build_key("secrets", Some(namespace), secret_name);
+                    let volume_dir =
+                        format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+                    if let Ok(secret) = storage
+                        .get::<rusternetes_common::resources::Secret>(&key)
+                        .await
+                    {
+                        let mut expected_files: std::collections::HashSet<String> =
+                            std::collections::HashSet::new();
                         if let Some(data) = &secret.data {
                             if let Some(ref items) = secret_source.items {
                                 // Only mount the specified keys at their mapped paths
@@ -1163,9 +1245,13 @@ impl ContainerRuntime {
                                         let file_path = format!("{}/{}", volume_dir, item.path);
                                         expected_files.insert(item.path.clone());
                                         if let Ok(existing) = std::fs::read(&file_path) {
-                                            if existing == *v { continue; }
+                                            if existing == *v {
+                                                continue;
+                                            }
                                         }
-                                        if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                                        if let Some(parent) =
+                                            std::path::Path::new(&file_path).parent()
+                                        {
                                             let _ = std::fs::create_dir_all(parent);
                                         }
                                         let _ = std::fs::write(&file_path, v);
@@ -1178,7 +1264,9 @@ impl ContainerRuntime {
                                     expected_files.insert(k.clone());
                                     // Only write if content changed
                                     if let Ok(existing) = std::fs::read(&file_path) {
-                                        if existing == *v { continue; }
+                                        if existing == *v {
+                                            continue;
+                                        }
                                     }
                                     let _ = std::fs::write(&file_path, v);
                                 }
@@ -1206,27 +1294,44 @@ impl ContainerRuntime {
                 // Resync configmap volumes
                 if let Some(cm_source) = &volume.config_map {
                     if let Some(cm_name) = &cm_source.name {
-                        let key = rusternetes_storage::build_key("configmaps", Some(namespace), cm_name);
-                        if let Ok(cm) = storage.get::<rusternetes_common::resources::ConfigMap>(&key).await {
-                            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+                        let key =
+                            rusternetes_storage::build_key("configmaps", Some(namespace), cm_name);
+                        if let Ok(cm) = storage
+                            .get::<rusternetes_common::resources::ConfigMap>(&key)
+                            .await
+                        {
+                            let volume_dir =
+                                format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
                             if let Some(ref items) = cm_source.items {
                                 // Only mount the specified keys at their mapped paths
                                 for item in items {
-                                    if let Some(value) = cm.data.as_ref().and_then(|d| d.get(&item.key)) {
+                                    if let Some(value) =
+                                        cm.data.as_ref().and_then(|d| d.get(&item.key))
+                                    {
                                         let file_path = format!("{}/{}", volume_dir, item.path);
                                         if let Ok(existing) = std::fs::read_to_string(&file_path) {
-                                            if existing == *value { continue; }
+                                            if existing == *value {
+                                                continue;
+                                            }
                                         }
-                                        if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                                        if let Some(parent) =
+                                            std::path::Path::new(&file_path).parent()
+                                        {
                                             let _ = std::fs::create_dir_all(parent);
                                         }
                                         let _ = std::fs::write(&file_path, value);
-                                    } else if let Some(value) = cm.binary_data.as_ref().and_then(|d| d.get(&item.key)) {
+                                    } else if let Some(value) =
+                                        cm.binary_data.as_ref().and_then(|d| d.get(&item.key))
+                                    {
                                         let file_path = format!("{}/{}", volume_dir, item.path);
                                         if let Ok(existing) = std::fs::read(&file_path) {
-                                            if existing == *value { continue; }
+                                            if existing == *value {
+                                                continue;
+                                            }
                                         }
-                                        if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                                        if let Some(parent) =
+                                            std::path::Path::new(&file_path).parent()
+                                        {
                                             let _ = std::fs::create_dir_all(parent);
                                         }
                                         let _ = std::fs::write(&file_path, value);
@@ -1238,7 +1343,9 @@ impl ContainerRuntime {
                                     for (k, v) in data {
                                         let file_path = format!("{}/{}", volume_dir, k);
                                         if let Ok(existing) = std::fs::read_to_string(&file_path) {
-                                            if existing == *v { continue; }
+                                            if existing == *v {
+                                                continue;
+                                            }
                                         }
                                         let _ = std::fs::write(&file_path, v);
                                     }
@@ -1248,7 +1355,9 @@ impl ContainerRuntime {
                                     for (k, v) in binary_data {
                                         let file_path = format!("{}/{}", volume_dir, k);
                                         if let Ok(existing) = std::fs::read(&file_path) {
-                                            if existing == *v { continue; }
+                                            if existing == *v {
+                                                continue;
+                                            }
                                         }
                                         let _ = std::fs::write(&file_path, v);
                                     }
@@ -1260,25 +1369,43 @@ impl ContainerRuntime {
                 // Resync projected volumes (may contain configmap/secret projections)
                 if let Some(projected) = &volume.projected {
                     if let Some(sources) = &projected.sources {
-                        let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+                        let volume_dir =
+                            format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
                         // Track expected files so we can delete stale ones
-                        let mut expected_files: std::collections::HashSet<String> = std::collections::HashSet::new();
+                        let mut expected_files: std::collections::HashSet<String> =
+                            std::collections::HashSet::new();
 
                         for source in sources {
                             if let Some(cm_proj) = &source.config_map {
                                 if let Some(cm_name) = &cm_proj.name {
-                                    let key = rusternetes_storage::build_key("configmaps", Some(namespace), cm_name);
-                                    if let Ok(cm) = storage.get::<rusternetes_common::resources::ConfigMap>(&key).await {
+                                    let key = rusternetes_storage::build_key(
+                                        "configmaps",
+                                        Some(namespace),
+                                        cm_name,
+                                    );
+                                    if let Ok(cm) = storage
+                                        .get::<rusternetes_common::resources::ConfigMap>(&key)
+                                        .await
+                                    {
                                         if let Some(items) = &cm_proj.items {
                                             // Selective projection — only mount specified keys
                                             for item in items {
-                                                let file_path = format!("{}/{}", volume_dir, item.path);
+                                                let file_path =
+                                                    format!("{}/{}", volume_dir, item.path);
                                                 expected_files.insert(file_path.clone());
-                                                if let Some(value) = cm.data.as_ref().and_then(|d| d.get(&item.key)) {
-                                                    if let Ok(existing) = std::fs::read_to_string(&file_path) {
-                                                        if existing == *value { continue; }
+                                                if let Some(value) =
+                                                    cm.data.as_ref().and_then(|d| d.get(&item.key))
+                                                {
+                                                    if let Ok(existing) =
+                                                        std::fs::read_to_string(&file_path)
+                                                    {
+                                                        if existing == *value {
+                                                            continue;
+                                                        }
                                                     }
-                                                    if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                                                    if let Some(parent) =
+                                                        std::path::Path::new(&file_path).parent()
+                                                    {
                                                         let _ = std::fs::create_dir_all(parent);
                                                     }
                                                     let _ = std::fs::write(&file_path, value);
@@ -1289,8 +1416,12 @@ impl ContainerRuntime {
                                             for (k, v) in data {
                                                 let file_path = format!("{}/{}", volume_dir, k);
                                                 expected_files.insert(file_path.clone());
-                                                if let Ok(existing) = std::fs::read_to_string(&file_path) {
-                                                    if existing == *v { continue; }
+                                                if let Ok(existing) =
+                                                    std::fs::read_to_string(&file_path)
+                                                {
+                                                    if existing == *v {
+                                                        continue;
+                                                    }
                                                 }
                                                 let _ = std::fs::write(&file_path, v);
                                             }
@@ -1300,14 +1431,23 @@ impl ContainerRuntime {
                             }
                             if let Some(sec_proj) = &source.secret {
                                 if let Some(sec_name) = &sec_proj.name {
-                                    let key = rusternetes_storage::build_key("secrets", Some(namespace), sec_name);
-                                    if let Ok(secret) = storage.get::<rusternetes_common::resources::Secret>(&key).await {
+                                    let key = rusternetes_storage::build_key(
+                                        "secrets",
+                                        Some(namespace),
+                                        sec_name,
+                                    );
+                                    if let Ok(secret) = storage
+                                        .get::<rusternetes_common::resources::Secret>(&key)
+                                        .await
+                                    {
                                         if let Some(data) = &secret.data {
                                             for (k, v) in data {
                                                 let file_path = format!("{}/{}", volume_dir, k);
                                                 expected_files.insert(file_path.clone());
                                                 if let Ok(existing) = std::fs::read(&file_path) {
-                                                    if existing == *v { continue; }
+                                                    if existing == *v {
+                                                        continue;
+                                                    }
                                                 }
                                                 let _ = std::fs::write(&file_path, v);
                                             }
@@ -1322,14 +1462,20 @@ impl ContainerRuntime {
                                         let file_path = format!("{}/{}", volume_dir, item.path);
                                         expected_files.insert(file_path.clone());
                                         let value = if let Some(ref field_ref) = item.field_ref {
-                                            self.get_pod_field_value(pod, &field_ref.field_path).unwrap_or_default()
-                                        } else if let Some(ref resource_ref) = item.resource_field_ref {
-                                            self.get_container_resource_value(pod, resource_ref).unwrap_or_default()
+                                            self.get_pod_field_value(pod, &field_ref.field_path)
+                                                .unwrap_or_default()
+                                        } else if let Some(ref resource_ref) =
+                                            item.resource_field_ref
+                                        {
+                                            self.get_container_resource_value(pod, resource_ref)
+                                                .unwrap_or_default()
                                         } else {
                                             String::new()
                                         };
                                         if let Ok(existing) = std::fs::read_to_string(&file_path) {
-                                            if existing == value { continue; }
+                                            if existing == value {
+                                                continue;
+                                            }
                                         }
                                         let _ = std::fs::write(&file_path, &value);
                                     }
@@ -1354,18 +1500,23 @@ impl ContainerRuntime {
                 // Resync standalone downwardAPI volumes
                 if let Some(downward_api) = &volume.downward_api {
                     if let Some(items) = &downward_api.items {
-                        let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+                        let volume_dir =
+                            format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
                         for item in items {
                             let file_path = format!("{}/{}", volume_dir, item.path);
                             let value = if let Some(ref field_ref) = item.field_ref {
-                                self.get_pod_field_value(pod, &field_ref.field_path).unwrap_or_default()
+                                self.get_pod_field_value(pod, &field_ref.field_path)
+                                    .unwrap_or_default()
                             } else if let Some(ref resource_ref) = item.resource_field_ref {
-                                self.get_container_resource_value(pod, resource_ref).unwrap_or_default()
+                                self.get_container_resource_value(pod, resource_ref)
+                                    .unwrap_or_default()
                             } else {
                                 String::new()
                             };
                             if let Ok(existing) = std::fs::read_to_string(&file_path) {
-                                if existing == value { continue; }
+                                if existing == value {
+                                    continue;
+                                }
                             }
                             let _ = std::fs::write(&file_path, &value);
                         }
@@ -1414,7 +1565,10 @@ impl ContainerRuntime {
         }
         // Reject absolute paths in the expanded result
         if result.starts_with('/') {
-            return Err(format!("subPath must not be an absolute path (expr='{}' result='{}')", expr, result));
+            return Err(format!(
+                "subPath must not be an absolute path (expr='{}' result='{}')",
+                expr, result
+            ));
         }
         // Reject path traversal — check for ".." as a path component, not substring.
         // This matches K8s behavior: "foo..bar" is valid, but "foo/../bar" is not.
@@ -1483,10 +1637,7 @@ impl ContainerRuntime {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(
-                    &volume_dir,
-                    std::fs::Permissions::from_mode(0o777),
-                )?;
+                std::fs::set_permissions(&volume_dir, std::fs::Permissions::from_mode(0o777))?;
             }
             info!("Created emptyDir volume {} at {}", volume.name, volume_dir);
             return Ok(volume_dir);
@@ -1544,21 +1695,22 @@ impl ContainerRuntime {
             match configmap_result {
                 Ok(configmap) => {
                     // Helper closure to write a file and set permissions
-                    let write_cm_file = |file_path: &str, content: &[u8], mode: i32| -> Result<()> {
-                        if let Some(parent) = std::path::Path::new(file_path).parent() {
-                            std::fs::create_dir_all(parent)?;
-                        }
-                        std::fs::write(file_path, content)?;
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            std::fs::set_permissions(
-                                file_path,
-                                std::fs::Permissions::from_mode(mode as u32),
-                            )?;
-                        }
-                        Ok(())
-                    };
+                    let write_cm_file =
+                        |file_path: &str, content: &[u8], mode: i32| -> Result<()> {
+                            if let Some(parent) = std::path::Path::new(file_path).parent() {
+                                std::fs::create_dir_all(parent)?;
+                            }
+                            std::fs::write(file_path, content)?;
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                std::fs::set_permissions(
+                                    file_path,
+                                    std::fs::Permissions::from_mode(mode as u32),
+                                )?;
+                            }
+                            Ok(())
+                        };
 
                     // Check if specific items are requested
                     if let Some(ref items) = configmap_source.items {
@@ -1568,16 +1720,33 @@ impl ContainerRuntime {
                             let file_path = format!("{}/{}", volume_dir, item.path);
 
                             // Try data first, then binary_data
-                            if let Some(value) = configmap.data.as_ref().and_then(|d| d.get(&item.key)) {
-                                write_cm_file(&file_path, value.as_bytes(), mode).with_context(|| {
-                                    format!("Failed to write ConfigMap key {} to file", item.key)
-                                })?;
+                            if let Some(value) =
+                                configmap.data.as_ref().and_then(|d| d.get(&item.key))
+                            {
+                                write_cm_file(&file_path, value.as_bytes(), mode).with_context(
+                                    || {
+                                        format!(
+                                            "Failed to write ConfigMap key {} to file",
+                                            item.key
+                                        )
+                                    },
+                                )?;
                                 info!("Wrote ConfigMap key {} to {}", item.key, file_path);
-                            } else if let Some(value) = configmap.binary_data.as_ref().and_then(|d| d.get(&item.key)) {
+                            } else if let Some(value) = configmap
+                                .binary_data
+                                .as_ref()
+                                .and_then(|d| d.get(&item.key))
+                            {
                                 write_cm_file(&file_path, value, mode).with_context(|| {
-                                    format!("Failed to write ConfigMap binaryData key {} to file", item.key)
+                                    format!(
+                                        "Failed to write ConfigMap binaryData key {} to file",
+                                        item.key
+                                    )
                                 })?;
-                                info!("Wrote ConfigMap binaryData key {} to {}", item.key, file_path);
+                                info!(
+                                    "Wrote ConfigMap binaryData key {} to {}",
+                                    item.key, file_path
+                                );
                             } else if !is_optional {
                                 warn!("ConfigMap {} missing key {}", configmap_name, item.key);
                             }
@@ -1587,9 +1756,10 @@ impl ContainerRuntime {
                         if let Some(data) = &configmap.data {
                             for (key, value) in data {
                                 let file_path = format!("{}/{}", volume_dir, key);
-                                write_cm_file(&file_path, value.as_bytes(), cm_default_mode).with_context(|| {
-                                    format!("Failed to write ConfigMap key {} to file", key)
-                                })?;
+                                write_cm_file(&file_path, value.as_bytes(), cm_default_mode)
+                                    .with_context(|| {
+                                        format!("Failed to write ConfigMap key {} to file", key)
+                                    })?;
                                 info!("Wrote ConfigMap key {} to {}", key, file_path);
                             }
                         }
@@ -1597,9 +1767,14 @@ impl ContainerRuntime {
                         if let Some(binary_data) = &configmap.binary_data {
                             for (key, value) in binary_data {
                                 let file_path = format!("{}/{}", volume_dir, key);
-                                write_cm_file(&file_path, value, cm_default_mode).with_context(|| {
-                                    format!("Failed to write ConfigMap binaryData key {} to file", key)
-                                })?;
+                                write_cm_file(&file_path, value, cm_default_mode).with_context(
+                                    || {
+                                        format!(
+                                            "Failed to write ConfigMap binaryData key {} to file",
+                                            key
+                                        )
+                                    },
+                                )?;
                                 info!("Wrote ConfigMap binaryData key {} to {}", key, file_path);
                             }
                         }
@@ -1616,7 +1791,9 @@ impl ContainerRuntime {
                         // retries on next reconciliation (when the ConfigMap exists).
                         return Err(anyhow::anyhow!(
                             "ConfigMap {} not found in namespace {}: {}",
-                            configmap_name, namespace, e
+                            configmap_name,
+                            namespace,
+                            e
                         ));
                     }
                 }
@@ -1673,7 +1850,9 @@ impl ContainerRuntime {
                         // retries on next reconciliation (when the secret exists).
                         return Err(anyhow::anyhow!(
                             "Secret {} not found in namespace {}: {}",
-                            secret_name, namespace, e
+                            secret_name,
+                            namespace,
+                            e
                         ));
                     }
                 }
@@ -1692,11 +1871,15 @@ impl ContainerRuntime {
                             // Create parent directories if needed
                             if let Some(parent) = std::path::Path::new(&file_path).parent() {
                                 std::fs::create_dir_all(parent).with_context(|| {
-                                    format!("Failed to create directory for Secret item {}", item.path)
+                                    format!(
+                                        "Failed to create directory for Secret item {}",
+                                        item.path
+                                    )
                                 })?;
                             }
-                            std::fs::write(&file_path, value)
-                                .with_context(|| format!("Failed to write Secret key {} to file", item.key))?;
+                            std::fs::write(&file_path, value).with_context(|| {
+                                format!("Failed to write Secret key {} to file", item.key)
+                            })?;
                             #[cfg(unix)]
                             {
                                 use std::os::unix::fs::PermissionsExt;
@@ -1713,8 +1896,9 @@ impl ContainerRuntime {
                     // Mount all keys
                     for (key, value) in data {
                         let file_path = format!("{}/{}", volume_dir, key);
-                        std::fs::write(&file_path, value)
-                            .with_context(|| format!("Failed to write Secret key {} to file", key))?;
+                        std::fs::write(&file_path, value).with_context(|| {
+                            format!("Failed to write Secret key {} to file", key)
+                        })?;
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt;
@@ -2029,30 +2213,46 @@ impl ContainerRuntime {
                                 match storage.get::<ConfigMap>(&key).await {
                                     Ok(cm) => {
                                         // Helper to write a projected file with permissions
-                                        let write_proj_file = |path: &str, content: &[u8], mode: i32| -> Result<()> {
-                                            if let Some(parent) = std::path::Path::new(path).parent() {
-                                                std::fs::create_dir_all(parent)?;
-                                            }
-                                            std::fs::write(path, content)?;
-                                            #[cfg(unix)]
-                                            {
-                                                use std::os::unix::fs::PermissionsExt;
-                                                std::fs::set_permissions(
-                                                    path,
-                                                    std::fs::Permissions::from_mode(mode as u32),
-                                                )?;
-                                            }
-                                            Ok(())
-                                        };
+                                        let write_proj_file =
+                                            |path: &str, content: &[u8], mode: i32| -> Result<()> {
+                                                if let Some(parent) =
+                                                    std::path::Path::new(path).parent()
+                                                {
+                                                    std::fs::create_dir_all(parent)?;
+                                                }
+                                                std::fs::write(path, content)?;
+                                                #[cfg(unix)]
+                                                {
+                                                    use std::os::unix::fs::PermissionsExt;
+                                                    std::fs::set_permissions(
+                                                        path,
+                                                        std::fs::Permissions::from_mode(
+                                                            mode as u32,
+                                                        ),
+                                                    )?;
+                                                }
+                                                Ok(())
+                                            };
 
                                         if let Some(items) = &cm_proj.items {
                                             for item in items {
                                                 let mode = item.mode.unwrap_or(proj_default_mode);
-                                                let file_path = format!("{}/{}", volume_dir, item.path);
+                                                let file_path =
+                                                    format!("{}/{}", volume_dir, item.path);
                                                 // Try data first, then binaryData
-                                                if let Some(value) = cm.data.as_ref().and_then(|d| d.get(&item.key)) {
-                                                    write_proj_file(&file_path, value.as_bytes(), mode)?;
-                                                } else if let Some(value) = cm.binary_data.as_ref().and_then(|d| d.get(&item.key)) {
+                                                if let Some(value) =
+                                                    cm.data.as_ref().and_then(|d| d.get(&item.key))
+                                                {
+                                                    write_proj_file(
+                                                        &file_path,
+                                                        value.as_bytes(),
+                                                        mode,
+                                                    )?;
+                                                } else if let Some(value) = cm
+                                                    .binary_data
+                                                    .as_ref()
+                                                    .and_then(|d| d.get(&item.key))
+                                                {
                                                     write_proj_file(&file_path, value, mode)?;
                                                 }
                                             }
@@ -2061,14 +2261,22 @@ impl ContainerRuntime {
                                             if let Some(data) = &cm.data {
                                                 for (k, v) in data {
                                                     let file_path = format!("{}/{}", volume_dir, k);
-                                                    write_proj_file(&file_path, v.as_bytes(), proj_default_mode)?;
+                                                    write_proj_file(
+                                                        &file_path,
+                                                        v.as_bytes(),
+                                                        proj_default_mode,
+                                                    )?;
                                                 }
                                             }
                                             // Mount all keys from binaryData
                                             if let Some(binary_data) = &cm.binary_data {
                                                 for (k, v) in binary_data {
                                                     let file_path = format!("{}/{}", volume_dir, k);
-                                                    write_proj_file(&file_path, v, proj_default_mode)?;
+                                                    write_proj_file(
+                                                        &file_path,
+                                                        v,
+                                                        proj_default_mode,
+                                                    )?;
                                                 }
                                             }
                                         }
@@ -2107,10 +2315,15 @@ impl ContainerRuntime {
                                                         #[cfg(unix)]
                                                         {
                                                             use std::os::unix::fs::PermissionsExt;
-                                                            let mode = item.mode.unwrap_or(proj_default_mode) as u32;
+                                                            let mode = item
+                                                                .mode
+                                                                .unwrap_or(proj_default_mode)
+                                                                as u32;
                                                             std::fs::set_permissions(
                                                                 &file_path,
-                                                                std::fs::Permissions::from_mode(mode),
+                                                                std::fs::Permissions::from_mode(
+                                                                    mode,
+                                                                ),
                                                             )?;
                                                         }
                                                     }
@@ -2124,7 +2337,9 @@ impl ContainerRuntime {
                                                         use std::os::unix::fs::PermissionsExt;
                                                         std::fs::set_permissions(
                                                             &file_path,
-                                                            std::fs::Permissions::from_mode(proj_default_mode as u32),
+                                                            std::fs::Permissions::from_mode(
+                                                                proj_default_mode as u32,
+                                                            ),
                                                         )?;
                                                     }
                                                 }
@@ -2147,9 +2362,7 @@ impl ContainerRuntime {
                         if let Some(items) = &downward_api.items {
                             for item in items {
                                 let file_path = format!("{}/{}", volume_dir, item.path);
-                                if let Some(parent) =
-                                    std::path::Path::new(&file_path).parent()
-                                {
+                                if let Some(parent) = std::path::Path::new(&file_path).parent() {
                                     std::fs::create_dir_all(parent)?;
                                 }
                                 let value = if let Some(ref field_ref) = item.field_ref {
@@ -2182,12 +2395,17 @@ impl ContainerRuntime {
                             std::fs::create_dir_all(parent)?;
                         }
                         // Generate a real JWT token bound to this pod
-                        let sa_name = pod.spec.as_ref()
+                        let sa_name = pod
+                            .spec
+                            .as_ref()
                             .and_then(|s| s.service_account_name.as_deref())
                             .unwrap_or("default");
                         let sa_uid = if let Some(storage) = storage {
                             let sa_key = build_key("serviceaccounts", Some(namespace), sa_name);
-                            match storage.get::<rusternetes_common::resources::ServiceAccount>(&sa_key).await {
+                            match storage
+                                .get::<rusternetes_common::resources::ServiceAccount>(&sa_key)
+                                .await
+                            {
                                 Ok(sa) => sa.metadata.uid.clone(),
                                 Err(_) => String::new(),
                             }
@@ -2217,7 +2435,10 @@ impl ContainerRuntime {
                         let token = match self.token_manager.generate_token(claims) {
                             Ok(t) => t,
                             Err(e) => {
-                                warn!("Failed to generate SA token for pod {}: {}, using placeholder", pod_name, e);
+                                warn!(
+                                    "Failed to generate SA token for pod {}: {}, using placeholder",
+                                    pod_name, e
+                                );
                                 "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.placeholder".to_string()
                             }
                         };
@@ -2234,10 +2455,7 @@ impl ContainerRuntime {
                 }
             }
 
-            info!(
-                "Created projected volume {} at {}",
-                volume.name, volume_dir
-            );
+            info!("Created projected volume {} at {}", volume.name, volume_dir);
             return Ok(volume_dir);
         }
 
@@ -2401,13 +2619,23 @@ impl ContainerRuntime {
             if is_running {
                 return Ok(());
             }
-            if matches!(status, Some(bollard::secret::ContainerStateStatusEnum::CREATED)) {
-                debug!("Container {} is in created state, waiting for it to start", container_name);
+            if matches!(
+                status,
+                Some(bollard::secret::ContainerStateStatusEnum::CREATED)
+            ) {
+                debug!(
+                    "Container {} is in created state, waiting for it to start",
+                    container_name
+                );
                 return Ok(());
             }
 
             // Only remove if container has actually exited
-            if matches!(status, Some(bollard::secret::ContainerStateStatusEnum::EXITED) | Some(bollard::secret::ContainerStateStatusEnum::DEAD)) {
+            if matches!(
+                status,
+                Some(bollard::secret::ContainerStateStatusEnum::EXITED)
+                    | Some(bollard::secret::ContainerStateStatusEnum::DEAD)
+            ) {
                 debug!("Removing exited container: {}", container_name);
                 let remove_options = RemoveContainerOptions {
                     force: true,
@@ -2418,7 +2646,10 @@ impl ContainerRuntime {
                     .await?;
             } else {
                 // Unknown state — don't remove, don't recreate
-                debug!("Container {} in state {:?}, skipping", container_name, status);
+                debug!(
+                    "Container {} in state {:?}, skipping",
+                    container_name, status
+                );
                 return Ok(());
             }
         }
@@ -2623,7 +2854,10 @@ impl ContainerRuntime {
                             Err(e) => {
                                 let optional = cm_ref.optional.unwrap_or(false);
                                 if !optional {
-                                    warn!("Failed to get ConfigMap {} for envFrom: {}", cm_ref.name, e);
+                                    warn!(
+                                        "Failed to get ConfigMap {} for envFrom: {}",
+                                        cm_ref.name, e
+                                    );
                                 }
                             }
                         }
@@ -2646,7 +2880,10 @@ impl ContainerRuntime {
                             Err(e) => {
                                 let optional = secret_ref.optional.unwrap_or(false);
                                 if !optional {
-                                    warn!("Failed to get Secret {} for envFrom: {}", secret_ref.name, e);
+                                    warn!(
+                                        "Failed to get Secret {} for envFrom: {}",
+                                        secret_ref.name, e
+                                    );
                                 }
                             }
                         }
@@ -2677,7 +2914,11 @@ impl ContainerRuntime {
                                 let mut parts = entry.splitn(2, '=');
                                 let k = parts.next()?;
                                 let v = parts.next()?;
-                                if k == var_name { Some(v.to_string()) } else { None }
+                                if k == var_name {
+                                    Some(v.to_string())
+                                } else {
+                                    None
+                                }
                             })
                             .unwrap_or_default();
                         expanded.replace_range(start..end + 1, &replacement);
@@ -2842,54 +3083,57 @@ impl ContainerRuntime {
                 // Validate subPathExpr / subPath BEFORE looking up the volume.
                 // Kubernetes rejects containers whose expanded subpath contains
                 // ".." or is absolute, regardless of whether the volume exists.
-                let expanded_sub_path: Option<String> =
-                    if let Some(ref expr) = mount.sub_path_expr {
-                        debug!("subPathExpr='{}' for container {} mount {}, env_pairs={:?}", expr, container.name, mount.name, resolved_env_pairs);
-                        match Self::expand_subpath_expr(expr, &resolved_env_pairs) {
-                            Ok(expanded) => {
-                                if expanded.is_empty() {
-                                    return Err(anyhow::anyhow!(
+                let expanded_sub_path: Option<String> = if let Some(ref expr) = mount.sub_path_expr
+                {
+                    debug!(
+                        "subPathExpr='{}' for container {} mount {}, env_pairs={:?}",
+                        expr, container.name, mount.name, resolved_env_pairs
+                    );
+                    match Self::expand_subpath_expr(expr, &resolved_env_pairs) {
+                        Ok(expanded) => {
+                            if expanded.is_empty() {
+                                return Err(anyhow::anyhow!(
                                         "CreateContainerError: subPathExpr '{}' expanded to empty string in container {}",
                                         expr, container.name
                                     ));
-                                }
-                                Some(expanded)
                             }
-                            Err(e) => {
-                                return Err(anyhow::anyhow!(
+                            Some(expanded)
+                        }
+                        Err(e) => {
+                            return Err(anyhow::anyhow!(
                                     "CreateContainerError: subPathExpr expansion failed for container {}: {}",
                                     container.name, e
                                 ));
-                            }
                         }
-                    } else if let Some(ref sub_path) = mount.sub_path {
-                        if !sub_path.is_empty() {
-                            // Validate plain subPath for path traversal / absolute path
-                            if sub_path.starts_with('/') {
-                                return Err(anyhow::anyhow!(
+                    }
+                } else if let Some(ref sub_path) = mount.sub_path {
+                    if !sub_path.is_empty() {
+                        // Validate plain subPath for path traversal / absolute path
+                        if sub_path.starts_with('/') {
+                            return Err(anyhow::anyhow!(
                                     "CreateContainerError: subPath must not be an absolute path in container {}",
                                     container.name
                                 ));
-                            }
-                            if sub_path.contains('`') {
-                                return Err(anyhow::anyhow!(
+                        }
+                        if sub_path.contains('`') {
+                            return Err(anyhow::anyhow!(
                                     "CreateContainerError: subPath must not contain backticks in container {}",
                                     container.name
                                 ));
-                            }
-                            if sub_path.split('/').any(|c| c == "..") {
-                                return Err(anyhow::anyhow!(
+                        }
+                        if sub_path.split('/').any(|c| c == "..") {
+                            return Err(anyhow::anyhow!(
                                     "CreateContainerError: subPath must not contain '..' in container {}",
                                     container.name
                                 ));
-                            }
-                            Some(sub_path.clone())
-                        } else {
-                            None
                         }
+                        Some(sub_path.clone())
                     } else {
                         None
-                    };
+                    }
+                } else {
+                    None
+                };
 
                 if let Some(host_path) = volume_paths.get(&mount.name) {
                     let read_only = mount.read_only.unwrap_or(false);
@@ -2909,7 +3153,9 @@ impl ContainerRuntime {
                             host_path.clone()
                         };
                         // emptyDir with medium: Memory uses tmpfs (in-memory filesystem).
-                        let is_memory_medium = pod.spec.as_ref()
+                        let is_memory_medium = pod
+                            .spec
+                            .as_ref()
                             .and_then(|s| s.volumes.as_ref())
                             .and_then(|vols| vols.iter().find(|v| v.name == mount.name))
                             .and_then(|v| v.empty_dir.as_ref())
@@ -2917,7 +3163,9 @@ impl ContainerRuntime {
                             .map(|m| m == "Memory")
                             .unwrap_or(false);
 
-                        let use_tmpfs = is_memory_medium && empty_dir_volumes.contains(&mount.name) && expanded_sub_path.is_none();
+                        let use_tmpfs = is_memory_medium
+                            && empty_dir_volumes.contains(&mount.name)
+                            && expanded_sub_path.is_none();
 
                         if use_tmpfs {
                             // Use tmpfs for medium: Memory emptyDir volumes.
@@ -2930,8 +3178,10 @@ impl ContainerRuntime {
                             tmpfs_mounts.insert(mount.mount_path.clone(), opts);
                         } else {
                             let ro_suffix = if read_only { ":ro" } else { "" };
-                            let bind =
-                                format!("{}:{}{}", effective_host_path, mount.mount_path, ro_suffix);
+                            let bind = format!(
+                                "{}:{}{}",
+                                effective_host_path, mount.mount_path, ro_suffix
+                            );
                             binds.push(bind);
                         }
                         info!(
@@ -3120,7 +3370,9 @@ impl ContainerRuntime {
 
         // Mount /etc/hosts if a pod-specific hosts file was created,
         // but skip if the container already has a volume mount at /etc/hosts
-        let has_hosts_mount = container.volume_mounts.as_ref()
+        let has_hosts_mount = container
+            .volume_mounts
+            .as_ref()
             .map(|mounts| mounts.iter().any(|m| m.mount_path == "/etc/hosts"))
             .unwrap_or(false);
         if let Some(hosts_path) = hosts_file_path {
@@ -3271,7 +3523,9 @@ impl ContainerRuntime {
         // network mode (Docker rejects hostname on containers sharing another's network NS)
         let using_container_network = !self.use_cni && netns_path.is_none();
         let pod_hostname = if !using_container_network {
-            let raw = pod.spec.as_ref()
+            let raw = pod
+                .spec
+                .as_ref()
                 .and_then(|s| s.hostname.as_deref())
                 .unwrap_or(&pod.metadata.name);
             // Linux hostnames limited to 63 chars
@@ -3303,8 +3557,16 @@ impl ContainerRuntime {
                     Some(port_bindings)
                 },
                 binds: if binds.is_empty() { None } else { Some(binds) },
-                tmpfs: if tmpfs_mounts.is_empty() { None } else { Some(tmpfs_mounts) },
-                mounts: if docker_vol_mounts.is_empty() { None } else { Some(docker_vol_mounts) },
+                tmpfs: if tmpfs_mounts.is_empty() {
+                    None
+                } else {
+                    Some(tmpfs_mounts)
+                },
+                mounts: if docker_vol_mounts.is_empty() {
+                    None
+                } else {
+                    Some(docker_vol_mounts)
+                },
                 // Configure DNS to use kube-dns service
                 // CoreDNS uses default/host DNS to avoid circular dependency
                 dns: dns_servers,
@@ -3323,10 +3585,19 @@ impl ContainerRuntime {
                 // Share IPC and PID namespaces with pause container (K8s pod semantics)
                 ipc_mode: if !self.use_cni {
                     Some(format!("container:{}_pause", pod_name))
-                } else { None },
-                pid_mode: if pod.spec.as_ref().and_then(|s| s.share_process_namespace).unwrap_or(false) {
+                } else {
+                    None
+                },
+                pid_mode: if pod
+                    .spec
+                    .as_ref()
+                    .and_then(|s| s.share_process_namespace)
+                    .unwrap_or(false)
+                {
                     Some(format!("container:{}_pause", pod_name))
-                } else { None },
+                } else {
+                    None
+                },
                 // Resource limits enforcement via cgroups
                 memory: memory_limit,
                 cpu_period,
@@ -3339,12 +3610,17 @@ impl ContainerRuntime {
                     .and_then(|sc| sc.read_only_root_filesystem),
                 // Security options: no-new-privileges when allowPrivilegeEscalation is false
                 security_opt: {
-                    let ape = container.security_context.as_ref()
+                    let ape = container
+                        .security_context
+                        .as_ref()
                         .and_then(|sc| sc.allow_privilege_escalation)
-                        .or_else(|| pod.spec.as_ref()
-                            .and_then(|s| s.security_context.as_ref())
-                            .and_then(|sc| sc.run_as_non_root)
-                            .map(|_| false));
+                        .or_else(|| {
+                            pod.spec
+                                .as_ref()
+                                .and_then(|s| s.security_context.as_ref())
+                                .and_then(|sc| sc.run_as_non_root)
+                                .map(|_| false)
+                        });
                     if ape == Some(false) {
                         Some(vec!["no-new-privileges".to_string()])
                     } else {
@@ -3352,14 +3628,20 @@ impl ContainerRuntime {
                     }
                 },
                 // Capabilities
-                cap_add: container.security_context.as_ref()
+                cap_add: container
+                    .security_context
+                    .as_ref()
                     .and_then(|sc| sc.capabilities.as_ref())
                     .and_then(|c| c.add.clone()),
-                cap_drop: container.security_context.as_ref()
+                cap_drop: container
+                    .security_context
+                    .as_ref()
                     .and_then(|sc| sc.capabilities.as_ref())
                     .and_then(|c| c.drop.clone()),
                 // Privileged mode
-                privileged: container.security_context.as_ref()
+                privileged: container
+                    .security_context
+                    .as_ref()
                     .and_then(|sc| sc.privileged),
                 // Sysctls are set on the pause container (which owns the namespaces).
                 // App containers share namespaces via ipc_mode/pid_mode above.
@@ -3373,26 +3655,30 @@ impl ContainerRuntime {
         // Kubernetes expands $(VAR_NAME) references in command and args using the
         // container's own environment variables.
         let expand_k8s_vars = |items: &[String]| -> Vec<String> {
-            items.iter().map(|item| {
-                let mut result = item.clone();
-                loop {
-                    let start = match result.find("$(") {
-                        Some(s) => s,
-                        None => break,
-                    };
-                    let end = match result[start..].find(')') {
-                        Some(e) => start + e,
-                        None => break,
-                    };
-                    let var_name = &result[start + 2..end];
-                    let value = resolved_env_pairs.iter()
-                        .find(|(k, _)| k == var_name)
-                        .map(|(_, v)| v.as_str())
-                        .unwrap_or("");
-                    result.replace_range(start..end + 1, value);
-                }
-                result
-            }).collect()
+            items
+                .iter()
+                .map(|item| {
+                    let mut result = item.clone();
+                    loop {
+                        let start = match result.find("$(") {
+                            Some(s) => s,
+                            None => break,
+                        };
+                        let end = match result[start..].find(')') {
+                            Some(e) => start + e,
+                            None => break,
+                        };
+                        let var_name = &result[start + 2..end];
+                        let value = resolved_env_pairs
+                            .iter()
+                            .find(|(k, _)| k == var_name)
+                            .map(|(_, v)| v.as_str())
+                            .unwrap_or("");
+                        result.replace_range(start..end + 1, value);
+                    }
+                    result
+                })
+                .collect()
         };
 
         // Check if this container mounts emptyDir volumes — if so, we need
@@ -3402,14 +3688,20 @@ impl ContainerRuntime {
         // so we wrap the command with "umask 0 && exec <original>".
         // However, distroless/scratch images don't have /bin/sh, so we probe
         // the image first by creating+starting a test container.
-        let has_emptydir_mount = container.volume_mounts.as_ref()
+        let has_emptydir_mount = container
+            .volume_mounts
+            .as_ref()
             .map(|mounts| mounts.iter().any(|m| empty_dir_volumes.contains(&m.name)))
             .unwrap_or(false);
         let has_shell = if has_emptydir_mount {
             let probe_name = format!("{}_sh_probe", container_name);
             let probe_config = bollard::container::Config {
                 image: Some(container.image.clone()),
-                entrypoint: Some(vec!["/bin/sh".to_string(), "-c".to_string(), "true".to_string()]),
+                entrypoint: Some(vec![
+                    "/bin/sh".to_string(),
+                    "-c".to_string(),
+                    "true".to_string(),
+                ]),
                 cmd: Some(vec![]),
                 ..Default::default()
             };
@@ -3417,9 +3709,14 @@ impl ContainerRuntime {
                 name: probe_name.clone(),
                 ..Default::default()
             };
-            let shell_ok = match self.docker.create_container(Some(probe_opts), probe_config).await {
+            let shell_ok = match self
+                .docker
+                .create_container(Some(probe_opts), probe_config)
+                .await
+            {
                 Ok(_) => {
-                    let start_ok = self.docker
+                    let start_ok = self
+                        .docker
                         .start_container(&probe_name, None::<StartContainerOptions<String>>)
                         .await
                         .is_ok();
@@ -3427,12 +3724,21 @@ impl ContainerRuntime {
                 }
                 Err(_) => false,
             };
-            let _ = self.docker.remove_container(
-                &probe_name,
-                Some(bollard::container::RemoveContainerOptions { force: true, ..Default::default() }),
-            ).await;
+            let _ = self
+                .docker
+                .remove_container(
+                    &probe_name,
+                    Some(bollard::container::RemoveContainerOptions {
+                        force: true,
+                        ..Default::default()
+                    }),
+                )
+                .await;
             if !shell_ok {
-                info!("Container {} - image lacks /bin/sh, skipping umask wrapper", container.name);
+                info!(
+                    "Container {} - image lacks /bin/sh, skipping umask wrapper",
+                    container.name
+                );
             }
             shell_ok
         } else {
@@ -3445,14 +3751,22 @@ impl ContainerRuntime {
                 let expanded_cmd = expand_k8s_vars(command);
                 let expanded_args = expand_k8s_vars(args);
                 if needs_umask_fix {
-                    let full = format!("umask 0000 && exec {} {}",
-                        shell_join(&expanded_cmd), shell_join(&expanded_args));
-                    info!("Container {} - wrapping with umask 0: {}", container.name, full);
+                    let full = format!(
+                        "umask 0000 && exec {} {}",
+                        shell_join(&expanded_cmd),
+                        shell_join(&expanded_args)
+                    );
+                    info!(
+                        "Container {} - wrapping with umask 0: {}",
+                        container.name, full
+                    );
                     config.entrypoint = Some(vec!["/bin/sh".to_string(), "-c".to_string(), full]);
                     config.cmd = Some(vec![]);
                 } else {
-                    info!("Container {} - setting entrypoint {:?} and cmd {:?}",
-                        container.name, expanded_cmd, expanded_args);
+                    info!(
+                        "Container {} - setting entrypoint {:?} and cmd {:?}",
+                        container.name, expanded_cmd, expanded_args
+                    );
                     config.entrypoint = Some(expanded_cmd);
                     config.cmd = Some(expanded_args);
                 }
@@ -3460,10 +3774,16 @@ impl ContainerRuntime {
                 let expanded_cmd = expand_k8s_vars(command);
                 if needs_umask_fix {
                     let full = format!("umask 0000 && exec {}", shell_join(&expanded_cmd));
-                    info!("Container {} - wrapping with umask 0: {}", container.name, full);
+                    info!(
+                        "Container {} - wrapping with umask 0: {}",
+                        container.name, full
+                    );
                     config.entrypoint = Some(vec!["/bin/sh".to_string(), "-c".to_string(), full]);
                 } else {
-                    info!("Container {} - setting entrypoint: {:?}", container.name, expanded_cmd);
+                    info!(
+                        "Container {} - setting entrypoint: {:?}",
+                        container.name, expanded_cmd
+                    );
                     config.entrypoint = Some(expanded_cmd);
                 }
                 config.cmd = Some(vec![]);
@@ -3472,7 +3792,8 @@ impl ContainerRuntime {
             let expanded_args = expand_k8s_vars(args);
             if needs_umask_fix {
                 // args-only: discover image entrypoint and wrap with umask
-                let image_entrypoint = self.docker
+                let image_entrypoint = self
+                    .docker
                     .inspect_image(&container.image)
                     .await
                     .ok()
@@ -3484,12 +3805,22 @@ impl ContainerRuntime {
                 } else {
                     shell_join(&image_entrypoint)
                 };
-                let full = format!("umask 0000 && exec {} {}", ep_str, shell_join(&expanded_args));
-                info!("Container {} - wrapping args with umask 0: {}", container.name, full);
+                let full = format!(
+                    "umask 0000 && exec {} {}",
+                    ep_str,
+                    shell_join(&expanded_args)
+                );
+                info!(
+                    "Container {} - wrapping args with umask 0: {}",
+                    container.name, full
+                );
                 config.entrypoint = Some(vec!["/bin/sh".to_string(), "-c".to_string(), full]);
                 config.cmd = Some(vec![]);
             } else {
-                info!("Container {} - setting cmd (args): {:?}", container.name, expanded_args);
+                info!(
+                    "Container {} - setting cmd (args): {:?}",
+                    container.name, expanded_args
+                );
                 config.cmd = Some(expanded_args);
             }
         }
@@ -3509,12 +3840,17 @@ impl ContainerRuntime {
         }
 
         // Start the container
-        if let Err(e) = self.docker
+        if let Err(e) = self
+            .docker
             .start_container(&container_name, None::<StartContainerOptions<String>>)
             .await
         {
             error!("Failed to start container {}: {}", container_name, e);
-            return Err(anyhow::anyhow!("Failed to start container {}: {}", container_name, e));
+            return Err(anyhow::anyhow!(
+                "Failed to start container {}: {}",
+                container_name,
+                e
+            ));
         }
 
         info!("Container {} started successfully", container_name);
@@ -3562,9 +3898,18 @@ impl ContainerRuntime {
 
         for container in containers {
             if let Some(id) = container.id {
-                let _ = self.docker.stop_container(&id, Some(StopContainerOptions { t: 0 })).await;
-                let remove_options = RemoveContainerOptions { force: true, ..Default::default() };
-                let _ = self.docker.remove_container(&id, Some(remove_options)).await;
+                let _ = self
+                    .docker
+                    .stop_container(&id, Some(StopContainerOptions { t: 0 }))
+                    .await;
+                let remove_options = RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                };
+                let _ = self
+                    .docker
+                    .remove_container(&id, Some(remove_options))
+                    .await;
             }
         }
 
@@ -3666,10 +4011,16 @@ impl ContainerRuntime {
 
     /// Check if a specific container is running
     pub async fn is_container_running(&self, container_name: &str) -> Result<bool> {
-        match self.docker.inspect_container(container_name, None::<InspectContainerOptions>).await {
-            Ok(inspect) => {
-                Ok(inspect.state.as_ref().and_then(|s| s.running).unwrap_or(false))
-            }
+        match self
+            .docker
+            .inspect_container(container_name, None::<InspectContainerOptions>)
+            .await
+        {
+            Ok(inspect) => Ok(inspect
+                .state
+                .as_ref()
+                .and_then(|s| s.running)
+                .unwrap_or(false)),
             Err(_) => Ok(false),
         }
     }
@@ -3731,7 +4082,8 @@ impl ContainerRuntime {
         // failed to start (e.g., CreateContainerError from subpath validation).
         let pause_suffix = format!("{}_pause", pod_name);
         let has_app_container = containers.iter().any(|c| {
-            c.names.as_ref()
+            c.names
+                .as_ref()
                 .map(|names| names.iter().any(|n| !n.contains(&pause_suffix)))
                 .unwrap_or(false)
         });
@@ -3756,30 +4108,48 @@ impl ContainerRuntime {
                 .inspect_container(&container_name, None::<InspectContainerOptions>)
                 .await;
 
-            let (state, container_id): (ContainerState, Option<String>) = match container_state_info {
+            let (state, container_id): (ContainerState, Option<String>) = match container_state_info
+            {
                 Ok(inspect) => {
                     let ds = inspect.state.unwrap_or_default();
                     let cid = inspect.id.clone().map(|id| format!("docker://{}", id));
                     let running = ds.running.unwrap_or(false);
 
                     if running {
-                        (ContainerState::Running { started_at: ds.started_at }, cid)
-                    } else if ds.finished_at.is_some() || matches!(ds.status, Some(bollard::secret::ContainerStateStatusEnum::EXITED)) {
+                        (
+                            ContainerState::Running {
+                                started_at: ds.started_at,
+                            },
+                            cid,
+                        )
+                    } else if ds.finished_at.is_some()
+                        || matches!(
+                            ds.status,
+                            Some(bollard::secret::ContainerStateStatusEnum::EXITED)
+                        )
+                    {
                         let code = ds.exit_code.unwrap_or(0) as i32;
                         let term_msg = self.read_termination_message(&container_name, ic).await;
                         let terminated = ContainerState::Terminated {
                             exit_code: code,
                             signal: None,
-                            reason: Some(if code == 0 { "Completed".to_string() } else { ds.error.clone().unwrap_or_else(|| "Error".to_string()) }),
+                            reason: Some(if code == 0 {
+                                "Completed".to_string()
+                            } else {
+                                ds.error.clone().unwrap_or_else(|| "Error".to_string())
+                            }),
                             message: term_msg,
                             started_at: ds.started_at.clone(),
                             finished_at: ds.finished_at.clone(),
                             container_id: cid.clone(),
                         };
                         // For non-zero exit with restartPolicy=Always, show CrashLoopBackOff
-                        let restart_always = pod.spec.as_ref()
+                        let restart_always = pod
+                            .spec
+                            .as_ref()
                             .and_then(|s| s.restart_policy.as_deref())
-                            .unwrap_or("Always") == "Always";
+                            .unwrap_or("Always")
+                            == "Always";
                         if code != 0 && restart_always {
                             // Store terminated as lastState, show Waiting/CrashLoopBackOff as current
                             // We'll handle lastState below
@@ -3791,13 +4161,25 @@ impl ContainerRuntime {
                             (terminated, cid)
                         }
                     } else {
-                        (ContainerState::Waiting { reason: Some("PodInitializing".to_string()), message: None }, cid)
+                        (
+                            ContainerState::Waiting {
+                                reason: Some("PodInitializing".to_string()),
+                                message: None,
+                            },
+                            cid,
+                        )
                     }
                 }
                 Err(_) => {
                     // Container doesn't exist — it hasn't been created yet.
                     // Report as Waiting, not Terminated.
-                    (ContainerState::Waiting { reason: Some("PodInitializing".to_string()), message: None }, None)
+                    (
+                        ContainerState::Waiting {
+                            reason: Some("PodInitializing".to_string()),
+                            message: None,
+                        },
+                        None,
+                    )
                 }
             };
 
@@ -3847,7 +4229,8 @@ impl ContainerRuntime {
                     // previously reported count. Docker's count resets when a
                     // container is recreated, so we must never decrease.
                     let docker_count = inspect.restart_count.map(|c| c as u32).unwrap_or(0);
-                    let prev_count = pod.status
+                    let prev_count = pod
+                        .status
                         .as_ref()
                         .and_then(|s| s.container_statuses.as_ref())
                         .and_then(|statuses| {
@@ -3863,17 +4246,24 @@ impl ContainerRuntime {
                         Some(ContainerState::Running {
                             started_at: state.started_at,
                         })
-                    } else if matches!(state.status, Some(bollard::secret::ContainerStateStatusEnum::EXITED))
-                        || state.finished_at.is_some()
+                    } else if matches!(
+                        state.status,
+                        Some(bollard::secret::ContainerStateStatusEnum::EXITED)
+                    ) || state.finished_at.is_some()
                     {
                         // Read termination message based on terminationMessagePolicy:
                         // - "File" (default): always read from file
                         // - "FallbackToLogsOnError": only read from file/logs if exit != 0
-                        let policy = container.termination_message_policy.as_deref().unwrap_or("File");
-                        let termination_msg = if policy == "FallbackToLogsOnError" && exit_code == 0 {
+                        let policy = container
+                            .termination_message_policy
+                            .as_deref()
+                            .unwrap_or("File");
+                        let termination_msg = if policy == "FallbackToLogsOnError" && exit_code == 0
+                        {
                             None // Successful exit with FallbackToLogsOnError = no message
                         } else {
-                            self.read_termination_message(&container_name, container).await
+                            self.read_termination_message(&container_name, container)
+                                .await
                         };
 
                         // Container has exited (any exit code, including 0)
@@ -3936,8 +4326,13 @@ impl ContainerRuntime {
                             let initial_delay = probe.initial_delay_seconds.unwrap_or(0);
                             let past_initial_delay = if initial_delay > 0 {
                                 // Check container start time from Docker state
-                                if let Some(ContainerState::Running { started_at: Some(ref started_at_str) }) = container_state {
-                                    if let Ok(started) = chrono::DateTime::parse_from_rfc3339(started_at_str) {
+                                if let Some(ContainerState::Running {
+                                    started_at: Some(ref started_at_str),
+                                }) = container_state
+                                {
+                                    if let Ok(started) =
+                                        chrono::DateTime::parse_from_rfc3339(started_at_str)
+                                    {
                                         let elapsed = Utc::now().signed_duration_since(started);
                                         elapsed.num_seconds() >= initial_delay as i64
                                     } else {
@@ -3953,25 +4348,25 @@ impl ContainerRuntime {
                             if !past_initial_delay {
                                 false // Not ready yet, still within initial delay
                             } else {
-                            let raw = self
-                                .check_probe(&container_name, probe)
-                                .await
-                                .unwrap_or(false);
-                            let _failure_threshold = probe.failure_threshold.unwrap_or(3);
-                            let success_threshold = probe.success_threshold.unwrap_or(1);
-                            let key = format!("{}/{}/readiness", pod_name, container.name);
-                            let mut states = self.probe_states.lock().unwrap();
-                            let state = states.entry(key).or_default();
-                            if raw {
-                                state.consecutive_successes += 1;
-                                state.consecutive_failures = 0;
-                                state.consecutive_successes >= success_threshold
-                            } else {
-                                state.consecutive_failures += 1;
-                                state.consecutive_successes = 0;
-                                // Not ready until success threshold is met
-                                false
-                            }
+                                let raw = self
+                                    .check_probe(&container_name, probe)
+                                    .await
+                                    .unwrap_or(false);
+                                let _failure_threshold = probe.failure_threshold.unwrap_or(3);
+                                let success_threshold = probe.success_threshold.unwrap_or(1);
+                                let key = format!("{}/{}/readiness", pod_name, container.name);
+                                let mut states = self.probe_states.lock().unwrap();
+                                let state = states.entry(key).or_default();
+                                if raw {
+                                    state.consecutive_successes += 1;
+                                    state.consecutive_failures = 0;
+                                    state.consecutive_successes >= success_threshold
+                                } else {
+                                    state.consecutive_failures += 1;
+                                    state.consecutive_successes = 0;
+                                    // Not ready until success threshold is met
+                                    false
+                                }
                             } // end else past_initial_delay
                         } else {
                             true // No probe means ready
@@ -3996,7 +4391,10 @@ impl ContainerRuntime {
                         }),
                         container_id: inspect.id.map(|id| format!("docker://{}", id)),
                         started: Some(startup_passed),
-                        allocated_resources: container.resources.as_ref().and_then(|r| r.requests.clone()),
+                        allocated_resources: container
+                            .resources
+                            .as_ref()
+                            .and_then(|r| r.requests.clone()),
                         allocated_resources_status: None,
                         resources: container.resources.clone(),
                         user: None,
@@ -4013,7 +4411,10 @@ impl ContainerRuntime {
                         .as_ref()
                         .and_then(|s| s.container_statuses.as_ref())
                         .and_then(|statuses| {
-                            statuses.iter().find(|cs| cs.name == container.name).cloned()
+                            statuses
+                                .iter()
+                                .find(|cs| cs.name == container.name)
+                                .cloned()
                         });
 
                     if let Some(prev) = existing_status {
@@ -4026,22 +4427,21 @@ impl ContainerRuntime {
                         .status
                         .as_ref()
                         .and_then(|s| s.container_statuses.as_ref())
-                        .and_then(|statuses| {
-                            statuses.iter().find(|cs| cs.name == container.name)
-                        })
+                        .and_then(|statuses| statuses.iter().find(|cs| cs.name == container.name))
                         .and_then(|cs| match &cs.state {
                             Some(ContainerState::Waiting {
-                                reason: Some(r), message,
-                            }) if r == "CreateContainerError" => {
-                                Some((r.clone(), message.clone()))
-                            }
+                                reason: Some(r),
+                                message,
+                            }) if r == "CreateContainerError" => Some((r.clone(), message.clone())),
                             _ => None,
                         });
 
                     let (reason, message) = match existing_reason {
                         Some((r, m)) => (r, m),
                         None => {
-                            let has_init = pod.spec.as_ref()
+                            let has_init = pod
+                                .spec
+                                .as_ref()
                                 .and_then(|s| s.init_containers.as_ref())
                                 .map_or(false, |ic| !ic.is_empty());
                             if has_init {
@@ -4065,14 +4465,17 @@ impl ContainerRuntime {
                         image_id: None,
                         container_id: None,
                         started: Some(false),
-                        allocated_resources: container.resources.as_ref().and_then(|r| r.requests.clone()),
+                        allocated_resources: container
+                            .resources
+                            .as_ref()
+                            .and_then(|r| r.requests.clone()),
                         allocated_resources_status: None,
                         resources: container.resources.clone(),
                         user: None,
                         volume_mounts: None,
                         stop_signal: None,
                     }
-                },
+                }
             };
 
             statuses.push(status);
@@ -4258,13 +4661,22 @@ impl ContainerRuntime {
             .as_deref()
             .unwrap_or("/dev/termination-log");
 
-        debug!("Reading termination message from {} in container {}", msg_path, container_name);
+        debug!(
+            "Reading termination message from {} in container {}",
+            msg_path, container_name
+        );
 
         // Extract pod_name from container_name (format: {pod_name}_{container_name})
-        let pod_name = container_name.rsplitn(2, '_').last().unwrap_or(container_name);
+        let pod_name = container_name
+            .rsplitn(2, '_')
+            .last()
+            .unwrap_or(container_name);
 
         // Try host-side file first (bind-mounted during container creation)
-        let term_host_file = format!("{}/{}/termination/{}", self.volumes_base_path, pod_name, container.name);
+        let term_host_file = format!(
+            "{}/{}/termination/{}",
+            self.volumes_base_path, pod_name, container.name
+        );
         if std::path::Path::new(&term_host_file).exists() {
             // Host file exists — read from it (authoritative, not docker cp)
             if let Ok(content) = std::fs::read_to_string(&term_host_file) {
@@ -4273,12 +4685,19 @@ impl ContainerRuntime {
                     if content.len() > 4096 {
                         content.truncate(4096);
                     }
-                    debug!("Read termination message ({} bytes) from host file for {}", content.len(), container_name);
+                    debug!(
+                        "Read termination message ({} bytes) from host file for {}",
+                        content.len(),
+                        container_name
+                    );
                     return Some(content);
                 }
             }
             // Host file exists but is empty — termination message is empty (don't fall through to docker cp)
-            debug!("Termination message file is empty (host-side) for {}", container_name);
+            debug!(
+                "Termination message file is empty (host-side) for {}",
+                container_name
+            );
             if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
                 return self.read_container_logs_tail(container_name, 80).await;
             }
@@ -4286,16 +4705,24 @@ impl ContainerRuntime {
         }
 
         // Fall back to docker cp for containers created before the bind-mount fix
-        let mut stream = self
-            .docker
-            .download_from_container(container_name, Some(bollard::container::DownloadFromContainerOptions { path: msg_path.to_string() }));
+        let mut stream = self.docker.download_from_container(
+            container_name,
+            Some(bollard::container::DownloadFromContainerOptions {
+                path: msg_path.to_string(),
+            }),
+        );
         let mut all_bytes = Vec::new();
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(bytes) => all_bytes.extend_from_slice(&bytes),
                 Err(e) => {
-                    debug!("Error reading termination message from {}: {}", container_name, e);
-                    if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
+                    debug!(
+                        "Error reading termination message from {}: {}",
+                        container_name, e
+                    );
+                    if container.termination_message_policy.as_deref()
+                        == Some("FallbackToLogsOnError")
+                    {
                         return self.read_container_logs_tail(container_name, 80).await;
                     }
                     return None;
@@ -4304,7 +4731,10 @@ impl ContainerRuntime {
         }
 
         if all_bytes.is_empty() {
-            debug!("Termination message file empty or not found in {}", container_name);
+            debug!(
+                "Termination message file empty or not found in {}",
+                container_name
+            );
             if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
                 return self.read_container_logs_tail(container_name, 80).await;
             }
@@ -4316,17 +4746,26 @@ impl ContainerRuntime {
         if let Ok(mut entries) = archive.entries() {
             while let Some(Ok(mut entry)) = entries.next() {
                 let mut content = String::new();
-                if std::io::Read::read_to_string(&mut entry, &mut content).is_ok() && !content.is_empty() {
+                if std::io::Read::read_to_string(&mut entry, &mut content).is_ok()
+                    && !content.is_empty()
+                {
                     if content.len() > 4096 {
                         content.truncate(4096);
                     }
-                    debug!("Read termination message ({} bytes) from {}", content.len(), container_name);
+                    debug!(
+                        "Read termination message ({} bytes) from {}",
+                        content.len(),
+                        container_name
+                    );
                     return Some(content);
                 }
             }
         }
 
-        debug!("Failed to extract termination message from tar archive for {}", container_name);
+        debug!(
+            "Failed to extract termination message from tar archive for {}",
+            container_name
+        );
         if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
             return self.read_container_logs_tail(container_name, 80).await;
         }
@@ -4445,11 +4884,7 @@ impl ContainerRuntime {
         };
 
         // Kubernetes sends scheme as uppercase ("HTTP", "HTTPS") — lowercase for URL
-        let scheme = http_get
-            .scheme
-            .as_deref()
-            .unwrap_or("HTTP")
-            .to_lowercase();
+        let scheme = http_get.scheme.as_deref().unwrap_or("HTTP").to_lowercase();
         let path = http_get.path.as_deref().unwrap_or("/");
         let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
 
@@ -4719,11 +5154,7 @@ impl ContainerRuntime {
                 }
             };
 
-            let scheme = http_get
-                .scheme
-                .as_deref()
-                .unwrap_or("HTTP")
-                .to_lowercase();
+            let scheme = http_get.scheme.as_deref().unwrap_or("HTTP").to_lowercase();
             let path = http_get.path.as_deref().unwrap_or("/");
             let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
 
@@ -4919,8 +5350,12 @@ impl ContainerRuntime {
                     Some(n) => n,
                     None => continue,
                 };
-                let secret_key = rusternetes_storage::build_key("secrets", Some(namespace), secret_name);
-                if let Ok(secret) = storage.get::<rusternetes_common::resources::Secret>(&secret_key).await {
+                let secret_key =
+                    rusternetes_storage::build_key("secrets", Some(namespace), secret_name);
+                if let Ok(secret) = storage
+                    .get::<rusternetes_common::resources::Secret>(&secret_key)
+                    .await
+                {
                     if let Some(data) = &secret.data {
                         let items = secret_source.items.as_ref();
                         if let Some(items) = items {
@@ -4947,7 +5382,10 @@ impl ContainerRuntime {
                     None => continue,
                 };
                 let cm_key = rusternetes_storage::build_key("configmaps", Some(namespace), cm_name);
-                if let Ok(cm) = storage.get::<rusternetes_common::resources::ConfigMap>(&cm_key).await {
+                if let Ok(cm) = storage
+                    .get::<rusternetes_common::resources::ConfigMap>(&cm_key)
+                    .await
+                {
                     if let Some(data) = &cm.data {
                         let items = cm_source.items.as_ref();
                         if let Some(items) = items {
@@ -5118,29 +5556,43 @@ impl ContainerRuntime {
                 .and_then(|s| s.host_ip.clone())
                 .unwrap_or_else(|| "127.0.0.1".to_string()),
             // All labels formatted as key="value"\n (with trailing newline, matching K8s)
-            "metadata.labels" => {
-                pod.metadata.labels.as_ref()
-                    .map(|labels| {
-                        let mut pairs: Vec<_> = labels.iter().collect();
-                        pairs.sort_by_key(|(k, _)| k.clone());
-                        let mut result = pairs.iter().map(|(k, v)| format!("{}=\"{}\"", k, v)).collect::<Vec<_>>().join("\n");
-                        if !result.is_empty() { result.push('\n'); }
-                        result
-                    })
-                    .unwrap_or_default()
-            }
+            "metadata.labels" => pod
+                .metadata
+                .labels
+                .as_ref()
+                .map(|labels| {
+                    let mut pairs: Vec<_> = labels.iter().collect();
+                    pairs.sort_by_key(|(k, _)| k.clone());
+                    let mut result = pairs
+                        .iter()
+                        .map(|(k, v)| format!("{}=\"{}\"", k, v))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !result.is_empty() {
+                        result.push('\n');
+                    }
+                    result
+                })
+                .unwrap_or_default(),
             // All annotations formatted as key="value"\n (with trailing newline, matching K8s)
-            "metadata.annotations" => {
-                pod.metadata.annotations.as_ref()
-                    .map(|anns| {
-                        let mut pairs: Vec<_> = anns.iter().collect();
-                        pairs.sort_by_key(|(k, _)| k.clone());
-                        let mut result = pairs.iter().map(|(k, v)| format!("{}=\"{}\"", k, v)).collect::<Vec<_>>().join("\n");
-                        if !result.is_empty() { result.push('\n'); }
-                        result
-                    })
-                    .unwrap_or_default()
-            }
+            "metadata.annotations" => pod
+                .metadata
+                .annotations
+                .as_ref()
+                .map(|anns| {
+                    let mut pairs: Vec<_> = anns.iter().collect();
+                    pairs.sort_by_key(|(k, _)| k.clone());
+                    let mut result = pairs
+                        .iter()
+                        .map(|(k, v)| format!("{}=\"{}\"", k, v))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !result.is_empty() {
+                        result.push('\n');
+                    }
+                    result
+                })
+                .unwrap_or_default(),
             _ => {
                 // Support metadata.labels['key'] and metadata.annotations['key']
                 if field_path.starts_with("metadata.labels['") && field_path.ends_with("']") {
@@ -5190,13 +5642,11 @@ impl ContainerRuntime {
                 .find(|c| &c.name == container_name)
                 .with_context(|| format!("Container {} not found", container_name))?
         } else {
-            spec.containers
-                .first()
-                .context("Pod has no containers")?
+            spec.containers.first().context("Pod has no containers")?
         };
 
-        let is_cpu = resource_ref.resource.contains("cpu")
-            || resource_ref.resource.contains("hugepages");
+        let is_cpu =
+            resource_ref.resource.contains("cpu") || resource_ref.resource.contains("hugepages");
         let is_memory = resource_ref.resource.contains("memory")
             || resource_ref.resource.contains("ephemeral-storage");
 
@@ -5252,10 +5702,7 @@ impl ContainerRuntime {
         if is_cpu {
             // Convert CPU value to millicores, then apply divisor
             // When no limit is set, use node capacity (default 4 cores = 4000m)
-            let millicores = raw_value
-                .as_deref()
-                .map(parse_cpu_quantity)
-                .unwrap_or(4000); // 4 cores default
+            let millicores = raw_value.as_deref().map(parse_cpu_quantity).unwrap_or(4000); // 4 cores default
             let divisor_millicores = if divisor_str == "0" || divisor_str == "1" {
                 // Default divisor "1" means return in cores (1 core = 1000 millicores)
                 1000
@@ -5302,7 +5749,9 @@ impl ContainerRuntime {
             memory,
             ..Default::default()
         };
-        self.docker.update_container(container_name, update).await
+        self.docker
+            .update_container(container_name, update)
+            .await
             .context("Failed to update container resources")?;
         Ok(())
     }
@@ -5345,7 +5794,9 @@ impl ContainerRuntime {
                     if let Some(started_at) = state.started_at {
                         if let Ok(started) = chrono::DateTime::parse_from_rfc3339(&started_at) {
                             let age = chrono::Utc::now().signed_duration_since(started);
-                            return Ok(std::time::Duration::from_secs(age.num_seconds().max(0) as u64));
+                            return Ok(std::time::Duration::from_secs(
+                                age.num_seconds().max(0) as u64
+                            ));
                         }
                     }
                 }
@@ -5403,7 +5854,9 @@ impl ContainerRuntime {
 
         for container in containers {
             // Skip rusternetes infrastructure containers
-            let name = container.names.as_ref()
+            let name = container
+                .names
+                .as_ref()
                 .and_then(|n| n.first())
                 .map(|n| n.trim_start_matches('/'))
                 .unwrap_or("");
@@ -5425,10 +5878,15 @@ impl ContainerRuntime {
 
     /// Remove a container by ID
     pub async fn remove_container(&self, container_id: &str) -> Result<()> {
-        self.docker.remove_container(container_id, Some(bollard::container::RemoveContainerOptions {
-            force: true,
-            ..Default::default()
-        })).await?;
+        self.docker
+            .remove_container(
+                container_id,
+                Some(bollard::container::RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                }),
+            )
+            .await?;
         Ok(())
     }
 }
@@ -7008,11 +7466,7 @@ mod tests {
             http_headers: None,
         };
 
-        let scheme = http_get
-            .scheme
-            .as_deref()
-            .unwrap_or("HTTP")
-            .to_lowercase();
+        let scheme = http_get.scheme.as_deref().unwrap_or("HTTP").to_lowercase();
         let ip = "172.18.0.5";
         let path = http_get.path.as_deref().unwrap_or("/");
         let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
@@ -7032,11 +7486,7 @@ mod tests {
             http_headers: None,
         };
 
-        let scheme = http_get
-            .scheme
-            .as_deref()
-            .unwrap_or("HTTP")
-            .to_lowercase();
+        let scheme = http_get.scheme.as_deref().unwrap_or("HTTP").to_lowercase();
         let ip = "10.244.0.5";
         let path = http_get.path.as_deref().unwrap_or("/");
         let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
@@ -7056,11 +7506,7 @@ mod tests {
             http_headers: None,
         };
 
-        let scheme = http_get
-            .scheme
-            .as_deref()
-            .unwrap_or("HTTP")
-            .to_lowercase();
+        let scheme = http_get.scheme.as_deref().unwrap_or("HTTP").to_lowercase();
         let ip = http_get.host.as_deref().unwrap_or("127.0.0.1");
         let path = http_get.path.as_deref().unwrap_or("/");
         let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
@@ -7095,7 +7541,11 @@ mod tests {
                 let name = reqwest::header::HeaderName::from_bytes(header.name.as_bytes());
                 let value = reqwest::header::HeaderValue::from_str(&header.value);
                 assert!(name.is_ok(), "Header name '{}' should parse", header.name);
-                assert!(value.is_ok(), "Header value '{}' should parse", header.value);
+                assert!(
+                    value.is_ok(),
+                    "Header value '{}' should parse",
+                    header.value
+                );
             }
         }
     }
@@ -7108,7 +7558,10 @@ mod tests {
             .danger_accept_invalid_certs(true)
             .no_proxy()
             .build();
-        assert!(client.is_ok(), "Client with no_proxy should build successfully");
+        assert!(
+            client.is_ok(),
+            "Client with no_proxy should build successfully"
+        );
     }
 
     #[test]
@@ -7196,13 +7649,11 @@ mod tests {
         data.insert("data-3".to_string(), "value-3".to_string());
 
         // Items: only mount data-2 at path/to/data-2
-        let items = vec![
-            rusternetes_common::resources::KeyToPath {
-                key: "data-2".to_string(),
-                path: "path/to/data-2".to_string(),
-                mode: None,
-            },
-        ];
+        let items = vec![rusternetes_common::resources::KeyToPath {
+            key: "data-2".to_string(),
+            path: "path/to/data-2".to_string(),
+            mode: None,
+        }];
 
         // Simulate the items-based mount logic from create_volume
         for item in &items {
@@ -7240,13 +7691,11 @@ mod tests {
         data.insert("data-2".to_string(), b"value-2".to_vec());
 
         // Items: only mount data-1 at new-path-data-1
-        let items = vec![
-            rusternetes_common::resources::KeyToPath {
-                key: "data-1".to_string(),
-                path: "new-path-data-1".to_string(),
-                mode: None,
-            },
-        ];
+        let items = vec![rusternetes_common::resources::KeyToPath {
+            key: "data-1".to_string(),
+            path: "new-path-data-1".to_string(),
+            mode: None,
+        }];
 
         // Simulate the items-based mount logic
         for item in &items {
@@ -7287,16 +7736,15 @@ mod tests {
         data.insert("data-2".to_string(), b"value-2".to_vec());
 
         // Items mapping
-        let items = vec![
-            rusternetes_common::resources::KeyToPath {
-                key: "data-1".to_string(),
-                path: "new-path-data-1".to_string(),
-                mode: None,
-            },
-        ];
+        let items = vec![rusternetes_common::resources::KeyToPath {
+            key: "data-1".to_string(),
+            path: "new-path-data-1".to_string(),
+            mode: None,
+        }];
 
         // Simulate resync logic with items
-        let mut expected_files: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut expected_files: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         for item in &items {
             if let Some(v) = data.get(&item.key) {
                 let file_path = volume_dir.join(&item.path);
@@ -7343,13 +7791,11 @@ mod tests {
         let mut data = std::collections::BTreeMap::new();
         data.insert("data-2".to_string(), "value-2".to_string());
 
-        let items = vec![
-            rusternetes_common::resources::KeyToPath {
-                key: "data-2".to_string(),
-                path: "path/to/data-2".to_string(),
-                mode: None,
-            },
-        ];
+        let items = vec![rusternetes_common::resources::KeyToPath {
+            key: "data-2".to_string(),
+            path: "path/to/data-2".to_string(),
+            mode: None,
+        }];
 
         // Simulate resync logic
         for item in &items {

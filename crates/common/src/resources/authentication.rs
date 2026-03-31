@@ -294,7 +294,10 @@ mod tests {
         let token_request: TokenRequest = serde_json::from_str(json).unwrap();
         assert_eq!(token_request.api_version, "authentication.k8s.io/v1");
         assert_eq!(token_request.kind, "TokenRequest");
-        assert_eq!(token_request.spec.audiences, vec!["https://kubernetes.default.svc"]);
+        assert_eq!(
+            token_request.spec.audiences,
+            vec!["https://kubernetes.default.svc"]
+        );
         assert_eq!(token_request.spec.expiration_seconds, Some(3600));
     }
 

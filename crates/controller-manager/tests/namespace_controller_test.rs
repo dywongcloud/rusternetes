@@ -12,17 +12,13 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn test_namespace_controller_creation() {
-    let storage = Arc::new(
-        MemoryStorage::new(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let _controller = NamespaceController::new(storage);
 }
 
 #[tokio::test]
 async fn test_namespace_active_not_deleted() {
-    let storage = Arc::new(
-        MemoryStorage::new(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = NamespaceController::new(storage.clone());
 
     // Create an active namespace
@@ -70,9 +66,7 @@ async fn test_namespace_active_not_deleted() {
 
 #[tokio::test]
 async fn test_namespace_with_finalizer_marked_for_deletion() {
-    let storage = Arc::new(
-        MemoryStorage::new(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = NamespaceController::new(storage.clone());
 
     // Create a namespace with finalizer and deletion timestamp
@@ -125,9 +119,7 @@ async fn test_namespace_with_finalizer_marked_for_deletion() {
 
 #[tokio::test]
 async fn test_namespace_deletion_removes_finalizers() {
-    let storage = Arc::new(
-        MemoryStorage::new(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
     let controller = NamespaceController::new(storage.clone());
 
     // Create a namespace with finalizer but no resources

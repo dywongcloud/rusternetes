@@ -472,14 +472,22 @@ pub fn calculate_resource_score_with_pods(node: &Node, pod: &Pod, all_pods: &[Po
     let mut used_memory = 0i64;
     let node_name = &node.metadata.name;
     for existing_pod in all_pods {
-        let scheduled_on_this_node = existing_pod.spec.as_ref()
+        let scheduled_on_this_node = existing_pod
+            .spec
+            .as_ref()
             .and_then(|s| s.node_name.as_ref())
             .map(|n| n == node_name)
             .unwrap_or(false);
-        if !scheduled_on_this_node { continue; }
+        if !scheduled_on_this_node {
+            continue;
+        }
         // Skip terminated pods
         let phase = existing_pod.status.as_ref().and_then(|s| s.phase.as_ref());
-        if matches!(phase, Some(rusternetes_common::types::Phase::Succeeded) | Some(rusternetes_common::types::Phase::Failed)) {
+        if matches!(
+            phase,
+            Some(rusternetes_common::types::Phase::Succeeded)
+                | Some(rusternetes_common::types::Phase::Failed)
+        ) {
             continue;
         }
         if let Some(spec) = &existing_pod.spec {

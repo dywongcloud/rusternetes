@@ -34,9 +34,9 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         Self {
             storage,
             scan_interval: Duration::from_secs(5), // Run every 5 seconds
-            max_concurrent_deletes: 50,             // Limit concurrent operations
-            delete_batch_size: 100,                 // Process up to 100 deletions per batch
-            max_retries: 3,                         // Retry failed deletions up to 3 times
+            max_concurrent_deletes: 50,            // Limit concurrent operations
+            delete_batch_size: 100,                // Process up to 100 deletions per batch
+            max_retries: 3,                        // Retry failed deletions up to 3 times
         }
     }
 
@@ -357,7 +357,8 @@ impl<S: Storage + 'static> GarbageCollector<S> {
                     .await?;
 
                 // Remove the foregroundDeletion finalizer from the resource
-                self.remove_finalizer(resource, "foregroundDeletion").await?;
+                self.remove_finalizer(resource, "foregroundDeletion")
+                    .await?;
             }
             DeletionPropagation::Orphan => {
                 // In orphan mode, we remove owner references from dependents,
@@ -379,7 +380,10 @@ impl<S: Storage + 'static> GarbageCollector<S> {
             Ok(value) => {
                 if let Ok(meta) = self.extract_metadata(&value) {
                     if !meta.has_finalizers() {
-                        info!("Deleting resource (no finalizers remaining): {}", resource.key);
+                        info!(
+                            "Deleting resource (no finalizers remaining): {}",
+                            resource.key
+                        );
                         self.storage.delete(&resource.key).await?;
                     } else {
                         debug!(
@@ -473,7 +477,10 @@ impl<S: Storage + 'static> GarbageCollector<S> {
             resource.key
         );
 
-        let existing_uids: HashSet<_> = all_resources.iter().map(|r| r.metadata.uid.as_str()).collect();
+        let existing_uids: HashSet<_> = all_resources
+            .iter()
+            .map(|r| r.metadata.uid.as_str())
+            .collect();
 
         for dependent in dependents {
             if let Some(owner_refs) = &dependent.metadata.owner_references {
@@ -502,12 +509,19 @@ impl<S: Storage + 'static> GarbageCollector<S> {
                             }
                         }
                     }
-                    if let Err(e) = self.storage.update_raw(&dependent.key, &dependent_value).await {
+                    if let Err(e) = self
+                        .storage
+                        .update_raw(&dependent.key, &dependent_value)
+                        .await
+                    {
                         error!("Failed to update dependent {}: {}", dependent.key, e);
                     }
                 } else {
                     // Dependent's only owner is the one being deleted — delete it
-                    info!("Deleting dependent {} (sole owner being deleted)", dependent.key);
+                    info!(
+                        "Deleting dependent {} (sole owner being deleted)",
+                        dependent.key
+                    );
 
                     // Recursively handle foreground deletion for this dependent's dependents
                     let (_, sub_dependent_map) = self.build_relationship_maps(&all_resources);

@@ -522,11 +522,7 @@ mod garbage_collector_integration {
 
         // Create child resources with owner references
         for i in 0..3 {
-            let child = create_test_pod(
-                &format!("child-rs-{}", i),
-                "default",
-                Some(&owner_uid),
-            );
+            let child = create_test_pod(&format!("child-rs-{}", i), "default", Some(&owner_uid));
             let child_key = build_key("pods", Some("default"), &format!("child-rs-{}", i));
             storage.create(&child_key, &child).await.unwrap();
         }

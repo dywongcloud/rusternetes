@@ -55,7 +55,9 @@ pub async fn create(
     // Initialize status with hard limits and zero usage
     if quota.status.is_none() {
         let used = quota.spec.hard.as_ref().map(|hard| {
-            hard.iter().map(|(k, _)| (k.clone(), "0".to_string())).collect()
+            hard.iter()
+                .map(|(k, _)| (k.clone(), "0".to_string()))
+                .collect()
         });
         quota.status = Some(ResourceQuotaStatus {
             hard: quota.spec.hard.clone(),
@@ -223,8 +225,14 @@ pub async fn list(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_namespaced::<ResourceQuota>(
-            state, auth_ctx, namespace, "resourcequotas", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "resourcequotas",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing ResourceQuotas in namespace: {}", namespace);
@@ -259,8 +267,13 @@ pub async fn list_all(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<ResourceQuota>(
-            state, auth_ctx, "resourcequotas", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "resourcequotas",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all ResourceQuotas");

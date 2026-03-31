@@ -140,10 +140,7 @@ where
     }
 
     // Check if the resource has finalizers (including any we just added)
-    let has_finalizers = meta
-        .finalizers
-        .as_ref()
-        .map_or(false, |f| !f.is_empty());
+    let has_finalizers = meta.finalizers.as_ref().map_or(false, |f| !f.is_empty());
 
     if !has_finalizers {
         // No finalizers - delete immediately

@@ -46,20 +46,22 @@ pub async fn create_validating_webhook(
                 for (i, condition) in conditions.iter().enumerate() {
                     if condition.expression.is_empty() {
                         return Err(rusternetes_common::Error::InvalidResource(
-                            "matchConditions[].expression must be non-empty".to_string()
+                            "matchConditions[].expression must be non-empty".to_string(),
                         ));
                     }
                     if condition.name.is_empty() {
                         return Err(rusternetes_common::Error::InvalidResource(format!(
-                            "matchConditions[{}].name must be non-empty", i
+                            "matchConditions[{}].name must be non-empty",
+                            i
                         )));
                     }
                     // Compile the expression — catch panics from antlr4rust parser
                     // which panics on certain invalid expressions instead of returning Err
                     let expr_clone = condition.expression.clone();
-                    let compile_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        cel_interpreter::Program::compile(&expr_clone)
-                    }));
+                    let compile_result =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            cel_interpreter::Program::compile(&expr_clone)
+                        }));
                     let _program = match compile_result {
                         Ok(Ok(p)) => p,
                         Ok(Err(e)) => {
@@ -238,8 +240,13 @@ pub async fn list_validating_webhooks(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<ValidatingWebhookConfiguration>(
-            state, auth_ctx, "validatingwebhookconfigurations", "admissionregistration.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "validatingwebhookconfigurations",
+            "admissionregistration.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing ValidatingWebhookConfigurations");
@@ -256,7 +263,10 @@ pub async fn list_validating_webhooks(
     }
 
     let prefix = build_prefix("validatingwebhookconfigurations", None);
-    let mut configs = state.storage.list::<ValidatingWebhookConfiguration>(&prefix).await?;
+    let mut configs = state
+        .storage
+        .list::<ValidatingWebhookConfiguration>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut configs, &params)?;
@@ -308,18 +318,20 @@ pub async fn create_mutating_webhook(
                 for (i, condition) in conditions.iter().enumerate() {
                     if condition.expression.is_empty() {
                         return Err(rusternetes_common::Error::InvalidResource(
-                            "matchConditions[].expression must be non-empty".to_string()
+                            "matchConditions[].expression must be non-empty".to_string(),
                         ));
                     }
                     if condition.name.is_empty() {
                         return Err(rusternetes_common::Error::InvalidResource(format!(
-                            "matchConditions[{}].name must be non-empty", i
+                            "matchConditions[{}].name must be non-empty",
+                            i
                         )));
                     }
                     let expr_clone = condition.expression.clone();
-                    let compile_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        cel_interpreter::Program::compile(&expr_clone)
-                    }));
+                    let compile_result =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            cel_interpreter::Program::compile(&expr_clone)
+                        }));
                     match compile_result {
                         Ok(Ok(_p)) => {}
                         Ok(Err(e)) => {
@@ -488,8 +500,13 @@ pub async fn list_mutating_webhooks(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<MutatingWebhookConfiguration>(
-            state, auth_ctx, "mutatingwebhookconfigurations", "admissionregistration.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "mutatingwebhookconfigurations",
+            "admissionregistration.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing MutatingWebhookConfigurations");
@@ -506,7 +523,10 @@ pub async fn list_mutating_webhooks(
     }
 
     let prefix = build_prefix("mutatingwebhookconfigurations", None);
-    let mut configs = state.storage.list::<MutatingWebhookConfiguration>(&prefix).await?;
+    let mut configs = state
+        .storage
+        .list::<MutatingWebhookConfiguration>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut configs, &params)?;

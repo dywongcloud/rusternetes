@@ -133,20 +133,32 @@ pub async fn get_pod_metrics(
     if let Some(spec) = &pod.spec {
         for container in &spec.containers {
             let mut usage = BTreeMap::new();
-            let cpu = container.resources.as_ref()
+            let cpu = container
+                .resources
+                .as_ref()
                 .and_then(|r| r.requests.as_ref())
                 .and_then(|req| req.get("cpu"))
-                .or_else(|| container.resources.as_ref()
-                    .and_then(|r| r.limits.as_ref())
-                    .and_then(|lim| lim.get("cpu")))
+                .or_else(|| {
+                    container
+                        .resources
+                        .as_ref()
+                        .and_then(|r| r.limits.as_ref())
+                        .and_then(|lim| lim.get("cpu"))
+                })
                 .cloned()
                 .unwrap_or_else(|| "100m".to_string());
-            let memory = container.resources.as_ref()
+            let memory = container
+                .resources
+                .as_ref()
                 .and_then(|r| r.requests.as_ref())
                 .and_then(|req| req.get("memory"))
-                .or_else(|| container.resources.as_ref()
-                    .and_then(|r| r.limits.as_ref())
-                    .and_then(|lim| lim.get("memory")))
+                .or_else(|| {
+                    container
+                        .resources
+                        .as_ref()
+                        .and_then(|r| r.limits.as_ref())
+                        .and_then(|lim| lim.get("memory"))
+                })
                 .cloned()
                 .unwrap_or_else(|| "128Mi".to_string());
             usage.insert("cpu".to_string(), cpu);
@@ -204,20 +216,32 @@ pub async fn list_pod_metrics(
         if let Some(spec) = &pod.spec {
             for container in &spec.containers {
                 let mut usage = BTreeMap::new();
-                let cpu = container.resources.as_ref()
+                let cpu = container
+                    .resources
+                    .as_ref()
                     .and_then(|r| r.requests.as_ref())
                     .and_then(|req| req.get("cpu"))
-                    .or_else(|| container.resources.as_ref()
-                        .and_then(|r| r.limits.as_ref())
-                        .and_then(|lim| lim.get("cpu")))
+                    .or_else(|| {
+                        container
+                            .resources
+                            .as_ref()
+                            .and_then(|r| r.limits.as_ref())
+                            .and_then(|lim| lim.get("cpu"))
+                    })
                     .cloned()
                     .unwrap_or_else(|| "100m".to_string());
-                let memory = container.resources.as_ref()
+                let memory = container
+                    .resources
+                    .as_ref()
                     .and_then(|r| r.requests.as_ref())
                     .and_then(|req| req.get("memory"))
-                    .or_else(|| container.resources.as_ref()
-                        .and_then(|r| r.limits.as_ref())
-                        .and_then(|lim| lim.get("memory")))
+                    .or_else(|| {
+                        container
+                            .resources
+                            .as_ref()
+                            .and_then(|r| r.limits.as_ref())
+                            .and_then(|lim| lim.get("memory"))
+                    })
                     .cloned()
                     .unwrap_or_else(|| "128Mi".to_string());
                 usage.insert("cpu".to_string(), cpu);
@@ -282,20 +306,32 @@ pub async fn list_all_pod_metrics(
             if let Some(spec) = &pod.spec {
                 for container in &spec.containers {
                     let mut usage = BTreeMap::new();
-                    let cpu = container.resources.as_ref()
+                    let cpu = container
+                        .resources
+                        .as_ref()
                         .and_then(|r| r.requests.as_ref())
                         .and_then(|req| req.get("cpu"))
-                        .or_else(|| container.resources.as_ref()
-                            .and_then(|r| r.limits.as_ref())
-                            .and_then(|lim| lim.get("cpu")))
+                        .or_else(|| {
+                            container
+                                .resources
+                                .as_ref()
+                                .and_then(|r| r.limits.as_ref())
+                                .and_then(|lim| lim.get("cpu"))
+                        })
                         .cloned()
                         .unwrap_or_else(|| "100m".to_string());
-                    let memory = container.resources.as_ref()
+                    let memory = container
+                        .resources
+                        .as_ref()
                         .and_then(|r| r.requests.as_ref())
                         .and_then(|req| req.get("memory"))
-                        .or_else(|| container.resources.as_ref()
-                            .and_then(|r| r.limits.as_ref())
-                            .and_then(|lim| lim.get("memory")))
+                        .or_else(|| {
+                            container
+                                .resources
+                                .as_ref()
+                                .and_then(|r| r.limits.as_ref())
+                                .and_then(|lim| lim.get("memory"))
+                        })
                         .cloned()
                         .unwrap_or_else(|| "128Mi".to_string());
                     usage.insert("cpu".to_string(), cpu);

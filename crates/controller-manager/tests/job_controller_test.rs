@@ -471,7 +471,11 @@ async fn test_job_suspend_deletes_active_pods() {
 
     let updated_job: Job = storage.get(&key).await.unwrap();
     let status = updated_job.status.unwrap();
-    assert_eq!(status.active, Some(0), "Suspended job should have 0 active pods");
+    assert_eq!(
+        status.active,
+        Some(0),
+        "Suspended job should have 0 active pods"
+    );
 }
 
 #[tokio::test]
@@ -504,7 +508,9 @@ async fn test_job_active_deadline_seconds() {
 
     // Should have Failed condition with DeadlineExceeded reason
     if let Some(conditions) = status.conditions {
-        let failed = conditions.iter().find(|c| c.condition_type == "Failed" && c.status == "True");
+        let failed = conditions
+            .iter()
+            .find(|c| c.condition_type == "Failed" && c.status == "True");
         assert!(failed.is_some(), "Should have Failed condition");
         assert_eq!(
             failed.unwrap().reason.as_deref(),
@@ -542,13 +548,24 @@ async fn test_job_does_not_recreate_pods_when_complete() {
     // Reconcile — should mark job as Complete
     controller.reconcile_all().await.unwrap();
     let completed_job: Job = storage.get(&key).await.unwrap();
-    assert!(completed_job.status.as_ref().unwrap().conditions.as_ref().unwrap().iter()
+    assert!(completed_job
+        .status
+        .as_ref()
+        .unwrap()
+        .conditions
+        .as_ref()
+        .unwrap()
+        .iter()
         .any(|c| c.condition_type == "Complete" && c.status == "True"));
 
     // Reconcile again — should NOT create new pods or change status
     controller.reconcile_all().await.unwrap();
     let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-    assert_eq!(pods_after.len(), 1, "Should not create new pods after completion");
+    assert_eq!(
+        pods_after.len(),
+        1,
+        "Should not create new pods after completion"
+    );
 }
 
 #[tokio::test]

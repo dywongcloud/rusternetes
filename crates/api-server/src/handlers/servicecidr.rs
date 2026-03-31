@@ -45,7 +45,9 @@ pub async fn create_servicecidr(
                 condition_type: "Ready".to_string(),
                 status: "True".to_string(),
                 observed_generation: servicecidr.metadata.generation,
-                last_transition_time: Some(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()),
+                last_transition_time: Some(
+                    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+                ),
                 reason: "ServiceCIDRReady".to_string(),
                 message: "ServiceCIDR is ready for allocation".to_string(),
             }]),

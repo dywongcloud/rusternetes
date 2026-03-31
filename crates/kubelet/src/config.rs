@@ -303,12 +303,18 @@ impl RuntimeConfig {
         // routable from bridge containers because kube-proxy's iptables DNAT
         // only applies in the host network namespace. Use the API server's
         // direct container IP instead. The TLS cert includes Docker bridge IPs.
-        let kubernetes_service_host = if let Ok(override_host) = std::env::var("KUBERNETES_SERVICE_HOST_OVERRIDE") {
+        let kubernetes_service_host = if let Ok(override_host) =
+            std::env::var("KUBERNETES_SERVICE_HOST_OVERRIDE")
+        {
             // Resolve hostname to IP for KUBERNETES_SERVICE_HOST
             use std::net::ToSocketAddrs;
             if let Ok(mut addrs) = format!("{}:6443", override_host).to_socket_addrs() {
                 if let Some(addr) = addrs.next() {
-                    tracing::info!("Resolved KUBERNETES_SERVICE_HOST_OVERRIDE {} -> {}", override_host, addr.ip());
+                    tracing::info!(
+                        "Resolved KUBERNETES_SERVICE_HOST_OVERRIDE {} -> {}",
+                        override_host,
+                        addr.ip()
+                    );
                     addr.ip().to_string()
                 } else {
                     override_host

@@ -240,7 +240,10 @@ impl<S: Storage> EndpointsController<S> {
         if has_named_target_port {
             // Group pods by their resolved port tuple, since different pods may have
             // different containerPort values for the same named port.
-            let mut port_groups: std::collections::HashMap<Vec<u16>, (Vec<EndpointAddress>, Vec<EndpointAddress>)> = std::collections::HashMap::new();
+            let mut port_groups: std::collections::HashMap<
+                Vec<u16>,
+                (Vec<EndpointAddress>, Vec<EndpointAddress>),
+            > = std::collections::HashMap::new();
 
             for pod in pods {
                 let pod_ip = match &pod.status {
@@ -252,20 +255,23 @@ impl<S: Storage> EndpointsController<S> {
                 };
 
                 // Resolve each service port for this pod
-                let resolved_ports: Vec<u16> = service_ports.iter().map(|sp| {
-                    match &sp.target_port {
-                        Some(rusternetes_common::resources::IntOrString::Int(p)) => *p as u16,
-                        Some(rusternetes_common::resources::IntOrString::String(s)) => {
-                            if let Ok(p) = s.parse::<u16>() {
-                                p
-                            } else {
-                                // Look up named port in pod's containers
-                                Self::resolve_named_port(pod, s).unwrap_or(sp.port)
+                let resolved_ports: Vec<u16> = service_ports
+                    .iter()
+                    .map(|sp| {
+                        match &sp.target_port {
+                            Some(rusternetes_common::resources::IntOrString::Int(p)) => *p as u16,
+                            Some(rusternetes_common::resources::IntOrString::String(s)) => {
+                                if let Ok(p) = s.parse::<u16>() {
+                                    p
+                                } else {
+                                    // Look up named port in pod's containers
+                                    Self::resolve_named_port(pod, s).unwrap_or(sp.port)
+                                }
                             }
+                            None => sp.port,
                         }
-                        None => sp.port,
-                    }
-                }).collect();
+                    })
+                    .collect();
 
                 let address = EndpointAddress {
                     ip: pod_ip,
@@ -279,7 +285,9 @@ impl<S: Storage> EndpointsController<S> {
                     }),
                 };
 
-                let entry = port_groups.entry(resolved_ports).or_insert_with(|| (Vec::new(), Vec::new()));
+                let entry = port_groups
+                    .entry(resolved_ports)
+                    .or_insert_with(|| (Vec::new(), Vec::new()));
                 if self.is_pod_ready(pod) {
                     entry.0.push(address);
                 } else {
@@ -293,18 +301,28 @@ impl<S: Storage> EndpointsController<S> {
                 if ready.is_empty() && not_ready.is_empty() {
                     continue;
                 }
-                let endpoint_ports: Vec<EndpointPort> = service_ports.iter().zip(resolved_ports.iter()).map(|(sp, &port)| {
-                    EndpointPort {
+                let endpoint_ports: Vec<EndpointPort> = service_ports
+                    .iter()
+                    .zip(resolved_ports.iter())
+                    .map(|(sp, &port)| EndpointPort {
                         name: sp.name.clone(),
                         port,
                         protocol: sp.protocol.clone(),
                         app_protocol: None,
-                    }
-                }).collect();
+                    })
+                    .collect();
                 subsets.push(EndpointSubset {
                     addresses: if ready.is_empty() { None } else { Some(ready) },
-                    not_ready_addresses: if not_ready.is_empty() { None } else { Some(not_ready) },
-                    ports: if endpoint_ports.is_empty() { None } else { Some(endpoint_ports) },
+                    not_ready_addresses: if not_ready.is_empty() {
+                        None
+                    } else {
+                        Some(not_ready)
+                    },
+                    ports: if endpoint_ports.is_empty() {
+                        None
+                    } else {
+                        Some(endpoint_ports)
+                    },
                 });
             }
             subsets
@@ -327,9 +345,21 @@ impl<S: Storage> EndpointsController<S> {
             let mut subsets = Vec::new();
             if !ready_addresses.is_empty() || !not_ready_addresses.is_empty() {
                 subsets.push(EndpointSubset {
-                    addresses: if ready_addresses.is_empty() { None } else { Some(ready_addresses) },
-                    not_ready_addresses: if not_ready_addresses.is_empty() { None } else { Some(not_ready_addresses) },
-                    ports: if endpoint_ports.is_empty() { None } else { Some(endpoint_ports) },
+                    addresses: if ready_addresses.is_empty() {
+                        None
+                    } else {
+                        Some(ready_addresses)
+                    },
+                    not_ready_addresses: if not_ready_addresses.is_empty() {
+                        None
+                    } else {
+                        Some(not_ready_addresses)
+                    },
+                    ports: if endpoint_ports.is_empty() {
+                        None
+                    } else {
+                        Some(endpoint_ports)
+                    },
                 });
             }
             subsets
@@ -660,7 +690,7 @@ mod tests {
     /// This prevents unnecessary etcd writes that would cause log spam and I/O pressure.
     #[tokio::test]
     async fn test_endpoints_skip_write_when_unchanged() {
-        use rusternetes_common::resources::{Service, ServiceSpec, ServicePort};
+        use rusternetes_common::resources::{Service, ServicePort, ServiceSpec};
 
         let storage = Arc::new(MemoryStorage::new());
         let controller = EndpointsController::new(storage.clone());
@@ -739,7 +769,7 @@ mod tests {
     /// Test that endpoints ARE updated when pod data actually changes.
     #[tokio::test]
     async fn test_endpoints_write_when_changed() {
-        use rusternetes_common::resources::{Service, ServiceSpec, ServicePort, PodStatus};
+        use rusternetes_common::resources::{PodStatus, Service, ServicePort, ServiceSpec};
         use rusternetes_common::types::Phase;
 
         let storage = Arc::new(MemoryStorage::new());
@@ -833,7 +863,10 @@ mod tests {
                 ..Default::default()
             }),
         };
-        storage.create("/registry/pods/default/web-pod", &pod).await.unwrap();
+        storage
+            .create("/registry/pods/default/web-pod", &pod)
+            .await
+            .unwrap();
 
         // Second reconcile — should detect the new pod and update endpoints
         controller.reconcile_all().await.unwrap();
@@ -847,7 +880,10 @@ mod tests {
         );
 
         // Verify the pod's IP is in the endpoints
-        assert!(!ep2.subsets.is_empty(), "Subsets should not be empty after adding a matching pod");
+        assert!(
+            !ep2.subsets.is_empty(),
+            "Subsets should not be empty after adding a matching pod"
+        );
         let addresses = ep2.subsets[0].addresses.as_ref().unwrap();
         assert_eq!(addresses[0].ip, "10.244.0.5");
     }

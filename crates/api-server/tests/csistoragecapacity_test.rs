@@ -33,10 +33,7 @@ async fn test_csistoragecapacity_create() {
 
     let created: CSIStorageCapacity = storage.create(&key, &csc).await.unwrap();
     assert_eq!(created.metadata.name, "csc-1");
-    assert_eq!(
-        created.metadata.namespace.as_deref(),
-        Some("default")
-    );
+    assert_eq!(created.metadata.namespace.as_deref(), Some("default"));
     assert_eq!(created.storage_class_name, "standard");
     assert_eq!(created.capacity.as_deref(), Some("100Gi"));
     assert_eq!(created.maximum_volume_size.as_deref(), Some("10Gi"));
@@ -197,7 +194,10 @@ async fn test_csistoragecapacity_serialization_roundtrip() {
     let deserialized: CSIStorageCapacity = serde_json::from_str(&json_str).unwrap();
 
     assert_eq!(deserialized.metadata.name, "csc-roundtrip");
-    assert_eq!(deserialized.metadata.namespace.as_deref(), Some("kube-system"));
+    assert_eq!(
+        deserialized.metadata.namespace.as_deref(),
+        Some("kube-system")
+    );
     assert_eq!(deserialized.storage_class_name, "standard");
     assert_eq!(deserialized.capacity.as_deref(), Some("100Gi"));
     assert_eq!(deserialized.maximum_volume_size.as_deref(), Some("10Gi"));
@@ -303,7 +303,10 @@ async fn test_csistoragecapacity_with_labels_and_annotations() {
 
     let created: CSIStorageCapacity = storage.create(&key, &csc).await.unwrap();
     let created_labels = created.metadata.labels.as_ref().unwrap();
-    assert_eq!(created_labels.get("driver"), Some(&"ebs.csi.aws.com".to_string()));
+    assert_eq!(
+        created_labels.get("driver"),
+        Some(&"ebs.csi.aws.com".to_string())
+    );
     let created_annotations = created.metadata.annotations.as_ref().unwrap();
     assert_eq!(
         created_annotations.get("managed-by"),
@@ -342,7 +345,10 @@ async fn test_csistoragecapacity_namespace_isolation() {
     let prefix_alpha = build_prefix("csistoragecapacities", Some("ns-alpha"));
     let items_alpha: Vec<CSIStorageCapacity> = storage.list(&prefix_alpha).await.unwrap();
     assert_eq!(items_alpha.len(), 1);
-    assert_eq!(items_alpha[0].metadata.namespace.as_deref(), Some("ns-alpha"));
+    assert_eq!(
+        items_alpha[0].metadata.namespace.as_deref(),
+        Some("ns-alpha")
+    );
 
     let prefix_beta = build_prefix("csistoragecapacities", Some("ns-beta"));
     let items_beta: Vec<CSIStorageCapacity> = storage.list(&prefix_beta).await.unwrap();

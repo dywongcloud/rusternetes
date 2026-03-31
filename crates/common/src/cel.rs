@@ -385,10 +385,7 @@ mod tests {
 
         // Build the variables map incrementally (like the VAP code does)
         let mut var_map: HashMap<Key, Value> = HashMap::new();
-        var_map.insert(
-            Key::String(Arc::new("replicas".to_string())),
-            replicas_val,
-        );
+        var_map.insert(Key::String(Arc::new("replicas".to_string())), replicas_val);
         context.add_variable(
             "variables".to_string(),
             Value::Map(Map {
@@ -402,10 +399,7 @@ mod tests {
             .expect("should evaluate variables.replicas % 2 == 1");
         assert_eq!(odd_val, Value::Bool(true));
 
-        var_map.insert(
-            Key::String(Arc::new("oddReplicas".to_string())),
-            odd_val,
-        );
+        var_map.insert(Key::String(Arc::new("oddReplicas".to_string())), odd_val);
         context.add_variable(
             "variables".to_string(),
             Value::Map(Map {
@@ -442,10 +436,7 @@ mod tests {
             .unwrap();
 
         let mut var_map: HashMap<Key, Value> = HashMap::new();
-        var_map.insert(
-            Key::String(Arc::new("replicas".to_string())),
-            replicas_val,
-        );
+        var_map.insert(Key::String(Arc::new("replicas".to_string())), replicas_val);
         context.add_variable(
             "variables".to_string(),
             Value::Map(Map {

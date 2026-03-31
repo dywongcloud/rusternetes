@@ -118,19 +118,36 @@ pub async fn list_resourceclaims(
         .and_then(|v| v.parse::<bool>().ok())
         .unwrap_or(false)
     {
-        info!("Starting watch for resourceclaims in namespace: {}", namespace);
+        info!(
+            "Starting watch for resourceclaims in namespace: {}",
+            namespace
+        );
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").cloned(),
             field_selector: params.get("fieldSelector").cloned(),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_namespaced_json(
-            state, auth_ctx, namespace, "resourceclaims", "resource.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "resourceclaims",
+            "resource.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing ResourceClaims in namespace: {}", namespace);
@@ -169,17 +186,30 @@ pub async fn list_all_resourceclaims(
     {
         info!("Starting watch for all resourceclaims");
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").cloned(),
             field_selector: params.get("fieldSelector").cloned(),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_cluster_scoped_json(
-            state, auth_ctx, "resourceclaims", "resource.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "resourceclaims",
+            "resource.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all ResourceClaims");

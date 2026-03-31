@@ -202,8 +202,14 @@ pub async fn list(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_namespaced::<HorizontalPodAutoscaler>(
-            state, auth_ctx, namespace, "horizontalpodautoscalers", "autoscaling", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "horizontalpodautoscalers",
+            "autoscaling",
+            watch_params,
+        )
+        .await;
     }
 
     info!(
@@ -224,7 +230,10 @@ pub async fn list(
     }
 
     let prefix = build_prefix("horizontalpodautoscalers", Some(&namespace));
-    let mut hpas = state.storage.list::<HorizontalPodAutoscaler>(&prefix).await?;
+    let mut hpas = state
+        .storage
+        .list::<HorizontalPodAutoscaler>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut hpas, &params)?;
@@ -241,8 +250,13 @@ pub async fn list_all(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<HorizontalPodAutoscaler>(
-            state, auth_ctx, "horizontalpodautoscalers", "autoscaling", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "horizontalpodautoscalers",
+            "autoscaling",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all horizontalpodautoscalers");
@@ -259,7 +273,10 @@ pub async fn list_all(
     }
 
     let prefix = build_prefix("horizontalpodautoscalers", None);
-    let mut hpas = state.storage.list::<HorizontalPodAutoscaler>(&prefix).await?;
+    let mut hpas = state
+        .storage
+        .list::<HorizontalPodAutoscaler>(&prefix)
+        .await?;
 
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut hpas, &params)?;

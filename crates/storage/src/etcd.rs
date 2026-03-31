@@ -188,7 +188,9 @@ impl Storage for EtcdStorage {
                     .and_then(|resp| {
                         if let etcd_client::TxnOpResponse::Get(get_resp) = resp {
                             get_resp.kvs().first().map(|kv| {
-                                crate::concurrency::mod_revision_to_resource_version(kv.mod_revision())
+                                crate::concurrency::mod_revision_to_resource_version(
+                                    kv.mod_revision(),
+                                )
                             })
                         } else {
                             None
@@ -398,8 +400,16 @@ impl Storage for EtcdStorage {
         let (_watcher, stream) = client
             .watch(prefix, Some(watch_options))
             .await
-            .map_err(|e| Error::Storage(format!("Failed to create watch from revision {}: {}", revision, e)))?;
-        info!("Started watching prefix: {} from revision {}", prefix, revision);
+            .map_err(|e| {
+                Error::Storage(format!(
+                    "Failed to create watch from revision {}: {}",
+                    revision, e
+                ))
+            })?;
+        info!(
+            "Started watching prefix: {} from revision {}",
+            prefix, revision
+        );
         // Use flat_map to handle multiple events per etcd watch response.
         // etcd can batch multiple events into a single response, and we must
         // emit all of them — not just the first one.
@@ -468,8 +478,10 @@ impl Storage for EtcdStorage {
         // Use flat_map to handle multiple events per etcd watch response.
         let watch_stream = stream.flat_map(move |watch_resp| {
             let events: Vec<Result<WatchEvent>> = match watch_resp {
-                Ok(resp) => {
-                    resp.events().iter().map(|event| {
+                Ok(resp) => resp
+                    .events()
+                    .iter()
+                    .map(|event| {
                         let key = event
                             .kv()
                             .map(|kv| kv.key_str().unwrap_or("").to_string())
@@ -483,7 +495,8 @@ impl Storage for EtcdStorage {
                                     .unwrap_or("")
                                     .to_string();
 
-                                let mod_revision = event.kv().map(|kv| kv.mod_revision()).unwrap_or(0);
+                                let mod_revision =
+                                    event.kv().map(|kv| kv.mod_revision()).unwrap_or(0);
                                 let value = Self::inject_resource_version(&raw_value, mod_revision);
 
                                 if event.kv().map(|kv| kv.version()).unwrap_or(0) == 1 {
@@ -498,13 +511,15 @@ impl Storage for EtcdStorage {
                                     .and_then(|kv| kv.value_str().ok())
                                     .unwrap_or("")
                                     .to_string();
-                                let mod_revision = event.kv().map(|kv| kv.mod_revision()).unwrap_or(0);
-                                let prev_value = Self::inject_resource_version(&raw_prev, mod_revision);
+                                let mod_revision =
+                                    event.kv().map(|kv| kv.mod_revision()).unwrap_or(0);
+                                let prev_value =
+                                    Self::inject_resource_version(&raw_prev, mod_revision);
                                 Ok(WatchEvent::Deleted(key, prev_value))
                             }
                         }
-                    }).collect()
-                }
+                    })
+                    .collect(),
                 Err(e) => vec![Err(Error::Storage(format!("Watch error: {}", e)))],
             };
             futures::stream::iter(events)
@@ -531,7 +546,9 @@ impl Storage for EtcdStorage {
             Ok(_) => Ok(false), // revision still available
             Err(e) => {
                 let err_msg = format!("{}", e);
-                if err_msg.contains("compacted") || err_msg.contains("required revision has been compacted") {
+                if err_msg.contains("compacted")
+                    || err_msg.contains("required revision has been compacted")
+                {
                     Ok(true) // revision has been compacted
                 } else {
                     // Other error — not a compaction issue

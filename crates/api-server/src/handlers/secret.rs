@@ -51,7 +51,12 @@ pub async fn create(
     // Validate secret data keys (must be valid path segments)
     if let Some(ref data) = secret.data {
         for key in data.keys() {
-            if key.is_empty() || key == "." || key == ".." || key.contains('/') || key.contains('\\') {
+            if key.is_empty()
+                || key == "."
+                || key == ".."
+                || key.contains('/')
+                || key.contains('\\')
+            {
                 return Err(rusternetes_common::Error::InvalidResource(format!(
                     "Invalid key name \"{}\": a valid config key must consist of alphanumeric characters, '-', '_' or '.'",
                     key
@@ -61,7 +66,12 @@ pub async fn create(
     }
     if let Some(ref string_data) = secret.string_data {
         for key in string_data.keys() {
-            if key.is_empty() || key == "." || key == ".." || key.contains('/') || key.contains('\\') {
+            if key.is_empty()
+                || key == "."
+                || key == ".."
+                || key.contains('/')
+                || key.contains('\\')
+            {
                 return Err(rusternetes_common::Error::InvalidResource(format!(
                     "Invalid key name \"{}\": a valid config key must consist of alphanumeric characters, '-', '_' or '.'",
                     key
@@ -162,7 +172,8 @@ pub async fn update(
             let immutable_changed = secret.immutable != Some(true) && secret.immutable.is_some();
             if data_changed || string_data_changed || immutable_changed {
                 return Err(rusternetes_common::Error::InvalidResource(format!(
-                    "Secret \"{}\" is immutable", name
+                    "Secret \"{}\" is immutable",
+                    name
                 )));
             }
         }
@@ -245,19 +256,37 @@ pub async fn list(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_namespaced::<Secret>(
-            state, auth_ctx, namespace, "secrets", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "secrets",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing secrets in namespace: {}", namespace);
@@ -291,19 +320,36 @@ pub async fn list_all_secrets(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_cluster_scoped::<Secret>(
-            state, auth_ctx, "secrets", "", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "secrets",
+            "",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all secrets");

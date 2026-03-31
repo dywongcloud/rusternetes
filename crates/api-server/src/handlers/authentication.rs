@@ -138,7 +138,8 @@ pub async fn create_token_request(
     token_request.metadata.namespace = Some(namespace.clone());
 
     // Verify the service account exists
-    let sa_key = rusternetes_storage::build_key("serviceaccounts", Some(&namespace), &service_account_name);
+    let sa_key =
+        rusternetes_storage::build_key("serviceaccounts", Some(&namespace), &service_account_name);
     let sa: rusternetes_common::resources::ServiceAccount = state.storage.get(&sa_key).await?;
 
     // Calculate expiration time
@@ -153,7 +154,10 @@ pub async fn create_token_request(
 
     // Generate a proper JWT service account token using direct seconds for precision
     let mut claims = rusternetes_common::auth::ServiceAccountClaims {
-        sub: format!("system:serviceaccount:{}:{}", namespace, service_account_name),
+        sub: format!(
+            "system:serviceaccount:{}:{}",
+            namespace, service_account_name
+        ),
         namespace: namespace.clone(),
         uid: sa.metadata.uid.clone(),
         iat: now.timestamp(),
@@ -179,7 +183,11 @@ pub async fn create_token_request(
             // Try to get node name from the pod
             if let Some(ref pod_name) = bound_ref.name {
                 let pod_key = rusternetes_storage::build_key("pods", Some(&namespace), pod_name);
-                if let Ok(pod) = state.storage.get::<rusternetes_common::resources::Pod>(&pod_key).await {
+                if let Ok(pod) = state
+                    .storage
+                    .get::<rusternetes_common::resources::Pod>(&pod_key)
+                    .await
+                {
                     claims.node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
                 }
             }

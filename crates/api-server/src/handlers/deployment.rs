@@ -31,7 +31,8 @@ pub async fn create(
             // Reformat to match Kubernetes strict decoding error format
             if let Some(field) = msg.split('`').nth(1) {
                 return rusternetes_common::Error::InvalidResource(format!(
-                    "strict decoding error: json: duplicate field \"{}\"", field
+                    "strict decoding error: json: duplicate field \"{}\"",
+                    field
                 ));
             }
         }
@@ -70,14 +71,18 @@ pub async fn create(
         version: "v1".to_string(),
         kind: "Deployment".to_string(),
     };
-    if let Err(e) = state.webhook_manager.run_validating_admission_policies_ext(
-        &rusternetes_common::admission::Operation::Create,
-        &gvk,
-        deploy_value.as_ref(),
-        None,
-        Some("deployments"),
-        Some(&namespace),
-    ).await {
+    if let Err(e) = state
+        .webhook_manager
+        .run_validating_admission_policies_ext(
+            &rusternetes_common::admission::Operation::Create,
+            &gvk,
+            deploy_value.as_ref(),
+            None,
+            Some("deployments"),
+            Some(&namespace),
+        )
+        .await
+    {
         return Err(e);
     }
 
@@ -261,21 +266,28 @@ pub async fn delete_deployment(
     let body_propagation: Option<String> = if !body.is_empty() {
         serde_json::from_slice::<serde_json::Value>(&body)
             .ok()
-            .and_then(|v| v.get("propagationPolicy").and_then(|p| p.as_str()).map(|s| s.to_string()))
+            .and_then(|v| {
+                v.get("propagationPolicy")
+                    .and_then(|p| p.as_str())
+                    .map(|s| s.to_string())
+            })
     } else {
         None
     };
-    let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str())
+    let propagation_policy = params
+        .get("propagationPolicy")
+        .map(|s| s.as_str())
         .or(body_propagation.as_deref());
 
     // Handle deletion with finalizers and propagation policy
-    let deleted_immediately = !crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
-        &state.storage,
-        &key,
-        &deployment,
-        propagation_policy,
-    )
-    .await?;
+    let deleted_immediately =
+        !crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
+            &state.storage,
+            &key,
+            &deployment,
+            propagation_policy,
+        )
+        .await?;
 
     if deleted_immediately {
         Ok(Json(deployment))
@@ -294,19 +306,37 @@ pub async fn list(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_namespaced::<Deployment>(
-            state, auth_ctx, namespace, "deployments", "apps", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            namespace,
+            "deployments",
+            "apps",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing deployments in namespace: {}", namespace);
@@ -355,19 +385,36 @@ pub async fn list_all_deployments(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
-    if params.get("watch").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if params
+        .get("watch")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         let watch_params = crate::handlers::watch::WatchParams {
-            resource_version: crate::handlers::watch::normalize_resource_version(params.get("resourceVersion").cloned()),
-            timeout_seconds: params.get("timeoutSeconds").and_then(|v| v.parse::<u64>().ok()),
+            resource_version: crate::handlers::watch::normalize_resource_version(
+                params.get("resourceVersion").cloned(),
+            ),
+            timeout_seconds: params
+                .get("timeoutSeconds")
+                .and_then(|v| v.parse::<u64>().ok()),
             label_selector: params.get("labelSelector").map(|s| s.clone()),
             field_selector: params.get("fieldSelector").map(|s| s.clone()),
             watch: Some(true),
-            allow_watch_bookmarks: params.get("allowWatchBookmarks").and_then(|v| v.parse::<bool>().ok()),
-            send_initial_events: params.get("sendInitialEvents").and_then(|v| v.parse::<bool>().ok()),
+            allow_watch_bookmarks: params
+                .get("allowWatchBookmarks")
+                .and_then(|v| v.parse::<bool>().ok()),
+            send_initial_events: params
+                .get("sendInitialEvents")
+                .and_then(|v| v.parse::<bool>().ok()),
         };
         return crate::handlers::watch::watch_cluster_scoped::<Deployment>(
-            state, auth_ctx, "deployments", "apps", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "deployments",
+            "apps",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all deployments");

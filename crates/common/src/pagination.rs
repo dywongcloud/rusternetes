@@ -201,12 +201,10 @@ pub fn paginate<T>(
             created_at,
         };
 
-        let token = next_token
-            .encode()
-            .map_err(|e| PaginationError {
-                message: format!("Failed to encode continue token: {}", e),
-                fresh_continue_token: None,
-            })?;
+        let token = next_token.encode().map_err(|e| PaginationError {
+            message: format!("Failed to encode continue token: {}", e),
+            fresh_continue_token: None,
+        })?;
 
         (Some(token), Some((total - end) as i64))
     } else {

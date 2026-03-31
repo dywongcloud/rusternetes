@@ -62,20 +62,33 @@ impl<S: Storage> ReplicationControllerController<S> {
         // If RC is being deleted with Orphan policy, remove ownerReferences from pods
         // and remove the orphan finalizer, then delete the RC.
         if rc.metadata.deletion_timestamp.is_some() {
-            let has_orphan_finalizer = rc.metadata.finalizers.as_ref()
+            let has_orphan_finalizer = rc
+                .metadata
+                .finalizers
+                .as_ref()
                 .map_or(false, |f| f.contains(&"orphan".to_string()));
             if has_orphan_finalizer {
-                info!("RC {}/{} being deleted with orphan policy, removing ownerRefs from pods", namespace, rc.metadata.name);
+                info!(
+                    "RC {}/{} being deleted with orphan policy, removing ownerRefs from pods",
+                    namespace, rc.metadata.name
+                );
                 // Remove ownerReferences from all owned pods
                 let pods_prefix = build_prefix("pods", Some(namespace));
                 let all_pods: Vec<Pod> = self.storage.list(&pods_prefix).await?;
                 for pod in &all_pods {
-                    let owned = pod.metadata.owner_references.as_ref()
+                    let owned = pod
+                        .metadata
+                        .owner_references
+                        .as_ref()
                         .map_or(false, |refs| refs.iter().any(|r| r.uid == rc.metadata.uid));
                     if owned {
                         let mut updated_pod = pod.clone();
-                        updated_pod.metadata.owner_references = updated_pod.metadata.owner_references
-                            .map(|refs| refs.into_iter().filter(|r| r.uid != rc.metadata.uid).collect());
+                        updated_pod.metadata.owner_references =
+                            updated_pod.metadata.owner_references.map(|refs| {
+                                refs.into_iter()
+                                    .filter(|r| r.uid != rc.metadata.uid)
+                                    .collect()
+                            });
                         let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
                         let _ = self.storage.update(&pod_key, &updated_pod).await;
                     }
@@ -85,8 +98,14 @@ impl<S: Storage> ReplicationControllerController<S> {
                 if let Some(ref mut finalizers) = updated_rc.metadata.finalizers {
                     finalizers.retain(|f| f != "orphan");
                 }
-                let rc_key = build_key("replicationcontrollers", Some(namespace), &rc.metadata.name);
-                if updated_rc.metadata.finalizers.as_ref().map_or(true, |f| f.is_empty()) {
+                let rc_key =
+                    build_key("replicationcontrollers", Some(namespace), &rc.metadata.name);
+                if updated_rc
+                    .metadata
+                    .finalizers
+                    .as_ref()
+                    .map_or(true, |f| f.is_empty())
+                {
                     let _ = self.storage.delete(&rc_key).await;
                 } else {
                     let _ = self.storage.update(&rc_key, &updated_rc).await;
@@ -120,10 +139,16 @@ impl<S: Storage> ReplicationControllerController<S> {
                     return false;
                 }
                 // Only count pods owned by this RC, or orphans (no controller owner)
-                let owned_by_this_rc = p.metadata.owner_references.as_ref()
+                let owned_by_this_rc = p
+                    .metadata
+                    .owner_references
+                    .as_ref()
                     .map(|refs| refs.iter().any(|r| r.uid == rc.metadata.uid))
                     .unwrap_or(false);
-                let is_orphan = p.metadata.owner_references.as_ref()
+                let is_orphan = p
+                    .metadata
+                    .owner_references
+                    .as_ref()
                     .map(|refs| refs.is_empty() || !refs.iter().any(|r| r.controller == Some(true)))
                     .unwrap_or(true);
                 // Skip pods owned by a different controller
@@ -133,12 +158,18 @@ impl<S: Storage> ReplicationControllerController<S> {
 
         // Adopt orphan pods — set ownerReference on matching pods that don't have one
         for pod in &rc_pods {
-            let has_owner = pod.metadata.owner_references.as_ref()
+            let has_owner = pod
+                .metadata
+                .owner_references
+                .as_ref()
                 .map(|refs| refs.iter().any(|r| r.uid == rc.metadata.uid))
                 .unwrap_or(false);
             if !has_owner {
                 let mut adopted_pod = pod.clone();
-                let refs = adopted_pod.metadata.owner_references.get_or_insert_with(Vec::new);
+                let refs = adopted_pod
+                    .metadata
+                    .owner_references
+                    .get_or_insert_with(Vec::new);
                 refs.push(rusternetes_common::types::OwnerReference {
                     api_version: "v1".to_string(),
                     kind: "ReplicationController".to_string(),
@@ -149,7 +180,10 @@ impl<S: Storage> ReplicationControllerController<S> {
                 });
                 let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
                 let _ = self.storage.update(&pod_key, &adopted_pod).await;
-                info!("Adopted orphan pod {} into RC {}", pod.metadata.name, rc.metadata.name);
+                info!(
+                    "Adopted orphan pod {} into RC {}",
+                    pod.metadata.name, rc.metadata.name
+                );
             }
         }
 
@@ -194,10 +228,16 @@ impl<S: Storage> ReplicationControllerController<S> {
                     return false;
                 }
                 // Only count pods owned by this RC or orphans
-                let owned_by_this_rc = p.metadata.owner_references.as_ref()
+                let owned_by_this_rc = p
+                    .metadata
+                    .owner_references
+                    .as_ref()
                     .map(|refs| refs.iter().any(|r| r.uid == rc.metadata.uid))
                     .unwrap_or(false);
-                let is_orphan = p.metadata.owner_references.as_ref()
+                let is_orphan = p
+                    .metadata
+                    .owner_references
+                    .as_ref()
                     .map(|refs| refs.is_empty() || !refs.iter().any(|r| r.controller == Some(true)))
                     .unwrap_or(true);
                 owned_by_this_rc || is_orphan
@@ -205,28 +245,42 @@ impl<S: Storage> ReplicationControllerController<S> {
             .collect();
 
         // Count only active (non-Failed, non-Succeeded) pods as replicas
-        let active_pods: Vec<&Pod> = rc_pods_after.iter().filter(|pod| {
-            !matches!(
-                pod.status.as_ref().and_then(|s| s.phase.as_ref()),
-                Some(Phase::Failed) | Some(Phase::Succeeded)
-            )
-        }).collect();
+        let active_pods: Vec<&Pod> = rc_pods_after
+            .iter()
+            .filter(|pod| {
+                !matches!(
+                    pod.status.as_ref().and_then(|s| s.phase.as_ref()),
+                    Some(Phase::Failed) | Some(Phase::Succeeded)
+                )
+            })
+            .collect();
 
         let final_current_replicas = active_pods.len() as i32;
-        let final_ready_replicas = active_pods.iter().filter(|pod| {
-            pod.status.as_ref()
-                .and_then(|s| s.conditions.as_ref())
-                .map(|conditions| conditions.iter().any(|c| c.condition_type == "Ready" && c.status == "True"))
-                .unwrap_or(false)
-        }).count() as i32;
+        let final_ready_replicas = active_pods
+            .iter()
+            .filter(|pod| {
+                pod.status
+                    .as_ref()
+                    .and_then(|s| s.conditions.as_ref())
+                    .map(|conditions| {
+                        conditions
+                            .iter()
+                            .any(|c| c.condition_type == "Ready" && c.status == "True")
+                    })
+                    .unwrap_or(false)
+            })
+            .count() as i32;
 
         // Check for failed pods as a failure signal
-        let failed_pods = rc_pods_after.iter().filter(|pod| {
-            matches!(
-                pod.status.as_ref().and_then(|s| s.phase.as_ref()),
-                Some(Phase::Failed)
-            )
-        }).count();
+        let failed_pods = rc_pods_after
+            .iter()
+            .filter(|pod| {
+                matches!(
+                    pod.status.as_ref().and_then(|s| s.phase.as_ref()),
+                    Some(Phase::Failed)
+                )
+            })
+            .count();
 
         // If we still don't have enough replicas after creation attempts, record failure
         if create_failure.is_none() && final_current_replicas < desired_replicas {
@@ -244,8 +298,13 @@ impl<S: Storage> ReplicationControllerController<S> {
         }
 
         // Update status with accurate counts
-        self.update_status(rc, final_current_replicas, final_ready_replicas, create_failure.as_deref())
-            .await?;
+        self.update_status(
+            rc,
+            final_current_replicas,
+            final_ready_replicas,
+            create_failure.as_deref(),
+        )
+        .await?;
 
         Ok(())
     }
@@ -386,14 +445,15 @@ impl<S: Storage> ReplicationControllerController<S> {
             // CAS conflict — re-read and retry once to ensure condition updates persist
             debug!("RC status update CAS conflict, retrying: {}", e);
             if let Ok(mut fresh_rc) = self.storage.get::<ReplicationController>(&key).await {
-                fresh_rc.status = Some(rusternetes_common::resources::ReplicationControllerStatus {
-                    replicas: current_replicas,
-                    fully_labeled_replicas: Some(current_replicas),
-                    ready_replicas: Some(ready_replicas),
-                    available_replicas: Some(ready_replicas),
-                    observed_generation: fresh_rc.metadata.generation,
-                    conditions: conditions_clone,
-                });
+                fresh_rc.status =
+                    Some(rusternetes_common::resources::ReplicationControllerStatus {
+                        replicas: current_replicas,
+                        fully_labeled_replicas: Some(current_replicas),
+                        ready_replicas: Some(ready_replicas),
+                        available_replicas: Some(ready_replicas),
+                        observed_generation: fresh_rc.metadata.generation,
+                        conditions: conditions_clone,
+                    });
                 let _ = self.storage.update(&key, &fresh_rc).await;
             }
         }

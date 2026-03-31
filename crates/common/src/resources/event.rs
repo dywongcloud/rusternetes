@@ -462,18 +462,31 @@ mod tests {
 
         // Field selector on involvedObject.name should work (camelCase serialization)
         let selector = FieldSelector::parse("involvedObject.name=my-pod").unwrap();
-        assert!(selector.matches(&json_val), "involvedObject.name selector should match");
+        assert!(
+            selector.matches(&json_val),
+            "involvedObject.name selector should match"
+        );
 
         // Non-matching selector
         let selector = FieldSelector::parse("involvedObject.name=other-pod").unwrap();
-        assert!(!selector.matches(&json_val), "Non-matching selector should not match");
+        assert!(
+            !selector.matches(&json_val),
+            "Non-matching selector should not match"
+        );
 
         // Field selector on metadata.namespace
         let selector = FieldSelector::parse("metadata.namespace=default").unwrap();
-        assert!(selector.matches(&json_val), "metadata.namespace selector should match");
+        assert!(
+            selector.matches(&json_val),
+            "metadata.namespace selector should match"
+        );
 
         // Combined selectors
-        let selector = FieldSelector::parse("involvedObject.name=my-pod,involvedObject.kind=Pod").unwrap();
-        assert!(selector.matches(&json_val), "Combined selector should match");
+        let selector =
+            FieldSelector::parse("involvedObject.name=my-pod,involvedObject.kind=Pod").unwrap();
+        assert!(
+            selector.matches(&json_val),
+            "Combined selector should match"
+        );
     }
 }

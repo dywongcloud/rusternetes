@@ -114,7 +114,8 @@ pub async fn update(
     if let Ok(existing) = state.storage.get::<PriorityClass>(&key).await {
         if existing.value != priority_class.value {
             return Err(rusternetes_common::Error::InvalidResource(format!(
-                "PriorityClass.value: Invalid value: \"{}\": field is immutable", priority_class.value
+                "PriorityClass.value: Invalid value: \"{}\": field is immutable",
+                priority_class.value
             )));
         }
     }
@@ -201,8 +202,13 @@ pub async fn list(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<PriorityClass>(
-            state, auth_ctx, "priorityclasses", "scheduling.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "priorityclasses",
+            "scheduling.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing PriorityClasses");
@@ -244,19 +250,32 @@ pub async fn patch(
     let name = path.0.clone();
     // Get existing value before patch
     let key = build_key("priorityclasses", None, &name);
-    let existing_value = state.storage.get::<PriorityClass>(&key).await.ok().map(|pc| pc.value);
+    let existing_value = state
+        .storage
+        .get::<PriorityClass>(&key)
+        .await
+        .ok()
+        .map(|pc| pc.value);
 
     // Delegate to generic patch
     let result = crate::handlers::generic_patch::patch_cluster_resource::<PriorityClass>(
-        state, auth_ctx, axum::extract::Path(name), query, headers, body,
-        "priorityclasses", "scheduling.k8s.io",
-    ).await?;
+        state,
+        auth_ctx,
+        axum::extract::Path(name),
+        query,
+        headers,
+        body,
+        "priorityclasses",
+        "scheduling.k8s.io",
+    )
+    .await?;
 
     // Validate immutable field wasn't changed
     if let Some(old_value) = existing_value {
         if result.0.value != old_value {
             return Err(rusternetes_common::Error::InvalidResource(format!(
-                "PriorityClass.value: Invalid value: \"{}\": field is immutable", result.0.value
+                "PriorityClass.value: Invalid value: \"{}\": field is immutable",
+                result.0.value
             )));
         }
     }

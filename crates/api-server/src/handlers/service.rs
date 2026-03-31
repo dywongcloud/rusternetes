@@ -65,7 +65,9 @@ pub async fn create(
     // Default target_port to port value if not set
     for port in &mut service.spec.ports {
         if port.target_port.is_none() {
-            port.target_port = Some(rusternetes_common::resources::IntOrString::Int(port.port as i32));
+            port.target_port = Some(rusternetes_common::resources::IntOrString::Int(
+                port.port as i32,
+            ));
         }
         // Default protocol to TCP if not set
         if port.protocol.is_none() {
@@ -79,7 +81,8 @@ pub async fn create(
             service.spec.ip_families = Some(vec![rusternetes_common::resources::IPFamily::IPv4]);
         }
         if service.spec.ip_family_policy.is_none() {
-            service.spec.ip_family_policy = Some(rusternetes_common::resources::IPFamilyPolicy::SingleStack);
+            service.spec.ip_family_policy =
+                Some(rusternetes_common::resources::IPFamilyPolicy::SingleStack);
         }
     }
 
@@ -139,7 +142,8 @@ pub async fn create(
                 if !state.ip_allocator.allocate_specific(requested_ip.clone()) {
                     // Check if this service already exists with the same IP
                     // (re-creation after restart). If so, allow it.
-                    let existing_key = build_key("services", Some(&namespace), &service.metadata.name);
+                    let existing_key =
+                        build_key("services", Some(&namespace), &service.metadata.name);
                     if let Ok(existing) = state.storage.get::<Service>(&existing_key).await {
                         if existing.spec.cluster_ip.as_deref() == Some(&requested_ip) {
                             info!(
@@ -193,12 +197,17 @@ pub async fn create(
     // Check ResourceQuota for services
     {
         let quota_prefix = format!("/registry/resourcequotas/{}/", namespace);
-        if let Ok(quotas) = state.storage.list::<rusternetes_common::resources::ResourceQuota>(&quota_prefix).await {
+        if let Ok(quotas) = state
+            .storage
+            .list::<rusternetes_common::resources::ResourceQuota>(&quota_prefix)
+            .await
+        {
             for quota in &quotas {
                 if let Some(hard) = &quota.spec.hard {
                     // Count existing services
                     let svc_prefix = format!("/registry/services/{}/", namespace);
-                    let existing_svcs: Vec<Service> = state.storage.list(&svc_prefix).await.unwrap_or_default();
+                    let existing_svcs: Vec<Service> =
+                        state.storage.list(&svc_prefix).await.unwrap_or_default();
 
                     // Check "services" quota
                     if let Some(limit_str) = hard.get("services") {
@@ -206,7 +215,8 @@ pub async fn create(
                             if existing_svcs.len() as i64 + 1 > limit {
                                 return Err(rusternetes_common::Error::Forbidden(format!(
                                     "exceeded quota: services, requested: 1, used: {}, limited: {}",
-                                    existing_svcs.len(), limit
+                                    existing_svcs.len(),
+                                    limit
                                 )));
                             }
                         }
@@ -216,9 +226,16 @@ pub async fn create(
                     if matches!(service.spec.service_type, Some(ServiceType::LoadBalancer)) {
                         if let Some(limit_str) = hard.get("services.loadbalancers") {
                             if let Ok(limit) = limit_str.parse::<i64>() {
-                                let current_lb = existing_svcs.iter()
-                                    .filter(|s| matches!(s.spec.service_type, Some(ServiceType::LoadBalancer)))
-                                    .count() as i64;
+                                let current_lb = existing_svcs
+                                    .iter()
+                                    .filter(|s| {
+                                        matches!(
+                                            s.spec.service_type,
+                                            Some(ServiceType::LoadBalancer)
+                                        )
+                                    })
+                                    .count()
+                                    as i64;
                                 if current_lb + 1 > limit {
                                     return Err(rusternetes_common::Error::Forbidden(format!(
                                         "exceeded quota: services.loadbalancers, requested: 1, used: {}, limited: {}",
@@ -230,12 +247,22 @@ pub async fn create(
                     }
 
                     // Check "services.nodeports" quota
-                    if matches!(service.spec.service_type, Some(ServiceType::NodePort | ServiceType::LoadBalancer)) {
+                    if matches!(
+                        service.spec.service_type,
+                        Some(ServiceType::NodePort | ServiceType::LoadBalancer)
+                    ) {
                         if let Some(limit_str) = hard.get("services.nodeports") {
                             if let Ok(limit) = limit_str.parse::<i64>() {
-                                let current_np = existing_svcs.iter()
-                                    .filter(|s| matches!(s.spec.service_type, Some(ServiceType::NodePort | ServiceType::LoadBalancer)))
-                                    .count() as i64;
+                                let current_np = existing_svcs
+                                    .iter()
+                                    .filter(|s| {
+                                        matches!(
+                                            s.spec.service_type,
+                                            Some(ServiceType::NodePort | ServiceType::LoadBalancer)
+                                        )
+                                    })
+                                    .count()
+                                    as i64;
                                 if current_np + 1 > limit {
                                     return Err(rusternetes_common::Error::Forbidden(format!(
                                         "exceeded quota: services.nodeports, requested: 1, used: {}, limited: {}",
@@ -329,7 +356,11 @@ pub async fn update(
     }
     // When changing FROM ExternalName TO ClusterIP/NodePort/LoadBalancer, allocate ClusterIP
     else if !matches!(service.spec.service_type, Some(ServiceType::ExternalName)) {
-        let needs_ip = service.spec.cluster_ip.as_ref().map_or(true, |ip| ip.is_empty());
+        let needs_ip = service
+            .spec
+            .cluster_ip
+            .as_ref()
+            .map_or(true, |ip| ip.is_empty());
         if needs_ip {
             if let Some(ip) = state.ip_allocator.allocate() {
                 service.spec.cluster_ip = Some(ip.clone());
@@ -337,7 +368,10 @@ pub async fn update(
             }
         }
         // Allocate NodePorts for NodePort/LoadBalancer services
-        if matches!(service.spec.service_type, Some(ServiceType::NodePort) | Some(ServiceType::LoadBalancer)) {
+        if matches!(
+            service.spec.service_type,
+            Some(ServiceType::NodePort) | Some(ServiceType::LoadBalancer)
+        ) {
             for port in &mut service.spec.ports {
                 if port.node_port.is_none() || port.node_port == Some(0) {
                     port.node_port = Some(allocate_node_port());

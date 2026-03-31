@@ -52,7 +52,12 @@ impl<S: Storage> NamespaceController<S> {
 
         // Ensure kube-root-ca.crt ConfigMap exists in active namespaces
         let cm_key = build_key("configmaps", Some(name), "kube-root-ca.crt");
-        if self.storage.get::<serde_json::Value>(&cm_key).await.is_err() {
+        if self
+            .storage
+            .get::<serde_json::Value>(&cm_key)
+            .await
+            .is_err()
+        {
             // Read CA cert
             let ca_cert = std::fs::read_to_string("/root/.rusternetes/certs/ca.crt")
                 .or_else(|_| std::fs::read_to_string("/etc/kubernetes/pki/ca.crt"))
@@ -81,7 +86,10 @@ impl<S: Storage> NamespaceController<S> {
 
     /// Build the standard set of namespace deletion conditions.
     /// These conditions indicate the namespace controller has processed the namespace.
-    fn build_deletion_conditions(content_remaining: bool, finalizers_remaining: bool) -> Vec<NamespaceCondition> {
+    fn build_deletion_conditions(
+        content_remaining: bool,
+        finalizers_remaining: bool,
+    ) -> Vec<NamespaceCondition> {
         let now = Utc::now();
         vec![
             NamespaceCondition {
@@ -103,7 +111,9 @@ impl<S: Storage> NamespaceController<S> {
                 status: "False".to_string(),
                 last_transition_time: Some(now),
                 reason: Some("ContentDeleted".to_string()),
-                message: Some("All content successfully deleted, may be waiting for finalization".to_string()),
+                message: Some(
+                    "All content successfully deleted, may be waiting for finalization".to_string(),
+                ),
             },
             NamespaceCondition {
                 condition_type: "NamespaceContentRemaining".to_string(),
@@ -122,7 +132,12 @@ impl<S: Storage> NamespaceController<S> {
             },
             NamespaceCondition {
                 condition_type: "NamespaceFinalizersRemaining".to_string(),
-                status: if finalizers_remaining { "True" } else { "False" }.to_string(),
+                status: if finalizers_remaining {
+                    "True"
+                } else {
+                    "False"
+                }
+                .to_string(),
                 last_transition_time: Some(now),
                 reason: if finalizers_remaining {
                     Some("SomeFinalizersRemain".to_string())
@@ -261,7 +276,10 @@ impl<S: Storage> NamespaceController<S> {
 
                 if no_finalizers {
                     // Delete the namespace from storage
-                    info!("All finalizers removed, deleting namespace {} from storage", name);
+                    info!(
+                        "All finalizers removed, deleting namespace {} from storage",
+                        name
+                    );
                     match self.storage.delete(&key).await {
                         Ok(_) => {
                             info!("Namespace {} fully deleted", name);
@@ -375,16 +393,24 @@ mod tests {
 
     #[test]
     fn test_build_deletion_conditions_all_clear() {
-        let conditions = NamespaceController::<MemoryStorage>::build_deletion_conditions(false, false);
+        let conditions =
+            NamespaceController::<MemoryStorage>::build_deletion_conditions(false, false);
         assert_eq!(conditions.len(), 5);
 
         // All conditions should be False when content is fully removed
         for cond in &conditions {
-            assert_eq!(cond.status, "False", "Condition {} should be False", cond.condition_type);
+            assert_eq!(
+                cond.status, "False",
+                "Condition {} should be False",
+                cond.condition_type
+            );
         }
 
         // Verify specific condition types are present
-        let types: Vec<&str> = conditions.iter().map(|c| c.condition_type.as_str()).collect();
+        let types: Vec<&str> = conditions
+            .iter()
+            .map(|c| c.condition_type.as_str())
+            .collect();
         assert!(types.contains(&"NamespaceDeletionDiscoveryFailure"));
         assert!(types.contains(&"NamespaceDeletionGroupVersionParsingFailure"));
         assert!(types.contains(&"NamespaceDeletionContentFailure"));
@@ -394,7 +420,8 @@ mod tests {
 
     #[test]
     fn test_build_deletion_conditions_content_remaining() {
-        let conditions = NamespaceController::<MemoryStorage>::build_deletion_conditions(true, false);
+        let conditions =
+            NamespaceController::<MemoryStorage>::build_deletion_conditions(true, false);
 
         let content_remaining = conditions
             .iter()
@@ -412,7 +439,8 @@ mod tests {
 
     #[test]
     fn test_build_deletion_conditions_finalizers_remaining() {
-        let conditions = NamespaceController::<MemoryStorage>::build_deletion_conditions(false, true);
+        let conditions =
+            NamespaceController::<MemoryStorage>::build_deletion_conditions(false, true);
 
         let finalizers = conditions
             .iter()
@@ -510,7 +538,10 @@ mod tests {
             if let Some(conditions) = &status.conditions {
                 assert!(!conditions.is_empty());
                 // Verify key condition types exist
-                let types: Vec<&str> = conditions.iter().map(|c| c.condition_type.as_str()).collect();
+                let types: Vec<&str> = conditions
+                    .iter()
+                    .map(|c| c.condition_type.as_str())
+                    .collect();
                 assert!(types.contains(&"NamespaceDeletionDiscoveryFailure"));
                 assert!(types.contains(&"NamespaceContentRemaining"));
             }

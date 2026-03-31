@@ -81,8 +81,13 @@ pub async fn list_storageclasses(
     if crate::handlers::watch::is_watch_request(&params) {
         let watch_params = crate::handlers::watch::watch_params_from_query(&params);
         return crate::handlers::watch::watch_cluster_scoped::<StorageClass>(
-            state, auth_ctx, "storageclasses", "storage.k8s.io", watch_params,
-        ).await;
+            state,
+            auth_ctx,
+            "storageclasses",
+            "storage.k8s.io",
+            watch_params,
+        )
+        .await;
     }
 
     info!("Listing all StorageClasses");

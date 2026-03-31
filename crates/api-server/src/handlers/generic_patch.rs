@@ -112,12 +112,15 @@ where
                 // Set the last-applied-configuration annotation
                 if let Some(metadata) = applied_json.get_mut("metadata") {
                     if let Some(obj) = metadata.as_object_mut() {
-                        let ann = obj.entry("annotations")
+                        let ann = obj
+                            .entry("annotations")
                             .or_insert_with(|| serde_json::json!({}));
                         if let Some(ann_obj) = ann.as_object_mut() {
                             ann_obj.insert(
                                 "kubectl.kubernetes.io/last-applied-configuration".to_string(),
-                                serde_json::Value::String(serde_json::to_string(&desired_json).unwrap_or_default()),
+                                serde_json::Value::String(
+                                    serde_json::to_string(&desired_json).unwrap_or_default(),
+                                ),
                             );
                         }
                     }
@@ -199,7 +202,10 @@ where
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
-        info!("Dry-run: {} {}/{} patch validated (not applied)", resource_type, namespace, name);
+        info!(
+            "Dry-run: {} {}/{} patch validated (not applied)",
+            resource_type, namespace, name
+        );
         return Ok(Json(patched_resource));
     }
 
@@ -295,12 +301,15 @@ where
                 // Set the last-applied-configuration annotation
                 if let Some(metadata) = applied_json.get_mut("metadata") {
                     if let Some(obj) = metadata.as_object_mut() {
-                        let ann = obj.entry("annotations")
+                        let ann = obj
+                            .entry("annotations")
                             .or_insert_with(|| serde_json::json!({}));
                         if let Some(ann_obj) = ann.as_object_mut() {
                             ann_obj.insert(
                                 "kubectl.kubernetes.io/last-applied-configuration".to_string(),
-                                serde_json::Value::String(serde_json::to_string(&desired_json).unwrap_or_default()),
+                                serde_json::Value::String(
+                                    serde_json::to_string(&desired_json).unwrap_or_default(),
+                                ),
                             );
                         }
                     }
@@ -377,7 +386,10 @@ where
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
-        info!("Dry-run: {} {} patch validated (not applied)", resource_type, name);
+        info!(
+            "Dry-run: {} {} patch validated (not applied)",
+            resource_type, name
+        );
         return Ok(Json(patched_resource));
     }
 

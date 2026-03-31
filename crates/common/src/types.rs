@@ -406,7 +406,11 @@ impl<T> List<T> {
         let mut max_rv: i64 = 0;
         for item in &self.items {
             if let Ok(v) = serde_json::to_value(item) {
-                if let Some(rv_str) = v.get("metadata").and_then(|m| m.get("resourceVersion")).and_then(|r| r.as_str()) {
+                if let Some(rv_str) = v
+                    .get("metadata")
+                    .and_then(|m| m.get("resourceVersion"))
+                    .and_then(|r| r.as_str())
+                {
                     if let Ok(rv) = rv_str.parse::<i64>() {
                         if rv > max_rv {
                             max_rv = rv;

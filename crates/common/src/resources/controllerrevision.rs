@@ -79,8 +79,7 @@ mod tests {
 
     #[test]
     fn test_controller_revision_serialization_camel_case() {
-        let cr = ControllerRevision::new("my-rev", "default", 3)
-            .with_data(json!({"key": "value"}));
+        let cr = ControllerRevision::new("my-rev", "default", 3).with_data(json!({"key": "value"}));
 
         let json_str = serde_json::to_string(&cr).expect("serialize");
 
@@ -117,20 +116,16 @@ mod tests {
             }
         });
 
-        let original = ControllerRevision::new("roundtrip-rev", "kube-system", 7)
-            .with_data(data.clone());
+        let original =
+            ControllerRevision::new("roundtrip-rev", "kube-system", 7).with_data(data.clone());
 
         let json_str = serde_json::to_string(&original).expect("serialize");
-        let restored: ControllerRevision =
-            serde_json::from_str(&json_str).expect("deserialize");
+        let restored: ControllerRevision = serde_json::from_str(&json_str).expect("deserialize");
 
         assert_eq!(restored.type_meta.kind, "ControllerRevision");
         assert_eq!(restored.type_meta.api_version, "apps/v1");
         assert_eq!(restored.metadata.name, "roundtrip-rev");
-        assert_eq!(
-            restored.metadata.namespace,
-            Some("kube-system".to_string())
-        );
+        assert_eq!(restored.metadata.namespace, Some("kube-system".to_string()));
         assert_eq!(restored.revision, 7);
         assert_eq!(restored.data, Some(data));
     }
@@ -154,10 +149,7 @@ mod tests {
         assert_eq!(cr.type_meta.kind, "ControllerRevision");
         assert_eq!(cr.type_meta.api_version, "apps/v1");
         assert_eq!(cr.metadata.name, "from-json-rev");
-        assert_eq!(
-            cr.metadata.namespace,
-            Some("production".to_string())
-        );
+        assert_eq!(cr.metadata.namespace, Some("production".to_string()));
         assert_eq!(cr.revision, 42);
         assert!(cr.data.is_some());
     }
@@ -177,8 +169,7 @@ mod tests {
         }]);
 
         let json_str = serde_json::to_string(&cr).expect("serialize");
-        let restored: ControllerRevision =
-            serde_json::from_str(&json_str).expect("deserialize");
+        let restored: ControllerRevision = serde_json::from_str(&json_str).expect("deserialize");
 
         let refs = restored.metadata.owner_references.unwrap();
         assert_eq!(refs.len(), 1);
@@ -201,17 +192,13 @@ mod tests {
         cr.metadata.labels = Some(labels);
 
         let json_str = serde_json::to_string(&cr).expect("serialize");
-        let restored: ControllerRevision =
-            serde_json::from_str(&json_str).expect("deserialize");
+        let restored: ControllerRevision = serde_json::from_str(&json_str).expect("deserialize");
 
         let restored_labels = restored.metadata.labels.unwrap();
         assert_eq!(
             restored_labels.get("controller-revision-hash"),
             Some(&"abc123def4".to_string())
         );
-        assert_eq!(
-            restored_labels.get("app"),
-            Some(&"nginx".to_string())
-        );
+        assert_eq!(restored_labels.get("app"), Some(&"nginx".to_string()));
     }
 }

@@ -49,15 +49,17 @@ pub async fn handle_spdy_exec(
     debug!("Direct Docker exec for container: {}", container_id);
 
     // Execute directly via Docker (API server has Docker socket mounted)
-    use bollard::Docker;
     use bollard::exec::{CreateExecOptions, StartExecResults};
+    use bollard::Docker;
     use futures::StreamExt;
 
     let docker = match Docker::connect_with_local_defaults() {
         Ok(d) => d,
         Err(e) => {
             error!("Failed to connect to Docker: {}", e);
-            let _ = spdy.write_error(&format!("Failed to connect to Docker: {}", e)).await;
+            let _ = spdy
+                .write_error(&format!("Failed to connect to Docker: {}", e))
+                .await;
             return;
         }
     };
@@ -80,7 +82,16 @@ pub async fn handle_spdy_exec(
         }
     };
 
-    let output = match docker.start_exec(&exec.id, Some(bollard::exec::StartExecOptions { detach: false, ..Default::default() })).await {
+    let output = match docker
+        .start_exec(
+            &exec.id,
+            Some(bollard::exec::StartExecOptions {
+                detach: false,
+                ..Default::default()
+            }),
+        )
+        .await
+    {
         Ok(o) => o,
         Err(e) => {
             error!("Failed to start exec: {}", e);
@@ -92,16 +103,21 @@ pub async fn handle_spdy_exec(
     // Collect output with timeout
     let mut stdout_data = Vec::new();
     let mut stderr_data = Vec::new();
-    if let StartExecResults::Attached { output: mut stream, .. } = output {
+    if let StartExecResults::Attached {
+        output: mut stream, ..
+    } = output
+    {
         loop {
             match tokio::time::timeout(std::time::Duration::from_secs(1), stream.next()).await {
-                Ok(Some(Ok(msg))) => {
-                    match msg {
-                        bollard::container::LogOutput::StdOut { message } => stdout_data.extend_from_slice(&message),
-                        bollard::container::LogOutput::StdErr { message } => stderr_data.extend_from_slice(&message),
-                        _ => {}
+                Ok(Some(Ok(msg))) => match msg {
+                    bollard::container::LogOutput::StdOut { message } => {
+                        stdout_data.extend_from_slice(&message)
                     }
-                }
+                    bollard::container::LogOutput::StdErr { message } => {
+                        stderr_data.extend_from_slice(&message)
+                    }
+                    _ => {}
+                },
                 Ok(Some(Err(_))) | Ok(None) => break,
                 Err(_) => {
                     // Timeout — check if exec finished
