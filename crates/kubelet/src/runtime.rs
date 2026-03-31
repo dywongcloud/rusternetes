@@ -4270,11 +4270,13 @@ impl ContainerRuntime {
                         Some(ContainerState::Terminated {
                             exit_code: exit_code as i32,
                             signal: None,
-                            reason: if exit_code == 0 {
-                                Some("Completed".to_string())
+                            reason: Some(if exit_code == 0 {
+                                "Completed".to_string()
+                            } else if exit_code == 137 {
+                                state.error.unwrap_or_else(|| "OOMKilled".to_string())
                             } else {
-                                state.error
-                            },
+                                state.error.unwrap_or_else(|| "Error".to_string())
+                            }),
                             message: termination_msg,
                             started_at: None,
                             finished_at: state.finished_at,
