@@ -1,6 +1,6 @@
 use anyhow::Result;
 use rusternetes_common::resources::{NetworkPolicy, Pod};
-use rusternetes_storage::Storage;
+use rusternetes_storage::{MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -359,9 +359,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_policy_valid() {
         let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
+            MemoryStorage::new(),
         );
         let controller = NetworkPolicyController::new(storage);
 
@@ -388,9 +386,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_policy_invalid_type() {
         let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
+            MemoryStorage::new(),
         );
         let controller = NetworkPolicyController::new(storage);
 
@@ -417,9 +413,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_ingress_rule() {
         let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
+            MemoryStorage::new(),
         );
         let controller = NetworkPolicyController::new(storage);
 
@@ -445,9 +439,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_port_invalid_protocol() {
         let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
+            MemoryStorage::new(),
         );
         let controller = NetworkPolicyController::new(storage);
 
@@ -465,9 +457,7 @@ mod tests {
     #[tokio::test]
     async fn test_pod_matches_selector_empty() {
         let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
+            MemoryStorage::new(),
         );
         let controller = NetworkPolicyController::new(storage);
 
@@ -493,9 +483,7 @@ mod tests {
     #[tokio::test]
     async fn test_pod_matches_selector_with_labels() {
         let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
+            MemoryStorage::new(),
         );
         let controller = NetworkPolicyController::new(storage);
 
@@ -529,9 +517,7 @@ mod tests {
     #[tokio::test]
     async fn test_pod_matches_expression() {
         let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
+            MemoryStorage::new(),
         );
         let controller = NetworkPolicyController::new(storage);
 

@@ -563,7 +563,7 @@ mod tests {
         let result = validate_strict_fields(&params, body, &parsed);
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
-        assert!(err_msg.contains("duplicate field"), "Expected 'duplicate field' in error: {}", err_msg);
+        assert!(err_msg.contains("json: unknown field"), "Expected 'json: unknown field' in error: {}", err_msg);
         assert!(err_msg.contains("name"), "Expected field name in error: {}", err_msg);
     }
 
@@ -617,13 +617,13 @@ mod tests {
         let result = validate_strict_fields(&params, body, &parsed);
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
-        assert!(err_msg.contains("duplicate field"), "Expected 'duplicate field' in error: {}", err_msg);
+        assert!(err_msg.contains("json: unknown field"), "Expected 'json: unknown field' in error: {}", err_msg);
         assert!(err_msg.contains("spec.replicas"), "Expected 'spec.replicas' dotted path in error: {}", err_msg);
     }
 
     #[test]
     fn test_strict_validation_error_format_matches_k8s() {
-        // K8s returns: strict decoding error: duplicate field "fieldName"
+        // K8s returns: strict decoding error: json: unknown field "fieldName"
         #[derive(serde::Serialize, serde::Deserialize)]
         struct Simple {
             name: String,
@@ -638,7 +638,7 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
-            err_msg.contains(r#"strict decoding error: duplicate field "name""#),
+            err_msg.contains(r#"strict decoding error: json: unknown field "name""#),
             "Error format must match K8s: {}", err_msg
         );
     }
@@ -670,8 +670,8 @@ mod tests {
             "Expected unknown field error: {}", err_msg
         );
         assert!(
-            err_msg.contains(r#"duplicate field "spec.replicas""#),
-            "Expected duplicate field error: {}", err_msg
+            err_msg.contains(r#"json: unknown field "spec.replicas""#),
+            "Expected json: unknown field error: {}", err_msg
         );
         // Should be combined in a single strict decoding error
         assert!(

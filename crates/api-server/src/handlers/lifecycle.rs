@@ -76,7 +76,7 @@ mod tests {
         let mut meta = ObjectMeta::default();
         meta.generation = Some(5);
         set_initial_generation(&mut meta);
-        assert_eq!(meta.generation, Some(5));
+        assert_eq!(meta.generation, Some(1)); // K8s always sets generation=1 on creation
     }
 
     #[test]

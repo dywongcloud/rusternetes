@@ -124,8 +124,16 @@ impl<S: Storage> StatefulSetController<S> {
 
         // Scale up or down
         if current_replicas < desired_replicas {
-            // Scale up: create pods in order
-            for i in current_replicas..desired_replicas {
+            // Scale up: create any missing pods in ordinal order.
+            // During rolling updates, gaps can appear at any ordinal (not just at the end),
+            // so we check all ordinals 0..desired rather than current..desired.
+            for i in 0..desired_replicas {
+                let pod_exists = {
+                    let pod_name = format!("{}-{}", name, i);
+                    let pod_key = build_key("pods", Some(namespace), &pod_name);
+                    self.storage.get::<Pod>(&pod_key).await.is_ok()
+                };
+                if pod_exists { continue; }
                 // For OrderedReady policy, check that the previous pod is Ready before
                 // creating the next one. If it's not ready, halt scaling.
                 if is_ordered_ready && i > 0 {
@@ -556,9 +564,14 @@ impl<S: Storage> StatefulSetController<S> {
         };
 
         let key = format!("/registry/pods/{}/{}", namespace, pod_name);
-        self.storage.create(&key, &pod).await?;
-
-        Ok(())
+        match self.storage.create(&key, &pod).await {
+            Ok(_) => Ok(()),
+            Err(rusternetes_common::Error::AlreadyExists(_)) => {
+                debug!("Pod {} already exists, skipping creation", pod_name);
+                Ok(())
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
@@ -792,18 +805,15 @@ mod tests {
         );
 
         // Now simulate completing the rolling update:
-        // Make all remaining pods ready, reconcile until all pods have new revision
-        for _ in 0..10 {
-            // Make all pods ready
-            let pod_prefix = format!("/registry/pods/{}/", ns);
-            let pods: Vec<Pod> = storage.list(&pod_prefix).await.unwrap();
-            for pod in &pods {
-                if pod.metadata.labels.as_ref()
-                    .and_then(|l| l.get("app"))
-                    .map(|a| a == "web")
-                    .unwrap_or(false)
-                {
-                    make_pod_ready(&storage, ns, &pod.metadata.name).await;
+        // Each cycle: make pods ready → reconcile (deletes one old, creates one new)
+        // Need enough cycles for all 3 pods to be replaced + a final reconcile
+        for cycle in 0..20 {
+            // Make all current pods ready
+            for i in 0..3 {
+                let pod_name = format!("web-{}", i);
+                let pod_key = format!("/registry/pods/{}/{}", ns, pod_name);
+                if storage.get::<Pod>(&pod_key).await.is_ok() {
+                    make_pod_ready(&storage, ns, &pod_name).await;
                 }
             }
 
@@ -815,6 +825,7 @@ mod tests {
             if status.current_revision == status.update_revision {
                 break;
             }
+            assert!(cycle < 19, "Rolling update did not complete in 20 cycles");
         }
 
         // After rollout completes, currentRevision == updateRevision
