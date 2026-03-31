@@ -163,38 +163,21 @@ pub async fn create_crd(
     }
 
     let key = build_key("customresourcedefinitions", None, &crd_name);
-    // Serialize the CRD to a serde_json::Value, store it, and return the stored
-    // value directly. This avoids a Serialize→store→Deserialize round-trip through
-    // the strongly-typed struct, which can fail if the storage layer enriches
-    // the JSON with fields (uid, resourceVersion) that cause type mismatches.
-    let crd_value = serde_json::to_value(&crd)
+
+    // Include observedGeneration in the status before creating, so the CRD is
+    // fully initialized in a single etcd write. This avoids the extra get+update
+    // roundtrip that was causing CRD creation timeouts under load.
+    let mut crd_value = serde_json::to_value(&crd)
         .map_err(|e| rusternetes_common::Error::Internal(format!("serialize: {}", e)))?;
-    let created: serde_json::Value = state.storage.create(&key, &crd_value).await?;
-
-    info!("CRD created: {}", crd_name);
-
-    // Synchronously update the CRD status to generate a MODIFIED watch event.
-    // K8s clients watch for CRD status changes (Established condition) using the
-    // resourceVersion from the CREATE response. The CREATE itself produces an ADDED
-    // watch event, but clients watch from that resourceVersion for MODIFIED events
-    // containing the Established condition. By doing a synchronous update before
-    // returning the CREATE response, we ensure the MODIFIED event exists in the
-    // watch stream at a resourceVersion >= the CREATE's resourceVersion.
-    // The client will see the MODIFIED event when it starts watching.
-    {
-        if let Ok(mut crd_val) = state.storage.get::<serde_json::Value>(&key).await {
-            if let Some(status) = crd_val.get_mut("status") {
-                if let Some(obj) = status.as_object_mut() {
-                    obj.insert("observedGeneration".to_string(), serde_json::json!(1));
-                }
-            }
-            let _ = state.storage.update(&key, &crd_val).await;
+    if let Some(status) = crd_value.get_mut("status") {
+        if let Some(obj) = status.as_object_mut() {
+            obj.insert("observedGeneration".to_string(), serde_json::json!(1));
         }
     }
 
-    // Return the originally created value (with the CREATE resourceVersion).
-    // The client will watch from this resourceVersion and see the MODIFIED event
-    // we just wrote above.
+    let created: serde_json::Value = state.storage.create(&key, &crd_value).await?;
+    info!("CRD created: {}", crd_name);
+
     Ok((StatusCode::CREATED, Json(created)))
 }
 
