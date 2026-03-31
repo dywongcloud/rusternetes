@@ -99,6 +99,8 @@ pub struct ContainerRuntime {
     probe_states: Mutex<HashMap<String, ProbeState>>,
     /// Cache of images known to exist locally (avoid repeated Docker API calls)
     image_cache: Mutex<std::collections::HashSet<String>>,
+    /// Cache of shell availability per image (true = has /bin/sh)
+    shell_cache: Mutex<HashMap<String, bool>>,
 }
 
 /// Join a list of strings into a shell-safe command string.
@@ -202,6 +204,7 @@ impl ContainerRuntime {
             token_manager,
             probe_states: Mutex::new(HashMap::new()),
             image_cache: Mutex::new(std::collections::HashSet::new()),
+            shell_cache: Mutex::new(HashMap::new()),
         })
     }
 
@@ -3694,6 +3697,10 @@ impl ContainerRuntime {
             .map(|mounts| mounts.iter().any(|m| empty_dir_volumes.contains(&m.name)))
             .unwrap_or(false);
         let has_shell = if has_emptydir_mount {
+            // Check cache first to avoid probe overhead
+            if let Some(&cached) = self.shell_cache.lock().unwrap().get(&container.image) {
+                cached
+            } else {
             let probe_name = format!("{}_sh_probe", container_name);
             let probe_config = bollard::container::Config {
                 image: Some(container.image.clone()),
@@ -3740,7 +3747,10 @@ impl ContainerRuntime {
                     container.name
                 );
             }
+            // Cache the result
+            self.shell_cache.lock().unwrap().insert(container.image.clone(), shell_ok);
             shell_ok
+            } // end else (cache miss)
         } else {
             false
         };
