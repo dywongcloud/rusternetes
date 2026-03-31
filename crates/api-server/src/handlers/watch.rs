@@ -330,7 +330,7 @@ where
                     event_opt = watch_stream.next() => {
                         match event_opt {
                             Some(Ok(WatchEvent::Added(key, value))) => {
-                                debug!("Watch event - Added: {}", key);
+                                info!("Watch ADDED event for key={}, should_send_initial={}", key, should_send_initial);
                                 if let Ok(object) = serde_json::from_str::<T>(&value) {
                                     // Update latest resourceVersion
                                     if let Some(rv) = object.metadata().resource_version.as_ref() {
@@ -730,7 +730,7 @@ where
                     event_opt = watch_stream.next() => {
                         match event_opt {
                             Some(Ok(WatchEvent::Added(key, value))) => {
-                                debug!("Watch event - Added: {}", key);
+                                info!("Watch ADDED event for key={}, should_send_initial={}", key, should_send_initial);
                                 if let Ok(object) = serde_json::from_str::<T>(&value) {
                                     // Update latest resourceVersion
                                     if let Some(rv) = object.metadata().resource_version.as_ref() {
