@@ -97,6 +97,8 @@ pub struct ContainerRuntime {
     token_manager: rusternetes_common::auth::TokenManager,
     /// Probe state tracker: key is "{pod_name}/{container_name}/{probe_type}"
     probe_states: Mutex<HashMap<String, ProbeState>>,
+    /// Cache of images known to exist locally (avoid repeated Docker API calls)
+    image_cache: Mutex<std::collections::HashSet<String>>,
 }
 
 /// Join a list of strings into a shell-safe command string.
@@ -166,6 +168,7 @@ impl ContainerRuntime {
             kubernetes_service_host,
             token_manager,
             probe_states: Mutex::new(HashMap::new()),
+            image_cache: Mutex::new(std::collections::HashSet::new()),
         })
     }
 
@@ -317,15 +320,29 @@ impl ContainerRuntime {
     /// Pull an image if necessary based on the pull policy
     async fn ensure_image(&self, image: &str, pull_policy: Option<&str>) -> Result<()> {
         let policy = pull_policy.unwrap_or("IfNotPresent");
-        debug!("Ensuring image {} with policy {}", image, policy);
 
         // Normalize image name to include registry if not specified
         let normalized_image = self.normalize_image_name(image);
-        debug!("Normalized image name: {}", normalized_image);
 
-        // Check if image exists locally (try both original and normalized names)
-        let image_exists = self.check_image_exists(image).await
-            || self.check_image_exists(&normalized_image).await;
+        // Fast path: check in-memory cache first (avoids Docker API call)
+        let cached = {
+            let cache = self.image_cache.lock().unwrap();
+            cache.contains(image) || cache.contains(&normalized_image)
+        };
+
+        let image_exists = if cached && policy != "Always" {
+            true
+        } else {
+            // Check Docker API
+            let exists = self.check_image_exists(image).await
+                || self.check_image_exists(&normalized_image).await;
+            if exists {
+                let mut cache = self.image_cache.lock().unwrap();
+                cache.insert(image.to_string());
+                cache.insert(normalized_image.clone());
+            }
+            exists
+        };
 
         let should_pull = match policy {
             "Always" => true,
@@ -356,6 +373,10 @@ impl ContainerRuntime {
             }
 
             info!("Successfully pulled image: {}", image);
+            // Cache the pulled image
+            let mut cache = self.image_cache.lock().unwrap();
+            cache.insert(image.to_string());
+            cache.insert(normalized_image.clone());
         } else {
             debug!("Image {} already exists locally, skipping pull", image);
         }
@@ -513,11 +534,15 @@ impl ContainerRuntime {
         // Create volumes first (includes service account token volumes)
         let volume_binds = self.create_pod_volumes(pod).await?;
 
-        // Sync filesystem to ensure volume files are visible to Docker containers.
-        // Docker Desktop uses virtiofs which may not immediately see newly written
-        // files from the host. A sync ensures all writes are flushed before we
-        // bind-mount the volume directories into containers.
-        let _ = std::process::Command::new("sync").output();
+        // Flush volume directory to ensure files are visible to Docker containers.
+        // Docker Desktop uses virtiofs which may cache writes. Instead of a global
+        // sync (which flushes ALL filesystems), we sync_data just the pod's volume dir.
+        {
+            let pod_vol_dir = format!("{}/{}", self.volumes_base_path, pod_name);
+            if let Ok(dir) = std::fs::File::open(&pod_vol_dir) {
+                let _ = dir.sync_all();
+            }
+        }
 
         // Get pod IP. For CNI mode, IP is available right after network setup.
         // For non-CNI (Docker bridge) mode, we start a pause container first so we
@@ -550,28 +575,8 @@ impl ContainerRuntime {
         // Create /etc/hosts now that we know the pod IP.
         let hosts_file_path = self.create_pod_hosts_file(pod, pod_ip.as_deref())?;
 
-        // Copy the kubelet-managed /etc/hosts into the pause container.
-        // Docker manages /etc/hosts for containers in the network namespace, so
-        // bind mounts on app containers (which use container:pause network mode)
-        // don't override /etc/hosts. We must write directly into the pause container.
-        if let Some(ref hosts_path) = hosts_file_path {
-            let pause_name = format!("{}_pause", pod_name);
-            if let Ok(hosts_content) = std::fs::read(hosts_path) {
-                use bollard::container::UploadToContainerOptions;
-                // Create a tar archive containing /etc/hosts
-                let mut tar_builder = tar::Builder::new(Vec::new());
-                let mut header = tar::Header::new_gnu();
-                header.set_size(hosts_content.len() as u64);
-                header.set_mode(0o644);
-                header.set_cksum();
-                tar_builder.append_data(&mut header, "hosts", &hosts_content[..]).ok();
-                if let Ok(tar_data) = tar_builder.into_inner() {
-                    let opts = UploadToContainerOptions { path: "/etc", ..Default::default() };
-                    let _ = self.docker.upload_to_container(&pause_name, Some(opts), tar_data.into()).await;
-                    debug!("Copied kubelet-managed /etc/hosts into pause container {}", pause_name);
-                }
-            }
-        }
+        // /etc/hosts is bind-mounted into each app container (see start_container).
+        // No need to upload into the pause container — app containers use the bind mount.
 
         // resolved_ip is only used in the non-CNI/non-pause fallback path now.
         let mut resolved_ip = pod_ip.is_some();
