@@ -19,12 +19,12 @@
 | InitContainer RestartNever fail | Wrong message format | FIXED — K8s format message (f806dc2) |
 | CSR PATCH | Request rejected | FIXED — serde defaults (e7e95f5) |
 | EndpointSlice API operations | ADDED instead of MODIFIED | FIXED — etcd key version (2b4e496) |
-| Pod InPlace Resize | Resize state | Complex feature |
+| Pod InPlace Resize | cgroup cpu.weight wrong | FIXED — set cpu_shares on resize (0109b9f) |
 | StatefulSet rolling update | Revision mismatch | Likely fixed by watch event fix (2b4e496) |
 | FieldValidation duplicate | Wrong format | Fix deployed but may need rebuild |
-| Job FailIndex | Completion timeout | Fix deployed but still failing |
+| Job FailIndex | Pods succeed instead of fail | FIXED — check all terminated pods (0109b9f) |
 | Service endpoints latency | Missing selector field | FIXED — HashMap not Option (cf279a3) |
-| VAP validate Deployment | Denied | Fix deployed but still failing |
+| VAP validate Deployment | Missing params | FIXED — load params from binding (0109b9f) |
 | HostPort pod2 timeout | Pod not starting | Timing |
 | kubectl replace | MIME validation error | FIXED — OpenAPI JSON (286e31c) |
 
