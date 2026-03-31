@@ -3737,7 +3737,13 @@ impl ContainerRuntime {
             .unwrap_or(false);
         let has_shell = if has_emptydir_mount {
             // Check cache first to avoid probe overhead
-            if let Some(&cached) = self.shell_cache.lock().unwrap().get(&container.image) {
+            let cached_result = self
+                .shell_cache
+                .lock()
+                .unwrap()
+                .get(&container.image)
+                .copied();
+            if let Some(cached) = cached_result {
                 cached
             } else {
                 let probe_name = format!("{}_sh_probe", container_name);
