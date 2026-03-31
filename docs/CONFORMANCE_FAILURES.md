@@ -18,7 +18,7 @@
 | WebSocket exec channel order | Channel 3 before channel 1 | FIXED — initial stdout frame (aad60bc) |
 | InitContainer RestartNever fail | Wrong message format | FIXED — K8s format message (f806dc2) |
 | CSR PATCH | Request rejected | FIXED — serde defaults (e7e95f5) |
-| EndpointSlice API operations | Expected | Need investigation |
+| EndpointSlice API operations | ADDED instead of MODIFIED | FIXED — etcd key version (2b4e496) |
 | Pod InPlace Resize | Resize state | Complex feature |
 | StatefulSet rolling update | Revision mismatch | Need investigation |
 | FieldValidation duplicate | Wrong format | Fix deployed but may need rebuild |
