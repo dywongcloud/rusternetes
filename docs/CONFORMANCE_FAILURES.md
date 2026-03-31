@@ -19,6 +19,8 @@ expected to resolve many timeout failures caused by client-go watch cancel loops
 | Kubelet watch cooldown 3s→1s | 0102b4b | Faster pod startup for timeout tests |
 | Scheduler 5s→2s, controller-manager 10s→5s | ac17291 | Reduce convergence latency |
 | Watch kind mappings for 16 resource types | cdc276a | Fixes watch cancel loops for IngressClass, PriorityClass, LimitRange, RC, etc. |
+| Refresh Secret/ConfigMap volumes on sync | d66a1f8 | Fixes "optional updates should be reflected in volume" (#3) |
+| Deployment revision annotation CAS retry | 2b7b4a9 | Fixes "deployment doesn't have required revision set" (#11) |
 
 ## Code Bugs (Round 116)
 
