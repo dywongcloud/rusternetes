@@ -5320,6 +5320,35 @@ impl ContainerRuntime {
         Ok(())
     }
 
+    /// Remove a terminated container so it can be recreated for restart.
+    pub async fn remove_terminated_container(&self, container_name: &str) -> Result<()> {
+        match self
+            .docker
+            .inspect_container(container_name, None::<InspectContainerOptions>)
+            .await
+        {
+            Ok(info) => {
+                let running = info
+                    .state
+                    .as_ref()
+                    .and_then(|s| s.running)
+                    .unwrap_or(false);
+                if !running {
+                    let opts = bollard::container::RemoveContainerOptions {
+                        force: true,
+                        ..Default::default()
+                    };
+                    self.docker
+                        .remove_container(container_name, Some(opts))
+                        .await?;
+                    debug!("Removed terminated container {} for restart", container_name);
+                }
+            }
+            Err(_) => {} // Container doesn't exist, nothing to remove
+        }
+        Ok(())
+    }
+
     /// Refresh Secret and ConfigMap volumes for a running pod.
     /// Re-reads the data from storage and overwrites files on disk.
     pub async fn refresh_volumes(&self, pod: &Pod) -> Result<()> {

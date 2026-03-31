@@ -1393,6 +1393,18 @@ impl Kubelet {
                                 }
                                 let _ = self.storage.update(&key, &new_pod).await;
 
+                                // Remove terminated containers before restarting
+                                // (Docker won't allow creating a container with the same name)
+                                if let Some(spec) = &pod.spec {
+                                    for c in &spec.containers {
+                                        let cname = format!("{}_{}", pod_name, c.name);
+                                        let _ = self
+                                            .runtime
+                                            .remove_terminated_container(&cname)
+                                            .await;
+                                    }
+                                }
+
                                 // Restart the exited containers
                                 if let Err(e) = self.runtime.start_pod(pod).await {
                                     debug!(
