@@ -407,7 +407,7 @@ mod tests {
         let mut sel = HashMap::new();
         sel.insert("app".to_string(), "web".to_string());
         let spec = ServiceSpec {
-            selector: Some(sel),
+            selector: sel,
             ..Default::default()
         };
         let json = serde_json::to_string(&spec).unwrap();

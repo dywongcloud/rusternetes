@@ -21,7 +21,7 @@ fn create_test_service(name: &str, namespace: &str, selector: HashMap<String, St
             meta
         },
         spec: ServiceSpec {
-            selector: Some(selector),
+            selector: selector,
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 protocol: Some("TCP".to_string()),

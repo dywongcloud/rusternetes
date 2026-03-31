@@ -533,7 +533,7 @@ async fn test_watch_namespace_isolation() {
             ..Default::default()
         },
         spec: ServiceSpec {
-            selector: None,
+            selector: std::collections::HashMap::new(),
             ports: vec![ServicePort {
                 name: None,
                 protocol: Some("TCP".to_string()),
@@ -580,7 +580,7 @@ async fn test_watch_namespace_isolation() {
             ..Default::default()
         },
         spec: ServiceSpec {
-            selector: None,
+            selector: std::collections::HashMap::new(),
             ports: vec![ServicePort {
                 name: None,
                 protocol: Some("TCP".to_string()),

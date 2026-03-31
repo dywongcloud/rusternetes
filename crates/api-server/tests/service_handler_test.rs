@@ -38,7 +38,7 @@ fn create_test_service(name: &str, namespace: &str, service_type: ServiceType) -
             managed_fields: None,
         },
         spec: ServiceSpec {
-            selector: Some(selector),
+            selector: selector,
             ports: vec![ServicePort {
                 name: Some("http".to_string()),
                 protocol: Some("TCP".to_string()),
@@ -348,13 +348,13 @@ async fn test_service_selector() {
     selector.insert("tier".to_string(), "api".to_string());
 
     let mut service = create_test_service("test-selector", "default", ServiceType::ClusterIP);
-    service.spec.selector = Some(selector.clone());
+    service.spec.selector = selector.clone();
 
     let key = build_key("services", Some("default"), "test-selector");
 
     // Create with selector
     let created: Service = storage.create(&key, &service).await.unwrap();
-    assert!(created.spec.!selector.is_empty());
+    assert!(!created.spec.selector.is_empty());
 
     let created_selector = created.spec.selector.clone();
     assert_eq!(created_selector.get("app"), Some(&"backend".to_string()));
