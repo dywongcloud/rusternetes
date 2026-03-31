@@ -531,26 +531,19 @@ impl Kubelet {
             }
         }
 
-        // Clean up containers for completed/failed pods that have been terminal
-        // for more than 5 minutes. We delay cleanup because tests may read pod logs
-        // after the pod completes — Docker can only return logs for containers that
-        // still exist. Cleaning up too early causes the logs API to return synthetic
-        // (fake) logs instead of real container output.
-        for pod in all_existing_pods {
-            let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
-            let is_terminal = matches!(phase, Some(Phase::Succeeded) | Some(Phase::Failed));
-            if is_terminal {
-                // Check if the pod has been terminal long enough (5 minutes)
-                let start_time = pod.status.as_ref()
-                    .and_then(|s| s.start_time.as_ref())
-                    .copied();
-                let age = start_time
-                    .map(|t| (chrono::Utc::now() - t).num_seconds())
-                    .unwrap_or(0);
-                if age > 300 { // 5 minutes
-                    let pod_name = &pod.metadata.name;
-                    if let Err(e) = self.runtime.stop_and_remove_pod(pod_name).await {
-                        debug!("Error cleaning up terminal pod {}: {}", pod_name, e);
+        // Clean up EXITED containers whose pods no longer exist in etcd.
+        // When conformance tests delete namespaces, the pods are removed from etcd
+        // but Docker containers remain in "exited" state. The orphan cleanup only
+        // handles RUNNING containers. This handles EXITED ones.
+        if let Ok(exited_pods) = self.runtime.list_exited_pods().await {
+            for exited_pod_name in &exited_pods {
+                if !existing_pod_names.contains(exited_pod_name) {
+                    // Pod not in etcd — check container age before removing
+                    let age = self.runtime.get_container_age(exited_pod_name).await
+                        .unwrap_or(std::time::Duration::from_secs(0));
+                    if age > std::time::Duration::from_secs(300) {
+                        debug!("Removing exited orphan containers for pod {}", exited_pod_name);
+                        let _ = self.runtime.stop_and_remove_pod(exited_pod_name).await;
                     }
                 }
             }

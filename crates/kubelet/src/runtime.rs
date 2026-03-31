@@ -5209,6 +5209,36 @@ impl ContainerRuntime {
         }
     }
 
+    /// List pod names that have EXITED containers (not running).
+    /// Used to clean up containers from pods deleted from etcd.
+    pub async fn list_exited_pods(&self) -> Result<Vec<String>> {
+        let mut filters = std::collections::HashMap::new();
+        filters.insert("status".to_string(), vec!["exited".to_string()]);
+        let options = ListContainersOptions {
+            all: true,
+            filters,
+            ..Default::default()
+        };
+
+        let containers = self.docker.list_containers(Some(options)).await?;
+
+        let mut pod_names = std::collections::HashSet::new();
+        for container in containers {
+            if let Some(names) = container.names {
+                for name in names {
+                    let name = name.trim_start_matches('/');
+                    if let Some(pod_name) = name.split('_').next() {
+                        if !pod_name.starts_with("rusternetes-") {
+                            pod_names.insert(pod_name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(pod_names.into_iter().collect())
+    }
+
     /// List containers stuck in "Created" state for more than 60 seconds
     pub async fn list_stale_created_containers(&self) -> Result<Vec<String>> {
         let options = ListContainersOptions::<String> {
