@@ -1133,6 +1133,11 @@ impl Kubelet {
                 // Use fresh_pod for all subsequent checks (spec may have been updated by resize PATCH)
                 let pod = &fresh_pod;
 
+                // Refresh Secret/ConfigMap volumes so updates are reflected in running pods
+                if let Err(e) = self.runtime.refresh_volumes(pod).await {
+                    debug!("Failed to refresh volumes for pod {}/{}: {}", namespace, pod_name, e);
+                }
+
                 // Check if all spec containers have terminated (pause container may still be running).
                 // This must happen before liveness probes, which may error on exited containers.
                 {

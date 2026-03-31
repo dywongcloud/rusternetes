@@ -4878,6 +4878,87 @@ impl ContainerRuntime {
         Ok(())
     }
 
+    /// Refresh Secret and ConfigMap volumes for a running pod.
+    /// Re-reads the data from storage and overwrites files on disk.
+    pub async fn refresh_volumes(&self, pod: &Pod) -> Result<()> {
+        let storage = match &self.storage {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+        let pod_name = &pod.metadata.name;
+        let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
+        let spec = match &pod.spec {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+        let volumes = match &spec.volumes {
+            Some(v) => v,
+            None => return Ok(()),
+        };
+
+        for volume in volumes {
+            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+            if !std::path::Path::new(&volume_dir).exists() {
+                continue;
+            }
+
+            // Refresh Secret volumes
+            if let Some(secret_source) = &volume.secret {
+                let secret_name = match &secret_source.secret_name {
+                    Some(n) => n,
+                    None => continue,
+                };
+                let secret_key = rusternetes_storage::build_key("secrets", Some(namespace), secret_name);
+                if let Ok(secret) = storage.get::<rusternetes_common::resources::Secret>(&secret_key).await {
+                    if let Some(data) = &secret.data {
+                        let items = secret_source.items.as_ref();
+                        if let Some(items) = items {
+                            for item in items {
+                                if let Some(value) = data.get(&item.key) {
+                                    let file_path = format!("{}/{}", volume_dir, item.path);
+                                    let _ = std::fs::write(&file_path, value);
+                                }
+                            }
+                        } else {
+                            for (key, value) in data {
+                                let file_path = format!("{}/{}", volume_dir, key);
+                                let _ = std::fs::write(&file_path, value);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Refresh ConfigMap volumes
+            if let Some(cm_source) = &volume.config_map {
+                let cm_name = match &cm_source.name {
+                    Some(n) => n,
+                    None => continue,
+                };
+                let cm_key = rusternetes_storage::build_key("configmaps", Some(namespace), cm_name);
+                if let Ok(cm) = storage.get::<rusternetes_common::resources::ConfigMap>(&cm_key).await {
+                    if let Some(data) = &cm.data {
+                        let items = cm_source.items.as_ref();
+                        if let Some(items) = items {
+                            for item in items {
+                                if let Some(value) = data.get(&item.key) {
+                                    let file_path = format!("{}/{}", volume_dir, item.path);
+                                    let _ = std::fs::write(&file_path, value);
+                                }
+                            }
+                        } else {
+                            for (key, value) in data {
+                                let file_path = format!("{}/{}", volume_dir, key);
+                                let _ = std::fs::write(&file_path, value);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Get the pod IP address from the first running container
     pub async fn get_pod_ip(&self, pod_name: &str) -> Result<Option<String>> {
         // If using CNI, get IP from CNI runtime
