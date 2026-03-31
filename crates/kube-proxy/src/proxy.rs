@@ -94,10 +94,17 @@ impl KubeProxy {
             }
         }
 
+        info!(
+            "Kube-proxy sync: {} services, {} endpoints, {} endpointslices",
+            services.len(),
+            endpoints_map.len(),
+            all_endpointslices.len()
+        );
+
         // Process each service
-        for service in services {
+        for service in &services {
             if let Err(e) = self
-                .sync_service(&service, &endpoints_map, &endpointslice_map)
+                .sync_service(service, &endpoints_map, &endpointslice_map)
                 .await
             {
                 let namespace = service.metadata.namespace.as_deref().unwrap_or("unknown");
@@ -156,8 +163,8 @@ impl KubeProxy {
             })
             .unwrap_or(false);
         if !has_valid_cluster_ip {
-            debug!(
-                "Service {}/{} has no valid ClusterIP ({:?}), skipping",
+            info!(
+                "Service {}/{} has no valid ClusterIP ({:?}), skipping iptables rules",
                 namespace, name, cluster_ip
             );
             return Ok(());
@@ -182,7 +189,12 @@ impl KubeProxy {
         }
 
         if endpoint_addresses.is_empty() {
-            debug!("Service {}/{} has no ready endpoints", namespace, name);
+            info!(
+                "Service {}/{} (ClusterIP={}) has no ready endpoints, rules will have 0 backends",
+                namespace,
+                name,
+                cluster_ip.unwrap_or(&String::new())
+            );
         }
 
         // Check session affinity
