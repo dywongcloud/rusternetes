@@ -254,13 +254,13 @@ impl Event {
     pub fn generate_name(involved_object: &ObjectReference, reason: &str) -> String {
         let obj_name = involved_object.name.as_deref().unwrap_or("unknown");
         let uid = involved_object.uid.as_deref().unwrap_or("unknown");
-        let timestamp = Utc::now().timestamp();
+        // Use a stable name (no timestamp) so duplicate events can be detected
+        // and deduplicated. The event's first/last timestamp fields track timing.
         format!(
-            "{}.{}.{}.{}",
+            "{}.{}.{}",
             obj_name,
             reason.to_lowercase(),
-            uid[..8.min(uid.len())].to_lowercase(),
-            timestamp
+            uid[..8.min(uid.len())].to_lowercase()
         )
     }
 }
