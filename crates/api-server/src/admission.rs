@@ -348,30 +348,29 @@ pub fn apply_limit_range_with(
                             }
                         }
 
-                        // Apply default requests — use defaultRequest if set,
-                        // otherwise fall back to default (limits) values per K8s spec.
-                        // This matches Kubernetes behavior: when defaultRequest is not
-                        // specified, requests default to the default limit value.
+                        // K8s rule: if limits are set but requests are not for a
+                        // given resource, default that request to the limit value.
+                        // This MUST happen before applying LimitRange defaultRequest
+                        // so that explicitly-set limits take precedence over defaults.
+                        if let Some(ref limits) = resources.limits {
+                            let requests = resources.requests.get_or_insert_with(HashMap::new);
+                            for (key, value) in limits {
+                                requests.entry(key.clone()).or_insert_with(|| value.clone());
+                            }
+                        }
+
+                        // Apply default requests from LimitRange for any resource that
+                        // still doesn't have a request value set.
                         let effective_request_defaults = limit_item.default_request.as_ref()
                             .or(limit_item.default.as_ref());
                         if let Some(default_requests) = effective_request_defaults {
                             if resources.requests.is_none() {
                                 resources.requests = Some(default_requests.clone());
                             } else {
-                                // Merge with existing requests
                                 let requests = resources.requests.as_mut().unwrap();
                                 for (key, value) in default_requests {
                                     requests.entry(key.clone()).or_insert_with(|| value.clone());
                                 }
-                            }
-                        }
-
-                        // K8s rule: if limits are set but requests are not, default
-                        // requests to the limits value
-                        if let Some(ref limits) = resources.limits {
-                            let requests = resources.requests.get_or_insert_with(HashMap::new);
-                            for (key, value) in limits {
-                                requests.entry(key.clone()).or_insert_with(|| value.clone());
                             }
                         }
 
@@ -1211,5 +1210,29 @@ mod tests {
         assert_eq!(limits.get("cpu").unwrap(), "400m");
         assert_eq!(requests.get("cpu").unwrap(), "400m",
             "requests.cpu should default to limits.cpu when no defaultRequest");
+    }
+
+    #[tokio::test]
+    async fn test_limit_range_explicit_limits_override_default_request() {
+        // Conformance scenario: pod has explicit limits.cpu=300m but no requests.cpu.
+        // LimitRange has default=500m, defaultRequest=100m.
+        // Expected: requests.cpu=300m (from explicit limits), NOT 100m (from defaultRequest).
+        let storage = Arc::new(rusternetes_storage::MemoryStorage::new());
+        let lr = make_limit_range(Some("500m"), Some("100m"), Some("50m"), Some("1"));
+        let lr_key = "/registry/limitranges/default/test-limit-range";
+        storage.create(lr_key, &lr).await.unwrap();
+
+        let mut pod = make_pod("test-pod", None, Some("300m"));
+        let result = apply_limit_range(&storage, "default", &mut pod).await.unwrap();
+        assert!(result);
+
+        let resources = pod.spec.as_ref().unwrap().containers[0].resources.as_ref().unwrap();
+        let requests = resources.requests.as_ref().expect("requests should be set");
+        let limits = resources.limits.as_ref().expect("limits should be set");
+
+        assert_eq!(limits.get("cpu").unwrap(), "300m",
+            "explicit limits.cpu=300m should be preserved");
+        assert_eq!(requests.get("cpu").unwrap(), "300m",
+            "requests.cpu should default to explicit limits.cpu (300m), not defaultRequest (100m)");
     }
 }
