@@ -121,6 +121,22 @@ impl<S: Storage> EndpointSliceController<S> {
 
             let slice_key = build_key("endpointslices", Some(namespace), &slice_name);
 
+            // Check if existing endpointslice matches — skip write if nothing changed
+            if let Ok(existing) = self.storage.get::<EndpointSlice>(&slice_key).await {
+                // Compare endpoints and ports (the fields that actually change)
+                if existing.endpoints == endpointslice.endpoints
+                    && existing.ports == endpointslice.ports
+                {
+                    debug!(
+                        "Endpointslice {}/{} unchanged, skipping write",
+                        namespace, slice_name
+                    );
+                    continue;
+                }
+                // Preserve resource version for update
+                endpointslice.metadata.resource_version = existing.metadata.resource_version;
+            }
+
             // Try to update first, if it doesn't exist, create it
             match self.storage.update(&slice_key, &endpointslice).await {
                 Ok(_) => {

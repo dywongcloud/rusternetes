@@ -31,7 +31,7 @@ impl Endpoints {
 }
 
 /// EndpointSubset is a group of addresses with a common set of ports.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EndpointSubset {
     /// IP addresses which offer the related ports that are marked as ready.
@@ -48,7 +48,7 @@ pub struct EndpointSubset {
 }
 
 /// EndpointAddress is a tuple that describes single IP address.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EndpointAddress {
     /// The IP of this endpoint.
@@ -68,7 +68,7 @@ pub struct EndpointAddress {
 }
 
 /// EndpointPort is a tuple that describes a single port.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EndpointPort {
     /// The name of this port. Must match a port name in the Service.
@@ -88,7 +88,7 @@ pub struct EndpointPort {
 }
 
 /// EndpointReference contains enough information to let you identify the referenced object.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EndpointReference {
     /// Kind of the referent.

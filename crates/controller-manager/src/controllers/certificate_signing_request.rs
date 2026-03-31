@@ -42,7 +42,7 @@ impl<S: Storage> CertificateSigningRequestController<S> {
             .list("/registry/certificatesigningrequests/")
             .await?;
 
-        info!(
+        debug!(
             "Found {} certificate signing requests to reconcile",
             csrs.len()
         );

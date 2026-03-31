@@ -183,7 +183,7 @@ impl EndpointSlice {
 }
 
 /// Endpoint represents a single logical "backend" implementing a service.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Endpoint {
     /// addresses of this endpoint. The contents of this field are interpreted according to
@@ -221,7 +221,7 @@ pub struct Endpoint {
 }
 
 /// EndpointConditions represents the current condition of an endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EndpointConditions {
     /// ready indicates that this endpoint is prepared to receive traffic.
@@ -238,7 +238,7 @@ pub struct EndpointConditions {
 }
 
 /// EndpointPort represents a Port used by an EndpointSlice.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EndpointPort {
     /// name represents the name of this port.
@@ -259,7 +259,7 @@ pub struct EndpointPort {
 }
 
 /// EndpointReference contains enough information to let you identify the referenced object.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EndpointReference {
     /// Kind of the referent.
@@ -288,7 +288,7 @@ pub struct EndpointReference {
 }
 
 /// EndpointHints provides hints describing how an endpoint should be consumed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EndpointHints {
     /// forZones indicates the zone(s) this endpoint should be consumed by to enable topology aware routing.
@@ -300,7 +300,7 @@ pub struct EndpointHints {
 }
 
 /// ForZone provides information about which zones should consume this endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForZone {
     /// name represents the name of the zone.

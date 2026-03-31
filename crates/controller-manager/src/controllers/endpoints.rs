@@ -92,7 +92,7 @@ impl<S: Storage> EndpointsController<S> {
         let subsets = self.build_endpoint_subsets(&matching_pods, &service.spec.ports);
 
         // Create or update endpoints
-        let endpoints = Endpoints {
+        let mut endpoints = Endpoints {
             type_meta: rusternetes_common::types::TypeMeta {
                 kind: "Endpoints".to_string(),
                 api_version: "v1".to_string(),
@@ -124,6 +124,19 @@ impl<S: Storage> EndpointsController<S> {
         };
 
         let endpoints_key = build_key("endpoints", Some(namespace), service_name);
+        // Check if existing endpoints match — skip write if nothing changed
+        if let Ok(existing) = self.storage.get::<Endpoints>(&endpoints_key).await {
+            if existing.subsets == endpoints.subsets {
+                debug!(
+                    "Endpoints for service {}/{} unchanged, skipping write",
+                    namespace, service_name
+                );
+                return Ok(());
+            }
+            // Preserve resource version for update
+            endpoints.metadata.resource_version = existing.metadata.resource_version;
+        }
+
         // Try to update first, if it doesn't exist, create it
         match self.storage.update(&endpoints_key, &endpoints).await {
             Ok(_) => {}
@@ -550,5 +563,201 @@ mod tests {
             ..pod_no_status
         };
         assert!(!controller.is_pod_ready(&pod_not_ready));
+    }
+
+    /// Test that reconcile_all skips writing endpoints when nothing has changed.
+    /// This prevents unnecessary etcd writes that would cause log spam and I/O pressure.
+    #[tokio::test]
+    async fn test_endpoints_skip_write_when_unchanged() {
+        use rusternetes_common::resources::{Service, ServiceSpec, ServicePort};
+
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = EndpointsController::new(storage.clone());
+
+        // Create a service with a selector
+        let service = Service {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Service".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: rusternetes_common::types::ObjectMeta::new("test-svc")
+                .with_namespace("default"),
+            spec: ServiceSpec {
+                selector: {
+                    let mut m = HashMap::new();
+                    m.insert("app".to_string(), "web".to_string());
+                    m
+                },
+                ports: vec![ServicePort {
+                    name: Some("http".to_string()),
+                    port: 80,
+                    target_port: Some(rusternetes_common::resources::IntOrString::Int(8080)),
+                    protocol: Some("TCP".to_string()),
+                    node_port: None,
+                    app_protocol: None,
+                }],
+                cluster_ip: Some("10.96.0.100".to_string()),
+                cluster_ips: None,
+                service_type: Some(rusternetes_common::resources::ServiceType::ClusterIP),
+                external_ips: None,
+                session_affinity: None,
+                load_balancer_ip: None,
+                external_name: None,
+                external_traffic_policy: None,
+                internal_traffic_policy: None,
+                ip_families: None,
+                ip_family_policy: None,
+                publish_not_ready_addresses: None,
+                session_affinity_config: None,
+                allocate_load_balancer_node_ports: None,
+                load_balancer_class: None,
+                load_balancer_source_ranges: None,
+                health_check_node_port: None,
+                traffic_distribution: None,
+            },
+            status: None,
+        };
+        let svc_key = "/registry/services/default/test-svc";
+        storage.create(svc_key, &service).await.unwrap();
+
+        // First reconcile — should create endpoints
+        controller.reconcile_all().await.unwrap();
+
+        // Get the endpoints and their resource version
+        let ep_key = "/registry/endpoints/default/test-svc";
+        let ep1: Endpoints = storage.get(ep_key).await.unwrap();
+        let rv1 = ep1.metadata.resource_version.clone();
+
+        // Second reconcile — nothing changed, should skip the write
+        controller.reconcile_all().await.unwrap();
+
+        let ep2: Endpoints = storage.get(ep_key).await.unwrap();
+        let rv2 = ep2.metadata.resource_version.clone();
+
+        // Resource version should be unchanged because no write occurred
+        assert_eq!(
+            rv1, rv2,
+            "Endpoints resource version changed despite no data change — \
+             this means the controller is doing unnecessary writes every reconcile loop"
+        );
+
+        // Verify the subsets are correct (empty since no pods match)
+        assert!(ep2.subsets.is_empty());
+    }
+
+    /// Test that endpoints ARE updated when pod data actually changes.
+    #[tokio::test]
+    async fn test_endpoints_write_when_changed() {
+        use rusternetes_common::resources::{Service, ServiceSpec, ServicePort, PodStatus};
+        use rusternetes_common::types::Phase;
+
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = EndpointsController::new(storage.clone());
+
+        // Create a service
+        let service = Service {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Service".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: rusternetes_common::types::ObjectMeta::new("test-svc")
+                .with_namespace("default"),
+            spec: ServiceSpec {
+                selector: {
+                    let mut m = HashMap::new();
+                    m.insert("app".to_string(), "web".to_string());
+                    m
+                },
+                ports: vec![ServicePort {
+                    name: Some("http".to_string()),
+                    port: 80,
+                    target_port: Some(rusternetes_common::resources::IntOrString::Int(8080)),
+                    protocol: Some("TCP".to_string()),
+                    node_port: None,
+                    app_protocol: None,
+                }],
+                cluster_ip: Some("10.96.0.100".to_string()),
+                cluster_ips: None,
+                service_type: Some(rusternetes_common::resources::ServiceType::ClusterIP),
+                external_ips: None,
+                session_affinity: None,
+                load_balancer_ip: None,
+                external_name: None,
+                external_traffic_policy: None,
+                internal_traffic_policy: None,
+                ip_families: None,
+                ip_family_policy: None,
+                publish_not_ready_addresses: None,
+                session_affinity_config: None,
+                allocate_load_balancer_node_ports: None,
+                load_balancer_class: None,
+                load_balancer_source_ranges: None,
+                health_check_node_port: None,
+                traffic_distribution: None,
+            },
+            status: None,
+        };
+        let svc_key = "/registry/services/default/test-svc";
+        storage.create(svc_key, &service).await.unwrap();
+
+        // First reconcile — creates empty endpoints
+        controller.reconcile_all().await.unwrap();
+        let ep_key = "/registry/endpoints/default/test-svc";
+        let ep1: Endpoints = storage.get(ep_key).await.unwrap();
+        let rv1 = ep1.metadata.resource_version.clone();
+        assert!(ep1.subsets.is_empty());
+
+        // Now add a matching pod with an IP and Running phase
+        let pod = Pod {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: rusternetes_common::types::ObjectMeta {
+                name: "web-pod".to_string(),
+                namespace: Some("default".to_string()),
+                uid: "pod-uid-1".to_string(),
+                labels: Some({
+                    let mut m = HashMap::new();
+                    m.insert("app".to_string(), "web".to_string());
+                    m
+                }),
+                ..Default::default()
+            },
+            spec: Some(rusternetes_common::resources::PodSpec {
+                containers: vec![],
+                ..Default::default()
+            }),
+            status: Some(PodStatus {
+                phase: Some(Phase::Running),
+                pod_ip: Some("10.244.0.5".to_string()),
+                conditions: Some(vec![rusternetes_common::resources::PodCondition {
+                    condition_type: "Ready".to_string(),
+                    status: "True".to_string(),
+                    last_transition_time: None,
+                    reason: None,
+                    message: None,
+                    observed_generation: None,
+                }]),
+                ..Default::default()
+            }),
+        };
+        storage.create("/registry/pods/default/web-pod", &pod).await.unwrap();
+
+        // Second reconcile — should detect the new pod and update endpoints
+        controller.reconcile_all().await.unwrap();
+        let ep2: Endpoints = storage.get(ep_key).await.unwrap();
+
+        // Subsets should have changed from empty to containing the pod
+        assert_ne!(
+            ep1.subsets, ep2.subsets,
+            "Endpoints subsets didn't change even though a new pod was added — \
+             the skip-unchanged optimization is too aggressive"
+        );
+
+        // Verify the pod's IP is in the endpoints
+        assert!(!ep2.subsets.is_empty(), "Subsets should not be empty after adding a matching pod");
+        let addresses = ep2.subsets[0].addresses.as_ref().unwrap();
+        assert_eq!(addresses[0].ip, "10.244.0.5");
     }
 }

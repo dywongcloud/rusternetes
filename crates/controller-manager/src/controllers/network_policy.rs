@@ -31,7 +31,7 @@ impl<S: Storage> NetworkPolicyController<S> {
         // List all NetworkPolicies across all namespaces
         let policies: Vec<NetworkPolicy> = self.storage.list("/registry/networkpolicies/").await?;
 
-        info!("Found {} network policies to reconcile", policies.len());
+        debug!("Found {} network policies to reconcile", policies.len());
 
         for policy in policies {
             if let Err(e) = self.reconcile_policy(&policy).await {

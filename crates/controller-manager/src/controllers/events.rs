@@ -218,12 +218,11 @@ impl<S: Storage> EventsController<S> {
 
         // Check if event already exists
         let key = format!("/registry/events/{}/{}", namespace, event_name);
-        if let Ok(existing_event) = self.storage.get::<Event>(&key).await {
-            // Update count and last timestamp
-            let mut updated_event = existing_event;
-            updated_event.count += 1;
-            updated_event.last_timestamp = Some(Utc::now());
-            self.storage.update(&key, &updated_event).await?;
+        if let Ok(_existing_event) = self.storage.get::<Event>(&key).await {
+            // Event already exists — don't update on every reconcile loop.
+            // The event was already recorded; continuously incrementing the
+            // count and rewriting to etcd every second creates massive I/O
+            // pressure and log spam under load.
             return Ok(());
         }
 

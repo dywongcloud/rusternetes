@@ -38,7 +38,7 @@ impl<S: Storage> CRDController<S> {
             .list("/registry/customresourcedefinitions/")
             .await?;
 
-        info!(
+        debug!(
             "Found {} custom resource definitions to reconcile",
             crds.len()
         );

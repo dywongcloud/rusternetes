@@ -27,7 +27,7 @@ struct Args {
     log_level: String,
 
     /// Scheduling interval in seconds
-    #[arg(long, default_value = "1")]
+    #[arg(long, default_value = "5")]
     interval: u64,
 
     /// Metrics server port

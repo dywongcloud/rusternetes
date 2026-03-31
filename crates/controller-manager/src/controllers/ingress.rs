@@ -33,7 +33,7 @@ impl<S: Storage> IngressController<S> {
         // List all Ingress resources across all namespaces
         let ingresses: Vec<Ingress> = self.storage.list("/registry/ingresses/").await?;
 
-        info!("Found {} ingress resources to reconcile", ingresses.len());
+        debug!("Found {} ingress resources to reconcile", ingresses.len());
 
         for ingress in ingresses {
             if let Err(e) = self.reconcile_ingress(&ingress).await {
