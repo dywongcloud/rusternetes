@@ -461,6 +461,15 @@ impl ContainerRuntime {
     pub async fn start_pod(&self, pod: &Pod) -> Result<()> {
         let pod_name = &pod.metadata.name;
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
+
+        // Guard: if the pod's containers are already running, skip the start.
+        // This prevents duplicate container creation when sync_pod is called
+        // multiple times in rapid succession (e.g., watch feedback loops).
+        if self.is_pod_running(pod_name).await.unwrap_or(false) {
+            debug!("Pod {}/{} containers already running, skipping start", namespace, pod_name);
+            return Ok(());
+        }
+
         info!("Starting pod: {}/{}", namespace, pod_name);
 
         // Create network namespace and setup CNI networking if enabled

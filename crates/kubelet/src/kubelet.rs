@@ -120,15 +120,28 @@ impl Kubelet {
         // Node status update runs every 10 seconds (heartbeat)
         let mut node_status_timer = tokio::time::interval(Duration::from_secs(10));
 
+        // Debounce watch-triggered syncs to prevent feedback loops:
+        // sync_pod writes status -> triggers watch event -> triggers sync_pod -> ...
+        // Minimum 3 seconds between watch-triggered syncs.
+        let mut last_watch_sync = tokio::time::Instant::now() - Duration::from_secs(10);
+        let watch_sync_cooldown = Duration::from_secs(3);
+
         loop {
             tokio::select! {
-                // Watch-triggered: a pod changed, do a full sync immediately
-                // We batch rapid changes by draining the channel
+                // Watch-triggered: a pod changed, do a sync if cooldown elapsed
                 Some(_key) = watch_rx.recv() => {
                     // Drain any additional queued events to batch them
                     while watch_rx.try_recv().is_ok() {}
 
-                    // Run sync loop for all pods on this node
+                    // Skip if we just synced (prevents status-write feedback loop)
+                    let elapsed = last_watch_sync.elapsed();
+                    if elapsed < watch_sync_cooldown {
+                        debug!("Skipping watch-triggered sync ({}ms since last sync, cooldown {}ms)",
+                            elapsed.as_millis(), watch_sync_cooldown.as_millis());
+                        continue;
+                    }
+
+                    last_watch_sync = tokio::time::Instant::now();
                     if let Err(e) = self.sync_loop().await {
                         error!("Error in watch-triggered sync: {}", e);
                     }
