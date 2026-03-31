@@ -217,6 +217,10 @@ impl<S: Storage> StatefulSetController<S> {
             && update_strategy == "RollingUpdate"
         {
             let update_revision = Self::compute_revision(&statefulset.spec.template);
+            debug!(
+                "StatefulSet {}/{}: rolling update check, update_revision={}",
+                namespace, name, update_revision
+            );
 
             // Check pods in reverse order for rolling update.
             // Only update pods with ordinal >= partition.
@@ -245,6 +249,10 @@ impl<S: Storage> StatefulSetController<S> {
                     .and_then(|l| l.get("controller-revision-hash"))
                     .map(|s| s.as_str())
                     .unwrap_or("");
+                debug!(
+                    "StatefulSet {}/{}: pod {} revision={} vs update_revision={}",
+                    namespace, name, pod.metadata.name, pod_revision, update_revision
+                );
                 if pod_revision != update_revision {
                     // Check if this pod is at least Running or Ready — don't delete pods
                     // that haven't even started yet (prevents cascading deletions during initial creation)
