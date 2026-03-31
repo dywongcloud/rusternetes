@@ -23,7 +23,7 @@
 | StatefulSet rolling update | Revision mismatch | Need investigation |
 | FieldValidation duplicate | Wrong format | Fix deployed but may need rebuild |
 | Job FailIndex | Completion timeout | Fix deployed but still failing |
-| Service endpoints latency | Missing selector field | Serialization path strips null |
+| Service endpoints latency | Missing selector field | FIXED — HashMap not Option (cf279a3) |
 | VAP validate Deployment | Denied | Fix deployed but still failing |
 | HostPort pod2 timeout | Pod not starting | Timing |
 | kubectl replace | Error running replace | Protobuf/content type |
