@@ -297,7 +297,11 @@ impl<S: Storage> JobController<S> {
             if let Some(rules) = policy.get("rules").and_then(|r| r.as_array()) {
                 for pod in job_pods.iter() {
                     let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
-                    if !matches!(phase, Some(Phase::Failed)) {
+                    // Check ALL terminated pods (Failed AND Succeeded with non-zero exit).
+                    // K8s podFailurePolicy evaluates against any pod with terminated containers,
+                    // not just Failed phase pods. A pod can be Succeeded but have containers
+                    // that exited with non-zero codes (if other containers succeeded).
+                    if !matches!(phase, Some(Phase::Failed) | Some(Phase::Succeeded)) {
                         continue;
                     }
                     // Get container exit codes

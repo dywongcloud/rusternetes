@@ -764,23 +764,17 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                 .and_then(|n| n.as_str())
                 .unwrap_or("");
 
-            // Check if any binding references this policy AND has been around long enough
-            // K8s VAP enforcement requires the controller to observe the binding first.
-            // We approximate this by requiring the binding to be at least 2 seconds old.
-            let has_ready_binding = bindings.iter().any(|b| {
-                let matches_policy = b.get("spec")
+            // Find the binding that references this policy
+            let matching_binding = bindings.iter().find(|b| {
+                b.get("spec")
                     .and_then(|s| s.get("policyName"))
                     .and_then(|n| n.as_str())
-                    == Some(policy_name);
-                if !matches_policy { return false; }
-                // VAP bindings take effect immediately — no delay needed.
-                // The conformance test creates a binding and immediately tests
-                // enforcement. Any artificial delay causes the test to fail.
-                true
+                    == Some(policy_name)
             });
-            if !has_ready_binding {
+            if matching_binding.is_none() {
                 continue;
             }
+            let binding = matching_binding.unwrap();
 
             // Check match conditions from spec.matchConstraints
             let match_resources = policy.get("spec")
@@ -863,6 +857,43 @@ impl<S: Storage> AdmissionWebhookManager<S> {
             });
             let _ = context.add_json_variable("request", &request_val);
 
+            // Add params from the binding's paramRef (if present)
+            if let Some(param_ref) = binding.get("spec")
+                .and_then(|s| s.get("paramRef"))
+            {
+                let param_ns = param_ref.get("namespace").and_then(|n| n.as_str())
+                    .or(namespace);
+                let param_name = param_ref.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                let param_kind = param_ref.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+                let param_api_group = param_ref.get("apiGroup").and_then(|g| g.as_str()).unwrap_or("");
+
+                if !param_name.is_empty() {
+                    // Try to load the param resource from storage
+                    let resource_type = format!("{}s", param_kind.to_lowercase());
+                    let param_key = if let Some(ns) = param_ns {
+                        format!("/registry/{}/{}/{}", resource_type, ns, param_name)
+                    } else {
+                        format!("/registry/{}/{}", resource_type, param_name)
+                    };
+                    if let Ok(param_val) = self.storage.get::<serde_json::Value>(&param_key).await {
+                        let _ = context.add_json_variable("params", &param_val);
+                    } else {
+                        // Try as CRD instance
+                        let crd_key = format!("/registry/{}.{}/{}/{}", resource_type, param_api_group,
+                            param_ns.unwrap_or(""), param_name);
+                        if let Ok(param_val) = self.storage.get::<serde_json::Value>(&crd_key).await {
+                            let _ = context.add_json_variable("params", &param_val);
+                        } else {
+                            let _ = context.add_json_variable("params", &serde_json::Value::Null);
+                        }
+                    }
+                } else {
+                    let _ = context.add_json_variable("params", &serde_json::Value::Null);
+                }
+            } else {
+                let _ = context.add_json_variable("params", &serde_json::Value::Null);
+            }
+
             // Add namespaceObject — the Namespace object for the request's namespace.
             // K8s conformance tests use expressions like `namespaceObject.metadata.name`.
             if let Some(ns) = namespace {
@@ -935,8 +966,12 @@ impl<S: Storage> AdmissionWebhookManager<S> {
 
                     // Evaluate
                     match evaluator.evaluate(expression, &context) {
-                        Ok(true) => { /* Validation passed */ }
+                        Ok(true) => {
+                            tracing::debug!("VAP {} expression '{}' passed", policy_name, expression);
+                        }
                         Ok(false) => {
+                            tracing::info!("VAP {} expression '{}' DENIED for {} in ns {:?}",
+                                policy_name, expression, derived_resource, namespace);
                             // Check validation actions (from validation rule or binding)
                             let actions = validation.get("validationActions")
                                 .and_then(|a| a.as_array());
@@ -965,7 +1000,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                             }
                         }
                         Err(e) => {
-                            tracing::warn!("CEL evaluation error for policy {}: {}", policy_name, e);
+                            tracing::warn!("CEL evaluation error for policy {} expression '{}': {}", policy_name, expression, e);
                             // On error, check failure policy
                             if failure_policy == "Fail" {
                                 return Err(rusternetes_common::Error::Forbidden(format!(

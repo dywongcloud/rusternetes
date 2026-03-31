@@ -1039,6 +1039,19 @@ impl Kubelet {
                                 let mut memory = None;
                                 let mut needs_update = false;
 
+                                // Set CPU shares from requests (maps to cgroup cpu.weight)
+                                let mut cpu_shares: Option<i64> = None;
+                                if let Some(requests) = &resources.requests {
+                                    if let Some(cpu) = requests.get("cpu") {
+                                        let millicores = crate::runtime::parse_cpu_quantity(cpu);
+                                        if millicores > 0 {
+                                            // K8s formula: shares = max(2, (millicores * 1024) / 1000)
+                                            cpu_shares = Some(((millicores as i64 * 1024) / 1000).max(2));
+                                            needs_update = true;
+                                        }
+                                    }
+                                }
+
                                 if let Some(limits) = &resources.limits {
                                     if let Some(cpu) = limits.get("cpu") {
                                         let millicores = crate::runtime::parse_cpu_quantity(cpu);
@@ -1048,6 +1061,10 @@ impl Kubelet {
                                             cpu_period = Some(period);
                                             cpu_quota = Some(quota);
                                             needs_update = true;
+                                            // Also set shares from limits if no requests
+                                            if cpu_shares.is_none() {
+                                                cpu_shares = Some(((millicores as i64 * 1024) / 1000).max(2));
+                                            }
                                         }
                                     }
                                     if let Some(mem) = limits.get("memory") {
@@ -1064,6 +1081,7 @@ impl Kubelet {
                                         &container_name,
                                         cpu_period,
                                         cpu_quota,
+                                        cpu_shares,
                                         memory,
                                     ).await {
                                         Ok(_) => {

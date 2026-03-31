@@ -104,7 +104,10 @@ pub struct ContainerRuntime {
 fn shell_join(args: &[String]) -> String {
     args.iter()
         .map(|a| {
-            if a.contains(' ') || a.contains('\'') || a.contains('"') || a.contains('$') || a.contains('\\') {
+            if a.contains('$') {
+                // Use double quotes to allow variable expansion
+                format!("\"{}\"", a.replace('\\', "\\\\").replace('"', "\\\""))
+            } else if a.contains(' ') || a.contains('\'') || a.contains('"') || a.contains('\\') {
                 format!("'{}'", a.replace('\'', "'\\''"))
             } else {
                 a.clone()
@@ -3445,10 +3448,13 @@ impl ContainerRuntime {
         }
 
         // Start the container
-        self.docker
+        if let Err(e) = self.docker
             .start_container(&container_name, None::<StartContainerOptions<String>>)
             .await
-            .context("Failed to start container")?;
+        {
+            error!("Failed to start container {}: {}", container_name, e);
+            return Err(anyhow::anyhow!("Failed to start container {}: {}", container_name, e));
+        }
 
         info!("Container {} started successfully", container_name);
 
@@ -5135,11 +5141,13 @@ impl ContainerRuntime {
         container_name: &str,
         cpu_period: Option<i64>,
         cpu_quota: Option<i64>,
+        cpu_shares: Option<i64>,
         memory: Option<i64>,
     ) -> Result<()> {
         let update = bollard::container::UpdateContainerOptions::<String> {
             cpu_period,
             cpu_quota,
+            cpu_shares: cpu_shares.map(|s| s as isize),
             memory,
             ..Default::default()
         };
