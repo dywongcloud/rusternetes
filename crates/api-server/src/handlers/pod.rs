@@ -1293,12 +1293,21 @@ fn is_valid_sysctl_name(name: &str) -> bool {
         if segment.is_empty() {
             return false;
         }
-        for (i, c) in segment.chars().enumerate() {
-            if i == 0 {
-                if !c.is_ascii_lowercase() && !c.is_ascii_digit() {
-                    return false;
-                }
-            } else if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_' {
+        let chars: Vec<char> = segment.chars().collect();
+        // First char must be lowercase alphanumeric
+        if !chars[0].is_ascii_lowercase() && !chars[0].is_ascii_digit() {
+            return false;
+        }
+        // Last char must be lowercase alphanumeric (not - or _)
+        if chars.len() > 1 {
+            let last = *chars.last().unwrap();
+            if !last.is_ascii_lowercase() && !last.is_ascii_digit() {
+                return false;
+            }
+        }
+        // Middle chars can be lowercase alphanumeric, - or _
+        for &c in &chars[1..] {
+            if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_' {
                 return false;
             }
         }
