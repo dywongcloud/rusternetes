@@ -419,10 +419,14 @@ impl Storage for EtcdStorage {
                                     .unwrap_or_default();
                                 let mod_revision = event.kv().map(|kv| kv.mod_revision()).unwrap_or(0);
                                 let value = Self::inject_resource_version(&raw_value, mod_revision);
-                                if event.prev_kv().is_some() {
-                                    Ok(WatchEvent::Modified(key, value))
-                                } else {
+                                // Use etcd key version to distinguish create vs update:
+                                // version=1 means first write (create), >1 means update.
+                                // This is more reliable than prev_kv() which may be absent
+                                // after etcd compaction.
+                                if event.kv().map(|kv| kv.version()).unwrap_or(0) == 1 {
                                     Ok(WatchEvent::Added(key, value))
+                                } else {
+                                    Ok(WatchEvent::Modified(key, value))
                                 }
                             }
                             etcd_client::EventType::Delete => {
