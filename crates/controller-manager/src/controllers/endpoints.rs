@@ -62,16 +62,14 @@ impl<S: Storage> EndpointsController<S> {
         );
 
         // Skip services without selectors (headless services without selector)
-        let selector = match &service.spec.selector {
-            Some(s) if !s.is_empty() => s,
-            _ => {
-                debug!(
-                    "Service {}/{} has no selector, skipping endpoint creation",
-                    namespace, service_name
-                );
-                return Ok(());
-            }
-        };
+        if service.spec.selector.is_empty() {
+            debug!(
+                "Service {}/{} has no selector, skipping endpoint creation",
+                namespace, service_name
+            );
+            return Ok(());
+        }
+        let selector = &service.spec.selector;
 
         // Find all pods in the same namespace
         let pod_prefix = format!("/registry/pods/{}/", namespace);

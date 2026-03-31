@@ -354,9 +354,9 @@ async fn test_service_selector() {
 
     // Create with selector
     let created: Service = storage.create(&key, &service).await.unwrap();
-    assert!(created.spec.selector.is_some());
+    assert!(created.spec.!selector.is_empty());
 
-    let created_selector = created.spec.selector.unwrap();
+    let created_selector = created.spec.selector.clone();
     assert_eq!(created_selector.get("app"), Some(&"backend".to_string()));
     assert_eq!(created_selector.get("tier"), Some(&"api".to_string()));
 

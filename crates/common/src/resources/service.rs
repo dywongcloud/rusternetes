@@ -33,8 +33,10 @@ impl Service {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceSpec {
+    /// Selector is always serialized (even empty) because K8s clients
+    /// require the field to be present in the JSON response.
     #[serde(default)]
-    pub selector: Option<HashMap<String, String>>,
+    pub selector: HashMap<String, String>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub ports: Vec<ServicePort>,
@@ -321,7 +323,7 @@ mod tests {
         let svc = Service::new(
             "test-svc",
             ServiceSpec {
-                selector: None,
+                selector: HashMap::new(),
                 ports: vec![],
                 service_type: None,
                 cluster_ip: None,
@@ -356,7 +358,7 @@ mod tests {
     fn test_service_spec_default() {
         // ServiceSpec should have a Default impl
         let spec = ServiceSpec::default();
-        assert!(spec.selector.is_none());
+        assert!(spec.selector.is_empty());
         assert!(spec.ports.is_empty());
         assert!(spec.service_type.is_none());
         assert!(spec.cluster_ip.is_none());
@@ -372,7 +374,7 @@ mod tests {
             "spec": {"ports": []}
         }"#;
         let svc: Service = serde_json::from_str(json).unwrap();
-        assert!(svc.spec.selector.is_none());
+        assert!(svc.spec.selector.is_empty());
     }
 
     #[test]
@@ -384,19 +386,19 @@ mod tests {
             "metadata": {"name": "test"}
         }"#;
         let svc: Service = serde_json::from_str(json).unwrap();
-        assert!(svc.spec.selector.is_none());
+        assert!(svc.spec.selector.is_empty());
         assert!(svc.spec.ports.is_empty());
     }
 
     #[test]
-    fn test_service_selector_none_serialization() {
-        // When selector is None, it should be serialized as null (K8s clients require it)
+    fn test_service_selector_empty_serialization() {
+        // Empty selector should be serialized as {} (K8s clients require the field present)
         let spec = ServiceSpec {
-            selector: None,
+            selector: HashMap::new(),
             ..Default::default()
         };
         let json = serde_json::to_string(&spec).unwrap();
-        assert!(json.contains("\"selector\":null"));
+        assert!(json.contains("\"selector\":{}"));
     }
 
     #[test]

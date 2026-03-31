@@ -134,7 +134,7 @@ fn test_external_name_service_has_external_name() {
 
     assert_eq!(service.spec.service_type, Some(ServiceType::ExternalName));
     assert_eq!(service.spec.external_name, Some("example.com".to_string()));
-    assert!(service.spec.selector.is_none());
+    assert!(service.spec.selector.is_empty());
     assert!(service.spec.ports.is_empty());
 }
 

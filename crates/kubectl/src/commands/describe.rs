@@ -239,10 +239,10 @@ fn describe_service(service: &Service) {
             .join("\n              ")
     );
 
-    if let Some(selector) = &service.spec.selector {
+    if !service.spec.selector.is_empty() {
         println!(
             "Selector:     {}",
-            selector
+            service.spec.selector
                 .iter()
                 .map(|(k, v)| format!("{}={}", k, v))
                 .collect::<Vec<_>>()
