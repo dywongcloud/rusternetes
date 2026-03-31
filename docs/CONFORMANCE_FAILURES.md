@@ -16,17 +16,17 @@
 |------|-------|--------|
 | EmptyDir (root,0777,default) | File perms 0755 not 0777 | FIXED — umask 0000 wrapper (aad60bc) |
 | WebSocket exec channel order | Channel 3 before channel 1 | FIXED — initial stdout frame (aad60bc) |
+| InitContainer RestartNever fail | Wrong message format | FIXED — K8s format message (f806dc2) |
+| CSR PATCH | Request rejected | FIXED — serde defaults (e7e95f5) |
 | EndpointSlice API operations | Expected | Need investigation |
 | Pod InPlace Resize | Resize state | Complex feature |
 | StatefulSet rolling update | Revision mismatch | Need investigation |
-| InitContainer RestartNever fail | Expected | Need investigation |
 | FieldValidation duplicate | Wrong format | Fix deployed but may need rebuild |
 | Job FailIndex | Completion timeout | Fix deployed but still failing |
-| Service endpoints latency | Missing selector field | Serialization issue |
+| Service endpoints latency | Missing selector field | Serialization path strips null |
 | VAP validate Deployment | Denied | Fix deployed but still failing |
 | HostPort pod2 timeout | Pod not starting | Timing |
 | kubectl replace | Error running replace | Protobuf/content type |
-| CSR PATCH | Request rejected | PATCH handling |
 
 ## Progress
 | Round | Fail | Total | Rate |
