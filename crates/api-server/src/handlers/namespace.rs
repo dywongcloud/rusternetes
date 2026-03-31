@@ -276,29 +276,43 @@ pub async fn delete_ns(
     // Save the Terminating state
     let _ = state.storage.update(&key, &namespace).await;
 
-    // CASCADE DELETE: Delete all resources in this namespace
-    info!("Cascade deleting all resources in namespace: {}", name);
-    cascade_delete_namespace_resources(&*state.storage, &name).await?;
+    // Don't cascade-delete synchronously. Return the Terminating namespace
+    // immediately and let the namespace controller handle cleanup asynchronously.
+    // This matches real K8s behavior where DELETE returns quickly and the
+    // namespace controller observes the deletionTimestamp and does cleanup.
+    //
+    // Handle finalizers: if the namespace has finalizers, keep it in storage
+    // (the controller will remove finalizers after cleanup). If no finalizers,
+    // also keep it — the namespace controller will delete it after cleanup.
+    let has_finalizers = namespace
+        .metadata
+        .finalizers
+        .as_ref()
+        .map(|f| !f.is_empty())
+        .unwrap_or(false);
 
-    // Handle deletion with finalizers and propagation policy
-    let propagation_policy = params.get("propagationPolicy").map(|s| s.as_str());
-    let deleted_immediately =
-        !crate::handlers::finalizers::handle_delete_with_finalizers_and_propagation(
-            &state.storage,
-            &key,
-            &namespace,
-            propagation_policy,
-        )
-        .await?;
-
-    if deleted_immediately {
-        info!("Namespace {} deleted successfully (no finalizers)", name);
-        Ok(Json(namespace))
-    } else {
-        // Resource has finalizers, re-read to get updated version with deletionTimestamp
-        let updated: Namespace = state.storage.get(&key).await?;
-        Ok(Json(updated))
+    if !has_finalizers {
+        // Add the kubernetes finalizer so the namespace stays in storage
+        // until the controller finishes cleanup
+        namespace
+            .metadata
+            .finalizers
+            .get_or_insert_with(Vec::new)
+            .push("kubernetes".to_string());
+        let _ = state.storage.update(&key, &namespace).await;
     }
+
+    info!(
+        "Namespace {} marked for deletion (Terminating)",
+        name
+    );
+    // Return the namespace in Terminating state
+    let updated: Namespace = state
+        .storage
+        .get(&key)
+        .await
+        .unwrap_or(namespace);
+    Ok(Json(updated))
 }
 
 /// Cascade delete all resources in a namespace
