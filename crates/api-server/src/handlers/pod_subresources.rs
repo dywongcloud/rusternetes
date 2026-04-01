@@ -966,7 +966,7 @@ pub async fn create_eviction(
                         .as_ref()
                         .map(|v| v.to_string())
                         .unwrap_or_else(|| "<nil>".to_string());
-                    return Err(Error::TooManyRequests(format!(
+                    let detail_msg = format!(
                         "Cannot evict pod {}/{}: PodDisruptionBudget {} does not allow any disruptions. \
                         Current healthy: {}, Desired healthy: {}, Min available: {}, Max unavailable: {}",
                         namespace,
@@ -976,7 +976,29 @@ pub async fn create_eviction(
                         status.desired_healthy,
                         min_avail_str,
                         max_unavail_str
-                    )));
+                    );
+                    // Return 429 with details.causes containing DisruptionBudget
+                    let status_body = serde_json::json!({
+                        "kind": "Status",
+                        "apiVersion": "v1",
+                        "metadata": {},
+                        "status": "Failure",
+                        "message": detail_msg,
+                        "reason": "TooManyRequests",
+                        "details": {
+                            "causes": [{
+                                "reason": "DisruptionBudget",
+                                "message": detail_msg
+                            }]
+                        },
+                        "code": 429
+                    });
+                    return Ok(axum::response::Response::builder()
+                        .status(axum::http::StatusCode::TOO_MANY_REQUESTS)
+                        .header("Content-Type", "application/json")
+                        .body(axum::body::Body::from(serde_json::to_string(&status_body).unwrap()))
+                        .unwrap()
+                        .into_response());
                 }
 
                 info!(

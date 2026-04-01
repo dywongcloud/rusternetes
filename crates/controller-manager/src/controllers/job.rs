@@ -109,18 +109,29 @@ impl<S: Storage> JobController<S> {
                     labels.map_or(false, |l| sel.iter().all(|(k, v)| l.get(k) == Some(v)));
                 if !matches {
                     // Pod no longer matches selector — release it by removing ownerReference
-                    let mut released = pod.clone();
-                    if let Some(ref mut refs) = released.metadata.owner_references {
-                        refs.retain(|r| &r.uid != job_uid);
-                    }
+                    // Use CAS retry to handle concurrent updates
                     let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
-                    if let Err(e) = self.storage.update(&pod_key, &released).await {
-                        tracing::warn!("Failed to release pod {}: {}", pod.metadata.name, e);
-                    } else {
-                        info!(
-                            "Released pod {} from job {}/{} (labels no longer match)",
-                            pod.metadata.name, namespace, name
-                        );
+                    for _ in 0..3 {
+                        match self.storage.get::<Pod>(&pod_key).await {
+                            Ok(mut fresh_pod) => {
+                                if let Some(ref mut refs) = fresh_pod.metadata.owner_references {
+                                    refs.retain(|r| &r.uid != job_uid);
+                                }
+                                match self.storage.update(&pod_key, &fresh_pod).await {
+                                    Ok(_) => {
+                                        info!(
+                                            "Released pod {} from job {}/{} (labels no longer match)",
+                                            pod.metadata.name, namespace, name
+                                        );
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        tracing::debug!("CAS retry releasing pod {}: {}", pod.metadata.name, e);
+                                    }
+                                }
+                            }
+                            Err(_) => break,
+                        }
                     }
                     continue;
                 }
