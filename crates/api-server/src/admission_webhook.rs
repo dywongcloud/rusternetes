@@ -135,6 +135,7 @@ impl AdmissionWebhookClient {
     ) -> Result<AdmissionReviewResponse> {
         let client = reqwest::Client::builder()
             .timeout(timeout)
+            .danger_accept_invalid_certs(true)
             .build()
             .map_err(|e| {
                 rusternetes_common::Error::Network(format!("Failed to create HTTP client: {}", e))
