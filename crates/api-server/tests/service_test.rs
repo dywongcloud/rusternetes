@@ -57,7 +57,7 @@ fn create_external_name_service(name: &str, namespace: &str, external_name: &str
         },
         metadata: ObjectMeta::new(name).with_namespace(namespace),
         spec: ServiceSpec {
-            selector: HashMap::new(), // ExternalName services typically don't have selectors
+            selector: None, // ExternalName services typically don't have selectors
             ports: vec![],            // ExternalName services don't need ports
             service_type: Some(ServiceType::ExternalName),
             cluster_ip: None,

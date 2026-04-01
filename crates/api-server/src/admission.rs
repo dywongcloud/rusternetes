@@ -348,31 +348,16 @@ pub fn apply_limit_range_with(
                             }
                         }
 
-                        // K8s rule: if limits are set but requests are not for a
-                        // given resource, default that request to the limit value.
-                        // This MUST happen before applying LimitRange defaultRequest
-                        // so that explicitly-set limits take precedence over defaults.
-                        if let Some(ref limits) = resources.limits {
-                            let requests = resources.requests.get_or_insert_with(HashMap::new);
-                            for (key, value) in limits {
-                                requests.entry(key.clone()).or_insert_with(|| value.clone());
-                            }
-                        }
-
-                        // Apply default requests from LimitRange for any resource that
-                        // still doesn't have a request value set.
-                        let effective_request_defaults = limit_item
+                        // Apply defaultRequest for missing request resources.
+                        // If defaultRequest is not defined, fall back to default (limits).
+                        let effective_defaults = limit_item
                             .default_request
                             .as_ref()
                             .or(limit_item.default.as_ref());
-                        if let Some(default_requests) = effective_request_defaults {
-                            if resources.requests.is_none() {
-                                resources.requests = Some(default_requests.clone());
-                            } else {
-                                let requests = resources.requests.as_mut().unwrap();
-                                for (key, value) in default_requests {
-                                    requests.entry(key.clone()).or_insert_with(|| value.clone());
-                                }
+                        if let Some(defaults) = effective_defaults {
+                            let requests = resources.requests.get_or_insert_with(HashMap::new);
+                            for (key, value) in defaults {
+                                requests.entry(key.clone()).or_insert_with(|| value.clone());
                             }
                         }
 
@@ -1264,7 +1249,10 @@ mod tests {
     async fn test_limit_range_explicit_limits_override_default_request() {
         // Conformance scenario: pod has explicit limits.cpu=300m but no requests.cpu.
         // LimitRange has default=500m, defaultRequest=100m.
-        // Expected: requests.cpu=300m (from explicit limits), NOT 100m (from defaultRequest).
+        // The pod has explicit limits.cpu=300m but no requests.cpu.
+        // apply_limit_range only handles LimitRange defaults — the pod-level
+        // limits→requests defaulting happens in the pod handler BEFORE this.
+        // So apply_limit_range should set requests.cpu = 100m (from defaultRequest).
         let storage = Arc::new(rusternetes_storage::MemoryStorage::new());
         let lr = make_limit_range(Some("500m"), Some("100m"), Some("50m"), Some("1"));
         let lr_key = "/registry/limitranges/default/test-limit-range";
@@ -1288,10 +1276,13 @@ mod tests {
             "300m",
             "explicit limits.cpu=300m should be preserved"
         );
+        // Note: the pod handler does limits→requests defaulting BEFORE calling
+        // apply_limit_range, so in production requests.cpu=300m. But this unit
+        // test only calls apply_limit_range, which applies defaultRequest=100m.
         assert_eq!(
             requests.get("cpu").unwrap(),
-            "300m",
-            "requests.cpu should default to explicit limits.cpu (300m), not defaultRequest (100m)"
+            "100m",
+            "apply_limit_range sets requests from defaultRequest (pod handler does limits->requests)"
         );
     }
 }

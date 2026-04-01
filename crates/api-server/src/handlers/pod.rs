@@ -139,9 +139,34 @@ pub async fn create(
         if spec.termination_grace_period_seconds.is_none() {
             spec.termination_grace_period_seconds = Some(30);
         }
-        // LimitRange defaults are applied by apply_limit_range_with() below (line ~272).
-        // NOT here — the ordering matters (limits→requests inheritance must happen
-        // before defaultRequest) and duplicate application causes bugs.
+        // K8s pod defaulting: if a container has explicit limits but no requests,
+        // default requests to the limit value. This happens BEFORE LimitRange so that
+        // explicit limits take precedence over LimitRange defaultRequest.
+        for container in &mut spec.containers {
+            if let Some(ref limits) = container
+                .resources
+                .as_ref()
+                .and_then(|r| r.limits.clone())
+            {
+                if !limits.is_empty() {
+                    let resources = container
+                        .resources
+                        .get_or_insert_with(|| rusternetes_common::types::ResourceRequirements {
+                            limits: None,
+                            requests: None,
+                            claims: None,
+                        });
+                    let requests = resources
+                        .requests
+                        .get_or_insert_with(std::collections::HashMap::new);
+                    for (key, value) in limits {
+                        requests.entry(key.clone()).or_insert_with(|| value.clone());
+                    }
+                }
+            }
+        }
+
+        // LimitRange defaults are applied by apply_limit_range_with() below.
 
         for container in &mut spec.containers {
             if container.termination_message_path.is_none() {
