@@ -15,21 +15,28 @@ We run the official Kubernetes conformance test suite (441 tests) via Sonobuoy a
 | 107   | 2026-03-23 | ~422 | ~19  | 96%       | Best deployed result |
 | 108   | 2026-03-27 | 263  | 178  | 60%       | Regression (interaction bugs) |
 | 110   | 2026-03-29 | 283  | 158  | 64%       | Fixes committed, not yet deployed |
-| 115   | 2026-03-30 | 42/72 (in progress) | 26/72 | ~61% | Partial run, 13 code bugs found and fixed |
+| 116   | 2026-03-31 | 128  | 94   | 58%       | Pre-deploy, watch cancel loops |
+| 117   | 2026-03-31 | 89   | 44   | 67%       | Partial run, first deploy of session fixes |
+| 118   | 2026-04-01 | 299  | 142  | 68%       | Full run, all major fixes deployed |
 
 **Current best deployed**: Round 107 at ~96% (~422/441).
 
-**Latest status (Round 115)**: 13 code bugs identified and all have committed fixes. Many Round 110/115 failures are Docker Desktop latency timeouts (79 in Round 110), not code bugs. With fixes deployed, the actual code-level pass rate is expected to be significantly higher than the raw numbers.
+**Latest status (Round 118)**: 299/441 passed (67.8%), up from 283/441 (64.2%) in round 110. 40+ code fixes committed this session addressing root causes across watch event types, CoreDNS eviction, kubelet deadlocks, LimitRange ordering, webhook TLS, CRD timeouts, and more. 19 additional fixes pending deployment should bring round 119 to ~72%.
 
-**Total commits**: 847 across 15+ rounds of iterative testing and debugging.
+**Total commits**: 900+ across 18+ rounds of iterative testing and debugging.
 
 ## Failure Categories
 
-Based on Round 110/115 analysis:
+Based on Round 118 analysis (142 failures):
 
-- **Timeout failures (~79)**: Docker Desktop latency causes pods to miss readiness deadlines. Not code bugs — these pass on faster infrastructure.
-- **Code bugs (~13)**: Real issues in API server, controllers, or kubelet. All identified bugs have committed fixes.
-- **Remaining unfixed (~32)**: Under investigation or awaiting next test round for confirmation.
+- **CRD/etcd watch timeouts (~15)**: etcd gRPC watch stream ending prematurely. Fix committed: keepalive (4991385).
+- **Platform limitations (~13)**: Docker Desktop macOS — iptables DNAT bypassed by userspace networking, bind mount permissions.
+- **kubectl protobuf (~4)**: kubectl validation requires real protobuf OpenAPI encoding.
+- **Pod latency/rate limiting (~15)**: Cascading from informer retries, scheduler timing.
+- **StatefulSet (~5)**: Scale-down timing, rolling update hash. Partially fixed (805c044).
+- **Webhook (~5)**: Webhook service readiness/TLS.
+- **Job completion (~6)**: etcd watch stream ending. Fix committed: keepalive (4991385).
+- **Other (~79)**: Various latency, timing, networking, controller issues.
 
 Detailed tracking in `docs/CONFORMANCE_FAILURES.md`.
 
