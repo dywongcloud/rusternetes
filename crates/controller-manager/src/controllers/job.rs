@@ -886,7 +886,7 @@ impl<S: Storage> JobController<S> {
             }
             Err(e) => {
                 error!("Job {}/{} status update FAILED: {}", namespace, name, e);
-                return Err(e);
+                return Err(e.into());
             }
         }
 
