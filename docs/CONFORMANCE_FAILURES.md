@@ -42,10 +42,15 @@
 - Deployment: FIXED 36ff92b — direct pod count (~3 tests)
 - Webhooks: FIXED 88f9c37 — stale config cleanup (~5 tests)
 
-### Remaining (~5 tests, need investigation)
-- Events (~1): Event list empty — possible field selector filtering
-- Aggregator (~1): Multi-container pod startup ordering
-- Other (~3): Edge cases
+### Fixed (additional)
+- Events: FIXED 2d6a5e1 — reportingController alias + field selector
+- DaemonSet: FIXED 9451c4e — updatedNumberScheduled
+- Volume refresh: FIXED 9451c4e — optional volume dirs + key deletion
+- Namespace: FIXED 2a0ff37 — two-cycle finalizer removal
+
+### Remaining (~3 tests)
+- Aggregator (~1): Multi-container pod localhost communication
+- Other (~2): Edge cases
 
 ## Projected Results
 
