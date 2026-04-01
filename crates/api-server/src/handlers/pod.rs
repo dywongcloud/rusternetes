@@ -133,50 +133,9 @@ pub async fn create(
         if spec.termination_grace_period_seconds.is_none() {
             spec.termination_grace_period_seconds = Some(30);
         }
-        // Apply LimitRange defaults to containers (using pre-fetched list)
-        for lr in &limit_ranges {
-            {
-                let limits = &lr.spec.limits;
-                for limit in limits {
-                    if limit.item_type == "Container" {
-                        for container in &mut spec.containers {
-                            let resources = container.resources.get_or_insert_with(|| {
-                                rusternetes_common::types::ResourceRequirements {
-                                    limits: None,
-                                    requests: None,
-                                    claims: None,
-                                }
-                            });
-                            // Apply default limits first
-                            if let Some(ref default_limits) = limit.default {
-                                let limits = resources
-                                    .limits
-                                    .get_or_insert_with(std::collections::HashMap::new);
-                                for (k, v) in default_limits {
-                                    if !limits.contains_key(k) {
-                                        limits.insert(k.clone(), v.clone());
-                                    }
-                                }
-                            }
-                            // Apply default requests — use defaultRequest if set,
-                            // otherwise fall back to default (limits) values per K8s spec
-                            let effective_defaults =
-                                limit.default_request.as_ref().or(limit.default.as_ref());
-                            if let Some(defaults) = effective_defaults {
-                                let requests = resources
-                                    .requests
-                                    .get_or_insert_with(std::collections::HashMap::new);
-                                for (k, v) in defaults {
-                                    if !requests.contains_key(k) {
-                                        requests.insert(k.clone(), v.clone());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // LimitRange defaults are applied by apply_limit_range_with() below (line ~272).
+        // NOT here — the ordering matters (limits→requests inheritance must happen
+        // before defaultRequest) and duplicate application causes bugs.
 
         for container in &mut spec.containers {
             if container.termination_message_path.is_none() {
