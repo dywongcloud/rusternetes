@@ -1858,8 +1858,9 @@ impl Kubelet {
 
                         // CrashLoopBackOff: compute backoff delay based on restart count
                         // K8s uses: 10s, 20s, 40s, 80s, 160s, 300s (capped at 5m)
-                        let backoff_secs = std::cmp::min(
-                            10_i64 * (1_i64 << (restart_count as i64 - 1).min(5)),
+                        let current_restart = prev_restart + 1;
+                        let backoff_secs: i64 = std::cmp::min(
+                            10 * (1_i64 << (current_restart as i64 - 1).min(5)),
                             300
                         );
                         // Check if enough time has passed since the container finished
@@ -1867,10 +1868,12 @@ impl Kubelet {
                             .and_then(|cs| cs.first())
                             .and_then(|c| match &c.state {
                                 Some(ContainerState::Terminated { finished_at, .. }) => {
-                                    finished_at.as_ref().map(|ft| {
-                                        let elapsed = (chrono::Utc::now() - *ft).num_seconds();
-                                        elapsed >= backoff_secs
-                                    })
+                                    finished_at.as_ref().and_then(|ft| {
+                                        chrono::DateTime::parse_from_rfc3339(ft).ok().map(|parsed| {
+                                            let elapsed = (chrono::Utc::now() - parsed.with_timezone(&chrono::Utc)).num_seconds();
+                                            elapsed >= backoff_secs
+                                        })
+                                    }).or(Some(true))
                                 }
                                 _ => Some(true),
                             })
@@ -1879,7 +1882,7 @@ impl Kubelet {
                         if !should_restart {
                             debug!(
                                 "CrashLoopBackOff: pod {}/{} waiting (restart #{}, backoff {}s)",
-                                namespace, pod_name, restart_count, backoff_secs
+                                namespace, pod_name, current_restart, backoff_secs
                             );
                             return Ok(());
                         }

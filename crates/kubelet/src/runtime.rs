@@ -1820,6 +1820,42 @@ impl ContainerRuntime {
 
             let is_optional = secret_source.optional.unwrap_or(false);
 
+            // For SA token volumes, generate a bound token with pod reference
+            // instead of using the static token from the Secret.
+            let is_sa_token_volume = volume.name.contains("kube-api-access")
+                || secret_name.ends_with("-token");
+            let bound_token: Option<String> = if is_sa_token_volume {
+                let sa_name = pod
+                    .spec
+                    .as_ref()
+                    .and_then(|s| s.service_account_name.as_deref())
+                    .unwrap_or("default");
+                let sa_key = build_key("serviceaccounts", Some(namespace), sa_name);
+                let sa_uid = storage
+                    .get::<serde_json::Value>(&sa_key)
+                    .await
+                    .ok()
+                    .and_then(|v| v.pointer("/metadata/uid").and_then(|u| u.as_str()).map(|s| s.to_string()))
+                    .unwrap_or_default();
+                let node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
+                let now = chrono::Utc::now();
+                let claims = rusternetes_common::auth::ServiceAccountClaims {
+                    sub: format!("system:serviceaccount:{}:{}", namespace, sa_name),
+                    namespace: namespace.to_string(),
+                    uid: sa_uid,
+                    iat: now.timestamp(),
+                    exp: (now + chrono::Duration::hours(1)).timestamp(),
+                    iss: "rusternetes-api-server".to_string(),
+                    aud: vec!["rusternetes".to_string()],
+                    pod_name: Some(pod_name.to_string()),
+                    pod_uid: Some(pod.metadata.uid.clone()),
+                    node_name,
+                };
+                self.token_manager.generate_token(claims).ok()
+            } else {
+                None
+            };
+
             let key = build_key("secrets", Some(namespace), secret_name);
             let secret_result: Result<Secret, _> = storage.get(&key).await;
 
@@ -1880,7 +1916,17 @@ impl ContainerRuntime {
                                     )
                                 })?;
                             }
-                            std::fs::write(&file_path, value).with_context(|| {
+                            // For SA token volumes, substitute the bound token
+                            let write_value: &[u8] = if item.key == "token" {
+                                if let Some(ref bt) = bound_token {
+                                    bt.as_bytes()
+                                } else {
+                                    value
+                                }
+                            } else {
+                                value
+                            };
+                            std::fs::write(&file_path, write_value).with_context(|| {
                                 format!("Failed to write Secret key {} to file", item.key)
                             })?;
                             #[cfg(unix)]
@@ -1892,14 +1938,28 @@ impl ContainerRuntime {
                                     std::fs::Permissions::from_mode(mode),
                                 )?;
                             }
-                            info!("Wrote Secret key {} to {}", item.key, file_path);
+                            if bound_token.is_some() && item.key == "token" {
+                                info!("Wrote bound SA token for pod {} to {}", pod_name, file_path);
+                            } else {
+                                info!("Wrote Secret key {} to {}", item.key, file_path);
+                            }
                         }
                     }
                 } else {
                     // Mount all keys
                     for (key, value) in data {
                         let file_path = format!("{}/{}", volume_dir, key);
-                        std::fs::write(&file_path, value).with_context(|| {
+                        // For SA token volumes, substitute the bound token
+                        let write_value: &[u8] = if key == "token" {
+                            if let Some(ref bt) = bound_token {
+                                bt.as_bytes()
+                            } else {
+                                value.as_slice()
+                            }
+                        } else {
+                            value.as_slice()
+                        };
+                        std::fs::write(&file_path, write_value).with_context(|| {
                             format!("Failed to write Secret key {} to file", key)
                         })?;
                         #[cfg(unix)]
