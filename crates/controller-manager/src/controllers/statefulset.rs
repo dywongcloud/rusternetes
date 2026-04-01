@@ -92,18 +92,11 @@ impl<S: Storage> StatefulSetController<S> {
 
         // Filter out terminated (Failed/Succeeded) pods — only count active pods as replicas
         statefulset_pods.retain(|pod| {
-            // Exclude terminated pods
-            if matches!(
+            // Exclude terminated pods (Failed/Succeeded phase)
+            !matches!(
                 pod.status.as_ref().and_then(|s| s.phase.as_ref()),
                 Some(Phase::Failed) | Some(Phase::Succeeded)
-            ) {
-                return false;
-            }
-            // Exclude pods marked for deletion (deletionTimestamp set)
-            if pod.metadata.deletion_timestamp.is_some() {
-                return false;
-            }
-            true
+            )
         });
 
         // Sort pods by ordinal index
@@ -188,27 +181,36 @@ impl<S: Storage> StatefulSetController<S> {
             }
         } else if current_replicas > desired_replicas {
             // Scale down: mark ONE pod at a time for deletion in reverse order.
-            // Set deletionTimestamp instead of direct delete — the kubelet handles
-            // graceful termination and actual deletion, matching real K8s behavior.
-            let i = current_replicas - 1;
-            let pod_name = format!("{}-{}", name, i);
-            let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
-            match self.storage.get::<Pod>(&pod_key).await {
-                Ok(mut pod) => {
-                    if pod.metadata.deletion_timestamp.is_none() {
-                        pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
-                        let _ = self.storage.update(&pod_key, &pod).await;
+            // Wait for any terminating pod to be fully removed before deleting the next.
+            // This matches K8s behavior: StatefulSet scales down one at a time, waiting
+            // for graceful termination between each.
+            let any_terminating = statefulset_pods.iter().any(|p| p.metadata.deletion_timestamp.is_some());
+            if any_terminating {
+                debug!(
+                    "StatefulSet {}/{}: waiting for terminating pod before continuing scale-down",
+                    namespace, name
+                );
+            } else {
+                let i = current_replicas - 1;
+                let pod_name = format!("{}-{}", name, i);
+                let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
+                match self.storage.get::<Pod>(&pod_key).await {
+                    Ok(mut pod) => {
+                        if pod.metadata.deletion_timestamp.is_none() {
+                            pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
+                            let _ = self.storage.update(&pod_key, &pod).await;
+                            info!(
+                                "Scale down: marked pod {} for deletion ({} -> {})",
+                                pod_name, current_replicas, current_replicas - 1
+                            );
+                        }
+                    }
+                    Err(_) => {
                         info!(
-                            "Scale down: marked pod {} for deletion ({} -> {})",
-                            pod_name, current_replicas, current_replicas - 1
+                            "Scale down: pod {} already gone",
+                            pod_name
                         );
                     }
-                }
-                Err(_) => {
-                    info!(
-                        "Scale down: pod {} already deleted ({} -> {})",
-                        pod_name, current_replicas, current_replicas - 1
-                    );
                 }
             }
         }
