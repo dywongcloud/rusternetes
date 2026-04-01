@@ -1,17 +1,18 @@
 # Conformance Issue Tracker
 
-**Round 118** | IN PROGRESS | 113/441 done | 75 passed, 38 failed (66.4%)
+**Round 118** | IN PROGRESS | 119/441 done | 78 passed, 41 failed (65.5%)
 
 ## Current Failures — 32 unique
 
-### CRD timeouts (5 tests)
+### CRD/etcd watch timeouts (7 tests)
 | Test | Status |
 |------|--------|
-| crd_publish_openapi.go:366 | CRD creation >30s |
+| crd_publish_openapi.go:285,318,366 | CRD creation/watch >30s |
 | crd_watch.go:72 | CRD creation timeout |
 | custom_resource_definition.go:288 | CRD creation timeout |
 | field_validation.go:428 | CRD creation timeout |
-| field_validation.go (sysctl portion) | FIXED d165195 not deployed |
+| job.go:422,1251 | Job completion not observed (etcd watch ended) |
+| Root cause: etcd gRPC keepalive — FIXED 4991385, not deployed |
 
 ### Service/network — Docker Desktop (4 tests)
 | Test | Status |
