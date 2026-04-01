@@ -35,6 +35,7 @@ pub async fn create(
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
+    let user_for_webhook = auth_ctx.user.clone();
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "configmaps")
         .with_api_group("")
         .with_namespace(&namespace);
@@ -73,6 +74,56 @@ pub async fn create(
         .await
     {
         return Err(e);
+    }
+
+    // Run admission webhooks (mutating + validating)
+    {
+        use crate::admission_webhook::AdmissionWebhookClient;
+        let gvr = rusternetes_common::admission::GroupVersionResource {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            resource: "configmaps".to_string(),
+        };
+        let user = &user_for_webhook;
+        let user_info = rusternetes_common::admission::UserInfo {
+            username: user.username.clone(),
+            uid: user.uid.clone(),
+            groups: user.groups.clone(),
+        };
+        let cm_val = serde_json::to_value(&configmap).ok();
+        // Run mutating webhooks
+        let (_response, mutated_obj) = state
+            .webhook_manager
+            .run_mutating_webhooks(
+                &rusternetes_common::admission::Operation::Create,
+                &gvk,
+                &gvr,
+                Some(&namespace),
+                &configmap.metadata.name,
+                cm_val.clone(),
+                None,
+                &user_info,
+            )
+            .await?;
+        if let Some(mutated) = mutated_obj {
+            if let Ok(m) = serde_json::from_value::<ConfigMap>(mutated) {
+                configmap = m;
+            }
+        }
+        // Run validating webhooks
+        state
+            .webhook_manager
+            .run_validating_webhooks(
+                &rusternetes_common::admission::Operation::Create,
+                &gvk,
+                &gvr,
+                Some(&namespace),
+                &configmap.metadata.name,
+                serde_json::to_value(&configmap).ok(),
+                None,
+                &user_info,
+            )
+            .await?;
     }
 
     let key = build_key("configmaps", Some(&namespace), &configmap.metadata.name);
