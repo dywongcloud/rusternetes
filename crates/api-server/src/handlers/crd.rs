@@ -180,33 +180,18 @@ pub async fn create_crd(
 
     // Generate a MODIFIED watch event by touching the CRD status.
     // K8s clients watch from the CREATE's resourceVersion for a MODIFIED event
-    // containing the Established condition. Without this update, there's no
-    // MODIFIED event and the client times out waiting.
-    tokio::spawn({
-        let storage = state.storage.clone();
-        let key = key.clone();
-        let crd_name_clone = crd_name.clone();
-        async move {
-            match storage.get::<serde_json::Value>(&key).await {
-                Ok(mut val) => {
-                    if let Some(status) = val.get_mut("status").and_then(|s| s.as_object_mut()) {
-                        status.insert("observedGeneration".to_string(), serde_json::json!(1));
-                    }
-                    match storage.update(&key, &val).await {
-                        Ok(_) => {
-                            tracing::info!("CRD {} async status update succeeded", crd_name_clone);
-                        }
-                        Err(e) => {
-                            tracing::warn!("CRD {} async status update failed: {}", crd_name_clone, e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("CRD {} async status get failed: {}", crd_name_clone, e);
-                }
+    // containing the Established condition. Do this synchronously to ensure
+    // the event exists before returning the CREATE response.
+    {
+        if let Ok(mut val) = state.storage.get::<serde_json::Value>(&key).await {
+            if let Some(status) = val.get_mut("status").and_then(|s| s.as_object_mut()) {
+                status.insert("observedGeneration".to_string(), serde_json::json!(1));
+            }
+            if let Err(e) = state.storage.update(&key, &val).await {
+                tracing::warn!("CRD {} status update failed: {}", crd_name, e);
             }
         }
-    });
+    }
 
     Ok((StatusCode::CREATED, Json(created)))
 }
