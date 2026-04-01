@@ -1,70 +1,52 @@
 # Conformance Issue Tracker
 
-**Round 117** | IN PROGRESS | 113/441 done | 75 passed, 38 failed (66.4%)
+**Round 117** | IN PROGRESS | 128/441 done | 87 passed, 41 failed (68.0%)
 
-## Current Failures (Round 117) — 33 unique
+## Not Yet Deployed Fixes (17 expected additional passes)
 
-### Will be fixed on next deploy (8 tests)
-| Test | Error | Fix |
-|------|-------|-----|
-| ingressclass.go:375 | ADDED not MODIFIED | ce2f9d3 — label selector bug |
-| ingress.go:232 | ADDED not MODIFIED | ce2f9d3 |
-| validatingadmissionpolicy.go:814,270 | ADDED not MODIFIED | ce2f9d3 |
-| flowcontrol.go:661 | ADDED not MODIFIED | ce2f9d3 |
-| endpointslice.go:409 | ADDED not MODIFIED | ce2f9d3 |
-| field_validation.go:105 | Wrong error format | c182bfd — duplicate vs unknown |
-| builder.go:97 | MIME error | b2f9538 — Content-Type |
-| crd_publish_openapi.go:161,77 | CRD timeout | 213585c — async status update |
-| certificates.go:372 | Unknown variant | 319466f — CSR String type |
+| Fix | Commit | Tests |
+|-----|--------|-------|
+| Watch MODIFIED→ADDED label selector bug | ce2f9d3 | IngressClass, Ingress, VAP(2), FlowSchema, EndpointSlice = 6 |
+| Duplicate LimitRange removal | 3215a6c | LimitRange = 1 |
+| Webhook TLS accept self-signed | d6b0c60 | webhook(4) = 4 |
+| CRD async status update | 213585c | CRD(3) = 3 |
+| Field validation duplicate format | c182bfd | field_validation = 1 |
+| kubectl Content-Type | b2f9538 | builder = 1 |
+| CSR condition String type | 319466f | certificates = 1 |
+| PDB DisruptionBudget cause | 2bc8ef4 | disruption = 1 |
 
-### Docker Desktop limitations (5 tests)
-| Test | Error | Reason |
-|------|-------|--------|
-| service.go:1450,1571,4291 | Service unreachable | iptables DNAT bypassed by Docker userspace networking |
-| output.go:263 | Perms 0755 not 0777 | macOS bind mount umask |
-| pre_stop.go:153 | Timed out | Service networking |
+## Current Failures — 41 total, 38 unique locations
 
-### StatefulSet rolling update (3 tests)
-| Test | Error | Status |
-|------|-------|--------|
-| statefulset.go:957,1092 | Pod not re-created | Template hash comparison — needs deploy + debug |
-| statefulset.go:2479 | Scaled 3->2 | Timing race |
+### Fixed by pending deploys (~17 tests)
+- ingressclass.go:375, ingress.go:232, validatingadmissionpolicy.go:814,270
+- flowcontrol.go:661, endpointslice.go:409
+- field_validation.go:105, builder.go:97, certificates.go:372
+- crd_publish_openapi.go:161,77,451
+- webhook.go:601,1194,1334,1631
+- limit_range.go:162, disruption.go:372
 
-### Webhook service reachability (3 tests)
-| Test | Error | Status |
-|------|-------|--------|
-| webhook.go:601,1334,1631 | Timed out | Webhook service not reachable from API server |
+### Docker Desktop limitations (~5 tests)
+- service.go:1450,1571,4291 — iptables DNAT bypassed by userspace networking
+- output.go:263 — macOS bind mount umask
+- pre_stop.go:153 — service networking required
 
-### Pod startup/latency (5 tests)
-| Test | Error | Status |
-|------|-------|--------|
-| hostport.go:219 | Pod not starting | Latency |
-| rc.go:538,623 | Unavailable replicas | Pod startup |
-| replica_set.go:232,738 | Failed/timed out | Pod startup/informer |
-| wait.go:63 | Rate limiter | Client rate limiting |
-| preemption.go:1025 | Replicas unavailable | Pod readiness |
+### Pod latency / rate limiting (~8 tests)
+- hostport.go:219 — init container failed (hostPort conflict)
+- rc.go:538,623 — rate limiter exhausted
+- replica_set.go:232,738 — pod connectivity / timed out
+- wait.go:63 — rate limiter
+- preemption.go:1025 — replicas unavailable
+- dns_common.go:476 — rate limiter exhausted
 
-### Other (4 tests)
-| Test | Error | Status |
-|------|-------|--------|
-| job.go:974 | Pod not released | Job adopt/release CAS — 2bc8ef4 |
-| disruption.go:372 | Wrong cause format | PDB DisruptionBudget — 2bc8ef4 |
-| watch.go:223 | No 2nd notification | Watch delivery |
-| expansion.go:419 | Container didn't fail | Subpath validation |
+### StatefulSet rolling update (~3 tests)
+- statefulset.go:957,1092 — template hash not changing after patch
+- statefulset.go:2479 — timing race
 
-## Not Yet Deployed Fixes
-
-| Fix | Commit | Tests Fixed |
-|-----|--------|-------------|
-| **Watch MODIFIED→ADDED** | ce2f9d3 | 6 tests |
-| Field validation format | c182bfd | 1 test |
-| Content-Type | b2f9538 | 1 test |
-| CRD async status | 213585c | 2 tests |
-| CSR String type | 319466f | 1 test |
-| PDB cause + Job CAS | 2bc8ef4 | 2 tests |
-| Watch param logging | dd468e2 | diagnostics |
-
-**Total: ~13 tests expected to be fixed on next deploy**
+### Other (~5 tests)
+- job.go:974 — adopt/release CAS (fix pending: 2bc8ef4)
+- watch.go:223 — second watch notification not delivered
+- expansion.go:419 — subpath CreateContainerError not observed by test
+- aggregator.go:359 — sample API server pod not ready
 
 ## Progress History
 
@@ -72,4 +54,5 @@
 |-------|------|------|-------|------|
 | 110 | 283 | 158 | 441 | 64.2% |
 | 116 | 128 | 94 | 222/441 | 57.7% |
-| 117 | 71 | 34 | 105/441 | 67.6% (in progress) |
+| 117 | 87 | 41 | 128/441 | 68.0% (in progress) |
+| 117+deploy | ~104 | ~24 | ~128/441 | ~81% (projected) |
