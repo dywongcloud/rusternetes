@@ -182,13 +182,25 @@ pub async fn create_crd(
     // K8s clients watch from the CREATE's resourceVersion for a MODIFIED event
     // containing the Established condition. Do this synchronously to ensure
     // the event exists before returning the CREATE response.
-    {
-        if let Ok(mut val) = state.storage.get::<serde_json::Value>(&key).await {
-            if let Some(status) = val.get_mut("status").and_then(|s| s.as_object_mut()) {
-                status.insert("observedGeneration".to_string(), serde_json::json!(1));
+    // Retry up to 3 times in case of CAS conflict.
+    for attempt in 0..3 {
+        match state.storage.get::<serde_json::Value>(&key).await {
+            Ok(mut val) => {
+                if let Some(status) = val.get_mut("status").and_then(|s| s.as_object_mut()) {
+                    status.insert("observedGeneration".to_string(), serde_json::json!(1));
+                }
+                match state.storage.update(&key, &val).await {
+                    Ok(_) => {
+                        tracing::info!("CRD {} status update succeeded (attempt {})", crd_name, attempt + 1);
+                        break;
+                    }
+                    Err(e) => {
+                        tracing::warn!("CRD {} status update failed (attempt {}): {}", crd_name, attempt + 1, e);
+                    }
+                }
             }
-            if let Err(e) = state.storage.update(&key, &val).await {
-                tracing::warn!("CRD {} status update failed: {}", crd_name, e);
+            Err(e) => {
+                tracing::warn!("CRD {} status get failed (attempt {}): {}", crd_name, attempt + 1, e);
             }
         }
     }
