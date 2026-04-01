@@ -949,8 +949,6 @@ impl Kubelet {
                                 let observed_gen = fresh_pod.metadata.generation;
 
                                 let mut new_pod = fresh_pod;
-                                // Set proper conditions for failed init containers
-                                let failed_conditions = Self::init_failed_pod_conditions();
                                 // Build K8s-style message listing incomplete init containers
                                 let incomplete_inits: Vec<String> = new_pod
                                     .spec
@@ -966,6 +964,8 @@ impl Kubelet {
                                 } else {
                                     err_msg.clone()
                                 };
+                                // Set proper conditions for failed init containers
+                                let failed_conditions = Self::init_failed_pod_conditions(&incomplete_inits);
                                 new_pod.status = Some(PodStatus {
                                     phase: Some(Phase::Failed),
                                     message: Some(status_msg),
@@ -2097,14 +2097,22 @@ impl Kubelet {
     }
 
     /// Build conditions for a pod whose init containers failed.
-    fn init_failed_pod_conditions() -> Vec<PodCondition> {
+    fn init_failed_pod_conditions(incomplete_init_names: &[String]) -> Vec<PodCondition> {
         let now = Some(chrono::Utc::now());
+        let msg = if !incomplete_init_names.is_empty() {
+            format!(
+                "containers with incomplete status: [{}]",
+                incomplete_init_names.join(" ")
+            )
+        } else {
+            "Init container failed".to_string()
+        };
         vec![
             PodCondition {
                 condition_type: "Initialized".to_string(),
                 status: "False".to_string(),
                 reason: Some("ContainersNotInitialized".to_string()),
-                message: Some("Init container failed".to_string()),
+                message: Some(msg.clone()),
                 last_transition_time: now,
                 observed_generation: None,
             },
@@ -2120,7 +2128,7 @@ impl Kubelet {
                 condition_type: "ContainersReady".to_string(),
                 status: "False".to_string(),
                 reason: Some("ContainersNotReady".to_string()),
-                message: Some("Init container failed".to_string()),
+                message: Some(msg.clone()),
                 last_transition_time: now,
                 observed_generation: None,
             },
@@ -2128,7 +2136,7 @@ impl Kubelet {
                 condition_type: "Ready".to_string(),
                 status: "False".to_string(),
                 reason: Some("ContainersNotReady".to_string()),
-                message: Some("Init container failed".to_string()),
+                message: Some(msg),
                 last_transition_time: now,
                 observed_generation: None,
             },
