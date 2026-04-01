@@ -494,3 +494,142 @@ impl<S: Storage> ReplicationControllerController<S> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusternetes_common::resources::workloads::{PodTemplateSpec, ReplicationControllerSpec};
+    use rusternetes_common::types::ObjectMeta;
+    use rusternetes_storage::MemoryStorage;
+    use std::collections::HashMap;
+
+    fn make_rc(name: &str, ns: &str, replicas: i32, selector: HashMap<String, String>, template_labels: Option<HashMap<String, String>>) -> ReplicationController {
+        ReplicationController {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "ReplicationController".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: {
+                let mut m = ObjectMeta::new(name);
+                m.namespace = Some(ns.to_string());
+                m
+            },
+            spec: ReplicationControllerSpec {
+                replicas: Some(replicas),
+                selector: Some(selector),
+                template: PodTemplateSpec {
+                    metadata: template_labels.map(|labels| {
+                        let mut m = ObjectMeta::new("");
+                        m.labels = Some(labels);
+                        m
+                    }),
+                    spec: rusternetes_common::resources::PodSpec {
+                        containers: vec![rusternetes_common::resources::Container {
+                            name: "test".to_string(),
+                            image: "busybox".to_string(),
+                            command: None, args: None, working_dir: None, ports: None,
+                            env: None, env_from: None, resources: None, volume_mounts: None,
+                            volume_devices: None, liveness_probe: None, readiness_probe: None,
+                            startup_probe: None, lifecycle: None, termination_message_path: None,
+                            termination_message_policy: None, image_pull_policy: None,
+                            security_context: None, stdin: None, stdin_once: None, tty: None,
+                            resize_policy: None, restart_policy: None,
+                        }],
+                        init_containers: None, ephemeral_containers: None,
+                        restart_policy: Some("Always".to_string()),
+                        termination_grace_period_seconds: None,
+                        dns_policy: None, node_selector: None, service_account_name: None,
+                        service_account: None, automount_service_account_token: None,
+                        node_name: None, host_network: None, host_pid: None, host_ipc: None,
+                        security_context: None, image_pull_secrets: None, hostname: None,
+                        subdomain: None, affinity: None, scheduler_name: None, tolerations: None,
+                        host_aliases: None, priority_class_name: None, priority: None,
+                        preemption_policy: None, overhead: None, topology_spread_constraints: None,
+                        volumes: None, active_deadline_seconds: None, dns_config: None,
+                        enable_service_links: None, readiness_gates: None,
+                        runtime_class_name: None, os: None, set_hostname_as_fqdn: None,
+                        share_process_namespace: None, scheduling_gates: None,
+                        resource_claims: None, host_users: None, resources: None,
+                    },
+                },
+                min_ready_seconds: None,
+            },
+            status: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rc_creates_pods_with_selector_labels_when_template_has_none() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = ReplicationControllerController::new(storage.clone(), 5);
+
+        let mut selector = HashMap::new();
+        selector.insert("app".to_string(), "test".to_string());
+
+        // Template has NO labels (metadata is None)
+        let rc = make_rc("test-rc", "default", 1, selector.clone(), None);
+        storage.create("/registry/replicationcontrollers/default/test-rc", &rc).await.unwrap();
+
+        controller.reconcile_all().await.unwrap();
+
+        // The pod should exist and have the selector labels
+        let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        assert!(!pods.is_empty(), "RC should have created a pod");
+
+        let pod = &pods[0];
+        let pod_labels = pod.metadata.labels.as_ref().expect("Pod should have labels");
+        assert_eq!(pod_labels.get("app"), Some(&"test".to_string()),
+            "Pod should inherit selector labels when template has no labels");
+    }
+
+    #[tokio::test]
+    async fn test_rc_creates_pods_with_template_labels_when_present() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = ReplicationControllerController::new(storage.clone(), 5);
+
+        let mut selector = HashMap::new();
+        selector.insert("app".to_string(), "test".to_string());
+
+        let mut template_labels = HashMap::new();
+        template_labels.insert("app".to_string(), "test".to_string());
+        template_labels.insert("version".to_string(), "v1".to_string());
+
+        let rc = make_rc("test-rc", "default", 1, selector, Some(template_labels));
+        storage.create("/registry/replicationcontrollers/default/test-rc", &rc).await.unwrap();
+
+        controller.reconcile_all().await.unwrap();
+
+        let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        assert!(!pods.is_empty(), "RC should have created a pod");
+
+        let pod_labels = pods[0].metadata.labels.as_ref().unwrap();
+        assert_eq!(pod_labels.get("app"), Some(&"test".to_string()));
+        assert_eq!(pod_labels.get("version"), Some(&"v1".to_string()),
+            "Pod should use template labels when present");
+    }
+
+    #[tokio::test]
+    async fn test_rc_matches_created_pods_on_next_reconcile() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = ReplicationControllerController::new(storage.clone(), 5);
+
+        let mut selector = HashMap::new();
+        selector.insert("app".to_string(), "test".to_string());
+
+        let rc = make_rc("test-rc", "default", 2, selector, None);
+        storage.create("/registry/replicationcontrollers/default/test-rc", &rc).await.unwrap();
+
+        // First reconcile: creates pods
+        controller.reconcile_all().await.unwrap();
+
+        let pods_after_first: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        assert_eq!(pods_after_first.len(), 2, "Should create 2 pods");
+
+        // Second reconcile: should match existing pods, not create more
+        controller.reconcile_all().await.unwrap();
+
+        let pods_after_second: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        assert_eq!(pods_after_second.len(), 2,
+            "Should still have 2 pods — RC must match its own pods on second reconcile");
+    }
+}

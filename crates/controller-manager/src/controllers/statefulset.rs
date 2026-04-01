@@ -1081,4 +1081,59 @@ mod tests {
             "With partition, currentRevision should not equal updateRevision"
         );
     }
+
+    /// Test that scale-down sets deletionTimestamp instead of direct delete.
+    #[tokio::test]
+    async fn test_scale_down_sets_deletion_timestamp() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = StatefulSetController::new(storage.clone());
+
+        let ns = "default";
+        // Create a StatefulSet with 3 replicas
+        let ss = make_statefulset("ss-scale", ns, 3, "busybox");
+        storage
+            .create("/registry/statefulsets/default/ss-scale", &ss)
+            .await
+            .unwrap();
+
+        // First reconcile: creates 3 pods
+        let mut ss: StatefulSet = storage.get("/registry/statefulsets/default/ss-scale").await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        // Make all pods ready
+        for i in 0..3 {
+            make_pod_ready(&storage, ns, &format!("ss-scale-{}", i)).await;
+        }
+
+        // Reconcile again to update status
+        let mut ss: StatefulSet = storage.get("/registry/statefulsets/default/ss-scale").await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        // Scale down to 2
+        let mut ss: StatefulSet = storage.get("/registry/statefulsets/default/ss-scale").await.unwrap();
+        ss.spec.replicas = Some(2);
+        storage.update("/registry/statefulsets/default/ss-scale", &ss).await.unwrap();
+
+        // Reconcile — should set deletionTimestamp on pod ss-scale-2
+        let mut ss: StatefulSet = storage.get("/registry/statefulsets/default/ss-scale").await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        // Pod ss-scale-2 should have deletionTimestamp set, not be deleted
+        let pod2: Pod = storage
+            .get("/registry/pods/default/ss-scale-2")
+            .await
+            .expect("Pod ss-scale-2 should still exist (graceful termination)");
+
+        assert!(
+            pod2.metadata.deletion_timestamp.is_some(),
+            "Pod ss-scale-2 should have deletionTimestamp set for graceful termination"
+        );
+
+        // Pods 0 and 1 should not have deletionTimestamp
+        let pod0: Pod = storage.get("/registry/pods/default/ss-scale-0").await.unwrap();
+        assert!(
+            pod0.metadata.deletion_timestamp.is_none(),
+            "Pod ss-scale-0 should not be terminating"
+        );
+    }
 }

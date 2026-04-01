@@ -8144,4 +8144,105 @@ mod tests {
         let prefix = format!("rusternetes-emptydir-{}-", pod_name);
         assert!(docker_vol_name.starts_with(&prefix));
     }
+
+    /// Test expand_k8s_vars logic: only expand $(VAR) for defined env vars,
+    /// preserve shell substitutions like $(id -u).
+    #[test]
+    fn test_expand_k8s_vars_preserves_shell_substitutions() {
+        // Simulate the expand_k8s_vars closure logic
+        let env_pairs: Vec<(String, String)> = vec![
+            ("MY_VAR".to_string(), "hello".to_string()),
+            ("PORT".to_string(), "8080".to_string()),
+        ];
+
+        let expand = |items: &[String]| -> Vec<String> {
+            items
+                .iter()
+                .map(|item| {
+                    let mut result = item.clone();
+                    let mut search_from = 0;
+                    loop {
+                        let start = match result[search_from..].find("$(") {
+                            Some(s) => search_from + s,
+                            None => break,
+                        };
+                        let end = match result[start..].find(')') {
+                            Some(e) => start + e,
+                            None => break,
+                        };
+                        let var_name = &result[start + 2..end];
+                        if let Some((_, value)) = env_pairs.iter().find(|(k, _)| k == var_name) {
+                            let value = value.clone();
+                            result.replace_range(start..end + 1, &value);
+                        } else {
+                            search_from = start + 2;
+                        }
+                    }
+                    result
+                })
+                .collect()
+        };
+
+        // Known env var is expanded
+        assert_eq!(
+            expand(&["echo $(MY_VAR)".to_string()]),
+            vec!["echo hello"]
+        );
+
+        // Shell command substitution is preserved (not a defined env var)
+        assert_eq!(
+            expand(&["test $(id -u) -eq 65534".to_string()]),
+            vec!["test $(id -u) -eq 65534"]
+        );
+
+        // Multiple vars: known ones expanded, unknown preserved
+        assert_eq!(
+            expand(&["$(MY_VAR):$(PORT) $(unknown)".to_string()]),
+            vec!["hello:8080 $(unknown)"]
+        );
+
+        // No vars at all
+        assert_eq!(
+            expand(&["plain text".to_string()]),
+            vec!["plain text"]
+        );
+
+        // Nested: $(VAR) inside result of expansion should also expand
+        let env_pairs2: Vec<(String, String)> = vec![
+            ("A".to_string(), "$(B)".to_string()),
+            ("B".to_string(), "final".to_string()),
+        ];
+        let expand2 = |items: &[String]| -> Vec<String> {
+            items
+                .iter()
+                .map(|item| {
+                    let mut result = item.clone();
+                    let mut search_from = 0;
+                    loop {
+                        let start = match result[search_from..].find("$(") {
+                            Some(s) => search_from + s,
+                            None => break,
+                        };
+                        let end = match result[start..].find(')') {
+                            Some(e) => start + e,
+                            None => break,
+                        };
+                        let var_name = &result[start + 2..end];
+                        if let Some((_, value)) = env_pairs2.iter().find(|(k, _)| k == var_name) {
+                            let value = value.clone();
+                            result.replace_range(start..end + 1, &value);
+                        } else {
+                            search_from = start + 2;
+                        }
+                    }
+                    result
+                })
+                .collect()
+        };
+        assert_eq!(
+            expand2(&["$(A)".to_string()]),
+            vec!["final"],
+            "Nested variable expansion should work"
+        );
+    }
 }
