@@ -22,7 +22,7 @@
 |-------|-------|-----------|------------|
 | CRD/Job etcd watch timeout | ~22 | gRPC stream ending | FIXED — keepalive 4991385 |
 | Webhook readiness | ~12 | Webhook matching/calling not triggering | Need to debug matching logic |
-| RC quota enforcement | ~2 | RC controller bypasses API server admission | Route pod creation through API |
+| RC quota enforcement | ~2 | Controllers bypassed quota check | FIXED 7985cf9 — all controllers check quota |
 | Deployment available=0 | ~3 | Pods not reporting ready fast enough | Kubelet readiness timing |
 | SA token pod-name | ~3 | Kubelet uses static tokens | Bound token fix deployed but tests still fail |
 | Terminated container reason | 1 | Status being overwritten | Need to trace status flow |
