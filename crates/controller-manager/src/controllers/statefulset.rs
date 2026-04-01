@@ -181,16 +181,43 @@ impl<S: Storage> StatefulSetController<S> {
             }
         } else if current_replicas > desired_replicas {
             // Scale down: delete ONE pod at a time in reverse order.
-            // K8s StatefulSet controller deletes the pod via the API server, which
-            // sets deletionTimestamp. The kubelet handles graceful termination.
-            // If any pod is currently terminating (has deletionTimestamp), wait for
-            // it to be fully removed before deleting the next.
+            // K8s StatefulSet controller requires:
+            // 1. No pod is currently terminating
+            // 2. All remaining pods (ordinals < pod being deleted) are Running and Ready
+            // This prevents scaling past an unhealthy pod (OrderedReady policy).
             let any_terminating = statefulset_pods
                 .iter()
                 .any(|p| p.metadata.deletion_timestamp.is_some());
+            // Check if all pods that will REMAIN after this scale-down are Ready.
+            // For scaling from N to desired, we delete pod N-1. All pods 0..desired must be Ready.
+            let all_remaining_ready = if is_ordered_ready {
+                (0..desired_replicas).all(|ordinal| {
+                    let pod_name = format!("{}-{}", name, ordinal);
+                    statefulset_pods.iter().any(|p| {
+                        p.metadata.name == pod_name
+                            && p.metadata.deletion_timestamp.is_none()
+                            && p.status
+                                .as_ref()
+                                .and_then(|s| s.conditions.as_ref())
+                                .map(|conditions| {
+                                    conditions
+                                        .iter()
+                                        .any(|c| c.condition_type == "Ready" && c.status == "True")
+                                })
+                                .unwrap_or(false)
+                    })
+                })
+            } else {
+                true // Parallel policy doesn't require ordered readiness
+            };
             if any_terminating {
                 debug!(
                     "StatefulSet {}/{}: waiting for terminating pod before continuing scale-down",
+                    namespace, name
+                );
+            } else if !all_remaining_ready {
+                debug!(
+                    "StatefulSet {}/{}: scale-down halted — not all remaining pods are Ready",
                     namespace, name
                 );
             } else {
