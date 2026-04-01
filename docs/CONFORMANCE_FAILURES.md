@@ -1,52 +1,30 @@
 # Conformance Issue Tracker
 
-**Round 119** | IN PROGRESS | ~51/441 done | ~21 passed, ~30 failed (~41%)
+**Round 120** | IN PROGRESS | 9/441 done | 4 passed, 5 failed (44%)
 
 ## Current Failures
 
 | # | Test | Error | Root Cause | Status |
 |---|------|-------|-----------|--------|
-| 1 | crd_publish_openapi.go:400,451 | CRD timeout 30s | Watch event for Established condition not received | Fix committed |
-| 2 | custom_resource_definition.go:72,161 | CRD timeout | Same as #1 | Fix committed |
-| 3 | field_validation.go:245 | CRD timeout | Same as #1 | Fix committed |
-| 4 | webhook.go:2338 | Webhook ready timeout | API server can't reach pod IP via HTTPS | Fix committed (rustls) |
-| 5 | webhook.go:520 | Webhook request failed | Same as #4 | Fix committed (rustls) |
-| 6 | init_container.go:565 | Condition message wrong | Kubelet sets "Init container failed" instead of K8s format | Fix committed |
-| 7 | job.go:422 | Job never completes (900s) | Stale resourceVersion causes CAS conflict on status update | Fix committed |
-| 8 | job.go:623 | Job never fails | Same as #7 | Fix committed |
-| 9 | statefulset.go:381 | updateRevision same as current | Revision not computed on spec update | Fix committed |
-| 10 | statefulset.go:2479 | Scale 3->2 timing | Direct delete skipped graceful termination | Fix committed |
-| 11 | pod_client.go:216 (x2) | Pod timeout 60s | Ephemeral container statuses never reported | Fix committed |
-| 12 | pod_client.go:302 | Pod Failed | $(id -u) shell substitution eaten by expand_k8s_vars | Fix committed |
-| 13 | rc.go:442 | RC rate limiter | RC can't match pods (no labels) → replicas stays 0 → timeout | Fix committed |
-| 14 | rc.go:538 | RC pods check | Same root cause as #13 | Fix committed |
-| 15 | rc.go:623 | ReplicaFailure not cleared | RC creates pods with no labels, can't match selector | Fix committed |
-| 16 | output.go:263 (x2) | Perms 0755 | Docker Desktop bind mount permissions | Platform limitation |
-| 17 | dns_common.go:476 (x2) | DNS pod not found | Pod lifecycle issue, may cascade from other fixes | May improve |
-| 18 | service.go:4291 (x3), 768 | Service unreachable | iptables DNAT bypass on Docker Desktop | Platform limitation |
-| 19 | preemption.go:978 | PriorityClass value mismatch | Stale cluster-scoped resources from previous tests | Test isolation |
-| 20 | secrets_volume.go:374 | Secret volume update timeout | Optional secret deletion not cleaning up volume files | Fix committed |
-| 21 | job.go:974 | Job pod release | Pod release CAS diagnostics added | Diagnostics |
+| 1 | statefulset.go:2479 | Scaled unexpectedly | Scale-down doesn't halt on unhealthy pods | Fix committed (readiness check) |
+| 2 | builder.go:97 | kubectl protobuf | OpenAPI protobuf encoding not implemented | Known limitation |
+| 3 | output.go:263 | Perms 0644 vs 0666 | Docker Desktop virtiofs strips write bits on bind mounts | Platform limitation |
+| 4 | crd_publish_openapi.go:244 | CRD timeout 30s | Watch may not deliver MODIFIED event; investigating | Investigating |
+| 5 | kubelet.go:127 | Pod terminated 300s timeout | Ready/ContainersReady left True on terminated pod | Fix committed |
 
-## Fixes Committed (Not Yet Deployed)
+## Fixes Committed During This Round (Not Yet Deployed)
 
-1. **Init container condition message** (0a3bf2f) — K8s format "containers with incomplete status: [name]"
-2. **Indexed job hostname** (31a3f95) — Set hostname to {job-name}-{index} for indexed jobs
-3. **Webhook rustls + diagnostics** (6ec67e4) — rustls TLS, connect timeout, error cause chain
-4. **CRD status update retry** (70c2cda) — 3-attempt retry with logging
-5. **StatefulSet updateRevision** (52594bc) — Compute revision hash in API update handler
-6. **Shell substitution preservation** (21a8349) — Only expand $(VAR) for defined env vars
-7. **StatefulSet graceful scale-down** (b0a3215) — Set deletionTimestamp instead of direct delete
-8. **RC pod labels from selector** (ecae49f) — Fall back to selector labels when template has none
-9. **Job CAS refresh** (b1ef595) — Re-read job before status update to get fresh resourceVersion
-10. **Secret volume cleanup** (4895c6c) — Remove volume files when optional secret is deleted
-11. **Ephemeral container statuses** (f2e1dd8) — Report ephemeral container Running/Terminated state
+17. **StatefulSet readiness check on scale-down** (9b4ba30) — halt scale-down when remaining pods not Ready
+18. **Terminated pod conditions** (002eb90) — set Ready/ContainersReady to False when pod terminates
 
-## Platform Limitations (Unfixable on Docker Desktop)
+## Deployed Fixes (This Round)
 
-- **iptables DNAT**: Service traffic via ClusterIP/NodePort doesn't work (~4 tests)
-- **Bind mount permissions**: Docker Desktop doesn't preserve Unix permissions (~2 tests)
-- **PriorityClass isolation**: Cluster-scoped resources persist between tests (~1 test)
+16 fixes from round 119 analysis deployed at start of round 120.
+
+## Known Limitations
+
+- **Bind mount permissions**: Docker Desktop virtiofs strips group/other write bits (~2 tests)
+- **kubectl protobuf**: OpenAPI protobuf encoding not implemented (~1 test)
 
 ## Progress History
 
@@ -54,4 +32,5 @@
 |-------|------|------|-------|------|
 | 110 | 283 | 158 | 441 | 64.2% |
 | 118 | 299 | 142 | 441 | 67.8% |
-| 119 | ~21 | ~30 | ~51/441 | ~41% (in progress, pre-fix) |
+| 119 | ~21 | ~30 | ~51/441 | ~41% (partial, pre-fix baseline) |
+| 120 | 4 | 5 | 9/441 | 44% (in progress) |
