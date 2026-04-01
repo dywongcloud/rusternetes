@@ -553,6 +553,10 @@ where
         params.timeout_seconds,
         params.allow_watch_bookmarks.unwrap_or(false)
     );
+    info!(
+        "  Watch params: rv={:?}, sendInitialEvents={:?}, labelSelector={:?}",
+        params.resource_version, params.send_initial_events, params.label_selector
+    );
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user.clone(), "watch", resource_type)
