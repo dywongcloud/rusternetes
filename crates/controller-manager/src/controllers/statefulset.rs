@@ -92,10 +92,18 @@ impl<S: Storage> StatefulSetController<S> {
 
         // Filter out terminated (Failed/Succeeded) pods — only count active pods as replicas
         statefulset_pods.retain(|pod| {
-            !matches!(
+            // Exclude terminated pods
+            if matches!(
                 pod.status.as_ref().and_then(|s| s.phase.as_ref()),
                 Some(Phase::Failed) | Some(Phase::Succeeded)
-            )
+            ) {
+                return false;
+            }
+            // Exclude pods marked for deletion (deletionTimestamp set)
+            if pod.metadata.deletion_timestamp.is_some() {
+                return false;
+            }
+            true
         });
 
         // Sort pods by ordinal index
@@ -179,19 +187,30 @@ impl<S: Storage> StatefulSetController<S> {
                 info!("Created pod {}-{}", name, i);
             }
         } else if current_replicas > desired_replicas {
-            // Scale down: delete ONE pod at a time in reverse order.
-            // K8s StatefulSet scales down one pod per reconcile cycle,
-            // waiting for each to fully terminate before deleting the next.
+            // Scale down: mark ONE pod at a time for deletion in reverse order.
+            // Set deletionTimestamp instead of direct delete — the kubelet handles
+            // graceful termination and actual deletion, matching real K8s behavior.
             let i = current_replicas - 1;
             let pod_name = format!("{}-{}", name, i);
             let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
-            self.storage.delete(&pod_key).await?;
-            info!(
-                "Scale down: deleted pod {} ({} -> {})",
-                pod_name,
-                current_replicas,
-                current_replicas - 1
-            );
+            match self.storage.get::<Pod>(&pod_key).await {
+                Ok(mut pod) => {
+                    if pod.metadata.deletion_timestamp.is_none() {
+                        pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
+                        let _ = self.storage.update(&pod_key, &pod).await;
+                        info!(
+                            "Scale down: marked pod {} for deletion ({} -> {})",
+                            pod_name, current_replicas, current_replicas - 1
+                        );
+                    }
+                }
+                Err(_) => {
+                    info!(
+                        "Scale down: pod {} already deleted ({} -> {})",
+                        pod_name, current_replicas, current_replicas - 1
+                    );
+                }
+            }
         }
 
         // Rolling update: if replica count matches but pods have old revision, delete one at a time.
