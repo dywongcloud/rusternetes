@@ -132,6 +132,24 @@ impl<S: Storage> ReplicationControllerController<S> {
         );
 
         // Filter pods that match this replicationcontroller's selector
+        // Log pod/selector matching for debugging
+        if all_pods.len() > 0 {
+            info!(
+                "RC {}/{} selector={:?}, checking {} pods",
+                namespace, rc.metadata.name, rc.spec.selector, all_pods.len()
+            );
+            for p in &all_pods {
+                let pod_labels = p.metadata.labels.as_ref();
+                let matches = self.matches_selector(p, rc);
+                if !matches {
+                    debug!(
+                        "Pod {} labels={:?} does NOT match selector",
+                        p.metadata.name, pod_labels
+                    );
+                }
+            }
+        }
+
         let rc_pods: Vec<Pod> = all_pods
             .into_iter()
             .filter(|p| {
