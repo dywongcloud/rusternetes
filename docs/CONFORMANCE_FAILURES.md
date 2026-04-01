@@ -26,10 +26,12 @@
 - EmptyDir/Secret permissions (~8): macOS bind mount umask
 - kubectl protobuf (~8): Need real K8s OpenAPI protobuf encoding
 
-### Need Investigation (~30 tests)
-- Preemption/scheduling (~5): Watch cancel loops from previous tests, scheduler predicates
+### Fixed (not yet deployed)
+- Preemption/scheduling: FIXED 88f9c37 — stale webhook configs cleaned up on namespace delete
+- Deployment readiness: FIXED 36ff92b — count pods directly instead of stale RS status
+
+### Remaining (~25 tests, need investigation)
 - DaemonSet (~2): Pod creation not happening on all nodes, rolling update
-- Deployment (~3): Pods not becoming available (readiness timing)
 - RC/ReplicaSet (~5): Pod connectivity, rate limiter exhaustion
 - Namespace (~1): Deleted before test observes Terminating
 - ConfigMap/Secret volume (~2): Update not reflected within 240s timeout
@@ -37,6 +39,7 @@
 - Aggregator (~1): Sample API server pod not ready (multi-container startup)
 - DNS rate limiter (~6): Cascading from informer retries
 - Pod latency (~4): Docker Desktop + controller intervals
+- Other (~3): Various
 
 ## Progress History
 
