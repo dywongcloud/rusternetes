@@ -3278,18 +3278,6 @@ impl ContainerRuntime {
                                 "mode=1777".to_string()
                             };
                             tmpfs_mounts.insert(mount.mount_path.clone(), opts);
-                        } else if empty_dir_volumes.contains(&mount.name)
-                            && expanded_sub_path.is_none()
-                        {
-                            // Use a Docker named volume for emptyDir instead of a host bind mount.
-                            // Host bind mounts on Docker Desktop macOS lose permission bits
-                            // through virtiofs (0666→0644). Docker named volumes live inside the
-                            // Linux VM and support proper Unix permissions. They're also shared
-                            // between containers that reference the same volume name.
-                            let vol_name = format!("rusternetes-emptydir-{}-{}", pod_name, mount.name);
-                            let ro_suffix = if read_only { ":ro" } else { "" };
-                            let bind = format!("{}:{}{}", vol_name, mount.mount_path, ro_suffix);
-                            binds.push(bind);
                         } else {
                             let ro_suffix = if read_only { ":ro" } else { "" };
                             let bind = format!(
