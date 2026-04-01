@@ -145,6 +145,28 @@ impl Scheduler {
                         "No suitable node found for pod {} (even with preemption)",
                         pod.metadata.name
                     );
+                    // Set pod condition to Unschedulable so tests can observe it
+                    let pod_ns = pod.metadata.namespace.as_deref().unwrap_or("default");
+                    let pod_key = rusternetes_storage::build_key("pods", Some(pod_ns), &pod.metadata.name);
+                    if let Ok(mut p) = self.storage.get::<Pod>(&pod_key).await {
+                        let condition = rusternetes_common::resources::PodCondition {
+                            condition_type: "PodScheduled".to_string(),
+                            status: "False".to_string(),
+                            reason: Some("Unschedulable".to_string()),
+                            message: Some(format!(
+                                "0/{} nodes are available: no node matched the scheduling constraints",
+                                nodes.len()
+                            )),
+                            last_transition_time: Some(chrono::Utc::now()),
+                            observed_generation: None,
+                        };
+                        if let Some(ref mut status) = p.status {
+                            let conditions = status.conditions.get_or_insert_with(Vec::new);
+                            conditions.retain(|c| c.condition_type != "PodScheduled");
+                            conditions.push(condition);
+                        }
+                        let _ = self.storage.update(&pod_key, &p).await;
+                    }
                 }
             }
         }
