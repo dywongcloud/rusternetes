@@ -133,6 +133,45 @@ pub async fn update(
 
     let key = build_key("statefulsets", Some(&namespace), &name);
 
+    // Compute the updateRevision from the new template. If the template changed,
+    // this produces a different hash. K8s conformance tests expect updateRevision
+    // to be set immediately after an update, not on the next controller cycle.
+    {
+        use sha2::{Digest, Sha256};
+        let tmpl_value = serde_json::to_value(&statefulset.spec.template).unwrap_or_default();
+        let serialized = serde_json::to_string(&tmpl_value).unwrap_or_default();
+        let hash = Sha256::digest(serialized.as_bytes());
+        let new_revision = format!(
+            "{:010x}",
+            u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8]))
+        );
+
+        let status = statefulset.status.get_or_insert_with(|| {
+            rusternetes_common::resources::StatefulSetStatus {
+                replicas: 0,
+                ready_replicas: None,
+                current_replicas: None,
+                updated_replicas: None,
+                available_replicas: None,
+                collision_count: None,
+                observed_generation: None,
+                current_revision: None,
+                update_revision: None,
+                conditions: None,
+            }
+        });
+        let old_update_rev = status.update_revision.clone();
+        status.update_revision = Some(new_revision.clone());
+        // If currentRevision wasn't set yet, initialize it to the updateRevision
+        if status.current_revision.is_none() {
+            status.current_revision = Some(new_revision);
+        }
+        info!(
+            "StatefulSet {}/{} update: old_updateRevision={:?}, new_updateRevision={:?}",
+            namespace, name, old_update_rev, status.update_revision
+        );
+    }
+
     // Try to update first, if not found then create (upsert behavior)
     let result = match state.storage.update(&key, &statefulset).await {
         Ok(updated) => updated,
