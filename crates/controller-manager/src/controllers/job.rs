@@ -229,7 +229,11 @@ impl<S: Storage> JobController<S> {
                 observed_generation: job.metadata.generation,
             });
             let key = format!("/registry/jobs/{}/{}", namespace, name);
-            self.storage.update(&key, job).await?;
+            // Refresh RV before update to avoid CAS conflict
+            if let Ok(mut fresh) = self.storage.get::<Job>(&key).await {
+                fresh.status = job.status.clone();
+                self.storage.update(&key, &fresh).await?;
+            }
             return Ok(());
         }
 
@@ -277,7 +281,11 @@ impl<S: Storage> JobController<S> {
                         observed_generation: job.metadata.generation,
                     });
                     let key = format!("/registry/jobs/{}/{}", namespace, name);
-                    self.storage.update(&key, job).await?;
+                    // Refresh RV before update to avoid CAS conflict
+                    if let Ok(mut fresh) = self.storage.get::<Job>(&key).await {
+                        fresh.status = job.status.clone();
+                        self.storage.update(&key, &fresh).await?;
+                    }
                     return Ok(());
                 }
             }
@@ -656,7 +664,11 @@ impl<S: Storage> JobController<S> {
                 observed_generation: job.metadata.generation,
             });
             let key = format!("/registry/jobs/{}/{}", namespace, name);
-            self.storage.update(&key, job).await?;
+            // Refresh RV before update to avoid CAS conflict
+            if let Ok(mut fresh) = self.storage.get::<Job>(&key).await {
+                fresh.status = job.status.clone();
+                self.storage.update(&key, &fresh).await?;
+            }
             return Ok(());
         }
 
@@ -874,25 +886,40 @@ impl<S: Storage> JobController<S> {
                 job.status.as_ref().and_then(|s| s.conditions.as_ref())
             );
         }
-        match self.storage.update(&key, job).await {
-            Ok(_) => {
-                if has_complete || has_failed {
-                    info!("Job {}/{} status update persisted successfully", namespace, name);
-                    // Verify by reading back
-                    match self.storage.get::<Job>(&key).await {
-                        Ok(read_back) => {
-                            let rb_conditions = read_back.status.as_ref().and_then(|s| s.conditions.as_ref());
-                            info!("Job {}/{} read-back conditions: {:?}", namespace, name, rb_conditions);
+        // Refresh resourceVersion before update to avoid CAS conflicts.
+        // The job's RV may be stale from the list() at the start of reconcile_all().
+        // Other components (API server, kubelet) may have modified the job since then.
+        let status_to_save = job.status.clone();
+        for attempt in 0..3 {
+            match self.storage.get::<Job>(&key).await {
+                Ok(mut fresh_job) => {
+                    fresh_job.status = status_to_save.clone();
+                    match self.storage.update(&key, &fresh_job).await {
+                        Ok(_) => {
+                            if has_complete || has_failed {
+                                info!(
+                                    "Job {}/{} status update persisted (attempt {})",
+                                    namespace, name, attempt + 1
+                                );
+                            }
+                            break;
                         }
                         Err(e) => {
-                            error!("Job {}/{} read-back failed: {}", namespace, name, e);
+                            warn!(
+                                "Job {}/{} status update CAS conflict (attempt {}): {}",
+                                namespace, name, attempt + 1, e
+                            );
+                            if attempt == 2 {
+                                return Err(e.into());
+                            }
                         }
                     }
                 }
-            }
-            Err(e) => {
-                error!("Job {}/{} status update FAILED: {}", namespace, name, e);
-                return Err(e.into());
+                Err(e) => {
+                    // Job was deleted between list and update
+                    debug!("Job {}/{} no longer exists: {}", namespace, name, e);
+                    break;
+                }
             }
         }
 
