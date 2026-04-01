@@ -3761,9 +3761,10 @@ impl ContainerRuntime {
                 .iter()
                 .map(|item| {
                     let mut result = item.clone();
+                    let mut search_from = 0;
                     loop {
-                        let start = match result.find("$(") {
-                            Some(s) => s,
+                        let start = match result[search_from..].find("$(") {
+                            Some(s) => search_from + s,
                             None => break,
                         };
                         let end = match result[start..].find(')') {
@@ -3771,12 +3772,22 @@ impl ContainerRuntime {
                             None => break,
                         };
                         let var_name = &result[start + 2..end];
-                        let value = resolved_env_pairs
+                        // Only expand $(VAR) if VAR matches a defined env var.
+                        // Unmatched references like $(id -u) are shell command
+                        // substitutions and must be passed through literally.
+                        if let Some((_, value)) = resolved_env_pairs
                             .iter()
                             .find(|(k, _)| k == var_name)
-                            .map(|(_, v)| v.as_str())
-                            .unwrap_or("");
-                        result.replace_range(start..end + 1, value);
+                        {
+                            let value = value.clone();
+                            result.replace_range(start..end + 1, &value);
+                            // Don't advance search_from — the replacement might
+                            // contain more $(VAR) references to expand
+                        } else {
+                            // Not a K8s env var — skip past this $( to avoid
+                            // infinite loop and preserve the literal text
+                            search_from = start + 2;
+                        }
                     }
                     result
                 })
