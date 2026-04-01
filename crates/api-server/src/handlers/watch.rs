@@ -379,15 +379,9 @@ where
                                     // For the "re-add" case (label changed back to match), we
                                     // rely on the ADDED event from the initial list being sufficient.
                                     let matches_labels = matches_label_selector(object.metadata(), &label_selector);
-                                    let event_type = if label_selector.is_some() {
-                                        if !matches_labels {
-                                            WatchEventType::Deleted
-                                        } else {
-                                            // Send as ADDED for label-filtered watches so objects
-                                            // that start matching appear correctly. The client
-                                            // deduplicates ADDED events for objects it already knows.
-                                            WatchEventType::Added
-                                        }
+                                    let event_type = if label_selector.is_some() && !matches_labels {
+                                        // Labels no longer match — send synthetic DELETED
+                                        WatchEventType::Deleted
                                     } else {
                                         WatchEventType::Modified
                                     };
@@ -783,15 +777,9 @@ where
                                     // For the "re-add" case (label changed back to match), we
                                     // rely on the ADDED event from the initial list being sufficient.
                                     let matches_labels = matches_label_selector(object.metadata(), &label_selector);
-                                    let event_type = if label_selector.is_some() {
-                                        if !matches_labels {
-                                            WatchEventType::Deleted
-                                        } else {
-                                            // Send as ADDED for label-filtered watches so objects
-                                            // that start matching appear correctly. The client
-                                            // deduplicates ADDED events for objects it already knows.
-                                            WatchEventType::Added
-                                        }
+                                    let event_type = if label_selector.is_some() && !matches_labels {
+                                        // Labels no longer match — send synthetic DELETED
+                                        WatchEventType::Deleted
                                     } else {
                                         WatchEventType::Modified
                                     };
