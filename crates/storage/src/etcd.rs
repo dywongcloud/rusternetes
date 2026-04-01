@@ -18,7 +18,15 @@ pub struct EtcdStorage {
 impl EtcdStorage {
     /// Create a new EtcdStorage instance
     pub async fn new(endpoints: Vec<String>) -> Result<Self> {
-        let client = Client::connect(endpoints, None)
+        let options = Some(
+            etcd_client::ConnectOptions::new()
+                .with_keep_alive(
+                    std::time::Duration::from_secs(10),
+                    std::time::Duration::from_secs(3),
+                )
+                .with_keep_alive_while_idle(true),
+        );
+        let client = Client::connect(endpoints, options)
             .await
             .map_err(|e| Error::Storage(format!("Failed to connect to etcd: {}", e)))?;
 
