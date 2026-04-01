@@ -378,6 +378,11 @@ impl<S: Storage> ReplicationControllerController<S> {
             }),
         };
 
+        // Check ResourceQuota before creating pod
+        super::check_resource_quota(&*self.storage, namespace)
+            .await
+            .map_err(|e| rusternetes_common::Error::Forbidden(e.to_string()))?;
+
         let key = build_key("pods", Some(namespace), &pod_name);
         self.storage.create(&key, &pod).await?;
 

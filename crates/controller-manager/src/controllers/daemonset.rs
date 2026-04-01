@@ -597,6 +597,9 @@ impl<S: Storage> DaemonSetController<S> {
             }),
         };
 
+        // Check ResourceQuota before creating pod
+        super::check_resource_quota(&*self.storage, namespace).await?;
+
         let key = format!("/registry/pods/{}/{}", namespace, pod_name);
         self.storage.create(&key, &pod).await?;
 

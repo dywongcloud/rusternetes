@@ -30,3 +30,34 @@ pub mod ttl_controller;
 pub mod volume_expansion;
 pub mod volume_snapshot;
 pub mod vpa;
+
+/// Check ResourceQuota before creating a pod in a namespace.
+/// Returns Ok(()) if quota allows, Err with quota exceeded message otherwise.
+pub async fn check_resource_quota<S: rusternetes_storage::Storage>(
+    storage: &S,
+    namespace: &str,
+) -> anyhow::Result<()> {
+    let quota_prefix = format!("/registry/resourcequotas/{}/", namespace);
+    let quotas: Vec<serde_json::Value> = storage.list(&quota_prefix).await.unwrap_or_default();
+    for quota in &quotas {
+        if let Some(hard) = quota.pointer("/spec/hard") {
+            for limit_key in ["pods", "count/pods"] {
+                if let Some(limit_str) = hard.get(limit_key).and_then(|v| v.as_str()) {
+                    let limit: i64 = limit_str.parse().unwrap_or(i64::MAX);
+                    let pod_prefix = format!("/registry/pods/{}/", namespace);
+                    let current: Vec<serde_json::Value> =
+                        storage.list(&pod_prefix).await.unwrap_or_default();
+                    if current.len() as i64 >= limit {
+                        return Err(anyhow::anyhow!(
+                            "exceeded quota: {}, requested: 1, used: {}, limited: {}",
+                            limit_key,
+                            current.len(),
+                            limit_str
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
