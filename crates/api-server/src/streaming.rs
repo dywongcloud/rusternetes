@@ -141,8 +141,10 @@ pub async fn handle_ws_exec(
     // Also send empty stderr for completeness
     let _ = socket.send(Message::Binary(vec![1u8].into())).await;
     let _ = socket.send(Message::Binary(vec![2u8].into())).await;
-    // Small delay to ensure the client processes stdout/stderr before status
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    // Delay to ensure the client receives and processes stdout/stderr frames
+    // before the status frame. Without this, the WebSocket might batch all
+    // frames together and the client sees channel 3 before channel 1.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     // Send exit code as status on error channel (channel 3)
     let exit_code = docker
