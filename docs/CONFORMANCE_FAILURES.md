@@ -2,51 +2,53 @@
 
 **Round 117** | IN PROGRESS | 133/441 done | 89 passed, 44 failed (66.9%)
 
-## Not Yet Deployed Fixes (17 expected additional passes)
+## Pending Fixes (for next deploy)
 
-| Fix | Commit | Tests |
-|-----|--------|-------|
-| Watch MODIFIED→ADDED label selector bug | ce2f9d3 | IngressClass, Ingress, VAP(2), FlowSchema, EndpointSlice = 6 |
-| Duplicate LimitRange removal | 3215a6c | LimitRange = 1 |
-| Webhook TLS accept self-signed | d6b0c60 | webhook(4) = 4 |
-| CRD async status update | 213585c | CRD(3) = 3 |
-| Field validation duplicate format | c182bfd | field_validation = 1 |
-| kubectl Content-Type | b2f9538 | builder = 1 |
-| CSR condition String type | 319466f | certificates = 1 |
-| PDB DisruptionBudget cause | 2bc8ef4 | disruption = 1 |
+| Fix | Commit | Tests Fixed |
+|-----|--------|-------------|
+| Watch MODIFIED→ADDED label selector | ce2f9d3 | 6 (IngressClass, Ingress, VAP×2, FlowSchema, EndpointSlice) |
+| Duplicate LimitRange removal | 3215a6c | 1 (LimitRange) |
+| Webhook TLS self-signed certs | d6b0c60 | 4 (webhook×4) |
+| CRD async status update | 213585c | 3 (CRD×3) |
+| Field validation format | c182bfd | 1 |
+| kubectl Content-Type | b2f9538 | 1 |
+| CSR condition String type | 319466f | 1 |
+| PDB DisruptionBudget cause | 2bc8ef4 | 1 |
+| etcd compaction 1m→10m | 10bc590 | 1 (watch.go:223) |
+| CreateContainerError status preserved | 8af3c12 | 1 (expansion.go:419) |
+| StatefulSet revision logging | 8af3c12 | diagnostic |
+| **Total** | | **~20 tests** |
 
-## Current Failures — 41 total, 38 unique locations
+## Remaining Failures After Deploy
 
-### Fixed by pending deploys (~17 tests)
-- ingressclass.go:375, ingress.go:232, validatingadmissionpolicy.go:814,270
-- flowcontrol.go:661, endpointslice.go:409
-- field_validation.go:105, builder.go:97, certificates.go:372
-- crd_publish_openapi.go:161,77,451
-- webhook.go:601,1194,1334,1631
-- limit_range.go:162, disruption.go:372
+### Docker Desktop limitations (cannot fix)
+| Test | Issue |
+|------|-------|
+| service.go:1450,1571,4291 | iptables DNAT bypassed by userspace networking |
+| output.go:263 | macOS bind mount umask (0755 not 0777) |
+| pre_stop.go:153 | Requires service networking |
+| hostport.go:219 | Docker Desktop doesn't support hostIP-specific port binding |
 
-### Docker Desktop limitations (~5 tests)
-- service.go:1450,1571,4291 — iptables DNAT bypassed by userspace networking
-- output.go:263 — macOS bind mount umask
-- pre_stop.go:153 — service networking required
+### Pod startup latency / rate limiting
+| Test | Issue |
+|------|-------|
+| rc.go:538,623 | Client rate limiter exhausted from informer retries |
+| replica_set.go:232,738 | Pod connectivity / timed out |
+| wait.go:63 | Rate limiter |
+| preemption.go:1025 | Replicas not available in time |
+| dns_common.go:476 | Rate limiter from informer retries |
 
-### Pod latency / rate limiting (~8 tests)
-- hostport.go:219 — init container failed (hostPort conflict)
-- rc.go:538,623 — rate limiter exhausted
-- replica_set.go:232,738 — pod connectivity / timed out
-- wait.go:63 — rate limiter
-- preemption.go:1025 — replicas unavailable
-- dns_common.go:476 — rate limiter exhausted
+### StatefulSet rolling update
+| Test | Issue |
+|------|-------|
+| statefulset.go:957,1092 | Template hash unchanged after patch — logging added (8af3c12) |
+| statefulset.go:2479 | Timing race at scale boundary |
 
-### StatefulSet rolling update (~3 tests)
-- statefulset.go:957,1092 — template hash not changing after patch
-- statefulset.go:2479 — timing race
-
-### Other (~5 tests)
-- job.go:974 — adopt/release CAS (fix pending: 2bc8ef4)
-- watch.go:223 — second watch notification not delivered
-- expansion.go:419 — subpath CreateContainerError not observed by test
-- aggregator.go:359 — sample API server pod not ready
+### Complex test requirements
+| Test | Issue |
+|------|-------|
+| aggregator.go:359 | Sample API server pod needs TLS certs + etcd sidecar |
+| job.go:974 | Pod adopt/release — CAS retry added (2bc8ef4) |
 
 ## Progress History
 
@@ -54,5 +56,5 @@
 |-------|------|------|-------|------|
 | 110 | 283 | 158 | 441 | 64.2% |
 | 116 | 128 | 94 | 222/441 | 57.7% |
-| 117 | 87 | 41 | 128/441 | 68.0% (in progress) |
-| 117+deploy | ~104 | ~24 | ~128/441 | ~81% (projected) |
+| 117 | 89 | 44 | 133/441 | 66.9% (in progress) |
+| 118 (projected) | ~109 | ~24 | ~133 | ~82% |
