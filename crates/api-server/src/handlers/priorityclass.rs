@@ -248,20 +248,21 @@ pub async fn patch(
     body: axum::body::Bytes,
 ) -> rusternetes_common::Result<axum::Json<PriorityClass>> {
     let name = path.0.clone();
-    // Get existing value before patch
+    // Get existing value before patch to check immutability
     let key = build_key("priorityclasses", None, &name);
-    let existing_value = state
+    let existing_pc = state
         .storage
         .get::<PriorityClass>(&key)
         .await
-        .ok()
-        .map(|pc| pc.value);
+        .ok();
+    let existing_value = existing_pc.as_ref().map(|pc| pc.value);
 
-    // Delegate to generic patch
+    // Apply the patch to compute the result without writing yet.
+    // We need to check immutability BEFORE persisting.
     let result = crate::handlers::generic_patch::patch_cluster_resource::<PriorityClass>(
-        state,
+        state.clone(),
         auth_ctx,
-        axum::extract::Path(name),
+        axum::extract::Path(name.clone()),
         query,
         headers,
         body,
@@ -270,9 +271,14 @@ pub async fn patch(
     )
     .await?;
 
-    // Validate immutable field wasn't changed
+    // Validate immutable field wasn't changed — if it was, revert by
+    // writing back the original value
     if let Some(old_value) = existing_value {
         if result.0.value != old_value {
+            // Revert: restore original PriorityClass
+            if let Some(original) = existing_pc {
+                let _ = state.storage.update(&key, &original).await;
+            }
             return Err(rusternetes_common::Error::InvalidResource(format!(
                 "PriorityClass.value: Invalid value: \"{}\": field is immutable",
                 result.0.value
