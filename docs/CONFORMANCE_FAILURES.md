@@ -1,60 +1,40 @@
 # Conformance Issue Tracker
 
-**Round 118** | COMPLETE | 299/441 passed, 142 failed (67.8%)
+**Round 119** | IN PROGRESS | 8/441 done | 6 passed, 2 failed (75.0%)
+Zero watch failures. All round 118 fixes deployed.
 
-## Fixes Ready for Round 119 (~48 additional passes expected)
+## Current Failures (Round 119)
 
-| Fix | Commit | Expected Tests |
-|-----|--------|----------------|
-| etcd gRPC keepalive | 4991385 | ~12 (CRD/job/RC/CSI watch timeouts) |
-| ConfigMap webhook pipeline | fac86a3 | ~12 (webhook readiness tests) |
-| SA token bound in Secret volume | 0a30348 | ~3 |
-| ResourceQuota enforcement | 7985cf9 | ~2 |
-| CrashLoopBackOff backoff | fa0122b | ~1 |
-| Stale webhook cleanup on NS delete | 88f9c37 | ~5 (preemption/scheduling) |
-| Deployment direct pod count | 36ff92b | ~3 |
-| Namespace lifecycle split | 2a0ff37 | ~1 |
-| StatefulSet scale-down | 805c044 | ~1 |
-| Scheduler Unschedulable | d165195 | ~2 |
-| Sysctl all errors | d165195 | ~1 |
-| LimitRange pod defaulting | c99e0db | ~1 |
-| CreateContainerError preserved | 8af3c12 | ~1 |
-| WebSocket exec delay | 4d7f7e3 | ~1 |
-| StatefulSet rolling update logging | various | diagnostic |
-| **Total** | | **~48** |
+| # | Test | Error | Status |
+|---|------|-------|--------|
+| 1 | statefulset.go:2479 | Scaled 3->2 timing race | Known — scale-down fix deployed but timing still tight |
+| 2 | pod_client.go:216 | Pod creation timeout 60s | Pod startup latency |
 
-## Remaining Issues (~20 tests)
+## Deployed Fixes This Round
 
-### Platform Limitations (~26 tests, cannot fix)
-- Service networking (~10): Docker Desktop iptables DNAT bypassed
-- EmptyDir/Secret permissions (~8): macOS bind mount umask
-- kubectl protobuf (~8): Need real K8s OpenAPI protobuf encoding
+56 fixes deployed including:
+- etcd gRPC keepalive (4991385)
+- ConfigMap webhook pipeline (fac86a3)
+- SA token bound in Secret volume (0a30348)
+- ResourceQuota enforcement in all controllers (7985cf9)
+- CrashLoopBackOff exponential backoff (fa0122b)
+- Stale webhook config cleanup on NS delete (88f9c37)
+- Deployment direct pod counting (36ff92b)
+- Namespace two-cycle finalizer removal (2a0ff37)
+- DaemonSet updatedNumberScheduled fix (9451c4e)
+- Volume refresh dir creation + key deletion (9451c4e)
+- Event reportingController alias (2d6a5e1)
+- StatefulSet scale-down one-at-a-time (805c044)
+- Scheduler Unschedulable condition (d165195)
+- Sysctl all errors reported (d165195)
+- LimitRange pod defaulting separation (c99e0db)
+- CreateContainerError status preserved (8af3c12)
+- WebSocket exec channel delay (4d7f7e3)
 
-### Latency/Timing (~12 tests)
-- DNS rate limiter (~6): Cascading from informer retries — improves with keepalive
-- Pod startup latency (~4): Docker Desktop + controller intervals
-- RC/ReplicaSet (~2): Rate limiter exhaustion — improves with keepalive
+## Progress History
 
-### Fixed (additional, not yet deployed)
-- DaemonSet: FIXED 9451c4e — updatedNumberScheduled counts current-hash pods (~2 tests)
-- Volume refresh: FIXED 9451c4e — creates dirs, deletes removed keys (~2 tests)
-- Namespace: FIXED 2a0ff37 — split finalizer across cycles (~1 test)
-- Deployment: FIXED 36ff92b — direct pod count (~3 tests)
-- Webhooks: FIXED 88f9c37 — stale config cleanup (~5 tests)
-
-### Fixed (additional)
-- Events: FIXED 2d6a5e1 — reportingController alias + field selector
-- DaemonSet: FIXED 9451c4e — updatedNumberScheduled
-- Volume refresh: FIXED 9451c4e — optional volume dirs + key deletion
-- Namespace: FIXED 2a0ff37 — two-cycle finalizer removal
-
-### Remaining (~3 tests)
-- Aggregator (~1): Multi-container pod localhost communication
-- Other (~2): Edge cases
-
-## Projected Results
-
-| Round | Pass | Fail | Rate |
-|-------|------|------|------|
-| 118 | 299 | 142 | 67.8% |
-| 119 | ~355 | ~86 | **~80%** |
+| Round | Pass | Fail | Total | Rate |
+|-------|------|------|-------|------|
+| 110 | 283 | 158 | 441 | 64.2% |
+| 118 | 299 | 142 | 441 | 67.8% |
+| 119 | 6 | 2 | 8/441 | 75.0% (in progress) |
