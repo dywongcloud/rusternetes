@@ -416,7 +416,8 @@ pub fn validate_strict_fields(
     if let Ok(body_str) = std::str::from_utf8(original_body) {
         let dup_fields = find_all_duplicate_json_keys(body_str);
         for dup_field in &dup_fields {
-            error_parts.push(format!("json: duplicate field \"{}\"", dup_field));
+            // K8s reports duplicate fields as "unknown field" (not "duplicate field")
+            error_parts.push(format!("json: unknown field \"{}\"", dup_field));
         }
     }
 
@@ -644,8 +645,8 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
-            err_msg.contains("duplicate field"),
-            "Expected 'duplicate field' in error: {}",
+            err_msg.contains("unknown field"),
+            "Expected 'unknown field' in error: {}",
             err_msg
         );
         assert!(
@@ -712,8 +713,8 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
-            err_msg.contains("duplicate field"),
-            "Expected 'duplicate field' in error: {}",
+            err_msg.contains("unknown field"),
+            "Expected 'unknown field' in error: {}",
             err_msg
         );
         assert!(
@@ -743,8 +744,8 @@ mod tests {
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
             err_msg.contains(r#"strict decoding error:"#)
-                && err_msg.contains(r#"duplicate field "name""#),
-            "Error format must match K8s duplicate field detection: {}",
+                && err_msg.contains(r#"unknown field "name""#),
+            "Error format must match K8s unknown field detection: {}",
             err_msg
         );
     }
@@ -779,8 +780,8 @@ mod tests {
             err_msg
         );
         assert!(
-            err_msg.contains(r#"json: duplicate field "spec.replicas""#),
-            "Expected json: duplicate field error: {}",
+            err_msg.contains(r#"json: unknown field "spec.replicas""#),
+            "Expected json: unknown field error: {}",
             err_msg
         );
         // Should be combined in a single strict decoding error
