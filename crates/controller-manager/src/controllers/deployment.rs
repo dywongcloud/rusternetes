@@ -627,24 +627,26 @@ impl<S: Storage> DeploymentController<S> {
         let mut updated_replicas = 0;
 
         for rs in &owned_replicasets {
-            if let Some(status) = &rs.status {
-                total_replicas += status.replicas;
-                ready_replicas += status.ready_replicas;
-                available_replicas += status.available_replicas;
+            // Always count pods directly for the most accurate status.
+            // RS status may be stale if the RS controller hasn't run recently.
+            let (pod_total, pod_ready, pod_available) =
+                self.count_pods_for_replicaset(rs).await;
 
-                // Count replicas from ReplicaSets matching current template as "updated"
-                if self.replicaset_matches_template(rs, deployment) {
-                    updated_replicas += status.replicas;
-                }
+            // Use the higher of RS status or direct pod count
+            if let Some(status) = &rs.status {
+                total_replicas += std::cmp::max(status.replicas, pod_total);
+                ready_replicas += std::cmp::max(status.ready_replicas, pod_ready);
+                available_replicas += std::cmp::max(status.available_replicas, pod_available);
             } else {
-                // RS has no status yet — count pods directly as a fallback
-                let (pod_total, pod_ready, pod_available) =
-                    self.count_pods_for_replicaset(rs).await;
                 total_replicas += pod_total;
                 ready_replicas += pod_ready;
                 available_replicas += pod_available;
+            }
 
-                if self.replicaset_matches_template(rs, deployment) {
+            if self.replicaset_matches_template(rs, deployment) {
+                if let Some(status) = &rs.status {
+                    updated_replicas += std::cmp::max(status.replicas, pod_total);
+                } else {
                     updated_replicas += pod_total;
                 }
             }
