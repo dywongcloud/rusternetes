@@ -1,42 +1,55 @@
 # Conformance Issue Tracker
 
-**Round 118** | IN PROGRESS | 30/441 done | 20 passed, 10 failed (66.7%)
+**Round 118** | IN PROGRESS | 98/441 done | 64 passed, 34 failed (65.3%)
 
-## Current Failures
+## Current Failures — 28 unique
 
-| # | Test | Error | Status |
-|---|------|-------|--------|
-| 1 | statefulset.go:2479 | Scaled 3->2 timing | FIXED 805c044 — not deployed |
-| 2 | job.go:1251 | Job Complete not observed (900s) | etcd watch stream may have ended |
-| 3 | predicates.go:1102 | Context deadline | FIXED d165195 — Unschedulable condition, not deployed |
-| 4 | output.go:263 | Perms 0755 | Docker Desktop limitation |
-| 5 | dns_common.go:476 | Rate limiter exhausted | Cascading from other failures |
-| 6 | statefulset.go:381 | status.replicas not updated to 0 | Controller status update latency |
-| 7 | sysctl.go:153 | Only first error reported | FIXED d165195 — report all errors, not deployed |
-| 8 | crd_publish_openapi.go:366 | CRD creation timeout | API server contention |
-| 9 | builder.go:97 | proto parse error | kubectl protobuf — not fixable without real protobuf |
-| 10 | pod_client.go:216 | Pod creation timeout 60s | Latency |
+### CRD creation timeouts (4 tests)
+- crd_publish_openapi.go:366, crd_watch.go:72, custom_resource_definition.go:288, field_validation.go:428
+- Root cause: CRD creation takes >30s under load
+- Potential fix: reduce CRD handler overhead
 
-## Pending Fixes (not yet deployed)
+### Service/network (Docker Desktop limitations) (3 tests)
+- proxy.go:271 — service proxy unreachable
+- util.go:182 — service networking
+- dns_common.go:476 — rate limiter from informer retries
 
-| Fix | Commit | Issue |
+### StatefulSet (3 tests)
+- statefulset.go:2479 — timing race (FIXED 805c044, not deployed)
+- statefulset.go:381 — status.replicas not updated
+- statefulset.go:1092 — rolling update not triggering
+
+### Webhook (3 tests)
+- webhook.go:1244, 1631, 2338 — webhook service reachability/TLS
+
+### Pod startup/latency (3 tests)
+- pod_client.go:216 — pod creation timeout
+- preemption.go:1025, 516 — replicas unavailable
+- replica_set.go:232 — pod connectivity
+
+### Pending fix (not deployed) (5 tests)
+- sysctl.go:153 — FIXED d165195 (report all errors)
+- predicates.go:1102 — FIXED d165195 (Unschedulable condition)
+- limit_range.go:141 — FIXED c99e0db (separate pod defaulting from LimitRange)
+- builder.go:97 — kubectl protobuf (not fixable without real protobuf)
+- expansion.go:419 — CreateContainerError status (FIXED 8af3c12)
+
+### Other (7 tests)
+- job.go:1251 — etcd watch stream ending (Complete not observed)
+- output.go:263 — Docker Desktop permissions
+- service_accounts.go:151,792 — SA token pod-name extra info
+- pods.go:600 — WebSocket exec channel ordering (status before stdout)
+- init_container.go:565 — init container failure handling
+
+## Pending Fixes (not deployed)
+
+| Fix | Commit | Tests |
 |-----|--------|-------|
-| StatefulSet one-at-a-time scale-down | 805c044 | #1 |
-| Scheduler Unschedulable condition | d165195 | #3 |
-| Sysctl validate all names | d165195 | #7 |
-| OpenAPI protobuf removed | d165195 | cleanup |
-
-## Key Results
-- **76.5% peak** early in run (dropped to 66.7% as harder tests ran)
-- Watch MODIFIED→ADDED fix (ce2f9d3): IngressClass, Ingress, VAP, FlowSchema, EndpointSlice ALL PASS
-- Webhook TLS fix (d6b0c60): webhook tests PASS
-- CRD async status (213585c): most CRD tests PASS
-- LimitRange duplicate removal (3215a6c): LimitRange PASSES
-- Field validation (c182bfd): PASSES
-- CSR String type (319466f): PASSES
-- PDB cause (2bc8ef4): PASSES
-- CoreDNS toleration: DNS survives taints
-- Zero watch cancel loops
+| StatefulSet one-at-a-time scale-down | 805c044 | statefulset.go:2479 |
+| Scheduler Unschedulable condition | d165195 | predicates.go:1102 |
+| Sysctl validate all names | d165195 | sysctl.go:153 |
+| LimitRange pod defaulting separation | c99e0db | limit_range.go:141 |
+| CreateContainerError preserved | 8af3c12 | expansion.go:419 |
 
 ## Progress History
 
@@ -45,4 +58,4 @@
 | 110 | 283 | 158 | 441 | 64.2% |
 | 116 | 128 | 94 | 222/441 | 57.7% |
 | 117 | 89 | 44 | 133/441 | 66.9% |
-| 118 | 20 | 10 | 30/441 | 66.7% (in progress) |
+| 118 | 64 | 34 | 98/441 | 65.3% (in progress) |
