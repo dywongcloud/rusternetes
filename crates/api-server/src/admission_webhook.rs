@@ -16,6 +16,7 @@ use rusternetes_common::{
 };
 use rusternetes_storage::Storage;
 use serde_json::Value;
+use std::error::Error as StdError;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
@@ -135,6 +136,7 @@ impl AdmissionWebhookClient {
     ) -> Result<AdmissionReviewResponse> {
         let client = reqwest::Client::builder()
             .timeout(timeout)
+            .connect_timeout(Duration::from_secs(5))
             .danger_accept_invalid_certs(true)
             .build()
             .map_err(|e| {
@@ -142,6 +144,13 @@ impl AdmissionWebhookClient {
             })?;
 
         let response = client.post(url).json(review).send().await.map_err(|e| {
+            // Build full error cause chain for diagnostics
+            let mut causes = Vec::new();
+            let mut source: Option<&dyn StdError> = StdError::source(&e);
+            while let Some(cause) = source {
+                causes.push(format!("{}", cause));
+                source = cause.source();
+            }
             let detail = if e.is_connect() {
                 "connection refused/failed"
             } else if e.is_timeout() {
@@ -151,9 +160,18 @@ impl AdmissionWebhookClient {
             } else {
                 "unknown"
             };
+            let cause_chain = if causes.is_empty() {
+                String::new()
+            } else {
+                format!(" causes=[{}]", causes.join(" -> "))
+            };
+            error!(
+                "Webhook call to {} failed: {} ({}){}",
+                url, e, detail, cause_chain
+            );
             rusternetes_common::Error::Network(format!(
-                "Webhook request failed: {} ({})",
-                e, detail
+                "Webhook request failed: {}",
+                e
             ))
         })?;
 
