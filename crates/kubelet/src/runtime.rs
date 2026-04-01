@@ -5510,33 +5510,46 @@ impl ContainerRuntime {
                 };
                 let secret_key =
                     rusternetes_storage::build_key("secrets", Some(namespace), secret_name);
-                if let Ok(secret) = storage
+                match storage
                     .get::<rusternetes_common::resources::Secret>(&secret_key)
                     .await
                 {
-                    if let Some(data) = &secret.data {
-                        let items = secret_source.items.as_ref();
-                        if let Some(items) = items {
-                            for item in items {
-                                if let Some(value) = data.get(&item.key) {
-                                    let file_path = format!("{}/{}", volume_dir, item.path);
+                    Ok(secret) => {
+                        if let Some(data) = &secret.data {
+                            let items = secret_source.items.as_ref();
+                            if let Some(items) = items {
+                                for item in items {
+                                    if let Some(value) = data.get(&item.key) {
+                                        let file_path = format!("{}/{}", volume_dir, item.path);
+                                        let _ = std::fs::write(&file_path, value);
+                                    }
+                                }
+                            } else {
+                                // Write all current keys
+                                for (key, value) in data {
+                                    let file_path = format!("{}/{}", volume_dir, key);
                                     let _ = std::fs::write(&file_path, value);
                                 }
-                            }
-                        } else {
-                            // Write all current keys
-                            for (key, value) in data {
-                                let file_path = format!("{}/{}", volume_dir, key);
-                                let _ = std::fs::write(&file_path, value);
-                            }
-                            // Delete files for keys that no longer exist
-                            if let Ok(entries) = std::fs::read_dir(&volume_dir) {
-                                for entry in entries.flatten() {
-                                    if let Some(fname) = entry.file_name().to_str() {
-                                        if !data.contains_key(fname) && fname != "..data" && fname != "ca.crt" {
-                                            let _ = std::fs::remove_file(entry.path());
+                                // Delete files for keys that no longer exist
+                                if let Ok(entries) = std::fs::read_dir(&volume_dir) {
+                                    for entry in entries.flatten() {
+                                        if let Some(fname) = entry.file_name().to_str() {
+                                            if !data.contains_key(fname) && fname != "..data" && fname != "ca.crt" {
+                                                let _ = std::fs::remove_file(entry.path());
+                                            }
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // Secret was deleted — if optional, remove all volume files
+                        let is_optional = secret_source.optional.unwrap_or(false);
+                        if is_optional {
+                            if let Ok(entries) = std::fs::read_dir(&volume_dir) {
+                                for entry in entries.flatten() {
+                                    let _ = std::fs::remove_file(entry.path());
                                 }
                             }
                         }
