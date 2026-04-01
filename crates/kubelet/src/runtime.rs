@@ -5488,13 +5488,11 @@ impl ContainerRuntime {
 
         for volume in volumes {
             let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
-            if !std::path::Path::new(&volume_dir).exists() {
-                continue;
-            }
 
             // Refresh Secret volumes
-            debug!("Refreshing volume {} at {}", volume.name, volume_dir);
             if let Some(secret_source) = &volume.secret {
+                // Create volume dir if it doesn't exist (optional Secret that was created later)
+                let _ = std::fs::create_dir_all(&volume_dir);
                 let secret_name = match &secret_source.secret_name {
                     Some(n) => n,
                     None => continue,
@@ -5515,9 +5513,20 @@ impl ContainerRuntime {
                                 }
                             }
                         } else {
+                            // Write all current keys
                             for (key, value) in data {
                                 let file_path = format!("{}/{}", volume_dir, key);
                                 let _ = std::fs::write(&file_path, value);
+                            }
+                            // Delete files for keys that no longer exist
+                            if let Ok(entries) = std::fs::read_dir(&volume_dir) {
+                                for entry in entries.flatten() {
+                                    if let Some(fname) = entry.file_name().to_str() {
+                                        if !data.contains_key(fname) && fname != "..data" && fname != "ca.crt" {
+                                            let _ = std::fs::remove_file(entry.path());
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -5526,6 +5535,7 @@ impl ContainerRuntime {
 
             // Refresh ConfigMap volumes
             if let Some(cm_source) = &volume.config_map {
+                let _ = std::fs::create_dir_all(&volume_dir);
                 let cm_name = match &cm_source.name {
                     Some(n) => n,
                     None => continue,
@@ -5548,6 +5558,16 @@ impl ContainerRuntime {
                             for (key, value) in data {
                                 let file_path = format!("{}/{}", volume_dir, key);
                                 let _ = std::fs::write(&file_path, value);
+                            }
+                            // Delete files for keys removed from ConfigMap
+                            if let Ok(entries) = std::fs::read_dir(&volume_dir) {
+                                for entry in entries.flatten() {
+                                    if let Some(fname) = entry.file_name().to_str() {
+                                        if !data.contains_key(fname) && fname != "..data" {
+                                            let _ = std::fs::remove_file(entry.path());
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

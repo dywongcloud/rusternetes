@@ -407,6 +407,19 @@ impl<S: Storage> DaemonSetController<S> {
             })
             .count() as i32;
 
+        // Count pods with the current template hash as "updated"
+        let updated_count = pods_by_node
+            .values()
+            .filter(|pod| {
+                pod.metadata
+                    .labels
+                    .as_ref()
+                    .and_then(|l| l.get("controller-revision-hash"))
+                    .map(|h| h == &template_hash)
+                    .unwrap_or(false)
+            })
+            .count() as i32;
+
         daemonset.status = Some(DaemonSetStatus {
             desired_number_scheduled,
             current_number_scheduled,
@@ -414,7 +427,7 @@ impl<S: Storage> DaemonSetController<S> {
             number_misscheduled: 0,
             number_available: Some(number_ready),
             number_unavailable: Some(desired_number_scheduled - number_ready),
-            updated_number_scheduled: Some(current_number_scheduled),
+            updated_number_scheduled: Some(updated_count),
             observed_generation: daemonset.metadata.generation,
             collision_count: None,
             conditions: None,
