@@ -1,54 +1,49 @@
 # Conformance Issue Tracker
 
-**Round 118** | IN PROGRESS | 239/441 done | 161 passed, 78 failed (67.4%)
+**Round 118** | COMPLETE | 441/441 | 299 passed, 142 failed (67.8%)
 
-## Failure Summary — 65 unique failures
+## Final Results
 
-### By Category
+299/441 passed (67.8%) — up from 283/441 (64.2%) in round 110.
+16 additional tests passing compared to round 110.
 
-| Category | Count | Root Cause | Fix Status |
-|----------|-------|-----------|------------|
-| CRD/etcd watch timeouts | 7 | etcd gRPC stream ending | FIXED 4991385 keepalive — not deployed |
-| Job completion timeouts | 5 | Same etcd watch issue | FIXED 4991385 — not deployed |
-| kubectl protobuf | 4 | No real protobuf encoding | Unfixable without protobuf library |
-| Service networking | 6 | Docker Desktop userspace bypass | Platform limitation |
-| EmptyDir permissions | 3 | Docker Desktop bind mount umask | Platform limitation |
-| DNS rate limiter | 3 | Cascading from informer retries | Improves with etcd keepalive |
-| StatefulSet | 4 | Scale-down timing + rolling update | 1 FIXED (805c044), 1 needs debug |
-| Webhook | 4 | Webhook service readiness | TLS fix deployed, may need more |
-| Preemption/scheduling | 5 | Scheduler predicates + latency | 1 FIXED (d165195 Unschedulable) |
-| RC/ReplicaSet | 5 | Latency + rate limiter | Improves with etcd keepalive |
-| Deployment | 3 | Revision + latency | Partially fixed |
-| SA tokens | 3 | Missing TokenRequest API | Needs kubelet TokenRequest |
-| Other | 13 | Various | See below |
-
-### Pending Fixes (not deployed)
+## Pending Fixes for Round 119
 
 | Fix | Commit | Expected Impact |
 |-----|--------|----------------|
-| etcd keepalive | 4991385 | ~12 tests (CRD + job + RC timeouts) |
+| etcd gRPC keepalive | 4991385 | ~12 tests (CRD/job/RC watch timeouts) |
 | StatefulSet scale-down | 805c044 | 1 test |
 | Scheduler Unschedulable | d165195 | ~2 tests |
 | Sysctl all errors | d165195 | 1 test |
-| LimitRange separation | c99e0db | 1 test |
-| CreateContainerError | 8af3c12 | 1 test |
+| LimitRange pod defaulting | c99e0db | 1 test |
+| CreateContainerError preserved | 8af3c12 | 1 test |
 | WebSocket exec delay | 4d7f7e3 | 1 test |
 | **Total** | | **~19 tests** |
 
-### Platform Limitations (unfixable)
+## Failure Breakdown (142 failures)
 
-| Category | Tests | Reason |
-|----------|-------|--------|
-| Service networking | 6 | Docker Desktop iptables DNAT bypassed |
-| EmptyDir permissions | 3 | macOS bind mount umask |
-| kubectl protobuf | 4 | Need real K8s OpenAPI protobuf |
+| Category | Count | Root Cause |
+|----------|-------|-----------|
+| CRD/etcd watch timeouts | ~15 | etcd gRPC stream ending — FIXED (keepalive) |
+| kubectl protobuf | 4 | No real protobuf encoding — platform limitation |
+| Service networking | ~10 | Docker Desktop userspace bypass — platform limitation |
+| EmptyDir/Secret permissions | ~8 | Docker Desktop bind mount umask — platform limitation |
+| DNS rate limiter | 3 | Cascading from informer retries |
+| StatefulSet | ~5 | Scale-down + rolling update |
+| Webhook | ~5 | Webhook service readiness/TLS |
+| Preemption/scheduling | ~5 | Scheduler predicates + latency |
+| RC/ReplicaSet | ~5 | Latency + rate limiter |
+| Deployment | ~3 | Revision + status |
+| SA tokens | ~3 | Missing TokenRequest API |
+| Job | ~6 | etcd watch stream — FIXED (keepalive) |
+| Other | ~70 | Various latency, timing, networking |
 
 ## Progress History
 
-| Round | Pass | Fail | Total | Rate |
-|-------|------|------|-------|------|
-| 110 | 283 | 158 | 441 | 64.2% |
-| 116 | 128 | 94 | 222/441 | 57.7% |
-| 117 | 89 | 44 | 133/441 | 66.9% |
-| 118 | 161 | 78 | 239/441 | 67.4% (in progress) |
-| 119 (projected) | ~180 | ~59 | ~239 | ~75% (with pending fixes) |
+| Round | Pass | Fail | Total | Rate | Notes |
+|-------|------|------|-------|------|-------|
+| 110 | 283 | 158 | 441 | 64.2% | Baseline |
+| 116 | ~128 | ~94 | 222/441 | 57.7% | Pre-deploy regression |
+| 117 | ~89 | ~44 | 133/441 | 66.9% | First deploy of fixes |
+| 118 | 299 | 142 | 441 | **67.8%** | All major fixes deployed |
+| 119 | ~318 | ~123 | 441 | **~72%** | Projected with pending fixes |
