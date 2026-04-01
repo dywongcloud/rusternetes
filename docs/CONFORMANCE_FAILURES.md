@@ -1,35 +1,32 @@
 # Conformance Issue Tracker
 
-**Round 119** | IN PROGRESS | 8/441 done | 6 passed, 2 failed (75.0%)
-Zero watch failures. All round 118 fixes deployed.
+**Round 119** | IN PROGRESS | 35/441 done | 22 passed, 13 failed (62.9%)
 
-## Current Failures (Round 119)
+## Current Failures
 
-| # | Test | Error | Status |
-|---|------|-------|--------|
-| 1 | statefulset.go:2479 | Scaled 3->2 timing race | Known — scale-down fix deployed but timing still tight |
-| 2 | pod_client.go:216 | Pod creation timeout 60s | Pod startup latency |
+| # | Test | Error | Root Cause | Status |
+|---|------|-------|-----------|--------|
+| 1 | statefulset.go:2479 | Scaled 3->2 | Timing race | Known |
+| 2 | pod_client.go:216 (x2) | Pod timeout 60s | Latency | Investigating |
+| 3 | webhook.go:2338 | Webhook ready timeout | Connection to pod IP fails | Investigating |
+| 4 | webhook.go:520 | Webhook request failed | "error sending request" to pod IP | Network connectivity |
+| 5 | crd_publish_openapi.go:400,451 | CRD timeout | Async status update may fail | Added logging |
+| 6 | rc.go:442,538 | RC pods | Rate limiter / latency | Cascading |
+| 7 | output.go:263 (x2) | Perms 0755 | Docker Desktop | Platform limitation |
+| 8 | dns_common.go:476 | DNS timeout | Rate limiter | Cascading |
+| 9 | custom_resource_definition.go:161 | CRD timeout | Same as #5 | Investigating |
 
-## Deployed Fixes This Round
+## Key Issues to Fix
 
-56 fixes deployed including:
-- etcd gRPC keepalive (4991385)
-- ConfigMap webhook pipeline (fac86a3)
-- SA token bound in Secret volume (0a30348)
-- ResourceQuota enforcement in all controllers (7985cf9)
-- CrashLoopBackOff exponential backoff (fa0122b)
-- Stale webhook config cleanup on NS delete (88f9c37)
-- Deployment direct pod counting (36ff92b)
-- Namespace two-cycle finalizer removal (2a0ff37)
-- DaemonSet updatedNumberScheduled fix (9451c4e)
-- Volume refresh dir creation + key deletion (9451c4e)
-- Event reportingController alias (2d6a5e1)
-- StatefulSet scale-down one-at-a-time (805c044)
-- Scheduler Unschedulable condition (d165195)
-- Sysctl all errors reported (d165195)
-- LimitRange pod defaulting separation (c99e0db)
-- CreateContainerError status preserved (8af3c12)
-- WebSocket exec channel delay (4d7f7e3)
+1. **Webhook pod connectivity**: API server can reach pod IP but HTTPS request fails.
+   The webhook pod listens on 8443 with TLS. Our reqwest client has
+   `danger_accept_invalid_certs(true)` but connection still fails.
+   Added detailed error categorization (connect/timeout/request).
+
+2. **CRD async status update**: The spawned tokio task may fail silently.
+   Added logging to diagnose. May need synchronous update instead.
+
+3. **Pod startup latency**: 2 pod_client timeouts at 60s.
 
 ## Progress History
 
@@ -37,4 +34,4 @@ Zero watch failures. All round 118 fixes deployed.
 |-------|------|------|-------|------|
 | 110 | 283 | 158 | 441 | 64.2% |
 | 118 | 299 | 142 | 441 | 67.8% |
-| 119 | 6 | 2 | 8/441 | 75.0% (in progress) |
+| 119 | 22 | 13 | 35/441 | 62.9% (in progress) |

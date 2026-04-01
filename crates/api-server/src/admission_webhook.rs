@@ -142,7 +142,19 @@ impl AdmissionWebhookClient {
             })?;
 
         let response = client.post(url).json(review).send().await.map_err(|e| {
-            rusternetes_common::Error::Network(format!("Webhook request failed: {}", e))
+            let detail = if e.is_connect() {
+                "connection refused/failed"
+            } else if e.is_timeout() {
+                "timeout"
+            } else if e.is_request() {
+                "request error"
+            } else {
+                "unknown"
+            };
+            rusternetes_common::Error::Network(format!(
+                "Webhook request failed: {} ({})",
+                e, detail
+            ))
         })?;
 
         if !response.status().is_success() {

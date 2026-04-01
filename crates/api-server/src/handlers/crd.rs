@@ -185,12 +185,25 @@ pub async fn create_crd(
     tokio::spawn({
         let storage = state.storage.clone();
         let key = key.clone();
+        let crd_name_clone = crd_name.clone();
         async move {
-            if let Ok(mut val) = storage.get::<serde_json::Value>(&key).await {
-                if let Some(status) = val.get_mut("status").and_then(|s| s.as_object_mut()) {
-                    status.insert("observedGeneration".to_string(), serde_json::json!(1));
+            match storage.get::<serde_json::Value>(&key).await {
+                Ok(mut val) => {
+                    if let Some(status) = val.get_mut("status").and_then(|s| s.as_object_mut()) {
+                        status.insert("observedGeneration".to_string(), serde_json::json!(1));
+                    }
+                    match storage.update(&key, &val).await {
+                        Ok(_) => {
+                            tracing::info!("CRD {} async status update succeeded", crd_name_clone);
+                        }
+                        Err(e) => {
+                            tracing::warn!("CRD {} async status update failed: {}", crd_name_clone, e);
+                        }
+                    }
                 }
-                let _ = storage.update(&key, &val).await;
+                Err(e) => {
+                    tracing::warn!("CRD {} async status get failed: {}", crd_name_clone, e);
+                }
             }
         }
     });
