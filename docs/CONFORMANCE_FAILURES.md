@@ -24,7 +24,7 @@
 | Webhook readiness | ~12 | Webhook matching/calling not triggering | Need to debug matching logic |
 | RC quota enforcement | ~2 | Controllers bypassed quota check | FIXED 7985cf9 — all controllers check quota |
 | Deployment available=0 | ~3 | Pods not reporting ready fast enough | Kubelet readiness timing |
-| SA token pod-name | ~3 | Kubelet uses static tokens | Bound token fix deployed but tests still fail |
+| SA token pod-name | ~3 | Bound token in wrong code path | FIXED 0a30348 — inject in Secret volume path |
 | Terminated container reason | 1 | Kubelet restarts too fast, no backoff | FIXED fa0122b — CrashLoopBackOff backoff |
 | StatefulSet rolling update | ~2 | Template hash comparison | Logging deployed, need data |
 
