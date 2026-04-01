@@ -16,13 +16,13 @@
 | 8 | job.go:623 | Job never fails | Same as #7 | Fix committed |
 | 9 | statefulset.go:381 | updateRevision same as current | Revision not computed on spec update | Fix committed |
 | 10 | statefulset.go:2479 | Scale 3->2 timing | Direct delete skipped graceful termination | Fix committed |
-| 11 | pod_client.go:216 (x2) | Pod timeout 60s | API server latency under load | Latency |
+| 11 | pod_client.go:216 (x2) | Pod timeout 60s | Ephemeral container statuses never reported | Fix committed |
 | 12 | pod_client.go:302 | Pod Failed | $(id -u) shell substitution eaten by expand_k8s_vars | Fix committed |
-| 13 | rc.go:442 | RC rate limiter | Client rate limiter timeout from API latency | Latency |
-| 14 | rc.go:538 | RC pods check | Cascading from #13 | Cascading |
+| 13 | rc.go:442 | RC rate limiter | RC can't match pods (no labels) → replicas stays 0 → timeout | Fix committed |
+| 14 | rc.go:538 | RC pods check | Same root cause as #13 | Fix committed |
 | 15 | rc.go:623 | ReplicaFailure not cleared | RC creates pods with no labels, can't match selector | Fix committed |
 | 16 | output.go:263 (x2) | Perms 0755 | Docker Desktop bind mount permissions | Platform limitation |
-| 17 | dns_common.go:476 (x2) | DNS timeout | API latency cascading | Latency |
+| 17 | dns_common.go:476 (x2) | DNS pod not found | Pod lifecycle issue, may cascade from other fixes | May improve |
 | 18 | service.go:4291 (x3), 768 | Service unreachable | iptables DNAT bypass on Docker Desktop | Platform limitation |
 | 19 | preemption.go:978 | PriorityClass value mismatch | Stale cluster-scoped resources from previous tests | Test isolation |
 | 20 | secrets_volume.go:374 | Secret volume update timeout | Optional secret deletion not cleaning up volume files | Fix committed |
@@ -40,13 +40,13 @@
 8. **RC pod labels from selector** (ecae49f) — Fall back to selector labels when template has none
 9. **Job CAS refresh** (b1ef595) — Re-read job before status update to get fresh resourceVersion
 10. **Secret volume cleanup** (4895c6c) — Remove volume files when optional secret is deleted
+11. **Ephemeral container statuses** (f2e1dd8) — Report ephemeral container Running/Terminated state
 
 ## Platform Limitations (Unfixable on Docker Desktop)
 
 - **iptables DNAT**: Service traffic via ClusterIP/NodePort doesn't work (~4 tests)
 - **Bind mount permissions**: Docker Desktop doesn't preserve Unix permissions (~2 tests)
 - **PriorityClass isolation**: Cluster-scoped resources persist between tests (~1 test)
-- **API latency**: etcd round-trip + Docker overhead causes client rate limiter timeouts (~5 tests)
 
 ## Progress History
 
