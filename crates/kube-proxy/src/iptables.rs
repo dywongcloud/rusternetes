@@ -584,14 +584,15 @@ impl IptablesManager {
                 );
 
                 // Rule 2 in SEP chain: DNAT to the endpoint (terminates).
-                // This is separate from the recent-set rule so that DNAT works
-                // even if the recent module has issues with a specific rule.
+                // Must include -p proto — iptables requires a protocol for port DNAT.
                 self.run_iptables_logged(
                     &[
                         "-t",
                         "nat",
                         "-A",
                         &sep_chain,
+                        "-p",
+                        &proto,
                         "-j",
                         "DNAT",
                         "--to-destination",
@@ -788,13 +789,15 @@ impl IptablesManager {
                     &format!("NP SEP {} recent set", sep_chain),
                 );
 
-                // Rule 2: DNAT (terminating)
+                // Rule 2: DNAT (terminating) — must include -p proto for port DNAT
                 self.run_iptables_logged(
                     &[
                         "-t",
                         "nat",
                         "-A",
                         &sep_chain,
+                        "-p",
+                        &proto,
                         "-j",
                         "DNAT",
                         "--to-destination",
