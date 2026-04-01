@@ -1303,6 +1303,17 @@ impl Kubelet {
                                     status.phase = Some(terminal_phase);
                                     status.message = Some(message);
                                     status.container_statuses = Some(container_statuses);
+                                    // Update conditions — terminated pod is not Ready
+                                    if let Some(ref mut conditions) = status.conditions {
+                                        for c in conditions.iter_mut() {
+                                            if c.condition_type == "Ready"
+                                                || c.condition_type == "ContainersReady"
+                                            {
+                                                c.status = "False".to_string();
+                                                c.reason = Some("PodCompleted".to_string());
+                                            }
+                                        }
+                                    }
                                 }
                                 let _ = self.storage.update(&key, &new_pod).await;
                                 return Ok(());
@@ -1688,6 +1699,17 @@ impl Kubelet {
                                     status.phase = Some(terminal_phase);
                                     status.message = Some(message);
                                     status.container_statuses = Some(container_statuses);
+                                    // Update conditions — terminated pod is not Ready
+                                    if let Some(ref mut conditions) = status.conditions {
+                                        for c in conditions.iter_mut() {
+                                            if c.condition_type == "Ready"
+                                                || c.condition_type == "ContainersReady"
+                                            {
+                                                c.status = "False".to_string();
+                                                c.reason = Some("PodCompleted".to_string());
+                                            }
+                                        }
+                                    }
                                 }
                                 let _ = self.storage.update(&key, &new_pod).await;
                                 return Ok(());
