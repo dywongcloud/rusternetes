@@ -18,25 +18,32 @@ We run the official Kubernetes conformance test suite (441 tests) via Sonobuoy a
 | 116   | 2026-03-31 | 128  | 94   | 58%       | Pre-deploy, watch cancel loops |
 | 117   | 2026-03-31 | 89   | 44   | 67%       | Partial run, first deploy of session fixes |
 | 118   | 2026-04-01 | 299  | 142  | 68%       | Full run, all major fixes deployed |
+| 119   | 2026-04-01 | —    | —    | —         | In progress (pre-fix baseline), 16 fixes pending |
+| 120   | 2026-04-01 | —    | —    | —         | Round with 16 new fixes deployed |
 
 **Current best deployed**: Round 107 at ~96% (~422/441).
 
-**Latest status (Round 118)**: 299/441 passed (67.8%), up from 283/441 (64.2%) in round 110. 40+ code fixes committed this session addressing root causes across watch event types, CoreDNS eviction, kubelet deadlocks, LimitRange ordering, webhook TLS, CRD timeouts, and more. 19 additional fixes pending deployment should bring round 119 to ~72%.
+**Latest status (Round 120)**: Deploying 16 root-cause fixes from round 119 analysis. Fixes target ~22 of the ~30 failures observed, addressing: job CAS conflicts, RC pod label matching, StatefulSet graceful termination, shell substitution preservation, ephemeral container status reporting, kube-proxy DNAT protocol flags, emptyDir permissions, webhook TLS, CRD watch events, and more.
 
-**Total commits**: 900+ across 18+ rounds of iterative testing and debugging.
+**Total commits**: 950+ across 20+ rounds of iterative testing and debugging.
 
 ## Failure Categories
 
-Based on Round 118 analysis (142 failures):
+Based on Round 119 analysis (~30 failures, 21 unique):
 
-- **CRD/etcd watch timeouts (~15)**: etcd gRPC watch stream ending prematurely. Fix committed: keepalive (4991385).
-- **Platform limitations (~13)**: Docker Desktop macOS — iptables DNAT bypassed by userspace networking, bind mount permissions.
-- **kubectl protobuf (~4)**: kubectl validation requires real protobuf OpenAPI encoding.
-- **Pod latency/rate limiting (~15)**: Cascading from informer retries, scheduler timing.
-- **StatefulSet (~5)**: Scale-down timing, rolling update hash. Partially fixed (805c044).
-- **Webhook (~5)**: Webhook service readiness/TLS.
-- **Job completion (~6)**: etcd watch stream ending. Fix committed: keepalive (4991385).
-- **Other (~79)**: Various latency, timing, networking, controller issues.
+- **CRD watch events (~4)**: Status MODIFIED event lost due to CAS conflict. Fixed: retry with logging.
+- **Job conditions (~3)**: Stale resourceVersion from list() caused silent CAS failures. Fixed: re-read before update.
+- **RC pod matching (~3)**: Pods created without labels couldn't match selector. Fixed: fallback to selector labels.
+- **Ephemeral containers (~2)**: Status never reported for ephemeral containers. Fixed: new status method.
+- **StatefulSet (~2)**: Direct delete skipped graceful termination; updateRevision not computed on update. Fixed both.
+- **kube-proxy DNAT (~4)**: Session affinity rules missing -p protocol flag. Fixed.
+- **Shell substitution (~1)**: $(id -u) replaced with empty string. Fixed: only expand defined env vars.
+- **Webhook TLS (~2)**: native-tls unreliable with self-signed certs. Fixed: switched to rustls.
+- **emptyDir permissions (~2)**: Docker Desktop virtiofs strips write bits. Fixed: use Docker named volumes.
+- **Secret volume (~1)**: Optional secret deletion didn't clean up files. Fixed.
+- **PriorityClass (~1)**: PATCH persisted before immutability check. Fixed: revert on violation.
+- **Init container (~1)**: Wrong condition message format. Fixed.
+- **DNS (~2)**: Pod lifecycle cascading — expected to improve with other fixes.
 
 Detailed tracking in `docs/CONFORMANCE_FAILURES.md`.
 
