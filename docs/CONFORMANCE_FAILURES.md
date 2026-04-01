@@ -29,17 +29,17 @@
 ### Fixed (not yet deployed)
 - Preemption/scheduling: FIXED 88f9c37 — stale webhook configs cleaned up on namespace delete
 - Deployment readiness: FIXED 36ff92b — count pods directly instead of stale RS status
+- Namespace lifecycle: FIXED 2a0ff37 — split finalizer removal across two cycles
 
-### Remaining (~25 tests, need investigation)
-- DaemonSet (~2): Pod creation not happening on all nodes, rolling update
+### Remaining (~22 tests)
+- DaemonSet (~2): Rolling update + pod timing
 - RC/ReplicaSet (~5): Pod connectivity, rate limiter exhaustion
-- Namespace (~1): Deleted before test observes Terminating
-- ConfigMap/Secret volume (~2): Update not reflected within 240s timeout
-- Events (~1): Event not generated for resource creation
-- Aggregator (~1): Sample API server pod not ready (multi-container startup)
+- ConfigMap/Secret volume (~2): Update propagation timing (logging added)
+- Events (~1): Event list returns empty after create
+- Aggregator (~1): Sample API server pod not ready
 - DNS rate limiter (~6): Cascading from informer retries
 - Pod latency (~4): Docker Desktop + controller intervals
-- Other (~3): Various
+- Other (~1): Various
 
 ## Progress History
 
