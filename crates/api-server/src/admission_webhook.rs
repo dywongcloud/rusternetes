@@ -48,7 +48,7 @@ impl AdmissionWebhookClient {
             .map(|t| Duration::from_secs(t as u64))
             .unwrap_or(Duration::from_secs(10));
 
-        debug!("Calling validating webhook {} at {}", webhook.name, url);
+        info!("Calling validating webhook {} at {}", webhook.name, url);
 
         let review = AdmissionReview::new_request(request.clone());
 
@@ -93,7 +93,7 @@ impl AdmissionWebhookClient {
             .map(|t| Duration::from_secs(t as u64))
             .unwrap_or(Duration::from_secs(10));
 
-        debug!("Calling mutating webhook {} at {}", webhook.name, url);
+        info!("Calling mutating webhook {} at {}", webhook.name, url);
 
         let review = AdmissionReview::new_request(request.clone());
 
