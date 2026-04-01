@@ -644,8 +644,8 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
-            err_msg.contains("json: unknown field"),
-            "Expected 'json: unknown field' in error: {}",
+            err_msg.contains("duplicate field"),
+            "Expected 'duplicate field' in error: {}",
             err_msg
         );
         assert!(
@@ -712,8 +712,8 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
-            err_msg.contains("json: unknown field"),
-            "Expected 'json: unknown field' in error: {}",
+            err_msg.contains("duplicate field"),
+            "Expected 'duplicate field' in error: {}",
             err_msg
         );
         assert!(
@@ -742,8 +742,9 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
-            err_msg.contains(r#"strict decoding error: json: unknown field "name""#),
-            "Error format must match K8s: {}",
+            err_msg.contains(r#"strict decoding error:"#)
+                && err_msg.contains(r#"duplicate field "name""#),
+            "Error format must match K8s duplicate field detection: {}",
             err_msg
         );
     }
@@ -778,8 +779,8 @@ mod tests {
             err_msg
         );
         assert!(
-            err_msg.contains(r#"json: unknown field "spec.replicas""#),
-            "Expected json: unknown field error: {}",
+            err_msg.contains(r#"json: duplicate field "spec.replicas""#),
+            "Expected json: duplicate field error: {}",
             err_msg
         );
         // Should be combined in a single strict decoding error

@@ -408,7 +408,8 @@ impl<S: Storage> DaemonSetController<S> {
             .count() as i32;
 
         // Count pods with the current template hash as "updated"
-        let updated_count = pods_by_node
+        // Use final_pods_by_node (re-fetched after create/delete) for accurate count
+        let updated_count = final_pods_by_node
             .values()
             .filter(|pod| {
                 pod.metadata
