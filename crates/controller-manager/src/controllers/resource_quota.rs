@@ -81,15 +81,18 @@ impl<S: Storage> ResourceQuotaController<S> {
             }
         }
 
-        // Update quota status
-        let mut updated_quota = quota.clone();
+        // Update quota status — re-read for fresh resourceVersion to avoid CAS conflicts
+        let key = build_key("resourcequotas", Some(namespace), quota_name);
+        let mut updated_quota: ResourceQuota = match self.storage.get(&key).await {
+            Ok(q) => q,
+            Err(_) => quota.clone(),
+        };
         updated_quota.status = Some(ResourceQuotaStatus {
             hard: quota.spec.hard.clone(),
             used: Some(used),
         });
 
         // Save updated quota
-        let key = build_key("resourcequotas", Some(namespace), quota_name);
         self.storage.update(&key, &updated_quota).await?;
 
         info!("Updated quota {}/{} status", namespace, quota_name);

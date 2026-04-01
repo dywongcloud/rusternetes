@@ -226,10 +226,36 @@ impl<S: Storage> DeploymentController<S> {
                 .await?;
 
                 // How many old pods can we remove while respecting maxUnavailable?
-                // Available = new pods that are running (assume all new pods are available for simplicity)
-                let available_after_scaleup = new_active_replicas;
-                let can_remove = (available_after_scaleup - min_available).max(0);
-                let scale_down_by = can_remove.min(old_rs_total).max(1); // At least 1 to make progress
+                // Count actual available pods (Running+Ready) across ALL ReplicaSets,
+                // not just the desired count. Pods with bad images won't be available,
+                // so the old RS must retain replicas until new pods are actually ready.
+                let dep_pod_prefix = build_prefix("pods", Some(namespace));
+                let all_pods: Vec<Pod> = self.storage.list(&dep_pod_prefix).await?;
+                let total_available: i32 = all_pods
+                    .iter()
+                    .filter(|p| {
+                        // Must be owned by this deployment's ReplicaSets
+                        let owned = p.metadata.owner_references.as_ref().map_or(false, |refs| {
+                            refs.iter().any(|r| {
+                                owned_replicasets.iter().any(|rs| r.uid == rs.metadata.uid)
+                            })
+                        });
+                        if !owned { return false; }
+                        // Must be Running and Ready, not terminating
+                        if p.metadata.deletion_timestamp.is_some() { return false; }
+                        let is_ready = p.status.as_ref()
+                            .and_then(|s| s.conditions.as_ref())
+                            .map(|conds| conds.iter().any(|c| c.condition_type == "Ready" && c.status == "True"))
+                            .unwrap_or(false);
+                        is_ready
+                    })
+                    .count() as i32;
+                let can_remove = (total_available - min_available).max(0);
+                let scale_down_by = if can_remove > 0 {
+                    can_remove.min(old_rs_total)
+                } else {
+                    0 // Don't scale down old RS if not enough available pods
+                };
 
                 let mut remaining_to_remove = scale_down_by;
                 for rs in owned_replicasets.iter() {
