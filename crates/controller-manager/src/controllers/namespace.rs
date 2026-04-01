@@ -215,6 +215,10 @@ impl<S: Storage> NamespaceController<S> {
             }
         }
 
+        // Clean up cluster-scoped webhook configurations that reference this namespace.
+        // Without this, stale webhooks cause watch cancel loops in subsequent tests.
+        self.cleanup_webhook_configs_for_namespace(name).await;
+
         // Check if all resources are deleted
         let remaining_count = self.count_remaining_resources(name).await?;
 
@@ -299,6 +303,56 @@ impl<S: Storage> NamespaceController<S> {
 
         info!("Namespace {} finalization complete", name);
         Ok(())
+    }
+
+    /// Clean up cluster-scoped webhook configurations that reference a deleted namespace.
+    async fn cleanup_webhook_configs_for_namespace(&self, namespace: &str) {
+        // ValidatingWebhookConfigurations
+        let vwc_prefix = "/registry/validatingwebhookconfigurations/";
+        if let Ok(configs) = self.storage.list::<serde_json::Value>(vwc_prefix).await {
+            for config in configs {
+                let references_ns = config
+                    .pointer("/webhooks")
+                    .and_then(|w| w.as_array())
+                    .map(|webhooks| {
+                        webhooks.iter().any(|wh| {
+                            wh.pointer("/clientConfig/service/namespace")
+                                .and_then(|n| n.as_str())
+                                == Some(namespace)
+                        })
+                    })
+                    .unwrap_or(false);
+                if references_ns {
+                    let name = config.pointer("/metadata/name").and_then(|n| n.as_str()).unwrap_or("");
+                    let key = format!("{}{}",vwc_prefix, name);
+                    let _ = self.storage.delete(&key).await;
+                    info!("Cleaned up ValidatingWebhookConfiguration {} (namespace {} deleted)", name, namespace);
+                }
+            }
+        }
+        // MutatingWebhookConfigurations
+        let mwc_prefix = "/registry/mutatingwebhookconfigurations/";
+        if let Ok(configs) = self.storage.list::<serde_json::Value>(mwc_prefix).await {
+            for config in configs {
+                let references_ns = config
+                    .pointer("/webhooks")
+                    .and_then(|w| w.as_array())
+                    .map(|webhooks| {
+                        webhooks.iter().any(|wh| {
+                            wh.pointer("/clientConfig/service/namespace")
+                                .and_then(|n| n.as_str())
+                                == Some(namespace)
+                        })
+                    })
+                    .unwrap_or(false);
+                if references_ns {
+                    let name = config.pointer("/metadata/name").and_then(|n| n.as_str()).unwrap_or("");
+                    let key = format!("{}{}", mwc_prefix, name);
+                    let _ = self.storage.delete(&key).await;
+                    info!("Cleaned up MutatingWebhookConfiguration {} (namespace {} deleted)", name, namespace);
+                }
+            }
+        }
     }
 
     /// Delete all resources of a given type in a namespace
