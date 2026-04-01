@@ -840,7 +840,55 @@ impl<S: Storage> JobController<S> {
 
         // Save updated status
         let key = format!("/registry/jobs/{}/{}", namespace, name);
-        self.storage.update(&key, job).await?;
+        let has_complete = job
+            .status
+            .as_ref()
+            .and_then(|s| s.conditions.as_ref())
+            .map(|c| {
+                c.iter()
+                    .any(|cond| cond.condition_type == "Complete" && cond.status == "True")
+            })
+            .unwrap_or(false);
+        let has_failed = job
+            .status
+            .as_ref()
+            .and_then(|s| s.conditions.as_ref())
+            .map(|c| {
+                c.iter()
+                    .any(|cond| cond.condition_type == "Failed" && cond.status == "True")
+            })
+            .unwrap_or(false);
+        if has_complete || has_failed {
+            info!(
+                "Job {}/{} status update: complete={}, failed={}, conditions={:?}",
+                namespace,
+                name,
+                has_complete,
+                has_failed,
+                job.status.as_ref().and_then(|s| s.conditions.as_ref())
+            );
+        }
+        match self.storage.update(&key, job).await {
+            Ok(_) => {
+                if has_complete || has_failed {
+                    info!("Job {}/{} status update persisted successfully", namespace, name);
+                    // Verify by reading back
+                    match self.storage.get::<Job>(&key).await {
+                        Ok(read_back) => {
+                            let rb_conditions = read_back.status.as_ref().and_then(|s| s.conditions.as_ref());
+                            info!("Job {}/{} read-back conditions: {:?}", namespace, name, rb_conditions);
+                        }
+                        Err(e) => {
+                            error!("Job {}/{} read-back failed: {}", namespace, name, e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Job {}/{} status update FAILED: {}", namespace, name, e);
+                return Err(e);
+            }
+        }
 
         Ok(())
     }
