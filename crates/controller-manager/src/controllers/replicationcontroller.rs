@@ -353,12 +353,17 @@ impl<S: Storage> ReplicationControllerController<S> {
 
         let mut metadata = ObjectMeta::new(&pod_name);
         metadata.namespace = Some(namespace.to_string());
+        // Use template labels, falling back to the RC's selector labels.
+        // In K8s, template labels must be a superset of selector labels.
+        // If the template has no labels at all, use the selector to ensure
+        // created pods can be matched by the controller.
         metadata.labels = rc
             .spec
             .template
             .metadata
             .as_ref()
-            .and_then(|m| m.labels.clone());
+            .and_then(|m| m.labels.clone())
+            .or_else(|| rc.spec.selector.clone());
         metadata.owner_references = Some(vec![OwnerReference {
             api_version: "v1".to_string(),
             kind: "ReplicationController".to_string(),
