@@ -154,7 +154,7 @@ impl<S: Storage> StatefulSetController<S> {
                                 .unwrap_or(false);
 
                             if !is_ready {
-                                debug!(
+                                info!(
                                     "StatefulSet {}: pod {} not ready, halting scale-up",
                                     name, prev_pod_name
                                 );
@@ -163,7 +163,7 @@ impl<S: Storage> StatefulSetController<S> {
                         }
                         Err(_) => {
                             // Previous pod doesn't exist yet
-                            debug!(
+                            info!(
                                 "StatefulSet {}: pod {} not found, halting scale-up",
                                 name, prev_pod_name
                             );
@@ -217,7 +217,7 @@ impl<S: Storage> StatefulSetController<S> {
             && update_strategy == "RollingUpdate"
         {
             let update_revision = Self::compute_revision(&statefulset.spec.template);
-            debug!(
+            info!(
                 "StatefulSet {}/{}: rolling update check, update_revision={}",
                 namespace, name, update_revision
             );
@@ -249,7 +249,7 @@ impl<S: Storage> StatefulSetController<S> {
                     .and_then(|l| l.get("controller-revision-hash"))
                     .map(|s| s.as_str())
                     .unwrap_or("");
-                debug!(
+                info!(
                     "StatefulSet {}/{}: pod {} revision={} vs update_revision={}",
                     namespace, name, pod.metadata.name, pod_revision, update_revision
                 );
@@ -458,7 +458,7 @@ impl<S: Storage> StatefulSetController<S> {
                 "revision": 1
             });
             if let Err(e) = self.storage.create(&cr_key, &cr).await {
-                debug!(
+                info!(
                     "ControllerRevision {} already exists or failed: {}",
                     cr_name, e
                 );
@@ -635,7 +635,7 @@ impl<S: Storage> StatefulSetController<S> {
         match self.storage.create(&key, &pod).await {
             Ok(_) => Ok(()),
             Err(rusternetes_common::Error::AlreadyExists(_)) => {
-                debug!("Pod {} already exists, skipping creation", pod_name);
+                info!("Pod {} already exists, skipping creation", pod_name);
                 Ok(())
             }
             Err(e) => Err(e.into()),

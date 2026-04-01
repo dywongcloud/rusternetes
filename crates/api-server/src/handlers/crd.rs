@@ -178,6 +178,23 @@ pub async fn create_crd(
     let created: serde_json::Value = state.storage.create(&key, &crd_value).await?;
     info!("CRD created: {}", crd_name);
 
+    // Generate a MODIFIED watch event by touching the CRD status.
+    // K8s clients watch from the CREATE's resourceVersion for a MODIFIED event
+    // containing the Established condition. Without this update, there's no
+    // MODIFIED event and the client times out waiting.
+    tokio::spawn({
+        let storage = state.storage.clone();
+        let key = key.clone();
+        async move {
+            if let Ok(mut val) = storage.get::<serde_json::Value>(&key).await {
+                if let Some(status) = val.get_mut("status").and_then(|s| s.as_object_mut()) {
+                    status.insert("observedGeneration".to_string(), serde_json::json!(1));
+                }
+                let _ = storage.update(&key, &val).await;
+            }
+        }
+    });
+
     Ok((StatusCode::CREATED, Json(created)))
 }
 

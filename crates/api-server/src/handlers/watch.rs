@@ -357,7 +357,7 @@ where
                                 }
                             }
                             Some(Ok(WatchEvent::Modified(key, value))) => {
-                                debug!("Watch event - Modified: {}", key);
+                                info!("Watch MODIFIED event for key={}", key);
                                 if let Ok(object) = serde_json::from_str::<T>(&value) {
                                     // Update latest resourceVersion
                                     if let Some(rv) = object.metadata().resource_version.as_ref() {
@@ -757,7 +757,7 @@ where
                                 }
                             }
                             Some(Ok(WatchEvent::Modified(key, value))) => {
-                                debug!("Watch event - Modified: {}", key);
+                                info!("Watch MODIFIED event for key={}", key);
                                 if let Ok(object) = serde_json::from_str::<T>(&value) {
                                     // Update latest resourceVersion
                                     if let Some(rv) = object.metadata().resource_version.as_ref() {
