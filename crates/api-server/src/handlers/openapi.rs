@@ -97,37 +97,9 @@ pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if accept.contains("protobuf") {
-        // Encode as K8s protobuf envelope (runtime.Unknown wrapper).
-        // Format: 4-byte magic "k8s\0" + protobuf Unknown message containing JSON.
-        // Field 2 (content_type) = "application/json"
-        // Field 3 (content_encoding) = "" (no encoding)
-        // Field 1 (raw) = JSON bytes
-        let content_type = b"application/json";
-        let mut proto = Vec::new();
-        // Magic header
-        proto.extend_from_slice(&[0x6b, 0x38, 0x73, 0x00]);
-        // Protobuf Unknown message fields:
-        // Field 2 (content_type, string, wire type 2): tag = (2 << 3) | 2 = 18
-        proto.push(18);
-        encode_varint(&mut proto, content_type.len() as u64);
-        proto.extend_from_slice(content_type);
-        // Field 3 (content_encoding, string, wire type 2): tag = (3 << 3) | 2 = 26
-        // Empty string, skip
-        // Field 1 (raw, bytes, wire type 2): tag = (1 << 3) | 2 = 10
-        proto.push(10);
-        encode_varint(&mut proto, json_bytes.len() as u64);
-        proto.extend_from_slice(&json_bytes);
-
-        return Response::builder()
-            .status(StatusCode::OK)
-            .header(
-                header::CONTENT_TYPE,
-                "application/octet-stream",
-            )
-            .body(Body::from(proto))
-            .unwrap();
-    }
+    // Always return JSON. kubectl sends Accept with both protobuf and JSON;
+    // we only support JSON. The Content-Type: application/json header tells
+    // kubectl to parse as JSON instead of protobuf.
 
     Response::builder()
         .status(StatusCode::OK)

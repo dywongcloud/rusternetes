@@ -86,14 +86,20 @@ pub async fn create(
     if let Some(ref spec) = pod.spec {
         if let Some(ref security_context) = spec.security_context {
             if let Some(ref sysctls) = security_context.sysctls {
-                // Validate sysctl names first (K8s rejects invalid names)
+                // Validate ALL sysctl names and collect errors (K8s reports all errors)
+                let mut sysctl_errors: Vec<String> = Vec::new();
                 for sysctl in sysctls {
                     if !is_valid_sysctl_name(&sysctl.name) {
-                        return Err(rusternetes_common::Error::InvalidResource(format!(
+                        sysctl_errors.push(format!(
                             "spec.securityContext.sysctls: Invalid value: \"{}\": must have at most 253 characters and match regex {}",
                             sysctl.name, "^([a-z0-9][-_a-z0-9]*[a-z0-9]?\\.)*[a-z0-9][-_a-z0-9]*[a-z0-9]?$"
-                        )));
+                        ));
                     }
+                }
+                if !sysctl_errors.is_empty() {
+                    return Err(rusternetes_common::Error::InvalidResource(
+                        sysctl_errors.join(", ")
+                    ));
                 }
                 let safe_sysctls = [
                     "kernel.shm_rmid_forced",
