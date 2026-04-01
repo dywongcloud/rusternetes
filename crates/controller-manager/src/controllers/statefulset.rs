@@ -180,11 +180,14 @@ impl<S: Storage> StatefulSetController<S> {
                 info!("Created pod {}-{}", name, i);
             }
         } else if current_replicas > desired_replicas {
-            // Scale down: mark ONE pod at a time for deletion in reverse order.
-            // Wait for any terminating pod to be fully removed before deleting the next.
-            // This matches K8s behavior: StatefulSet scales down one at a time, waiting
-            // for graceful termination between each.
-            let any_terminating = statefulset_pods.iter().any(|p| p.metadata.deletion_timestamp.is_some());
+            // Scale down: delete ONE pod at a time in reverse order.
+            // K8s StatefulSet controller deletes the pod via the API server, which
+            // sets deletionTimestamp. The kubelet handles graceful termination.
+            // If any pod is currently terminating (has deletionTimestamp), wait for
+            // it to be fully removed before deleting the next.
+            let any_terminating = statefulset_pods
+                .iter()
+                .any(|p| p.metadata.deletion_timestamp.is_some());
             if any_terminating {
                 debug!(
                     "StatefulSet {}/{}: waiting for terminating pod before continuing scale-down",
@@ -194,24 +197,11 @@ impl<S: Storage> StatefulSetController<S> {
                 let i = current_replicas - 1;
                 let pod_name = format!("{}-{}", name, i);
                 let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
-                match self.storage.get::<Pod>(&pod_key).await {
-                    Ok(mut pod) => {
-                        if pod.metadata.deletion_timestamp.is_none() {
-                            pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
-                            let _ = self.storage.update(&pod_key, &pod).await;
-                            info!(
-                                "Scale down: marked pod {} for deletion ({} -> {})",
-                                pod_name, current_replicas, current_replicas - 1
-                            );
-                        }
-                    }
-                    Err(_) => {
-                        info!(
-                            "Scale down: pod {} already gone",
-                            pod_name
-                        );
-                    }
-                }
+                self.storage.delete(&pod_key).await?;
+                info!(
+                    "Scale down: deleted pod {} ({} -> {})",
+                    pod_name, current_replicas, current_replicas - 1
+                );
             }
         }
 

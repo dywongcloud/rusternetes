@@ -223,8 +223,10 @@ async fn test_statefulset_scales_down_reverse_order() {
     statefulset.spec.replicas = Some(2);
     storage.update(&key, &statefulset).await.unwrap();
 
-    // Run controller again
-    controller.reconcile_all().await.unwrap();
+    // Run controller multiple times (one pod deleted per cycle, matching K8s behavior)
+    for _ in 0..4 {
+        controller.reconcile_all().await.unwrap();
+    }
 
     // Verify only 2 pods remain
     let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
