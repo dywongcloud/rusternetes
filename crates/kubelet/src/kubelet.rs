@@ -817,6 +817,9 @@ impl Kubelet {
                                 Self::running_pod_conditions()
                             };
 
+                            let ephemeral_container_statuses =
+                                self.runtime.get_ephemeral_container_statuses(&new_pod).await;
+
                             new_pod.status = Some(PodStatus {
                                 phase: Some(Phase::Running),
                                 message: Some("All containers started".to_string()),
@@ -826,7 +829,7 @@ impl Kubelet {
                                 conditions: Some(conditions),
                                 container_statuses,
                                 init_container_statuses,
-                                ephemeral_container_statuses: None,
+                                ephemeral_container_statuses,
                                 resize: None,
                                 resource_claim_statuses: None,
                                 observed_generation: observed_gen,
@@ -1071,6 +1074,9 @@ impl Kubelet {
                         Self::running_pod_conditions()
                     };
 
+                    let ephemeral_container_statuses =
+                        self.runtime.get_ephemeral_container_statuses(&new_pod).await;
+
                     new_pod.status = Some(PodStatus {
                         phase: Some(Phase::Running),
                         message: Some("All containers started".to_string()),
@@ -1080,7 +1086,7 @@ impl Kubelet {
                         conditions: Some(conditions),
                         container_statuses,
                         init_container_statuses,
-                        ephemeral_container_statuses: None,
+                        ephemeral_container_statuses,
                         resize: None,
                         resource_claim_statuses: None,
                         observed_generation: observed_gen,

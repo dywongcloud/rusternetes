@@ -4337,6 +4337,104 @@ impl ContainerRuntime {
     }
 
     /// Get detailed status of all containers in a pod
+    /// Get statuses for ephemeral containers in a pod.
+    pub async fn get_ephemeral_container_statuses(
+        &self,
+        pod: &Pod,
+    ) -> Option<Vec<ContainerStatus>> {
+        let ecs = pod.spec.as_ref()?.ephemeral_containers.as_ref()?;
+        if ecs.is_empty() {
+            return None;
+        }
+
+        let pod_name = &pod.metadata.name;
+        let mut statuses = Vec::new();
+
+        for ec in ecs {
+            let container_name = format!("{}_{}", pod_name, ec.name);
+            let status = match self
+                .docker
+                .inspect_container(&container_name, None::<InspectContainerOptions>)
+                .await
+            {
+                Ok(inspect) => {
+                    let state = inspect.state.unwrap_or_default();
+                    let running = state.running.unwrap_or(false);
+                    let exit_code = state.exit_code.unwrap_or(0);
+
+                    let container_state = if running {
+                        Some(ContainerState::Running {
+                            started_at: state.started_at,
+                        })
+                    } else if state.finished_at.is_some() {
+                        Some(ContainerState::Terminated {
+                            exit_code: exit_code as i32,
+                            signal: None,
+                            reason: Some(if exit_code == 0 {
+                                "Completed".to_string()
+                            } else {
+                                "Error".to_string()
+                            }),
+                            message: None,
+                            started_at: None,
+                            finished_at: state.finished_at,
+                            container_id: inspect
+                                .id
+                                .clone()
+                                .map(|id| format!("docker://{}", id)),
+                        })
+                    } else {
+                        Some(ContainerState::Waiting {
+                            reason: Some("ContainerCreating".to_string()),
+                            message: None,
+                        })
+                    };
+
+                    ContainerStatus {
+                        name: ec.name.clone(),
+                        ready: running,
+                        restart_count: 0,
+                        state: container_state,
+                        last_state: None,
+                        image: Some(ec.image.clone()),
+                        image_id: inspect.image.clone().map(|id| format!("docker-pullable://{}", id)),
+                        container_id: inspect.id.map(|id| format!("docker://{}", id)),
+                        started: Some(running),
+                        allocated_resources: None,
+                        allocated_resources_status: None,
+                        resources: ec.resources.clone(),
+                        user: None,
+                        volume_mounts: None,
+                        stop_signal: None,
+                    }
+                }
+                Err(_) => ContainerStatus {
+                    name: ec.name.clone(),
+                    ready: false,
+                    restart_count: 0,
+                    state: Some(ContainerState::Waiting {
+                        reason: Some("ContainerCreating".to_string()),
+                        message: None,
+                    }),
+                    last_state: None,
+                    image: Some(ec.image.clone()),
+                    image_id: None,
+                    container_id: None,
+                    started: Some(false),
+                    allocated_resources: None,
+                    allocated_resources_status: None,
+                    resources: ec.resources.clone(),
+                    user: None,
+                    volume_mounts: None,
+                    stop_signal: None,
+                },
+            };
+            statuses.push(status);
+        }
+
+        Some(statuses)
+    }
+
     pub async fn get_container_statuses(&self, pod: &Pod) -> Result<Vec<ContainerStatus>> {
         let mut statuses = Vec::new();
         let pod_name = &pod.metadata.name;
