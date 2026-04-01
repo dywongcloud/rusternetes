@@ -5493,6 +5493,7 @@ impl ContainerRuntime {
             }
 
             // Refresh Secret volumes
+            debug!("Refreshing volume {} at {}", volume.name, volume_dir);
             if let Some(secret_source) = &volume.secret {
                 let secret_name = match &secret_source.secret_name {
                     Some(n) => n,
