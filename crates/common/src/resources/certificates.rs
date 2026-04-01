@@ -128,7 +128,7 @@ pub struct CertificateSigningRequestStatus {
 pub struct CertificateSigningRequestCondition {
     /// type of the condition
     #[serde(rename = "type")]
-    pub type_: CertificateSigningRequestConditionType,
+    pub type_: String,
 
     /// status of the condition
     pub status: String,

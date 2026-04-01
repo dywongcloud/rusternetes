@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use chrono::{Datelike, Utc};
 use rusternetes_common::resources::{
     CertificateSigningRequest, CertificateSigningRequestCondition,
-    CertificateSigningRequestConditionType, CertificateSigningRequestStatus, KeyUsage,
+    CertificateSigningRequestStatus, KeyUsage,
 };
 use rusternetes_storage::Storage;
 use std::sync::Arc;
@@ -74,19 +74,20 @@ impl<S: Storage> CertificateSigningRequestController<S> {
         if let Some(status) = &csr.status {
             if let Some(conditions) = &status.conditions {
                 for condition in conditions {
-                    match &condition.type_ {
-                        CertificateSigningRequestConditionType::Approved => {
+                    match condition.type_.as_str() {
+                        "Approved" => {
                             debug!("CSR {} is already approved", csr_name);
                             return Ok(());
                         }
-                        CertificateSigningRequestConditionType::Denied => {
+                        "Denied" => {
                             debug!("CSR {} is already denied", csr_name);
                             return Ok(());
                         }
-                        CertificateSigningRequestConditionType::Failed => {
+                        "Failed" => {
                             debug!("CSR {} has failed", csr_name);
                             return Ok(());
                         }
+                        _ => {}
                     }
                 }
             }
@@ -142,7 +143,7 @@ impl<S: Storage> CertificateSigningRequestController<S> {
         // Add Approved condition
         let now = Utc::now().to_rfc3339();
         let condition = CertificateSigningRequestCondition {
-            type_: CertificateSigningRequestConditionType::Approved,
+            type_: "Approved".to_string(),
             status: "True".to_string(),
             reason: Some("AutoApproved".to_string()),
             message: Some(format!(
@@ -187,7 +188,7 @@ impl<S: Storage> CertificateSigningRequestController<S> {
 
         let now = Utc::now().to_rfc3339();
         let condition = CertificateSigningRequestCondition {
-            type_: CertificateSigningRequestConditionType::Denied,
+            type_: "Denied".to_string(),
             status: "True".to_string(),
             reason: Some("Denied".to_string()),
             message: Some(reason.to_string()),

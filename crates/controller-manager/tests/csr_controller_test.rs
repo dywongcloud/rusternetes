@@ -3,7 +3,6 @@
 
 use rusternetes_common::resources::{
     CertificateSigningRequest, CertificateSigningRequestCondition,
-    CertificateSigningRequestConditionType, CertificateSigningRequestSpec,
     CertificateSigningRequestStatus, KeyUsage,
 };
 use rusternetes_common::types::ObjectMeta;
@@ -38,7 +37,7 @@ fn create_test_csr(name: &str, signer: &str, usages: Vec<KeyUsage>) -> Certifica
 
 fn create_csr_with_status(
     name: &str,
-    condition_type: CertificateSigningRequestConditionType,
+    condition_type: &str,
 ) -> CertificateSigningRequest {
     let mut csr = create_test_csr(
         name,
@@ -48,7 +47,7 @@ fn create_csr_with_status(
 
     csr.status = Some(CertificateSigningRequestStatus {
         conditions: Some(vec![CertificateSigningRequestCondition {
-            type_: condition_type,
+            type_: condition_type.to_string(),
             status: "True".to_string(),
             reason: Some("AutoApproved".to_string()),
             message: Some("This CSR was approved automatically".to_string()),
@@ -153,7 +152,7 @@ async fn test_csr_controller_skips_approved_csr() {
     // Create an already approved CSR
     let csr = create_csr_with_status(
         "approved-csr",
-        CertificateSigningRequestConditionType::Approved,
+        "Approved",
     );
 
     let csr_key = build_key("certificatesigningrequests", None, "approved-csr");
@@ -174,7 +173,7 @@ async fn test_csr_controller_skips_denied_csr() {
     let storage = setup_test().await;
 
     // Create a denied CSR
-    let csr = create_csr_with_status("denied-csr", CertificateSigningRequestConditionType::Denied);
+    let csr = create_csr_with_status("denied-csr", "Denied");
 
     let csr_key = build_key("certificatesigningrequests", None, "denied-csr");
     storage.create(&csr_key, &csr).await.unwrap();
@@ -193,7 +192,7 @@ async fn test_csr_controller_skips_failed_csr() {
     let storage = setup_test().await;
 
     // Create a failed CSR
-    let csr = create_csr_with_status("failed-csr", CertificateSigningRequestConditionType::Failed);
+    let csr = create_csr_with_status("failed-csr", "Failed");
 
     let csr_key = build_key("certificatesigningrequests", None, "failed-csr");
     storage.create(&csr_key, &csr).await.unwrap();
