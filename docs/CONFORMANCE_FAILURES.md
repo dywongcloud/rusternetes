@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 117** | IN PROGRESS | 65/441 done | 42 passed, 23 failed (64.6%)
+**Round 117** | IN PROGRESS | 96/441 done | 64 passed, 32 failed (66.7%)
 Zero watch cancel loops. CoreDNS surviving taints.
 
 ## Current Failures (Round 117)
