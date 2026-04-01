@@ -1,49 +1,62 @@
 # Conformance Issue Tracker
 
-**Round 118** | COMPLETE | 441/441 | 299 passed, 142 failed (67.8%)
+**Round 118** | COMPLETE | 299/441 passed, 142 failed (67.8%)
 
-## Final Results
+## Fixes Ready for Deploy (Round 119)
 
-299/441 passed (67.8%) — up from 283/441 (64.2%) in round 110.
-16 additional tests passing compared to round 110.
-
-## Pending Fixes for Round 119
-
-| Fix | Commit | Expected Impact |
+| Fix | Commit | Expected Tests |
 |-----|--------|----------------|
-| etcd gRPC keepalive | 4991385 | ~12 tests (CRD/job/RC watch timeouts) |
-| StatefulSet scale-down | 805c044 | 1 test |
-| Scheduler Unschedulable | d165195 | ~2 tests |
-| Sysctl all errors | d165195 | 1 test |
-| LimitRange pod defaulting | c99e0db | 1 test |
-| CreateContainerError preserved | 8af3c12 | 1 test |
-| WebSocket exec delay | 4d7f7e3 | 1 test |
-| **Total** | | **~19 tests** |
+| etcd gRPC keepalive | 4991385 | ~12 (CRD/job/RC watch timeouts) |
+| StatefulSet scale-down | 805c044 | 1 |
+| Scheduler Unschedulable | d165195 | ~2 |
+| Sysctl all errors | d165195 | 1 |
+| LimitRange pod defaulting | c99e0db | 1 |
+| CreateContainerError preserved | 8af3c12 | 1 |
+| WebSocket exec delay | 4d7f7e3 | 1 |
+| Webhook info logging | 8a42d81 | diagnostic |
+| **Total** | | **~19** |
 
-## Failure Breakdown (142 failures)
+## Root Causes Identified (Need Code Fixes)
 
-| Category | Count | Root Cause |
-|----------|-------|-----------|
-| CRD/etcd watch timeouts | ~15 | etcd gRPC stream ending — FIXED (keepalive) |
-| kubectl protobuf | 4 | No real protobuf encoding — platform limitation |
-| Service networking | ~10 | Docker Desktop userspace bypass — platform limitation |
-| EmptyDir/Secret permissions | ~8 | Docker Desktop bind mount umask — platform limitation |
-| DNS rate limiter | 3 | Cascading from informer retries |
-| StatefulSet | ~5 | Scale-down + rolling update |
-| Webhook | ~5 | Webhook service readiness/TLS |
-| Preemption/scheduling | ~5 | Scheduler predicates + latency |
-| RC/ReplicaSet | ~5 | Latency + rate limiter |
-| Deployment | ~3 | Revision + status |
-| SA tokens | ~3 | Missing TokenRequest API |
-| Job | ~6 | etcd watch stream — FIXED (keepalive) |
-| Other | ~70 | Various latency, timing, networking |
+| Issue | Count | Root Cause | Fix Needed |
+|-------|-------|-----------|------------|
+| CRD/Job etcd watch timeout | ~22 | gRPC stream ending | FIXED — keepalive 4991385 |
+| Webhook readiness | ~12 | Webhook matching/calling not triggering | Need to debug matching logic |
+| RC quota enforcement | ~2 | RC controller bypasses API server admission | Route pod creation through API |
+| Deployment available=0 | ~3 | Pods not reporting ready fast enough | Kubelet readiness timing |
+| SA token pod-name | ~3 | Kubelet uses static tokens | Bound token fix deployed but tests still fail |
+| Terminated container reason | 1 | Status being overwritten | Need to trace status flow |
+| StatefulSet rolling update | ~2 | Template hash comparison | Logging deployed, need data |
+
+## Platform Limitations (Cannot Fix)
+
+| Issue | Count | Reason |
+|-------|-------|--------|
+| Service networking | ~10 | Docker Desktop iptables DNAT bypassed |
+| EmptyDir/Secret permissions | ~8 | macOS bind mount umask |
+| kubectl protobuf | ~8 | Need real K8s OpenAPI protobuf encoding |
+| DNS rate limiter | ~6 | Cascading from other failures |
+| Pod latency | ~10 | Docker Desktop + controller intervals |
+
+## Other Failures (~48)
+
+- Preemption/scheduling: ~5 (scheduler predicates)
+- ReplicaSet: ~4 (latency)
+- DaemonSet: ~2 (pod startup)
+- Namespace: ~1 (async deletion)
+- Events: ~1 (event format)
+- ConfigMap/Secret volume: ~2 (update propagation timing)
+- CSIStorageCapacity: ~1
+- Aggregator: ~1 (sample API server)
+- HostPort: ~1 (Docker Desktop)
+- Disruption: ~1 (PDB cause format)
+- Lifecycle hooks: ~1 (service networking)
+- Various other: ~27
 
 ## Progress History
 
-| Round | Pass | Fail | Total | Rate | Notes |
-|-------|------|------|-------|------|-------|
-| 110 | 283 | 158 | 441 | 64.2% | Baseline |
-| 116 | ~128 | ~94 | 222/441 | 57.7% | Pre-deploy regression |
-| 117 | ~89 | ~44 | 133/441 | 66.9% | First deploy of fixes |
-| 118 | 299 | 142 | 441 | **67.8%** | All major fixes deployed |
-| 119 | ~318 | ~123 | 441 | **~72%** | Projected with pending fixes |
+| Round | Pass | Fail | Total | Rate |
+|-------|------|------|-------|------|
+| 110 | 283 | 158 | 441 | 64.2% |
+| 118 | 299 | 142 | 441 | 67.8% |
+| 119 | ~318 | ~123 | 441 | ~72% (projected) |
