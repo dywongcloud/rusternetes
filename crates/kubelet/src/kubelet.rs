@@ -734,21 +734,31 @@ impl Kubelet {
         match current_phase {
             // If pod is Pending and has been scheduled to this node, start it
             Phase::Pending if !is_running => {
-                info!("Starting pod: {}/{}", namespace, pod_name);
-
-                // Update status to indicate we're starting
-                let has_init_containers = pod
-                    .spec
+                // Don't overwrite CreateContainerError status — the test needs to
+                // observe it. Only set ContainerCreating on first start attempt.
+                let already_has_error = pod
+                    .status
                     .as_ref()
-                    .and_then(|s| s.init_containers.as_ref())
-                    .map_or(false, |ic| !ic.is_empty());
-                let reason = if has_init_containers {
-                    "PodInitializing"
+                    .and_then(|s| s.reason.as_deref())
+                    == Some("CreateContainerError");
+
+                if !already_has_error {
+                    info!("Starting pod: {}/{}", namespace, pod_name);
+                    let has_init_containers = pod
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.init_containers.as_ref())
+                        .map_or(false, |ic| !ic.is_empty());
+                    let reason = if has_init_containers {
+                        "PodInitializing"
+                    } else {
+                        "ContainerCreating"
+                    };
+                    self.update_pod_status(pod, Phase::Pending, Some(reason), None)
+                        .await?;
                 } else {
-                    "ContainerCreating"
-                };
-                self.update_pod_status(pod, Phase::Pending, Some(reason), None)
-                    .await?;
+                    debug!("Pod {}/{} already has CreateContainerError, retrying without status reset", namespace, pod_name);
+                }
 
                 // Start the pod with timeout
                 match tokio::time::timeout(

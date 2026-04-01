@@ -553,11 +553,17 @@ impl<S: Storage> StatefulSetController<S> {
         let value = serde_json::to_value(template).unwrap_or_default();
         let serialized = serde_json::to_string(&value).unwrap_or_default();
         let hash = Sha256::digest(serialized.as_bytes());
-        // Format as a 10-char hex string from the hash
-        format!(
+        let revision = format!(
             "{:010x}",
             u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8]))
-        )
+        );
+        // Log the first container's image for debugging rolling updates
+        let image = value
+            .pointer("/spec/containers/0/image")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        info!("compute_revision: image={}, hash={}, json_len={}", image, revision, serialized.len());
+        revision
     }
 
     async fn create_pod(
