@@ -35,16 +35,21 @@
 - Pod startup latency (~4): Docker Desktop + controller intervals
 - RC/ReplicaSet (~2): Rate limiter exhaustion — improves with keepalive
 
-### Need Deeper Work (~8 tests)
-- DaemonSet rolling update (~2): DS controller rolling update logic
-- ConfigMap/Secret volume refresh (~2): Update propagation timing
-- Events (~1): Event list empty after create
+### Fixed (additional, not yet deployed)
+- DaemonSet: FIXED 9451c4e — updatedNumberScheduled counts current-hash pods (~2 tests)
+- Volume refresh: FIXED 9451c4e — creates dirs, deletes removed keys (~2 tests)
+- Namespace: FIXED 2a0ff37 — split finalizer across cycles (~1 test)
+- Deployment: FIXED 36ff92b — direct pod count (~3 tests)
+- Webhooks: FIXED 88f9c37 — stale config cleanup (~5 tests)
+
+### Remaining (~5 tests, need investigation)
+- Events (~1): Event list empty — possible field selector filtering
 - Aggregator (~1): Multi-container pod startup ordering
-- Other (~2): Various edge cases
+- Other (~3): Edge cases
 
 ## Projected Results
 
 | Round | Pass | Fail | Rate |
 |-------|------|------|------|
 | 118 | 299 | 142 | 67.8% |
-| 119 | ~347 | ~94 | **~79%** |
+| 119 | ~355 | ~86 | **~80%** |
