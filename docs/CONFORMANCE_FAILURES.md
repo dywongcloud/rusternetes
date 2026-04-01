@@ -21,7 +21,7 @@
 | Issue | Count | Root Cause | Fix Needed |
 |-------|-------|-----------|------------|
 | CRD/Job etcd watch timeout | ~22 | gRPC stream ending | FIXED — keepalive 4991385 |
-| Webhook readiness | ~12 | Webhook matching/calling not triggering | Need to debug matching logic |
+| Webhook readiness | ~12 | ConfigMap handler missing webhook calls | FIXED fac86a3 — added webhook pipeline |
 | RC quota enforcement | ~2 | Controllers bypassed quota check | FIXED 7985cf9 — all controllers check quota |
 | Deployment available=0 | ~3 | Pods not reporting ready fast enough | Kubelet readiness timing |
 | SA token pod-name | ~3 | Bound token in wrong code path | FIXED 0a30348 — inject in Secret volume path |
