@@ -12,7 +12,7 @@ services:
       - --listen-client-urls=http://0.0.0.0:2379
       - --advertise-client-urls=http://etcd:2379
       - --listen-peer-urls=http://0.0.0.0:2380
-      - --auto-compaction-retention=1m
+      - --auto-compaction-retention=10m
       - --auto-compaction-mode=periodic
       - --snapshot-count=5000
       - --quota-backend-bytes=8589934592
