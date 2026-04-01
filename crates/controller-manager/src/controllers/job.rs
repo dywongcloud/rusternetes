@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct JobController<S: Storage> {
     storage: Arc<S>,
@@ -102,6 +102,12 @@ impl<S: Storage> JobController<S> {
             .selector
             .as_ref()
             .and_then(|s| s.match_labels.as_ref());
+        if selector.is_none() && !job_pods.is_empty() {
+            debug!(
+                "Job {}/{} has no matchLabels selector, skipping release check for {} pods",
+                namespace, name, job_pods.len()
+            );
+        }
         for pod in &job_pods {
             if let Some(sel) = selector {
                 let labels = pod.metadata.labels.as_ref();
@@ -126,7 +132,7 @@ impl<S: Storage> JobController<S> {
                                         break;
                                     }
                                     Err(e) => {
-                                        tracing::debug!("CAS retry releasing pod {}: {}", pod.metadata.name, e);
+                                        warn!("CAS retry releasing pod {}: {}", pod.metadata.name, e);
                                     }
                                 }
                             }
