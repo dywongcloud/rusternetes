@@ -2055,8 +2055,12 @@ pub async fn watch_cluster_scoped_json(
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
-    let should_send_initial =
-        send_initial_events || requested_rv.as_deref() == Some("0") || requested_rv.is_none();
+    // Always send initial events for cluster-scoped JSON watches.
+    // When the client watches with a specific resourceVersion (from a CREATE),
+    // our broadcast subscription only gets future events, missing the MODIFIED
+    // event that already happened. Sending current state as ADDED ensures the
+    // client sees the latest status (e.g. CRD Established=True condition).
+    let should_send_initial = true;
 
     tokio::spawn(async move {
         let mut latest_resource_version: Option<String> = Some(current_rev_str);
@@ -2233,8 +2237,12 @@ pub async fn watch_namespaced_json(
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
-    let should_send_initial =
-        send_initial_events || requested_rv.as_deref() == Some("0") || requested_rv.is_none();
+    // Always send initial events for cluster-scoped JSON watches.
+    // When the client watches with a specific resourceVersion (from a CREATE),
+    // our broadcast subscription only gets future events, missing the MODIFIED
+    // event that already happened. Sending current state as ADDED ensures the
+    // client sees the latest status (e.g. CRD Established=True condition).
+    let should_send_initial = true;
 
     tokio::spawn(async move {
         let mut latest_resource_version: Option<String> = Some(current_rev_str);
