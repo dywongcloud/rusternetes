@@ -197,11 +197,32 @@ impl<S: Storage> StatefulSetController<S> {
                 let i = current_replicas - 1;
                 let pod_name = format!("{}-{}", name, i);
                 let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
-                self.storage.delete(&pod_key).await?;
-                info!(
-                    "Scale down: deleted pod {} ({} -> {})",
-                    pod_name, current_replicas, current_replicas - 1
-                );
+                // Set deletionTimestamp for graceful termination (like real K8s).
+                // The kubelet will stop containers and remove the pod.
+                match self.storage.get::<Pod>(&pod_key).await {
+                    Ok(mut pod_to_delete) => {
+                        if pod_to_delete.metadata.deletion_timestamp.is_none() {
+                            pod_to_delete.metadata.deletion_timestamp =
+                                Some(chrono::Utc::now());
+                            pod_to_delete.metadata.deletion_grace_period_seconds =
+                                pod_to_delete.spec.as_ref()
+                                    .and_then(|s| s.termination_grace_period_seconds)
+                                    .or(Some(30));
+                            let _ = self.storage.update(&pod_key, &pod_to_delete).await;
+                            info!(
+                                "Scale down: set deletionTimestamp on pod {} ({} -> {})",
+                                pod_name, current_replicas, current_replicas - 1
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        // Pod doesn't exist — nothing to delete
+                        info!(
+                            "Scale down: pod {} already gone ({} -> {})",
+                            pod_name, current_replicas, current_replicas - 1
+                        );
+                    }
+                }
             }
         }
 
