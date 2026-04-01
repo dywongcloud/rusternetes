@@ -897,6 +897,11 @@ impl<S: Storage> JobController<S> {
             spec.restart_policy = Some("Never".to_string());
         }
 
+        // For Indexed mode, set hostname to {job-name}-{index} (K8s convention)
+        if is_indexed {
+            spec.hostname = Some(format!("{}-{}", job_name, index));
+        }
+
         // For Indexed mode, inject JOB_COMPLETION_INDEX env var into all containers
         if is_indexed {
             for container in &mut spec.containers {
