@@ -443,7 +443,36 @@ impl Scheduler {
         all_pods: &[Pod],
     ) -> Option<(String, Vec<String>)> {
         // Check each node to see if preemption is possible
+        // Only consider nodes that pass basic scheduling constraints (except resources)
         for node in nodes {
+            // Skip unschedulable nodes
+            if node
+                .spec
+                .as_ref()
+                .and_then(|s| s.unschedulable)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
+            // Check taints/tolerations
+            if !check_taints_tolerations(node, pod) {
+                continue;
+            }
+
+            // Check node selector
+            if let Some(node_selector) = pod.spec.as_ref().and_then(|s| s.node_selector.as_ref()) {
+                if !self.matches_node_selector(node, node_selector) {
+                    continue;
+                }
+            }
+
+            // Check node affinity (hard requirements only)
+            let (affinity_ok, _) = check_node_affinity(node, pod);
+            if !affinity_ok {
+                continue;
+            }
+
             let (can_preempt, pods_to_evict) = check_preemption(node, pod, all_pods);
             if can_preempt && !pods_to_evict.is_empty() {
                 return Some((node.metadata.name.clone(), pods_to_evict));
@@ -582,26 +611,45 @@ impl Scheduler {
     }
 
     /// Parse resource quantity (helper method)
+    /// Handles K8s resource formats:
+    ///   CPU: "100m" (millicores), "0.5" or "1.5" (decimal cores), "2" (whole cores)
+    ///   Memory: "128974848" (bytes), "129e6" (scientific), "129M" (SI), "123Mi" (binary)
     fn parse_resource_quantity(&self, quantity: &str, resource_type: &str) -> i64 {
         let quantity = quantity.trim();
 
         if resource_type == "cpu" {
-            // CPU: support m (millicores) and plain numbers
             if let Some(stripped) = quantity.strip_suffix('m') {
-                stripped.parse().unwrap_or(0)
+                stripped.parse::<i64>().unwrap_or(0)
+            } else if let Ok(val) = quantity.parse::<f64>() {
+                (val * 1000.0) as i64
             } else {
-                quantity.parse::<i64>().unwrap_or(0) * 1000
+                0
             }
         } else {
-            // Memory: support Ki, Mi, Gi
             if let Some(stripped) = quantity.strip_suffix("Ki") {
                 stripped.parse::<i64>().unwrap_or(0) * 1024
             } else if let Some(stripped) = quantity.strip_suffix("Mi") {
                 stripped.parse::<i64>().unwrap_or(0) * 1024 * 1024
             } else if let Some(stripped) = quantity.strip_suffix("Gi") {
                 stripped.parse::<i64>().unwrap_or(0) * 1024 * 1024 * 1024
+            } else if let Some(stripped) = quantity.strip_suffix("Ti") {
+                stripped.parse::<i64>().unwrap_or(0) * 1024 * 1024 * 1024 * 1024
+            } else if let Some(stripped) = quantity.strip_suffix('T') {
+                stripped.parse::<i64>().unwrap_or(0) * 1_000_000_000_000
+            } else if let Some(stripped) = quantity.strip_suffix('G') {
+                stripped.parse::<i64>().unwrap_or(0) * 1_000_000_000
+            } else if let Some(stripped) = quantity.strip_suffix('M') {
+                stripped.parse::<i64>().unwrap_or(0) * 1_000_000
+            } else if let Some(stripped) = quantity.strip_suffix('k') {
+                stripped.parse::<i64>().unwrap_or(0) * 1000
+            } else if let Some(stripped) = quantity.strip_suffix('E') {
+                stripped.parse::<i64>().unwrap_or(0) * 1_000_000_000_000_000_000
+            } else if let Some(stripped) = quantity.strip_suffix('P') {
+                stripped.parse::<i64>().unwrap_or(0) * 1_000_000_000_000_000
+            } else if let Ok(val) = quantity.parse::<f64>() {
+                val as i64
             } else {
-                quantity.parse().unwrap_or(0)
+                0
             }
         }
     }

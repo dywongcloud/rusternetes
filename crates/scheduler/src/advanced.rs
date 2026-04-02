@@ -533,27 +533,50 @@ pub fn calculate_resource_score_with_pods(node: &Node, pod: &Pod, all_pods: &[Po
 }
 
 /// Parse resource quantity (simplified)
+/// Handles K8s resource formats:
+///   CPU: "100m" (millicores), "0.5" or "1.5" (decimal cores), "2" (whole cores)
+///   Memory: "128974848" (bytes), "129e6" (scientific), "129M" (SI), "123Mi" (binary)
+///   Supported suffixes: Ki, Mi, Gi, Ti, k, M, G, T, E, P
 fn parse_resource_quantity(quantity: &str, resource_type: &str) -> i64 {
-    // Remove units and parse
     let quantity = quantity.trim();
 
     if resource_type == "cpu" {
-        // CPU: support m (millicores) and plain numbers
+        // CPU: support m (millicores), decimal, and integer cores
         if let Some(stripped) = quantity.strip_suffix('m') {
-            stripped.parse().unwrap_or(0)
+            stripped.parse::<i64>().unwrap_or(0)
+        } else if let Ok(val) = quantity.parse::<f64>() {
+            // Handles both "2" and "0.8" and "1.5"
+            (val * 1000.0) as i64
         } else {
-            quantity.parse::<i64>().unwrap_or(0) * 1000
+            0
         }
     } else {
-        // Memory: support Ki, Mi, Gi
+        // Memory: binary suffixes (Ki, Mi, Gi, Ti) and SI suffixes (k, M, G, T, E, P)
         if let Some(stripped) = quantity.strip_suffix("Ki") {
             stripped.parse::<i64>().unwrap_or(0) * 1024
         } else if let Some(stripped) = quantity.strip_suffix("Mi") {
             stripped.parse::<i64>().unwrap_or(0) * 1024 * 1024
         } else if let Some(stripped) = quantity.strip_suffix("Gi") {
             stripped.parse::<i64>().unwrap_or(0) * 1024 * 1024 * 1024
+        } else if let Some(stripped) = quantity.strip_suffix("Ti") {
+            stripped.parse::<i64>().unwrap_or(0) * 1024 * 1024 * 1024 * 1024
+        } else if let Some(stripped) = quantity.strip_suffix('T') {
+            stripped.parse::<i64>().unwrap_or(0) * 1_000_000_000_000
+        } else if let Some(stripped) = quantity.strip_suffix('G') {
+            stripped.parse::<i64>().unwrap_or(0) * 1_000_000_000
+        } else if let Some(stripped) = quantity.strip_suffix('M') {
+            stripped.parse::<i64>().unwrap_or(0) * 1_000_000
+        } else if let Some(stripped) = quantity.strip_suffix('k') {
+            stripped.parse::<i64>().unwrap_or(0) * 1000
+        } else if let Some(stripped) = quantity.strip_suffix('E') {
+            stripped.parse::<i64>().unwrap_or(0) * 1_000_000_000_000_000_000
+        } else if let Some(stripped) = quantity.strip_suffix('P') {
+            stripped.parse::<i64>().unwrap_or(0) * 1_000_000_000_000_000
+        } else if let Ok(val) = quantity.parse::<f64>() {
+            // Plain number (bytes) or scientific notation like "129e6"
+            val as i64
         } else {
-            quantity.parse().unwrap_or(0)
+            0
         }
     }
 }
@@ -569,15 +592,26 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
         return (false, vec![]);
     }
 
-    // Find pods running on this node
+    // Find pods running on this node (skip terminated pods)
     let node_pods: Vec<&Pod> = all_pods
         .iter()
         .filter(|p| {
-            p.spec
+            let on_this_node = p
+                .spec
                 .as_ref()
                 .and_then(|s| s.node_name.as_ref())
                 .map(|n| n == &node.metadata.name)
-                .unwrap_or(false)
+                .unwrap_or(false);
+            if !on_this_node {
+                return false;
+            }
+            // Skip terminated pods — they don't consume resources
+            let phase = p.status.as_ref().and_then(|s| s.phase.as_ref());
+            !matches!(
+                phase,
+                Some(rusternetes_common::types::Phase::Succeeded)
+                    | Some(rusternetes_common::types::Phase::Failed)
+            )
         })
         .collect();
 
@@ -621,8 +655,8 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
         }
     }
 
-    // Get node's allocatable resources
-    let (available_cpu, available_memory) = if let Some(status) = &node.status {
+    // Get node's total allocatable resources
+    let (total_cpu, total_memory) = if let Some(status) = &node.status {
         if let Some(allocatable) = &status.allocatable {
             let cpu = allocatable
                 .get("cpu")
@@ -640,9 +674,40 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
         return (false, vec![]);
     };
 
-    // Check if we have enough resources even with preemption
-    if cpu_needed > available_cpu || memory_needed > available_memory {
+    // If the pod can't fit even on a completely empty node, preemption won't help
+    if cpu_needed > total_cpu || memory_needed > total_memory {
         return (false, vec![]);
+    }
+
+    // Calculate resources used by ALL pods on this node (including non-candidates)
+    let mut total_used_cpu = 0i64;
+    let mut total_used_memory = 0i64;
+    for p in &node_pods {
+        if let Some(spec) = &p.spec {
+            for container in &spec.containers {
+                if let Some(ref resources) = container.resources {
+                    if let Some(ref requests) = resources.requests {
+                        if let Some(cpu) = requests.get("cpu") {
+                            total_used_cpu += parse_resource_quantity(cpu, "cpu");
+                        }
+                        if let Some(memory) = requests.get("memory") {
+                            total_used_memory += parse_resource_quantity(memory, "memory");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Current remaining resources (before any eviction)
+    let remaining_cpu = total_cpu - total_used_cpu;
+    let remaining_memory = total_memory - total_used_memory;
+
+    // If the pod already fits without eviction, no preemption needed
+    // (This shouldn't normally be reached since select_node would have picked this node,
+    //  but check anyway for correctness)
+    if remaining_cpu >= cpu_needed && remaining_memory >= memory_needed {
+        return (true, vec![]);
     }
 
     // Try to find a minimal set of pods to evict
@@ -670,8 +735,10 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
 
         pods_to_evict.push(candidate_pod.metadata.name.clone());
 
-        // Check if we've freed enough resources
-        if freed_cpu >= cpu_needed && freed_memory >= memory_needed {
+        // Check if remaining + freed resources are enough for the incoming pod
+        if (remaining_cpu + freed_cpu) >= cpu_needed
+            && (remaining_memory + freed_memory) >= memory_needed
+        {
             debug!(
                 "Preemption possible on node {}: evicting {} pods",
                 node.metadata.name,
@@ -853,6 +920,12 @@ mod tests {
         assert_eq!(parse_resource_quantity("100m", "cpu"), 100);
         assert_eq!(parse_resource_quantity("1", "cpu"), 1000);
         assert_eq!(parse_resource_quantity("2", "cpu"), 2000);
+        // Decimal CPU values (common in K8s)
+        assert_eq!(parse_resource_quantity("0.5", "cpu"), 500);
+        assert_eq!(parse_resource_quantity("0.8", "cpu"), 800);
+        assert_eq!(parse_resource_quantity("1.5", "cpu"), 1500);
+        assert_eq!(parse_resource_quantity("0.1", "cpu"), 100);
+        assert_eq!(parse_resource_quantity("0.25", "cpu"), 250);
     }
 
     #[test]
@@ -860,6 +933,14 @@ mod tests {
         assert_eq!(parse_resource_quantity("1Ki", "memory"), 1024);
         assert_eq!(parse_resource_quantity("1Mi", "memory"), 1024 * 1024);
         assert_eq!(parse_resource_quantity("1Gi", "memory"), 1024 * 1024 * 1024);
+        assert_eq!(parse_resource_quantity("8Gi", "memory"), 8 * 1024 * 1024 * 1024);
+        // SI units
+        assert_eq!(parse_resource_quantity("128M", "memory"), 128_000_000);
+        assert_eq!(parse_resource_quantity("1G", "memory"), 1_000_000_000);
+        // Plain bytes
+        assert_eq!(parse_resource_quantity("128974848", "memory"), 128974848);
+        // Scientific notation
+        assert_eq!(parse_resource_quantity("129e6", "memory"), 129_000_000);
     }
 
     #[test]

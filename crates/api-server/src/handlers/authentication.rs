@@ -74,6 +74,12 @@ pub async fn create_token_review(
                             vec![node_name.clone()],
                         );
                     }
+                    if let Some(ref node_uid) = claims.node_uid {
+                        extra.insert(
+                            "authentication.kubernetes.io/node-uid".to_string(),
+                            vec![node_uid.clone()],
+                        );
+                    }
                     extra
                 }),
             }),
@@ -167,6 +173,7 @@ pub async fn create_token_request(
         pod_name: None,
         pod_uid: None,
         node_name: None,
+        node_uid: None,
     };
 
     // Set audience from the request (TokenRequestSpec.audiences is Vec<String>, not Option)
@@ -180,7 +187,7 @@ pub async fn create_token_request(
             claims.pod_name = bound_ref.name.clone();
             claims.pod_uid = bound_ref.uid.clone();
 
-            // Try to get node name from the pod
+            // Try to get node name and node UID from the pod
             if let Some(ref pod_name) = bound_ref.name {
                 let pod_key = rusternetes_storage::build_key("pods", Some(&namespace), pod_name);
                 if let Ok(pod) = state
@@ -188,7 +195,23 @@ pub async fn create_token_request(
                     .get::<rusternetes_common::resources::Pod>(&pod_key)
                     .await
                 {
-                    claims.node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
+                    let node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
+                    claims.node_name = node_name.clone();
+
+                    // Look up node UID from the Node object
+                    if let Some(ref n) = node_name {
+                        let node_key = rusternetes_storage::build_key("nodes", None::<&str>, n);
+                        if let Ok(node) = state
+                            .storage
+                            .get::<rusternetes_common::resources::Node>(&node_key)
+                            .await
+                        {
+                            let uid = node.metadata.uid.clone();
+                            if !uid.is_empty() {
+                                claims.node_uid = Some(uid);
+                            }
+                        }
+                    }
                 }
             }
         }

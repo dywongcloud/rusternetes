@@ -41,6 +41,10 @@ pub struct ServiceAccountClaims {
     /// Node name where the bound pod is running
     #[serde(skip_serializing_if = "Option::is_none")]
     pub node_name: Option<String>,
+
+    /// Node UID where the bound pod is running
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_uid: Option<String>,
 }
 
 impl ServiceAccountClaims {
@@ -64,6 +68,7 @@ impl ServiceAccountClaims {
             pod_name: None,
             pod_uid: None,
             node_name: None,
+            node_uid: None,
         }
     }
 }
@@ -233,14 +238,50 @@ pub struct UserInfo {
 
 impl UserInfo {
     pub fn from_service_account_claims(claims: &ServiceAccountClaims) -> Self {
+        let mut extra = std::collections::HashMap::new();
+
+        // Include pod/node binding info in extra if present
+        if let Some(ref pod_name) = claims.pod_name {
+            extra.insert(
+                "authentication.kubernetes.io/pod-name".to_string(),
+                vec![pod_name.clone()],
+            );
+        }
+        if let Some(ref pod_uid) = claims.pod_uid {
+            extra.insert(
+                "authentication.kubernetes.io/pod-uid".to_string(),
+                vec![pod_uid.clone()],
+            );
+        }
+        if let Some(ref node_name) = claims.node_name {
+            extra.insert(
+                "authentication.kubernetes.io/node-name".to_string(),
+                vec![node_name.clone()],
+            );
+        }
+        if let Some(ref node_uid) = claims.node_uid {
+            extra.insert(
+                "authentication.kubernetes.io/node-uid".to_string(),
+                vec![node_uid.clone()],
+            );
+        }
+
+        // Add credential-id
+        let jti = format!("JTI={}", uuid::Uuid::new_v4());
+        extra.insert(
+            "authentication.kubernetes.io/credential-id".to_string(),
+            vec![jti],
+        );
+
         Self {
             username: claims.sub.clone(),
             uid: claims.uid.clone(),
             groups: vec![
                 "system:serviceaccounts".to_string(),
                 format!("system:serviceaccounts:{}", claims.namespace),
+                "system:authenticated".to_string(),
             ],
-            extra: std::collections::HashMap::new(),
+            extra,
         }
     }
 
@@ -815,6 +856,7 @@ mod tests {
             pod_name: None,
             pod_uid: None,
             node_name: None,
+            node_uid: None,
         };
 
         let token = manager.generate_token(claims).unwrap();
@@ -845,6 +887,7 @@ mod tests {
             pod_name: None,
             pod_uid: None,
             node_name: None,
+            node_uid: None,
         };
 
         let token = manager.generate_token(claims).unwrap();
@@ -878,6 +921,7 @@ mod tests {
             pod_name: None,
             pod_uid: None,
             node_name: None,
+            node_uid: None,
         };
 
         let token = manager.generate_token(claims).unwrap();
@@ -911,6 +955,7 @@ mod tests {
             pod_name: Some("my-pod".to_string()),
             pod_uid: Some("pod-uid-456".to_string()),
             node_name: Some("node-1".to_string()),
+            node_uid: Some("node-uid-789".to_string()),
         };
 
         let token = manager.generate_token(claims).unwrap();
@@ -920,6 +965,7 @@ mod tests {
         assert_eq!(validated.pod_name, Some("my-pod".to_string()));
         assert_eq!(validated.pod_uid, Some("pod-uid-456".to_string()));
         assert_eq!(validated.node_name, Some("node-1".to_string()));
+        assert_eq!(validated.node_uid, Some("node-uid-789".to_string()));
         assert_eq!(validated.sub, "system:serviceaccount:test-ns:my-sa");
         assert_eq!(validated.namespace, "test-ns");
     }
@@ -943,6 +989,7 @@ mod tests {
             pod_name: Some("pod-abc".to_string()),
             pod_uid: Some("pod-uid-abc".to_string()),
             node_name: Some("node-2".to_string()),
+            node_uid: Some("node-uid-2".to_string()),
         };
 
         let token = manager.generate_token(claims).unwrap();
@@ -968,6 +1015,12 @@ mod tests {
                 vec![node_name.clone()],
             );
         }
+        if let Some(ref node_uid) = validated.node_uid {
+            extra.insert(
+                "authentication.kubernetes.io/node-uid".to_string(),
+                vec![node_uid.clone()],
+            );
+        }
 
         assert_eq!(
             extra.get("authentication.kubernetes.io/pod-name"),
@@ -980,6 +1033,10 @@ mod tests {
         assert_eq!(
             extra.get("authentication.kubernetes.io/node-name"),
             Some(&vec!["node-2".to_string()])
+        );
+        assert_eq!(
+            extra.get("authentication.kubernetes.io/node-uid"),
+            Some(&vec!["node-uid-2".to_string()])
         );
     }
 }

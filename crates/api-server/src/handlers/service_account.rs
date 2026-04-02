@@ -478,6 +478,7 @@ pub async fn create_token(
         pod_name: None,
         pod_uid: None,
         node_name: None,
+        node_uid: None,
     };
     let token = state
         .token_manager

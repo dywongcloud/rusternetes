@@ -1838,6 +1838,13 @@ impl ContainerRuntime {
                     .and_then(|v| v.pointer("/metadata/uid").and_then(|u| u.as_str()).map(|s| s.to_string()))
                     .unwrap_or_default();
                 let node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
+                let node_uid = if let Some(ref nn) = node_name {
+                    let node_key = build_key("nodes", None::<&str>, nn);
+                    storage.get::<serde_json::Value>(&node_key).await.ok()
+                        .and_then(|v| v.pointer("/metadata/uid").and_then(|u| u.as_str()).map(|s| s.to_string()))
+                } else {
+                    None
+                };
                 let now = chrono::Utc::now();
                 let claims = rusternetes_common::auth::ServiceAccountClaims {
                     sub: format!("system:serviceaccount:{}:{}", namespace, sa_name),
@@ -1850,6 +1857,7 @@ impl ContainerRuntime {
                     pod_name: Some(pod_name.to_string()),
                     pod_uid: Some(pod.metadata.uid.clone()),
                     node_name,
+                    node_uid,
                 };
                 self.token_manager.generate_token(claims).ok()
             } else {
@@ -2483,6 +2491,13 @@ impl ContainerRuntime {
                             audiences = vec![aud.clone()];
                         }
                         let node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
+                        let node_uid = if let (Some(ref nn), Some(st)) = (&node_name, storage) {
+                            let node_key = build_key("nodes", None::<&str>, nn);
+                            st.get::<serde_json::Value>(&node_key).await.ok()
+                                .and_then(|v| v.pointer("/metadata/uid").and_then(|u| u.as_str()).map(|s| s.to_string()))
+                        } else {
+                            None
+                        };
                         let claims = rusternetes_common::auth::ServiceAccountClaims {
                             sub: format!("system:serviceaccount:{}:{}", namespace, sa_name),
                             namespace: namespace.to_string(),
@@ -2494,6 +2509,7 @@ impl ContainerRuntime {
                             pod_name: Some(pod_name.clone()),
                             pod_uid: Some(pod.metadata.uid.clone()),
                             node_name,
+                            node_uid,
                         };
                         let token = match self.token_manager.generate_token(claims) {
                             Ok(t) => t,
@@ -2607,6 +2623,13 @@ impl ContainerRuntime {
             .unwrap_or_default();
 
         let node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
+        let node_uid = if let Some(ref nn) = node_name {
+            let node_key = build_key("nodes", None::<&str>, nn);
+            storage.get::<serde_json::Value>(&node_key).await.ok()
+                .and_then(|v| v.pointer("/metadata/uid").and_then(|u| u.as_str()).map(|s| s.to_string()))
+        } else {
+            None
+        };
 
         let now = chrono::Utc::now();
         let claims = rusternetes_common::auth::ServiceAccountClaims {
@@ -2620,6 +2643,7 @@ impl ContainerRuntime {
             pod_name: Some(pod_name.clone()),
             pod_uid: Some(pod.metadata.uid.clone()),
             node_name,
+            node_uid,
         };
 
         let token = match self.token_manager.generate_token(claims) {
@@ -5663,11 +5687,12 @@ impl ContainerRuntime {
                     None => continue,
                 };
                 let cm_key = rusternetes_storage::build_key("configmaps", Some(namespace), cm_name);
-                if let Ok(cm) = storage
+                match storage
                     .get::<rusternetes_common::resources::ConfigMap>(&cm_key)
                     .await
                 {
-                    if let Some(data) = &cm.data {
+                    Ok(cm) => {
+                        if let Some(data) = &cm.data {
                         let items = cm_source.items.as_ref();
                         if let Some(items) = items {
                             for item in items {
@@ -5689,6 +5714,18 @@ impl ContainerRuntime {
                                             let _ = std::fs::remove_file(entry.path());
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+                    }
+                    Err(_) => {
+                        // ConfigMap deleted — clean up files if optional
+                        let is_optional = cm_source.optional.unwrap_or(false);
+                        if is_optional {
+                            if let Ok(entries) = std::fs::read_dir(&volume_dir) {
+                                for entry in entries.flatten() {
+                                    let _ = std::fs::remove_file(entry.path());
                                 }
                             }
                         }

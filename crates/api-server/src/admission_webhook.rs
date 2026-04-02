@@ -1157,10 +1157,17 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                                 derived_resource,
                                 namespace
                             );
-                            // Check validation actions (from validation rule or binding)
-                            let actions = validation
-                                .get("validationActions")
-                                .and_then(|a| a.as_array());
+                            // Check validation actions: first from the binding, then from
+                            // the validation rule itself, defaulting to Deny if neither set.
+                            let actions = binding
+                                .get("spec")
+                                .and_then(|s| s.get("validationActions"))
+                                .and_then(|a| a.as_array())
+                                .or_else(|| {
+                                    validation
+                                        .get("validationActions")
+                                        .and_then(|a| a.as_array())
+                                });
                             let has_deny = actions.map_or(true, |acts| {
                                 acts.iter().any(|a| a.as_str() == Some("Deny"))
                             });
@@ -1185,7 +1192,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                                         .unwrap_or("Validation failed")
                                         .to_string()
                                 };
-                                return Err(rusternetes_common::Error::Forbidden(format!(
+                                return Err(rusternetes_common::Error::InvalidResource(format!(
                                     "ValidatingAdmissionPolicy {} denied: {}",
                                     policy_name, message
                                 )));
@@ -1200,7 +1207,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                             );
                             // On error, check failure policy
                             if failure_policy == "Fail" {
-                                return Err(rusternetes_common::Error::Forbidden(format!(
+                                return Err(rusternetes_common::Error::InvalidResource(format!(
                                     "ValidatingAdmissionPolicy {} evaluation error: {}",
                                     policy_name, e
                                 )));
