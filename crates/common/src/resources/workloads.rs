@@ -151,6 +151,7 @@ pub struct ReplicaSetSpec {
     pub replicas: i32,
 
     /// Selector for pods
+    #[serde(default)]
     pub selector: LabelSelector,
 
     /// Template for pod creation
@@ -261,6 +262,7 @@ pub struct StatefulSetSpec {
     pub replicas: Option<i32>,
 
     /// Selector for pods
+    #[serde(default)]
     pub selector: LabelSelector,
 
     /// Service name for network identity
@@ -437,6 +439,7 @@ impl DaemonSet {
 #[serde(rename_all = "camelCase")]
 pub struct DaemonSetSpec {
     /// Selector for pods
+    #[serde(default)]
     pub selector: LabelSelector,
 
     /// Template for pod creation

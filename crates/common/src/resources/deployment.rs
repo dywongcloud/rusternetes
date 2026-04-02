@@ -35,6 +35,7 @@ pub struct DeploymentSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub replicas: Option<i32>,
 
+    #[serde(default)]
     pub selector: LabelSelector,
     pub template: PodTemplateSpec,
 
