@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
-use rusternetes_common::resources::{Namespace, NamespaceCondition, NamespaceStatus};
+use rusternetes_common::resources::{Namespace, NamespaceCondition, NamespaceStatus, Pod};
 use rusternetes_common::types::Phase;
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
@@ -203,6 +203,28 @@ impl<S: Storage> NamespaceController<S> {
             "podtemplates",
             "csistoragecapacities",
         ];
+
+        // Delete pods first and wait briefly for graceful termination.
+        // K8s deletes pods before other resources so pods can access configmaps/secrets
+        // during shutdown. We set deletionTimestamp on pods, wait, then delete everything.
+        {
+            let pod_prefix = build_prefix("pods", Some(name));
+            if let Ok(pods) = self.storage.list::<Pod>(&pod_prefix).await {
+                for pod in &pods {
+                    if pod.metadata.deletion_timestamp.is_none() {
+                        let pod_key = build_key("pods", Some(name), &pod.metadata.name);
+                        if let Ok(mut p) = self.storage.get::<Pod>(&pod_key).await {
+                            p.metadata.deletion_timestamp = Some(chrono::Utc::now());
+                            let _ = self.storage.update(&pod_key, &p).await;
+                        }
+                    }
+                }
+                if !pods.is_empty() {
+                    // Brief wait for kubelet to process termination
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                }
+            }
+        }
 
         // Delete all resources in the namespace
         for resource_type in &resource_types {
