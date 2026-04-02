@@ -137,14 +137,14 @@ pub async fn handle_ws_exec(
         }
     }
 
-    // Send empty stdout to signal EOF before status (K8s protocol expects ch1 before ch3)
-    // Also send empty stderr for completeness
+    // K8s protocol: client expects channel 1 (stdout) before channel 3 (status).
+    // Send empty stdout/stderr frames and flush with a ping to ensure ordering.
     let _ = socket.send(Message::Binary(vec![1u8].into())).await;
     let _ = socket.send(Message::Binary(vec![2u8].into())).await;
-    // Delay to ensure the client receives and processes stdout/stderr frames
-    // before the status frame. Without this, the WebSocket might batch all
-    // frames together and the client sees channel 3 before channel 1.
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // Send a Ping to flush the TCP buffer — the Pong response ensures the
+    // client has processed the stdout/stderr frames before we send status.
+    let _ = socket.send(Message::Ping(vec![].into())).await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
     // Send exit code as status on error channel (channel 3)
     let exit_code = docker
