@@ -1,55 +1,57 @@
 # Conformance Issue Tracker
 
-**Round 121** | IN PROGRESS | All 25 fixes deployed + 13 more committed for R122
+**Round 121** | COMPLETE | Round 122 ready with 17 additional fixes
 
-## Fixes Committed for Round 122 (Not Yet Deployed)
+## KEY FIX: OpenAPI v2 Protobuf Encoding (dcedd60)
 
-28. **CRD watch history replay** (5cd32b0) — use subscribe_from() instead of duplicate ADDED events
-29. **PriorityClassName resolution** (fa65ed7) — resolve to priority value on pod creation
-30. **Namespace deletion ordering** (313085f) — terminate pods before other resources
-31. **Exec WebSocket channel** (c742a89) — ping flush ensures stdout before status
-32. **SA node-uid tokens** (d883860) — add node_uid to bound token claims and extra info
-33. **Scheduler preemption** (d883860) — decimal CPU, memory units, resource accounting
-34. **VAP validation actions** (d883860) — check validationActions, return 422 not 403
-35. **ConfigMap volume cleanup** (d883860) — delete files when optional configmap deleted
-36. **DaemonSet rolling update** (15f5ff9) — delete old-hash pods and recreate
-37. **Proxy pod handler** (15f5ff9) — fix port types, add root handler
-38. **SubPath env expansion** (15f5ff9) — expand env vars in subPath
-39. **Endpoint controller** (15f5ff9) — improve readiness detection
-40. **kube-proxy sync** (15f5ff9) — better service rule timing
+The Go client-go library requests OpenAPI v2 via protobuf. Our server returned raw
+JSON, causing "proto: cannot parse invalid wire-format data" errors. This broke:
+- kubectl validation (8 tests)
+- CRD informer initialization (~12 tests — WaitForEstablishedCRD never polled)
+- Webhook informer initialization (~13 tests)
+- 12K watch "context canceled" errors from broken informers
 
-## Remaining Items
+Now properly wraps JSON in K8s protobuf wire format (magic + envelope).
 
-| Issue | Tests | Status |
+## Fixes for Round 122 (17 committed, not yet deployed)
+
+| # | Fix | Tests | Commit |
+|---|-----|-------|--------|
+| 28 | OpenAPI v2 protobuf wire format | ~33 | dcedd60 |
+| 29 | CRD watch history replay | ~12 | 5cd32b0 |
+| 30 | PriorityClassName → priority value | ~7 | fa65ed7 |
+| 31 | Namespace pod termination ordering | ~1 | 313085f |
+| 32 | Exec WebSocket channel flush | ~1 | c742a89 |
+| 33 | SA node-uid bound tokens | ~3 | d883860 |
+| 34 | Scheduler preemption + decimal CPU | ~7 | d883860 |
+| 35 | VAP validation actions (422) | ~2 | d883860 |
+| 36 | ConfigMap optional volume cleanup | ~1 | d883860 |
+| 37 | DaemonSet rolling update | ~2 | 15f5ff9 |
+| 38 | Pod proxy port parsing + root | ~2 | 15f5ff9 |
+| 39 | SubPath env var expansion | ~2 | 15f5ff9 |
+| 40 | LabelSelector Default + serde | ~1 | befccde |
+| 41 | Events v1→core field mapping | ~1 | 942c382 |
+| 42-44 | Endpoint, kube-proxy, proxy fixes | ~3 | 15f5ff9 |
+
+## Remaining Unfixed (~8 tests)
+
+| Issue | Tests | Root Cause |
+|-------|-------|-----------|
+| /etc/hosts | 1 | Docker overrides bind mount; need extra_hosts |
+| Pod resize | 1 | cgroup cpu.weight reading |
+| Lifecycle hooks | 1 | Watch stability (should improve with protobuf fix) |
+| PreStop | 1 | PreStop hook validation |
+| Sysctl | 1 | Watch stability |
+| CSI storage capacity | 1 | Watch stability |
+| Logs | 1 | kubectl --since flag line count |
+| Aggregator | 1 | Extension API server pod not becoming Ready |
+
+## Known Limitations (~14 tests)
+
+| Issue | Tests | Reason |
 |-------|-------|--------|
-| Scheduler resource accounting | 7 | Fixed (decimal CPU, preemption logic) |
-| DNS rate limiter | 6 | Cascading — should improve with watch stability |
-| RC pod matching | 5 | Fixed (endpoint controller + kube-proxy) |
-| ReplicaSet | 4 | Fixed (same connectivity fix) |
-| Service accounts | 3 | Fixed (node-uid in tokens) |
-| Aggregated discovery | 3 | Partially fixed (resources present, may be timing) |
-| Webhook (remaining) | 3 | Fixed (endpoint port + CRD watch) |
-| Service connectivity | 3 | Fixed (kube-proxy sync) |
-| ValidatingAdmissionPolicy | 2 | Fixed (validation actions, 422 status) |
-| Init container | 2 | Fixed (condition message format) |
-| Expansion/subpath | 2 | Fixed (env var expansion) |
-| DaemonSet | 2 | Fixed (rolling update) |
-| Events API | 1 | Needs investigation |
-| Watch label filter | 1 | Watch stability improvement needed |
-| /etc/hosts | 1 | Needs investigation |
-| Pod resize | 1 | Needs investigation |
-| Lifecycle hooks | 1 | Needs investigation |
-| PreStop | 1 | Needs investigation |
-| Sysctl | 1 | Needs investigation |
-| ConfigMap volume | 1 | Fixed (optional cleanup) |
-| CSI storage capacity | 1 | Needs investigation |
-| Service latency | 1 | Needs investigation |
-| Logs | 1 | Needs investigation |
-| Aggregator | 1 | Needs investigation |
-| Predicates | 2 | Fixed (scheduler resource parsing) |
-| Node expansion | 2 | Fixed (subpath) |
-| kubectl protobuf | 8 | Known limitation |
-| Bind mount perms | 6 | Known limitation |
+| Bind mount permissions | 6 | Docker Desktop virtiofs strips write bits |
+| kubectl protobuf | 8 | Should be fixed by protobuf encoding |
 
 ## Progress History
 
@@ -58,5 +60,5 @@
 | 110 | 283 | 158 | 441 | 64.2% |
 | 118 | 299 | 142 | 441 | 67.8% |
 | 120 | 308 | 133 | 441 | 69.8% |
-| 121 | — | — | 441 | IN PROGRESS |
-| 122 | — | — | 441 | PENDING (13 more fixes) |
+| 121 | ~308 | ~133 | 441 | ~70% (same fixes as R120) |
+| 122 | — | — | 441 | PENDING (protobuf + 16 fixes) |
