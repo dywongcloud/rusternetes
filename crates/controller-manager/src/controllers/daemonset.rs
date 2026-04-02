@@ -283,13 +283,63 @@ impl<S: Storage> DaemonSetController<S> {
             }
         }
 
+        // Rolling update: delete pods with old template hash BEFORE creating new ones.
+        // This way, in the same reconcile cycle we can delete an old pod and immediately
+        // create a replacement with the new template, rather than waiting for the next cycle.
+        let update_strategy = daemonset
+            .spec
+            .update_strategy
+            .as_ref()
+            .and_then(|s| s.strategy_type.as_deref())
+            .unwrap_or("RollingUpdate");
+        let mut rolling_update_deleted_nodes = std::collections::HashSet::new();
+        if update_strategy == "RollingUpdate" {
+            let max_unavailable = daemonset
+                .spec
+                .update_strategy
+                .as_ref()
+                .and_then(|s| s.rolling_update.as_ref())
+                .and_then(|r| r.max_unavailable.as_ref())
+                .and_then(|s| s.trim_end_matches('%').parse::<i32>().ok())
+                .unwrap_or(1)
+                .max(1);
+            let mut deleted_count = 0;
+            for (node_name, pod) in pods_by_node.iter() {
+                if deleted_count >= max_unavailable {
+                    break;
+                }
+                let pod_hash = pod
+                    .metadata
+                    .labels
+                    .as_ref()
+                    .and_then(|l| l.get("controller-revision-hash"))
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                // If pod has no hash label at all, treat it as outdated too
+                if pod_hash != template_hash {
+                    let pod_name = &pod.metadata.name;
+                    let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
+                    if let Ok(()) = self.storage.delete(&pod_key).await {
+                        info!(
+                            "Rolling update: deleted DaemonSet pod {} on node {} (hash {:?} != {})",
+                            pod_name, node_name, pod_hash, template_hash
+                        );
+                        deleted_count += 1;
+                        rolling_update_deleted_nodes.insert(node_name.clone());
+                    }
+                }
+            }
+        }
+
         // Ensure one pod per eligible node
         for node in eligible_nodes.iter() {
             let node_name = &node.metadata.name;
 
-            if !pods_by_node.contains_key(node_name)
-                && !nodes_with_deleted_terminal_pods.contains(node_name)
-            {
+            // Create pod if node has no pod, or if we just deleted the old-revision pod
+            let needs_pod = !pods_by_node.contains_key(node_name)
+                || rolling_update_deleted_nodes.contains(node_name);
+
+            if needs_pod && !nodes_with_deleted_terminal_pods.contains(node_name) {
                 // Create pod for this node, ignore AlreadyExists (race / re-reconcile)
                 match self.create_pod(daemonset, node_name, namespace).await {
                     Ok(_) => {
@@ -305,37 +355,6 @@ impl<S: Storage> DaemonSetController<S> {
                         } else {
                             return Err(e);
                         }
-                    }
-                }
-            }
-        }
-
-        // Rolling update: delete pods with old template hash (one at a time for RollingUpdate strategy)
-        let update_strategy = daemonset
-            .spec
-            .update_strategy
-            .as_ref()
-            .and_then(|s| s.strategy_type.as_deref())
-            .unwrap_or("RollingUpdate");
-        if update_strategy == "RollingUpdate" {
-            let mut updated_one = false;
-            for (node_name, pod) in pods_by_node.iter() {
-                let pod_hash = pod
-                    .metadata
-                    .labels
-                    .as_ref()
-                    .and_then(|l| l.get("controller-revision-hash"))
-                    .map(|s| s.as_str())
-                    .unwrap_or("");
-                if !pod_hash.is_empty() && pod_hash != template_hash && !updated_one {
-                    let pod_name = &pod.metadata.name;
-                    let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
-                    if let Ok(()) = self.storage.delete(&pod_key).await {
-                        info!(
-                            "Rolling update: deleted DaemonSet pod {} on node {} (hash {} != {})",
-                            pod_name, node_name, pod_hash, template_hash
-                        );
-                        updated_one = true; // Only delete one pod per reconcile cycle
                     }
                 }
             }

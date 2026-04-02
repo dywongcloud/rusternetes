@@ -218,6 +218,28 @@ pub async fn proxy_service(
     proxy_request(target_url, method, headers, params, body).await
 }
 
+/// Proxy HTTP requests to a pod (root path, no trailing path component)
+pub async fn proxy_pod_root(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path((namespace, pod_name)): Path<(String, String)>,
+    method: Method,
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+    body: Body,
+) -> Result<Response> {
+    proxy_pod(
+        State(state),
+        Extension(auth_ctx),
+        Path((namespace, pod_name, String::new())),
+        method,
+        headers,
+        Query(params),
+        body,
+    )
+    .await
+}
+
 /// Proxy HTTP requests to a pod
 ///
 /// Proxies requests to a specific pod for debugging.
@@ -235,11 +257,23 @@ pub async fn proxy_pod(
         namespace, pod_name, path
     );
 
+    // Parse pod name — format may be "name" or "name:port" (Kubernetes proxy subresource convention)
+    let (actual_pod_name, explicit_port) = if let Some(idx) = pod_name.rfind(':') {
+        let maybe_port = &pod_name[idx + 1..];
+        if let Ok(p) = maybe_port.parse::<u16>() {
+            (&pod_name[..idx], Some(p))
+        } else {
+            (pod_name.as_str(), None)
+        }
+    } else {
+        (pod_name.as_str(), None)
+    };
+
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "pods/proxy")
         .with_api_group("")
         .with_namespace(&namespace)
-        .with_name(&pod_name);
+        .with_name(actual_pod_name);
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -249,7 +283,7 @@ pub async fn proxy_pod(
     }
 
     // Get the pod to find its IP
-    let pod_key = rusternetes_storage::build_key("pods", Some(&namespace), &pod_name);
+    let pod_key = rusternetes_storage::build_key("pods", Some(&namespace), actual_pod_name);
     let pod: rusternetes_common::resources::Pod = state.storage.get(&pod_key).await?;
 
     // Get pod IP
@@ -260,19 +294,22 @@ pub async fn proxy_pod(
         .ok_or_else(|| {
             rusternetes_common::Error::NotFound(format!(
                 "Pod {}/{} has no IP address yet",
-                namespace, pod_name
+                namespace, actual_pod_name
             ))
         })?;
 
-    // Default to port 80 or first container port
-    let port = pod
-        .spec
-        .as_ref()
-        .and_then(|spec| spec.containers.first())
-        .and_then(|c| c.ports.as_ref())
-        .and_then(|ports| ports.first())
-        .map(|p| p.container_port)
-        .unwrap_or(80);
+    // Use explicit port from URL if provided, otherwise first container port, otherwise 80
+    let port: u16 = if let Some(p) = explicit_port {
+        p
+    } else {
+        pod.spec
+            .as_ref()
+            .and_then(|spec| spec.containers.first())
+            .and_then(|c| c.ports.as_ref())
+            .and_then(|ports| ports.first())
+            .map(|p| p.container_port)
+            .unwrap_or(80)
+    };
 
     // Build target URL
     let path = path.trim_start_matches('/');

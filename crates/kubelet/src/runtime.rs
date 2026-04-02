@@ -3219,7 +3219,7 @@ impl ContainerRuntime {
                         Ok(expanded) => {
                             if expanded.is_empty() {
                                 return Err(anyhow::anyhow!(
-                                        "CreateContainerError: subPathExpr '{}' expanded to empty string in container {}",
+                                        "CreateContainerConfigError: subPathExpr '{}' expanded to empty string in container {}",
                                         expr, container.name
                                     ));
                             }
@@ -3227,7 +3227,7 @@ impl ContainerRuntime {
                         }
                         Err(e) => {
                             return Err(anyhow::anyhow!(
-                                    "CreateContainerError: subPathExpr expansion failed for container {}: {}",
+                                    "CreateContainerConfigError: subPathExpr expansion failed for container {}: {}",
                                     container.name, e
                                 ));
                         }
@@ -3237,19 +3237,19 @@ impl ContainerRuntime {
                         // Validate plain subPath for path traversal / absolute path
                         if sub_path.starts_with('/') {
                             return Err(anyhow::anyhow!(
-                                    "CreateContainerError: subPath must not be an absolute path in container {}",
+                                    "CreateContainerConfigError: subPath must not be an absolute path in container {}",
                                     container.name
                                 ));
                         }
                         if sub_path.contains('`') {
                             return Err(anyhow::anyhow!(
-                                    "CreateContainerError: subPath must not contain backticks in container {}",
+                                    "CreateContainerConfigError: subPath must not contain backticks in container {}",
                                     container.name
                                 ));
                         }
                         if sub_path.split('/').any(|c| c == "..") {
                             return Err(anyhow::anyhow!(
-                                    "CreateContainerError: subPath must not contain '..' in container {}",
+                                    "CreateContainerConfigError: subPath must not contain '..' in container {}",
                                     container.name
                                 ));
                         }
@@ -4232,7 +4232,7 @@ impl ContainerRuntime {
         let containers = self.docker.list_containers(Some(options)).await?;
         // Check that at least one non-pause container is running.
         // Just the pause container running doesn't count — the app containers may have
-        // failed to start (e.g., CreateContainerError from subpath validation).
+        // failed to start (e.g., CreateContainerConfigError from subpath validation).
         let pause_suffix = format!("{}_pause", pod_name);
         let has_app_container = containers.iter().any(|c| {
             c.names
@@ -4685,7 +4685,7 @@ impl ContainerRuntime {
                             Some(ContainerState::Waiting {
                                 reason: Some(r),
                                 message,
-                            }) if r == "CreateContainerError" => Some((r.clone(), message.clone())),
+                            }) if r == "CreateContainerError" || r == "CreateContainerConfigError" => Some((r.clone(), message.clone())),
                             _ => None,
                         });
 

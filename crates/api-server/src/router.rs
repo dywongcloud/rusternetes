@@ -681,6 +681,14 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .patch(handlers::pod::patch),
         )
         .route(
+            "/api/v1/namespaces/:namespace/pods/:name/proxy",
+            get(handlers::proxy::proxy_pod_root)
+                .post(handlers::proxy::proxy_pod_root)
+                .put(handlers::proxy::proxy_pod_root)
+                .patch(handlers::proxy::proxy_pod_root)
+                .delete(handlers::proxy::proxy_pod_root),
+        )
+        .route(
             "/api/v1/namespaces/:namespace/pods/:name/proxy/*path",
             get(handlers::proxy::proxy_pod)
                 .post(handlers::proxy::proxy_pod)

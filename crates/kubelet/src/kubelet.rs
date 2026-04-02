@@ -734,13 +734,13 @@ impl Kubelet {
         match current_phase {
             // If pod is Pending and has been scheduled to this node, start it
             Phase::Pending if !is_running => {
-                // Don't overwrite CreateContainerError status — the test needs to
-                // observe it. Only set ContainerCreating on first start attempt.
+                // Don't overwrite CreateContainerError/CreateContainerConfigError status —
+                // the test needs to observe it. Only set ContainerCreating on first start attempt.
                 let already_has_error = pod
                     .status
                     .as_ref()
                     .and_then(|s| s.reason.as_deref())
-                    == Some("CreateContainerError");
+                    .map_or(false, |r| r == "CreateContainerError" || r == "CreateContainerConfigError");
 
                 if !already_has_error {
                     info!("Starting pod: {}/{}", namespace, pod_name);
@@ -757,7 +757,7 @@ impl Kubelet {
                     self.update_pod_status(pod, Phase::Pending, Some(reason), None)
                         .await?;
                 } else {
-                    debug!("Pod {}/{} already has CreateContainerError, retrying without status reset", namespace, pod_name);
+                    debug!("Pod {}/{} already has CreateContainer(Config)Error, retrying without status reset", namespace, pod_name);
                 }
 
                 // Start the pod with timeout
@@ -857,9 +857,20 @@ impl Kubelet {
                                 namespace, pod_name, err_msg
                             );
 
-                            if err_msg.starts_with("CreateContainerError:") {
-                                // Container creation error — pod stays Pending with
-                                // container in Waiting/CreateContainerError state.
+                            // Determine the error reason: CreateContainerConfigError for
+                            // configuration issues (subPath validation, env var expansion),
+                            // CreateContainerError for runtime container creation failures.
+                            let create_error_reason = if err_msg.starts_with("CreateContainerConfigError:") {
+                                Some("CreateContainerConfigError".to_string())
+                            } else if err_msg.starts_with("CreateContainerError:") {
+                                Some("CreateContainerError".to_string())
+                            } else {
+                                None
+                            };
+
+                            if let Some(reason) = create_error_reason {
+                                // Container creation/config error — pod stays Pending with
+                                // container in Waiting state with appropriate reason.
                                 let key = build_key("pods", Some(namespace), pod_name);
                                 let fresh_pod: Pod = match self.storage.get(&key).await {
                                     Ok(p) => p,
@@ -868,7 +879,6 @@ impl Kubelet {
                                 let mut new_pod = fresh_pod;
 
                                 // Build container statuses with the failed container
-                                // set to Waiting/CreateContainerError
                                 let container_statuses: Option<Vec<ContainerStatus>> =
                                     new_pod.spec.as_ref().map(|spec| {
                                         spec.containers
@@ -878,9 +888,7 @@ impl Kubelet {
                                                 ready: false,
                                                 restart_count: 0,
                                                 state: Some(ContainerState::Waiting {
-                                                    reason: Some(
-                                                        "CreateContainerError".to_string(),
-                                                    ),
+                                                    reason: Some(reason.clone()),
                                                     message: Some(err_msg.clone()),
                                                 }),
                                                 last_state: None,
@@ -906,7 +914,7 @@ impl Kubelet {
                                 new_pod.status = Some(PodStatus {
                                     phase: Some(Phase::Pending),
                                     message: Some(err_msg),
-                                    reason: Some("CreateContainerError".to_string()),
+                                    reason: Some(reason),
                                     host_ip: Some("127.0.0.1".to_string()),
                                     pod_ip: None,
                                     conditions: None,
@@ -929,7 +937,7 @@ impl Kubelet {
 
                                 if let Err(e) = self.storage.update(&key, &new_pod).await {
                                     warn!(
-                                    "Failed to update pod {}/{} status to CreateContainerError: {}, retrying",
+                                    "Failed to update pod {}/{} status to container error: {}, retrying",
                                     namespace, pod_name, e
                                 );
                                     // CAS retry — re-read and apply status
@@ -1005,21 +1013,21 @@ impl Kubelet {
                 } // end outer match timeout
             }
             // If pod is Pending but containers are already running, update to Running.
-            // If a container has CreateContainerError, retry starting it first.
+            // If a container has CreateContainerError/CreateContainerConfigError, retry starting it first.
             Phase::Pending if is_running => {
-                // Check if any container is in CreateContainerError
+                // Check if any container is in CreateContainerError or CreateContainerConfigError
                 let has_create_error = pod.status.as_ref()
                     .and_then(|s| s.container_statuses.as_ref())
                     .map_or(false, |statuses| {
                         statuses.iter().any(|cs| {
-                            matches!(&cs.state, Some(ContainerState::Waiting { reason: Some(r), .. }) if r == "CreateContainerError")
+                            matches!(&cs.state, Some(ContainerState::Waiting { reason: Some(r), .. }) if r == "CreateContainerError" || r == "CreateContainerConfigError")
                         })
                     });
 
                 let should_update_running = if has_create_error {
                     // Retry starting — spec/annotations may have changed
                     info!(
-                        "Pod {}/{} has CreateContainerError, retrying start",
+                        "Pod {}/{} has container creation error, retrying start",
                         namespace, pod_name
                     );
                     match self.runtime.start_pod(pod).await {
@@ -1029,7 +1037,7 @@ impl Kubelet {
                         }
                         Err(e) => {
                             debug!("Pod {}/{} retry still failing: {}", namespace, pod_name, e);
-                            false // Stay in CreateContainerError
+                            false // Stay in error state
                         }
                     }
                 } else {
