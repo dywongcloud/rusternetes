@@ -375,8 +375,14 @@ impl<S: Storage> StatefulSetController<S> {
             })
             .collect();
 
-        let final_current_replicas = statefulset_pods_after.len() as i32;
-        let final_ready_pods = statefulset_pods_after
+        // Filter out terminating pods (deletionTimestamp set) — K8s does not count
+        // terminating pods in replicas/readyReplicas/availableReplicas.
+        let non_terminating_pods: Vec<&Pod> = statefulset_pods_after
+            .iter()
+            .filter(|pod| pod.metadata.deletion_timestamp.is_none())
+            .collect();
+        let final_current_replicas = non_terminating_pods.len() as i32;
+        let final_ready_pods = non_terminating_pods
             .iter()
             .filter(|pod| {
                 pod.status
@@ -1161,6 +1167,18 @@ mod tests {
         assert!(
             pod0.metadata.deletion_timestamp.is_none(),
             "Pod ss-scale-0 should not be terminating"
+        );
+
+        // Status should not count terminating pods
+        let ss: StatefulSet = storage.get("/registry/statefulsets/default/ss-scale").await.unwrap();
+        let status = ss.status.unwrap();
+        assert_eq!(
+            status.replicas, 2,
+            "replicas should exclude terminating pods"
+        );
+        assert_eq!(
+            status.ready_replicas.unwrap_or(0), 2,
+            "readyReplicas should exclude terminating pods"
         );
     }
 }
