@@ -289,6 +289,11 @@ impl Scheduler {
 
             // If pod doesn't fit resource-wise, skip
             if resource_score == 0 {
+                debug!(
+                    "Node {} rejected for pod {}: resource_score=0 (insufficient resources)",
+                    node.metadata.name,
+                    pod.metadata.name,
+                );
                 continue;
             }
 

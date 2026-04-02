@@ -443,6 +443,25 @@ pub async fn create(
     pod.metadata.ensure_creation_timestamp();
     crate::handlers::lifecycle::set_initial_generation(&mut pod.metadata);
 
+    // Resolve PriorityClassName to priority value (K8s admission controller does this)
+    if let Some(ref mut spec) = pod.spec {
+        if spec.priority.is_none() {
+            if let Some(ref pc_name) = spec.priority_class_name {
+                let pc_key = rusternetes_storage::build_key("priorityclasses", None, pc_name);
+                if let Ok(pc) = state
+                    .storage
+                    .get::<rusternetes_common::resources::PriorityClass>(&pc_key)
+                    .await
+                {
+                    spec.priority = Some(pc.value);
+                    if spec.preemption_policy.is_none() {
+                        spec.preemption_policy = pc.preemption_policy.clone();
+                    }
+                }
+            }
+        }
+    }
+
     // Set initial status to Pending (Kubernetes always sets this on creation)
     if pod.status.is_none() || pod.status.as_ref().and_then(|s| s.phase.as_ref()).is_none() {
         let mut status = pod.status.take().unwrap_or_default();
