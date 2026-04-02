@@ -1,33 +1,31 @@
 # Conformance Issue Tracker
 
-**Round 122** | PENDING DEPLOY | All known failures fixed
+**Round 123** | IN PROGRESS | Tests still running
 
-## All Fixes Committed for Round 122
+## Fixes Applied
 
-| # | Fix | Tests | Commit |
+| # | Fix | Tests | Status |
 |---|-----|-------|--------|
-| 1 | OpenAPI v2 protobuf wire format | ~33 | dcedd60 |
-| 2 | CRD watch history replay | ~12 | 5cd32b0 |
-| 3 | PriorityClassName → priority value | ~7 | fa65ed7 |
-| 4 | Namespace pod termination ordering | ~1 | 313085f |
-| 5 | Exec WebSocket channel flush | ~1 | c742a89 |
-| 6 | SA node-uid bound tokens | ~3 | d883860 |
-| 7 | Scheduler preemption + decimal CPU | ~7 | d883860 |
-| 8 | VAP validation actions (422) | ~2 | d883860 |
-| 9 | ConfigMap optional volume cleanup | ~1 | d883860 |
-| 10 | DaemonSet rolling update | ~2 | 15f5ff9 |
-| 11 | Pod proxy port parsing + root | ~2 | 15f5ff9 |
-| 12 | SubPath env var expansion | ~2 | 15f5ff9 |
-| 13 | LabelSelector Default + serde | ~1 | befccde |
-| 14 | Events v1→core field mapping | ~1 | 942c382 |
-| 15 | /etc/hosts Kubernetes-managed format | ~1 | d8d2d8c |
-| 16 | Pod in-place resize via Docker API | ~1 | d8d2d8c |
-| 17 | Lifecycle hooks two-pass preStop | ~2 | d8d2d8c |
-| 18 | Sysctl validation (allow unsafe) | ~1 | d8d2d8c |
-| 19 | CSI storage capacity watch handler | ~1 | d8d2d8c |
-| 20 | Logs sinceSeconds/sinceTime handling | ~1 | d8d2d8c |
-| 21 | Deployment progressing condition | ~1 | d8d2d8c |
-| 22 | Endpoint, kube-proxy, proxy fixes | ~3 | 15f5ff9 |
+| 1 | StatefulSet: exclude terminating pods from status counts | ~5 | Committed (823884f) |
+| 2 | OpenAPI v3: add x-kubernetes-group-version-kind extensions | ~8 | Committed (7fb8ecd) |
+| 3 | OpenAPI v2: use MIME-parseable Content-Type header | ~8 | Committed (7fb8ecd) |
+| 4 | Job: completion reason CompletionsReached | ~2 | Committed (db1a3e5) |
+
+## Current Failures (11 of ~441 tests completed, all failed)
+
+| Test | Root Cause | Fix |
+|------|-----------|-----|
+| StatefulSet Burst scaling | readyReplicas counted terminating pods | Fix #1 |
+| StatefulSet Scaling predictable | readyReplicas counted terminating pods | Fix #1 |
+| Kubectl scale RC | OpenAPI v3 missing GVK / v2 bad MIME | Fix #2 + #3 |
+| Job indexed completions | Reason "Completed" vs "CompletionsReached" | Fix #4 |
+| Services multiport endpoints | Endpoints subset wrong port mapping | TODO - investigate port resolution |
+| StatefulSet list/patch/delete | Timeout waiting on patch condition | TODO - investigate |
+| Service status lifecycle | Timeout deleting service | TODO - investigate |
+| EmptyDir shared volumes | Exec connection reset by peer | TODO - WebSocket/exec stability |
+| DNS configurable nameservers | Exec connection reset by peer | TODO - WebSocket/exec stability |
+| CRD listing | CRD creation timeout | TODO - investigate CRD handler |
+| CRD publish OpenAPI | CRD creation timeout | TODO - investigate CRD handler |
 
 ## Known Platform Limitations (~6 tests)
 
@@ -43,4 +41,4 @@
 | 118 | 299 | 142 | 441 | 67.8% |
 | 120 | 308 | 133 | 441 | 69.8% |
 | 121 | 310 | 131 | 441 | 70.3% |
-| 122 | — | — | 441 | PENDING (22 fixes targeting ~85 tests) |
+| 123 | — | — | 441 | IN PROGRESS (0 passed so far) |
