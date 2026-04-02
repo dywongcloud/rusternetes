@@ -74,11 +74,47 @@ pub async fn get_openapi_spec_path() -> Response {
         .unwrap()
 }
 
+/// Wrap JSON bytes in the Kubernetes protobuf wire format.
+///
+/// The K8s protobuf format for OpenAPI is:
+/// - 4 bytes magic: "k8s\0"
+/// - Protobuf message with:
+///   - field 1 (string): content type
+///   - field 2 (bytes): encoding (empty)
+///   - field 3 (bytes): the raw data (JSON spec)
+///   - field 4 (string): content encoding (empty)
+fn wrap_in_k8s_protobuf(content_type: &str, data: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(data.len() + 100);
+    // Magic prefix
+    buf.extend_from_slice(b"k8s\0");
+
+    // Build the protobuf message body first to compute its length
+    let mut msg = Vec::with_capacity(data.len() + 80);
+    // Field 1: content type (wire type 2 = length-delimited, field number 1)
+    msg.push((1 << 3) | 2); // tag
+    encode_varint(&mut msg, content_type.len() as u64);
+    msg.extend_from_slice(content_type.as_bytes());
+    // Field 2: encoding (empty string)
+    msg.push((2 << 3) | 2);
+    encode_varint(&mut msg, 0);
+    // Field 3: raw data (the JSON spec bytes)
+    msg.push((3 << 3) | 2);
+    encode_varint(&mut msg, data.len() as u64);
+    msg.extend_from_slice(data);
+    // Field 4: content encoding (empty)
+    msg.push((4 << 3) | 2);
+    encode_varint(&mut msg, 0);
+
+    buf.extend_from_slice(&msg);
+    buf
+}
+
 /// GET /openapi/v2 and /swagger.json
 /// Returns an OpenAPI v2 (Swagger) specification.
-/// kubectl sends Accept: application/com.github.proto-openapi.spec.v2@v1.0+protobuf
-/// first, then falls back to JSON on 406. We return 406 for protobuf requests
-/// to force kubectl to use JSON, which we can serve.
+///
+/// Supports both protobuf and JSON Accept headers:
+/// - application/com.github.proto-openapi.spec.v2@v1.0+protobuf → protobuf-wrapped JSON
+/// - application/json → raw JSON
 pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
     let spec = serde_json::json!({
         "swagger": "2.0",
@@ -91,19 +127,25 @@ pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
     });
     let json_bytes = serde_json::to_vec(&spec).unwrap_or_default();
 
-    // Check if client requests protobuf OpenAPI
     let accept = headers
         .get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    // Always return JSON. kubectl sends Accept with both protobuf and JSON;
-    // we only support JSON. The Content-Type: application/json header tells
-    // kubectl to parse as JSON instead of protobuf.
-
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json_bytes))
-        .unwrap()
+    if accept.contains("proto-openapi") || accept.contains("protobuf") {
+        // Wrap JSON in K8s protobuf envelope
+        let content_type = "application/com.github.proto-openapi.spec.v2@v1.0+protobuf";
+        let pb_bytes = wrap_in_k8s_protobuf(content_type, &json_bytes);
+        Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, content_type)
+            .body(Body::from(pb_bytes))
+            .unwrap()
+    } else {
+        Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(json_bytes))
+            .unwrap()
+    }
 }
