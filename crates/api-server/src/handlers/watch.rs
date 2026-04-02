@@ -1130,6 +1130,9 @@ fn resource_type_to_kind_and_version(resource_type: &str, api_group: &str) -> (S
         "replicationcontrollers" => "ReplicationController",
         "horizontalpodautoscalers" => "HorizontalPodAutoscaler",
         "controllerrevisions" => "ControllerRevision",
+        "csistoragecapacities" => "CSIStorageCapacity",
+        "csidrivers" => "CSIDriver",
+        "csinodes" => "CSINode",
         other => {
             // CamelCase heuristic: capitalize first letter, remove trailing 's'
             let s = other.strip_suffix('s').unwrap_or(other);

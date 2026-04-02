@@ -848,8 +848,8 @@ impl ContainerRuntime {
             "# Kubernetes-managed hosts file\n\
              127.0.0.1\tlocalhost\n\
              ::1\tlocalhost ip6-localhost ip6-loopback\n\
-             fe00::0\tip6-localnet\n\
-             fe00::0\tip6-mcastprefix\n\
+             fe00::\tip6-localnet\n\
+             fe00::\tip6-mcastprefix\n\
              fe00::1\tip6-allnodes\n\
              fe00::2\tip6-allrouters\n",
         );
@@ -4008,6 +4008,43 @@ impl ContainerRuntime {
 
         info!("Container {} started successfully", container_name);
 
+        // Write Kubernetes-managed /etc/hosts into the container after start.
+        // Docker may override bind-mounted /etc/hosts during container creation,
+        // so we write it via `docker exec` after start to guarantee our content.
+        if let Some(hosts_path) = hosts_file_path {
+            if let Ok(hosts_content) = std::fs::read_to_string(hosts_path) {
+                // Use printf to write the exact content (handles newlines correctly)
+                let exec_config = CreateExecOptions {
+                    cmd: Some(vec![
+                        "sh".to_string(),
+                        "-c".to_string(),
+                        format!("cat > /etc/hosts << 'KUBEEOF'\n{}KUBEEOF", hosts_content),
+                    ]),
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    ..Default::default()
+                };
+                match self.docker.create_exec(&container_name, exec_config).await {
+                    Ok(exec) => {
+                        if let Err(e) = self.docker.start_exec(&exec.id, None).await {
+                            debug!(
+                                "Failed to write /etc/hosts via exec for {}: {}",
+                                container_name, e
+                            );
+                        } else {
+                            debug!("Wrote Kubernetes-managed /etc/hosts for {}", container_name);
+                        }
+                    }
+                    Err(e) => {
+                        debug!(
+                            "Failed to create exec for /etc/hosts write in {}: {}",
+                            container_name, e
+                        );
+                    }
+                }
+            }
+        }
+
         // Execute postStart lifecycle hook if present
         if let Some(ref lifecycle) = container.lifecycle {
             if let Some(ref post_start) = lifecycle.post_start {
@@ -5382,9 +5419,19 @@ impl ContainerRuntime {
                 if let Some(ip) = container_ip {
                     ip
                 } else {
-                    // Container uses container: network mode — get IP from the pause container
-                    let pod_name = container_name.rsplit('_').last().unwrap_or(container_name);
+                    // Container uses container: network mode — get IP from the pause container.
+                    // Container names have format "{pod_name}_{container_suffix}".
+                    // Use rsplitn(2, '_') to split at the last underscore, preserving
+                    // any underscores in the pod name itself.
+                    let pod_name = container_name
+                        .rsplitn(2, '_')
+                        .last()
+                        .unwrap_or(container_name);
                     let pause_name = format!("{}_pause", pod_name);
+                    info!(
+                        "Lifecycle HTTP handler: resolving IP from pause container {} (container: {})",
+                        pause_name, container_name
+                    );
                     let pause_inspect = self
                         .docker
                         .inspect_container(&pause_name, None::<InspectContainerOptions>)
@@ -5411,7 +5458,7 @@ impl ContainerRuntime {
             let path = http_get.path.as_deref().unwrap_or("/");
             let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
 
-            debug!("Lifecycle HTTP handler: {}", url);
+            info!("Lifecycle HTTP handler: {} for container {}", url, container_name);
 
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
@@ -5419,16 +5466,28 @@ impl ContainerRuntime {
                 .no_proxy()
                 .build()?;
 
-            match client.get(&url).send().await {
+            let mut request = client.get(&url);
+
+            // Add custom HTTP headers from the handler spec
+            if let Some(ref headers) = http_get.http_headers {
+                for header in headers {
+                    request = request.header(&header.name, &header.value);
+                }
+            }
+
+            match request.send().await {
                 Ok(response) => {
-                    if !response.status().is_success() {
-                        return Err(anyhow::anyhow!(
-                            "Lifecycle HTTP handler returned status {}",
-                            response.status()
-                        ));
-                    }
+                    let status = response.status();
+                    info!(
+                        "Lifecycle HTTP handler response: {} for container {}",
+                        status, container_name
+                    );
+                    // Kubernetes ignores the response status for lifecycle hooks —
+                    // any response (even non-2xx) counts as success. Only connection
+                    // failures are errors.
                 }
                 Err(e) => {
+                    warn!("Lifecycle HTTP handler failed for {}: {}", container_name, e);
                     return Err(anyhow::anyhow!("Lifecycle HTTP handler failed: {}", e));
                 }
             }
@@ -5505,6 +5564,14 @@ impl ContainerRuntime {
             }
         }
 
+        if !lifecycle_map.is_empty() {
+            info!(
+                "Pod {} has preStop hooks for containers: {:?}",
+                pod_name,
+                lifecycle_map.keys().collect::<Vec<_>>()
+            );
+        }
+
         // List all containers with this pod prefix
         let mut filters = HashMap::new();
         filters.insert("name".to_string(), vec![format!("{}_", pod_name)]);
@@ -5517,32 +5584,73 @@ impl ContainerRuntime {
 
         let containers = self.docker.list_containers(Some(options)).await?;
 
-        for container in containers {
-            if let Some(id) = container.id {
-                // Determine the container name for lifecycle hook lookup
-                let names = container.names.unwrap_or_default();
+        // First pass: execute preStop hooks on all running containers
+        // We must run ALL preStop hooks before stopping ANY containers, because
+        // preStop hooks may need to communicate with sibling containers (e.g.,
+        // sending an HTTP request to another container in the same pod).
+        for container in &containers {
+            if let Some(ref id) = container.id {
+                let names = container.names.clone().unwrap_or_default();
                 let container_name = names
                     .first()
                     .map(|n| n.trim_start_matches('/').to_string())
                     .unwrap_or_default();
 
-                // Execute preStop hook if present and the container is running
                 let is_running = container.state.as_deref() == Some("running");
                 if is_running {
-                    if let Some(lifecycle) = lifecycle_map.get(&container_name) {
+                    // Try exact match first, then try matching by suffix in case
+                    // Docker returns a different name format
+                    let lifecycle = lifecycle_map.get(&container_name).or_else(|| {
+                        // Fallback: try matching by finding a lifecycle_map key that
+                        // ends with the same container suffix
+                        lifecycle_map.iter().find_map(|(key, val)| {
+                            if container_name.ends_with(&key[pod_name.len()..]) {
+                                Some(val)
+                            } else {
+                                None
+                            }
+                        })
+                    });
+
+                    if let Some(lifecycle) = lifecycle {
                         if let Some(ref pre_stop) = lifecycle.pre_stop {
-                            info!("Executing preStop hook for container {}", container_name);
-                            if let Err(e) = self
-                                .execute_lifecycle_handler(pre_stop, &container_name)
-                                .await
-                            {
-                                warn!(
-                                    "preStop hook failed for container {}: {}",
-                                    container_name, e
-                                );
+                            info!(
+                                "Executing preStop hook for container {} (id: {})",
+                                container_name,
+                                &id[..12.min(id.len())]
+                            );
+                            match self.execute_lifecycle_handler(pre_stop, &container_name).await {
+                                Ok(()) => {
+                                    info!(
+                                        "preStop hook completed successfully for container {}",
+                                        container_name
+                                    );
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "preStop hook failed for container {}: {}",
+                                        container_name, e
+                                    );
+                                }
                             }
                         }
+                    } else if !container_name.ends_with("_pause") {
+                        debug!(
+                            "No preStop hook for running container {} (lifecycle_map keys: {:?})",
+                            container_name,
+                            lifecycle_map.keys().collect::<Vec<_>>()
+                        );
                     }
+                }
+            }
+        }
+
+        // Second pass: stop all containers
+        for container in &containers {
+            if let Some(ref id) = container.id {
+                let is_running = container.state.as_deref() == Some("running");
+                if !is_running {
+                    continue;
                 }
 
                 info!("Stopping container: {}", id);
@@ -5551,11 +5659,10 @@ impl ContainerRuntime {
                 let stop_options = StopContainerOptions {
                     t: grace_period_seconds,
                 };
-                if let Err(e) = self.docker.stop_container(&id, Some(stop_options)).await {
+                if let Err(e) = self.docker.stop_container(id, Some(stop_options)).await {
                     warn!("Failed to stop container {}: {}", id, e);
                 }
 
-                // Do NOT remove containers — keep them stopped for log retrieval.
                 debug!("Container {} stopped, keeping for log access", id);
             }
         }
@@ -6359,8 +6466,8 @@ mod tests {
             "# Kubernetes-managed hosts file\n\
              127.0.0.1\tlocalhost\n\
              ::1\tlocalhost ip6-localhost ip6-loopback\n\
-             fe00::0\tip6-localnet\n\
-             fe00::0\tip6-mcastprefix\n\
+             fe00::\tip6-localnet\n\
+             fe00::\tip6-mcastprefix\n\
              fe00::1\tip6-allnodes\n\
              fe00::2\tip6-allrouters\n",
         );

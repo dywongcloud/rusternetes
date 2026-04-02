@@ -475,8 +475,19 @@ impl Kubelet {
 
         // Sync all pods. Use a per-pod timeout to prevent a single slow pod
         // from blocking the entire sync loop and starving other pods' readiness updates.
+        // Pods being deleted get a longer timeout to allow preStop hooks and graceful
+        // shutdown to complete (preStop exec drain: 30s + container stop grace: 30s).
         for pod in &node_pods {
-            match tokio::time::timeout(std::time::Duration::from_secs(30), self.sync_pod(pod)).await
+            let timeout_secs = if pod.metadata.deletion_timestamp.is_some() {
+                90 // Allow time for preStop hooks + graceful shutdown
+            } else {
+                30
+            };
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(timeout_secs),
+                self.sync_pod(pod),
+            )
+            .await
             {
                 Ok(Err(e)) => {
                     let err_str = e.to_string();
@@ -497,8 +508,8 @@ impl Kubelet {
                 }
                 Err(_timeout) => {
                     warn!(
-                        "Timeout syncing pod {} (30s), skipping to next pod",
-                        pod.metadata.name
+                        "Timeout syncing pod {} ({}s), skipping to next pod",
+                        pod.metadata.name, timeout_secs
                     );
                 }
                 Ok(Ok(())) => {}
@@ -625,13 +636,14 @@ impl Kubelet {
                 .and_then(|s| s.termination_grace_period_seconds)
                 .unwrap_or(30);
 
-            // Stop the pod containers FIRST, executing preStop lifecycle hooks.
+            // Stop the pod containers, executing preStop lifecycle hooks.
             // We must stop before deleting from storage to prevent the orphan
             // cleanup from killing containers without running preStop hooks.
-            if self.runtime.is_pod_running(pod_name).await.unwrap_or(false) {
-                if let Err(e) = self.runtime.stop_pod_for(pod, grace_period).await {
-                    warn!("Error stopping pod {}/{}: {}", namespace, pod_name, e);
-                }
+            // Always call stop_pod_for — it checks each container's state internally.
+            // Skipping via is_pod_running() can race and miss preStop hooks when
+            // containers are transitioning states.
+            if let Err(e) = self.runtime.stop_pod_for(pod, grace_period).await {
+                warn!("Error stopping pod {}/{}: {}", namespace, pod_name, e);
             }
 
             // Remove stopped containers to prevent accumulation of exited containers.
@@ -1120,20 +1132,31 @@ impl Kubelet {
             Phase::Running if is_running => {
                 debug!("Pod {}/{} is running, checking health", namespace, pod_name);
 
-                // Use the pod we already have from the list() call to avoid a redundant
-                // storage GET. The list-fetched pod already has the correct resourceVersion.
-                // Only re-read from storage if we detect a resize is pending (rare path).
+                // Re-read from storage when resize is pending to get the latest spec
+                // (the API server may have updated resources since our list() call).
                 let key = build_key("pods", Some(namespace), pod_name);
-                let fresh_pod = pod.clone();
+                let resize_status = pod
+                    .status
+                    .as_ref()
+                    .and_then(|s| s.resize.as_deref())
+                    .unwrap_or("");
+                let fresh_pod = if resize_status == "Proposed" || resize_status == "InProgress" {
+                    // Re-read to get fresh spec with updated resources
+                    self.storage.get::<Pod>(&key).await.unwrap_or_else(|_| pod.clone())
+                } else {
+                    pod.clone()
+                };
 
-                // Handle in-place pod resize (KEP-1287):
-                // Flow: API sets resize="Proposed" -> kubelet sets "InProgress" ->
-                // applies resources -> sets resize="" with updated allocatedResources
+                // Re-check resize status from fresh pod (may differ from list-fetched pod)
                 let resize_status = fresh_pod
                     .status
                     .as_ref()
                     .and_then(|s| s.resize.as_deref())
                     .unwrap_or("");
+
+                // Handle in-place pod resize (KEP-1287):
+                // Flow: API sets resize="Proposed" -> kubelet sets "InProgress" ->
+                // applies resources -> sets resize="" with updated allocatedResources
                 if resize_status == "Proposed" || resize_status == "InProgress" {
                     // Set resize to InProgress if it was Proposed
                     if resize_status == "Proposed" {

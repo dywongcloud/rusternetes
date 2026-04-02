@@ -82,7 +82,12 @@ pub async fn create(
         }
     }
 
-    // Validate sysctls — check name format and reject unsafe sysctls
+    // Validate sysctl names — check format only.
+    // In real Kubernetes, the API server validates sysctl name format but does NOT
+    // reject unsafe sysctls. Unsafe sysctl enforcement is done by the kubelet
+    // (via --allowed-unsafe-sysctls flag) which sets the pod status to
+    // SysctlForbidden if the sysctl is not allowed. The conformance test expects
+    // pods with unsafe sysctls to be created successfully and handled by the kubelet.
     if let Some(ref spec) = pod.spec {
         if let Some(ref security_context) = spec.security_context {
             if let Some(ref sysctls) = security_context.sysctls {
@@ -101,24 +106,9 @@ pub async fn create(
                         sysctl_errors.join(", ")
                     ));
                 }
-                let safe_sysctls = [
-                    "kernel.shm_rmid_forced",
-                    "net.ipv4.ip_local_port_range",
-                    "net.ipv4.tcp_syncookies",
-                    "net.ipv4.ping_group_range",
-                    "net.ipv4.ip_unprivileged_port_start",
-                ];
-                for sysctl in sysctls {
-                    if !safe_sysctls.contains(&sysctl.name.as_str())
-                        && !sysctl.name.starts_with("net.ipv4.conf.")
-                        && !sysctl.name.starts_with("net.ipv6.conf.")
-                    {
-                        return Err(rusternetes_common::Error::Forbidden(format!(
-                            "pods \"{}\" is forbidden: unsafe sysctl \"{}\" is not allowed",
-                            pod.metadata.name, sysctl.name
-                        )));
-                    }
-                }
+                // NOTE: We intentionally do NOT reject unsafe sysctls here.
+                // The kubelet is responsible for enforcing the allowed-unsafe-sysctls
+                // list and rejecting pods with disallowed unsafe sysctls.
             }
         }
     }
@@ -740,6 +730,7 @@ pub async fn delete_pod(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+    body: axum::body::Bytes,
 ) -> Result<Json<Pod>> {
     info!("Deleting pod: {}/{}", namespace, name);
 
@@ -773,6 +764,13 @@ pub async fn delete_pod(
         return Ok(Json(pod));
     }
 
+    // Parse DeleteOptions from request body (gracePeriodSeconds, propagationPolicy, etc.)
+    let body_delete_options: Option<serde_json::Value> = if !body.is_empty() {
+        serde_json::from_slice(&body).ok()
+    } else {
+        None
+    };
+
     // Kubernetes pod deletion: set deletionTimestamp and let the kubelet
     // handle graceful shutdown. The pod remains in storage until the kubelet
     // confirms termination. This is different from other resources where
@@ -784,10 +782,15 @@ pub async fn delete_pod(
         updated_pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
     }
 
-    // Parse gracePeriodSeconds from query params or use pod spec default
+    // Parse gracePeriodSeconds from query params, request body (DeleteOptions), or pod spec
+    let body_grace_period = body_delete_options
+        .as_ref()
+        .and_then(|v| v.get("gracePeriodSeconds"))
+        .and_then(|v| v.as_i64());
     let grace_period = params
         .get("gracePeriodSeconds")
         .and_then(|v| v.parse::<i64>().ok())
+        .or(body_grace_period)
         .or(updated_pod
             .spec
             .as_ref()

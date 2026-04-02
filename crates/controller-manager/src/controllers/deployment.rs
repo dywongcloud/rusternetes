@@ -713,15 +713,68 @@ impl<S: Storage> DeploymentController<S> {
             });
         }
 
-        // Progressing condition
-        conditions.push(DeploymentCondition {
-            condition_type: "Progressing".to_string(),
-            status: "True".to_string(),
-            last_transition_time: Some(Utc::now()),
-            last_update_time: Some(Utc::now()),
-            reason: Some("NewReplicaSetAvailable".to_string()),
-            message: Some("ReplicaSet has successfully progressed.".to_string()),
-        });
+        // Progressing condition — check progressDeadlineSeconds
+        let progress_deadline = deployment.spec.progress_deadline_seconds.unwrap_or(600);
+        let deadline_exceeded = if available_replicas < desired_replicas {
+            // Check if the deployment has been progressing long enough to exceed the deadline
+            deployment
+                .metadata
+                .creation_timestamp
+                .map(|ct| {
+                    let elapsed = Utc::now().signed_duration_since(ct).num_seconds();
+                    elapsed > progress_deadline as i64
+                })
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if deadline_exceeded {
+            conditions.push(DeploymentCondition {
+                condition_type: "Progressing".to_string(),
+                status: "False".to_string(),
+                last_transition_time: Some(Utc::now()),
+                last_update_time: Some(Utc::now()),
+                reason: Some("ProgressDeadlineExceeded".to_string()),
+                message: Some(format!(
+                    "ReplicaSet \"{}\" has timed out progressing.",
+                    owned_replicasets
+                        .first()
+                        .map(|rs| rs.metadata.name.as_str())
+                        .unwrap_or("unknown")
+                )),
+            });
+        } else if updated_replicas == desired_replicas && available_replicas >= desired_replicas {
+            conditions.push(DeploymentCondition {
+                condition_type: "Progressing".to_string(),
+                status: "True".to_string(),
+                last_transition_time: Some(Utc::now()),
+                last_update_time: Some(Utc::now()),
+                reason: Some("NewReplicaSetAvailable".to_string()),
+                message: Some(format!(
+                    "ReplicaSet \"{}\" has successfully progressed.",
+                    owned_replicasets
+                        .first()
+                        .map(|rs| rs.metadata.name.as_str())
+                        .unwrap_or("unknown")
+                )),
+            });
+        } else {
+            conditions.push(DeploymentCondition {
+                condition_type: "Progressing".to_string(),
+                status: "True".to_string(),
+                last_transition_time: Some(Utc::now()),
+                last_update_time: Some(Utc::now()),
+                reason: Some("ReplicaSetUpdated".to_string()),
+                message: Some(format!(
+                    "ReplicaSet \"{}\" is progressing.",
+                    owned_replicasets
+                        .first()
+                        .map(|rs| rs.metadata.name.as_str())
+                        .unwrap_or("unknown")
+                )),
+            });
+        }
 
         let status = DeploymentStatus {
             replicas: Some(total_replicas),

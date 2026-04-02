@@ -70,9 +70,12 @@ pub struct LogsQuery {
     /// If set, the number of bytes to read from the server before terminating
     #[serde(rename = "limitBytes")]
     pub limit_bytes: Option<i64>,
-    /// RFC3339 timestamp from which to show logs
+    /// Relative time in seconds before the current time from which to show logs
     #[serde(rename = "sinceSeconds")]
     pub since_seconds: Option<i64>,
+    /// RFC3339 timestamp from which to show logs
+    #[serde(rename = "sinceTime")]
+    pub since_time: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -233,9 +236,22 @@ async fn get_container_logs(
         ..Default::default()
     };
 
-    // Handle since_seconds parameter
-    if let Some(since) = query.since_seconds {
-        options.since = since;
+    // Handle since_seconds parameter.
+    // K8s sinceSeconds is a relative duration (seconds ago from now).
+    // Bollard's `since` field expects an absolute Unix epoch timestamp.
+    if let Some(since_seconds) = query.since_seconds {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        options.since = now - since_seconds;
+    }
+
+    // Handle sinceTime parameter (RFC3339 timestamp)
+    if let Some(ref since_time) = query.since_time {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(since_time) {
+            options.since = parsed.timestamp();
+        }
     }
 
     // Try to get logs - first by exact name, then search all containers
