@@ -11,6 +11,8 @@ pub struct CertificateSigningRequest {
     #[serde(default = "default_kind")]
     pub kind: String,
     pub metadata: ObjectMeta,
+    /// CSR spec — optional to allow status-only patches/applies to deserialize
+    #[serde(default)]
     pub spec: CertificateSigningRequestSpec,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<CertificateSigningRequestStatus>,
@@ -24,7 +26,7 @@ fn default_kind() -> String {
     "CertificateSigningRequest".to_string()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateSigningRequestSpec {
     /// Base64-encoded PKCS#10 CSR data

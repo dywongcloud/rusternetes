@@ -270,10 +270,20 @@ impl AdmissionWebhookClient {
                 if !matches {
                     continue;
                 }
+                // Use the endpoint port from the EndpointSlice if available.
+                // The service port (e.g. 443) may differ from the container's targetPort
+                // (e.g. 8443 or 8444). The EndpointSlice port is the actual port the
+                // pod is listening on.
+                let ep_port = slice
+                    .ports
+                    .first()
+                    .and_then(|p| p.port)
+                    .map(|p| p.to_string())
+                    .unwrap_or_else(|| port.to_string());
                 for ep in &slice.endpoints {
                     if ep.conditions.as_ref().and_then(|c| c.ready).unwrap_or(true) {
                         if let Some(addr) = ep.addresses.first() {
-                            return format!("https://{}:{}{}", addr, port, path);
+                            return format!("https://{}:{}{}", addr, ep_port, path);
                         }
                     }
                 }

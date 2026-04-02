@@ -302,9 +302,11 @@ async fn proxy_request(
 
     info!("Forwarding {} request to {}", method, full_url);
 
-    // Create HTTP client
+    // Create HTTP client with timeouts
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true) // For kubelet self-signed certs
+        .timeout(std::time::Duration::from_secs(30))
+        .connect_timeout(std::time::Duration::from_secs(5))
         .build()
         .map_err(|e| {
             rusternetes_common::Error::Internal(format!("Failed to create HTTP client: {}", e))
