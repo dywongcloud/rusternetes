@@ -683,7 +683,7 @@ impl<S: Storage> JobController<S> {
                     status: "True".to_string(),
                     last_probe_time: Some(chrono::Utc::now()),
                     last_transition_time: Some(chrono::Utc::now()),
-                    reason: Some("Completed".to_string()),
+                    reason: Some("CompletionsReached".to_string()),
                     message: Some("Job completed successfully".to_string()),
                 }]),
                 start_time,
