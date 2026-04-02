@@ -686,6 +686,24 @@ pub async fn create_events_v1(
     event.metadata.ensure_uid();
     event.api_version = "events.k8s.io/v1".to_string();
 
+    // Map events.k8s.io/v1 fields to core/v1 equivalents for field selector compatibility.
+    // reportingComponent → source.component, note → message, regarding → involvedObject
+    if event.source.component.is_empty() {
+        if let Some(ref rc) = event.reporting_component {
+            event.source.component = rc.clone();
+        }
+    }
+    if event.message.is_empty() {
+        if let Some(ref note) = event.note {
+            event.message = note.clone();
+        }
+    }
+    if event.involved_object.name.as_deref().unwrap_or("").is_empty() {
+        if let Some(ref regarding) = event.regarding {
+            event.involved_object = regarding.clone();
+        }
+    }
+
     if event.metadata.name.is_empty() {
         let name = Event::generate_name(&event.involved_object, &event.reason);
         event.metadata.name = name;
