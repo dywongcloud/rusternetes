@@ -2040,9 +2040,39 @@ pub async fn watch_cluster_scoped_json(
     }
 
     let prefix = build_prefix(resource_type, None);
-    let watch_rx = state.watch_cache.subscribe(&prefix).await;
-    let watch_stream = crate::watch_cache::broadcast_to_stream(watch_rx);
-    let existing_resources: Vec<serde_json::Value> = state.storage.list(&prefix).await?;
+
+    // Use history-aware subscription when a specific resourceVersion is requested.
+    // This replays MODIFIED events from the watch cache history, which is critical
+    // for CRD Established condition delivery — the Go informer ignores duplicate
+    // ADDED events but processes MODIFIED events from history replay.
+    let requested_rv = params.resource_version.clone();
+    let (watch_stream, existing_resources) = if let Some(ref rv_str) = requested_rv {
+        if let Ok(rv) = rv_str.parse::<i64>() {
+            if rv > 1 {
+                // Specific RV: replay history from that revision
+                let (history, rx) = state.watch_cache.subscribe_from(&prefix, rv).await;
+                let stream = crate::watch_cache::broadcast_to_stream_with_history(history, rx);
+                // Don't send initial ADDED events — history replay delivers MODIFIED events
+                (stream, Vec::new())
+            } else {
+                let rx = state.watch_cache.subscribe(&prefix).await;
+                let stream = crate::watch_cache::broadcast_to_stream(rx);
+                let resources: Vec<serde_json::Value> = state.storage.list(&prefix).await?;
+                (stream, resources)
+            }
+        } else {
+            let rx = state.watch_cache.subscribe(&prefix).await;
+            let stream = crate::watch_cache::broadcast_to_stream(rx);
+            let resources: Vec<serde_json::Value> = state.storage.list(&prefix).await?;
+            (stream, resources)
+        }
+    } else {
+        let rx = state.watch_cache.subscribe(&prefix).await;
+        let stream = crate::watch_cache::broadcast_to_stream(rx);
+        let resources: Vec<serde_json::Value> = state.storage.list(&prefix).await?;
+        (stream, resources)
+    };
+
     let current_rev = state.storage.current_revision().await.unwrap_or(1);
     let current_rev_str = current_rev.to_string();
 
@@ -2051,16 +2081,11 @@ pub async fn watch_cluster_scoped_json(
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
     let timeout_duration = params.timeout_seconds.map(Duration::from_secs);
-    let requested_rv = params.resource_version.clone();
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
-    // Always send initial events for cluster-scoped JSON watches.
-    // When the client watches with a specific resourceVersion (from a CREATE),
-    // our broadcast subscription only gets future events, missing the MODIFIED
-    // event that already happened. Sending current state as ADDED ensures the
-    // client sees the latest status (e.g. CRD Established=True condition).
-    let should_send_initial = true;
+    let should_send_initial =
+        send_initial_events || requested_rv.as_deref() == Some("0") || requested_rv.is_none();
 
     tokio::spawn(async move {
         let mut latest_resource_version: Option<String> = Some(current_rev_str);
