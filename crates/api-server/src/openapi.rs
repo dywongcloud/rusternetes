@@ -221,16 +221,21 @@ fn add_namespaced_resource(
     tag: &str,
     has_status: bool,
 ) {
+    // Derive group/version from path for x-kubernetes-group-version-kind extension.
+    // /api/v1/... → group="", version="v1"
+    // /apis/{group}/{version}/... → group, version
+    let gvk_ext = gvk_extension_from_path(collection_path, resource_name);
+
     // Collection operations (list, create)
     paths.insert(
         collection_path.to_string(),
-        ReferenceOr::Item(create_collection_path_item(resource_name, tag)),
+        ReferenceOr::Item(create_collection_path_item(resource_name, tag, &gvk_ext)),
     );
 
     // Item operations (get, update, patch, delete)
     paths.insert(
         item_path.to_string(),
-        ReferenceOr::Item(create_item_path_item(resource_name, tag)),
+        ReferenceOr::Item(create_item_path_item(resource_name, tag, &gvk_ext)),
     );
 
     // Status subresource if applicable
@@ -241,6 +246,30 @@ fn add_namespaced_resource(
             ReferenceOr::Item(create_status_path_item(resource_name, tag)),
         );
     }
+}
+
+/// Extract group and version from a Kubernetes API path and build the
+/// x-kubernetes-group-version-kind extension value.
+fn gvk_extension_from_path(path: &str, kind: &str) -> serde_json::Value {
+    let (group, version) = if path.starts_with("/api/") {
+        // Core API: /api/v1/...
+        let parts: Vec<&str> = path.split('/').collect();
+        ("".to_string(), parts.get(2).unwrap_or(&"v1").to_string())
+    } else if path.starts_with("/apis/") {
+        // Named API group: /apis/{group}/{version}/...
+        let parts: Vec<&str> = path.split('/').collect();
+        (
+            parts.get(2).unwrap_or(&"").to_string(),
+            parts.get(3).unwrap_or(&"v1").to_string(),
+        )
+    } else {
+        ("".to_string(), "v1".to_string())
+    };
+    serde_json::json!([{
+        "group": group,
+        "version": version,
+        "kind": kind
+    }])
 }
 
 /// Add a cluster-scoped resource to the paths
@@ -263,7 +292,16 @@ fn add_cluster_resource(
 }
 
 /// Create a path item for collection operations
-fn create_collection_path_item(resource_name: &str, tag: &str) -> PathItem {
+fn create_collection_path_item(
+    resource_name: &str,
+    tag: &str,
+    gvk_ext: &serde_json::Value,
+) -> PathItem {
+    let mut ext = IndexMap::new();
+    ext.insert(
+        "x-kubernetes-group-version-kind".to_string(),
+        gvk_ext.clone(),
+    );
     PathItem {
         summary: None,
         description: None,
@@ -288,7 +326,7 @@ fn create_collection_path_item(resource_name: &str, tag: &str) -> PathItem {
             servers: vec![],
             external_docs: None,
             callbacks: IndexMap::new(),
-            extensions: IndexMap::new(),
+            extensions: ext.clone(),
         }),
         post: Some(Operation {
             tags: vec![tag.to_string()],
@@ -308,14 +346,23 @@ fn create_collection_path_item(resource_name: &str, tag: &str) -> PathItem {
             servers: vec![],
             external_docs: None,
             callbacks: IndexMap::new(),
-            extensions: IndexMap::new(),
+            extensions: ext,
         }),
         ..Default::default()
     }
 }
 
 /// Create a path item for individual resource operations
-fn create_item_path_item(resource_name: &str, tag: &str) -> PathItem {
+fn create_item_path_item(
+    resource_name: &str,
+    tag: &str,
+    gvk_ext: &serde_json::Value,
+) -> PathItem {
+    let mut ext = IndexMap::new();
+    ext.insert(
+        "x-kubernetes-group-version-kind".to_string(),
+        gvk_ext.clone(),
+    );
     PathItem {
         summary: None,
         description: None,
@@ -332,7 +379,7 @@ fn create_item_path_item(resource_name: &str, tag: &str) -> PathItem {
             servers: vec![],
             external_docs: None,
             callbacks: IndexMap::new(),
-            extensions: IndexMap::new(),
+            extensions: ext.clone(),
         }),
         put: Some(Operation {
             tags: vec![tag.to_string()],
@@ -352,7 +399,7 @@ fn create_item_path_item(resource_name: &str, tag: &str) -> PathItem {
             servers: vec![],
             external_docs: None,
             callbacks: IndexMap::new(),
-            extensions: IndexMap::new(),
+            extensions: ext.clone(),
         }),
         patch: Some(Operation {
             tags: vec![tag.to_string()],
@@ -372,7 +419,7 @@ fn create_item_path_item(resource_name: &str, tag: &str) -> PathItem {
             servers: vec![],
             external_docs: None,
             callbacks: IndexMap::new(),
-            extensions: IndexMap::new(),
+            extensions: ext.clone(),
         }),
         delete: Some(Operation {
             tags: vec![tag.to_string()],
@@ -387,7 +434,7 @@ fn create_item_path_item(resource_name: &str, tag: &str) -> PathItem {
             servers: vec![],
             external_docs: None,
             callbacks: IndexMap::new(),
-            extensions: IndexMap::new(),
+            extensions: ext,
         }),
         ..Default::default()
     }

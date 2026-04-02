@@ -133,12 +133,19 @@ pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
         .unwrap_or("");
 
     if accept.contains("proto-openapi") || accept.contains("protobuf") {
-        // Wrap JSON in K8s protobuf envelope
-        let content_type = "application/com.github.proto-openapi.spec.v2@v1.0+protobuf";
-        let pb_bytes = wrap_in_k8s_protobuf(content_type, &json_bytes);
+        // Wrap JSON in K8s protobuf envelope. The internal content type inside the
+        // protobuf wrapper uses the full proto-openapi identifier.
+        let internal_ct = "application/com.github.proto-openapi.spec.v2@v1.0+protobuf";
+        let pb_bytes = wrap_in_k8s_protobuf(internal_ct, &json_bytes);
+        // Use application/vnd.kubernetes.protobuf as the HTTP Content-Type header.
+        // The full proto-openapi content type contains '@' which Go's
+        // mime.ParseMediaType rejects with "unexpected content after media subtype".
         Response::builder()
             .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, content_type)
+            .header(
+                header::CONTENT_TYPE,
+                "application/vnd.kubernetes.protobuf",
+            )
             .body(Body::from(pb_bytes))
             .unwrap()
     } else {
