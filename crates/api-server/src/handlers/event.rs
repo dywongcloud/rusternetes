@@ -755,6 +755,29 @@ pub async fn update_events_v1(
     event.metadata.name = name.clone();
     event.api_version = "events.k8s.io/v1".to_string();
 
+    // Map events.k8s.io/v1 fields to core/v1 equivalents
+    if event.source.component.is_empty() {
+        if let Some(ref rc) = event.reporting_component {
+            event.source.component = rc.clone();
+        }
+    }
+    if event.message.is_empty() {
+        if let Some(ref note) = event.note {
+            event.message = note.clone();
+        }
+    }
+    if event
+        .involved_object
+        .name
+        .as_deref()
+        .unwrap_or("")
+        .is_empty()
+    {
+        if let Some(ref regarding) = event.regarding {
+            event.involved_object = regarding.clone();
+        }
+    }
+
     let key = build_key("events", Some(&namespace), &name);
 
     if is_dry_run {
