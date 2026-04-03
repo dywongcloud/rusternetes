@@ -1,55 +1,54 @@
 # Conformance Issue Tracker
 
-**Round 124** COMPLETE | 295/441 passed (66.9%)
+**Round 124** | 295/441 (66.9%) | Fixes pending redeploy
 
-## All 146 Failures by Category
+## Fixes Since Round 124 (4 new, 14 total this session)
 
-| Category | Count | Root Cause |
-|----------|-------|-----------|
-| Services | 13 | Exec connection reset, kube-proxy iptables, service type changes |
-| AdmissionWebhook | 13 | Webhook response parsing, webhook readiness timeout |
-| CRD PublishOpenAPI | 9 | CRD creation timeout (client-go polling) |
-| DNS | 7 | Exec connection reset, CoreDNS pod networking |
-| StatefulSet | 6 | Scale-down readyReplicas, rolling update patch, burst scaling |
-| FieldValidation | 6 | Strict/unknown field validation not implemented |
-| EmptyDir | 5 | Docker Desktop virtiofs bind mount permissions |
-| ReplicationController | 5 | ReplicaFailure condition, scale/lifecycle |
-| Job | 5 | Indexed completion, pod failure policy, disruption |
-| Networking Pods | 4 | Exec connection reset (intra-pod, node-pod) |
-| ReplicaSet | 4 | Scale, lifecycle, adoption |
-| Deployment | 4 | Rolling update, rollback, proportional scaling |
-| SchedulerPreemption | 4 | DisruptionTarget condition, preemption path |
-| CRD resources | 4 | CRD creation timeout, status sub-resource |
-| AggregatedDiscovery | 3 | Discovery API format not implemented |
-| ServiceAccounts | 3 | Token validation, projected volume |
-| Pod InPlace Resize (guaranteed) | 3 | Exec connection reset reading cgroups |
-| Pod InPlace Resize (burstable) | 2 | Exec connection reset reading cgroups |
-| InitContainer | 2 | Init container lifecycle |
-| Ephemeral Containers | 2 | Ephemeral container support |
-| Lifecycle Hook | 2 | PostStart HTTP hook, preStop |
-| Proxy | 2 | kubectl proxy, service proxy |
-| EndpointSlice | 2 | Multiport endpoints, port mapping |
-| Kubectl Update Demo | 2 | kubectl create validation (MIME) |
-| ResourceQuota | 2 | Quota enforcement |
-| SchedulerPredicates | 2 | NodeSelector, node affinity |
-| Kubectl (various) | 7 | diff, describe, expose, label, patch, replace, guestbook |
-| Node (various) | 5 | Variable expansion, sysctls, pods, kubelet, container runtime |
-| Storage (various) | 2 | Secrets permissions, projected secret |
-| Other (1 each) | 7 | Events API, HostPort, LimitRange, Certificates, DisruptionController, DaemonSet, Watchers, OrderedNamespaceDeletion, Aggregator |
+| # | Fix | Est. Tests | Commit |
+|---|-----|-----------|--------|
+| 10 | Exec WebSocket: 500ms delay before close | ~20 | 24ca36b |
+| 11 | OpenAPI v3: schemas for all 47 resource types | ~6 | 79f4f4a |
+| 12 | Targeted protobuf response for protobuf requests | ~13 | c859496 |
+| 13 | Recreate deployment: wait for old pods to terminate | ~2 | 140048a |
 
-## Root Cause Summary
+## All Fixes This Session
 
-| Root Cause | Est. Tests | Fixable? |
-|-----------|-----------|---------|
-| Exec WebSocket connection reset | ~20 | Yes - exec error stream handling |
-| CRD creation timeout | ~13 | Yes - client-go response format |
-| Webhook response parsing | ~13 | Partially fixed (ba0b26f) |
-| FieldValidation not implemented | ~6 | Yes - strict field validation |
-| Docker Desktop bind mount perms | ~5 | No - platform limitation |
-| kubectl MIME (1 remaining) | ~2 | Mostly fixed (b3a6772) |
-| AggregatedDiscovery format | ~3 | Yes - discovery API |
-| Service type transitions | ~4 | Yes - service controller |
-| StatefulSet rolling update | ~3 | Yes - patch handling |
+| # | Fix | Commit |
+|---|-----|--------|
+| 1 | StatefulSet: exclude terminating pods from status | 823884f |
+| 2 | OpenAPI v3: x-kubernetes-group-version-kind extensions | 7fb8ecd |
+| 3 | Job: reason CompletionsReached | db1a3e5 |
+| 4 | OpenAPI v2: dot-format Content-Type | b3a6772 |
+| 5 | RC: ReplicaFailure only on actual errors | b3a6772 |
+| 6 | Protobuf response middleware (added then removed) | 655b38e → 8965fd5 |
+| 7 | Webhook: lenient response parsing | ba0b26f |
+| 8 | Scheduler: DisruptionTarget on preemption | d7ef779 |
+| 9 | cargo fmt | 7cba226 |
+| 10-13 | See above | |
+
+## Remaining Failures Analysis (from round 124 evidence)
+
+| Category | Count | Root Cause | Fixable? |
+|----------|-------|-----------|---------|
+| Exec connection reset | ~20 | WebSocket close too early | Fix #10 |
+| CRD creation timeout | ~13 | Client expects protobuf response | Fix #12 |
+| AdmissionWebhook | 13 | Webhook response parsing + readiness | Fix #7 + needs more |
+| CRD OpenAPI | 9 | CRD creation timeout | Fix #12 |
+| DNS | 7 | Exec reset + CoreDNS networking | Partial |
+| FieldValidation | 6 | Missing OpenAPI schemas | Fix #11 |
+| StatefulSet | 6 | Scale-down + rolling update + patch | Fix #1 + needs more |
+| EmptyDir | 5 | Docker Desktop virtiofs perms | Platform limit |
+| RC | 5 | Condition clearing + lifecycle | Fix #5 + needs more |
+| Job | 5 | Orphan adoption + success policy timing | Partial |
+| Service type transitions | 5 | kube-proxy iptables timing | Intermittent |
+| Networking Pods | 4 | Exec connection reset | Fix #10 |
+| Deployment | 4 | Recreate + rolling update + scaling | Fix #13 + needs more |
+| ReplicaSet | 4 | Status patch overwritten by controller | Needs fix |
+| SchedulerPreemption | 4 | DisruptionTarget + preemption path | Fix #8 + needs more |
+| AggregatedDiscovery | 3 | CRD timeout blocks discovery | Fix #12 |
+| Pod InPlace Resize | 5 | Exec connection reset reading cgroups | Fix #10 |
+| Kubectl (various) | 7 | OpenAPI MIME (fixed) + validation | Fix #4 |
+| Other | ~20 | Various (init containers, watchers, etc.) | Mixed |
 
 ## Progress History
 
