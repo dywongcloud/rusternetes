@@ -519,29 +519,40 @@ fn validate_min_resources(
     min: &HashMap<String, String>,
     container_name: &str,
 ) -> anyhow::Result<bool> {
+    // Check requests against min
     if let Some(requests) = &resources.requests {
         for (resource, min_value) in min {
             if let Some(request_value) = requests.get(resource) {
-                if resource == "cpu" {
-                    let request = parse_cpu_to_millicores(request_value)?;
-                    let minimum = parse_cpu_to_millicores(min_value)?;
-                    if request < minimum {
-                        warn!(
-                            "Container {} has CPU request {} below minimum {}",
-                            container_name, request_value, min_value
-                        );
-                        return Ok(false);
-                    }
-                } else if resource == "memory" {
-                    let request = parse_memory_to_bytes(request_value)?;
-                    let minimum = parse_memory_to_bytes(min_value)?;
-                    if request < minimum {
-                        warn!(
-                            "Container {} has memory request {} below minimum {}",
-                            container_name, request_value, min_value
-                        );
-                        return Ok(false);
-                    }
+                let below = if resource == "cpu" {
+                    parse_cpu_to_millicores(request_value)? < parse_cpu_to_millicores(min_value)?
+                } else {
+                    parse_memory_to_bytes(request_value)? < parse_memory_to_bytes(min_value)?
+                };
+                if below {
+                    warn!(
+                        "Container {} has {} request {} below minimum {}",
+                        container_name, resource, request_value, min_value
+                    );
+                    return Ok(false);
+                }
+            }
+        }
+    }
+    // Check limits against min — K8s enforces min on both
+    if let Some(limits) = &resources.limits {
+        for (resource, min_value) in min {
+            if let Some(limit_value) = limits.get(resource) {
+                let below = if resource == "cpu" {
+                    parse_cpu_to_millicores(limit_value)? < parse_cpu_to_millicores(min_value)?
+                } else {
+                    parse_memory_to_bytes(limit_value)? < parse_memory_to_bytes(min_value)?
+                };
+                if below {
+                    warn!(
+                        "Container {} has {} limit {} below minimum {}",
+                        container_name, resource, limit_value, min_value
+                    );
+                    return Ok(false);
                 }
             }
         }
@@ -555,35 +566,49 @@ fn validate_max_resources(
     max: &HashMap<String, String>,
     container_name: &str,
 ) -> anyhow::Result<bool> {
+    // Check limits against max
     if let Some(limits) = &resources.limits {
         for (resource, max_value) in max {
             if let Some(limit_value) = limits.get(resource) {
-                if resource == "cpu" {
-                    let limit = parse_cpu_to_millicores(limit_value)?;
-                    let maximum = parse_cpu_to_millicores(max_value)?;
-                    if limit > maximum {
-                        warn!(
-                            "Container {} has CPU limit {} exceeding maximum {}",
-                            container_name, limit_value, max_value
-                        );
-                        return Ok(false);
-                    }
-                } else if resource == "memory" {
-                    let limit = parse_memory_to_bytes(limit_value)?;
-                    let maximum = parse_memory_to_bytes(max_value)?;
-                    if limit > maximum {
-                        warn!(
-                            "Container {} has memory limit {} exceeding maximum {}",
-                            container_name, limit_value, max_value
-                        );
-                        return Ok(false);
-                    }
+                let exceeds = compare_resource_values(resource, limit_value, max_value)?;
+                if exceeds {
+                    warn!(
+                        "Container {} has {} limit {} exceeding maximum {}",
+                        container_name, resource, limit_value, max_value
+                    );
+                    return Ok(false);
+                }
+            }
+        }
+    }
+    // Check requests against max — K8s enforces max on both limits and requests
+    if let Some(requests) = &resources.requests {
+        for (resource, max_value) in max {
+            if let Some(request_value) = requests.get(resource) {
+                let exceeds = compare_resource_values(resource, request_value, max_value)?;
+                if exceeds {
+                    warn!(
+                        "Container {} has {} request {} exceeding maximum {}",
+                        container_name, resource, request_value, max_value
+                    );
+                    return Ok(false);
                 }
             }
         }
     }
 
     Ok(true)
+}
+
+/// Compare a resource value against a limit, returns true if value > limit.
+/// Handles cpu, memory, ephemeral-storage, and other resources.
+fn compare_resource_values(resource: &str, value: &str, limit: &str) -> anyhow::Result<bool> {
+    if resource == "cpu" {
+        Ok(parse_cpu_to_millicores(value)? > parse_cpu_to_millicores(limit)?)
+    } else {
+        // memory, ephemeral-storage, and other byte-based resources
+        Ok(parse_memory_to_bytes(value)? > parse_memory_to_bytes(limit)?)
+    }
 }
 
 fn validate_ratio(
