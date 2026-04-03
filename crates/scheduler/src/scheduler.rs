@@ -147,6 +147,10 @@ impl Scheduler {
                     );
                     // Set pod condition to Unschedulable so tests can observe it
                     let pod_ns = pod.metadata.namespace.as_deref().unwrap_or("default");
+                    let sched_message = format!(
+                        "0/{} nodes are available: no node matched the scheduling constraints",
+                        nodes.len()
+                    );
                     let pod_key =
                         rusternetes_storage::build_key("pods", Some(pod_ns), &pod.metadata.name);
                     if let Ok(mut p) = self.storage.get::<Pod>(&pod_key).await {
@@ -154,10 +158,7 @@ impl Scheduler {
                             condition_type: "PodScheduled".to_string(),
                             status: "False".to_string(),
                             reason: Some("Unschedulable".to_string()),
-                            message: Some(format!(
-                                "0/{} nodes are available: no node matched the scheduling constraints",
-                                nodes.len()
-                            )),
+                            message: Some(sched_message.clone()),
                             last_transition_time: Some(chrono::Utc::now()),
                             observed_generation: None,
                         };
@@ -168,6 +169,43 @@ impl Scheduler {
                         }
                         let _ = self.storage.update(&pod_key, &p).await;
                     }
+
+                    // Emit FailedScheduling event — K8s conformance tests wait for this
+                    let event_name = format!(
+                        "{}.{:x}",
+                        pod.metadata.name,
+                        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64
+                    );
+                    let event = serde_json::json!({
+                        "apiVersion": "v1",
+                        "kind": "Event",
+                        "metadata": {
+                            "name": event_name,
+                            "namespace": pod_ns,
+                        },
+                        "involvedObject": {
+                            "apiVersion": "v1",
+                            "kind": "Pod",
+                            "name": pod.metadata.name,
+                            "namespace": pod_ns,
+                            "uid": pod.metadata.uid,
+                        },
+                        "reason": "FailedScheduling",
+                        "message": sched_message,
+                        "type": "Warning",
+                        "source": {
+                            "component": "default-scheduler",
+                        },
+                        "firstTimestamp": chrono::Utc::now().to_rfc3339(),
+                        "lastTimestamp": chrono::Utc::now().to_rfc3339(),
+                        "count": 1,
+                    });
+                    let event_key = rusternetes_storage::build_key(
+                        "events",
+                        Some(pod_ns),
+                        &event_name,
+                    );
+                    let _ = self.storage.create(&event_key, &event).await;
                 }
             }
         }
