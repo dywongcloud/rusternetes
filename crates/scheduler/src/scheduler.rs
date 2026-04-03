@@ -200,11 +200,8 @@ impl Scheduler {
                         "lastTimestamp": chrono::Utc::now().to_rfc3339(),
                         "count": 1,
                     });
-                    let event_key = rusternetes_storage::build_key(
-                        "events",
-                        Some(pod_ns),
-                        &event_name,
-                    );
+                    let event_key =
+                        rusternetes_storage::build_key("events", Some(pod_ns), &event_name);
                     let _ = self.storage.create(&event_key, &event).await;
                 }
             }

@@ -632,9 +632,7 @@ pub async fn patch(
 
     if matches!(service.spec.service_type, Some(ServiceType::ExternalName)) {
         // Changing TO ExternalName — clear ClusterIP and NodePorts
-        if service.spec.cluster_ip.as_deref() != Some("")
-            && service.spec.cluster_ip.is_some()
-        {
+        if service.spec.cluster_ip.as_deref() != Some("") && service.spec.cluster_ip.is_some() {
             service.spec.cluster_ip = Some("".to_string());
             service.spec.cluster_ips = None;
             for port in &mut service.spec.ports {
