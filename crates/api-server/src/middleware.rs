@@ -234,44 +234,7 @@ pub async fn normalize_content_type_middleware(
         }
     }
 
-    // Check if client wants protobuf response BEFORE running handler
-    let wants_protobuf = request
-        .headers()
-        .get(axum::http::header::ACCEPT)
-        .and_then(|v| v.to_str().ok())
-        .map(|a| a.contains("application/vnd.kubernetes.protobuf"))
-        .unwrap_or(false);
-
-    let mut response = next.run(request).await;
-
-    // If client wants protobuf and response is JSON, wrap in K8s protobuf envelope
-    if wants_protobuf {
-        let response_ct = response
-            .headers()
-            .get(axum::http::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
-        if response_ct.starts_with("application/json") {
-            let (parts, body) = response.into_parts();
-            if let Ok(json_bytes) = axum::body::to_bytes(body, 10 * 1024 * 1024).await {
-                let pb = wrap_json_in_protobuf(&json_bytes);
-                let mut resp = Response::from_parts(parts, Body::from(pb));
-                resp.headers_mut().insert(
-                    axum::http::header::CONTENT_TYPE,
-                    axum::http::HeaderValue::from_static("application/vnd.kubernetes.protobuf"),
-                );
-                return Ok(resp);
-            }
-            // Body read failed — return empty response
-            return Ok(Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap());
-        }
-    }
-
-    Ok(response)
+    Ok(next.run(request).await)
 }
 
 /// Wrap JSON bytes in the K8s protobuf envelope: "k8s\0" + Unknown{raw: json}
