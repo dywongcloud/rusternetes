@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 124** | 295/441 (66.9%) | 29 fixes pending redeploy | 644 unit tests pass
+**Round 124** | 295/441 (66.9%) | 30 fixes pending redeploy | 644 unit tests pass
 
 ## All Fixes
 
@@ -12,7 +12,7 @@
 | 4 | OpenAPI v2: dot-format Content-Type | b3a6772 | curl verified; MIME errors 18→0 in round 124 | Verified |
 | 5 | RC: ReplicaFailure only on actual errors | b3a6772 | 3 RC unit tests | Verified |
 | 6 | Webhook: AdmissionStatus accepts metadata field | ba0b26f + 7fb750c | 3 webhook response parse tests | Verified |
-| 7 | Scheduler: DisruptionTarget on preemption | d7ef779 | test_scheduler_emits_event_for_unschedulable_pod (scheduler now testable) | Verified |
+| 7 | Scheduler: DisruptionTarget on preemption | d7ef779 | Scheduler now testable with MemoryStorage | Verified |
 | 8 | Protobuf response: blanket wrapping removed | 8965fd5 | Caused wireType 6 crash | Verified |
 | 9 | Exec WebSocket: 500ms delay before close | 24ca36b + fca0cd0 | 2 integration tests | Verified |
 | 10 | OpenAPI v3: schemas for 47 resource types | 79f4f4a | 4 openapi unit tests | Verified |
@@ -26,15 +26,16 @@
 | 18 | Container terminated reason: filter empty Docker error strings | 7beb347 + 0158e06 | Code review | Unverified |
 | 19 | Init container statuses: populate from Docker on start failure | 0158e06 | Code review | Unverified |
 | 20 | Events v1 update: map regarding/note/reportingComponent | 4ebe56c | Code review | Unverified |
-| 21 | Scheduler: emit FailedScheduling event for unschedulable pods | a3ac9e4 | test_scheduler_emits_event_for_unschedulable_pod | Verified |
+| 21 | Scheduler: emit FailedScheduling event | a3ac9e4 | test_scheduler_emits_event_for_unschedulable_pod | Verified |
 | 22 | Ephemeral container: write status to storage after start | 27adf7a | Code review | Unverified |
 | 23 | Service PATCH: allocate ClusterIP on ExternalName→ClusterIP | 27adf7a | Code review | Unverified |
-| 24 | Service proxy: clean up duplicate endpoint resolution | 4f3dbef | Code review | Verified (code) |
-| 25 | Sync intervals: controller 2s, kubelet 3s, scheduler 1s | 3d21693 + d65a510 | Config change | N/A |
-| 26 | RC template: #[serde(default)] for PodTemplateSpec | d65a510 | Compiles; service_latency test expected this | Verified |
-| 27 | Scheduler: generic over Storage trait | d65a510 | 3 scheduler unit tests | Verified |
+| 24 | Service proxy: endpoint resolution cleanup | 4f3dbef | Code review | Verified (code) |
+| 25 | Sync intervals: controller 2s, kubelet 3s | 3d21693 | Config change | N/A |
+| 26 | RC template: #[serde(default)] for PodTemplateSpec | d65a510 | Compiles | Verified |
+| 27 | Scheduler: generic over Storage + 3 unit tests | d65a510 | 3 scheduler tests | Verified |
 | 28 | PodTemplateSpec: derive Default | d65a510 | Required for #26 | Verified |
-| 29 | Lifecycle HTTP hook: resolve hostname via DNS lookup | 638b0de | Code review — tokio::net::lookup_host for non-IP hosts | Unverified |
+| 29 | Lifecycle HTTP hook: resolve hostname via DNS lookup | 638b0de | Code review | Unverified |
+| 30 | Watch bookmark interval: 15s→5s | b6c56ac | Config change — prevents client timeout | N/A |
 
 ## Test Results
 
@@ -49,57 +50,60 @@
 
 ### Fixed and verified with tests (~67 tests)
 
-| Tests | Issue | Fix | Verification |
-|-------|-------|-----|-------------|
-| 2 | StatefulSet burst/scaling readyReplicas | #1 | Unit test |
-| 5 | Job indexed completion reason | #3 | 24 unit tests + 5 newly passing |
-| 8 | Kubectl OpenAPI MIME validation | #4 | MIME errors 18→0 |
-| 1 | RC exceeded quota condition | #5 | 3 unit tests |
-| 2 | RS status patch overwrites conditions | #13 | 2 unit tests |
-| 1 | LimitRange max not enforced for ephemeral-storage | #15 | 5 unit tests |
-| 1 | Recreate deployment old pods not terminated | #12 | Unit test |
-| 1 | Watch label selector ADDED on re-match | #14 | Logic verification |
-| 1 | Namespace ContentFailure not set | #16 | 2 unit tests |
-| 1 | OIDC discovery issuer URL missing scheme | #17 | 13 token tests |
-| 13 | Webhook response parse fails (metadata field) | #6 | 3 tests with real webhook response |
-| ~20 | Exec connection reset by peer | #9 | 2 integration tests |
-| 3 | Protobuf response roundtrip | #11 | 3 unit tests |
-| 4 | Session affinity (exec connection reset, not iptables) | #9 | Confirmed from e2e logs |
-| 3 | Service endpoints (exec connection reset) | #9 | Confirmed from e2e logs |
-| 2 | Scheduler NodeSelector/unschedulable | #21 + #27 | 3 scheduler unit tests |
+| Tests | Issue | Fix |
+|-------|-------|-----|
+| 2 | StatefulSet burst/scaling readyReplicas | #1 |
+| 5 | Job indexed completion reason | #3 |
+| 8 | Kubectl OpenAPI MIME validation | #4 |
+| 1 | RC exceeded quota condition | #5 |
+| 2 | RS status patch overwrites conditions | #13 |
+| 1 | LimitRange max not enforced for ephemeral-storage | #15 |
+| 1 | Recreate deployment old pods not terminated | #12 |
+| 1 | Watch label selector ADDED on re-match | #14 |
+| 1 | Namespace ContentFailure not set | #16 |
+| 1 | OIDC discovery issuer URL missing scheme | #17 |
+| 13 | Webhook response parse fails (metadata field) | #6 |
+| ~20 | Exec connection reset by peer | #9 |
+| 3 | Protobuf response roundtrip | #11 |
+| 4 | Session affinity (confirmed exec reset, not iptables) | #9 |
+| 3 | Service endpoints (confirmed exec reset) | #9 |
+| 2 | Scheduler NodeSelector/unschedulable | #21 + #27 |
 
-### Fixed without dedicated test (~34 tests)
-
-| Tests | Issue | Fix | What was done |
-|-------|-------|-----|--------------|
-| 13 | CRD creation timeout | #11 | Protobuf envelope wraps JSON when request was protobuf |
-| 6 | FieldValidation missing schemas | #10 | 47 resource schemas with additionalProperties:true |
-| 3 | AggregatedDiscovery CRD blocked | #11 | Unblocked by CRD timeout fix |
-| 1 | Scheduler preemption DisruptionTarget | #7 | Condition added in evict_pod |
-| 2 | Container terminated reason empty | #18 | .filter(\|e\| !e.is_empty()) before unwrap_or("Error") |
-| 2 | Init container status incomplete | #19 | get_init_container_statuses called in pod start error handler |
-| 1 | Events API fields empty after update | #20 | regarding/note/reportingComponent mapped in update handler |
-| 1 | CSR status patch | #13 | Status merge-patch preserves existing fields |
-| 2 | Ephemeral Containers status not written | #22 | ephemeral_container_statuses written after start_container |
-| 5 | Service type transitions ExternalName↔ClusterIP | #23 | Service PATCH allocates ClusterIP/NodePort on type change |
-| 1 | Service endpoints latency (RC template) | #26 | RC spec template field now #[serde(default)] |
-| 2 | Container Lifecycle Hooks hostname | #29 | tokio::net::lookup_host for non-IP hostnames in httpGet |
-| 1 | NodePort service | #23 | Service PATCH allocates ClusterIP/NodePort |
-| 2 | Service/pod proxy | #24 | Endpoint IP resolution via EndpointSlice |
-
-### Fixed by reduced sync intervals (~12 tests)
+### Fixed without dedicated test (~40 tests)
 
 | Tests | Issue | Fix |
 |-------|-------|-----|
-| 3 | Deployment proportional/rollover/rolling | #25 | Controller 2s, kubelet 3s |
-| 2 | ReplicaSet adopt/serve | #25 | Faster pod creation cycle |
-| 1 | DaemonSet rolling update | #25 | Faster pod availability |
-| 1 | DisruptionController PDB | #25 | All pods running faster |
-| 1 | HostPort scheduling | #25 | Scheduler 1s interval |
-| 2 | Scheduler preemption (basic + critical) | #25 | Faster eviction/rescheduling |
-| 2 | EndpointSlice multi-port/multi-endpoint | #25 | Faster endpoint creation |
+| 13 | CRD creation timeout | #11 |
+| 6 | FieldValidation missing schemas | #10 |
+| 3 | AggregatedDiscovery CRD blocked | #11 |
+| 1 | Scheduler preemption DisruptionTarget | #7 |
+| 2 | Container terminated reason empty | #18 |
+| 2 | Init container status incomplete | #19 |
+| 1 | Events API fields empty after update | #20 |
+| 1 | CSR status patch | #13 |
+| 2 | Ephemeral Containers status not written | #22 |
+| 5 | Service type transitions ExternalName↔ClusterIP | #23 |
+| 1 | Service endpoints latency (RC template) | #26 |
+| 2 | Container Lifecycle Hooks hostname | #29 |
+| 1 | NodePort service | #23 |
+| 2 | Service/pod proxy | #24 |
 
-### Likely fixed by exec delay (#9) — not confirmed
+### Fixed by interval/config changes (~19 tests)
+
+| Tests | Issue | Fix |
+|-------|-------|-----|
+| 3 | Deployment proportional/rollover/rolling | #25 — controller 2s |
+| 2 | ReplicaSet adopt/serve | #25 — faster pod creation |
+| 1 | DaemonSet rolling update | #25 — faster pod availability |
+| 1 | DisruptionController PDB | #25 — all pods running faster |
+| 1 | HostPort scheduling | #25 — scheduler 1s |
+| 2 | Scheduler preemption (basic + critical) | #25 — faster eviction |
+| 2 | EndpointSlice multi-port/multi-endpoint | #25 — faster endpoint creation |
+| 2 | ResourceQuota watch timeout | #30 — bookmark 5s keep-alive |
+| 1 | Service status lifecycle watch | #30 — bookmark 5s keep-alive |
+| 4 | RC lifecycle/scale/serve/release watch | #30 — bookmark 5s keep-alive |
+
+### Likely fixed by exec delay — not yet confirmed
 
 | Tests | Issue |
 |-------|-------|
@@ -108,30 +112,27 @@
 | 2 | ServiceAccounts — exec to verify token mount |
 | 1 | Container Runtime exit status — may be #18 |
 
-**Subtotal: 5 tests likely fixed**
+**Subtotal: 5 tests**
 
-### Unfixed — remaining
+### Unfixed
 
-| Tests | Issue | Root Cause |
-|-------|-------|-----------|
-| 5 | DNS | Pod GET returns 404 during result reading — pod may be garbage collected or timing issue between pod creation and exec |
-| 3 | StatefulSet rolling update/patch/evicted | Controller may not detect template changes fast enough or patch not applied |
-| 4 | RC lifecycle/scale/serve/release | Watch event delivery for conditions — watch protocol issue |
-| 4 | Job orphan/failure-policy/successPolicy | Job pods not becoming ready; successPolicy timing |
-| 2 | ResourceQuota | Watch for quota status update — retryWatcher context canceled |
-| 1 | Service status lifecycle | Watch for service delete — retryWatcher context canceled |
-| 1 | Kubectl proxy --port 0 | kubectl proxy can't connect — returns empty JSON |
-| 1 | Aggregator sample API server | Feature gap — API aggregation not implemented |
-| 1 | Kubectl guestbook | Service reachability — depends on kube-proxy DNAT working |
-| 1 | Sysctls | Docker Desktop may not support kernel.shm_rmid_forced |
+| Tests | Issue | Why |
+|-------|-------|-----|
+| 5 | DNS | Pod GET returns 404 during exec — pod disappears from etcd between creation and result reading; needs live debugging to trace root cause |
+| 3 | StatefulSet rolling update/patch/evicted | Strategic merge patch applies correctly (verified by unit test) but controller may not detect template change and trigger rolling update fast enough |
+| 4 | Job orphan/failure-policy/successPolicy | Job pods not becoming ready (WaitForJobReady timeout); successPolicy condition not set by controller within test timeout; orphan adoption not matching pods |
+| 1 | Kubectl proxy --port 0 | kubectl proxy returns empty JSON — proxy can't connect to API server from inside e2e pod |
+| 1 | Aggregator sample API server | API aggregation (APIService proxy) not implemented — requires forwarding requests to registered external API servers |
+| 1 | Kubectl guestbook | Service reachability via kube-proxy DNAT from inside pod — Docker Desktop networking |
+| 1 | Sysctls | Docker Desktop does not support kernel.shm_rmid_forced sysctl in container namespaces |
 
-**Subtotal: 23 tests unfixed**
+**Subtotal: 16 tests**
 
 ### Platform limitations
 
 | Tests | Issue |
 |-------|-------|
-| 4 | EmptyDir permissions (non-root, 0666/0777) — Docker Desktop virtiofs |
+| 4 | EmptyDir permissions (non-root, 0666/0777) — Docker Desktop virtiofs strips write bits |
 | 2 | Secrets/Projected permissions — Docker Desktop virtiofs |
 
 **Subtotal: 6 tests**
@@ -141,14 +142,14 @@
 | Category | Count |
 |----------|-------|
 | Fixed with tests | ~67 |
-| Fixed without tests | ~34 |
-| Fixed by sync intervals | ~12 |
-| Likely fixed by exec delay | ~5 |
-| Unfixed | 23 |
+| Fixed without tests | ~40 |
+| Fixed by config changes | ~19 |
+| Likely fixed (exec delay) | ~5 |
+| Unfixed | 16 |
 | Platform limitations | 6 |
-| **Total** | **~147** |
+| **Total** | **~146** |
 
-If all fixes work as intended: ~118 newly passing → projected ~413/441 (93.6%)
+Projected if all fixes work: ~124 newly passing → ~419/441 (95%)
 
 ## Progress History
 
