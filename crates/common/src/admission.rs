@@ -646,6 +646,7 @@ impl AdmissionReviewResponse {
                 message: Some(message),
                 reason: Some("Denied by webhook".to_string()),
                 code: Some(403),
+                metadata: None,
             }),
             patch: None,
             patch_type: None,
@@ -674,10 +675,12 @@ impl AdmissionReviewResponse {
     }
 }
 
-/// AdmissionStatus contains extra details about the admission response
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// AdmissionStatus contains extra details about the admission response.
+/// Maps to metav1.Status in K8s which has metadata, status, message, reason, code.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AdmissionStatus {
+    #[serde(default)]
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
@@ -685,6 +688,9 @@ pub struct AdmissionStatus {
     pub reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<i32>,
+    /// K8s metav1.Status includes metadata — we ignore it but accept it
+    #[serde(default, skip_serializing)]
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[cfg(test)]
@@ -743,5 +749,72 @@ mod tests {
         assert_eq!(gvk.group, "apps");
         assert_eq!(gvk.version, "v1");
         assert_eq!(gvk.kind, "Deployment");
+    }
+
+    #[test]
+    fn test_parse_real_webhook_response() {
+        // Exact response from K8s conformance test webhook server
+        let response_json = r#"{
+            "kind": "AdmissionReview",
+            "apiVersion": "admission.k8s.io/v1",
+            "response": {
+                "uid": "ab818250-607b-4060-812a-973a0c206d26",
+                "allowed": false,
+                "status": {
+                    "metadata": {},
+                    "message": "this webhook denies all requests"
+                }
+            }
+        }"#;
+
+        let review: AdmissionReview =
+            serde_json::from_str(response_json).expect("Should parse real webhook response");
+        let response = review.response.expect("Should have response");
+        assert_eq!(response.uid, "ab818250-607b-4060-812a-973a0c206d26");
+        assert!(!response.allowed);
+        let status = response.status.expect("Should have status");
+        assert_eq!(
+            status.message.as_deref(),
+            Some("this webhook denies all requests")
+        );
+    }
+
+    #[test]
+    fn test_parse_webhook_allow_response() {
+        let response_json = r#"{
+            "kind": "AdmissionReview",
+            "apiVersion": "admission.k8s.io/v1",
+            "response": {
+                "uid": "test-uid",
+                "allowed": true
+            }
+        }"#;
+
+        let review: AdmissionReview =
+            serde_json::from_str(response_json).expect("Should parse allow response");
+        let response = review.response.expect("Should have response");
+        assert!(response.allowed);
+        assert!(response.status.is_none());
+    }
+
+    #[test]
+    fn test_parse_webhook_mutating_response() {
+        let response_json = r#"{
+            "kind": "AdmissionReview",
+            "apiVersion": "admission.k8s.io/v1",
+            "response": {
+                "uid": "test-uid",
+                "allowed": true,
+                "patchType": "JSONPatch",
+                "patch": "W3sib3AiOiAiYWRkIiwgInBhdGgiOiAiL21ldGFkYXRhL2xhYmVscy9tdXRhdGVkIiwgInZhbHVlIjogInRydWUifV0="
+            }
+        }"#;
+
+        let review: AdmissionReview =
+            serde_json::from_str(response_json).expect("Should parse mutating response");
+        let response = review.response.expect("Should have response");
+        assert!(response.allowed);
+        assert!(response.patch.is_some());
+        assert_eq!(response.patch_type.as_deref(), Some("JSONPatch"));
     }
 }

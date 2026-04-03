@@ -1354,4 +1354,48 @@ mod tests {
             String::from_utf8_lossy(&result)
         );
     }
+
+    #[test]
+    fn test_wrap_json_in_protobuf_roundtrip() {
+        let json = b"{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"name\":\"test\"}}";
+        let wrapped = wrap_json_in_protobuf(json);
+
+        // Should start with k8s\0 magic
+        assert_eq!(&wrapped[..4], b"k8s\0");
+
+        // Should be extractable back to JSON
+        let extracted = extract_json_from_k8s_protobuf(&wrapped);
+        assert!(extracted.is_some(), "Should extract JSON from protobuf envelope");
+        let extracted = extracted.unwrap();
+        assert_eq!(extracted, json, "Extracted JSON should match original");
+    }
+
+    #[test]
+    fn test_wrap_json_in_protobuf_valid_wireformat() {
+        let json = b"{\"test\":true}";
+        let wrapped = wrap_json_in_protobuf(json);
+
+        // Verify protobuf field tags are valid
+        // After k8s\0 magic (4 bytes), first byte should be field tag
+        let tag1 = wrapped[4];
+        let field_num1 = tag1 >> 3;
+        let wire_type1 = tag1 & 0x07;
+        assert_eq!(field_num1, 2, "First field should be field 2 (raw)");
+        assert_eq!(wire_type1, 2, "Wire type should be 2 (length-delimited)");
+    }
+
+    #[test]
+    fn test_wrap_json_in_protobuf_large_payload() {
+        // Test with payload >127 bytes to exercise varint encoding
+        let json = format!("{{\"data\":\"{}\"}}", "x".repeat(200));
+        let wrapped = wrap_json_in_protobuf(json.as_bytes());
+
+        let extracted = extract_json_from_k8s_protobuf(&wrapped);
+        assert!(extracted.is_some(), "Should handle large payloads");
+        assert_eq!(
+            extracted.unwrap(),
+            json.as_bytes(),
+            "Large payload should roundtrip"
+        );
+    }
 }
