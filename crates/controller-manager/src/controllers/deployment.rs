@@ -349,8 +349,38 @@ impl<S: Storage> DeploymentController<S> {
                         self.update_replicaset_replicas(rs, 0).await?;
                     }
                 }
-                // Then create new RS at full desired count
-                self.create_replicaset(deployment).await?;
+                // Wait for old pods to actually be gone before creating new RS.
+                // Count non-terminated pods owned by old ReplicaSets.
+                let pods_prefix = build_prefix("pods", Some(namespace));
+                let all_pods: Vec<Pod> = self.storage.list(&pods_prefix).await?;
+                let old_pods_remaining = all_pods
+                    .iter()
+                    .filter(|p| {
+                        p.metadata.deletion_timestamp.is_none()
+                            && p.metadata
+                                .owner_references
+                                .as_ref()
+                                .map(|refs| {
+                                    refs.iter().any(|r| {
+                                        r.kind == "ReplicaSet"
+                                            && owned_replicasets
+                                                .iter()
+                                                .any(|rs| r.uid == rs.metadata.uid)
+                                    })
+                                })
+                                .unwrap_or(false)
+                    })
+                    .count();
+                if old_pods_remaining > 0 {
+                    debug!(
+                        "Recreate: waiting for {} old pods to terminate before creating new RS",
+                        old_pods_remaining
+                    );
+                    // Don't create new RS yet — wait for next reconcile cycle
+                } else {
+                    // All old pods gone — create new RS at full desired count
+                    self.create_replicaset(deployment).await?;
+                }
             } else if is_rolling_update && old_rs_total > 0 {
                 // Start the rolling update: create new RS with a smaller initial count
                 let max_total = desired_replicas + max_surge;
