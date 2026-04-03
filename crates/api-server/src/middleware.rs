@@ -204,6 +204,12 @@ pub async fn normalize_content_type_middleware(
                 axum::http::header::CONTENT_TYPE,
                 axum::http::HeaderValue::from_static("application/json"),
             );
+            // Mark that this request was originally protobuf so the response
+            // middleware can wrap the JSON response back in protobuf
+            new_request.headers_mut().insert(
+                axum::http::HeaderName::from_static("x-was-protobuf"),
+                axum::http::HeaderValue::from_static("true"),
+            );
             request = new_request;
         }
 
@@ -234,7 +240,53 @@ pub async fn normalize_content_type_middleware(
         }
     }
 
-    Ok(next.run(request).await)
+    // Track if this request was originally protobuf — if so, wrap JSON response
+    // in protobuf envelope. Only do this when the Accept header also requests protobuf.
+    // This fixes CRD creation timeouts where client-go sends protobuf and expects
+    // protobuf back, but our handlers return JSON.
+    let was_protobuf_request = request
+        .headers()
+        .get(axum::http::HeaderName::from_static("x-was-protobuf"))
+        .is_some();
+    let wants_protobuf = request
+        .headers()
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .map(|a| a.contains("application/vnd.kubernetes.protobuf"))
+        .unwrap_or(false);
+
+    let response = next.run(request).await;
+
+    // Only wrap response in protobuf if:
+    // 1. The request body was protobuf (so the client expects protobuf responses)
+    // 2. The Accept header requests protobuf
+    // 3. The response is JSON
+    if was_protobuf_request && wants_protobuf {
+        let response_ct = response
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        if response_ct.starts_with("application/json") {
+            let (parts, body) = response.into_parts();
+            if let Ok(json_bytes) = axum::body::to_bytes(body, 10 * 1024 * 1024).await {
+                let pb = wrap_json_in_protobuf(&json_bytes);
+                let mut resp = Response::from_parts(parts, Body::from(pb));
+                resp.headers_mut().insert(
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::HeaderValue::from_static("application/vnd.kubernetes.protobuf"),
+                );
+                return Ok(resp);
+            }
+            return Ok(Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap());
+        }
+    }
+
+    Ok(response)
 }
 
 /// Wrap JSON bytes in the K8s protobuf envelope: "k8s\0" + Unknown{raw: json}
