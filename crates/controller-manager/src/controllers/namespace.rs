@@ -108,12 +108,26 @@ impl<S: Storage> NamespaceController<S> {
             },
             NamespaceCondition {
                 condition_type: "NamespaceDeletionContentFailure".to_string(),
-                status: "False".to_string(),
+                status: if finalizers_remaining {
+                    "True"
+                } else {
+                    "False"
+                }
+                .to_string(),
                 last_transition_time: Some(now),
-                reason: Some("ContentDeleted".to_string()),
-                message: Some(
-                    "All content successfully deleted, may be waiting for finalization".to_string(),
-                ),
+                reason: if finalizers_remaining {
+                    Some("ContentDeletionFailed".to_string())
+                } else {
+                    Some("ContentDeleted".to_string())
+                },
+                message: if finalizers_remaining {
+                    Some("Some content in the namespace has finalizers remaining".to_string())
+                } else {
+                    Some(
+                        "All content successfully deleted, may be waiting for finalization"
+                            .to_string(),
+                    )
+                },
             },
             NamespaceCondition {
                 condition_type: "NamespaceContentRemaining".to_string(),
