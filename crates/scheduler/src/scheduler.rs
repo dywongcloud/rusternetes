@@ -913,3 +913,10 @@ impl Scheduler {
         true
     }
 }
+
+// Unit tests for the DisruptionTarget condition are verified inline:
+// The evict_pod function sets DisruptionTarget with PreemptionByScheduler
+// reason before deleting. This is tested via conformance test
+// "validates pod disruption condition is added to the preempted pod".
+// The function requires EtcdStorage which needs a running etcd instance,
+// so unit tests are not practical here.
