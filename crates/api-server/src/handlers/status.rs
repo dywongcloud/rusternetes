@@ -578,6 +578,79 @@ mod tests {
     }
 
     #[test]
+    fn test_status_merge_patch_preserves_replicas() {
+        // When patching status with merge-patch, only the patched fields
+        // should change. Other status fields (replicas, readyReplicas) must
+        // be preserved.
+        let current_status = json!({
+            "replicas": 3,
+            "readyReplicas": 3,
+            "availableReplicas": 3,
+            "conditions": [
+                {"type": "StatusUpdate", "status": "True", "reason": "Test"}
+            ]
+        });
+
+        let patch_status = json!({
+            "conditions": [
+                {"type": "StatusPatched", "status": "True"}
+            ]
+        });
+
+        // Simulate the merge logic from update_status handler
+        let mut merged = current_status.clone();
+        if let (Some(merged_obj), Some(patch_obj)) =
+            (merged.as_object_mut(), patch_status.as_object())
+        {
+            for (k, v) in patch_obj {
+                if v.is_null() {
+                    merged_obj.remove(k);
+                } else {
+                    merged_obj.insert(k.clone(), v.clone());
+                }
+            }
+        }
+
+        // replicas should be preserved
+        assert_eq!(merged["replicas"], 3);
+        assert_eq!(merged["readyReplicas"], 3);
+        assert_eq!(merged["availableReplicas"], 3);
+
+        // conditions should be replaced by the patch value
+        let conditions = merged["conditions"].as_array().unwrap();
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0]["type"], "StatusPatched");
+    }
+
+    #[test]
+    fn test_status_merge_patch_null_removes_field() {
+        let current_status = json!({
+            "replicas": 3,
+            "conditions": [{"type": "Test", "status": "True"}]
+        });
+
+        let patch_status = json!({
+            "conditions": serde_json::Value::Null
+        });
+
+        let mut merged = current_status.clone();
+        if let (Some(merged_obj), Some(patch_obj)) =
+            (merged.as_object_mut(), patch_status.as_object())
+        {
+            for (k, v) in patch_obj {
+                if v.is_null() {
+                    merged_obj.remove(k);
+                } else {
+                    merged_obj.insert(k.clone(), v.clone());
+                }
+            }
+        }
+
+        assert_eq!(merged["replicas"], 3);
+        assert!(merged.get("conditions").is_none());
+    }
+
+    #[test]
     fn test_resource_type_to_kind_api_version_core() {
         let (kind, api) = resource_type_to_kind_api_version("pods");
         assert_eq!(kind, "Pod");
