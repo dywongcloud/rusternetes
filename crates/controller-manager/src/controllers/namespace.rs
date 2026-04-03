@@ -595,10 +595,7 @@ mod tests {
             content_failure.status, "False",
             "ContentFailure should be False when no finalizers"
         );
-        assert_eq!(
-            content_failure.reason.as_deref(),
-            Some("ContentDeleted")
-        );
+        assert_eq!(content_failure.reason.as_deref(), Some("ContentDeleted"));
     }
 
     #[tokio::test]

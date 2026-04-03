@@ -1339,10 +1339,12 @@ mod tests {
                         ..Default::default()
                     },
                 },
-                strategy: Some(rusternetes_common::resources::deployment::DeploymentStrategy {
-                    strategy_type: "Recreate".to_string(),
-                    rolling_update: None,
-                }),
+                strategy: Some(
+                    rusternetes_common::resources::deployment::DeploymentStrategy {
+                        strategy_type: "Recreate".to_string(),
+                        rolling_update: None,
+                    },
+                ),
                 min_ready_seconds: None,
                 revision_history_limit: None,
                 paused: None,
@@ -1402,10 +1404,7 @@ mod tests {
             }),
         };
         storage
-            .create(
-                &build_key("pods", Some("default"), "old-pod-0"),
-                &old_pod,
-            )
+            .create(&build_key("pods", Some("default"), "old-pod-0"), &old_pod)
             .await
             .unwrap();
 

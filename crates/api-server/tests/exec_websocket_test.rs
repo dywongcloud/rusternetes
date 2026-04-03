@@ -84,8 +84,7 @@ async fn test_exec_websocket_client_receives_status_before_close() {
                     1 => received_stdout = true,
                     3 => {
                         received_status = true;
-                        status_content =
-                            String::from_utf8_lossy(&data[1..]).to_string();
+                        status_content = String::from_utf8_lossy(&data[1..]).to_string();
                     }
                     _ => {}
                 }
@@ -119,8 +118,7 @@ async fn test_exec_websocket_nonzero_exit_status() {
         let _ = socket.send(Message::Binary(vec![1u8].into())).await;
 
         // Send failure status on channel 3
-        let status_json =
-            r#"{"status":"Failure","message":"command terminated with exit code 1"}"#;
+        let status_json = r#"{"status":"Failure","message":"command terminated with exit code 1"}"#;
         let mut status_data = vec![3u8];
         status_data.extend_from_slice(status_json.as_bytes());
         let _ = socket.send(Message::Binary(status_data.into())).await;
@@ -157,8 +155,7 @@ async fn test_exec_websocket_nonzero_exit_status() {
             Ok(tokio_tungstenite::tungstenite::Message::Binary(data)) => {
                 if !data.is_empty() && data[0] == 3 {
                     received_status = true;
-                    status_content =
-                        String::from_utf8_lossy(&data[1..]).to_string();
+                    status_content = String::from_utf8_lossy(&data[1..]).to_string();
                 }
             }
             Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,

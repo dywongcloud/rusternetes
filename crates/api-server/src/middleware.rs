@@ -1365,7 +1365,10 @@ mod tests {
 
         // Should be extractable back to JSON
         let extracted = extract_json_from_k8s_protobuf(&wrapped);
-        assert!(extracted.is_some(), "Should extract JSON from protobuf envelope");
+        assert!(
+            extracted.is_some(),
+            "Should extract JSON from protobuf envelope"
+        );
         let extracted = extracted.unwrap();
         assert_eq!(extracted, json, "Extracted JSON should match original");
     }

@@ -1368,10 +1368,7 @@ mod tests {
             m
         };
         let result = validate_max_resources(&resources, &max, "test").unwrap();
-        assert!(
-            !result,
-            "2Gi ephemeral-storage should exceed max of 1Gi"
-        );
+        assert!(!result, "2Gi ephemeral-storage should exceed max of 1Gi");
     }
 
     #[test]
@@ -1391,10 +1388,7 @@ mod tests {
             m
         };
         let result = validate_max_resources(&resources, &max, "test").unwrap();
-        assert!(
-            !result,
-            "800m CPU request should exceed max of 500m"
-        );
+        assert!(!result, "800m CPU request should exceed max of 500m");
     }
 
     #[test]
