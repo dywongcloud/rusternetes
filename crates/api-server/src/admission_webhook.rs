@@ -169,10 +169,7 @@ impl AdmissionWebhookClient {
                 "Webhook call to {} failed: {} ({}){}",
                 url, e, detail, cause_chain
             );
-            rusternetes_common::Error::Network(format!(
-                "Webhook request failed: {}",
-                e
-            ))
+            rusternetes_common::Error::Network(format!("Webhook request failed: {}", e))
         })?;
 
         if !response.status().is_success() {

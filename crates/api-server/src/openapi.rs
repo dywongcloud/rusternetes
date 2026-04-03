@@ -353,11 +353,7 @@ fn create_collection_path_item(
 }
 
 /// Create a path item for individual resource operations
-fn create_item_path_item(
-    resource_name: &str,
-    tag: &str,
-    gvk_ext: &serde_json::Value,
-) -> PathItem {
+fn create_item_path_item(resource_name: &str, tag: &str, gvk_ext: &serde_json::Value) -> PathItem {
     let mut ext = IndexMap::new();
     ext.insert(
         "x-kubernetes-group-version-kind".to_string(),

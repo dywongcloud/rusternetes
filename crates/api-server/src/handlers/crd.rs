@@ -191,16 +191,30 @@ pub async fn create_crd(
                 }
                 match state.storage.update(&key, &val).await {
                     Ok(_) => {
-                        tracing::info!("CRD {} status update succeeded (attempt {})", crd_name, attempt + 1);
+                        tracing::info!(
+                            "CRD {} status update succeeded (attempt {})",
+                            crd_name,
+                            attempt + 1
+                        );
                         break;
                     }
                     Err(e) => {
-                        tracing::warn!("CRD {} status update failed (attempt {}): {}", crd_name, attempt + 1, e);
+                        tracing::warn!(
+                            "CRD {} status update failed (attempt {}): {}",
+                            crd_name,
+                            attempt + 1,
+                            e
+                        );
                     }
                 }
             }
             Err(e) => {
-                tracing::warn!("CRD {} status get failed (attempt {}): {}", crd_name, attempt + 1, e);
+                tracing::warn!(
+                    "CRD {} status get failed (attempt {}): {}",
+                    crd_name,
+                    attempt + 1,
+                    e
+                );
             }
         }
     }

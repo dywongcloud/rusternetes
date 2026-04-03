@@ -933,7 +933,10 @@ mod tests {
         assert_eq!(parse_resource_quantity("1Ki", "memory"), 1024);
         assert_eq!(parse_resource_quantity("1Mi", "memory"), 1024 * 1024);
         assert_eq!(parse_resource_quantity("1Gi", "memory"), 1024 * 1024 * 1024);
-        assert_eq!(parse_resource_quantity("8Gi", "memory"), 8 * 1024 * 1024 * 1024);
+        assert_eq!(
+            parse_resource_quantity("8Gi", "memory"),
+            8 * 1024 * 1024 * 1024
+        );
         // SI units
         assert_eq!(parse_resource_quantity("128M", "memory"), 128_000_000);
         assert_eq!(parse_resource_quantity("1G", "memory"), 1_000_000_000);

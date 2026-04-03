@@ -229,16 +229,18 @@ impl<S: Storage> StatefulSetController<S> {
                 match self.storage.get::<Pod>(&pod_key).await {
                     Ok(mut pod_to_delete) => {
                         if pod_to_delete.metadata.deletion_timestamp.is_none() {
-                            pod_to_delete.metadata.deletion_timestamp =
-                                Some(chrono::Utc::now());
-                            pod_to_delete.metadata.deletion_grace_period_seconds =
-                                pod_to_delete.spec.as_ref()
-                                    .and_then(|s| s.termination_grace_period_seconds)
-                                    .or(Some(30));
+                            pod_to_delete.metadata.deletion_timestamp = Some(chrono::Utc::now());
+                            pod_to_delete.metadata.deletion_grace_period_seconds = pod_to_delete
+                                .spec
+                                .as_ref()
+                                .and_then(|s| s.termination_grace_period_seconds)
+                                .or(Some(30));
                             let _ = self.storage.update(&pod_key, &pod_to_delete).await;
                             info!(
                                 "Scale down: set deletionTimestamp on pod {} ({} -> {})",
-                                pod_name, current_replicas, current_replicas - 1
+                                pod_name,
+                                current_replicas,
+                                current_replicas - 1
                             );
                         }
                     }
@@ -246,7 +248,9 @@ impl<S: Storage> StatefulSetController<S> {
                         // Pod doesn't exist — nothing to delete
                         info!(
                             "Scale down: pod {} already gone ({} -> {})",
-                            pod_name, current_replicas, current_replicas - 1
+                            pod_name,
+                            current_replicas,
+                            current_replicas - 1
                         );
                     }
                 }
@@ -627,7 +631,12 @@ impl<S: Storage> StatefulSetController<S> {
             .pointer("/spec/containers/0/image")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        info!("compute_revision: image={}, hash={}, json_len={}", image, revision, serialized.len());
+        info!(
+            "compute_revision: image={}, hash={}, json_len={}",
+            image,
+            revision,
+            serialized.len()
+        );
         revision
     }
 
@@ -1130,7 +1139,10 @@ mod tests {
             .unwrap();
 
         // First reconcile: creates 3 pods
-        let mut ss: StatefulSet = storage.get("/registry/statefulsets/default/ss-scale").await.unwrap();
+        let mut ss: StatefulSet = storage
+            .get("/registry/statefulsets/default/ss-scale")
+            .await
+            .unwrap();
         controller.reconcile(&mut ss).await.unwrap();
 
         // Make all pods ready
@@ -1139,16 +1151,28 @@ mod tests {
         }
 
         // Reconcile again to update status
-        let mut ss: StatefulSet = storage.get("/registry/statefulsets/default/ss-scale").await.unwrap();
+        let mut ss: StatefulSet = storage
+            .get("/registry/statefulsets/default/ss-scale")
+            .await
+            .unwrap();
         controller.reconcile(&mut ss).await.unwrap();
 
         // Scale down to 2
-        let mut ss: StatefulSet = storage.get("/registry/statefulsets/default/ss-scale").await.unwrap();
+        let mut ss: StatefulSet = storage
+            .get("/registry/statefulsets/default/ss-scale")
+            .await
+            .unwrap();
         ss.spec.replicas = Some(2);
-        storage.update("/registry/statefulsets/default/ss-scale", &ss).await.unwrap();
+        storage
+            .update("/registry/statefulsets/default/ss-scale", &ss)
+            .await
+            .unwrap();
 
         // Reconcile — should set deletionTimestamp on pod ss-scale-2
-        let mut ss: StatefulSet = storage.get("/registry/statefulsets/default/ss-scale").await.unwrap();
+        let mut ss: StatefulSet = storage
+            .get("/registry/statefulsets/default/ss-scale")
+            .await
+            .unwrap();
         controller.reconcile(&mut ss).await.unwrap();
 
         // Pod ss-scale-2 should have deletionTimestamp set, not be deleted
@@ -1163,21 +1187,28 @@ mod tests {
         );
 
         // Pods 0 and 1 should not have deletionTimestamp
-        let pod0: Pod = storage.get("/registry/pods/default/ss-scale-0").await.unwrap();
+        let pod0: Pod = storage
+            .get("/registry/pods/default/ss-scale-0")
+            .await
+            .unwrap();
         assert!(
             pod0.metadata.deletion_timestamp.is_none(),
             "Pod ss-scale-0 should not be terminating"
         );
 
         // Status should not count terminating pods
-        let ss: StatefulSet = storage.get("/registry/statefulsets/default/ss-scale").await.unwrap();
+        let ss: StatefulSet = storage
+            .get("/registry/statefulsets/default/ss-scale")
+            .await
+            .unwrap();
         let status = ss.status.unwrap();
         assert_eq!(
             status.replicas, 2,
             "replicas should exclude terminating pods"
         );
         assert_eq!(
-            status.ready_replicas.unwrap_or(0), 2,
+            status.ready_replicas.unwrap_or(0),
+            2,
             "readyReplicas should exclude terminating pods"
         );
     }

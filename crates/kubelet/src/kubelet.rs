@@ -752,7 +752,9 @@ impl Kubelet {
                     .status
                     .as_ref()
                     .and_then(|s| s.reason.as_deref())
-                    .map_or(false, |r| r == "CreateContainerError" || r == "CreateContainerConfigError");
+                    .map_or(false, |r| {
+                        r == "CreateContainerError" || r == "CreateContainerConfigError"
+                    });
 
                 if !already_has_error {
                     info!("Starting pod: {}/{}", namespace, pod_name);
@@ -829,8 +831,10 @@ impl Kubelet {
                                 Self::running_pod_conditions()
                             };
 
-                            let ephemeral_container_statuses =
-                                self.runtime.get_ephemeral_container_statuses(&new_pod).await;
+                            let ephemeral_container_statuses = self
+                                .runtime
+                                .get_ephemeral_container_statuses(&new_pod)
+                                .await;
 
                             new_pod.status = Some(PodStatus {
                                 phase: Some(Phase::Running),
@@ -872,13 +876,14 @@ impl Kubelet {
                             // Determine the error reason: CreateContainerConfigError for
                             // configuration issues (subPath validation, env var expansion),
                             // CreateContainerError for runtime container creation failures.
-                            let create_error_reason = if err_msg.starts_with("CreateContainerConfigError:") {
-                                Some("CreateContainerConfigError".to_string())
-                            } else if err_msg.starts_with("CreateContainerError:") {
-                                Some("CreateContainerError".to_string())
-                            } else {
-                                None
-                            };
+                            let create_error_reason =
+                                if err_msg.starts_with("CreateContainerConfigError:") {
+                                    Some("CreateContainerConfigError".to_string())
+                                } else if err_msg.starts_with("CreateContainerError:") {
+                                    Some("CreateContainerError".to_string())
+                                } else {
+                                    None
+                                };
 
                             if let Some(reason) = create_error_reason {
                                 // Container creation/config error — pod stays Pending with
@@ -988,7 +993,8 @@ impl Kubelet {
                                     err_msg.clone()
                                 };
                                 // Set proper conditions for failed init containers
-                                let failed_conditions = Self::init_failed_pod_conditions(&incomplete_inits);
+                                let failed_conditions =
+                                    Self::init_failed_pod_conditions(&incomplete_inits);
                                 new_pod.status = Some(PodStatus {
                                     phase: Some(Phase::Failed),
                                     message: Some(status_msg),
@@ -1094,8 +1100,10 @@ impl Kubelet {
                         Self::running_pod_conditions()
                     };
 
-                    let ephemeral_container_statuses =
-                        self.runtime.get_ephemeral_container_statuses(&new_pod).await;
+                    let ephemeral_container_statuses = self
+                        .runtime
+                        .get_ephemeral_container_statuses(&new_pod)
+                        .await;
 
                     new_pod.status = Some(PodStatus {
                         phase: Some(Phase::Running),
@@ -1142,7 +1150,10 @@ impl Kubelet {
                     .unwrap_or("");
                 let fresh_pod = if resize_status == "Proposed" || resize_status == "InProgress" {
                     // Re-read to get fresh spec with updated resources
-                    self.storage.get::<Pod>(&key).await.unwrap_or_else(|_| pod.clone())
+                    self.storage
+                        .get::<Pod>(&key)
+                        .await
+                        .unwrap_or_else(|_| pod.clone())
                 } else {
                     pod.clone()
                 };
@@ -1888,7 +1899,9 @@ impl Kubelet {
                         };
 
                         // Get current restart count from pod status
-                        let prev_restart = fresh_pod.status.as_ref()
+                        let prev_restart = fresh_pod
+                            .status
+                            .as_ref()
                             .and_then(|s| s.container_statuses.as_ref())
                             .and_then(|cs| cs.iter().map(|c| c.restart_count).max())
                             .unwrap_or(0);
@@ -1918,22 +1931,26 @@ impl Kubelet {
                         // CrashLoopBackOff: compute backoff delay based on restart count
                         // K8s uses: 10s, 20s, 40s, 80s, 160s, 300s (capped at 5m)
                         let current_restart = prev_restart + 1;
-                        let backoff_secs: i64 = std::cmp::min(
-                            10 * (1_i64 << (current_restart as i64 - 1).min(5)),
-                            300
-                        );
+                        let backoff_secs: i64 =
+                            std::cmp::min(10 * (1_i64 << (current_restart as i64 - 1).min(5)), 300);
                         // Check if enough time has passed since the container finished
-                        let should_restart = container_statuses.as_ref()
+                        let should_restart = container_statuses
+                            .as_ref()
                             .and_then(|cs| cs.first())
                             .and_then(|c| match &c.state {
-                                Some(ContainerState::Terminated { finished_at, .. }) => {
-                                    finished_at.as_ref().and_then(|ft| {
-                                        chrono::DateTime::parse_from_rfc3339(ft).ok().map(|parsed| {
-                                            let elapsed = (chrono::Utc::now() - parsed.with_timezone(&chrono::Utc)).num_seconds();
-                                            elapsed >= backoff_secs
-                                        })
-                                    }).or(Some(true))
-                                }
+                                Some(ContainerState::Terminated { finished_at, .. }) => finished_at
+                                    .as_ref()
+                                    .and_then(|ft| {
+                                        chrono::DateTime::parse_from_rfc3339(ft).ok().map(
+                                            |parsed| {
+                                                let elapsed = (chrono::Utc::now()
+                                                    - parsed.with_timezone(&chrono::Utc))
+                                                .num_seconds();
+                                                elapsed >= backoff_secs
+                                            },
+                                        )
+                                    })
+                                    .or(Some(true)),
                                 _ => Some(true),
                             })
                             .unwrap_or(true);

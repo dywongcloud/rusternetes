@@ -105,7 +105,9 @@ impl<S: Storage> JobController<S> {
         if selector.is_none() && !job_pods.is_empty() {
             debug!(
                 "Job {}/{} has no matchLabels selector, skipping release check for {} pods",
-                namespace, name, job_pods.len()
+                namespace,
+                name,
+                job_pods.len()
             );
         }
         for pod in &job_pods {
@@ -132,7 +134,10 @@ impl<S: Storage> JobController<S> {
                                         break;
                                     }
                                     Err(e) => {
-                                        warn!("CAS retry releasing pod {}: {}", pod.metadata.name, e);
+                                        warn!(
+                                            "CAS retry releasing pod {}: {}",
+                                            pod.metadata.name, e
+                                        );
                                     }
                                 }
                             }
@@ -899,7 +904,9 @@ impl<S: Storage> JobController<S> {
                             if has_complete || has_failed {
                                 info!(
                                     "Job {}/{} status update persisted (attempt {})",
-                                    namespace, name, attempt + 1
+                                    namespace,
+                                    name,
+                                    attempt + 1
                                 );
                             }
                             break;
@@ -907,7 +914,10 @@ impl<S: Storage> JobController<S> {
                         Err(e) => {
                             warn!(
                                 "Job {}/{} status update CAS conflict (attempt {}): {}",
-                                namespace, name, attempt + 1, e
+                                namespace,
+                                name,
+                                attempt + 1,
+                                e
                             );
                             if attempt == 2 {
                                 return Err(e.into());

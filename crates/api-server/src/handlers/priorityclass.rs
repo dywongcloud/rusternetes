@@ -250,11 +250,7 @@ pub async fn patch(
     let name = path.0.clone();
     // Get existing value before patch to check immutability
     let key = build_key("priorityclasses", None, &name);
-    let existing_pc = state
-        .storage
-        .get::<PriorityClass>(&key)
-        .await
-        .ok();
+    let existing_pc = state.storage.get::<PriorityClass>(&key).await.ok();
     let existing_value = existing_pc.as_ref().map(|pc| pc.value);
 
     // Apply the patch to compute the result without writing yet.

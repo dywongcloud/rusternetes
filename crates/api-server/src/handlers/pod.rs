@@ -103,7 +103,7 @@ pub async fn create(
                 }
                 if !sysctl_errors.is_empty() {
                     return Err(rusternetes_common::Error::InvalidResource(
-                        sysctl_errors.join(", ")
+                        sysctl_errors.join(", "),
                     ));
                 }
                 // NOTE: We intentionally do NOT reject unsafe sysctls here.
@@ -133,19 +133,15 @@ pub async fn create(
         // default requests to the limit value. This happens BEFORE LimitRange so that
         // explicit limits take precedence over LimitRange defaultRequest.
         for container in &mut spec.containers {
-            if let Some(ref limits) = container
-                .resources
-                .as_ref()
-                .and_then(|r| r.limits.clone())
-            {
+            if let Some(ref limits) = container.resources.as_ref().and_then(|r| r.limits.clone()) {
                 if !limits.is_empty() {
-                    let resources = container
-                        .resources
-                        .get_or_insert_with(|| rusternetes_common::types::ResourceRequirements {
+                    let resources = container.resources.get_or_insert_with(|| {
+                        rusternetes_common::types::ResourceRequirements {
                             limits: None,
                             requests: None,
                             claims: None,
-                        });
+                        }
+                    });
                     let requests = resources
                         .requests
                         .get_or_insert_with(std::collections::HashMap::new);

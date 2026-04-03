@@ -240,12 +240,22 @@ impl<S: Storage> DeploymentController<S> {
                                 owned_replicasets.iter().any(|rs| r.uid == rs.metadata.uid)
                             })
                         });
-                        if !owned { return false; }
+                        if !owned {
+                            return false;
+                        }
                         // Must be Running and Ready, not terminating
-                        if p.metadata.deletion_timestamp.is_some() { return false; }
-                        let is_ready = p.status.as_ref()
+                        if p.metadata.deletion_timestamp.is_some() {
+                            return false;
+                        }
+                        let is_ready = p
+                            .status
+                            .as_ref()
                             .and_then(|s| s.conditions.as_ref())
-                            .map(|conds| conds.iter().any(|c| c.condition_type == "Ready" && c.status == "True"))
+                            .map(|conds| {
+                                conds
+                                    .iter()
+                                    .any(|c| c.condition_type == "Ready" && c.status == "True")
+                            })
                             .unwrap_or(false);
                         is_ready
                     })
@@ -655,8 +665,7 @@ impl<S: Storage> DeploymentController<S> {
         for rs in &owned_replicasets {
             // Always count pods directly for the most accurate status.
             // RS status may be stale if the RS controller hasn't run recently.
-            let (pod_total, pod_ready, pod_available) =
-                self.count_pods_for_replicaset(rs).await;
+            let (pod_total, pod_ready, pod_available) = self.count_pods_for_replicaset(rs).await;
 
             // Use the higher of RS status or direct pod count
             if let Some(status) = &rs.status {

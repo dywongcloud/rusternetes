@@ -1012,7 +1012,9 @@ pub async fn create_eviction(
                     return Ok(axum::response::Response::builder()
                         .status(axum::http::StatusCode::TOO_MANY_REQUESTS)
                         .header("Content-Type", "application/json")
-                        .body(axum::body::Body::from(serde_json::to_string(&status_body).unwrap()))
+                        .body(axum::body::Body::from(
+                            serde_json::to_string(&status_body).unwrap(),
+                        ))
                         .unwrap()
                         .into_response());
                 }

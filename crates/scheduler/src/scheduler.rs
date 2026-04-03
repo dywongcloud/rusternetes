@@ -147,7 +147,8 @@ impl Scheduler {
                     );
                     // Set pod condition to Unschedulable so tests can observe it
                     let pod_ns = pod.metadata.namespace.as_deref().unwrap_or("default");
-                    let pod_key = rusternetes_storage::build_key("pods", Some(pod_ns), &pod.metadata.name);
+                    let pod_key =
+                        rusternetes_storage::build_key("pods", Some(pod_ns), &pod.metadata.name);
                     if let Ok(mut p) = self.storage.get::<Pod>(&pod_key).await {
                         let condition = rusternetes_common::resources::PodCondition {
                             condition_type: "PodScheduled".to_string(),
@@ -291,8 +292,7 @@ impl Scheduler {
             if resource_score == 0 {
                 debug!(
                     "Node {} rejected for pod {}: resource_score=0 (insufficient resources)",
-                    node.metadata.name,
-                    pod.metadata.name,
+                    node.metadata.name, pod.metadata.name,
                 );
                 continue;
             }

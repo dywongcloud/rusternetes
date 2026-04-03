@@ -698,7 +698,13 @@ pub async fn create_events_v1(
             event.message = note.clone();
         }
     }
-    if event.involved_object.name.as_deref().unwrap_or("").is_empty() {
+    if event
+        .involved_object
+        .name
+        .as_deref()
+        .unwrap_or("")
+        .is_empty()
+    {
         if let Some(ref regarding) = event.regarding {
             event.involved_object = regarding.clone();
         }

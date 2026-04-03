@@ -193,10 +193,7 @@ pub struct Event {
 
     /// Name of the controller that emitted this Event (e.g., "kubernetes.io/kubelet")
     /// K8s events.k8s.io/v1 calls this "reportingController"
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        alias = "reportingController"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "reportingController")]
     pub reporting_component: Option<String>,
 
     /// ID of the controller instance (e.g., "kubelet-xyzf")

@@ -286,12 +286,17 @@ impl<S: Storage> NamespaceController<S> {
         // All resources deleted. Check if the namespace already has the
         // deletion conditions set from a previous cycle. If not, set them
         // and return — the test needs to observe the Terminating state.
-        let conditions_already_set = namespace.status.as_ref()
+        let conditions_already_set = namespace
+            .status
+            .as_ref()
             .and_then(|s| s.conditions.as_ref())
             .map(|c| !c.is_empty())
             .unwrap_or(false);
         if !conditions_already_set {
-            info!("Namespace {} resources cleared, conditions set (will finalize next cycle)", name);
+            info!(
+                "Namespace {} resources cleared, conditions set (will finalize next cycle)",
+                name
+            );
             return Ok(());
         }
 
@@ -357,10 +362,16 @@ impl<S: Storage> NamespaceController<S> {
                     })
                     .unwrap_or(false);
                 if references_ns {
-                    let name = config.pointer("/metadata/name").and_then(|n| n.as_str()).unwrap_or("");
-                    let key = format!("{}{}",vwc_prefix, name);
+                    let name = config
+                        .pointer("/metadata/name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("");
+                    let key = format!("{}{}", vwc_prefix, name);
                     let _ = self.storage.delete(&key).await;
-                    info!("Cleaned up ValidatingWebhookConfiguration {} (namespace {} deleted)", name, namespace);
+                    info!(
+                        "Cleaned up ValidatingWebhookConfiguration {} (namespace {} deleted)",
+                        name, namespace
+                    );
                 }
             }
         }
@@ -380,10 +391,16 @@ impl<S: Storage> NamespaceController<S> {
                     })
                     .unwrap_or(false);
                 if references_ns {
-                    let name = config.pointer("/metadata/name").and_then(|n| n.as_str()).unwrap_or("");
+                    let name = config
+                        .pointer("/metadata/name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("");
                     let key = format!("{}{}", mwc_prefix, name);
                     let _ = self.storage.delete(&key).await;
-                    info!("Cleaned up MutatingWebhookConfiguration {} (namespace {} deleted)", name, namespace);
+                    info!(
+                        "Cleaned up MutatingWebhookConfiguration {} (namespace {} deleted)",
+                        name, namespace
+                    );
                 }
             }
         }

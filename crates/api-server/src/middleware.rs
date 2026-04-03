@@ -259,9 +259,7 @@ pub async fn normalize_content_type_middleware(
                 let mut resp = Response::from_parts(parts, Body::from(pb));
                 resp.headers_mut().insert(
                     axum::http::header::CONTENT_TYPE,
-                    axum::http::HeaderValue::from_static(
-                        "application/vnd.kubernetes.protobuf",
-                    ),
+                    axum::http::HeaderValue::from_static("application/vnd.kubernetes.protobuf"),
                 );
                 return Ok(resp);
             }

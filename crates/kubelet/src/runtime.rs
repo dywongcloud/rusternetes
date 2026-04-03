@@ -1822,8 +1822,8 @@ impl ContainerRuntime {
 
             // For SA token volumes, generate a bound token with pod reference
             // instead of using the static token from the Secret.
-            let is_sa_token_volume = volume.name.contains("kube-api-access")
-                || secret_name.ends_with("-token");
+            let is_sa_token_volume =
+                volume.name.contains("kube-api-access") || secret_name.ends_with("-token");
             let bound_token: Option<String> = if is_sa_token_volume {
                 let sa_name = pod
                     .spec
@@ -1835,13 +1835,24 @@ impl ContainerRuntime {
                     .get::<serde_json::Value>(&sa_key)
                     .await
                     .ok()
-                    .and_then(|v| v.pointer("/metadata/uid").and_then(|u| u.as_str()).map(|s| s.to_string()))
+                    .and_then(|v| {
+                        v.pointer("/metadata/uid")
+                            .and_then(|u| u.as_str())
+                            .map(|s| s.to_string())
+                    })
                     .unwrap_or_default();
                 let node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
                 let node_uid = if let Some(ref nn) = node_name {
                     let node_key = build_key("nodes", None::<&str>, nn);
-                    storage.get::<serde_json::Value>(&node_key).await.ok()
-                        .and_then(|v| v.pointer("/metadata/uid").and_then(|u| u.as_str()).map(|s| s.to_string()))
+                    storage
+                        .get::<serde_json::Value>(&node_key)
+                        .await
+                        .ok()
+                        .and_then(|v| {
+                            v.pointer("/metadata/uid")
+                                .and_then(|u| u.as_str())
+                                .map(|s| s.to_string())
+                        })
                 } else {
                     None
                 };
@@ -2493,8 +2504,14 @@ impl ContainerRuntime {
                         let node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
                         let node_uid = if let (Some(ref nn), Some(st)) = (&node_name, storage) {
                             let node_key = build_key("nodes", None::<&str>, nn);
-                            st.get::<serde_json::Value>(&node_key).await.ok()
-                                .and_then(|v| v.pointer("/metadata/uid").and_then(|u| u.as_str()).map(|s| s.to_string()))
+                            st.get::<serde_json::Value>(&node_key)
+                                .await
+                                .ok()
+                                .and_then(|v| {
+                                    v.pointer("/metadata/uid")
+                                        .and_then(|u| u.as_str())
+                                        .map(|s| s.to_string())
+                                })
                         } else {
                             None
                         };
@@ -2625,8 +2642,15 @@ impl ContainerRuntime {
         let node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
         let node_uid = if let Some(ref nn) = node_name {
             let node_key = build_key("nodes", None::<&str>, nn);
-            storage.get::<serde_json::Value>(&node_key).await.ok()
-                .and_then(|v| v.pointer("/metadata/uid").and_then(|u| u.as_str()).map(|s| s.to_string()))
+            storage
+                .get::<serde_json::Value>(&node_key)
+                .await
+                .ok()
+                .and_then(|v| {
+                    v.pointer("/metadata/uid")
+                        .and_then(|u| u.as_str())
+                        .map(|s| s.to_string())
+                })
         } else {
             None
         };
@@ -3799,9 +3823,8 @@ impl ContainerRuntime {
                         // Only expand $(VAR) if VAR matches a defined env var.
                         // Unmatched references like $(id -u) are shell command
                         // substitutions and must be passed through literally.
-                        if let Some((_, value)) = resolved_env_pairs
-                            .iter()
-                            .find(|(k, _)| k == var_name)
+                        if let Some((_, value)) =
+                            resolved_env_pairs.iter().find(|(k, _)| k == var_name)
                         {
                             let value = value.clone();
                             result.replace_range(start..end + 1, &value);
@@ -4439,10 +4462,7 @@ impl ContainerRuntime {
                             message: None,
                             started_at: None,
                             finished_at: state.finished_at,
-                            container_id: inspect
-                                .id
-                                .clone()
-                                .map(|id| format!("docker://{}", id)),
+                            container_id: inspect.id.clone().map(|id| format!("docker://{}", id)),
                         })
                     } else {
                         Some(ContainerState::Waiting {
@@ -4458,7 +4478,10 @@ impl ContainerRuntime {
                         state: container_state,
                         last_state: None,
                         image: Some(ec.image.clone()),
-                        image_id: inspect.image.clone().map(|id| format!("docker-pullable://{}", id)),
+                        image_id: inspect
+                            .image
+                            .clone()
+                            .map(|id| format!("docker-pullable://{}", id)),
                         container_id: inspect.id.map(|id| format!("docker://{}", id)),
                         started: Some(running),
                         allocated_resources: None,
@@ -4722,7 +4745,11 @@ impl ContainerRuntime {
                             Some(ContainerState::Waiting {
                                 reason: Some(r),
                                 message,
-                            }) if r == "CreateContainerError" || r == "CreateContainerConfigError" => Some((r.clone(), message.clone())),
+                            }) if r == "CreateContainerError"
+                                || r == "CreateContainerConfigError" =>
+                            {
+                                Some((r.clone(), message.clone()))
+                            }
                             _ => None,
                         });
 
@@ -5458,7 +5485,10 @@ impl ContainerRuntime {
             let path = http_get.path.as_deref().unwrap_or("/");
             let url = format!("{}://{}:{}{}", scheme, ip, http_get.port, path);
 
-            info!("Lifecycle HTTP handler: {} for container {}", url, container_name);
+            info!(
+                "Lifecycle HTTP handler: {} for container {}",
+                url, container_name
+            );
 
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
@@ -5487,7 +5517,10 @@ impl ContainerRuntime {
                     // failures are errors.
                 }
                 Err(e) => {
-                    warn!("Lifecycle HTTP handler failed for {}: {}", container_name, e);
+                    warn!(
+                        "Lifecycle HTTP handler failed for {}: {}",
+                        container_name, e
+                    );
                     return Err(anyhow::anyhow!("Lifecycle HTTP handler failed: {}", e));
                 }
             }
@@ -5619,7 +5652,10 @@ impl ContainerRuntime {
                                 container_name,
                                 &id[..12.min(id.len())]
                             );
-                            match self.execute_lifecycle_handler(pre_stop, &container_name).await {
+                            match self
+                                .execute_lifecycle_handler(pre_stop, &container_name)
+                                .await
+                            {
                                 Ok(()) => {
                                     info!(
                                         "preStop hook completed successfully for container {}",
@@ -5763,7 +5799,10 @@ impl ContainerRuntime {
                                 if let Ok(entries) = std::fs::read_dir(&volume_dir) {
                                     for entry in entries.flatten() {
                                         if let Some(fname) = entry.file_name().to_str() {
-                                            if !data.contains_key(fname) && fname != "..data" && fname != "ca.crt" {
+                                            if !data.contains_key(fname)
+                                                && fname != "..data"
+                                                && fname != "ca.crt"
+                                            {
                                                 let _ = std::fs::remove_file(entry.path());
                                             }
                                         }
@@ -5800,31 +5839,31 @@ impl ContainerRuntime {
                 {
                     Ok(cm) => {
                         if let Some(data) = &cm.data {
-                        let items = cm_source.items.as_ref();
-                        if let Some(items) = items {
-                            for item in items {
-                                if let Some(value) = data.get(&item.key) {
-                                    let file_path = format!("{}/{}", volume_dir, item.path);
+                            let items = cm_source.items.as_ref();
+                            if let Some(items) = items {
+                                for item in items {
+                                    if let Some(value) = data.get(&item.key) {
+                                        let file_path = format!("{}/{}", volume_dir, item.path);
+                                        let _ = std::fs::write(&file_path, value);
+                                    }
+                                }
+                            } else {
+                                for (key, value) in data {
+                                    let file_path = format!("{}/{}", volume_dir, key);
                                     let _ = std::fs::write(&file_path, value);
                                 }
-                            }
-                        } else {
-                            for (key, value) in data {
-                                let file_path = format!("{}/{}", volume_dir, key);
-                                let _ = std::fs::write(&file_path, value);
-                            }
-                            // Delete files for keys removed from ConfigMap
-                            if let Ok(entries) = std::fs::read_dir(&volume_dir) {
-                                for entry in entries.flatten() {
-                                    if let Some(fname) = entry.file_name().to_str() {
-                                        if !data.contains_key(fname) && fname != "..data" {
-                                            let _ = std::fs::remove_file(entry.path());
+                                // Delete files for keys removed from ConfigMap
+                                if let Ok(entries) = std::fs::read_dir(&volume_dir) {
+                                    for entry in entries.flatten() {
+                                        if let Some(fname) = entry.file_name().to_str() {
+                                            if !data.contains_key(fname) && fname != "..data" {
+                                                let _ = std::fs::remove_file(entry.path());
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
                     }
                     Err(_) => {
                         // ConfigMap deleted — clean up files if optional
@@ -8316,10 +8355,7 @@ mod tests {
         };
 
         // Known env var is expanded
-        assert_eq!(
-            expand(&["echo $(MY_VAR)".to_string()]),
-            vec!["echo hello"]
-        );
+        assert_eq!(expand(&["echo $(MY_VAR)".to_string()]), vec!["echo hello"]);
 
         // Shell command substitution is preserved (not a defined env var)
         assert_eq!(
@@ -8334,10 +8370,7 @@ mod tests {
         );
 
         // No vars at all
-        assert_eq!(
-            expand(&["plain text".to_string()]),
-            vec!["plain text"]
-        );
+        assert_eq!(expand(&["plain text".to_string()]), vec!["plain text"]);
 
         // Nested: $(VAR) inside result of expansion should also expand
         let env_pairs2: Vec<(String, String)> = vec![

@@ -136,7 +136,10 @@ impl<S: Storage> ReplicationControllerController<S> {
         if all_pods.len() > 0 {
             info!(
                 "RC {}/{} selector={:?}, checking {} pods",
-                namespace, rc.metadata.name, rc.spec.selector, all_pods.len()
+                namespace,
+                rc.metadata.name,
+                rc.spec.selector,
+                all_pods.len()
             );
             for p in &all_pods {
                 let pod_labels = p.metadata.labels.as_ref();
@@ -303,7 +306,8 @@ impl<S: Storage> ReplicationControllerController<S> {
         // If we had actual pod creation errors, keep them. Only add a new failure
         // message for failed pods — don't set ReplicaFailure just because pods
         // haven't started yet (K8s only sets this on actual creation errors).
-        if create_failure.is_none() && final_current_replicas < desired_replicas && failed_pods > 0 {
+        if create_failure.is_none() && final_current_replicas < desired_replicas && failed_pods > 0
+        {
             create_failure = Some(format!(
                 "pods for rc {}/{} failed: {} pods in Failed phase",
                 namespace, rc.metadata.name, failed_pods
@@ -497,7 +501,13 @@ mod tests {
     use rusternetes_storage::MemoryStorage;
     use std::collections::HashMap;
 
-    fn make_rc(name: &str, ns: &str, replicas: i32, selector: HashMap<String, String>, template_labels: Option<HashMap<String, String>>) -> ReplicationController {
+    fn make_rc(
+        name: &str,
+        ns: &str,
+        replicas: i32,
+        selector: HashMap<String, String>,
+        template_labels: Option<HashMap<String, String>>,
+    ) -> ReplicationController {
         ReplicationController {
             type_meta: rusternetes_common::types::TypeMeta {
                 kind: "ReplicationController".to_string(),
@@ -521,29 +531,68 @@ mod tests {
                         containers: vec![rusternetes_common::resources::Container {
                             name: "test".to_string(),
                             image: "busybox".to_string(),
-                            command: None, args: None, working_dir: None, ports: None,
-                            env: None, env_from: None, resources: None, volume_mounts: None,
-                            volume_devices: None, liveness_probe: None, readiness_probe: None,
-                            startup_probe: None, lifecycle: None, termination_message_path: None,
-                            termination_message_policy: None, image_pull_policy: None,
-                            security_context: None, stdin: None, stdin_once: None, tty: None,
-                            resize_policy: None, restart_policy: None,
+                            command: None,
+                            args: None,
+                            working_dir: None,
+                            ports: None,
+                            env: None,
+                            env_from: None,
+                            resources: None,
+                            volume_mounts: None,
+                            volume_devices: None,
+                            liveness_probe: None,
+                            readiness_probe: None,
+                            startup_probe: None,
+                            lifecycle: None,
+                            termination_message_path: None,
+                            termination_message_policy: None,
+                            image_pull_policy: None,
+                            security_context: None,
+                            stdin: None,
+                            stdin_once: None,
+                            tty: None,
+                            resize_policy: None,
+                            restart_policy: None,
                         }],
-                        init_containers: None, ephemeral_containers: None,
+                        init_containers: None,
+                        ephemeral_containers: None,
                         restart_policy: Some("Always".to_string()),
                         termination_grace_period_seconds: None,
-                        dns_policy: None, node_selector: None, service_account_name: None,
-                        service_account: None, automount_service_account_token: None,
-                        node_name: None, host_network: None, host_pid: None, host_ipc: None,
-                        security_context: None, image_pull_secrets: None, hostname: None,
-                        subdomain: None, affinity: None, scheduler_name: None, tolerations: None,
-                        host_aliases: None, priority_class_name: None, priority: None,
-                        preemption_policy: None, overhead: None, topology_spread_constraints: None,
-                        volumes: None, active_deadline_seconds: None, dns_config: None,
-                        enable_service_links: None, readiness_gates: None,
-                        runtime_class_name: None, os: None, set_hostname_as_fqdn: None,
-                        share_process_namespace: None, scheduling_gates: None,
-                        resource_claims: None, host_users: None, resources: None,
+                        dns_policy: None,
+                        node_selector: None,
+                        service_account_name: None,
+                        service_account: None,
+                        automount_service_account_token: None,
+                        node_name: None,
+                        host_network: None,
+                        host_pid: None,
+                        host_ipc: None,
+                        security_context: None,
+                        image_pull_secrets: None,
+                        hostname: None,
+                        subdomain: None,
+                        affinity: None,
+                        scheduler_name: None,
+                        tolerations: None,
+                        host_aliases: None,
+                        priority_class_name: None,
+                        priority: None,
+                        preemption_policy: None,
+                        overhead: None,
+                        topology_spread_constraints: None,
+                        volumes: None,
+                        active_deadline_seconds: None,
+                        dns_config: None,
+                        enable_service_links: None,
+                        readiness_gates: None,
+                        runtime_class_name: None,
+                        os: None,
+                        set_hostname_as_fqdn: None,
+                        share_process_namespace: None,
+                        scheduling_gates: None,
+                        resource_claims: None,
+                        host_users: None,
+                        resources: None,
                     },
                 },
                 min_ready_seconds: None,
@@ -562,7 +611,10 @@ mod tests {
 
         // Template has NO labels (metadata is None)
         let rc = make_rc("test-rc", "default", 1, selector.clone(), None);
-        storage.create("/registry/replicationcontrollers/default/test-rc", &rc).await.unwrap();
+        storage
+            .create("/registry/replicationcontrollers/default/test-rc", &rc)
+            .await
+            .unwrap();
 
         controller.reconcile_all().await.unwrap();
 
@@ -571,9 +623,16 @@ mod tests {
         assert!(!pods.is_empty(), "RC should have created a pod");
 
         let pod = &pods[0];
-        let pod_labels = pod.metadata.labels.as_ref().expect("Pod should have labels");
-        assert_eq!(pod_labels.get("app"), Some(&"test".to_string()),
-            "Pod should inherit selector labels when template has no labels");
+        let pod_labels = pod
+            .metadata
+            .labels
+            .as_ref()
+            .expect("Pod should have labels");
+        assert_eq!(
+            pod_labels.get("app"),
+            Some(&"test".to_string()),
+            "Pod should inherit selector labels when template has no labels"
+        );
     }
 
     #[tokio::test]
@@ -589,7 +648,10 @@ mod tests {
         template_labels.insert("version".to_string(), "v1".to_string());
 
         let rc = make_rc("test-rc", "default", 1, selector, Some(template_labels));
-        storage.create("/registry/replicationcontrollers/default/test-rc", &rc).await.unwrap();
+        storage
+            .create("/registry/replicationcontrollers/default/test-rc", &rc)
+            .await
+            .unwrap();
 
         controller.reconcile_all().await.unwrap();
 
@@ -598,8 +660,11 @@ mod tests {
 
         let pod_labels = pods[0].metadata.labels.as_ref().unwrap();
         assert_eq!(pod_labels.get("app"), Some(&"test".to_string()));
-        assert_eq!(pod_labels.get("version"), Some(&"v1".to_string()),
-            "Pod should use template labels when present");
+        assert_eq!(
+            pod_labels.get("version"),
+            Some(&"v1".to_string()),
+            "Pod should use template labels when present"
+        );
     }
 
     #[tokio::test]
@@ -611,7 +676,10 @@ mod tests {
         selector.insert("app".to_string(), "test".to_string());
 
         let rc = make_rc("test-rc", "default", 2, selector, None);
-        storage.create("/registry/replicationcontrollers/default/test-rc", &rc).await.unwrap();
+        storage
+            .create("/registry/replicationcontrollers/default/test-rc", &rc)
+            .await
+            .unwrap();
 
         // First reconcile: creates pods
         controller.reconcile_all().await.unwrap();
@@ -623,7 +691,10 @@ mod tests {
         controller.reconcile_all().await.unwrap();
 
         let pods_after_second: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-        assert_eq!(pods_after_second.len(), 2,
-            "Should still have 2 pods — RC must match its own pods on second reconcile");
+        assert_eq!(
+            pods_after_second.len(),
+            2,
+            "Should still have 2 pods — RC must match its own pods on second reconcile"
+        );
     }
 }

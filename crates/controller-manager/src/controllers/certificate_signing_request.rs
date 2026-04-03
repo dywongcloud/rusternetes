@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use chrono::{Datelike, Utc};
 use rusternetes_common::resources::{
-    CertificateSigningRequest, CertificateSigningRequestCondition,
-    CertificateSigningRequestStatus, KeyUsage,
+    CertificateSigningRequest, CertificateSigningRequestCondition, CertificateSigningRequestStatus,
+    KeyUsage,
 };
 use rusternetes_storage::Storage;
 use std::sync::Arc;

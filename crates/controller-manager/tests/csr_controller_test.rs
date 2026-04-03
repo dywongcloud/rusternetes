@@ -2,8 +2,8 @@
 // Tests validation and processing of certificate signing requests
 
 use rusternetes_common::resources::{
-    CertificateSigningRequest, CertificateSigningRequestCondition,
-    CertificateSigningRequestStatus, KeyUsage,
+    CertificateSigningRequest, CertificateSigningRequestCondition, CertificateSigningRequestStatus,
+    KeyUsage,
 };
 use rusternetes_common::types::ObjectMeta;
 use rusternetes_controller_manager::controllers::certificate_signing_request::CertificateSigningRequestController;
@@ -35,10 +35,7 @@ fn create_test_csr(name: &str, signer: &str, usages: Vec<KeyUsage>) -> Certifica
     }
 }
 
-fn create_csr_with_status(
-    name: &str,
-    condition_type: &str,
-) -> CertificateSigningRequest {
+fn create_csr_with_status(name: &str, condition_type: &str) -> CertificateSigningRequest {
     let mut csr = create_test_csr(
         name,
         "kubernetes.io/kube-apiserver-client",
@@ -150,10 +147,7 @@ async fn test_csr_controller_skips_approved_csr() {
     let storage = setup_test().await;
 
     // Create an already approved CSR
-    let csr = create_csr_with_status(
-        "approved-csr",
-        "Approved",
-    );
+    let csr = create_csr_with_status("approved-csr", "Approved");
 
     let csr_key = build_key("certificatesigningrequests", None, "approved-csr");
     storage.create(&csr_key, &csr).await.unwrap();
