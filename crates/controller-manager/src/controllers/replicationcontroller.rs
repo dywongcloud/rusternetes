@@ -300,19 +300,14 @@ impl<S: Storage> ReplicationControllerController<S> {
             })
             .count();
 
-        // If we still don't have enough replicas after creation attempts, record failure
-        if create_failure.is_none() && final_current_replicas < desired_replicas {
-            if failed_pods > 0 {
-                create_failure = Some(format!(
-                    "pods for rc {}/{} failed: {} pods in Failed phase",
-                    namespace, rc.metadata.name, failed_pods
-                ));
-            } else {
-                create_failure = Some(format!(
-                    "unable to create pods: only {} of {} desired replicas are available",
-                    final_current_replicas, desired_replicas
-                ));
-            }
+        // If we had actual pod creation errors, keep them. Only add a new failure
+        // message for failed pods — don't set ReplicaFailure just because pods
+        // haven't started yet (K8s only sets this on actual creation errors).
+        if create_failure.is_none() && final_current_replicas < desired_replicas && failed_pods > 0 {
+            create_failure = Some(format!(
+                "pods for rc {}/{} failed: {} pods in Failed phase",
+                namespace, rc.metadata.name, failed_pods
+            ));
         }
 
         // Update status with accurate counts
@@ -437,20 +432,19 @@ impl<S: Storage> ReplicationControllerController<S> {
         let key = build_key("replicationcontrollers", Some(namespace), &rc.metadata.name);
 
         let desired_replicas = rc.spec.replicas.unwrap_or(1);
-        let conditions = if current_replicas < desired_replicas {
-            let msg = failure_message
-                .unwrap_or("unable to create pods")
-                .to_string();
+        let conditions = if let Some(msg) = failure_message {
+            // Only set ReplicaFailure when there's an actual failure message
+            // (quota exceeded, pod creation failed, etc.)
             Some(vec![ReplicationControllerCondition {
                 condition_type: "ReplicaFailure".to_string(),
                 status: "True".to_string(),
                 last_transition_time: Some(Utc::now()),
                 reason: Some("FailedCreate".to_string()),
-                message: Some(msg),
+                message: Some(msg.to_string()),
             }])
         } else {
-            // Clear failure conditions when replicas are sufficient — use None
-            // (not empty vec) so K8s clients see no conditions field at all
+            // Clear failure conditions when no creation failure — K8s removes
+            // the ReplicaFailure condition once pods can be created again
             None
         };
 

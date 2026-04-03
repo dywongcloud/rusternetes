@@ -112,9 +112,10 @@ fn wrap_in_k8s_protobuf(content_type: &str, data: &[u8]) -> Vec<u8> {
 /// GET /openapi/v2 and /swagger.json
 /// Returns an OpenAPI v2 (Swagger) specification.
 ///
-/// Supports both protobuf and JSON Accept headers:
-/// - application/com.github.proto-openapi.spec.v2@v1.0+protobuf → protobuf-wrapped JSON
-/// - application/json → raw JSON
+/// Supports both protobuf and JSON Accept headers.
+/// When protobuf is requested, wraps JSON in the K8s protobuf envelope and
+/// responds with the MIME-safe content type (using '.' not '@').
+/// See k8s.io/kube-openapi/pkg/handler for the canonical implementation.
 pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
     let spec = serde_json::json!({
         "swagger": "2.0",
@@ -133,18 +134,16 @@ pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
         .unwrap_or("");
 
     if accept.contains("proto-openapi") || accept.contains("protobuf") {
-        // Wrap JSON in K8s protobuf envelope. The internal content type inside the
-        // protobuf wrapper uses the full proto-openapi identifier.
+        // K8s kube-openapi handler accepts the deprecated '@' subtype but always
+        // responds with the MIME-safe '.' subtype that Go's mime.ParseMediaType
+        // can parse. The internal envelope content-type uses the deprecated form.
         let internal_ct = "application/com.github.proto-openapi.spec.v2@v1.0+protobuf";
         let pb_bytes = wrap_in_k8s_protobuf(internal_ct, &json_bytes);
-        // Use application/vnd.kubernetes.protobuf as the HTTP Content-Type header.
-        // The full proto-openapi content type contains '@' which Go's
-        // mime.ParseMediaType rejects with "unexpected content after media subtype".
         Response::builder()
             .status(StatusCode::OK)
             .header(
                 header::CONTENT_TYPE,
-                "application/vnd.kubernetes.protobuf",
+                "application/com.github.proto-openapi.spec.v2.v1.0+protobuf",
             )
             .body(Body::from(pb_bytes))
             .unwrap()
