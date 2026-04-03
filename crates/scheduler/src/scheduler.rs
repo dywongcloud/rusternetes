@@ -507,17 +507,14 @@ impl Scheduler {
                         status.message =
                             Some("Pod was preempted by a higher-priority pod".to_string());
                         // Add DisruptionTarget condition (K8s conformance requirement)
-                        let disruption_condition =
-                            rusternetes_common::resources::PodCondition {
-                                condition_type: "DisruptionTarget".to_string(),
-                                status: "True".to_string(),
-                                last_transition_time: Some(Utc::now()),
-                                reason: Some("PreemptionByScheduler".to_string()),
-                                message: Some(
-                                    "Preempted by a higher-priority pod".to_string(),
-                                ),
-                                observed_generation: None,
-                            };
+                        let disruption_condition = rusternetes_common::resources::PodCondition {
+                            condition_type: "DisruptionTarget".to_string(),
+                            status: "True".to_string(),
+                            last_transition_time: Some(Utc::now()),
+                            reason: Some("PreemptionByScheduler".to_string()),
+                            message: Some("Preempted by a higher-priority pod".to_string()),
+                            observed_generation: None,
+                        };
                         let conditions = status.conditions.get_or_insert_with(Vec::new);
                         conditions.push(disruption_condition);
                     }

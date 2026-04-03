@@ -197,14 +197,13 @@ impl AdmissionWebhookClient {
                     e,
                     String::from_utf8_lossy(&body_bytes[..body_bytes.len().min(500)])
                 );
-                let value: serde_json::Value = serde_json::from_slice(&body_bytes).map_err(
-                    |e2| {
+                let value: serde_json::Value =
+                    serde_json::from_slice(&body_bytes).map_err(|e2| {
                         rusternetes_common::Error::Network(format!(
                             "Failed to parse webhook response as JSON: {}",
                             e2
                         ))
-                    },
-                )?;
+                    })?;
                 // Build AdmissionReview from raw value
                 let api_version = value
                     .get("apiVersion")

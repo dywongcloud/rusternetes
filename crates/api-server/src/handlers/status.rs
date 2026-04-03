@@ -196,8 +196,8 @@ pub async fn update_status(
     };
 
     // Handle merge-patch and strategic-merge-patch for /status
-    let is_merge_patch = content_type.contains("merge-patch")
-        || content_type.contains("strategic-merge-patch");
+    let is_merge_patch =
+        content_type.contains("merge-patch") || content_type.contains("strategic-merge-patch");
 
     // Get the current resource
     let key = build_key(&resource_type, Some(&namespace), &name);
@@ -214,7 +214,10 @@ pub async fn update_status(
     // For merge-patch, merge the status fields rather than replacing entirely.
     // This preserves replicas/readyReplicas when only conditions are patched.
     let new_status = if is_merge_patch {
-        let patch_status = new_resource.get("status").cloned().unwrap_or(Value::Object(serde_json::Map::new()));
+        let patch_status = new_resource
+            .get("status")
+            .cloned()
+            .unwrap_or(Value::Object(serde_json::Map::new()));
         let mut merged = current_resource
             .get("status")
             .cloned()
