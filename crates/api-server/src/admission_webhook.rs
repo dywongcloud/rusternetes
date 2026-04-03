@@ -179,9 +179,61 @@ impl AdmissionWebhookClient {
             )));
         }
 
-        let review_response: AdmissionReview = response.json().await.map_err(|e| {
-            rusternetes_common::Error::Network(format!("Failed to parse webhook response: {}", e))
+        let body_bytes = response.bytes().await.map_err(|e| {
+            rusternetes_common::Error::Network(format!(
+                "Failed to read webhook response body: {}",
+                e
+            ))
         })?;
+
+        // Try parsing as AdmissionReview first, fall back to parsing as raw Value
+        // to extract the response even if there are unknown fields
+        let review_response: AdmissionReview = match serde_json::from_slice(&body_bytes) {
+            Ok(r) => r,
+            Err(e) => {
+                // Try parsing as raw JSON and extract the response field
+                tracing::warn!(
+                    "Webhook response strict parse failed ({}), trying lenient parse. Body: {}",
+                    e,
+                    String::from_utf8_lossy(&body_bytes[..body_bytes.len().min(500)])
+                );
+                let value: serde_json::Value = serde_json::from_slice(&body_bytes).map_err(
+                    |e2| {
+                        rusternetes_common::Error::Network(format!(
+                            "Failed to parse webhook response as JSON: {}",
+                            e2
+                        ))
+                    },
+                )?;
+                // Build AdmissionReview from raw value
+                let api_version = value
+                    .get("apiVersion")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("admission.k8s.io/v1")
+                    .to_string();
+                let kind = value
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("AdmissionReview")
+                    .to_string();
+                let response_val = value.get("response");
+                let resp = response_val
+                    .map(|v| serde_json::from_value::<AdmissionReviewResponse>(v.clone()))
+                    .transpose()
+                    .map_err(|e| {
+                        rusternetes_common::Error::Network(format!(
+                            "Failed to parse webhook response.response: {}",
+                            e
+                        ))
+                    })?;
+                AdmissionReview {
+                    api_version,
+                    kind,
+                    request: None,
+                    response: resp,
+                }
+            }
+        };
 
         review_response.response.ok_or_else(|| {
             rusternetes_common::Error::Network(
