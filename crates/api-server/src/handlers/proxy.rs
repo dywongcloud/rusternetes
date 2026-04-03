@@ -141,14 +141,6 @@ pub async fn proxy_service(
         rusternetes_storage::build_key("services", Some(&namespace), actual_service_name);
     let service: rusternetes_common::resources::Service = state.storage.get(&service_key).await?;
 
-    // Get ClusterIP
-    let cluster_ip = service.spec.cluster_ip.ok_or_else(|| {
-        rusternetes_common::Error::InvalidResource(format!(
-            "Service {}/{} has no ClusterIP",
-            namespace, actual_service_name
-        ))
-    })?;
-
     // Find the port — by name if specified, otherwise first port
     let port = if let Some(pn) = port_name {
         service
@@ -162,6 +154,13 @@ pub async fn proxy_service(
     } else {
         service.spec.ports.first().map(|p| p.port).unwrap_or(80)
     };
+
+    // Get ClusterIP as fallback
+    let cluster_ip = service
+        .spec
+        .cluster_ip
+        .clone()
+        .unwrap_or_else(|| "127.0.0.1".to_string());
 
     // Try to find a pod endpoint IP for direct proxying (more reliable than ClusterIP DNAT)
     let target_port = match service
