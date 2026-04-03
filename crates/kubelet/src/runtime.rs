@@ -4349,7 +4349,10 @@ impl ContainerRuntime {
                             reason: Some(if code == 0 {
                                 "Completed".to_string()
                             } else {
-                                ds.error.clone().unwrap_or_else(|| "Error".to_string())
+                                ds.error
+                                    .clone()
+                                    .filter(|e| !e.is_empty())
+                                    .unwrap_or_else(|| "Error".to_string())
                             }),
                             message: term_msg,
                             started_at: ds.started_at.clone(),
@@ -4584,9 +4587,15 @@ impl ContainerRuntime {
                             reason: Some(if exit_code == 0 {
                                 "Completed".to_string()
                             } else if exit_code == 137 {
-                                state.error.unwrap_or_else(|| "OOMKilled".to_string())
+                                state
+                                    .error
+                                    .filter(|e| !e.is_empty())
+                                    .unwrap_or_else(|| "OOMKilled".to_string())
                             } else {
-                                state.error.unwrap_or_else(|| "Error".to_string())
+                                state
+                                    .error
+                                    .filter(|e| !e.is_empty())
+                                    .unwrap_or_else(|| "Error".to_string())
                             }),
                             message: termination_msg,
                             started_at: None,
