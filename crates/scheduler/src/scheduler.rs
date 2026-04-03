@@ -12,20 +12,22 @@ use crate::advanced::{
     check_preemption, check_taints_tolerations, check_topology_spread_constraints, NodeScore,
 };
 
-pub struct Scheduler {
-    storage: Arc<EtcdStorage>,
+pub struct Scheduler<S: Storage + Send + Sync + 'static = EtcdStorage> {
+    storage: Arc<S>,
     interval: Duration,
     /// Name of this scheduler (default "default-scheduler")
     scheduler_name: String,
 }
 
-impl Scheduler {
+impl Scheduler<EtcdStorage> {
     pub fn new(storage: Arc<EtcdStorage>, interval_secs: u64) -> Self {
         Self::new_with_name(storage, interval_secs, "default-scheduler".to_string())
     }
+}
 
+impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
     pub fn new_with_name(
-        storage: Arc<EtcdStorage>,
+        storage: Arc<S>,
         interval_secs: u64,
         scheduler_name: String,
     ) -> Self {
@@ -52,7 +54,9 @@ impl Scheduler {
         }
     }
 
-    async fn schedule_pending_pods(&self) -> rusternetes_common::Result<()> {
+    /// Run one scheduling cycle — schedules all pending pods.
+    /// Public for testing.
+    pub async fn schedule_pending_pods(&self) -> rusternetes_common::Result<()> {
         debug!("Looking for pending pods to schedule");
 
         // Get all pods
@@ -950,8 +954,296 @@ impl Scheduler {
 }
 
 // Unit tests for the DisruptionTarget condition are verified inline:
-// The evict_pod function sets DisruptionTarget with PreemptionByScheduler
-// reason before deleting. This is tested via conformance test
-// "validates pod disruption condition is added to the preempted pod".
-// The function requires EtcdStorage which needs a running etcd instance,
-// so unit tests are not practical here.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusternetes_common::resources::{PodSpec, PodStatus};
+    use rusternetes_common::types::ObjectMeta;
+    use rusternetes_storage::MemoryStorage;
+
+    fn make_node(name: &str) -> Node {
+        Node {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Node".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: {
+                let mut m = ObjectMeta::new(name);
+                m.labels = Some({
+                    let mut labels = HashMap::new();
+                    labels.insert("kubernetes.io/os".to_string(), "linux".to_string());
+                    labels.insert("kubernetes.io/arch".to_string(), "amd64".to_string());
+                    labels.insert("kubernetes.io/hostname".to_string(), name.to_string());
+                    labels
+                });
+                m
+            },
+            spec: None,
+            status: Some(rusternetes_common::resources::NodeStatus {
+                conditions: Some(vec![rusternetes_common::resources::NodeCondition {
+                    condition_type: "Ready".to_string(),
+                    status: "True".to_string(),
+                    reason: Some("KubeletReady".to_string()),
+                    message: Some("kubelet is posting ready status".to_string()),
+                    last_heartbeat_time: Some(Utc::now()),
+                    last_transition_time: Some(Utc::now()),
+                }]),
+                capacity: Some({
+                    let mut m = HashMap::new();
+                    m.insert("cpu".to_string(), "4".to_string());
+                    m.insert("memory".to_string(), "8Gi".to_string());
+                    m.insert("pods".to_string(), "110".to_string());
+                    m
+                }),
+                allocatable: Some({
+                    let mut m = HashMap::new();
+                    m.insert("cpu".to_string(), "4".to_string());
+                    m.insert("memory".to_string(), "8Gi".to_string());
+                    m.insert("pods".to_string(), "110".to_string());
+                    m
+                }),
+                addresses: None,
+                daemon_endpoints: None,
+                node_info: None,
+                images: None,
+                volumes_in_use: None,
+                volumes_attached: None,
+                config: None,
+                runtime_handlers: None,
+                features: None,
+            }),
+        }
+    }
+
+    fn make_pending_pod(name: &str, ns: &str) -> Pod {
+        Pod {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: {
+                let mut m = ObjectMeta::new(name);
+                m.namespace = Some(ns.to_string());
+                m
+            },
+            spec: Some(PodSpec {
+                containers: vec![rusternetes_common::resources::Container {
+                    name: "main".to_string(),
+                    image: "busybox".to_string(),
+                    command: None, args: None, working_dir: None, ports: None,
+                    env: None, env_from: None, resources: None, volume_mounts: None,
+                    volume_devices: None, liveness_probe: None, readiness_probe: None,
+                    startup_probe: None, lifecycle: None, termination_message_path: None,
+                    termination_message_policy: None, image_pull_policy: None,
+                    security_context: None, stdin: None, stdin_once: None, tty: None,
+                    resize_policy: None, restart_policy: None,
+                }],
+                scheduler_name: Some("default-scheduler".to_string()),
+                init_containers: None, ephemeral_containers: None,
+                restart_policy: None, termination_grace_period_seconds: None,
+                dns_policy: None, node_selector: None, service_account_name: None,
+                service_account: None, automount_service_account_token: None,
+                node_name: None, host_network: None, host_pid: None, host_ipc: None,
+                security_context: None, image_pull_secrets: None, hostname: None,
+                subdomain: None, affinity: None, tolerations: None, host_aliases: None,
+                priority_class_name: None, priority: None, preemption_policy: None,
+                overhead: None, topology_spread_constraints: None, volumes: None,
+                active_deadline_seconds: None, dns_config: None, enable_service_links: None,
+                readiness_gates: None, runtime_class_name: None, os: None,
+                set_hostname_as_fqdn: None, share_process_namespace: None,
+                scheduling_gates: None, resource_claims: None, host_users: None,
+                resources: None
+            }),
+            status: Some(PodStatus {
+                phase: Some(Phase::Pending),
+                message: None, reason: None, host_ip: None, pod_ip: None,
+                conditions: None, container_statuses: None, init_container_statuses: None,
+                ephemeral_container_statuses: None, start_time: None, qos_class: None,
+                nominated_node_name: None, host_i_ps: None, pod_i_ps: None,
+                resize: None, resource_claim_statuses: None, observed_generation: None,
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_assigns_pod_to_node() {
+        let storage = Arc::new(MemoryStorage::new());
+        let scheduler = Scheduler::new_with_name(
+            storage.clone(),
+            1,
+            "default-scheduler".to_string(),
+        );
+
+        // Create two nodes
+        let node1 = make_node("node-1");
+        let node2 = make_node("node-2");
+        storage
+            .create("/registry/nodes/node-1", &node1)
+            .await
+            .unwrap();
+        storage
+            .create("/registry/nodes/node-2", &node2)
+            .await
+            .unwrap();
+
+        // Create a pending pod
+        let pod = make_pending_pod("test-pod", "default");
+        storage
+            .create("/registry/pods/default/test-pod", &pod)
+            .await
+            .unwrap();
+
+        // Run one scheduling cycle
+        scheduler.schedule_pending_pods().await.unwrap();
+
+        // Pod should now have a node name assigned
+        let scheduled_pod: Pod = storage
+            .get("/registry/pods/default/test-pod")
+            .await
+            .unwrap();
+        let node_name = scheduled_pod
+            .spec
+            .as_ref()
+            .and_then(|s| s.node_name.as_ref());
+        assert!(
+            node_name.is_some(),
+            "Pod should be assigned to a node after scheduling"
+        );
+        let node_name = node_name.unwrap();
+        assert!(
+            node_name == "node-1" || node_name == "node-2",
+            "Pod should be on node-1 or node-2, got: {}",
+            node_name
+        );
+
+        // Pod should have PodScheduled condition
+        let conditions = scheduled_pod
+            .status
+            .as_ref()
+            .and_then(|s| s.conditions.as_ref());
+        assert!(conditions.is_some(), "Pod should have conditions");
+        let has_scheduled = conditions.unwrap().iter().any(|c| {
+            c.condition_type == "PodScheduled" && c.status == "True"
+        });
+        assert!(has_scheduled, "Pod should have PodScheduled=True condition");
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_emits_event_for_unschedulable_pod() {
+        let storage = Arc::new(MemoryStorage::new());
+        let scheduler = Scheduler::new_with_name(
+            storage.clone(),
+            1,
+            "default-scheduler".to_string(),
+        );
+
+        // Create a node with a label
+        let node1 = make_node("node-1");
+        storage
+            .create("/registry/nodes/node-1", &node1)
+            .await
+            .unwrap();
+
+        // Create a pod with a nodeSelector that doesn't match any node
+        let mut pod = make_pending_pod("unsched-pod", "default");
+        if let Some(ref mut spec) = pod.spec {
+            spec.node_selector = Some({
+                let mut m = HashMap::new();
+                m.insert("disktype".to_string(), "ssd".to_string());
+                m
+            });
+        }
+        storage
+            .create("/registry/pods/default/unsched-pod", &pod)
+            .await
+            .unwrap();
+
+        // Run scheduling
+        scheduler.schedule_pending_pods().await.unwrap();
+
+        // Pod should NOT have a node name
+        let unsched_pod: Pod = storage
+            .get("/registry/pods/default/unsched-pod")
+            .await
+            .unwrap();
+        assert!(
+            unsched_pod
+                .spec
+                .as_ref()
+                .and_then(|s| s.node_name.as_ref())
+                .is_none(),
+            "Unschedulable pod should not be assigned to a node"
+        );
+
+        // Pod should have PodScheduled=False condition
+        let conditions = unsched_pod
+            .status
+            .as_ref()
+            .and_then(|s| s.conditions.as_ref());
+        assert!(conditions.is_some(), "Pod should have conditions");
+        let has_unschedulable = conditions.unwrap().iter().any(|c| {
+            c.condition_type == "PodScheduled"
+                && c.status == "False"
+                && c.reason.as_deref() == Some("Unschedulable")
+        });
+        assert!(
+            has_unschedulable,
+            "Pod should have PodScheduled=False with Unschedulable reason"
+        );
+
+        // Should have a FailedScheduling event
+        let events: Vec<serde_json::Value> = storage
+            .list("/registry/events/default/")
+            .await
+            .unwrap_or_default();
+        let has_failed_event = events.iter().any(|e| {
+            e.get("reason")
+                .and_then(|r| r.as_str())
+                .map(|r| r == "FailedScheduling")
+                .unwrap_or(false)
+        });
+        assert!(
+            has_failed_event,
+            "Should have a FailedScheduling event for unschedulable pod"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_does_not_reschedule_already_scheduled_pod() {
+        let storage = Arc::new(MemoryStorage::new());
+        let scheduler = Scheduler::new_with_name(
+            storage.clone(),
+            1,
+            "default-scheduler".to_string(),
+        );
+
+        let node1 = make_node("node-1");
+        storage
+            .create("/registry/nodes/node-1", &node1)
+            .await
+            .unwrap();
+
+        // Create a pod that is already scheduled
+        let mut pod = make_pending_pod("scheduled-pod", "default");
+        if let Some(ref mut spec) = pod.spec {
+            spec.node_name = Some("node-1".to_string());
+        }
+        storage
+            .create("/registry/pods/default/scheduled-pod", &pod)
+            .await
+            .unwrap();
+
+        // Run scheduling — should not touch already-scheduled pod
+        scheduler.schedule_pending_pods().await.unwrap();
+
+        let result_pod: Pod = storage
+            .get("/registry/pods/default/scheduled-pod")
+            .await
+            .unwrap();
+        assert_eq!(
+            result_pod.spec.as_ref().and_then(|s| s.node_name.as_deref()),
+            Some("node-1"),
+            "Already-scheduled pod should remain on its node"
+        );
+    }
+}

@@ -81,7 +81,7 @@ services:
       - rusternetes-net
     environment:
       - RUST_LOG=info
-    command: ["--etcd-servers", "http://etcd:2379"]
+    command: ["--etcd-servers", "http://etcd:2379", "--interval", "1"]
 
   # Controller Manager - runs controllers
   controller-manager:

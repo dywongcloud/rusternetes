@@ -50,7 +50,9 @@ pub struct ReplicationControllerSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selector: Option<HashMap<String, String>>,
 
-    /// Template for pod creation
+    /// Template for pod creation — default allows RC creation without template
+    /// (K8s allows this for headless/selector-only RCs)
+    #[serde(default)]
     pub template: PodTemplateSpec,
 
     /// Minimum number of seconds for which a newly created pod should be ready
@@ -830,7 +832,7 @@ impl PodTemplate {
 }
 
 /// PodTemplateSpec describes the pod that will be created
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PodTemplateSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
