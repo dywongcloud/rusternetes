@@ -5447,7 +5447,27 @@ impl ContainerRuntime {
             // Containers using container: network mode won't have their own IP — we need the
             // pause container's IP (which owns the network namespace).
             let ip = if let Some(ref host) = http_get.host {
-                host.clone()
+                // If host looks like a hostname (not an IP), try to resolve it via
+                // the pod's /etc/hosts or DNS. The kubelet container can't resolve
+                // K8s service names, so we check if it's an IP first.
+                if host.parse::<std::net::Ipv4Addr>().is_ok()
+                    || host.parse::<std::net::Ipv6Addr>().is_ok()
+                {
+                    host.clone()
+                } else {
+                    // Try resolving as a hostname — look up in pod's network namespace
+                    // by checking the pod's /etc/hosts or using DNS
+                    match tokio::net::lookup_host(format!("{}:{}", host, http_get.port)).await {
+                        Ok(mut addrs) => {
+                            if let Some(addr) = addrs.next() {
+                                addr.ip().to_string()
+                            } else {
+                                host.clone()
+                            }
+                        }
+                        Err(_) => host.clone(),
+                    }
+                }
             } else {
                 let inspect = self
                     .docker
