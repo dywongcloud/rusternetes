@@ -168,6 +168,11 @@ pub async fn handle_ws_exec(
     status_data.extend_from_slice(status_json.as_bytes());
     let _ = socket.send(Message::Binary(status_data.into())).await;
 
+    // Allow time for the client to read the status message before closing.
+    // Without this delay, the TCP connection may reset before the client
+    // processes channel 3, causing "connection reset by peer" errors.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
     // Close with a short reason (WebSocket close frames max 125 bytes)
     let short_reason = if exit_code == 0 {
         "Success"
