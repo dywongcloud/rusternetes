@@ -315,7 +315,7 @@ where
 
         // Always send periodic bookmarks as keep-alive to prevent the K8s client
         // from closing the watch connection due to inactivity
-        let mut bookmark_interval = Some(interval(Duration::from_secs(15)));
+        let mut bookmark_interval = Some(interval(Duration::from_secs(5)));
 
         // Box-pin the watch stream so it can be replaced on reconnect
         let mut watch_stream: std::pin::Pin<
@@ -718,7 +718,7 @@ where
 
         // Always send periodic bookmarks as keep-alive to prevent the K8s client
         // from closing the watch connection due to inactivity
-        let mut bookmark_interval = Some(interval(Duration::from_secs(15)));
+        let mut bookmark_interval = Some(interval(Duration::from_secs(5)));
 
         // Box-pin the watch stream so it can be replaced on reconnect
         let mut watch_stream: std::pin::Pin<
