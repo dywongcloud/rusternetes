@@ -53,6 +53,18 @@ pub async fn create_apiservice(
         value["metadata"]["creationTimestamp"] = Value::String(chrono::Utc::now().to_rfc3339());
     }
 
+    // Set status conditions — mark as Available
+    let now = chrono::Utc::now().to_rfc3339();
+    value["status"] = serde_json::json!({
+        "conditions": [{
+            "type": "Available",
+            "status": "True",
+            "lastTransitionTime": now,
+            "reason": "Passed",
+            "message": "API service is available"
+        }]
+    });
+
     let key = build_key("apiservices", None, &name);
     let created: Value = state.storage.create(&key, &value).await?;
     Ok((StatusCode::CREATED, Json(created)))

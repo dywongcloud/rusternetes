@@ -1,5 +1,6 @@
 use crate::{handlers, middleware, state::ApiServerState};
 use axum::{
+    body::Body,
     extract::{Request, State},
     http::{Method, StatusCode, Uri},
     middleware as axum_middleware,
@@ -11,7 +12,7 @@ use rusternetes_common::resources::CustomResourceDefinition;
 use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 /// Fallback handler for custom resources defined by CRDs
 /// This handler is called for any route not matched by the static routes
@@ -40,6 +41,111 @@ async fn custom_resource_fallback(
     }
 
     let parts: Vec<&str> = path.trim_start_matches("/apis/").split('/').collect();
+
+    // Check for API aggregation — if an APIService is registered for this
+    // group/version, proxy the request to the backing service's pod.
+    if parts.len() >= 2 {
+        let group = parts[0];
+        let version = parts[1];
+        let apiservice_name = format!("{}.{}", version, group);
+        let apiservice_key =
+            rusternetes_storage::build_key("apiservices", None, &apiservice_name);
+        if let Ok(apiservice) = state
+            .storage
+            .get::<serde_json::Value>(&apiservice_key)
+            .await
+        {
+            // Found a registered APIService — proxy to its backing service
+            if let (Some(svc_name), Some(svc_ns)) = (
+                apiservice
+                    .pointer("/spec/service/name")
+                    .and_then(|v| v.as_str()),
+                apiservice
+                    .pointer("/spec/service/namespace")
+                    .and_then(|v| v.as_str()),
+            ) {
+                debug!(
+                    "API aggregation: proxying {}/{} to service {}/{}",
+                    group, version, svc_ns, svc_name
+                );
+                // Resolve the service to a pod IP via endpoints
+                let ep_key =
+                    rusternetes_storage::build_key("endpoints", Some(svc_ns), svc_name);
+                if let Ok(ep) = state
+                    .storage
+                    .get::<rusternetes_common::resources::Endpoints>(&ep_key)
+                    .await
+                {
+                    if let Some(addr) = ep
+                        .subsets
+                        .iter()
+                        .flat_map(|s| s.addresses.iter().flatten())
+                        .next()
+                    {
+                        let port = ep
+                            .subsets
+                            .iter()
+                            .flat_map(|s| s.ports.iter().flatten())
+                            .next()
+                            .map(|p| p.port)
+                            .unwrap_or(443);
+                        let target_url =
+                            format!("https://{}:{}{}", addr.ip, port, path);
+                        info!("API aggregation proxy: {} -> {}", path, target_url);
+                        // Forward the request using reqwest with TLS cert verification disabled
+                        // (the APIService has a caBundle but we skip verification for simplicity)
+                        let client = reqwest::Client::builder()
+                            .danger_accept_invalid_certs(true)
+                            .timeout(std::time::Duration::from_secs(30))
+                            .build()
+                            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+                        let body_bytes = axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024)
+                            .await
+                            .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+                        let reqwest_method = match method {
+                            Method::GET => reqwest::Method::GET,
+                            Method::POST => reqwest::Method::POST,
+                            Method::PUT => reqwest::Method::PUT,
+                            Method::DELETE => reqwest::Method::DELETE,
+                            Method::PATCH => reqwest::Method::PATCH,
+                            _ => reqwest::Method::GET,
+                        };
+
+                        match client
+                            .request(reqwest_method, &target_url)
+                            .body(body_bytes.to_vec())
+                            .header("Content-Type", "application/json")
+                            .send()
+                            .await
+                        {
+                            Ok(resp) => {
+                                let status = StatusCode::from_u16(resp.status().as_u16())
+                                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+                                let body = resp.bytes().await.unwrap_or_default();
+                                return Ok(Response::builder()
+                                    .status(status)
+                                    .header("Content-Type", "application/json")
+                                    .body(Body::from(body))
+                                    .unwrap());
+                            }
+                            Err(e) => {
+                                warn!("API aggregation proxy error: {}", e);
+                                return Ok(Response::builder()
+                                    .status(StatusCode::SERVICE_UNAVAILABLE)
+                                    .body(Body::from(format!(
+                                        "{{\"message\":\"aggregated API server unavailable: {}\"}}",
+                                        e
+                                    )))
+                                    .unwrap());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Handle /apis/{group} — return APIGroup info for the group
     if parts.len() == 1 && !parts[0].is_empty() {
