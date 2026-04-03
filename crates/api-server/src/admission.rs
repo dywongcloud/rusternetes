@@ -1310,4 +1310,110 @@ mod tests {
             "apply_limit_range sets requests from defaultRequest (pod handler does limits->requests)"
         );
     }
+
+    #[test]
+    fn test_validate_max_rejects_over_limit_cpu() {
+        let resources = ResourceRequirements {
+            limits: Some({
+                let mut m = HashMap::new();
+                m.insert("cpu".to_string(), "800m".to_string());
+                m
+            }),
+            requests: None,
+            claims: None,
+        };
+        let max = {
+            let mut m = HashMap::new();
+            m.insert("cpu".to_string(), "500m".to_string());
+            m
+        };
+        let result = validate_max_resources(&resources, &max, "test").unwrap();
+        assert!(!result, "800m CPU should exceed max of 500m");
+    }
+
+    #[test]
+    fn test_validate_max_rejects_over_limit_memory() {
+        let resources = ResourceRequirements {
+            limits: Some({
+                let mut m = HashMap::new();
+                m.insert("memory".to_string(), "1Gi".to_string());
+                m
+            }),
+            requests: None,
+            claims: None,
+        };
+        let max = {
+            let mut m = HashMap::new();
+            m.insert("memory".to_string(), "500Mi".to_string());
+            m
+        };
+        let result = validate_max_resources(&resources, &max, "test").unwrap();
+        assert!(!result, "1Gi memory should exceed max of 500Mi");
+    }
+
+    #[test]
+    fn test_validate_max_rejects_over_limit_ephemeral_storage() {
+        let resources = ResourceRequirements {
+            limits: Some({
+                let mut m = HashMap::new();
+                m.insert("ephemeral-storage".to_string(), "2Gi".to_string());
+                m
+            }),
+            requests: None,
+            claims: None,
+        };
+        let max = {
+            let mut m = HashMap::new();
+            m.insert("ephemeral-storage".to_string(), "1Gi".to_string());
+            m
+        };
+        let result = validate_max_resources(&resources, &max, "test").unwrap();
+        assert!(
+            !result,
+            "2Gi ephemeral-storage should exceed max of 1Gi"
+        );
+    }
+
+    #[test]
+    fn test_validate_max_checks_requests_too() {
+        let resources = ResourceRequirements {
+            limits: None,
+            requests: Some({
+                let mut m = HashMap::new();
+                m.insert("cpu".to_string(), "800m".to_string());
+                m
+            }),
+            claims: None,
+        };
+        let max = {
+            let mut m = HashMap::new();
+            m.insert("cpu".to_string(), "500m".to_string());
+            m
+        };
+        let result = validate_max_resources(&resources, &max, "test").unwrap();
+        assert!(
+            !result,
+            "800m CPU request should exceed max of 500m"
+        );
+    }
+
+    #[test]
+    fn test_validate_max_allows_within_limit() {
+        let resources = ResourceRequirements {
+            limits: Some({
+                let mut m = HashMap::new();
+                m.insert("cpu".to_string(), "400m".to_string());
+                m
+            }),
+            requests: None,
+            claims: None,
+        };
+        let max = {
+            let mut m = HashMap::new();
+            m.insert("cpu".to_string(), "500m".to_string());
+            m
+        };
+        let result = validate_max_resources(&resources, &max, "test").unwrap();
+        assert!(result, "400m CPU should be within max of 500m");
+    }
 }
