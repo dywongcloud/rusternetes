@@ -234,7 +234,85 @@ pub async fn normalize_content_type_middleware(
         }
     }
 
-    Ok(next.run(request).await)
+    // Check if client wants protobuf response BEFORE running handler
+    let wants_protobuf = request
+        .headers()
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .map(|a| a.contains("application/vnd.kubernetes.protobuf"))
+        .unwrap_or(false);
+
+    let mut response = next.run(request).await;
+
+    // If client wants protobuf and response is JSON, wrap in K8s protobuf envelope
+    if wants_protobuf {
+        let response_ct = response
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        if response_ct.starts_with("application/json") {
+            let (parts, body) = response.into_parts();
+            if let Ok(json_bytes) = axum::body::to_bytes(body, 10 * 1024 * 1024).await {
+                let pb = wrap_json_in_protobuf(&json_bytes);
+                let mut resp = Response::from_parts(parts, Body::from(pb));
+                resp.headers_mut().insert(
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::HeaderValue::from_static(
+                        "application/vnd.kubernetes.protobuf",
+                    ),
+                );
+                return Ok(resp);
+            }
+            // Body read failed — return empty response
+            return Ok(Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap());
+        }
+    }
+
+    Ok(response)
+}
+
+/// Wrap JSON bytes in the K8s protobuf envelope: "k8s\0" + Unknown{raw: json}
+fn wrap_json_in_protobuf(json: &[u8]) -> Vec<u8> {
+    // K8s Unknown protobuf message:
+    //   field 2 (raw, bytes): the JSON payload
+    //   field 1 (typeMeta, string): empty (not needed for responses)
+    //   field 3 (contentEncoding, string): empty
+    //   field 4 (contentType, string): "application/json"
+    let content_type = b"application/json";
+    let mut msg = Vec::with_capacity(json.len() + 30);
+
+    // Field 1: typeMeta (empty)
+    // Field 2: raw bytes (the JSON)
+    msg.push(0x12); // field 2, wire type 2
+    encode_protobuf_varint(&mut msg, json.len() as u64);
+    msg.extend_from_slice(json);
+    // Field 4: contentType
+    msg.push(0x22); // field 4, wire type 2
+    encode_protobuf_varint(&mut msg, content_type.len() as u64);
+    msg.extend_from_slice(content_type);
+
+    let mut buf = Vec::with_capacity(msg.len() + 4);
+    buf.extend_from_slice(b"k8s\0");
+    buf.extend_from_slice(&msg);
+    buf
+}
+
+fn encode_protobuf_varint(buf: &mut Vec<u8>, mut value: u64) {
+    loop {
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.push(byte);
+            break;
+        } else {
+            buf.push(byte | 0x80);
+        }
+    }
 }
 
 /// Extract JSON from a Kubernetes protobuf envelope.
