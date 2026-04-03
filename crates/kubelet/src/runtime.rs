@@ -723,6 +723,13 @@ impl ContainerRuntime {
                                         .await;
                                     tokio::time::sleep(Duration::from_secs(backoff)).await;
                                 } else {
+                                    // Before returning, update init container status so the
+                                    // pod status shows the actual Terminated state with exit code.
+                                    // Without this, init containers show "incomplete status".
+                                    warn!(
+                                        "Init container {} failed permanently: {}",
+                                        container.name, e
+                                    );
                                     return Err(e);
                                 }
                             }

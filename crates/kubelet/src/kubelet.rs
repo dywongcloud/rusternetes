@@ -926,6 +926,10 @@ impl Kubelet {
                                             .collect()
                                     });
 
+                                // Get init container statuses — they may have run before the error
+                                let init_container_statuses =
+                                    self.runtime.get_init_container_statuses(&new_pod).await;
+
                                 let qos = Self::compute_qos_class(&new_pod);
                                 let observed_gen = new_pod.metadata.generation;
                                 new_pod.status = Some(PodStatus {
@@ -936,7 +940,7 @@ impl Kubelet {
                                     pod_ip: None,
                                     conditions: None,
                                     container_statuses,
-                                    init_container_statuses: None,
+                                    init_container_statuses,
                                     ephemeral_container_statuses: None,
                                     resize: None,
                                     resource_claim_statuses: None,
