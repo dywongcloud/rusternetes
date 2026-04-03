@@ -63,7 +63,7 @@ impl ServiceAccountClaims {
             uid,
             iat: now.timestamp(),
             exp: exp.timestamp(),
-            iss: "rusternetes-api-server".to_string(),
+            iss: "https://kubernetes.default.svc.cluster.local".to_string(),
             aud: vec!["rusternetes".to_string()],
             pod_name: None,
             pod_uid: None,
@@ -99,7 +99,10 @@ impl TokenManager {
         // First try with standard audience
         let mut validation = Validation::new(Algorithm::HS256);
         validation.set_audience(&["rusternetes"]);
-        validation.set_issuer(&["rusternetes-api-server"]);
+        validation.set_issuer(&[
+            "https://kubernetes.default.svc.cluster.local",
+            "rusternetes-api-server",
+        ]);
 
         if let Ok(data) = decode::<ServiceAccountClaims>(token, &self.decoding_key, &validation) {
             return Ok(data.claims);
@@ -128,7 +131,10 @@ impl TokenManager {
         } else {
             validation.validate_aud = false;
         }
-        validation.set_issuer(&["rusternetes-api-server"]);
+        validation.set_issuer(&[
+            "https://kubernetes.default.svc.cluster.local",
+            "rusternetes-api-server",
+        ]);
 
         decode::<ServiceAccountClaims>(token, &self.decoding_key, &validation)
             .map(|data| data.claims)
@@ -848,7 +854,7 @@ mod tests {
             uid: "test-uid".to_string(),
             iat: now.timestamp(),
             exp: (now + Duration::hours(1)).timestamp(),
-            iss: "rusternetes-api-server".to_string(),
+            iss: "https://kubernetes.default.svc.cluster.local".to_string(),
             aud: vec![
                 "https://kubernetes.default.svc".to_string(),
                 "api".to_string(),
@@ -882,7 +888,7 @@ mod tests {
             uid: "test-uid".to_string(),
             iat: now.timestamp(),
             exp: (now + Duration::hours(1)).timestamp(),
-            iss: "rusternetes-api-server".to_string(),
+            iss: "https://kubernetes.default.svc.cluster.local".to_string(),
             aud: vec!["api".to_string()],
             pod_name: None,
             pod_uid: None,
@@ -916,7 +922,7 @@ mod tests {
             uid: "test-uid".to_string(),
             iat: now.timestamp(),
             exp: (now + Duration::seconds(600)).timestamp(),
-            iss: "rusternetes-api-server".to_string(),
+            iss: "https://kubernetes.default.svc.cluster.local".to_string(),
             aud: vec!["rusternetes".to_string()],
             pod_name: None,
             pod_uid: None,
@@ -950,7 +956,7 @@ mod tests {
             uid: "sa-uid-123".to_string(),
             iat: now.timestamp(),
             exp: (now + Duration::hours(1)).timestamp(),
-            iss: "rusternetes-api-server".to_string(),
+            iss: "https://kubernetes.default.svc.cluster.local".to_string(),
             aud: vec!["rusternetes".to_string()],
             pod_name: Some("my-pod".to_string()),
             pod_uid: Some("pod-uid-456".to_string()),
@@ -984,7 +990,7 @@ mod tests {
             uid: "sa-uid".to_string(),
             iat: now.timestamp(),
             exp: (now + Duration::hours(1)).timestamp(),
-            iss: "rusternetes-api-server".to_string(),
+            iss: "https://kubernetes.default.svc.cluster.local".to_string(),
             aud: vec!["rusternetes".to_string()],
             pod_name: Some("pod-abc".to_string()),
             pod_uid: Some("pod-uid-abc".to_string()),
