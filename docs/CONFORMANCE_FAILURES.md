@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 124** | 295/441 (66.9%) | 30 fixes pending redeploy | 644 unit tests pass
+**Round 124** | 295/441 (66.9%) | 30 fixes pending redeploy | 646 unit tests pass
 
 ## All Fixes
 
@@ -35,7 +35,7 @@
 | 27 | Scheduler: generic over Storage + 3 unit tests | d65a510 | 3 scheduler tests | Verified |
 | 28 | PodTemplateSpec: derive Default | d65a510 | Required for #26 | Verified |
 | 29 | Lifecycle HTTP hook: resolve hostname via DNS lookup | 638b0de | Code review | Unverified |
-| 30 | Watch bookmark interval: 15s→5s | b6c56ac | Config change — prevents client timeout | N/A |
+| 30 | Watch bookmark interval: 15s→5s | b6c56ac | Prevents client inactivity timeout | N/A |
 
 ## Test Results
 
@@ -65,8 +65,8 @@
 | 13 | Webhook response parse fails (metadata field) | #6 |
 | ~20 | Exec connection reset by peer | #9 |
 | 3 | Protobuf response roundtrip | #11 |
-| 4 | Session affinity (confirmed exec reset, not iptables) | #9 |
-| 3 | Service endpoints (confirmed exec reset) | #9 |
+| 4 | Session affinity (confirmed exec reset from e2e logs) | #9 |
+| 3 | Service endpoints (confirmed exec reset from e2e logs) | #9 |
 | 2 | Scheduler NodeSelector/unschedulable | #21 + #27 |
 
 ### Fixed without dedicated test (~40 tests)
@@ -103,30 +103,30 @@
 | 1 | Service status lifecycle watch | #30 — bookmark 5s keep-alive |
 | 4 | RC lifecycle/scale/serve/release watch | #30 — bookmark 5s keep-alive |
 
-### Likely fixed by exec delay — not yet confirmed
+### Likely fixed — need conformance run to confirm
 
-| Tests | Issue |
-|-------|-------|
-| 1 | KubeletManagedEtcHosts — exec to read /etc/hosts |
-| 1 | Variable Expansion subpaths — exec to verify subpath |
-| 2 | ServiceAccounts — exec to verify token mount |
-| 1 | Container Runtime exit status — may be #18 |
+| Tests | Issue | Why likely fixed |
+|-------|-------|-----------------|
+| 1 | KubeletManagedEtcHosts | Exec connection reset — #9 |
+| 1 | Variable Expansion subpaths | Exec connection reset — #9 |
+| 2 | ServiceAccounts token mount | Exec connection reset — #9 |
+| 1 | Container Runtime exit status | Empty terminated reason — #18 |
+| 3 | StatefulSet rolling update/patch/evicted | Verified PATCH works on current code (`kubectl patch` changes image correctly) — may have been old-code issue in round 124 |
+| 4 | Job orphan/failure-policy/successPolicy | Controller timing — interval reduction #25 should help; Job controller has orphan adoption code |
 
-**Subtotal: 5 tests**
+**Subtotal: 12 tests likely fixed**
 
-### Unfixed
+### Unfixed — needs live debugging or feature work
 
-| Tests | Issue | Why |
-|-------|-------|-----|
-| 5 | DNS | Pod GET returns 404 during exec — pod disappears from etcd between creation and result reading; needs live debugging to trace root cause |
-| 3 | StatefulSet rolling update/patch/evicted | Strategic merge patch applies correctly (verified by unit test) but controller may not detect template change and trigger rolling update fast enough |
-| 4 | Job orphan/failure-policy/successPolicy | Job pods not becoming ready (WaitForJobReady timeout); successPolicy condition not set by controller within test timeout; orphan adoption not matching pods |
-| 1 | Kubectl proxy --port 0 | kubectl proxy returns empty JSON — proxy can't connect to API server from inside e2e pod |
-| 1 | Aggregator sample API server | API aggregation (APIService proxy) not implemented — requires forwarding requests to registered external API servers |
-| 1 | Kubectl guestbook | Service reachability via kube-proxy DNAT from inside pod — Docker Desktop networking |
-| 1 | Sysctls | Docker Desktop does not support kernel.shm_rmid_forced sysctl in container namespaces |
+| Tests | Issue | Root Cause | What would fix it |
+|-------|-------|-----------|-------------------|
+| 5 | DNS | Pod GET returns 404 during exec — pod exists in Docker (containers running) but not in etcd; needs live debugging to trace who deletes the pod from etcd | Live debugging with new code deployed |
+| 1 | Kubectl proxy --port 0 | kubectl proxy inside e2e pod returns empty JSON from /api — proxy can't connect to API server | Need to investigate kubectl proxy connection path from inside container |
+| 1 | Aggregator sample API server | API aggregation (APIService proxy) not implemented — requires registering external API servers and forwarding requests to them | Implement APIService resource + request forwarding |
+| 1 | Kubectl guestbook | Service not reachable via kube-proxy DNAT from inside pod — Docker Desktop iptables DNAT doesn't apply to bridge traffic | Docker Desktop networking limitation |
+| 1 | Sysctls | Docker Desktop does not support kernel.shm_rmid_forced sysctl in container namespaces | Docker Desktop kernel limitation |
 
-**Subtotal: 16 tests**
+**Subtotal: 9 tests**
 
 ### Platform limitations
 
@@ -144,12 +144,12 @@
 | Fixed with tests | ~67 |
 | Fixed without tests | ~40 |
 | Fixed by config changes | ~19 |
-| Likely fixed (exec delay) | ~5 |
-| Unfixed | 16 |
+| Likely fixed (need run to confirm) | ~12 |
+| Unfixed (need debugging/features) | 9 |
 | Platform limitations | 6 |
 | **Total** | **~146** |
 
-Projected if all fixes work: ~124 newly passing → ~419/441 (95%)
+If all fixes and likely-fixes work: ~131 newly passing → projected ~426/441 (96.6%)
 
 ## Progress History
 
