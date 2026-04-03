@@ -953,30 +953,93 @@ fn add_object_meta_schema(schemas: &mut IndexMap<String, ReferenceOr<Schema>>) {
 }
 
 fn add_basic_resource_schemas(schemas: &mut IndexMap<String, ReferenceOr<Schema>>) {
-    // Add schemas for basic resources (simplified versions)
-    schemas.insert(
-        "Pod".to_string(),
-        ReferenceOr::Item(Schema {
-            schema_data: SchemaData {
-                description: Some(
-                    "Pod is a collection of containers that can run on a host".to_string(),
-                ),
-                ..Default::default()
-            },
-            schema_kind: SchemaKind::Type(Type::Object(ObjectType::default())),
-        }),
-    );
+    // Add schemas for ALL resource types referenced in API paths.
+    // Using x-kubernetes-group-version-kind extension so kubectl can map GVK to schemas.
+    // Schemas use additionalProperties: true to allow any fields (permissive validation).
+    let resources = [
+        ("Pod", "Pod is a collection of containers that can run on a host"),
+        ("Service", "Service is a named abstraction of software service"),
+        ("ConfigMap", "ConfigMap holds configuration data for pods to consume"),
+        ("Secret", "Secret holds secret data of a certain type"),
+        ("Node", "Node is a worker node in Kubernetes"),
+        ("Namespace", "Namespace provides a scope for Names"),
+        ("Deployment", "Deployment enables declarative updates for Pods and ReplicaSets"),
+        ("ReplicaSet", "ReplicaSet ensures a specified number of pod replicas are running"),
+        ("StatefulSet", "StatefulSet represents a set of pods with consistent identities"),
+        ("DaemonSet", "DaemonSet represents a set of pods run on every node"),
+        ("Job", "Job represents the configuration of a single job"),
+        ("CronJob", "CronJob represents the configuration of a single cron job"),
+        ("Ingress", "Ingress is a collection of rules for inbound connections"),
+        ("NetworkPolicy", "NetworkPolicy describes what network traffic is allowed for a set of Pods"),
+        ("ClusterRole", "ClusterRole is a cluster level set of rules"),
+        ("ClusterRoleBinding", "ClusterRoleBinding binds a ClusterRole to subjects"),
+        ("Role", "Role is a set of rules within a namespace"),
+        ("RoleBinding", "RoleBinding binds a Role to subjects within a namespace"),
+        ("ServiceAccount", "ServiceAccount binds together a name and a secret"),
+        ("PersistentVolume", "PersistentVolume is a storage resource provisioned by an admin"),
+        ("PersistentVolumeClaim", "PersistentVolumeClaim is a user's request for storage"),
+        ("StorageClass", "StorageClass describes the parameters for a class of storage"),
+        ("CSIDriver", "CSIDriver captures information about a CSI volume driver"),
+        ("CSINode", "CSINode holds information about the CSI drivers on a node"),
+        ("VolumeAttachment", "VolumeAttachment captures the intent to attach or detach a volume"),
+        ("PriorityClass", "PriorityClass defines mapping from a priority class name to the priority value"),
+        ("CustomResourceDefinition", "CustomResourceDefinition represents a custom API resource"),
+        ("MutatingWebhookConfiguration", "MutatingWebhookConfiguration describes the configuration of admission webhooks"),
+        ("ValidatingWebhookConfiguration", "ValidatingWebhookConfiguration describes the configuration of admission webhooks"),
+        ("ValidatingAdmissionPolicy", "ValidatingAdmissionPolicy describes the configuration of an admission validation policy"),
+        ("ValidatingAdmissionPolicyBinding", "ValidatingAdmissionPolicyBinding binds a ValidatingAdmissionPolicy"),
+        ("Lease", "Lease defines a lease concept used for leader election"),
+        ("FlowSchema", "FlowSchema defines the schema of a group of flows"),
+        ("PriorityLevelConfiguration", "PriorityLevelConfiguration represents the configuration of a priority level"),
+        ("CertificateSigningRequest", "CertificateSigningRequest objects provide a mechanism for CSR approval"),
+        ("EndpointSlice", "EndpointSlice represents a subset of the endpoints that implement a service"),
+        ("RuntimeClass", "RuntimeClass defines a class of container runtime"),
+        ("HorizontalPodAutoscaler", "HorizontalPodAutoscaler configuration"),
+        ("PodDisruptionBudget", "PodDisruptionBudget is an object to limit disruptions to pods"),
+        ("ResourceClaim", "ResourceClaim describes which resources are needed by a pod"),
+        ("DeviceClass", "DeviceClass is a vendor- or admin-provided resource that describes a class of devices"),
+        ("Event", "Event is a report of an event somewhere in the cluster"),
+        ("LimitRange", "LimitRange sets resource usage limits for each kind of resource"),
+        ("ResourceQuota", "ResourceQuota sets aggregate quota restrictions per namespace"),
+        ("ReplicationController", "ReplicationController represents a replication controller"),
+        ("Endpoints", "Endpoints is a collection of endpoints that implement the actual service"),
+        ("PodTemplate", "PodTemplate describes a template for creating copies of a predefined pod"),
+    ];
 
-    schemas.insert(
-        "PodList".to_string(),
-        ReferenceOr::Item(Schema {
-            schema_data: SchemaData {
-                description: Some("PodList is a list of Pods".to_string()),
-                ..Default::default()
-            },
-            schema_kind: SchemaKind::Type(Type::Object(ObjectType::default())),
-        }),
-    );
+    for (name, desc) in resources {
+        schemas.insert(
+            name.to_string(),
+            ReferenceOr::Item(Schema {
+                schema_data: SchemaData {
+                    description: Some(desc.to_string()),
+                    extensions: {
+                        let mut ext = IndexMap::new();
+                        ext.insert(
+                            "x-kubernetes-group-version-kind".to_string(),
+                            serde_json::json!([{"group": "", "version": "v1", "kind": name}]),
+                        );
+                        ext
+                    },
+                    ..Default::default()
+                },
+                schema_kind: SchemaKind::Type(Type::Object(ObjectType {
+                    additional_properties: Some(openapiv3::AdditionalProperties::Any(true)),
+                    ..Default::default()
+                })),
+            }),
+        );
+        // Also add the List variant
+        schemas.insert(
+            format!("{}List", name),
+            ReferenceOr::Item(Schema {
+                schema_data: SchemaData {
+                    description: Some(format!("{}List is a list of {} objects", name, name)),
+                    ..Default::default()
+                },
+                schema_kind: SchemaKind::Type(Type::Object(ObjectType::default())),
+            }),
+        );
+    }
 }
 
 #[cfg(test)]
