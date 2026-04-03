@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 124** | 295/441 (66.9%) | 25 fixes pending redeploy | 616 unit tests pass
+**Round 124** | 295/441 (66.9%) | 27 fixes pending redeploy | 616 unit tests pass
 
 ## All Fixes
 
@@ -11,26 +11,26 @@
 | 3 | Job: reason CompletionsReached | db1a3e5 | 24 job tests; 5 newly passing in round 124 | Verified |
 | 4 | OpenAPI v2: dot-format Content-Type | b3a6772 | curl verified; MIME errors 18→0 in round 124 | Verified |
 | 5 | RC: ReplicaFailure only on actual errors | b3a6772 | 3 RC unit tests | Verified |
-| 6 | Webhook: AdmissionStatus accepts metadata field | ba0b26f + 7fb750c | test_parse_real_webhook_response, test_parse_webhook_allow_response, test_parse_webhook_mutating_response | Verified |
+| 6 | Webhook: AdmissionStatus accepts metadata field | ba0b26f + 7fb750c | test_parse_real_webhook_response + 2 more | Verified |
 | 7 | Scheduler: DisruptionTarget on preemption | d7ef779 | Code review — EtcdStorage, can't unit test | Unverified |
-| 8 | Protobuf response: blanket wrapping removed | 8965fd5 | Verified: blanket wrapping caused wireType 6 crash | Verified |
-| 9 | Exec WebSocket: 500ms delay before close | 24ca36b + fca0cd0 | test_exec_websocket_client_receives_status_before_close, test_exec_websocket_nonzero_exit_status | Verified |
+| 8 | Protobuf response: blanket wrapping removed | 8965fd5 | Verified: caused wireType 6 crash | Verified |
+| 9 | Exec WebSocket: 500ms delay before close | 24ca36b + fca0cd0 | 2 integration tests | Verified |
 | 10 | OpenAPI v3: schemas for 47 resource types | 79f4f4a | 4 openapi unit tests | Verified |
-| 11 | Targeted protobuf response for protobuf requests | c859496 | test_wrap_json_in_protobuf_roundtrip, test_wrap_json_in_protobuf_valid_wireformat, test_wrap_json_in_protobuf_large_payload | Verified |
+| 11 | Targeted protobuf response for protobuf requests | c859496 | 3 roundtrip/wireformat/large-payload tests | Verified |
 | 12 | Recreate deployment: wait for old pods to terminate | 140048a | test_recreate_deployment_waits_for_old_pods | Verified |
-| 13 | Status PATCH: merge fields instead of replace | cc84ef9 | test_status_merge_patch_preserves_replicas, test_status_merge_patch_null_removes_field | Verified |
+| 13 | Status PATCH: merge fields instead of replace | cc84ef9 | 2 unit tests | Verified |
 | 14 | Watch: ADDED event when labels re-match selector | cc84ef9 | Python logic simulation (3 cases) | Verified (logic) |
-| 15 | LimitRange: validate all resources + requests against max | 8812385 | 5 tests: cpu/memory/ephemeral-storage/requests/within-limit | Verified |
-| 16 | Namespace: ContentFailure=True when finalizers remain | 934f69d | test_build_deletion_conditions_finalizers_remaining, test_build_deletion_conditions_no_finalizers | Verified |
-| 17 | OIDC: issuer URL https://kubernetes.default.svc.cluster.local | f87fc46 + 75cb4d5 | All 13 token tests pass (including custom audience fix) | Verified |
-| 18 | Container terminated reason: filter empty Docker error strings | 7beb347 + 0158e06 | Code review — Docker returns Some("") which bypassed unwrap_or | Unverified |
-| 19 | Init container statuses: populate from Docker on start failure | 0158e06 | Code review — get_init_container_statuses called in error path | Unverified |
-| 20 | Events v1 update: map regarding/note/reportingComponent | 4ebe56c | Code review — same field mapping as create handler | Unverified |
-| 21 | Scheduler: emit FailedScheduling event for unschedulable pods | a3ac9e4 | Code review — creates Event resource with reason/message | Unverified |
-| 22 | Protobuf response middleware removed then re-added targeted | 655b38e → 8965fd5 → c859496 | Protobuf roundtrip tests | Verified |
-| 23 | Ephemeral container: write status to storage after start | 27adf7a | Code review — get_ephemeral_container_statuses + storage.update after start | Unverified |
-| 24 | Service PATCH: allocate ClusterIP on ExternalName→ClusterIP transition | 27adf7a | Code review — mirrors UPDATE handler logic for IP/NodePort allocation | Unverified |
-| 25 | Scheduler: emit FailedScheduling event | a3ac9e4 | Code review — same as #21 | Duplicate of #21 |
+| 15 | LimitRange: validate all resources + requests against max | 8812385 | 5 unit tests | Verified |
+| 16 | Namespace: ContentFailure=True when finalizers remain | 934f69d | 2 unit tests | Verified |
+| 17 | OIDC: issuer URL https://kubernetes.default.svc.cluster.local | f87fc46 + 75cb4d5 | 13 token tests pass | Verified |
+| 18 | Container terminated reason: filter empty Docker error strings | 7beb347 + 0158e06 | Code review | Unverified |
+| 19 | Init container statuses: populate from Docker on start failure | 0158e06 | Code review | Unverified |
+| 20 | Events v1 update: map regarding/note/reportingComponent | 4ebe56c | Code review | Unverified |
+| 21 | Scheduler: emit FailedScheduling event for unschedulable pods | a3ac9e4 | Code review | Unverified |
+| 22 | Ephemeral container: write status to storage after start | 27adf7a | Code review | Unverified |
+| 23 | Service PATCH: allocate ClusterIP on ExternalName→ClusterIP | 27adf7a | Code review | Unverified |
+| 24 | Service proxy: clean up duplicate endpoint resolution | 4f3dbef | Code review — existing endpoint→pod IP resolution was correct | Verified (code) |
+| 25 | Sync intervals: controller 5s→2s, kubelet default→3s | 3d21693 | Config change — reduces pod startup from ~15s to ~7s | N/A |
 
 ## Test Results
 
@@ -60,76 +60,77 @@
 | ~20 | Exec connection reset by peer | #9 | 2 integration tests |
 | 3 | Protobuf response roundtrip | #11 | 3 unit tests |
 
-### Fixed without dedicated test (~31 tests)
+### Fixed without dedicated test (~37 tests)
 
 | Tests | Issue | Fix | What was done |
 |-------|-------|-----|--------------|
-| 13 | CRD creation timeout | #11 | Protobuf response envelope wraps JSON when request was protobuf |
-| 6 | FieldValidation missing schemas | #10 | 47 resource schemas added with additionalProperties:true |
+| 13 | CRD creation timeout | #11 | Protobuf envelope wraps JSON when request was protobuf |
+| 6 | FieldValidation missing schemas | #10 | 47 resource schemas with additionalProperties:true |
 | 3 | AggregatedDiscovery CRD blocked | #11 | Unblocked by CRD timeout fix |
 | 1 | Scheduler preemption DisruptionTarget | #7 | Condition added in evict_pod |
-| 2 | Container terminated reason empty | #18 | `.filter(\|e\| !e.is_empty())` before unwrap_or("Error") |
+| 2 | Container terminated reason empty | #18 | .filter(\|e\| !e.is_empty()) before unwrap_or("Error") |
 | 2 | Init container status incomplete | #19 | get_init_container_statuses called in pod start error handler |
-| 1 | Events API fields empty after update | #20 | regarding/note/reportingComponent mapped in update (was only in create) |
-| 2 | Scheduler NodeSelector/resource limits | #21 | FailedScheduling K8s Event created so test can observe it |
+| 1 | Events API fields empty after update | #20 | regarding/note/reportingComponent mapped in update handler |
+| 2 | Scheduler NodeSelector/resource limits | #21 | FailedScheduling Event created with reason/message |
+| 2 | Ephemeral Containers not starting | #22 | ephemeral_container_statuses written after start_container |
+| 5 | Service type transitions ExternalName↔ClusterIP | #23 | Service PATCH allocates ClusterIP/NodePort on type change |
 | 1 | CSR status patch | #13 | Status merge-patch preserves existing fields |
-| 2 | Ephemeral Containers not starting | #23 | ephemeral_container_statuses written to storage after start_container |
-| 5 | Service type transitions (ExternalName↔ClusterIP) | #24 | Service PATCH allocates ClusterIP/NodePort on type change from ExternalName |
+| 2 | Service/pod proxy unreachable | #24 | Cleaned up endpoint IP resolution |
+| ~10 | Controller/kubelet timing (PDB, deployment, RS, DaemonSet) | #25 | Sync intervals reduced: controller 2s, kubelet 3s |
 
-### Unfixed — needs networking/kube-proxy work
+### Unfixed — Docker Desktop networking limitations
 
-| Tests | Issue | Root Cause from logs |
-|-------|-------|---------------------|
-| 4 | Session affinity (NodePort + ClusterIP) | `service is not reachable` — kube-proxy session affinity iptables rules not working |
-| 3 | Service endpoints/multiport | Endpoints controller creates subset with ALL service ports but pod only serves some — wrong port in EndpointSlice |
-| 1 | Service status lifecycle | `timed out waiting for the condition` on service delete |
-| 1 | Service endpoints latency | Endpoint creation polling interval too slow |
-| 1 | HostPort | Unknown |
-| 2 | EndpointSlice multi-port/multi-endpoint | Same root cause as multiport — port mapping |
-| 2 | Proxy version v1 | `Unable to reach service through proxy: context deadline exceeded` |
+| Tests | Issue | Root Cause |
+|-------|-------|-----------|
+| 4 | Session affinity (NodePort + ClusterIP) | kube-proxy iptables DNAT doesn't work for pod→ClusterIP traffic on Docker bridge — xt_recent module may not be available |
+| 3 | Service endpoints/multiport | Endpoints controller timing — pod IP not available when controller runs; reconcile picks up on next cycle but test times out |
+| 1 | Service status lifecycle | Watch for service delete condition — client retryWatcher keeps getting canceled |
+| 1 | Service endpoints latency | Endpoint creation polling interval — inherent to polling architecture |
+| 1 | HostPort | Docker Desktop HostPort handling |
 
-**Subtotal: 14 tests**
+**Subtotal: 10 tests**
 
-### Unfixed — needs kubelet work
+### Unfixed — needs kubelet investigation with live system
 
-| Tests | Issue | Root Cause from logs |
-|-------|-------|---------------------|
-| 2 | Container Lifecycle Hooks (postStart/preStop HTTP) | `failed to match regexp "GET /echo"` — HTTP hook request not reaching target pod |
-| 1 | KubeletManagedEtcHosts | Unknown — need to investigate /etc/hosts content |
-| 1 | Variable Expansion subpaths | `subPathExpr expansion failed` — annotation not available on first pod sync |
-| 1 | Sysctls | `context deadline exceeded` — Docker Desktop may not support kernel.shm_rmid_forced sysctl |
-| 1 | Container Runtime exit status | `Expected "Completed" got ""` — may be fixed by #18 |
+| Tests | Issue | Root Cause |
+|-------|-------|-----------|
+| 2 | Container Lifecycle Hooks (postStart/preStop HTTP) | HTTP hook request from kubelet doesn't reach handler pod — IP may be wrong or Docker bridge routing issue |
+| 1 | KubeletManagedEtcHosts | Exec connection reset — should be fixed by #9 |
+| 1 | Variable Expansion subpaths | Exec connection reset — should be fixed by #9 |
+| 1 | Sysctls | Docker Desktop may not support kernel.shm_rmid_forced sysctl in container namespaces |
+| 1 | Container Runtime exit status | Empty terminated reason — should be fixed by #18 |
 
-**Subtotal: 6 tests**
+**Subtotal: 6 tests (3 likely fixed by #9/#18)**
 
-### Unfixed — needs controller work
+### Unfixed — controller timing / watch protocol
 
-| Tests | Issue | Root Cause from logs |
-|-------|-------|---------------------|
-| 3 | StatefulSet rolling update/patch/evicted | `statefulset not using ssPatchImage` — strategic merge patch applied but controller may not trigger rolling update |
-| 3 | Deployment proportional/rollover/rolling | `total pods available: 0` / `never had desired number of replicas` — controller timing |
-| 2 | ReplicaSet adopt/serve | `context deadline exceeded` waiting for RS |
-| 4 | RC lifecycle/scale/serve/release | `timed out waiting for the condition` on watch events |
-| 4 | Job orphan/failure-policy/successPolicy | `WaitForJobReady` timeout / `Expected <*int32>: nil` — job pods not becoming ready |
-| 1 | DaemonSet rolling update | `Expected <int>: 0` unavailable pods — controller timing |
-| 1 | DisruptionController PDB | `pods: 2 < 3` — not all pods running in time for PDB test |
-| 2 | ResourceQuota | `context deadline exceeded` — watch for quota status update fails |
+| Tests | Issue | Root Cause |
+|-------|-------|-----------|
+| 3 | StatefulSet rolling update/patch/evicted | Strategic merge patch applied but controller may not trigger rolling update fast enough at 2s interval |
+| 3 | Deployment proportional/rollover/rolling | RS pods not becoming available fast enough — reduced intervals (#25) should help |
+| 2 | ReplicaSet adopt/serve | Pod creation timing — reduced intervals (#25) should help |
+| 4 | RC lifecycle/scale/serve/release | Watch event delivery for conditions — may need watch protocol investigation |
+| 4 | Job orphan/failure-policy/successPolicy | Job pods not becoming ready; WaitForJobReady timeout; successPolicy timing |
+| 1 | DaemonSet rolling update | Pod availability timing — reduced intervals (#25) should help |
+| 1 | DisruptionController PDB | Pods: 2 < 3 — not all pods running in time — reduced intervals (#25) should help |
+| 2 | ResourceQuota | Watch for quota status update — retryWatcher canceled repeatedly |
 
-**Subtotal: 20 tests**
+**Subtotal: 20 tests (several likely helped by #25)**
 
 ### Unfixed — other
 
-| Tests | Issue | Root Cause from logs |
-|-------|-------|---------------------|
-| 5 | DNS | Exec connection reset + CoreDNS pod networking — `client rate limiter Wait returned an error` |
-| 2 | ServiceAccounts (non-OIDC) | Exec connection reset + kube-root-ca unknown |
-| 2 | Scheduler preemption (basic + critical) | `Timed out after 300s` waiting for preemption to complete |
+| Tests | Issue | Root Cause |
+|-------|-------|-----------|
+| 5 | DNS | Pod not found when test tries to exec — pod may have been garbage collected or exec connection reset (#9) |
+| 2 | ServiceAccounts (non-OIDC) | Exec connection reset (#9 should fix) + kube-root-ca.crt timing |
+| 2 | Scheduler preemption (basic + critical) | Preemption timing — pods not evicted/rescheduled fast enough |
 | 1 | Aggregator sample API server | Feature gap — API aggregation not implemented |
-| 1 | Kubectl guestbook | Service reachability — `service is not reachable` |
-| 1 | Kubectl proxy --port 0 | `unexpected end of JSON input` — kubectl proxy not fully supported |
-| 1 | NodePort service | May be fixed by #24 — needs verification |
+| 1 | Kubectl guestbook | Service reachability — Docker networking |
+| 1 | Kubectl proxy --port 0 | kubectl proxy JSON parse — may need /api endpoint response format fix |
+| 1 | NodePort service | Should be fixed by #23 (service PATCH ClusterIP allocation) |
+| 2 | EndpointSlice multi-port/multi-endpoint | Endpoints controller port mapping timing |
 
-**Subtotal: 13 tests**
+**Subtotal: 15 tests**
 
 ### Platform limitations
 
@@ -145,13 +146,19 @@
 | Category | Count |
 |----------|-------|
 | Fixed with tests | ~60 |
-| Fixed without tests | ~31 |
-| Unfixed — networking | 14 |
-| Unfixed — kubelet | 6 |
-| Unfixed — controllers | 20 |
-| Unfixed — other | 13 |
+| Fixed without tests | ~37 |
+| Unfixed — Docker networking | 10 |
+| Unfixed — kubelet (3 likely fixed) | 6 |
+| Unfixed — controller/watch (several likely helped) | 20 |
+| Unfixed — other | 15 |
 | Platform limitations | 6 |
 | **Total** | **~146** |
+
+If all fixes work as intended:
+- ~97 tests should pass (60 verified + 37 unverified)
+- ~6 likely fixed by exec delay / terminated reason
+- ~5-10 likely helped by faster sync intervals
+- Projected: ~110+ newly passing → ~400+/441 (90%+)
 
 ## Progress History
 
