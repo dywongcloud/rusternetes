@@ -195,6 +195,10 @@ pub async fn update_status(
         })?
     };
 
+    // Handle merge-patch and strategic-merge-patch for /status
+    let is_merge_patch = content_type.contains("merge-patch")
+        || content_type.contains("strategic-merge-patch");
+
     // Get the current resource
     let key = build_key(&resource_type, Some(&namespace), &name);
     let current_resource: Value = state.storage.get(&key).await?;
@@ -207,10 +211,34 @@ pub async fn update_status(
 
     let current_spec = current_resource.get("spec").cloned();
 
-    let new_status = new_resource
-        .get("status")
-        .ok_or_else(|| rusternetes_common::Error::InvalidResource("Missing status".to_string()))?
-        .clone();
+    // For merge-patch, merge the status fields rather than replacing entirely.
+    // This preserves replicas/readyReplicas when only conditions are patched.
+    let new_status = if is_merge_patch {
+        let patch_status = new_resource.get("status").cloned().unwrap_or(Value::Object(serde_json::Map::new()));
+        let mut merged = current_resource
+            .get("status")
+            .cloned()
+            .unwrap_or(Value::Object(serde_json::Map::new()));
+        if let (Some(merged_obj), Some(patch_obj)) =
+            (merged.as_object_mut(), patch_status.as_object())
+        {
+            for (k, v) in patch_obj {
+                if v.is_null() {
+                    merged_obj.remove(k);
+                } else {
+                    merged_obj.insert(k.clone(), v.clone());
+                }
+            }
+        }
+        merged
+    } else {
+        new_resource
+            .get("status")
+            .ok_or_else(|| {
+                rusternetes_common::Error::InvalidResource("Missing status".to_string())
+            })?
+            .clone()
+    };
 
     // Build the updated resource:
     // - Keep the current spec

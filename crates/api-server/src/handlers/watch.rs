@@ -322,6 +322,10 @@ where
             Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>,
         > = Box::pin(watch_stream);
 
+        // Track objects DELETED from watch due to label selector mismatch.
+        let mut deleted_from_watch: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
         // Watch loop with timeout support
         let watch_future = async {
             loop {
@@ -372,16 +376,17 @@ where
                                     // For label-filtered watches, MODIFIED events need special handling:
                                     // - If labels NOW match but didn't before → synthetic ADDED
                                     // - If labels DON'T match but did before → synthetic DELETED
+                                    // K8s watch semantics for label selectors:
+                                    // - If labels no longer match → DELETED
+                                    // - If labels now match but didn't before → ADDED
                                     // - If labels match and matched before → MODIFIED
-                                    // Since we don't track previous state, use a simpler heuristic:
-                                    // For watches with label selectors, non-matching = DELETED,
-                                    // matching = MODIFIED (the initial ADDED was already sent).
-                                    // For the "re-add" case (label changed back to match), we
-                                    // rely on the ADDED event from the initial list being sufficient.
                                     let matches_labels = matches_label_selector(object.metadata(), &label_selector);
+                                    let obj_key = object.metadata().name.clone();
                                     let event_type = if label_selector.is_some() && !matches_labels {
-                                        // Labels no longer match — send synthetic DELETED
+                                        deleted_from_watch.insert(obj_key);
                                         WatchEventType::Deleted
+                                    } else if label_selector.is_some() && deleted_from_watch.remove(&obj_key) {
+                                        WatchEventType::Added
                                     } else {
                                         WatchEventType::Modified
                                     };
@@ -720,6 +725,10 @@ where
             Box<dyn futures::Stream<Item = rusternetes_common::Result<WatchEvent>> + Send>,
         > = Box::pin(watch_stream);
 
+        // Track objects DELETED from watch due to label selector mismatch.
+        let mut deleted_from_watch: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
         // Watch loop with timeout support
         let watch_future = async {
             loop {
@@ -770,16 +779,17 @@ where
                                     // For label-filtered watches, MODIFIED events need special handling:
                                     // - If labels NOW match but didn't before → synthetic ADDED
                                     // - If labels DON'T match but did before → synthetic DELETED
+                                    // K8s watch semantics for label selectors:
+                                    // - If labels no longer match → DELETED
+                                    // - If labels now match but didn't before → ADDED
                                     // - If labels match and matched before → MODIFIED
-                                    // Since we don't track previous state, use a simpler heuristic:
-                                    // For watches with label selectors, non-matching = DELETED,
-                                    // matching = MODIFIED (the initial ADDED was already sent).
-                                    // For the "re-add" case (label changed back to match), we
-                                    // rely on the ADDED event from the initial list being sufficient.
                                     let matches_labels = matches_label_selector(object.metadata(), &label_selector);
+                                    let obj_key = object.metadata().name.clone();
                                     let event_type = if label_selector.is_some() && !matches_labels {
-                                        // Labels no longer match — send synthetic DELETED
+                                        deleted_from_watch.insert(obj_key);
                                         WatchEventType::Deleted
+                                    } else if label_selector.is_some() && deleted_from_watch.remove(&obj_key) {
+                                        WatchEventType::Added
                                     } else {
                                         WatchEventType::Modified
                                     };
