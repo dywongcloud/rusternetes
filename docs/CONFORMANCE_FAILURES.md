@@ -14,7 +14,7 @@
 | 6 | Webhook: AdmissionStatus accepts metadata field | ba0b26f + 7fb750c | test_parse_real_webhook_response, test_parse_webhook_allow_response, test_parse_webhook_mutating_response | Verified |
 | 7 | Scheduler: DisruptionTarget on preemption | d7ef779 | Code review only — scheduler uses EtcdStorage, can't unit test | Unverified |
 | 8 | Protobuf response: blanket wrapping removed | 8965fd5 | Verified: blanket wrapping caused wireType 6 crash | Verified |
-| 9 | Exec WebSocket: 500ms delay before close | 24ca36b | No unit test — needs integration test | Unverified |
+| 9 | Exec WebSocket: 500ms delay before close | 24ca36b + fca0cd0 | test_exec_websocket_client_receives_status_before_close, test_exec_websocket_nonzero_exit_status | Verified |
 | 10 | OpenAPI v3: schemas for 47 resource types | 79f4f4a | 4 openapi unit tests | Verified |
 | 11 | Targeted protobuf response for protobuf requests | c859496 | test_wrap_json_in_protobuf_roundtrip, test_wrap_json_in_protobuf_valid_wireformat, test_wrap_json_in_protobuf_large_payload | Verified |
 | 12 | Recreate deployment: wait for old pods to terminate | 140048a | test_recreate_deployment_waits_for_old_pods | Verified |
