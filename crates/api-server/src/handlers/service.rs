@@ -625,17 +625,54 @@ pub async fn patch(
     )
     .await?;
 
-    // Post-patch: clear ClusterIP if service type changed to ExternalName
-    let service = result.0;
+    // Post-patch: handle service type transitions
+    let mut service = result.0;
+    let key = rusternetes_storage::build_key("services", Some(&namespace), &name);
+    let mut needs_update = false;
+
     if matches!(service.spec.service_type, Some(ServiceType::ExternalName)) {
-        if service.spec.cluster_ip.as_deref() != Some("") && service.spec.cluster_ip.is_some() {
-            let key = rusternetes_storage::build_key("services", Some(&namespace), &name);
-            let mut updated_service = service;
-            updated_service.spec.cluster_ip = Some("".to_string());
-            updated_service.spec.cluster_ips = None;
-            let saved: Service = state.storage.update(&key, &updated_service).await?;
-            return Ok(Json(saved));
+        // Changing TO ExternalName — clear ClusterIP and NodePorts
+        if service.spec.cluster_ip.as_deref() != Some("")
+            && service.spec.cluster_ip.is_some()
+        {
+            service.spec.cluster_ip = Some("".to_string());
+            service.spec.cluster_ips = None;
+            for port in &mut service.spec.ports {
+                port.node_port = None;
+            }
+            needs_update = true;
         }
+    } else {
+        // Changing FROM ExternalName (or new service) — allocate ClusterIP if needed
+        let needs_ip = service
+            .spec
+            .cluster_ip
+            .as_ref()
+            .map_or(true, |ip| ip.is_empty());
+        if needs_ip {
+            if let Some(ip) = state.ip_allocator.allocate() {
+                service.spec.cluster_ip = Some(ip.clone());
+                service.spec.cluster_ips = Some(vec![ip]);
+                needs_update = true;
+            }
+        }
+        // Allocate NodePorts for NodePort/LoadBalancer services
+        if matches!(
+            service.spec.service_type,
+            Some(ServiceType::NodePort) | Some(ServiceType::LoadBalancer)
+        ) {
+            for port in &mut service.spec.ports {
+                if port.node_port.is_none() || port.node_port == Some(0) {
+                    port.node_port = Some(allocate_node_port());
+                    needs_update = true;
+                }
+            }
+        }
+    }
+
+    if needs_update {
+        let saved: Service = state.storage.update(&key, &service).await?;
+        return Ok(Json(saved));
     }
     Ok(Json(service))
 }

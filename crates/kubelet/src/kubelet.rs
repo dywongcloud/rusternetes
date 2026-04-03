@@ -1544,6 +1544,17 @@ impl Kubelet {
                                 .await
                             {
                                 warn!("Failed to start ephemeral container {}: {}", ec.name, e);
+                            } else {
+                                // Update ephemeral container status in pod so the test can observe it
+                                let key = build_key("pods", Some(namespace), pod_name);
+                                if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
+                                    let ec_statuses =
+                                        self.runtime.get_ephemeral_container_statuses(&p).await;
+                                    if let Some(ref mut status) = p.status {
+                                        status.ephemeral_container_statuses = ec_statuses;
+                                    }
+                                    let _ = self.storage.update(&key, &p).await;
+                                }
                             }
                         }
                     }
