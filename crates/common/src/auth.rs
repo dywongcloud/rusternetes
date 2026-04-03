@@ -111,7 +111,10 @@ impl TokenManager {
         // Retry without audience validation — tokens created via TokenRequest API
         // may have custom audiences (e.g. "https://kubernetes.default.svc", "api", etc.)
         let mut validation_relaxed = Validation::new(Algorithm::HS256);
-        validation_relaxed.set_issuer(&["rusternetes-api-server"]);
+        validation_relaxed.set_issuer(&[
+            "https://kubernetes.default.svc.cluster.local",
+            "rusternetes-api-server",
+        ]);
         validation_relaxed.validate_aud = false;
 
         decode::<ServiceAccountClaims>(token, &self.decoding_key, &validation_relaxed)

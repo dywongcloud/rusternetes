@@ -566,6 +566,39 @@ mod tests {
             .find(|c| c.condition_type == "NamespaceFinalizersRemaining")
             .unwrap();
         assert_eq!(finalizers.status, "True");
+
+        // When finalizers remain, NamespaceDeletionContentFailure should be True
+        let content_failure = conditions
+            .iter()
+            .find(|c| c.condition_type == "NamespaceDeletionContentFailure")
+            .unwrap();
+        assert_eq!(
+            content_failure.status, "True",
+            "ContentFailure should be True when finalizers prevent deletion"
+        );
+        assert_eq!(
+            content_failure.reason.as_deref(),
+            Some("ContentDeletionFailed")
+        );
+    }
+
+    #[test]
+    fn test_build_deletion_conditions_no_finalizers() {
+        let conditions =
+            NamespaceController::<MemoryStorage>::build_deletion_conditions(false, false);
+
+        let content_failure = conditions
+            .iter()
+            .find(|c| c.condition_type == "NamespaceDeletionContentFailure")
+            .unwrap();
+        assert_eq!(
+            content_failure.status, "False",
+            "ContentFailure should be False when no finalizers"
+        );
+        assert_eq!(
+            content_failure.reason.as_deref(),
+            Some("ContentDeleted")
+        );
     }
 
     #[tokio::test]

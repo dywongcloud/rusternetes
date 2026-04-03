@@ -1305,4 +1305,133 @@ mod tests {
         assert_eq!(status.ready_replicas, Some(2));
         assert_eq!(status.available_replicas, Some(2));
     }
+
+    #[tokio::test]
+    async fn test_recreate_deployment_waits_for_old_pods() {
+        use rusternetes_common::resources::PodTemplateSpec;
+        use rusternetes_common::types::LabelSelector;
+        use rusternetes_storage::memory::MemoryStorage;
+        use std::collections::HashMap;
+
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = DeploymentController::new(storage.clone(), 5);
+
+        let mut labels = HashMap::new();
+        labels.insert("app".to_string(), "recreate-test".to_string());
+
+        // Create a Recreate deployment with 1 replica
+        let deployment = Deployment {
+            type_meta: TypeMeta {
+                kind: "Deployment".to_string(),
+                api_version: "apps/v1".to_string(),
+            },
+            metadata: ObjectMeta::new("recreate-deploy").with_namespace("default"),
+            spec: rusternetes_common::resources::DeploymentSpec {
+                replicas: Some(1),
+                selector: LabelSelector {
+                    match_labels: Some(labels.clone()),
+                    match_expressions: None,
+                },
+                template: PodTemplateSpec {
+                    metadata: Some(ObjectMeta::new("").with_labels(labels.clone())),
+                    spec: rusternetes_common::resources::PodSpec {
+                        containers: vec![test_container("main", "nginx:1.0")],
+                        ..Default::default()
+                    },
+                },
+                strategy: Some(rusternetes_common::resources::deployment::DeploymentStrategy {
+                    strategy_type: "Recreate".to_string(),
+                    rolling_update: None,
+                }),
+                min_ready_seconds: None,
+                revision_history_limit: None,
+                paused: None,
+                progress_deadline_seconds: None,
+            },
+            status: None,
+        };
+
+        let dep_key = build_key("deployments", Some("default"), "recreate-deploy");
+        storage.create(&dep_key, &deployment).await.unwrap();
+
+        // First reconcile — creates initial RS and pods
+        controller.reconcile_all().await.unwrap();
+
+        // Should have created a ReplicaSet
+        let rs_prefix = build_prefix("replicasets", Some("default"));
+        let replicasets: Vec<ReplicaSet> = storage.list(&rs_prefix).await.unwrap();
+        assert!(
+            !replicasets.is_empty(),
+            "Should have created at least one ReplicaSet"
+        );
+
+        // Now simulate an image update (template change) by updating the deployment
+        let mut dep: Deployment = storage.get(&dep_key).await.unwrap();
+        dep.spec.template.spec.containers[0].image = "nginx:2.0".to_string();
+        dep.metadata.generation = Some(dep.metadata.generation.unwrap_or(1) + 1);
+        storage.update(&dep_key, &dep).await.unwrap();
+
+        // Create a pod owned by the old RS that is still "running" (not terminated)
+        let old_rs = &replicasets[0];
+        let old_pod = Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta {
+                name: "old-pod-0".to_string(),
+                namespace: Some("default".to_string()),
+                labels: Some(labels.clone()),
+                owner_references: Some(vec![rusternetes_common::types::OwnerReference {
+                    api_version: "apps/v1".to_string(),
+                    kind: "ReplicaSet".to_string(),
+                    name: old_rs.metadata.name.clone(),
+                    uid: old_rs.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                }]),
+                ..Default::default()
+            },
+            spec: Some(rusternetes_common::resources::PodSpec {
+                containers: vec![test_container("main", "nginx:1.0")],
+                ..Default::default()
+            }),
+            status: Some(rusternetes_common::resources::PodStatus {
+                phase: Some(rusternetes_common::types::Phase::Running),
+                ..Default::default()
+            }),
+        };
+        storage
+            .create(
+                &build_key("pods", Some("default"), "old-pod-0"),
+                &old_pod,
+            )
+            .await
+            .unwrap();
+
+        // Reconcile — should scale down old RS but NOT create new RS yet
+        // because old pod is still running
+        controller.reconcile_all().await.unwrap();
+
+        // Count ReplicaSets — should still be 1 (old one), no new RS created
+        let replicasets_after: Vec<ReplicaSet> = storage.list(&rs_prefix).await.unwrap();
+        let new_rs_count = replicasets_after
+            .iter()
+            .filter(|rs| {
+                rs.spec
+                    .template
+                    .spec
+                    .containers
+                    .first()
+                    .map(|c| c.image == "nginx:2.0")
+                    .unwrap_or(false)
+            })
+            .count();
+
+        // Old pod is still running, so new RS should NOT be created
+        assert_eq!(
+            new_rs_count, 0,
+            "Recreate should not create new RS while old pods are still running"
+        );
+    }
 }
