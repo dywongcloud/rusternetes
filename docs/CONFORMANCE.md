@@ -18,14 +18,15 @@ We run the official Kubernetes conformance test suite (441 tests) via Sonobuoy a
 | 116   | 2026-03-31 | 128  | 94   | 58%       | Pre-deploy, watch cancel loops |
 | 117   | 2026-03-31 | 89   | 44   | 67%       | Partial run, first deploy of session fixes |
 | 118   | 2026-04-01 | 299  | 142  | 68%       | Full run, all major fixes deployed |
-| 119   | 2026-04-01 | —    | —    | —         | In progress (pre-fix baseline), 16 fixes pending |
+| 119   | 2026-04-01 | —    | —    | —         | Pre-fix baseline, 16 fixes pending |
 | 120   | 2026-04-01 | —    | —    | —         | Round with 16 new fixes deployed |
+| 125   | 2026-04-04 | 329  | 112  | 74.6%     | New high score — 30 fixes deployed |
 
-**Current best deployed**: Round 107 at ~96% (~422/441).
+**Current best deployed**: Round 125 at 74.6% (329/441).
 
-**Latest status (Round 120)**: Deploying 16 root-cause fixes from round 119 analysis. Fixes target ~22 of the ~30 failures observed, addressing: job CAS conflicts, RC pod label matching, StatefulSet graceful termination, shell substitution preservation, ephemeral container status reporting, kube-proxy DNAT protocol flags, emptyDir permissions, webhook TLS, CRD watch events, and more.
+**Latest status (Round 125)**: 30+ root-cause fixes deployed across rounds 119–125, addressing: job CAS conflicts, RC pod label matching, StatefulSet graceful termination, shell substitution preservation, ephemeral container status reporting, kube-proxy DNAT protocol flags, emptyDir permissions, webhook TLS, CRD watch events, API aggregation proxy, pod Started events, watch bookmark intervals, and more.
 
-**Total commits**: 950+ across 20+ rounds of iterative testing and debugging.
+**Total commits**: 1,050+ across 25+ rounds of iterative testing and debugging.
 
 ## Failure Categories
 

@@ -1,6 +1,6 @@
 # Conformance Issue Tracker
 
-**Round 124** | 295/441 (66.9%) | 30 fixes pending redeploy | 646 unit tests pass
+**Round 125** | 329/441 (74.6%) | +34 from round 124 | 648 unit tests pass
 
 ## All Fixes
 
@@ -160,3 +160,4 @@ If all fixes and likely-fixes work: ~131 newly passing → projected ~426/441 (9
 | 120 | 308 | 133 | 441 | 69.8% |
 | 121 | 310 | 131 | 441 | 70.3% |
 | 124 | 295 | 146 | 441 | 66.9% |
+| 125 | 329 | 112 | 441 | 74.6% |
