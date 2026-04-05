@@ -3458,3 +3458,276 @@ pub async fn get_apiregistration_v1_resources() -> (StatusCode, Json<APIResource
 
     (StatusCode::OK, Json(resource_list))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    #[test]
+    fn test_wants_aggregated_discovery_with_explicit_accept() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "accept",
+            HeaderValue::from_static(
+                "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList",
+            ),
+        );
+        assert!(wants_aggregated_discovery(&headers));
+    }
+
+    #[test]
+    fn test_wants_aggregated_discovery_with_higher_q_value() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "accept",
+            HeaderValue::from_static(
+                "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList;q=0.9, application/json;q=0.7",
+            ),
+        );
+        assert!(wants_aggregated_discovery(&headers));
+    }
+
+    #[test]
+    fn test_wants_aggregated_discovery_plain_json_preferred() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "accept",
+            HeaderValue::from_static(
+                "application/json, application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList;q=0.5",
+            ),
+        );
+        assert!(!wants_aggregated_discovery(&headers));
+    }
+
+    #[test]
+    fn test_wants_aggregated_discovery_no_apidiscovery() {
+        let mut headers = HeaderMap::new();
+        headers.insert("accept", HeaderValue::from_static("application/json"));
+        assert!(!wants_aggregated_discovery(&headers));
+    }
+
+    #[test]
+    fn test_aggregated_core_api_response_format() {
+        let resources = get_aggregated_resources_for_group("", "v1");
+
+        // Verify pods resource exists and has nested subresources
+        let pods = resources
+            .iter()
+            .find(|r| r.get("resource").and_then(|v| v.as_str()) == Some("pods"))
+            .expect("pods resource should exist");
+
+        // pods should NOT have a slash in resource name
+        assert_eq!(pods["resource"], "pods");
+        assert_eq!(pods["scope"], "Namespaced");
+        assert_eq!(pods["singularResource"], "pod");
+        assert_eq!(pods["responseKind"]["kind"], "Pod");
+        assert_eq!(pods["responseKind"]["group"], "");
+        assert_eq!(pods["responseKind"]["version"], "v1");
+
+        // pods should have subresources array
+        let subresources = pods["subresources"]
+            .as_array()
+            .expect("pods should have subresources array");
+
+        // Verify status subresource
+        let status = subresources
+            .iter()
+            .find(|s| s.get("subresource").and_then(|v| v.as_str()) == Some("status"))
+            .expect("pods should have status subresource");
+        assert_eq!(status["responseKind"]["kind"], "Pod");
+        assert!(status["verbs"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("get")));
+
+        // Verify log subresource
+        let log = subresources
+            .iter()
+            .find(|s| s.get("subresource").and_then(|v| v.as_str()) == Some("log"))
+            .expect("pods should have log subresource");
+        assert_eq!(log["verbs"], serde_json::json!(["get"]));
+
+        // Verify exec subresource
+        let exec = subresources
+            .iter()
+            .find(|s| s.get("subresource").and_then(|v| v.as_str()) == Some("exec"))
+            .expect("pods should have exec subresource");
+        assert_eq!(exec["responseKind"]["kind"], "PodExecOptions");
+
+        // Verify eviction subresource
+        let eviction = subresources
+            .iter()
+            .find(|s| s.get("subresource").and_then(|v| v.as_str()) == Some("eviction"))
+            .expect("pods should have eviction subresource");
+        assert_eq!(eviction["responseKind"]["kind"], "Eviction");
+
+        // Verify NO flat entries with slashes exist
+        for resource in &resources {
+            let name = resource["resource"].as_str().unwrap_or("");
+            assert!(
+                !name.contains('/'),
+                "Resource name '{}' should not contain slash in v2 format - subresources must be nested",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn test_aggregated_apps_group_response_format() {
+        let resources = get_aggregated_resources_for_group("apps", "v1");
+
+        // Verify deployments resource has nested subresources
+        let deployments = resources
+            .iter()
+            .find(|r| r.get("resource").and_then(|v| v.as_str()) == Some("deployments"))
+            .expect("deployments resource should exist");
+
+        let subresources = deployments["subresources"]
+            .as_array()
+            .expect("deployments should have subresources");
+
+        // Should have status and scale
+        let status = subresources
+            .iter()
+            .find(|s| s.get("subresource").and_then(|v| v.as_str()) == Some("status"))
+            .expect("deployments should have status subresource");
+        assert_eq!(status["responseKind"]["kind"], "Deployment");
+
+        let scale = subresources
+            .iter()
+            .find(|s| s.get("subresource").and_then(|v| v.as_str()) == Some("scale"))
+            .expect("deployments should have scale subresource");
+        assert_eq!(scale["responseKind"]["kind"], "Scale");
+
+        // No flat entries with slashes
+        for resource in &resources {
+            let name = resource["resource"].as_str().unwrap_or("");
+            assert!(
+                !name.contains('/'),
+                "Resource name '{}' should not contain slash in v2 format",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn test_aggregated_serviceaccounts_has_token_subresource() {
+        let resources = get_aggregated_resources_for_group("", "v1");
+        let sa = resources
+            .iter()
+            .find(|r| r.get("resource").and_then(|v| v.as_str()) == Some("serviceaccounts"))
+            .expect("serviceaccounts resource should exist");
+
+        let subresources = sa["subresources"]
+            .as_array()
+            .expect("serviceaccounts should have subresources");
+
+        let token = subresources
+            .iter()
+            .find(|s| s.get("subresource").and_then(|v| v.as_str()) == Some("token"))
+            .expect("serviceaccounts should have token subresource");
+        assert_eq!(token["responseKind"]["kind"], "TokenRequest");
+        assert_eq!(token["verbs"], serde_json::json!(["create"]));
+    }
+
+    #[test]
+    fn test_aggregated_namespaces_has_finalize_subresource() {
+        let resources = get_aggregated_resources_for_group("", "v1");
+        let ns = resources
+            .iter()
+            .find(|r| r.get("resource").and_then(|v| v.as_str()) == Some("namespaces"))
+            .expect("namespaces resource should exist");
+
+        let subresources = ns["subresources"]
+            .as_array()
+            .expect("namespaces should have subresources");
+
+        subresources
+            .iter()
+            .find(|s| s.get("subresource").and_then(|v| v.as_str()) == Some("finalize"))
+            .expect("namespaces should have finalize subresource");
+    }
+
+    #[test]
+    fn test_all_api_groups_have_entries() {
+        // Verify every group in get_api_group_names returns non-empty (or at least valid) resources
+        for (group, version) in get_api_group_names() {
+            let resources = get_aggregated_resources_for_group(group, version);
+            if group != "custom.metrics.k8s.io" {
+                assert!(
+                    !resources.is_empty(),
+                    "Group '{}' version '{}' should have resources",
+                    group,
+                    version
+                );
+            }
+            // Verify no flat subresources (no slashes in resource names)
+            for resource in &resources {
+                let name = resource["resource"].as_str().unwrap_or("");
+                assert!(
+                    !name.contains('/'),
+                    "Group '{}' resource '{}' should not contain slash in v2 format",
+                    group,
+                    name
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_core_api_aggregated_response() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "accept",
+            HeaderValue::from_static(
+                "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList",
+            ),
+        );
+
+        let response = get_core_api(headers).await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Verify Content-Type header
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .expect("should have content-type header")
+            .to_str()
+            .unwrap();
+        assert_eq!(
+            content_type,
+            "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList"
+        );
+
+        // Parse body
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let discovery: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(discovery["kind"], "APIGroupDiscoveryList");
+        assert_eq!(discovery["apiVersion"], "apidiscovery.k8s.io/v2");
+        assert!(discovery["items"].is_array());
+
+        let items = discovery["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1, "core API should have exactly 1 group item");
+
+        // Core group has empty name
+        assert_eq!(items[0]["metadata"]["name"], "");
+        let versions = items[0]["versions"].as_array().unwrap();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0]["version"], "v1");
+
+        // Verify resources have proper v2 structure (no slashes)
+        let resources = versions[0]["resources"].as_array().unwrap();
+        for resource in resources {
+            let name = resource["resource"].as_str().unwrap_or("");
+            assert!(
+                !name.contains('/'),
+                "Core API resource '{}' should not have slash (v2 nests subresources)",
+                name
+            );
+        }
+    }
+}

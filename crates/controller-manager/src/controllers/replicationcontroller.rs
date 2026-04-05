@@ -121,9 +121,8 @@ impl<S: Storage> ReplicationControllerController<S> {
             namespace, rc.metadata.name
         );
 
-        // Get all pods for this replicationcontroller
+        // Get all pods in namespace
         let pods_prefix = build_prefix("pods", Some(namespace));
-        info!("Querying pods with prefix: {}", pods_prefix);
         let all_pods: Vec<Pod> = self.storage.list(&pods_prefix).await?;
         info!(
             "Found {} total pods in namespace {}",
@@ -131,82 +130,14 @@ impl<S: Storage> ReplicationControllerController<S> {
             namespace
         );
 
-        // Filter pods that match this replicationcontroller's selector
-        // Log pod/selector matching for debugging
-        if all_pods.len() > 0 {
-            info!(
-                "RC {}/{} selector={:?}, checking {} pods",
-                namespace,
-                rc.metadata.name,
-                rc.spec.selector,
-                all_pods.len()
-            );
-            for p in &all_pods {
-                let pod_labels = p.metadata.labels.as_ref();
-                let matches = self.matches_selector(p, rc);
-                if !matches {
-                    debug!(
-                        "Pod {} labels={:?} does NOT match selector",
-                        p.metadata.name, pod_labels
-                    );
-                }
-            }
-        }
+        // Adopt orphan pods and release non-matching owned pods
+        let all_pods = self.adopt_and_release(rc, all_pods, namespace).await?;
 
+        // Filter to only pods owned by this RC (after adopt/release)
         let rc_pods: Vec<Pod> = all_pods
             .into_iter()
-            .filter(|p| {
-                if !self.matches_selector(p, rc) {
-                    return false;
-                }
-                // Only count pods owned by this RC, or orphans (no controller owner)
-                let owned_by_this_rc = p
-                    .metadata
-                    .owner_references
-                    .as_ref()
-                    .map(|refs| refs.iter().any(|r| r.uid == rc.metadata.uid))
-                    .unwrap_or(false);
-                let is_orphan = p
-                    .metadata
-                    .owner_references
-                    .as_ref()
-                    .map(|refs| refs.is_empty() || !refs.iter().any(|r| r.controller == Some(true)))
-                    .unwrap_or(true);
-                // Skip pods owned by a different controller
-                owned_by_this_rc || is_orphan
-            })
+            .filter(|p| self.is_owned_by(p, rc))
             .collect();
-
-        // Adopt orphan pods — set ownerReference on matching pods that don't have one
-        for pod in &rc_pods {
-            let has_owner = pod
-                .metadata
-                .owner_references
-                .as_ref()
-                .map(|refs| refs.iter().any(|r| r.uid == rc.metadata.uid))
-                .unwrap_or(false);
-            if !has_owner {
-                let mut adopted_pod = pod.clone();
-                let refs = adopted_pod
-                    .metadata
-                    .owner_references
-                    .get_or_insert_with(Vec::new);
-                refs.push(rusternetes_common::types::OwnerReference {
-                    api_version: "v1".to_string(),
-                    kind: "ReplicationController".to_string(),
-                    name: rc.metadata.name.clone(),
-                    uid: rc.metadata.uid.clone(),
-                    controller: Some(true),
-                    block_owner_deletion: Some(true),
-                });
-                let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
-                let _ = self.storage.update(&pod_key, &adopted_pod).await;
-                info!(
-                    "Adopted orphan pod {} into RC {}",
-                    pod.metadata.name, rc.metadata.name
-                );
-            }
-        }
 
         let current_replicas = rc_pods.len() as i32;
         let desired_replicas = rc.spec.replicas.unwrap_or(1);
@@ -244,25 +175,7 @@ impl<S: Storage> ReplicationControllerController<S> {
 
         let rc_pods_after: Vec<Pod> = all_pods_after
             .into_iter()
-            .filter(|p| {
-                if !self.matches_selector(p, rc) {
-                    return false;
-                }
-                // Only count pods owned by this RC or orphans
-                let owned_by_this_rc = p
-                    .metadata
-                    .owner_references
-                    .as_ref()
-                    .map(|refs| refs.iter().any(|r| r.uid == rc.metadata.uid))
-                    .unwrap_or(false);
-                let is_orphan = p
-                    .metadata
-                    .owner_references
-                    .as_ref()
-                    .map(|refs| refs.is_empty() || !refs.iter().any(|r| r.controller == Some(true)))
-                    .unwrap_or(true);
-                owned_by_this_rc || is_orphan
-            })
+            .filter(|p| self.is_owned_by(p, rc))
             .collect();
 
         // Count only active (non-Failed, non-Succeeded) pods as replicas
@@ -326,8 +239,8 @@ impl<S: Storage> ReplicationControllerController<S> {
         Ok(())
     }
 
-    fn matches_selector(&self, pod: &Pod, rc: &ReplicationController) -> bool {
-        // ReplicationController uses simple label matching (not label selectors like Deployment)
+    /// Check if a pod's labels match the RC's selector (pure label check, ignores ownerReference)
+    fn labels_match_selector(&self, pod: &Pod, rc: &ReplicationController) -> bool {
         if let Some(selector) = &rc.spec.selector {
             if let Some(pod_labels) = &pod.metadata.labels {
                 for (key, value) in selector {
@@ -339,6 +252,119 @@ impl<S: Storage> ReplicationControllerController<S> {
             }
         }
         false
+    }
+
+    /// Check if a pod is owned by this RC (has a controller ownerReference pointing to it)
+    fn is_owned_by(&self, pod: &Pod, rc: &ReplicationController) -> bool {
+        pod.metadata
+            .owner_references
+            .as_ref()
+            .map(|refs| {
+                refs.iter().any(|r| {
+                    r.kind == "ReplicationController"
+                        && r.name == rc.metadata.name
+                        && r.controller == Some(true)
+                })
+            })
+            .unwrap_or(false)
+    }
+
+    /// Check if a pod has any controller ownerReference at all
+    fn has_controller_owner(&self, pod: &Pod) -> bool {
+        pod.metadata
+            .owner_references
+            .as_ref()
+            .map(|refs| refs.iter().any(|r| r.controller == Some(true)))
+            .unwrap_or(false)
+    }
+
+    /// Adopt orphan pods that match the selector and release owned pods that no longer match.
+    /// Returns the updated list of all pods (with ownerReferences modified as needed).
+    async fn adopt_and_release(
+        &self,
+        rc: &ReplicationController,
+        mut all_pods: Vec<Pod>,
+        namespace: &str,
+    ) -> rusternetes_common::Result<Vec<Pod>> {
+        for i in 0..all_pods.len() {
+            let pod = &all_pods[i];
+
+            // Skip terminated or deleting pods
+            if let Some(ref status) = pod.status {
+                if let Some(ref phase) = status.phase {
+                    if matches!(phase, Phase::Failed | Phase::Succeeded) {
+                        continue;
+                    }
+                }
+            }
+            if pod.metadata.deletion_timestamp.is_some() {
+                continue;
+            }
+
+            let labels_match = self.labels_match_selector(pod, rc);
+            let owned = self.is_owned_by(pod, rc);
+
+            if labels_match && !owned && !self.has_controller_owner(pod) {
+                // Adopt orphan pod: labels match, no controller owner
+                let mut adopted_pod = pod.clone();
+                let owner_ref = OwnerReference {
+                    api_version: "v1".to_string(),
+                    kind: "ReplicationController".to_string(),
+                    name: rc.metadata.name.clone(),
+                    uid: rc.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                };
+                adopted_pod
+                    .metadata
+                    .owner_references
+                    .get_or_insert_with(Vec::new)
+                    .push(owner_ref);
+
+                let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                match self.storage.update(&pod_key, &adopted_pod).await {
+                    Ok(_) => {
+                        info!(
+                            "Adopted orphan pod {} into RC {}/{}",
+                            pod.metadata.name, namespace, rc.metadata.name
+                        );
+                        all_pods[i] = adopted_pod;
+                    }
+                    Err(e) => {
+                        debug!("Failed to adopt pod {}: {}", pod.metadata.name, e);
+                    }
+                }
+            } else if !labels_match && owned {
+                // Release owned pod: labels no longer match
+                let mut released_pod = pod.clone();
+                if let Some(refs) = &mut released_pod.metadata.owner_references {
+                    refs.retain(|r| {
+                        !(r.kind == "ReplicationController"
+                            && r.name == rc.metadata.name
+                            && r.controller == Some(true))
+                    });
+                    if refs.is_empty() {
+                        released_pod.metadata.owner_references = None;
+                    }
+                }
+
+                let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                match self.storage.update(&pod_key, &released_pod).await {
+                    Ok(_) => {
+                        info!(
+                            "Released pod {} from RC {}/{}",
+                            pod.metadata.name, namespace, rc.metadata.name
+                        );
+                        all_pods[i] = released_pod;
+                    }
+                    Err(e) => {
+                        debug!("Failed to release pod {}: {}", pod.metadata.name, e);
+                    }
+                }
+            }
+        }
+
+        Ok(all_pods)
     }
 
     async fn create_pod(
@@ -435,7 +461,6 @@ impl<S: Storage> ReplicationControllerController<S> {
         let namespace = rc.metadata.namespace.as_deref().unwrap_or("default");
         let key = build_key("replicationcontrollers", Some(namespace), &rc.metadata.name);
 
-        let desired_replicas = rc.spec.replicas.unwrap_or(1);
         let conditions = if let Some(msg) = failure_message {
             // Only set ReplicaFailure when there's an actual failure message
             // (quota exceeded, pod creation failed, etc.)
@@ -598,6 +623,107 @@ mod tests {
                 min_ready_seconds: None,
             },
             status: None,
+        }
+    }
+
+    fn make_orphan_pod(name: &str, labels: HashMap<String, String>) -> Pod {
+        Pod {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: {
+                let mut m = ObjectMeta::new(name);
+                m.namespace = Some("default".to_string());
+                m.labels = Some(labels);
+                m
+            },
+            spec: Some(rusternetes_common::resources::PodSpec {
+                containers: vec![rusternetes_common::resources::Container {
+                    name: "test".to_string(),
+                    image: "busybox".to_string(),
+                    command: None,
+                    args: None,
+                    working_dir: None,
+                    ports: None,
+                    env: None,
+                    env_from: None,
+                    resources: None,
+                    volume_mounts: None,
+                    volume_devices: None,
+                    liveness_probe: None,
+                    readiness_probe: None,
+                    startup_probe: None,
+                    lifecycle: None,
+                    termination_message_path: None,
+                    termination_message_policy: None,
+                    image_pull_policy: None,
+                    security_context: None,
+                    stdin: None,
+                    stdin_once: None,
+                    tty: None,
+                    resize_policy: None,
+                    restart_policy: None,
+                }],
+                init_containers: None,
+                ephemeral_containers: None,
+                restart_policy: Some("Always".to_string()),
+                termination_grace_period_seconds: None,
+                dns_policy: None,
+                node_selector: None,
+                service_account_name: None,
+                service_account: None,
+                automount_service_account_token: None,
+                node_name: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                security_context: None,
+                image_pull_secrets: None,
+                hostname: None,
+                subdomain: None,
+                affinity: None,
+                scheduler_name: None,
+                tolerations: None,
+                host_aliases: None,
+                priority_class_name: None,
+                priority: None,
+                preemption_policy: None,
+                overhead: None,
+                topology_spread_constraints: None,
+                volumes: None,
+                active_deadline_seconds: None,
+                dns_config: None,
+                enable_service_links: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                os: None,
+                set_hostname_as_fqdn: None,
+                share_process_namespace: None,
+                scheduling_gates: None,
+                resource_claims: None,
+                host_users: None,
+                resources: None,
+            }),
+            status: Some(PodStatus {
+                phase: Some(Phase::Running),
+                message: None,
+                reason: None,
+                host_ip: None,
+                pod_ip: None,
+                conditions: None,
+                container_statuses: None,
+                init_container_statuses: None,
+                ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
+                host_i_ps: None,
+                pod_i_ps: None,
+                nominated_node_name: None,
+                qos_class: None,
+                start_time: None,
+            }),
         }
     }
 
@@ -816,6 +942,87 @@ mod tests {
         // Verify pod was actually created
         let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
         assert!(!pods.is_empty(), "Pod should be created after quota removed");
+    }
+
+    #[tokio::test]
+    async fn test_rc_adopt_orphan_pods_and_release_non_matching() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = ReplicationControllerController::new(storage.clone(), 5);
+
+        let mut selector = HashMap::new();
+        selector.insert("app".to_string(), "web".to_string());
+
+        // Create RC with selector app=web, wanting 1 replica
+        let rc = make_rc("adopt-rc", "default", 1, selector.clone(), None);
+        storage
+            .create("/registry/replicationcontrollers/default/adopt-rc", &rc)
+            .await
+            .unwrap();
+
+        // Create an orphan pod with matching labels (no ownerReference)
+        let mut orphan_labels = HashMap::new();
+        orphan_labels.insert("app".to_string(), "web".to_string());
+        let orphan_pod = make_orphan_pod("orphan-pod", orphan_labels);
+        storage
+            .create("/registry/pods/default/orphan-pod", &orphan_pod)
+            .await
+            .unwrap();
+
+        // Reconcile — should adopt the orphan pod (1 desired, 1 orphan matches)
+        controller.reconcile_all().await.unwrap();
+
+        // Verify the orphan pod was adopted (now has ownerReference pointing to the RC)
+        let adopted_pod: Pod = storage
+            .get("/registry/pods/default/orphan-pod")
+            .await
+            .unwrap();
+        let owner_refs = adopted_pod.metadata.owner_references.as_ref().unwrap();
+        assert!(
+            owner_refs.iter().any(|r| r.kind == "ReplicationController"
+                && r.name == "adopt-rc"
+                && r.controller == Some(true)),
+            "Pod should have ownerReference to RC after adoption"
+        );
+
+        // Verify no extra pods were created (orphan counts toward desired replicas)
+        let all_pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        assert_eq!(
+            all_pods.len(),
+            1,
+            "Should still have only 1 pod — orphan was adopted, not a new pod created"
+        );
+
+        // Now change the pod's labels so it no longer matches the selector
+        let mut changed_pod = adopted_pod.clone();
+        let labels = changed_pod.metadata.labels.as_mut().unwrap();
+        labels.clear();
+        labels.insert("app".to_string(), "backend".to_string());
+        storage
+            .update("/registry/pods/default/orphan-pod", &changed_pod)
+            .await
+            .unwrap();
+
+        // Reconcile — should release the pod (labels no longer match)
+        controller.reconcile_all().await.unwrap();
+
+        // Verify the pod's ownerReference was removed (released)
+        let released_pod: Pod = storage
+            .get("/registry/pods/default/orphan-pod")
+            .await
+            .unwrap();
+        let has_rc_owner = released_pod
+            .metadata
+            .owner_references
+            .as_ref()
+            .map(|refs| {
+                refs.iter()
+                    .any(|r| r.kind == "ReplicationController" && r.name == "adopt-rc")
+            })
+            .unwrap_or(false);
+        assert!(
+            !has_rc_owner,
+            "Pod should no longer have ownerReference to RC after label change"
+        );
     }
 
     #[tokio::test]

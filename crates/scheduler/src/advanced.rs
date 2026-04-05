@@ -1114,7 +1114,7 @@ mod tests {
     }
 
     #[test]
-    fn test_system_critical_pod_not_preempted_by_lower_priority() {
+    fn test_preemption_blocked_for_system_critical_pod() {
         // Node with 2 CPUs
         let node = make_node("node-1", "2", "4Gi");
 

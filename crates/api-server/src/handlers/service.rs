@@ -7,7 +7,7 @@ use axum::{
 };
 use rusternetes_common::{
     authz::{Decision, RequestAttributes},
-    resources::{Service, ServiceType},
+    resources::{LoadBalancerStatus, Service, ServiceStatus, ServiceType},
     List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
@@ -187,6 +187,21 @@ pub async fn create(
                 port.node_port = Some(node_port);
             }
         }
+    }
+
+    // Populate clusterIPs from clusterIP for consistency (K8s always returns both)
+    if let Some(ref cip) = service.spec.cluster_ip {
+        if cip != "None" && !cip.is_empty() && service.spec.cluster_ips.is_none() {
+            service.spec.cluster_ips = Some(vec![cip.clone()]);
+        }
+    }
+
+    // Initialize status — K8s always returns status.loadBalancer on Service objects
+    if service.status.is_none() {
+        service.status = Some(ServiceStatus {
+            load_balancer: Some(LoadBalancerStatus { ingress: vec![] }),
+            conditions: None,
+        });
     }
 
     // Check ResourceQuota count limits for services

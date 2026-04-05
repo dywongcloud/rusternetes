@@ -237,10 +237,8 @@ pub async fn update_status(
     } else {
         new_resource
             .get("status")
-            .ok_or_else(|| {
-                rusternetes_common::Error::InvalidResource("Missing status".to_string())
-            })?
-            .clone()
+            .cloned()
+            .unwrap_or(Value::Object(serde_json::Map::new()))
     };
 
     // Build the updated resource:

@@ -38,8 +38,12 @@
 | 60 | Scheduler: check preemptionPolicy=Never before preempting | 4 (preemption tests) | DONE — 2 unit tests |
 | 61 | Scheduler: protect system-critical pods from preemption | (included in #60) | DONE — priority >= 2B protected |
 | 62 | Kubelet: start ephemeral containers added to running pods | 2 (ephemeral container tests) | DONE — sync loop detects new containers |
+| 63 | PDB eviction: check PDB before allowing pod eviction | 1 (PDB eviction test) | DONE — returns 429 when PDB violated |
+| 64 | Service handler: add selector filtering + table format | 3 (service tests) | DONE — matches deployment pattern |
+| 65 | Aggregated discovery: fix response format and CRD inclusion | 3 (discovery tests) | DONE — proper APIGroupDiscoveryList |
+| 66 | RC controller: pod adoption + release matching RS pattern | 3 (RC tests) | DONE — 2 unit tests |
 
-**Projected impact**: ~88 of 112 failures addressed
+**Projected impact**: ~98 of 112 failures addressed
 
 ## Failures by Category
 
@@ -67,9 +71,9 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 14 | should support aggregated discovery interface | | |
-| 15 | should support aggregated discovery interface for CRDs | | |
-| 16 | should support raw aggregated discovery request for CRDs | | |
+| 14 | should support aggregated discovery interface | Fix #65 | Aggregated discovery format fix |
+| 15 | should support aggregated discovery interface for CRDs | Fix #65 | CRD inclusion in discovery |
+| 16 | should support raw aggregated discovery request for CRDs | Fix #65 | Raw discovery response |
 
 #### Aggregator (1)
 
@@ -134,7 +138,7 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 44 | should block an eviction until the PDB is updated to allow it | | PDB eviction logic needed |
+| 44 | should block an eviction until the PDB is updated to allow it | Fix #63 | PDB check before eviction |
 
 #### Job (4)
 
@@ -158,9 +162,9 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 53 | should get and update a ReplicationController scale | | |
-| 54 | should release no longer matching pods | | |
-| 55 | should serve a basic image on each replica with a public image | | |
+| 53 | should get and update a ReplicationController scale | Fix #66 | Scale + adoption logic |
+| 54 | should release no longer matching pods | Fix #66 | Pod release removes ownerRef |
+| 55 | should serve a basic image on each replica with a public image | Fix #66 | Correct replica management |
 | 56 | should surface a failure condition on a common issue like exceeded quota | Fix #51 | ReplicaFailure condition on quota error |
 
 #### StatefulSet (5)
@@ -201,9 +205,9 @@
 | 71 | Proxy — A set of valid responses are returned for both pod and service Proxy | | |
 | 72 | Proxy — should proxy through a service and a pod | | |
 | 73 | Service endpoints latency — should not be very high | | |
-| 74 | Services — should complete a service status lifecycle | | |
-| 75 | Services — should serve a basic endpoint from pods | | |
-| 76 | Services — should serve multiport endpoints from pods | | |
+| 74 | Services — should complete a service status lifecycle | Fix #64 | Service status lifecycle + filtering |
+| 75 | Services — should serve a basic endpoint from pods | Fix #64 | Service endpoint serving |
+| 76 | Services — should serve multiport endpoints from pods | Fix #54,#64 | Multi-port EndpointSlice + service |
 
 ### sig-node (10 failures)
 
