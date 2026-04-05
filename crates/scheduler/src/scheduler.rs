@@ -558,11 +558,8 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
                         conditions.push(disruption_condition);
                     }
                     self.storage.update(&key, &pod).await?;
+                    info!("Evicted pod {} for preemption (set deletionTimestamp + DisruptionTarget condition)", pod_name);
                 }
-
-                // Also delete the pod since grace period is 0 (force eviction)
-                self.storage.delete(&key).await?;
-                info!("Evicted pod {} for preemption", pod_name);
                 return Ok(());
             }
         }
@@ -1245,5 +1242,83 @@ mod tests {
             Some("node-1"),
             "Already-scheduled pod should remain on its node"
         );
+    }
+
+    /// Preemption should set deletionTimestamp and DisruptionTarget condition
+    /// on evicted pods, but NOT delete them from storage. The kubelet handles
+    /// actual cleanup. The conformance test needs to observe the condition.
+    #[tokio::test]
+    async fn test_preemption_sets_disruption_target_condition() {
+        let storage = Arc::new(MemoryStorage::new());
+        let scheduler = Scheduler::new_with_name(
+            storage.clone(),
+            2,
+            "default-scheduler".to_string(),
+        );
+
+        // Create a node
+        let node = make_node("node-1");
+        storage
+            .create("/registry/nodes/node-1", &node)
+            .await
+            .unwrap();
+
+        // Create a low-priority pod already scheduled on node-1
+        let mut low_pod = make_pending_pod("low-pod", "default");
+        low_pod.spec.as_mut().unwrap().node_name = Some("node-1".to_string());
+        low_pod.spec.as_mut().unwrap().priority = Some(0);
+        low_pod.status = Some(PodStatus {
+            phase: Some(Phase::Running),
+            message: None, reason: None, host_ip: None, pod_ip: None,
+            conditions: None, container_statuses: None, init_container_statuses: None,
+            ephemeral_container_statuses: None, start_time: None, qos_class: None,
+            nominated_node_name: None, host_i_ps: None, pod_i_ps: None,
+            resize: None, resource_claim_statuses: None, observed_generation: None,
+        });
+        storage
+            .create("/registry/pods/default/low-pod", &low_pod)
+            .await
+            .unwrap();
+
+        // Evict the pod (private method, accessible from within the module)
+        scheduler.evict_pod("low-pod").await.unwrap();
+
+        // The pod should still exist in storage with:
+        // 1. deletionTimestamp set
+        // 2. DisruptionTarget condition
+        // 3. Phase = Failed
+        let evicted: Pod = storage
+            .get("/registry/pods/default/low-pod")
+            .await
+            .expect("Evicted pod should still exist in storage (not hard-deleted)");
+
+        assert!(
+            evicted.metadata.deletion_timestamp.is_some(),
+            "Evicted pod should have deletionTimestamp set"
+        );
+
+        let status = evicted.status.as_ref().expect("Should have status");
+        assert_eq!(
+            status.phase,
+            Some(Phase::Failed),
+            "Evicted pod phase should be Failed"
+        );
+        assert_eq!(
+            status.reason.as_deref(),
+            Some("Preempted"),
+            "Evicted pod reason should be Preempted"
+        );
+
+        let conditions = status.conditions.as_ref().expect("Should have conditions");
+        let disruption = conditions
+            .iter()
+            .find(|c| c.condition_type == "DisruptionTarget");
+        assert!(
+            disruption.is_some(),
+            "Evicted pod must have DisruptionTarget condition"
+        );
+        let dt = disruption.unwrap();
+        assert_eq!(dt.status, "True");
+        assert_eq!(dt.reason.as_deref(), Some("PreemptionByScheduler"));
     }
 }

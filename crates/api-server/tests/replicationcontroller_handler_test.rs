@@ -4,6 +4,7 @@
 //! ReplicationController is a legacy resource superseded by ReplicaSet and Deployment,
 //! but still supported for backwards compatibility.
 
+use rusternetes_api_server::handlers::filtering;
 use rusternetes_common::resources::{
     Container, PodSpec, PodTemplateSpec, ReplicationController, ReplicationControllerSpec,
     ReplicationControllerStatus,
@@ -581,4 +582,65 @@ async fn test_rc_multiple_containers() {
 
     // Clean up
     storage.delete(&key).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_rc_list_with_label_selector_filtering() {
+    let storage = Arc::new(MemoryStorage::new());
+
+    // Create two RCs with different labels
+    let mut rc1 = create_test_rc("rc-frontend", "default", 3);
+    let mut labels1 = HashMap::new();
+    labels1.insert("app".to_string(), "frontend".to_string());
+    labels1.insert("tier".to_string(), "web".to_string());
+    rc1.metadata.labels = Some(labels1);
+
+    let mut rc2 = create_test_rc("rc-backend", "default", 2);
+    let mut labels2 = HashMap::new();
+    labels2.insert("app".to_string(), "backend".to_string());
+    labels2.insert("tier".to_string(), "api".to_string());
+    rc2.metadata.labels = Some(labels2);
+
+    let key1 = build_key("replicationcontrollers", Some("default"), "rc-frontend");
+    let key2 = build_key("replicationcontrollers", Some("default"), "rc-backend");
+
+    storage.create(&key1, &rc1).await.unwrap();
+    storage.create(&key2, &rc2).await.unwrap();
+
+    // List all and filter by labelSelector=app=frontend
+    let prefix = build_prefix("replicationcontrollers", Some("default"));
+    let mut rcs: Vec<ReplicationController> = storage.list(&prefix).await.unwrap();
+
+    let mut params = HashMap::new();
+    params.insert("labelSelector".to_string(), "app=frontend".to_string());
+    filtering::apply_selectors(&mut rcs, &params).unwrap();
+
+    // Should only contain the frontend RC
+    assert_eq!(rcs.len(), 1, "Expected exactly 1 RC matching app=frontend");
+    assert_eq!(rcs[0].metadata.name, "rc-frontend");
+
+    // Now filter by app=backend
+    let mut rcs2: Vec<ReplicationController> = storage.list(&prefix).await.unwrap();
+    let mut params2 = HashMap::new();
+    params2.insert("labelSelector".to_string(), "app=backend".to_string());
+    filtering::apply_selectors(&mut rcs2, &params2).unwrap();
+
+    assert_eq!(rcs2.len(), 1, "Expected exactly 1 RC matching app=backend");
+    assert_eq!(rcs2[0].metadata.name, "rc-backend");
+
+    // Filter by non-existent label should return empty
+    let mut rcs3: Vec<ReplicationController> = storage.list(&prefix).await.unwrap();
+    let mut params3 = HashMap::new();
+    params3.insert("labelSelector".to_string(), "app=nonexistent".to_string());
+    filtering::apply_selectors(&mut rcs3, &params3).unwrap();
+
+    assert_eq!(
+        rcs3.len(),
+        0,
+        "Expected 0 RCs matching app=nonexistent"
+    );
+
+    // Clean up
+    storage.delete(&key1).await.unwrap();
+    storage.delete(&key2).await.unwrap();
 }

@@ -668,6 +668,157 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_rc_sets_replica_failure_on_quota_exceeded() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = ReplicationControllerController::new(storage.clone(), 5);
+
+        let mut selector = HashMap::new();
+        selector.insert("app".to_string(), "quota-test".to_string());
+
+        // Create RC wanting 2 replicas
+        let rc = make_rc("quota-rc", "default", 2, selector.clone(), None);
+        storage
+            .create("/registry/replicationcontrollers/default/quota-rc", &rc)
+            .await
+            .unwrap();
+
+        // Create a ResourceQuota that limits pods to 0
+        let quota: serde_json::Value = serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "ResourceQuota",
+            "metadata": {
+                "name": "test-quota",
+                "namespace": "default",
+                "uid": "quota-uid-1"
+            },
+            "spec": {
+                "hard": {
+                    "pods": "0"
+                }
+            }
+        });
+        storage
+            .create("/registry/resourcequotas/default/test-quota", &quota)
+            .await
+            .unwrap();
+
+        // Reconcile — pod creation should fail due to quota
+        controller.reconcile_all().await.unwrap();
+
+        // Verify no pods were created
+        let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        assert_eq!(pods.len(), 0, "No pods should be created when quota is exceeded");
+
+        // Verify the RC has a ReplicaFailure condition
+        let updated_rc: ReplicationController = storage
+            .get("/registry/replicationcontrollers/default/quota-rc")
+            .await
+            .unwrap();
+        let status = updated_rc.status.expect("RC should have status");
+        let conditions = status.conditions.expect("RC should have conditions");
+        let failure_condition = conditions
+            .iter()
+            .find(|c| c.condition_type == "ReplicaFailure")
+            .expect("RC should have a ReplicaFailure condition");
+        assert_eq!(failure_condition.status, "True");
+        assert_eq!(
+            failure_condition.reason.as_deref(),
+            Some("FailedCreate")
+        );
+        assert!(
+            failure_condition
+                .message
+                .as_ref()
+                .unwrap()
+                .contains("exceeded quota"),
+            "Message should mention exceeded quota, got: {}",
+            failure_condition.message.as_ref().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rc_clears_replica_failure_when_pods_created_successfully() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = ReplicationControllerController::new(storage.clone(), 5);
+
+        let mut selector = HashMap::new();
+        selector.insert("app".to_string(), "clear-test".to_string());
+
+        // Create RC wanting 1 replica
+        let rc = make_rc("clear-rc", "default", 1, selector.clone(), None);
+        storage
+            .create("/registry/replicationcontrollers/default/clear-rc", &rc)
+            .await
+            .unwrap();
+
+        // Create a ResourceQuota that limits pods to 0 — forces failure
+        let quota: serde_json::Value = serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "ResourceQuota",
+            "metadata": {
+                "name": "test-quota2",
+                "namespace": "default",
+                "uid": "quota-uid-2"
+            },
+            "spec": {
+                "hard": {
+                    "pods": "0"
+                }
+            }
+        });
+        storage
+            .create("/registry/resourcequotas/default/test-quota2", &quota)
+            .await
+            .unwrap();
+
+        // First reconcile — should fail and set ReplicaFailure
+        controller.reconcile_all().await.unwrap();
+
+        let rc_after_fail: ReplicationController = storage
+            .get("/registry/replicationcontrollers/default/clear-rc")
+            .await
+            .unwrap();
+        assert!(
+            rc_after_fail
+                .status
+                .as_ref()
+                .and_then(|s| s.conditions.as_ref())
+                .and_then(|c| c.iter().find(|c| c.condition_type == "ReplicaFailure"))
+                .map(|c| c.status == "True")
+                .unwrap_or(false),
+            "Should have ReplicaFailure=True after quota exceeded"
+        );
+
+        // Remove the quota so pods can be created
+        storage
+            .delete("/registry/resourcequotas/default/test-quota2")
+            .await
+            .unwrap();
+
+        // Second reconcile — should succeed and clear the condition
+        controller.reconcile_all().await.unwrap();
+
+        let rc_after_success: ReplicationController = storage
+            .get("/registry/replicationcontrollers/default/clear-rc")
+            .await
+            .unwrap();
+        let conditions = rc_after_success
+            .status
+            .as_ref()
+            .and_then(|s| s.conditions.as_ref());
+        // Conditions should be None (cleared) when no failure
+        assert!(
+            conditions.is_none(),
+            "ReplicaFailure condition should be cleared after successful pod creation, got: {:?}",
+            conditions
+        );
+
+        // Verify pod was actually created
+        let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
+        assert!(!pods.is_empty(), "Pod should be created after quota removed");
+    }
+
+    #[tokio::test]
     async fn test_rc_matches_created_pods_on_next_reconcile() {
         let storage = Arc::new(MemoryStorage::new());
         let controller = ReplicationControllerController::new(storage.clone(), 5);

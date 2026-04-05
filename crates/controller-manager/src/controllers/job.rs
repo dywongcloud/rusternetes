@@ -354,6 +354,7 @@ impl<S: Storage> JobController<S> {
         // Also check for FailIndex rules
         let mut pod_failure_policy_triggered = false;
         let mut pod_failure_message = String::new();
+        let mut ignored_pods: HashSet<String> = HashSet::new();
         if let Some(ref policy) = job.spec.pod_failure_policy {
             if let Some(rules) = policy.get("rules").and_then(|r| r.as_array()) {
                 for pod in job_pods.iter() {
@@ -455,7 +456,14 @@ impl<S: Storage> JobController<S> {
                                     }
                                     break;
                                 }
-                                _ => {} // Count, Ignore, etc.
+                                "Ignore" => {
+                                    ignored_pods.insert(pod.metadata.name.clone());
+                                    break;
+                                }
+                                _ => {
+                                    // "Count" and other actions: count normally against backoff
+                                    break;
+                                }
                             }
                         }
                     }
@@ -464,6 +472,14 @@ impl<S: Storage> JobController<S> {
                     }
                 }
             }
+        }
+
+        // Subtract ignored pods from the failed count — pods matching an "Ignore"
+        // pod failure policy rule should not count against the backoff limit.
+        let ignored_failed_count = ignored_pods.len() as i32;
+        failed -= ignored_failed_count;
+        if failed < 0 {
+            failed = 0;
         }
 
         // Track failed indexes for backoffLimitPerIndex
@@ -823,7 +839,11 @@ impl<S: Storage> JobController<S> {
                         match &status.phase {
                             Some(Phase::Running) | Some(Phase::Pending) => active += 1,
                             Some(Phase::Succeeded) => succeeded += 1,
-                            Some(Phase::Failed) => failed += 1,
+                            Some(Phase::Failed) => {
+                                if !ignored_pods.contains(&pod.metadata.name) {
+                                    failed += 1;
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -1128,7 +1148,7 @@ mod tests {
     use super::*;
     use rusternetes_common::resources::workloads::{Job, JobSpec, PodTemplateSpec};
     use rusternetes_common::resources::{
-        Container, ContainerState, ContainerStatus, Pod, PodSpec, PodStatus,
+        Container, ContainerState, ContainerStatus, Pod, PodCondition, PodSpec, PodStatus,
     };
     use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
     use rusternetes_storage::MemoryStorage;
@@ -2030,6 +2050,100 @@ mod tests {
         assert!(
             !is_complete,
             "Job should NOT be complete when not all required indexes succeeded"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pod_failure_policy_ignore_action() {
+        let storage = Arc::new(MemoryStorage::new());
+
+        // Create an indexed job with backoffLimit=0 and a pod failure policy
+        // that ignores pods with DisruptionTarget condition
+        let mut job = make_job("ignore-job", "default", 3, 3);
+        job.spec.completion_mode = Some("Indexed".to_string());
+        job.spec.backoff_limit = Some(0); // Would fail immediately if the pod is counted
+        job.spec.pod_failure_policy = Some(serde_json::json!({
+            "rules": [
+                {
+                    "action": "Ignore",
+                    "onPodConditions": [
+                        {
+                            "type": "DisruptionTarget",
+                            "status": "True"
+                        }
+                    ]
+                }
+            ]
+        }));
+
+        let job_key = "/registry/jobs/default/ignore-job";
+        storage.create(job_key, &job).await.unwrap();
+
+        // Create a failed pod with a DisruptionTarget condition — should be ignored
+        let mut pod0 = make_indexed_pod(
+            "pod-0-fail",
+            "default",
+            Phase::Failed,
+            "ignore-job",
+            "job-uid-1",
+            0,
+        );
+        if let Some(ref mut status) = pod0.status {
+            status.conditions = Some(vec![PodCondition {
+                condition_type: "DisruptionTarget".to_string(),
+                status: "True".to_string(),
+                reason: Some("EvictionByEvictionAPI".to_string()),
+                message: None,
+                last_transition_time: None,
+                observed_generation: None,
+            }]);
+        }
+        storage
+            .create("/registry/pods/default/pod-0-fail", &pod0)
+            .await
+            .unwrap();
+
+        // Index 1 running
+        let pod1 = make_indexed_pod(
+            "pod-1",
+            "default",
+            Phase::Running,
+            "ignore-job",
+            "job-uid-1",
+            1,
+        );
+        storage
+            .create("/registry/pods/default/pod-1", &pod1)
+            .await
+            .unwrap();
+
+        let controller = JobController::new(storage.clone());
+        let mut job: Job = storage.get(job_key).await.unwrap();
+        controller.reconcile(&mut job).await.unwrap();
+
+        let updated_job: Job = storage.get(job_key).await.unwrap();
+        let status = updated_job.status.unwrap();
+
+        // The job should NOT have a Failed condition — the ignored pod shouldn't
+        // trigger backoff limit exceeded
+        let has_failed = status
+            .conditions
+            .as_ref()
+            .map(|c| {
+                c.iter()
+                    .any(|cond| cond.condition_type == "Failed" && cond.status == "True")
+            })
+            .unwrap_or(false);
+        assert!(
+            !has_failed,
+            "Job should NOT be Failed — the pod with DisruptionTarget should be ignored"
+        );
+
+        // status.failed should not count the ignored pod
+        assert_eq!(
+            status.failed,
+            Some(0),
+            "Ignored pod should not be counted in status.failed"
         );
     }
 }

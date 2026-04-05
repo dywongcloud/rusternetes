@@ -213,7 +213,14 @@ impl<S: Storage> EndpointsController<S> {
 
             let address = EndpointAddress {
                 ip: pod_ip,
-                hostname: None,
+                hostname: pod.spec.as_ref().and_then(|s| {
+                    // Only set hostname when subdomain is also set (K8s behavior)
+                    if s.subdomain.is_some() {
+                        s.hostname.clone().or(Some(pod.metadata.name.clone()))
+                    } else {
+                        None
+                    }
+                }),
                 node_name: pod.spec.as_ref().and_then(|s| s.node_name.clone()),
                 target_ref: Some(EndpointReference {
                     kind: Some("Pod".to_string()),
@@ -275,7 +282,14 @@ impl<S: Storage> EndpointsController<S> {
 
                 let address = EndpointAddress {
                     ip: pod_ip,
-                    hostname: None,
+                    hostname: pod.spec.as_ref().and_then(|s| {
+                        // Only set hostname when subdomain is also set (K8s behavior)
+                        if s.subdomain.is_some() {
+                            s.hostname.clone().or(Some(pod.metadata.name.clone()))
+                        } else {
+                            None
+                        }
+                    }),
                     node_name: pod.spec.as_ref().and_then(|s| s.node_name.clone()),
                     target_ref: Some(EndpointReference {
                         kind: Some("Pod".to_string()),
@@ -886,5 +900,181 @@ mod tests {
         );
         let addresses = ep2.subsets[0].addresses.as_ref().unwrap();
         assert_eq!(addresses[0].ip, "10.244.0.5");
+    }
+
+    /// Test that EndpointAddress.hostname is populated from pod spec when subdomain is set.
+    #[tokio::test]
+    async fn test_endpoint_address_hostname_from_pod_spec() {
+        use rusternetes_common::resources::{PodStatus, Service, ServicePort, ServiceSpec};
+        use rusternetes_common::types::Phase;
+
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = EndpointsController::new(storage.clone());
+
+        // Create a headless service (clusterIP: None) with selector
+        let service = Service {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Service".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: rusternetes_common::types::ObjectMeta::new("my-svc")
+                .with_namespace("default"),
+            spec: ServiceSpec {
+                selector: Some({
+                    let mut m = HashMap::new();
+                    m.insert("app".to_string(), "web".to_string());
+                    m
+                }),
+                ports: vec![ServicePort {
+                    name: Some("http".to_string()),
+                    port: 80,
+                    target_port: Some(rusternetes_common::resources::IntOrString::Int(8080)),
+                    protocol: Some("TCP".to_string()),
+                    node_port: None,
+                    app_protocol: None,
+                }],
+                cluster_ip: Some("None".to_string()),
+                cluster_ips: None,
+                service_type: Some(rusternetes_common::resources::ServiceType::ClusterIP),
+                external_ips: None,
+                session_affinity: None,
+                load_balancer_ip: None,
+                external_name: None,
+                external_traffic_policy: None,
+                internal_traffic_policy: None,
+                ip_families: None,
+                ip_family_policy: None,
+                publish_not_ready_addresses: None,
+                session_affinity_config: None,
+                allocate_load_balancer_node_ports: None,
+                load_balancer_class: None,
+                load_balancer_source_ranges: None,
+                health_check_node_port: None,
+                traffic_distribution: None,
+            },
+            status: None,
+        };
+        storage
+            .create("/registry/services/default/my-svc", &service)
+            .await
+            .unwrap();
+
+        // Create a pod with hostname and subdomain set
+        let pod_with_hostname = Pod {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: rusternetes_common::types::ObjectMeta {
+                name: "web-0".to_string(),
+                namespace: Some("default".to_string()),
+                uid: "pod-uid-hostname".to_string(),
+                labels: Some({
+                    let mut m = HashMap::new();
+                    m.insert("app".to_string(), "web".to_string());
+                    m
+                }),
+                ..Default::default()
+            },
+            spec: Some(rusternetes_common::resources::PodSpec {
+                containers: vec![],
+                hostname: Some("my-host".to_string()),
+                subdomain: Some("my-svc".to_string()),
+                ..Default::default()
+            }),
+            status: Some(PodStatus {
+                phase: Some(Phase::Running),
+                pod_ip: Some("10.244.0.10".to_string()),
+                conditions: Some(vec![rusternetes_common::resources::PodCondition {
+                    condition_type: "Ready".to_string(),
+                    status: "True".to_string(),
+                    last_transition_time: None,
+                    reason: None,
+                    message: None,
+                    observed_generation: None,
+                }]),
+                ..Default::default()
+            }),
+        };
+        storage
+            .create("/registry/pods/default/web-0", &pod_with_hostname)
+            .await
+            .unwrap();
+
+        // Create a pod WITHOUT subdomain — hostname should NOT be set in endpoint
+        let pod_no_subdomain = Pod {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: rusternetes_common::types::ObjectMeta {
+                name: "web-1".to_string(),
+                namespace: Some("default".to_string()),
+                uid: "pod-uid-no-subdomain".to_string(),
+                labels: Some({
+                    let mut m = HashMap::new();
+                    m.insert("app".to_string(), "web".to_string());
+                    m
+                }),
+                ..Default::default()
+            },
+            spec: Some(rusternetes_common::resources::PodSpec {
+                containers: vec![],
+                hostname: Some("my-other-host".to_string()),
+                subdomain: None,
+                ..Default::default()
+            }),
+            status: Some(PodStatus {
+                phase: Some(Phase::Running),
+                pod_ip: Some("10.244.0.11".to_string()),
+                conditions: Some(vec![rusternetes_common::resources::PodCondition {
+                    condition_type: "Ready".to_string(),
+                    status: "True".to_string(),
+                    last_transition_time: None,
+                    reason: None,
+                    message: None,
+                    observed_generation: None,
+                }]),
+                ..Default::default()
+            }),
+        };
+        storage
+            .create("/registry/pods/default/web-1", &pod_no_subdomain)
+            .await
+            .unwrap();
+
+        // Reconcile
+        controller.reconcile_all().await.unwrap();
+
+        // Get the endpoints
+        let ep: Endpoints = storage
+            .get("/registry/endpoints/default/my-svc")
+            .await
+            .unwrap();
+
+        assert!(!ep.subsets.is_empty(), "Endpoints should have subsets");
+        let addresses = ep.subsets[0].addresses.as_ref().unwrap();
+        assert_eq!(addresses.len(), 2, "Should have 2 ready addresses");
+
+        // Find the address for the pod with hostname+subdomain
+        let addr_with_hostname = addresses
+            .iter()
+            .find(|a| a.ip == "10.244.0.10")
+            .expect("Should find address for pod with hostname");
+        assert_eq!(
+            addr_with_hostname.hostname,
+            Some("my-host".to_string()),
+            "EndpointAddress should have hostname set when pod has hostname+subdomain"
+        );
+
+        // Find the address for the pod WITHOUT subdomain
+        let addr_no_subdomain = addresses
+            .iter()
+            .find(|a| a.ip == "10.244.0.11")
+            .expect("Should find address for pod without subdomain");
+        assert_eq!(
+            addr_no_subdomain.hostname, None,
+            "EndpointAddress should NOT have hostname when pod has no subdomain"
+        );
     }
 }

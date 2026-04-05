@@ -1,7 +1,7 @@
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Extension, Json,
 };
@@ -202,6 +202,7 @@ pub async fn list_replicationcontrollers(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
+    headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     if crate::handlers::watch::is_watch_request(&params) {
@@ -232,7 +233,24 @@ pub async fn list_replicationcontrollers(
     }
 
     let prefix = build_prefix("replicationcontrollers", Some(&namespace));
-    let rcs = state.storage.list::<ReplicationController>(&prefix).await?;
+    let mut rcs = state.storage.list::<ReplicationController>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut rcs, &params)?;
+
+    // Get a resource version for consistency
+    let resource_version = chrono::Utc::now().timestamp().to_string();
+
+    // Check if table format is requested
+    let accept = headers.get("accept").and_then(|v| v.to_str().ok());
+    if crate::handlers::table::wants_table(accept) {
+        let table = crate::handlers::table::generic_table(
+            rcs,
+            Some(resource_version),
+            "ReplicationController",
+        );
+        return Ok(axum::Json(table).into_response());
+    }
 
     let list = List::new("ReplicationControllerList", "v1", rcs);
     Ok(Json(list).into_response())
@@ -242,6 +260,7 @@ pub async fn list_replicationcontrollers(
 pub async fn list_all_replicationcontrollers(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
+    headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     if crate::handlers::watch::is_watch_request(&params) {
@@ -270,7 +289,24 @@ pub async fn list_all_replicationcontrollers(
     }
 
     let prefix = build_prefix("replicationcontrollers", None);
-    let rcs = state.storage.list::<ReplicationController>(&prefix).await?;
+    let mut rcs = state.storage.list::<ReplicationController>(&prefix).await?;
+
+    // Apply field and label selector filtering
+    crate::handlers::filtering::apply_selectors(&mut rcs, &params)?;
+
+    // Get a resource version for consistency
+    let resource_version = chrono::Utc::now().timestamp().to_string();
+
+    // Check if table format is requested
+    let accept = headers.get("accept").and_then(|v| v.to_str().ok());
+    if crate::handlers::table::wants_table(accept) {
+        let table = crate::handlers::table::generic_table(
+            rcs,
+            Some(resource_version),
+            "ReplicationController",
+        );
+        return Ok(axum::Json(table).into_response());
+    }
 
     let list = List::new("ReplicationControllerList", "v1", rcs);
     Ok(Json(list).into_response())

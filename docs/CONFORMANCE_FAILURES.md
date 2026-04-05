@@ -23,8 +23,13 @@
 | 45 | Namespace: count_remaining_resources checks all resource types (not just 4) | 0 (correctness) | DONE — matches deletion resource_types list |
 | 46 | Kubelet: skip umask wrapper when image has no entrypoint/cmd | 0 (correctness) | DONE — prevents empty `exec` crash |
 | 47 | ResourceQuota: insert `count/pods` alongside `pods` in usage map | 1 (ResourceQuota life of pod) | DONE — matches pattern used by all other resource types |
+| 48 | Scheduler: don't hard-delete evicted pods — set deletionTimestamp + DisruptionTarget only | 4 (preemption tests) | DONE — 1 unit test |
+| 49 | Endpoints: set hostname from pod spec when subdomain is set | 6 (DNS tests) | DONE — 1 unit test |
+| 50 | RC list handler: add selector filtering + table format support | 4 (sig-cli RC tests) | DONE — 1 unit test |
+| 51 | RC controller: set ReplicaFailure condition when pod creation fails | 1 (exceeded quota) | DONE — 1 unit test |
+| 52 | Job controller: Ignore action in pod failure policy should not count toward failed | 1 (DisruptionTarget ignore) | DONE — 1 unit test |
 
-**Projected impact**: ~41 of 112 failures addressed
+**Projected impact**: ~57 of 112 failures addressed
 
 ## Failures by Category
 
@@ -119,14 +124,14 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 44 | should block an eviction until the PDB is updated to allow it | | |
+| 44 | should block an eviction until the PDB is updated to allow it | | PDB eviction logic needed |
 
 #### Job (4)
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
 | 45 | should adopt matching orphans and release non-matching pods | | |
-| 46 | should allow to use a pod failure policy to ignore failure matching on DisruptionTarget condition | | |
+| 46 | should allow to use a pod failure policy to ignore failure matching on DisruptionTarget condition | Fix #52 | Ignore action excludes from failed count |
 | 47 | with successPolicy should succeeded when all indexes succeeded | | |
 | 48 | with successPolicy succeededCount rule should succeeded even when some indexes remain pending | | |
 | 49 | with successPolicy succeededIndexes rule should succeeded even when some indexes remain pending | | |
@@ -146,7 +151,7 @@
 | 53 | should get and update a ReplicationController scale | | |
 | 54 | should release no longer matching pods | | |
 | 55 | should serve a basic image on each replica with a public image | | |
-| 56 | should surface a failure condition on a common issue like exceeded quota | | |
+| 56 | should surface a failure condition on a common issue like exceeded quota | Fix #51 | ReplicaFailure condition on quota error |
 
 #### StatefulSet (5)
 
@@ -164,12 +169,12 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 62 | should provide /etc/hosts entries for the cluster | | |
-| 63 | should provide DNS for pods for Hostname | | |
-| 64 | should provide DNS for pods for Subdomain | | |
-| 65 | should provide DNS for services | | |
-| 66 | should provide DNS for the cluster | | |
-| 67 | should resolve DNS of partial qualified names for services | | |
+| 62 | should provide /etc/hosts entries for the cluster | Fix #49 | Endpoints hostname from pod spec |
+| 63 | should provide DNS for pods for Hostname | Fix #49 | Endpoints hostname from pod spec |
+| 64 | should provide DNS for pods for Subdomain | Fix #49 | Endpoints hostname from pod spec |
+| 65 | should provide DNS for services | Fix #49 | Endpoints hostname from pod spec |
+| 66 | should provide DNS for the cluster | Fix #49 | Endpoints hostname from pod spec |
+| 67 | should resolve DNS of partial qualified names for services | Fix #49 | Endpoints hostname from pod spec |
 
 #### EndpointSlice (2)
 
@@ -224,10 +229,10 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 97 | validates basic preemption works | | |
-| 98 | validates lower priority pod preemption by critical pod | | |
-| 99 | validates pod disruption condition is added to the preempted pod | | |
-| 100 | runs ReplicaSets to verify preemption running path | | |
+| 97 | validates basic preemption works | Fix #48 | Don't hard-delete evicted pods |
+| 98 | validates lower priority pod preemption by critical pod | Fix #48 | Don't hard-delete evicted pods |
+| 99 | validates pod disruption condition is added to the preempted pod | Fix #48 | Don't hard-delete evicted pods |
+| 100 | runs ReplicaSets to verify preemption running path | Fix #48 | Don't hard-delete evicted pods |
 | 101 | verify PriorityClass endpoints can be operated with different HTTP methods | Fix #44 | Resource version fix on patch revert |
 
 ### sig-storage (6 failures)
