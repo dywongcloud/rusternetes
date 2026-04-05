@@ -297,21 +297,24 @@ pub async fn normalize_content_type_middleware(
 
 /// Wrap JSON bytes in the K8s protobuf envelope: "k8s\0" + Unknown{raw: json}
 fn wrap_json_in_protobuf(json: &[u8]) -> Vec<u8> {
-    // K8s Unknown protobuf message fields (from k8s.io/apimachinery runtime.Unknown):
-    //   field 1 (apiVersion, string): empty (not needed for responses)
-    //   field 2 (kind, string): empty (not needed for responses)
-    //   field 3 (raw, bytes): the JSON payload
-    //   field 4 (contentEncoding, string): empty
-    //   field 5 (contentType, string): "application/json"
+    // K8s runtime.Unknown protobuf message (from k8s.io/apimachinery generated.proto):
+    //   field 1 (typeMeta, TypeMeta): nested message (empty for responses)
+    //   field 2 (raw, bytes): the JSON payload
+    //   field 3 (contentEncoding, string): empty
+    //   field 4 (contentType, string): "application/json"
+    //
+    // IMPORTANT: These field numbers match the Go protobuf definition, NOT our
+    // prost Unknown struct which flattened TypeMeta and shifted field numbers.
+    // The Go client decodes using the original proto definition.
     let content_type = b"application/json";
     let mut msg = Vec::with_capacity(json.len() + 30);
 
-    // Field 3: raw bytes (the JSON) — tag = (3 << 3) | 2 = 0x1a
-    msg.push(0x1a);
+    // Field 2: raw bytes (the JSON) — tag = (2 << 3) | 2 = 0x12
+    msg.push(0x12);
     encode_protobuf_varint(&mut msg, json.len() as u64);
     msg.extend_from_slice(json);
-    // Field 5: contentType — tag = (5 << 3) | 2 = 0x2a
-    msg.push(0x2a);
+    // Field 4: contentType — tag = (4 << 3) | 2 = 0x22
+    msg.push(0x22);
     encode_protobuf_varint(&mut msg, content_type.len() as u64);
     msg.extend_from_slice(content_type);
 
@@ -1385,12 +1388,12 @@ mod tests {
         let wrapped = wrap_json_in_protobuf(json);
 
         // Verify protobuf field tags match the Unknown message schema.
-        // After k8s\0 magic (4 bytes), first byte should be field 3 tag (raw).
-        // Field 3 wire type 2 = (3 << 3) | 2 = 0x1a
+        // After k8s\0 magic (4 bytes), first byte should be field 2 tag (raw).
+        // K8s runtime.Unknown proto: field 2 = raw, wire type 2 = (2 << 3) | 2 = 0x12
         let tag1 = wrapped[4];
         let field_num1 = tag1 >> 3;
         let wire_type1 = tag1 & 0x07;
-        assert_eq!(field_num1, 3, "First field should be field 3 (raw)");
+        assert_eq!(field_num1, 2, "First field should be field 2 (raw) per K8s runtime.Unknown proto");
         assert_eq!(wire_type1, 2, "Wire type should be 2 (length-delimited)");
     }
 
@@ -1411,46 +1414,45 @@ mod tests {
 
     #[test]
     fn test_wrap_json_in_protobuf_decodable_by_common_decoder() {
-        // Critical test: the middleware's manual protobuf encoding MUST produce
-        // output that the common crate's protobuf decoder can parse.
-        // This validates that field numbers match the Unknown message schema:
-        //   1=apiVersion, 2=kind, 3=raw, 4=contentEncoding, 5=contentType
-        use rusternetes_common::protobuf::{decode_protobuf, is_protobuf};
+        // The middleware encodes using Go's runtime.Unknown field numbers
+        // (field 2 = raw, field 4 = contentType) which differ from our prost
+        // Unknown struct (field 3 = raw, field 5 = contentType). The Go client
+        // needs field 2/4. Our own extract_json_from_k8s_protobuf handles both.
+        use rusternetes_common::protobuf::is_protobuf;
 
         let json = b"{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"name\":\"test\"}}";
         let wrapped = wrap_json_in_protobuf(json);
 
         assert!(is_protobuf(&wrapped), "wrapped output must have k8s magic prefix");
 
-        // Decode using the common crate's decoder (which uses prost internally)
-        let result: Result<(serde_json::Value, _), _> = decode_protobuf(&wrapped);
-        let (decoded_value, _type_meta) = result
-            .expect("common::protobuf::decode_protobuf must be able to decode wrap_json_in_protobuf output");
+        // Verify our own extractor can decode it (handles field 2 and 3)
+        let extracted = extract_json_from_k8s_protobuf(&wrapped);
+        assert!(extracted.is_some(), "extract_json_from_k8s_protobuf must decode the wrapper");
 
-        // The decoded JSON should match the original
+        // The extracted JSON should match the original
         let original: serde_json::Value = serde_json::from_slice(json).unwrap();
-        assert_eq!(decoded_value, original,
-            "decoded JSON must match original input");
+        let decoded: serde_json::Value = serde_json::from_slice(&extracted.unwrap()).unwrap();
+        assert_eq!(decoded, original, "decoded JSON must match original input");
     }
 
     #[test]
     fn test_wrap_json_in_protobuf_field_numbers_correct() {
-        // Verify field 3 (raw) and field 5 (contentType) are used, not field 2/4.
-        // Field 3, wire type 2 = (3 << 3) | 2 = 0x1a
+        // Verify field 2 (raw) and field 4 (contentType) per K8s runtime.Unknown proto.
+        // Field 2, wire type 2 = (2 << 3) | 2 = 0x12
         // Field 5, wire type 2 = (5 << 3) | 2 = 0x2a
         let json = b"{\"test\":1}";
         let wrapped = wrap_json_in_protobuf(json);
 
-        // After k8s\0 (4 bytes), first byte should be field 3 tag
-        assert_eq!(wrapped[4], 0x1a, "first field tag should be 0x1a (field 3, wire type 2)");
+        // After k8s\0 (4 bytes), first byte should be field 2 tag
+        assert_eq!(wrapped[4], 0x12, "first field tag should be 0x12 (field 2, wire type 2)");
 
-        // Find field 5 tag after the raw field data
+        // Find field 4 tag after the raw field data
         // raw field: tag(1) + varint_len + json_data
         let json_len = json.len();
         let varint_size = if json_len < 128 { 1 } else { 2 };
         let content_type_tag_pos = 4 + 1 + varint_size + json_len;
-        assert_eq!(wrapped[content_type_tag_pos], 0x2a,
-            "contentType field tag should be 0x2a (field 5, wire type 2)");
+        assert_eq!(wrapped[content_type_tag_pos], 0x22,
+            "contentType field tag should be 0x22 (field 4, wire type 2) per K8s runtime.Unknown proto");
     }
 
     #[test]
