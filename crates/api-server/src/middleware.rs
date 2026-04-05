@@ -240,28 +240,34 @@ pub async fn normalize_content_type_middleware(
         }
     }
 
-    // Track if this request was originally protobuf — if so, wrap JSON response
-    // in protobuf envelope. Only do this when the Accept header also requests protobuf.
-    // This fixes CRD creation timeouts where client-go sends protobuf and expects
-    // protobuf back, but our handlers return JSON.
-    let was_protobuf_request = request
-        .headers()
-        .get(axum::http::HeaderName::from_static("x-was-protobuf"))
-        .is_some();
-    let wants_protobuf = request
+    // Track if the client wants protobuf responses (via Accept header).
+    // Real Kubernetes always wraps in protobuf when Accept requests it,
+    // regardless of request Content-Type.
+    // Skip for watch/streaming requests — those use chunked JSON lines and
+    // cannot be collected into a single protobuf envelope.
+    let accept_header = request
         .headers()
         .get(axum::http::header::ACCEPT)
         .and_then(|v| v.to_str().ok())
-        .map(|a| a.contains("application/vnd.kubernetes.protobuf"))
-        .unwrap_or(false);
+        .unwrap_or("")
+        .to_string();
+    let is_watch_request = accept_header.contains("stream=watch")
+        || request.uri().path().contains("/watch/")
+        || request
+            .uri()
+            .query()
+            .map(|q| q.contains("watch=true") || q.contains("watch=1"))
+            .unwrap_or(false);
+    let wants_protobuf = accept_header.contains("application/vnd.kubernetes.protobuf")
+        && !is_watch_request;
 
     let response = next.run(request).await;
 
-    // Only wrap response in protobuf if:
-    // 1. The request body was protobuf (so the client expects protobuf responses)
-    // 2. The Accept header requests protobuf
-    // 3. The response is JSON
-    if was_protobuf_request && wants_protobuf {
+    // Wrap response in protobuf if:
+    // 1. The Accept header requests protobuf
+    // 2. The response is JSON (our handlers always produce JSON)
+    // 3. The response is NOT a streaming/watch response (no Content-Length means streaming)
+    if wants_protobuf {
         let response_ct = response
             .headers()
             .get(axum::http::header::CONTENT_TYPE)
@@ -291,21 +297,21 @@ pub async fn normalize_content_type_middleware(
 
 /// Wrap JSON bytes in the K8s protobuf envelope: "k8s\0" + Unknown{raw: json}
 fn wrap_json_in_protobuf(json: &[u8]) -> Vec<u8> {
-    // K8s Unknown protobuf message:
-    //   field 2 (raw, bytes): the JSON payload
-    //   field 1 (typeMeta, string): empty (not needed for responses)
-    //   field 3 (contentEncoding, string): empty
-    //   field 4 (contentType, string): "application/json"
+    // K8s Unknown protobuf message fields (from k8s.io/apimachinery runtime.Unknown):
+    //   field 1 (apiVersion, string): empty (not needed for responses)
+    //   field 2 (kind, string): empty (not needed for responses)
+    //   field 3 (raw, bytes): the JSON payload
+    //   field 4 (contentEncoding, string): empty
+    //   field 5 (contentType, string): "application/json"
     let content_type = b"application/json";
     let mut msg = Vec::with_capacity(json.len() + 30);
 
-    // Field 1: typeMeta (empty)
-    // Field 2: raw bytes (the JSON)
-    msg.push(0x12); // field 2, wire type 2
+    // Field 3: raw bytes (the JSON) — tag = (3 << 3) | 2 = 0x1a
+    msg.push(0x1a);
     encode_protobuf_varint(&mut msg, json.len() as u64);
     msg.extend_from_slice(json);
-    // Field 4: contentType
-    msg.push(0x22); // field 4, wire type 2
+    // Field 5: contentType — tag = (5 << 3) | 2 = 0x2a
+    msg.push(0x2a);
     encode_protobuf_varint(&mut msg, content_type.len() as u64);
     msg.extend_from_slice(content_type);
 
@@ -1378,12 +1384,13 @@ mod tests {
         let json = b"{\"test\":true}";
         let wrapped = wrap_json_in_protobuf(json);
 
-        // Verify protobuf field tags are valid
-        // After k8s\0 magic (4 bytes), first byte should be field tag
+        // Verify protobuf field tags match the Unknown message schema.
+        // After k8s\0 magic (4 bytes), first byte should be field 3 tag (raw).
+        // Field 3 wire type 2 = (3 << 3) | 2 = 0x1a
         let tag1 = wrapped[4];
         let field_num1 = tag1 >> 3;
         let wire_type1 = tag1 & 0x07;
-        assert_eq!(field_num1, 2, "First field should be field 2 (raw)");
+        assert_eq!(field_num1, 3, "First field should be field 3 (raw)");
         assert_eq!(wire_type1, 2, "Wire type should be 2 (length-delimited)");
     }
 
@@ -1400,5 +1407,60 @@ mod tests {
             json.as_bytes(),
             "Large payload should roundtrip"
         );
+    }
+
+    #[test]
+    fn test_wrap_json_in_protobuf_decodable_by_common_decoder() {
+        // Critical test: the middleware's manual protobuf encoding MUST produce
+        // output that the common crate's protobuf decoder can parse.
+        // This validates that field numbers match the Unknown message schema:
+        //   1=apiVersion, 2=kind, 3=raw, 4=contentEncoding, 5=contentType
+        use rusternetes_common::protobuf::{decode_protobuf, is_protobuf};
+
+        let json = b"{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"name\":\"test\"}}";
+        let wrapped = wrap_json_in_protobuf(json);
+
+        assert!(is_protobuf(&wrapped), "wrapped output must have k8s magic prefix");
+
+        // Decode using the common crate's decoder (which uses prost internally)
+        let result: Result<(serde_json::Value, _), _> = decode_protobuf(&wrapped);
+        let (decoded_value, _type_meta) = result
+            .expect("common::protobuf::decode_protobuf must be able to decode wrap_json_in_protobuf output");
+
+        // The decoded JSON should match the original
+        let original: serde_json::Value = serde_json::from_slice(json).unwrap();
+        assert_eq!(decoded_value, original,
+            "decoded JSON must match original input");
+    }
+
+    #[test]
+    fn test_wrap_json_in_protobuf_field_numbers_correct() {
+        // Verify field 3 (raw) and field 5 (contentType) are used, not field 2/4.
+        // Field 3, wire type 2 = (3 << 3) | 2 = 0x1a
+        // Field 5, wire type 2 = (5 << 3) | 2 = 0x2a
+        let json = b"{\"test\":1}";
+        let wrapped = wrap_json_in_protobuf(json);
+
+        // After k8s\0 (4 bytes), first byte should be field 3 tag
+        assert_eq!(wrapped[4], 0x1a, "first field tag should be 0x1a (field 3, wire type 2)");
+
+        // Find field 5 tag after the raw field data
+        // raw field: tag(1) + varint_len + json_data
+        let json_len = json.len();
+        let varint_size = if json_len < 128 { 1 } else { 2 };
+        let content_type_tag_pos = 4 + 1 + varint_size + json_len;
+        assert_eq!(wrapped[content_type_tag_pos], 0x2a,
+            "contentType field tag should be 0x2a (field 5, wire type 2)");
+    }
+
+    #[test]
+    fn test_wrap_and_extract_roundtrip_with_correct_fields() {
+        // End-to-end test: wrap JSON in protobuf, then extract it back.
+        // This proves the encoding is compatible with the decoder.
+        let json = b"{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"spec\":{\"replicas\":3}}";
+        let wrapped = wrap_json_in_protobuf(json);
+        let extracted = extract_json_from_k8s_protobuf(&wrapped);
+        assert!(extracted.is_some(), "should extract JSON from wrapped protobuf");
+        assert_eq!(extracted.unwrap(), json, "extracted JSON must match original");
     }
 }

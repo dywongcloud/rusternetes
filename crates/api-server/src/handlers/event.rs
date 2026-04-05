@@ -755,6 +755,21 @@ pub async fn update_events_v1(
     event.metadata.name = name.clone();
     event.api_version = "events.k8s.io/v1".to_string();
 
+    let key = build_key("events", Some(&namespace), &name);
+
+    // Preserve creation_timestamp and UID from existing resource — the client
+    // may send a truncated version (Go's time.Time loses nanosecond precision
+    // during JSON round-trip in some cases).
+    if let Ok(existing) = state.storage.get::<Event>(&key).await {
+        if existing.metadata.creation_timestamp.is_some() {
+            event.metadata.creation_timestamp = existing.metadata.creation_timestamp;
+        }
+        // Also preserve UID — must not change on update
+        if !existing.metadata.uid.is_empty() {
+            event.metadata.uid = existing.metadata.uid;
+        }
+    }
+
     // Map events.k8s.io/v1 fields to core/v1 equivalents
     if event.source.component.is_empty() {
         if let Some(ref rc) = event.reporting_component {
@@ -777,8 +792,6 @@ pub async fn update_events_v1(
             event.involved_object = regarding.clone();
         }
     }
-
-    let key = build_key("events", Some(&namespace), &name);
 
     if is_dry_run {
         return Ok(Json(event));

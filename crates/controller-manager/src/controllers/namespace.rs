@@ -58,9 +58,10 @@ impl<S: Storage> NamespaceController<S> {
             .await
             .is_err()
         {
-            // Read CA cert
-            let ca_cert = std::fs::read_to_string("/root/.rusternetes/certs/ca.crt")
-                .or_else(|_| std::fs::read_to_string("/etc/kubernetes/pki/ca.crt"))
+            // Read CA cert — try the standard K8s path first (matches docker-compose mount),
+            // then fall back to the development path
+            let ca_cert = std::fs::read_to_string("/etc/kubernetes/pki/ca.crt")
+                .or_else(|_| std::fs::read_to_string("/root/.rusternetes/certs/ca.crt"))
                 .unwrap_or_else(|_| "".to_string());
             if !ca_cert.is_empty() {
                 let cm = serde_json::json!({
@@ -240,14 +241,23 @@ impl<S: Storage> NamespaceController<S> {
             }
         }
 
-        // Delete all resources in the namespace
+        // Delete all resources in the namespace, tracking finalizer state.
+        // Resources with finalizers get deletionTimestamp but remain in storage.
+        let mut any_finalizers_remaining = false;
         for resource_type in &resource_types {
-            if let Err(e) = self.delete_all_resources(name, resource_type).await {
-                warn!(
-                    "Failed to delete {} in namespace {}: {}",
-                    resource_type, name, e
-                );
-                // Continue with other resource types
+            match self.delete_all_resources(name, resource_type).await {
+                Ok(had_finalizers) => {
+                    if had_finalizers {
+                        any_finalizers_remaining = true;
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to delete {} in namespace {}: {}",
+                        resource_type, name, e
+                    );
+                    // Continue with other resource types
+                }
             }
         }
 
@@ -267,7 +277,7 @@ impl<S: Storage> NamespaceController<S> {
 
             let conditions = Self::build_deletion_conditions(
                 remaining_count > 0,
-                false, // We handle finalizers ourselves so this is always false
+                any_finalizers_remaining,
             );
 
             ns.status = Some(NamespaceStatus {
@@ -279,7 +289,8 @@ impl<S: Storage> NamespaceController<S> {
             if let Err(e) = self.storage.update(&key, &ns).await {
                 debug!("Namespace status update CAS conflict, retrying: {}", e);
                 if let Ok(mut fresh_ns) = self.storage.get::<Namespace>(&key).await {
-                    let conditions = Self::build_deletion_conditions(remaining_count > 0, false);
+                    let conditions =
+                        Self::build_deletion_conditions(remaining_count > 0, any_finalizers_remaining);
                     fresh_ns.status = Some(NamespaceStatus {
                         phase: Some(Phase::Terminating),
                         conditions: Some(conditions),
@@ -420,8 +431,15 @@ impl<S: Storage> NamespaceController<S> {
         }
     }
 
-    /// Delete all resources of a given type in a namespace
-    async fn delete_all_resources(&self, namespace: &str, resource_type: &str) -> Result<()> {
+    /// Delete all resources of a given type in a namespace.
+    /// Returns `true` if any resources had finalizers and could not be fully deleted.
+    /// Resources with finalizers get a deletionTimestamp set but remain in storage
+    /// until their finalizers are removed (matching real K8s behavior).
+    async fn delete_all_resources(
+        &self,
+        namespace: &str,
+        resource_type: &str,
+    ) -> Result<bool> {
         let prefix = build_prefix(resource_type, Some(namespace));
 
         // List all resources
@@ -429,7 +447,7 @@ impl<S: Storage> NamespaceController<S> {
             self.storage.list(&prefix).await.unwrap_or_default();
 
         if resources.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
 
         debug!(
@@ -439,34 +457,103 @@ impl<S: Storage> NamespaceController<S> {
             namespace
         );
 
+        let mut had_finalizers = false;
+
         // Delete each resource
         for resource in resources {
             if let Some(metadata) = resource.get("metadata") {
                 if let Some(name) = metadata.get("name").and_then(|n| n.as_str()) {
                     let key = build_key(resource_type, Some(namespace), name);
-                    match self.storage.delete(&key).await {
-                        Ok(_) => debug!("Deleted {}/{}/{}", resource_type, namespace, name),
-                        Err(rusternetes_common::Error::NotFound(_)) => {
-                            // Already deleted, that's fine
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to delete {}/{}/{}: {}",
-                                resource_type, namespace, name, e
+
+                    // Check if the resource has finalizers
+                    let has_finalizers = metadata
+                        .get("finalizers")
+                        .and_then(|f| f.as_array())
+                        .map(|f| !f.is_empty())
+                        .unwrap_or(false);
+
+                    if has_finalizers {
+                        // Resource has finalizers: set deletionTimestamp but don't remove.
+                        // The finalizer controller/owner must remove the finalizer first.
+                        had_finalizers = true;
+                        let already_terminating = metadata
+                            .get("deletionTimestamp")
+                            .and_then(|d| d.as_str())
+                            .is_some();
+                        if !already_terminating {
+                            let mut updated = resource.clone();
+                            if let Some(meta) = updated.get_mut("metadata") {
+                                meta.as_object_mut().map(|m| {
+                                    m.insert(
+                                        "deletionTimestamp".to_string(),
+                                        serde_json::Value::String(
+                                            chrono::Utc::now().to_rfc3339(),
+                                        ),
+                                    )
+                                });
+                            }
+                            let _ = self.storage.update(&key, &updated).await;
+                            debug!(
+                                "Set deletionTimestamp on {}/{}/{} (has finalizers)",
+                                resource_type, namespace, name
                             );
+                        }
+                    } else {
+                        // No finalizers — hard delete from storage
+                        match self.storage.delete(&key).await {
+                            Ok(_) => {
+                                debug!("Deleted {}/{}/{}", resource_type, namespace, name)
+                            }
+                            Err(rusternetes_common::Error::NotFound(_)) => {
+                                // Already deleted, that's fine
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to delete {}/{}/{}: {}",
+                                    resource_type, namespace, name, e
+                                );
+                            }
                         }
                     }
                 }
             }
         }
 
-        Ok(())
+        Ok(had_finalizers)
     }
 
-    /// Count remaining resources in a namespace
+    /// Count remaining resources in a namespace.
+    /// Checks all resource types that are deleted during finalization.
     async fn count_remaining_resources(&self, namespace: &str) -> Result<usize> {
-        // Check a few key resource types to see if anything remains
-        let resource_types = vec!["pods", "services", "configmaps", "secrets"];
+        let resource_types = vec![
+            "pods",
+            "replicationcontrollers",
+            "replicasets",
+            "deployments",
+            "statefulsets",
+            "daemonsets",
+            "jobs",
+            "cronjobs",
+            "configmaps",
+            "secrets",
+            "serviceaccounts",
+            "services",
+            "endpoints",
+            "endpointslices",
+            "ingresses",
+            "networkpolicies",
+            "persistentvolumeclaims",
+            "poddisruptionbudgets",
+            "resourcequotas",
+            "limitranges",
+            "roles",
+            "rolebindings",
+            "events",
+            "horizontalpodautoscalers",
+            "leases",
+            "controllerrevisions",
+            "podtemplates",
+        ];
         let mut total = 0;
 
         for resource_type in resource_types {
@@ -695,5 +782,109 @@ mod tests {
                 assert!(types.contains(&"NamespaceContentRemaining"));
             }
         }
+    }
+
+    /// Verifies that during namespace finalization, pods with finalizers get
+    /// deletionTimestamp set (but are NOT removed from storage) while resources
+    /// without finalizers (like configmaps) ARE removed. This matches the K8s
+    /// conformance test "namespace deletion should delete pod first".
+    #[tokio::test]
+    async fn test_finalize_namespace_deletes_pods_before_other_resources() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = NamespaceController::new(storage.clone());
+
+        let ns_name = "test-ns-order";
+
+        // Create a namespace marked for deletion
+        let mut ns = Namespace::new(ns_name);
+        ns.metadata.deletion_timestamp = Some(Utc::now());
+        ns.metadata.finalizers = Some(vec!["kubernetes".to_string()]);
+        ns.status = Some(NamespaceStatus {
+            phase: Some(Phase::Terminating),
+            conditions: None,
+        });
+        let ns_key = build_key("namespaces", None, ns_name);
+        storage.create(&ns_key, &ns).await.unwrap();
+
+        // Create a pod WITH a finalizer (should get deletionTimestamp but NOT be removed)
+        let pod_value = serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "name": "finalized-pod",
+                "namespace": ns_name,
+                "finalizers": ["test.example.com/block"]
+            },
+            "spec": {
+                "containers": [{"name": "test", "image": "nginx"}]
+            }
+        });
+        let pod_key = build_key("pods", Some(ns_name), "finalized-pod");
+        storage.create(&pod_key, &pod_value).await.unwrap();
+
+        // Create a configmap WITHOUT a finalizer (should be deleted)
+        let cm_value = serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "name": "test-configmap",
+                "namespace": ns_name
+            },
+            "data": {"key": "value"}
+        });
+        let cm_key = build_key("configmaps", Some(ns_name), "test-configmap");
+        storage.create(&cm_key, &cm_value).await.unwrap();
+
+        // Run finalization
+        controller.finalize_namespace(&ns).await.unwrap();
+
+        // The pod should still exist in storage (it has a finalizer)
+        let pod_after: serde_json::Value = storage
+            .get(&pod_key)
+            .await
+            .expect("Pod with finalizer should still exist in storage");
+
+        // The pod should have deletionTimestamp set
+        let pod_deletion_ts = pod_after
+            .pointer("/metadata/deletionTimestamp")
+            .expect("Pod should have deletionTimestamp set");
+        assert!(
+            pod_deletion_ts.as_str().is_some(),
+            "deletionTimestamp should be a string"
+        );
+
+        // The configmap should be deleted (no finalizer)
+        let cm_result = storage.get::<serde_json::Value>(&cm_key).await;
+        assert!(
+            cm_result.is_err(),
+            "ConfigMap without finalizer should be deleted from storage"
+        );
+
+        // The namespace should have NamespaceDeletionContentFailure condition set to True
+        // because the pod's finalizer prevents full cleanup
+        let updated_ns: Namespace = storage.get(&ns_key).await.unwrap();
+        let conditions = updated_ns
+            .status
+            .as_ref()
+            .and_then(|s| s.conditions.as_ref())
+            .expect("Namespace should have conditions");
+
+        let content_failure = conditions
+            .iter()
+            .find(|c| c.condition_type == "NamespaceDeletionContentFailure")
+            .expect("Should have NamespaceDeletionContentFailure condition");
+        assert_eq!(
+            content_failure.status, "True",
+            "NamespaceDeletionContentFailure should be True when pod has finalizer"
+        );
+
+        let finalizers_remaining = conditions
+            .iter()
+            .find(|c| c.condition_type == "NamespaceFinalizersRemaining")
+            .expect("Should have NamespaceFinalizersRemaining condition");
+        assert_eq!(
+            finalizers_remaining.status, "True",
+            "NamespaceFinalizersRemaining should be True when pod has finalizer"
+        );
     }
 }

@@ -1164,7 +1164,12 @@ impl ContainerRuntime {
             }
         }
 
-        // Apply fsGroup: change group ownership and set group-writable on all volume files
+        // Apply fsGroup: change group ownership on all volume files.
+        // Real Kubernetes behavior: fsGroup changes the group owner of volume files
+        // to the specified GID, and sets group permission bits to match the owner bits
+        // (i.e., if owner has read, group gets read; if owner has write, group gets write).
+        // This preserves the defaultMode permissions — a file with mode 0440 stays 0440,
+        // not 0460 (which would happen with unconditional g+rwX).
         #[cfg(unix)]
         if let Some(fs_group) = pod
             .spec
@@ -1174,40 +1179,49 @@ impl ContainerRuntime {
         {
             use std::os::unix::fs::PermissionsExt;
             for (_name, path) in &volume_paths {
-                // Skip Docker named volumes (they're not local paths)
-                // Recursively chown to fsGroup and chmod g+rwx
-                if let Ok(entries) = std::fs::read_dir(path) {
-                    for entry in entries.flatten() {
-                        let fpath = entry.path();
-                        // chown -R :fsGroup
-                        let _ = std::process::Command::new("chown")
-                            .args(&[
-                                "-R",
-                                &format!(":{}", fs_group),
-                                fpath.to_str().unwrap_or(""),
-                            ])
-                            .output();
-                        // chmod -R g+rwX (K8s fsGroup adds group-read-write + execute on dirs)
-                        let _ = std::process::Command::new("chmod")
-                            .args(&["-R", "g+rwX", fpath.to_str().unwrap_or("")])
-                            .output();
+                // Recursively chown to fsGroup
+                let _ = std::process::Command::new("chown")
+                    .args(&["-R", &format!(":{}", fs_group), path])
+                    .output();
+
+                // Set group bits to mirror owner bits on each file/directory.
+                // This matches real K8s behavior: if owner=r--, group becomes r--
+                // (not r+w which chmod g+rwX would do).
+                fn apply_fsgroup_permissions(dir: &std::path::Path) {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(entries) = std::fs::read_dir(dir) {
+                        for entry in entries.flatten() {
+                            let fpath = entry.path();
+                            if let Ok(meta) = std::fs::metadata(&fpath) {
+                                let mode = meta.permissions().mode();
+                                // Copy owner bits (bits 8-6) to group bits (bits 5-3)
+                                let owner_bits = (mode >> 6) & 0o7;
+                                let new_mode = (mode & !0o070) | (owner_bits << 3);
+                                if new_mode != mode {
+                                    let _ = std::fs::set_permissions(
+                                        &fpath,
+                                        std::fs::Permissions::from_mode(new_mode),
+                                    );
+                                }
+                                if meta.is_dir() {
+                                    apply_fsgroup_permissions(&fpath);
+                                }
+                            }
+                        }
                     }
                 }
-                // Set setgid bit on the directory itself
+                apply_fsgroup_permissions(std::path::Path::new(path));
+
+                // Set setgid bit on the directory itself so new files inherit group
                 if let Ok(meta) = std::fs::metadata(path) {
                     let mode = meta.permissions().mode();
+                    let owner_bits = (mode >> 6) & 0o7;
+                    let new_mode = (mode & !0o070) | (owner_bits << 3) | 0o2000;
                     let _ = std::fs::set_permissions(
                         path,
-                        std::fs::Permissions::from_mode(mode | 0o2000),
+                        std::fs::Permissions::from_mode(new_mode),
                     );
                 }
-                // chown the directory itself
-                let _ = std::process::Command::new("chown")
-                    .args(&[&format!(":{}", fs_group), path])
-                    .output();
-                let _ = std::process::Command::new("chmod")
-                    .args(&["g+rwx", path])
-                    .output();
             }
             info!(
                 "Applied fsGroup {} to {} volumes",
@@ -1870,7 +1884,7 @@ impl ContainerRuntime {
                     uid: sa_uid,
                     iat: now.timestamp(),
                     exp: (now + chrono::Duration::hours(1)).timestamp(),
-                    iss: "rusternetes-api-server".to_string(),
+                    iss: "https://kubernetes.default.svc.cluster.local".to_string(),
                     aud: vec!["rusternetes".to_string()],
                     pod_name: Some(pod_name.to_string()),
                     pod_uid: Some(pod.metadata.uid.clone()),
@@ -2528,7 +2542,7 @@ impl ContainerRuntime {
                             uid: sa_uid,
                             iat: now.timestamp(),
                             exp,
-                            iss: "rusternetes-api-server".to_string(),
+                            iss: "https://kubernetes.default.svc.cluster.local".to_string(),
                             aud: audiences,
                             pod_name: Some(pod_name.clone()),
                             pod_uid: Some(pod.metadata.uid.clone()),
@@ -2669,7 +2683,7 @@ impl ContainerRuntime {
             uid: sa_uid,
             iat: now.timestamp(),
             exp: (now + chrono::Duration::hours(1)).timestamp(),
-            iss: "rusternetes-api-server".to_string(),
+            iss: "https://kubernetes.default.svc.cluster.local".to_string(),
             aud: vec!["rusternetes".to_string()],
             pod_name: Some(pod_name.clone()),
             pod_uid: Some(pod.metadata.uid.clone()),
@@ -3309,23 +3323,17 @@ impl ContainerRuntime {
                         } else {
                             host_path.clone()
                         };
-                        // emptyDir with medium: Memory uses tmpfs (in-memory filesystem).
-                        let is_memory_medium = pod
-                            .spec
-                            .as_ref()
-                            .and_then(|s| s.volumes.as_ref())
-                            .and_then(|vols| vols.iter().find(|v| v.name == mount.name))
-                            .and_then(|v| v.empty_dir.as_ref())
-                            .and_then(|ed| ed.medium.as_deref())
-                            .map(|m| m == "Memory")
-                            .unwrap_or(false);
+                        // Use tmpfs for ALL emptyDir volumes (both default and Memory medium).
+                        // This ensures correct file permissions (mode=1777) because:
+                        // 1. Docker's default umask (0022) strips write bits from bind-mounted files
+                        // 2. tmpfs allows setting mode directly, bypassing umask issues
+                        // 3. Real K8s also uses tmpfs-backed directories for emptyDir
+                        let is_emptydir = empty_dir_volumes.contains(&mount.name);
 
-                        let use_tmpfs = is_memory_medium
-                            && empty_dir_volumes.contains(&mount.name)
-                            && expanded_sub_path.is_none();
+                        let use_tmpfs = is_emptydir && expanded_sub_path.is_none();
 
                         if use_tmpfs {
-                            // Use tmpfs for medium: Memory emptyDir volumes.
+                            // Use tmpfs for emptyDir volumes.
                             // Set mode=1777 (world-writable + sticky bit) to match K8s emptyDir behavior.
                             let opts = if read_only {
                                 "ro,mode=1777".to_string()
@@ -4005,6 +4013,35 @@ impl ContainerRuntime {
                     container.name, expanded_args
                 );
                 config.cmd = Some(expanded_args);
+            }
+        } else if needs_umask_fix {
+            // No command, no args — use image defaults with umask wrapper.
+            // Discover image entrypoint+cmd and wrap with umask.
+            let inspect = self.docker.inspect_image(&container.image).await.ok();
+            let image_config = inspect.and_then(|i| i.config);
+            let image_ep = image_config
+                .as_ref()
+                .and_then(|c| c.entrypoint.clone())
+                .unwrap_or_default();
+            let image_cmd = image_config
+                .as_ref()
+                .and_then(|c| c.cmd.clone())
+                .unwrap_or_default();
+            // Only wrap if we found an actual entrypoint or cmd from the image.
+            // If both are empty (image inspect failed or image has no defaults),
+            // skip the umask wrapper — an empty `exec` would fail.
+            if !image_ep.is_empty() || !image_cmd.is_empty() {
+                let full = format!(
+                    "umask 0000 && exec {} {}",
+                    shell_join(&image_ep),
+                    shell_join(&image_cmd)
+                );
+                info!(
+                    "Container {} - wrapping image defaults with umask 0: {}",
+                    container.name, full
+                );
+                config.entrypoint = Some(vec!["/bin/sh".to_string(), "-c".to_string(), full]);
+                config.cmd = Some(vec![]);
             }
         }
 
@@ -8444,6 +8481,66 @@ mod tests {
             expand2(&["$(A)".to_string()]),
             vec!["final"],
             "Nested variable expansion should work"
+        );
+    }
+
+    /// fsGroup should copy owner permission bits to group bits, not unconditionally
+    /// add g+rwX. A file with mode 0440 (r--r-----) should stay 0440 after fsGroup,
+    /// not become 0460 (r--rw----) which would happen with `chmod g+rwX`.
+    #[test]
+    #[cfg(unix)]
+    fn test_fsgroup_preserves_restrictive_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("secret-file");
+        std::fs::write(&file_path, "secret-data").unwrap();
+
+        // Set restrictive mode: 0440 (r--r-----)
+        std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o440)).unwrap();
+
+        // Apply fsGroup logic: copy owner bits to group bits
+        let meta = std::fs::metadata(&file_path).unwrap();
+        let mode = meta.permissions().mode();
+        let owner_bits = (mode >> 6) & 0o7;
+        let new_mode = (mode & !0o070) | (owner_bits << 3);
+        std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(new_mode)).unwrap();
+
+        // Verify: mode should still be 0440 (owner=r, group=r, others=none)
+        let final_mode = std::fs::metadata(&file_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            final_mode, 0o440,
+            "fsGroup should preserve mode 0440, got {:04o}",
+            final_mode
+        );
+    }
+
+    /// fsGroup should make group match owner — a file with 0644 gets group=rw (0664).
+    #[test]
+    #[cfg(unix)]
+    fn test_fsgroup_copies_owner_bits_to_group() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("config-file");
+        std::fs::write(&file_path, "config-data").unwrap();
+
+        // Set mode: 0644 (rw-r--r--)
+        std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        // Apply fsGroup logic
+        let meta = std::fs::metadata(&file_path).unwrap();
+        let mode = meta.permissions().mode();
+        let owner_bits = (mode >> 6) & 0o7;
+        let new_mode = (mode & !0o070) | (owner_bits << 3);
+        std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(new_mode)).unwrap();
+
+        // Owner is rw (6), so group should also be rw (6): 0664
+        let final_mode = std::fs::metadata(&file_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            final_mode, 0o664,
+            "fsGroup should copy owner rw bits to group, got {:04o}",
+            final_mode
         );
     }
 }

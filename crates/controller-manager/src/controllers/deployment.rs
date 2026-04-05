@@ -97,24 +97,6 @@ impl<S: Storage> DeploymentController<S> {
             namespace, deployment.metadata.name
         );
 
-        // Ensure the deployment has a revision annotation
-        {
-            let annotations = deployment.metadata.annotations.clone().unwrap_or_default();
-            if !annotations.contains_key("deployment.kubernetes.io/revision") {
-                let mut updated = deployment.clone();
-                updated
-                    .metadata
-                    .annotations
-                    .get_or_insert_with(std::collections::HashMap::new)
-                    .insert(
-                        "deployment.kubernetes.io/revision".to_string(),
-                        "1".to_string(),
-                    );
-                let key = build_key("deployments", Some(namespace), &deployment.metadata.name);
-                let _ = self.storage.update(&key, &updated).await;
-            }
-        }
-
         // Get all ReplicaSets owned by this deployment
         let rs_prefix = build_prefix("replicasets", Some(namespace));
         let all_replicasets: Vec<ReplicaSet> = self.storage.list(&rs_prefix).await?;
@@ -123,6 +105,37 @@ impl<S: Storage> DeploymentController<S> {
             .into_iter()
             .filter(|rs| self.is_owned_by_deployment(rs, deployment))
             .collect();
+
+        // Ensure the deployment has a revision annotation.
+        // Compute from owned ReplicaSets to get the correct value (not hardcoded "1").
+        {
+            let annotations = deployment.metadata.annotations.clone().unwrap_or_default();
+            if !annotations.contains_key("deployment.kubernetes.io/revision") {
+                let max_revision = owned_replicasets
+                    .iter()
+                    .filter_map(|rs| {
+                        rs.metadata
+                            .annotations
+                            .as_ref()
+                            .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+                            .and_then(|v| v.parse::<i64>().ok())
+                    })
+                    .max()
+                    .unwrap_or(0);
+                let revision = std::cmp::max(max_revision, 1).to_string();
+                let mut updated = deployment.clone();
+                updated
+                    .metadata
+                    .annotations
+                    .get_or_insert_with(std::collections::HashMap::new)
+                    .insert(
+                        "deployment.kubernetes.io/revision".to_string(),
+                        revision,
+                    );
+                let key = build_key("deployments", Some(namespace), &deployment.metadata.name);
+                let _ = self.storage.update(&key, &updated).await;
+            }
+        }
 
         info!(
             "Found {} ReplicaSets owned by deployment {}/{}",
@@ -1431,6 +1444,102 @@ mod tests {
         assert_eq!(
             new_rs_count, 0,
             "Recreate should not create new RS while old pods are still running"
+        );
+    }
+
+    /// Deployment revision annotation should be computed from existing ReplicaSets,
+    /// not hardcoded to "1". When a deployment owns pre-existing ReplicaSets,
+    /// its revision should be the max revision from those ReplicaSets.
+    #[tokio::test]
+    async fn test_deployment_revision_from_existing_replicasets() {
+        use rusternetes_common::resources::PodTemplateSpec;
+        use rusternetes_common::types::LabelSelector;
+        use rusternetes_storage::MemoryStorage;
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = DeploymentController::new(storage.clone(), 2);
+        let ns = "default";
+
+        let mut rs_labels = HashMap::new();
+        rs_labels.insert("app".to_string(), "web".to_string());
+        let mut rs_annotations = HashMap::new();
+        rs_annotations.insert(
+            "deployment.kubernetes.io/revision".to_string(),
+            "5".to_string(),
+        );
+
+        // Create a pre-existing ReplicaSet with revision 5 as raw JSON
+        let rs_json = serde_json::json!({
+            "apiVersion": "apps/v1",
+            "kind": "ReplicaSet",
+            "metadata": {
+                "name": "web-rs-1",
+                "namespace": ns,
+                "uid": "rs-uid-1",
+                "annotations": { "deployment.kubernetes.io/revision": "5" },
+                "labels": { "app": "web" },
+                "ownerReferences": [{
+                    "apiVersion": "apps/v1",
+                    "kind": "Deployment",
+                    "name": "web",
+                    "uid": "deploy-uid-1",
+                    "controller": true
+                }]
+            },
+            "spec": {
+                "replicas": 1,
+                "selector": { "matchLabels": { "app": "web" } },
+                "template": {
+                    "metadata": { "labels": { "app": "web" } },
+                    "spec": { "containers": [{ "name": "nginx", "image": "nginx:1.19" }] }
+                }
+            }
+        });
+        let rs: ReplicaSet = serde_json::from_value(rs_json).unwrap();
+        let rs_key = format!("/registry/replicasets/{}/web-rs-1", ns);
+        storage.create(&rs_key, &rs).await.unwrap();
+
+        // Create a Deployment (no revision annotation yet) as raw JSON
+        let deploy_json = serde_json::json!({
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "name": "web",
+                "namespace": ns,
+                "uid": "deploy-uid-1"
+            },
+            "spec": {
+                "replicas": 1,
+                "selector": { "matchLabels": { "app": "web" } },
+                "template": {
+                    "metadata": { "labels": { "app": "web" } },
+                    "spec": { "containers": [{ "name": "nginx", "image": "nginx:1.19" }] }
+                }
+            }
+        });
+        let deployment: Deployment = serde_json::from_value(deploy_json).unwrap();
+        let deploy_key = format!("/registry/deployments/{}/web", ns);
+        storage.create(&deploy_key, &deployment).await.unwrap();
+
+        // Reconcile
+        let mut d: Deployment = storage.get(&deploy_key).await.unwrap();
+        controller.reconcile_deployment(&mut d).await.unwrap();
+
+        // The deployment's revision should be based on the pre-existing ReplicaSet (5),
+        // NOT hardcoded to "1"
+        let d: Deployment = storage.get(&deploy_key).await.unwrap();
+        let revision = d
+            .metadata
+            .annotations
+            .as_ref()
+            .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+            .expect("deployment should have revision annotation");
+        assert!(
+            revision.parse::<i64>().unwrap() >= 5,
+            "deployment revision ({}) should be >= 5 (max from owned ReplicaSets)",
+            revision
         );
     }
 }

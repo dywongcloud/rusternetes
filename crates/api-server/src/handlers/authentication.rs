@@ -168,7 +168,7 @@ pub async fn create_token_request(
         uid: sa.metadata.uid.clone(),
         iat: now.timestamp(),
         exp: expiration_timestamp.timestamp(),
-        iss: "rusternetes-api-server".to_string(),
+        iss: "https://kubernetes.default.svc.cluster.local".to_string(),
         aud: vec!["rusternetes".to_string()],
         pod_name: None,
         pod_uid: None,

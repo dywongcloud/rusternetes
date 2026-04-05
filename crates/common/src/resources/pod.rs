@@ -1003,6 +1003,9 @@ pub struct ImageVolumeSource {
 pub struct EmptyDirVolumeSource {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub medium: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_limit: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

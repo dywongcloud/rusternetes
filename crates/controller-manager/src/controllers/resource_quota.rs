@@ -289,9 +289,11 @@ impl<S: Storage> ResourceQuotaController<S> {
         let needs_secrets = hard_keys
             .iter()
             .any(|k| k == "secrets" || k == "count/secrets");
-        let needs_replicasets = hard_keys
-            .iter()
-            .any(|k| k == "count/replicasets" || k == "replicasets");
+        let needs_replicasets = hard_keys.iter().any(|k| {
+            k == "count/replicasets"
+                || k == "count/replicasets.apps"
+                || k == "replicasets"
+        });
         let needs_pvcs = hard_keys
             .iter()
             .any(|k| k == "persistentvolumeclaims" || k == "count/persistentvolumeclaims");
@@ -316,7 +318,9 @@ impl<S: Storage> ResourceQuotaController<S> {
                     Self::pod_matches_scopes(p, scopes, scope_selector)
                 })
                 .collect();
-            usage.insert("pods".to_string(), pods.len().to_string());
+            let pod_count = pods.len().to_string();
+            usage.insert("pods".to_string(), pod_count.clone());
+            usage.insert("count/pods".to_string(), pod_count);
 
             // Calculate CPU and memory requests/limits
             let mut total_cpu_requests = 0i64;
@@ -426,11 +430,10 @@ impl<S: Storage> ResourceQuotaController<S> {
             let rs_prefix = format!("/registry/replicasets/{}/", namespace);
             let replicasets: Vec<serde_json::Value> =
                 self.storage.list(&rs_prefix).await.unwrap_or_default();
-            usage.insert(
-                "count/replicasets".to_string(),
-                replicasets.len().to_string(),
-            );
-            usage.insert("replicasets".to_string(), replicasets.len().to_string());
+            let rs_count = replicasets.len().to_string();
+            usage.insert("count/replicasets".to_string(), rs_count.clone());
+            usage.insert("count/replicasets.apps".to_string(), rs_count.clone());
+            usage.insert("replicasets".to_string(), rs_count);
         }
 
         if needs_pvcs {

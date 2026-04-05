@@ -1048,4 +1048,26 @@ mod tests {
             Some(&vec!["node-uid-2".to_string()])
         );
     }
+
+    /// OIDC issuer must be a valid HTTPS URL, not a bare hostname.
+    /// The conformance test verifies that tokens have an `iss` claim matching
+    /// the OIDC discovery endpoint's `issuer` field.
+    #[test]
+    fn test_service_account_claims_use_correct_issuer() {
+        let claims = ServiceAccountClaims::new(
+            "default".to_string(),
+            "default".to_string(),
+            "uid-123".to_string(),
+            24,
+        );
+        assert_eq!(
+            claims.iss,
+            "https://kubernetes.default.svc.cluster.local",
+            "Token issuer must be a valid HTTPS URL for OIDC compliance"
+        );
+        assert!(
+            claims.iss.starts_with("https://"),
+            "Issuer must start with https://"
+        );
+    }
 }

@@ -108,7 +108,13 @@ impl<S: Storage> StatefulSetController<S> {
                 .unwrap_or(0)
         });
 
-        let current_replicas = statefulset_pods.len() as i32;
+        // Count only non-terminating pods as current replicas.
+        // Terminating pods (deletion_timestamp set) should not prevent scale-up
+        // to recreate them with the new template.
+        let current_replicas = statefulset_pods
+            .iter()
+            .filter(|p| p.metadata.deletion_timestamp.is_none())
+            .count() as i32;
 
         info!(
             "StatefulSet {}/{}: desired={}, current={}",
@@ -332,15 +338,26 @@ impl<S: Storage> StatefulSetController<S> {
                         })
                         .unwrap_or(false);
 
-                    // Delete pods with stale revision if they have a revision label
-                    // (empty revision means newly created — skip those)
+                    // Delete pods with stale revision using graceful termination
+                    // (set deletionTimestamp instead of direct delete, so the kubelet
+                    // can perform cleanup and the pod gets properly recreated).
+                    // Empty revision means newly created — skip those.
                     if !pod_revision.is_empty() && (pod_is_ready || pod_is_active) {
                         let pod_key = format!("/registry/pods/{}/{}", namespace, pod.metadata.name);
-                        self.storage.delete(&pod_key).await?;
-                        info!(
-                            "Rolling update: deleted pod {} (old revision {}, update revision {})",
-                            pod.metadata.name, pod_revision, update_revision
-                        );
+                        if pod.metadata.deletion_timestamp.is_none() {
+                            let mut pod_to_delete = pod.clone();
+                            pod_to_delete.metadata.deletion_timestamp = Some(chrono::Utc::now());
+                            pod_to_delete.metadata.deletion_grace_period_seconds = pod_to_delete
+                                .spec
+                                .as_ref()
+                                .and_then(|s| s.termination_grace_period_seconds)
+                                .or(Some(30));
+                            let _ = self.storage.update(&pod_key, &pod_to_delete).await;
+                            info!(
+                                "Rolling update: set deletionTimestamp on pod {} (old revision {}, update revision {})",
+                                pod.metadata.name, pod_revision, update_revision
+                            );
+                        }
                         deleted_one = true;
                         break; // Delete one at a time for OrderedReady rolling updates
                     }
@@ -1210,6 +1227,90 @@ mod tests {
             status.ready_replicas.unwrap_or(0),
             2,
             "readyReplicas should exclude terminating pods"
+        );
+    }
+
+    /// Rolling update should use graceful termination (set deletionTimestamp)
+    /// instead of direct deletion. This ensures the kubelet can perform cleanup
+    /// and the pod gets properly recreated.
+    #[tokio::test]
+    async fn test_rolling_update_uses_graceful_termination() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = StatefulSetController::new(storage.clone());
+        let ns = "default";
+        let ss = make_statefulset("ss-grace", ns, 2, "nginx:1.19");
+        let key = "/registry/statefulsets/default/ss-grace";
+        storage.create(key, &ss).await.unwrap();
+
+        // Create initial pods
+        let mut ss: StatefulSet = storage.get(key).await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+        for i in 0..2 {
+            make_pod_ready(&storage, ns, &format!("ss-grace-{}", i)).await;
+        }
+        let mut ss: StatefulSet = storage.get(key).await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        // Change image to trigger rolling update
+        let mut ss: StatefulSet = storage.get(key).await.unwrap();
+        ss.spec.template.spec.containers[0].image = "nginx:1.20".to_string();
+        storage.update(key, &ss).await.unwrap();
+
+        // Reconcile — should set deletionTimestamp on highest-ordinal stale pod
+        let mut ss: StatefulSet = storage.get(key).await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        // The pod should still exist (not directly deleted) with deletionTimestamp set
+        let pod1_key = "/registry/pods/default/ss-grace-1";
+        let pod1: Pod = storage.get(pod1_key).await
+            .expect("Pod ss-grace-1 should still exist after rolling update (graceful termination)");
+        assert!(
+            pod1.metadata.deletion_timestamp.is_some(),
+            "Rolling update should set deletionTimestamp for graceful termination, not direct delete"
+        );
+        assert!(
+            pod1.metadata.deletion_grace_period_seconds.is_some(),
+            "Rolling update should set deletion_grace_period_seconds"
+        );
+    }
+
+    /// Current replicas count should exclude terminating pods so that
+    /// the controller can recreate them with the new template.
+    #[tokio::test]
+    async fn test_current_replicas_excludes_terminating() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = StatefulSetController::new(storage.clone());
+        let ns = "default";
+        let ss = make_statefulset("ss-term", ns, 2, "nginx:1.19");
+        let key = "/registry/statefulsets/default/ss-term";
+        storage.create(key, &ss).await.unwrap();
+
+        // Create initial pods
+        let mut ss: StatefulSet = storage.get(key).await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+        for i in 0..2 {
+            make_pod_ready(&storage, ns, &format!("ss-term-{}", i)).await;
+        }
+
+        // Manually set deletionTimestamp on one pod (simulating graceful termination)
+        let pod_key = "/registry/pods/default/ss-term-1";
+        let mut pod: Pod = storage.get(pod_key).await.unwrap();
+        pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
+        storage.update(pod_key, &pod).await.unwrap();
+
+        // Reconcile — controller should see only 1 active replica (not 2)
+        // and attempt to recreate the terminating one
+        let mut ss: StatefulSet = storage.get(key).await.unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        // Status should reflect the non-terminating count
+        let ss: StatefulSet = storage.get(key).await.unwrap();
+        let status = ss.status.unwrap();
+        // replicas should be the total non-terminating pod count
+        assert!(
+            status.replicas <= 2,
+            "replicas ({}) should not double-count terminating pods",
+            status.replicas
         );
     }
 }

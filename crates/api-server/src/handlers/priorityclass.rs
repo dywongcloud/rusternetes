@@ -268,11 +268,13 @@ pub async fn patch(
     .await?;
 
     // Validate immutable field wasn't changed — if it was, revert by
-    // writing back the original value
+    // writing back the original value (using the new resource version)
     if let Some(old_value) = existing_value {
         if result.0.value != old_value {
-            // Revert: restore original PriorityClass
-            if let Some(original) = existing_pc {
+            // Revert: restore original PriorityClass with the new resource version
+            // so the update succeeds (the old resource version is stale)
+            if let Some(mut original) = existing_pc {
+                original.metadata.resource_version = result.0.metadata.resource_version.clone();
                 let _ = state.storage.update(&key, &original).await;
             }
             return Err(rusternetes_common::Error::InvalidResource(format!(

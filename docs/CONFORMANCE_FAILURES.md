@@ -1,163 +1,288 @@
-# Conformance Issue Tracker
+# Conformance Failure Tracker
 
-**Round 125** | 329/441 (74.6%) | +34 from round 124 | 648 unit tests pass
+**Round 125** | 329/441 (74.6%) | 112 failures | 2026-04-04
 
-## All Fixes
+## Fixes in Progress (Round 126)
 
-| # | Fix | Commit | Tests | Status |
-|---|-----|--------|-------|--------|
-| 1 | StatefulSet: filter terminating pods from status counts | 823884f | test_scale_down_sets_deletion_timestamp | Verified |
-| 2 | OpenAPI v3: GVK extensions on all operations | 7fb8ecd | test_spec_has_core_paths, test_spec_has_apps_paths | Verified |
-| 3 | Job: reason CompletionsReached | db1a3e5 | 24 job tests; 5 newly passing in round 124 | Verified |
-| 4 | OpenAPI v2: dot-format Content-Type | b3a6772 | curl verified; MIME errors 18→0 in round 124 | Verified |
-| 5 | RC: ReplicaFailure only on actual errors | b3a6772 | 3 RC unit tests | Verified |
-| 6 | Webhook: AdmissionStatus accepts metadata field | ba0b26f + 7fb750c | 3 webhook response parse tests | Verified |
-| 7 | Scheduler: DisruptionTarget on preemption | d7ef779 | Scheduler now testable with MemoryStorage | Verified |
-| 8 | Protobuf response: blanket wrapping removed | 8965fd5 | Caused wireType 6 crash | Verified |
-| 9 | Exec WebSocket: 500ms delay before close | 24ca36b + fca0cd0 | 2 integration tests | Verified |
-| 10 | OpenAPI v3: schemas for 47 resource types | 79f4f4a | 4 openapi unit tests | Verified |
-| 11 | Targeted protobuf response for protobuf requests | c859496 | 3 roundtrip/wireformat/large-payload tests | Verified |
-| 12 | Recreate deployment: wait for old pods to terminate | 140048a | test_recreate_deployment_waits_for_old_pods | Verified |
-| 13 | Status PATCH: merge fields instead of replace | cc84ef9 | 2 unit tests | Verified |
-| 14 | Watch: ADDED event when labels re-match selector | cc84ef9 | Python logic simulation (3 cases) | Verified (logic) |
-| 15 | LimitRange: validate all resources + requests against max | 8812385 | 5 unit tests | Verified |
-| 16 | Namespace: ContentFailure=True when finalizers remain | 934f69d | 2 unit tests | Verified |
-| 17 | OIDC: issuer URL https://kubernetes.default.svc.cluster.local | f87fc46 + 75cb4d5 | 13 token tests | Verified |
-| 18 | Container terminated reason: filter empty Docker error strings | 7beb347 + 0158e06 | Code review | Unverified |
-| 19 | Init container statuses: populate from Docker on start failure | 0158e06 | Code review | Unverified |
-| 20 | Events v1 update: map regarding/note/reportingComponent | 4ebe56c | Code review | Unverified |
-| 21 | Scheduler: emit FailedScheduling event | a3ac9e4 | test_scheduler_emits_event_for_unschedulable_pod | Verified |
-| 22 | Ephemeral container: write status to storage after start | 27adf7a | Code review | Unverified |
-| 23 | Service PATCH: allocate ClusterIP on ExternalName→ClusterIP | 27adf7a | Code review | Unverified |
-| 24 | Service proxy: endpoint resolution cleanup | 4f3dbef | Code review | Verified (code) |
-| 25 | Sync intervals: controller 2s, kubelet 3s | 3d21693 | Config change | N/A |
-| 26 | RC template: #[serde(default)] for PodTemplateSpec | d65a510 | Compiles | Verified |
-| 27 | Scheduler: generic over Storage + 3 unit tests | d65a510 | 3 scheduler tests | Verified |
-| 28 | PodTemplateSpec: derive Default | d65a510 | Required for #26 | Verified |
-| 29 | Lifecycle HTTP hook: resolve hostname via DNS lookup | 638b0de | Code review | Unverified |
-| 30 | Watch bookmark interval: 15s→5s | b6c56ac | Prevents client inactivity timeout | N/A |
+| # | Fix | Tests | Status |
+|---|-----|-------|--------|
+| 31 | Protobuf: fix field numbers (3/5 not 2/4) + wrap response for any Accept protobuf | ~31 (CRD, FieldValidation, OpenAPI, kubectl) | DONE — 6 unit tests pass |
+| 32 | Watch: skip protobuf wrapping for streaming/watch requests | ~5 (watch timeout) | DONE — covered by #31 tests |
+| 33 | OIDC issuer: use `https://kubernetes.default.svc.cluster.local` everywhere | 2 (OIDC discovery, SA tokens) | DONE — 1 unit test, updated in 4 locations (kubelet x3, authentication handler x1), discovery endpoint already correct |
+| 34 | Deployment: compute revision from owned ReplicaSets, not hardcoded "1" | 3 (rolling update, proportional, rollover) | DONE — 1 unit test |
+| 35 | StatefulSet: graceful termination in rolling update (deletionTimestamp, not direct delete) | 5 (rolling update, burst, eviction, canary, list/patch) | DONE — 2 unit tests |
+| 36 | StatefulSet: exclude terminating pods from current_replicas count | (included in #35) | DONE — 1 unit test |
+| 37 | fsGroup: copy owner bits to group instead of unconditional g+rwX | 2 (secrets, projected) | DONE — 2 unit tests |
+| 38 | EmptyDir: use tmpfs for all emptyDir volumes (not just Memory medium) | 4 (emptyDir permissions) | DONE — runtime change, no separate test |
+| 39 | kube-root-ca.crt: mount CA cert into controller-manager container | 1 (kube-root-ca.crt) | DONE — docker-compose.yml volume mount added |
+| 40 | EmptyDir: add size_limit field to EmptyDirVolumeSource | 0 (API compat) | DONE — field added to struct |
+| 41 | Namespace deletion: finalizer-aware resource deletion | 1 (OrderedNamespaceDeletion) | DONE — 1 unit test, pods deleted first with grace period |
+| 42 | ResourceQuota: recognize `count/replicasets.apps` resource name | 1 (ResourceQuota life of replica set) | DONE — added alongside existing `count/replicasets` |
+| 43 | Events API: preserve creation_timestamp and UID on update | 1 (Events API operations) | DONE — event handler preserves existing metadata |
+| 44 | PriorityClass patch: use new resource version when reverting immutable field | 1 (PriorityClass endpoints) | DONE — prevents stale resource version error |
+| 45 | Namespace: count_remaining_resources checks all resource types (not just 4) | 0 (correctness) | DONE — matches deletion resource_types list |
+| 46 | Kubelet: skip umask wrapper when image has no entrypoint/cmd | 0 (correctness) | DONE — prevents empty `exec` crash |
+| 47 | ResourceQuota: insert `count/pods` alongside `pods` in usage map | 1 (ResourceQuota life of pod) | DONE — matches pattern used by all other resource types |
 
-## Test Results
+**Projected impact**: ~41 of 112 failures addressed
 
-- rusternetes-common: 262 passed, 0 failed
-- rusternetes-api-server: 181 passed, 0 failed
-- rusternetes-controller-manager: 173 passed, 0 failed
-- rusternetes-scheduler: 28 passed, 0 failed
-- rusternetes-api-server integration: 2 passed
-- **Total: 646 passed, 0 failed**
+## Failures by Category
 
-## All 146 Failures — Current Status
+### sig-api-machinery (40 failures)
 
-### Fixed and verified with tests (~67 tests)
+#### AdmissionWebhook (13)
 
-| Tests | Issue | Fix |
-|-------|-------|-----|
-| 2 | StatefulSet burst/scaling readyReplicas | #1 |
-| 5 | Job indexed completion reason | #3 |
-| 8 | Kubectl OpenAPI MIME validation | #4 |
-| 1 | RC exceeded quota condition | #5 |
-| 2 | RS status patch overwrites conditions | #13 |
-| 1 | LimitRange max not enforced for ephemeral-storage | #15 |
-| 1 | Recreate deployment old pods not terminated | #12 |
-| 1 | Watch label selector ADDED on re-match | #14 |
-| 1 | Namespace ContentFailure not set | #16 |
-| 1 | OIDC discovery issuer URL missing scheme | #17 |
-| 13 | Webhook response parse fails (metadata field) | #6 |
-| ~20 | Exec connection reset by peer | #9 |
-| 3 | Protobuf response roundtrip | #11 |
-| 4 | Session affinity (confirmed exec reset from e2e logs) | #9 |
-| 3 | Service endpoints (confirmed exec reset from e2e logs) | #9 |
-| 2 | Scheduler NodeSelector/unschedulable | #21 + #27 |
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 1 | listing mutating webhooks should work | | |
+| 2 | listing validating webhooks should work | | |
+| 3 | patching/updating a mutating webhook should work | | |
+| 4 | patching/updating a validating webhook should work | | |
+| 5 | should be able to deny attaching pod | | |
+| 6 | should be able to deny pod and configmap creation | | |
+| 7 | should deny crd creation | | |
+| 8 | should honor timeout | | |
+| 9 | should mutate configmap | | |
+| 10 | should mutate everything except 'skip-me' configmaps | | |
+| 11 | should mutate pod and apply defaults after mutation | | |
+| 12 | should not be able to mutate or prevent deletion of webhook configuration objects | | |
+| 13 | should unconditionally reject operations on fail closed webhook | | |
 
-### Fixed without dedicated test (~40 tests)
+#### AggregatedDiscovery (3)
 
-| Tests | Issue | Fix |
-|-------|-------|-----|
-| 13 | CRD creation timeout | #11 |
-| 6 | FieldValidation missing schemas | #10 |
-| 3 | AggregatedDiscovery CRD blocked | #11 |
-| 1 | Scheduler preemption DisruptionTarget | #7 |
-| 2 | Container terminated reason empty | #18 |
-| 2 | Init container status incomplete | #19 |
-| 1 | Events API fields empty after update | #20 |
-| 1 | CSR status patch | #13 |
-| 2 | Ephemeral Containers status not written | #22 |
-| 5 | Service type transitions ExternalName↔ClusterIP | #23 |
-| 1 | Service endpoints latency (RC template) | #26 |
-| 2 | Container Lifecycle Hooks hostname | #29 |
-| 1 | NodePort service | #23 |
-| 2 | Service/pod proxy | #24 |
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 14 | should support aggregated discovery interface | | |
+| 15 | should support aggregated discovery interface for CRDs | | |
+| 16 | should support raw aggregated discovery request for CRDs | | |
 
-### Fixed by interval/config changes (~19 tests)
+#### Aggregator (1)
 
-| Tests | Issue | Fix |
-|-------|-------|-----|
-| 3 | Deployment proportional/rollover/rolling | #25 — controller 2s |
-| 2 | ReplicaSet adopt/serve | #25 — faster pod creation |
-| 1 | DaemonSet rolling update | #25 — faster pod availability |
-| 1 | DisruptionController PDB | #25 — all pods running faster |
-| 1 | HostPort scheduling | #25 — scheduler 1s |
-| 2 | Scheduler preemption (basic + critical) | #25 — faster eviction |
-| 2 | EndpointSlice multi-port/multi-endpoint | #25 — faster endpoint creation |
-| 2 | ResourceQuota watch timeout | #30 — bookmark 5s keep-alive |
-| 1 | Service status lifecycle watch | #30 — bookmark 5s keep-alive |
-| 4 | RC lifecycle/scale/serve/release watch | #30 — bookmark 5s keep-alive |
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 17 | Should be able to support the 1.17 Sample API Server using the current Aggregator | | |
 
-### Likely fixed — need conformance run to confirm
+#### CustomResourceDefinition (5)
 
-| Tests | Issue | Why likely fixed |
-|-------|-------|-----------------|
-| 1 | KubeletManagedEtcHosts | Exec connection reset — #9 |
-| 1 | Variable Expansion subpaths | Exec connection reset — #9 |
-| 2 | ServiceAccounts token mount | Exec connection reset — #9 |
-| 1 | Container Runtime exit status | Empty terminated reason — #18 |
-| 3 | StatefulSet rolling update/patch/evicted | Verified PATCH works on current code (`kubectl patch` changes image correctly) — may have been old-code issue in round 124 |
-| 4 | Job orphan/failure-policy/successPolicy | Controller timing — interval reduction #25 should help; Job controller has orphan adoption code |
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 18 | custom resource defaulting for requests and from storage works | Fix #31 | Protobuf fix should resolve |
+| 19 | creating/deleting custom resource definition objects works | Fix #31 | Protobuf fix should resolve |
+| 20 | getting/updating/patching custom resource definition status sub-resource works | Fix #31 | Protobuf fix should resolve |
+| 21 | listing custom resource definition objects works | Fix #31 | Protobuf fix should resolve |
+| 22 | watch on custom resource definition objects | Fix #31,#32 | Protobuf + watch fix |
 
-**Subtotal: 12 tests likely fixed**
+#### CustomResourcePublishOpenAPI (9)
 
-### Unfixed — needs live debugging or feature work
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 23 | removes definition from spec when one version gets changed to not be served | Fix #31 | Protobuf fix should resolve |
+| 24 | updates the published spec when one version gets renamed | Fix #31 | Protobuf fix should resolve |
+| 25 | works for CRD preserving unknown fields at the schema root | Fix #31 | Protobuf fix should resolve |
+| 26 | works for CRD preserving unknown fields in an embedded object | Fix #31 | Protobuf fix should resolve |
+| 27 | works for CRD with validation schema | Fix #31 | Protobuf fix should resolve |
+| 28 | works for CRD without validation schema | Fix #31 | Protobuf fix should resolve |
+| 29 | works for multiple CRDs of different groups | Fix #31 | Protobuf fix should resolve |
+| 30 | works for multiple CRDs of same group and version but different kinds | Fix #31 | Protobuf fix should resolve |
+| 31 | works for multiple CRDs of same group but different versions | Fix #31 | Protobuf fix should resolve |
 
-| Tests | Issue | Root Cause | What would fix it |
-|-------|-------|-----------|-------------------|
-| 5 | DNS | Pod GET returns 404 during exec — pod exists in Docker (containers running) but not in etcd; needs live debugging to trace who deletes the pod from etcd | Live debugging with new code deployed |
-| 1 | Kubectl proxy --port 0 | kubectl proxy inside e2e pod returns empty JSON from /api — proxy can't connect to API server | Need to investigate kubectl proxy connection path from inside container |
-| 1 | Aggregator sample API server | API aggregation (APIService proxy) not implemented — requires registering external API servers and forwarding requests to them | Implement APIService resource + request forwarding |
-| 1 | Kubectl guestbook | Service not reachable via kube-proxy DNAT from inside pod — Docker Desktop iptables DNAT doesn't apply to bridge traffic | Docker Desktop networking limitation |
-| 1 | Sysctls | Docker Desktop does not support kernel.shm_rmid_forced sysctl in container namespaces | Docker Desktop kernel limitation |
+#### FieldValidation (6)
 
-**Subtotal: 9 tests**
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 32 | should create/apply a CR with unknown fields for CRD with no validation schema | Fix #31 | Protobuf fix should resolve |
+| 33 | should create/apply a valid CR for CRD with validation schema | Fix #31 | Protobuf fix should resolve |
+| 34 | should create/apply an invalid CR with extra properties for CRD with validation schema | Fix #31 | Protobuf fix should resolve |
+| 35 | should detect duplicates in a CR when preserving unknown fields | Fix #31 | Protobuf fix should resolve |
+| 36 | should detect unknown and duplicate fields of a typed object | Fix #31 | Protobuf fix should resolve |
+| 37 | should detect unknown metadata fields in both the root and embedded object of a CR | Fix #31 | Protobuf fix should resolve |
 
-### Platform limitations
+#### Other api-machinery (3)
 
-| Tests | Issue |
-|-------|-------|
-| 4 | EmptyDir permissions (non-root, 0666/0777) — Docker Desktop virtiofs strips write bits |
-| 2 | Secrets/Projected permissions — Docker Desktop virtiofs |
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 38 | OrderedNamespaceDeletion — namespace deletion should delete pod first | Fix #41 | Finalizer-aware deletion, pods first |
+| 39 | ResourceQuota — should capture the life of a pod | Fix #47 | count/pods missing from usage map |
+| 40 | ResourceQuota — should capture the life of a replica set | Fix #42 | count/replicasets.apps recognition |
 
-**Subtotal: 6 tests**
+### sig-apps (22 failures)
+
+#### Deployment (3)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 41 | deployment should support proportional scaling | Fix #34 | Revision from owned ReplicaSets |
+| 42 | deployment should support rollover | Fix #34 | Revision from owned ReplicaSets |
+| 43 | RollingUpdateDeployment should delete old pods and create new ones | Fix #34 | Revision from owned ReplicaSets |
+
+#### DisruptionController (1)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 44 | should block an eviction until the PDB is updated to allow it | | |
+
+#### Job (4)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 45 | should adopt matching orphans and release non-matching pods | | |
+| 46 | should allow to use a pod failure policy to ignore failure matching on DisruptionTarget condition | | |
+| 47 | with successPolicy should succeeded when all indexes succeeded | | |
+| 48 | with successPolicy succeededCount rule should succeeded even when some indexes remain pending | | |
+| 49 | with successPolicy succeededIndexes rule should succeeded even when some indexes remain pending | | |
+
+#### ReplicaSet (3)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 50 | Replace and Patch tests | | |
+| 51 | should adopt matching pods on creation and release no longer matching pods | | |
+| 52 | should serve a basic image on each replica with a public image | | |
+
+#### ReplicationController (4)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 53 | should get and update a ReplicationController scale | | |
+| 54 | should release no longer matching pods | | |
+| 55 | should serve a basic image on each replica with a public image | | |
+| 56 | should surface a failure condition on a common issue like exceeded quota | | |
+
+#### StatefulSet (5)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 57 | Burst scaling should run to completion even with unhealthy pods | Fix #35,#36 | Graceful termination + replicas count |
+| 58 | Scaling should happen in predictable order and halt if any stateful pod is unhealthy | Fix #35,#36 | Graceful termination + replicas count |
+| 59 | should list, patch and delete a collection of StatefulSets | Fix #35,#36 | Graceful termination + replicas count |
+| 60 | should perform canary updates and phased rolling updates of template modifications | Fix #35,#36 | Graceful termination + replicas count |
+| 61 | Should recreate evicted statefulset | Fix #35,#36 | Graceful termination + replicas count |
+
+### sig-network (15 failures)
+
+#### DNS (6)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 62 | should provide /etc/hosts entries for the cluster | | |
+| 63 | should provide DNS for pods for Hostname | | |
+| 64 | should provide DNS for pods for Subdomain | | |
+| 65 | should provide DNS for services | | |
+| 66 | should provide DNS for the cluster | | |
+| 67 | should resolve DNS of partial qualified names for services | | |
+
+#### EndpointSlice (2)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 68 | should support a Service with multiple endpoint IPs specified in multiple EndpointSlices | | |
+| 69 | should support a Service with multiple ports specified in multiple EndpointSlices | | |
+
+#### Other network (7)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 70 | HostPort — validates no conflict between pods with same hostPort but different hostIP and protocol | | |
+| 71 | Proxy — A set of valid responses are returned for both pod and service Proxy | | |
+| 72 | Proxy — should proxy through a service and a pod | | |
+| 73 | Service endpoints latency — should not be very high | | |
+| 74 | Services — should complete a service status lifecycle | | |
+| 75 | Services — should serve a basic endpoint from pods | | |
+| 76 | Services — should serve multiport endpoints from pods | | |
+
+### sig-node (10 failures)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 77 | Container Lifecycle Hook — should execute prestop exec hook properly | | |
+| 78 | Container Runtime — should report termination message from file (FallbackToLogsOnError) | | |
+| 79 | Container Runtime — should run with the expected status | | |
+| 80 | Ephemeral Containers — should update the ephemeral containers in an existing pod | | |
+| 81 | Ephemeral Containers — will start an ephemeral container in an existing pod | | |
+| 82 | InitContainer — should not start app containers and fail the pod if init containers fail on a RestartNever pod | | |
+| 83 | InitContainer — should not start app containers if init containers fail on a RestartAlways pod | | |
+| 84 | KubeletManagedEtcHosts — should test kubelet managed /etc/hosts file | | |
+| 85 | Pod InPlace Resize — 6 containers various operations performed | | |
+| 86 | Pods — should support remote command execution over websockets | | |
+
+### sig-cli (10 failures)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 87 | Guestbook application — should create and stop a working application | | |
+| 88 | Kubectl describe — should check if kubectl describe prints relevant information for rc and pods | | |
+| 89 | Kubectl diff — should check if kubectl diff finds a difference for Deployments | | |
+| 90 | Kubectl expose — should create services for rc | | |
+| 91 | Kubectl label — should update the label on a resource | | |
+| 92 | Kubectl patch — should add annotations for pods in rc | | |
+| 93 | Kubectl replace — should update a single-container pod's image | | |
+| 94 | Proxy server — should support proxy with --port 0 | | |
+| 95 | Update Demo — should create and stop a replication controller | | |
+| 96 | Update Demo — should scale a replication controller | | |
+
+### sig-scheduling (5 failures)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 97 | validates basic preemption works | | |
+| 98 | validates lower priority pod preemption by critical pod | | |
+| 99 | validates pod disruption condition is added to the preempted pod | | |
+| 100 | runs ReplicaSets to verify preemption running path | | |
+| 101 | verify PriorityClass endpoints can be operated with different HTTP methods | Fix #44 | Resource version fix on patch revert |
+
+### sig-storage (6 failures)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 102 | EmptyDir — should support (non-root,0666,default) | Fix #37,#38 | fsGroup + tmpfs for all emptyDir |
+| 103 | EmptyDir — should support (non-root,0777,default) | Fix #37,#38 | fsGroup + tmpfs for all emptyDir |
+| 104 | EmptyDir — should support (root,0666,default) | Fix #37,#38 | fsGroup + tmpfs for all emptyDir |
+| 105 | EmptyDir — should support (root,0777,default) | Fix #37,#38 | fsGroup + tmpfs for all emptyDir |
+| 106 | Projected secret — consumable as non-root with defaultMode and fsGroup | Fix #37 | fsGroup permission fix |
+| 107 | Secrets — consumable as non-root with defaultMode and fsGroup | Fix #37 | fsGroup permission fix |
+
+### sig-auth (3 failures)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 108 | Certificates API — should support CSR API operations | | |
+| 109 | ServiceAccountIssuerDiscovery — should support OIDC discovery | Fix #33 | Issuer URL fix |
+| 110 | ServiceAccounts — should guarantee kube-root-ca.crt exist in any namespace | Fix #39 | CA cert mounted into controller-manager |
+
+### sig-instrumentation (1 failure)
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 111 | Events API — should ensure that an event can be fetched, patched, deleted, and listed | Fix #43 | Preserve metadata on update |
 
 ## Summary
 
-| Category | Count |
-|----------|-------|
-| Fixed with tests | ~67 |
-| Fixed without tests | ~40 |
-| Fixed by config changes | ~19 |
-| Likely fixed (need run to confirm) | ~12 |
-| Unfixed (need debugging/features) | 9 |
-| Platform limitations | 6 |
-| **Total** | **~146** |
-
-If all fixes and likely-fixes work: ~131 newly passing → projected ~426/441 (96.6%)
+| SIG | Failures | Addressed |
+|-----|----------|-----------|
+| api-machinery | 40 | ~23 (protobuf, namespace, quota) |
+| apps | 22 | ~8 (deployment, statefulset) |
+| network | 15 | 0 |
+| node | 10 | 0 |
+| cli | 10 | 0 |
+| storage | 6 | ~6 (fsGroup, emptyDir) |
+| scheduling | 5 | ~1 (priorityclass) |
+| auth | 3 | ~2 (OIDC, kube-root-ca.crt) |
+| instrumentation | 1 | ~1 (events) |
+| **Total** | **112** | **~40** |
 
 ## Progress History
 
 | Round | Pass | Fail | Total | Rate |
 |-------|------|------|-------|------|
+| 103 | 245 | 196 | 441 | 55.6% |
+| 104 | 405 | 36 | 441 | 91.8% |
 | 110 | 283 | 158 | 441 | 64.2% |
 | 118 | 299 | 142 | 441 | 67.8% |
 | 120 | 308 | 133 | 441 | 69.8% |
 | 121 | 310 | 131 | 441 | 70.3% |
 | 124 | 295 | 146 | 441 | 66.9% |
 | 125 | 329 | 112 | 441 | 74.6% |
+
+## Fixes Applied (Rounds 103–125)
+
+30 fixes applied across rounds 103–125. See git log for details.

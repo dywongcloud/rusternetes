@@ -94,6 +94,9 @@ services:
       - api-server
     networks:
       - rusternetes-net
+    volumes:
+      # Mount CA certificate so the namespace controller can create kube-root-ca.crt ConfigMaps
+      - ./.rusternetes/certs:/etc/kubernetes/pki:ro
     environment:
       - RUST_LOG=info
     command: ["--etcd-servers", "http://etcd:2379", "--sync-interval", "2"]
