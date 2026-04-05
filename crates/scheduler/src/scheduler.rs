@@ -8,8 +8,9 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tracing::{debug, error, info, warn};
 
 use crate::advanced::{
-    calculate_resource_score, check_node_affinity, check_pod_affinity, check_pod_anti_affinity,
-    check_preemption, check_taints_tolerations, check_topology_spread_constraints, NodeScore,
+    calculate_resource_score, check_host_port_conflicts, check_node_affinity, check_pod_affinity,
+    check_pod_anti_affinity, check_preemption, check_taints_tolerations,
+    check_topology_spread_constraints, NodeScore,
 };
 
 pub struct Scheduler<S: Storage + Send + Sync + 'static = EtcdStorage> {
@@ -294,10 +295,31 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
             return None;
         }
 
+        // Phase 4b: Check hostPort conflicts
+        let port_ok_nodes: Vec<&Node> = dra_matched_nodes
+            .into_iter()
+            .filter(|node| {
+                if !check_host_port_conflicts(node, pod, all_pods) {
+                    debug!(
+                        "Node {} rejected for pod {}: hostPort conflict",
+                        node.metadata.name, pod.metadata.name
+                    );
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        if port_ok_nodes.is_empty() {
+            debug!("No nodes without hostPort conflicts");
+            return None;
+        }
+
         // Phase 5, 6 & 7: Score nodes based on affinity, pod affinity/anti-affinity, topology spread, and resources
         let mut node_scores: Vec<NodeScore> = Vec::new();
 
-        for node in dra_matched_nodes {
+        for node in port_ok_nodes {
             // Check node affinity (hard requirements and scoring)
             let (affinity_ok, node_affinity_score) = check_node_affinity(node, pod);
             if !affinity_ok {

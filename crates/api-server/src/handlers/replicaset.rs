@@ -2,7 +2,7 @@ use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
     body::Bytes,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Extension, Json,
 };
@@ -218,6 +218,7 @@ pub async fn list(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
+    headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
@@ -274,9 +275,23 @@ pub async fn list(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut replicasets, &params)?;
 
-    let mut list = List::new("ReplicaSetList", "apps/v1", replicasets);
+    // Get a resource version for consistency
     let rv = state.storage.current_revision().await.unwrap_or(0);
-    list.metadata.resource_version = Some(rv.to_string());
+    let resource_version = rv.to_string();
+
+    // Check if table format is requested
+    let accept = headers.get("accept").and_then(|v| v.to_str().ok());
+    if crate::handlers::table::wants_table(accept) {
+        let table = crate::handlers::table::generic_table(
+            replicasets,
+            Some(resource_version),
+            "ReplicaSet",
+        );
+        return Ok(Json(table).into_response());
+    }
+
+    let mut list = List::new("ReplicaSetList", "apps/v1", replicasets);
+    list.metadata.resource_version = Some(resource_version);
     Ok(Json(list).into_response())
 }
 
@@ -284,6 +299,7 @@ pub async fn list(
 pub async fn list_all_replicasets(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
+    headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<axum::response::Response> {
     // Check if this is a watch request
@@ -337,9 +353,23 @@ pub async fn list_all_replicasets(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut replicasets, &params)?;
 
-    let mut list = List::new("ReplicaSetList", "apps/v1", replicasets);
+    // Get a resource version for consistency
     let rv = state.storage.current_revision().await.unwrap_or(0);
-    list.metadata.resource_version = Some(rv.to_string());
+    let resource_version = rv.to_string();
+
+    // Check if table format is requested
+    let accept = headers.get("accept").and_then(|v| v.to_str().ok());
+    if crate::handlers::table::wants_table(accept) {
+        let table = crate::handlers::table::generic_table(
+            replicasets,
+            Some(resource_version),
+            "ReplicaSet",
+        );
+        return Ok(Json(table).into_response());
+    }
+
+    let mut list = List::new("ReplicaSetList", "apps/v1", replicasets);
+    list.metadata.resource_version = Some(resource_version);
     Ok(Json(list).into_response())
 }
 

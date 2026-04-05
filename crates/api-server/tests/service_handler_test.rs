@@ -423,3 +423,236 @@ async fn test_service_session_affinity() {
     // Clean up
     storage.delete(&key).await.unwrap();
 }
+
+// ===== Service List Filtering Tests =====
+
+#[tokio::test]
+async fn test_service_list_label_selector_filtering() {
+    use rusternetes_api_server::handlers::filtering::apply_selectors;
+
+    let storage = Arc::new(MemoryStorage::new());
+
+    // Create services with different labels
+    let mut svc1 = create_test_service("svc-web", "default", ServiceType::ClusterIP);
+    svc1.metadata.labels = Some({
+        let mut m = HashMap::new();
+        m.insert("app".to_string(), "web".to_string());
+        m.insert("tier".to_string(), "frontend".to_string());
+        m
+    });
+
+    let mut svc2 = create_test_service("svc-api", "default", ServiceType::ClusterIP);
+    svc2.metadata.labels = Some({
+        let mut m = HashMap::new();
+        m.insert("app".to_string(), "api".to_string());
+        m.insert("tier".to_string(), "backend".to_string());
+        m
+    });
+
+    let mut svc3 = create_test_service("svc-db", "default", ServiceType::ClusterIP);
+    svc3.metadata.labels = Some({
+        let mut m = HashMap::new();
+        m.insert("app".to_string(), "db".to_string());
+        m.insert("tier".to_string(), "backend".to_string());
+        m
+    });
+
+    let key1 = build_key("services", Some("default"), "svc-web");
+    let key2 = build_key("services", Some("default"), "svc-api");
+    let key3 = build_key("services", Some("default"), "svc-db");
+
+    storage.create(&key1, &svc1).await.unwrap();
+    storage.create(&key2, &svc2).await.unwrap();
+    storage.create(&key3, &svc3).await.unwrap();
+
+    // List all, then filter by label selector app=web
+    let prefix = build_prefix("services", Some("default"));
+    let mut services: Vec<Service> = storage.list(&prefix).await.unwrap();
+
+    let mut params = HashMap::new();
+    params.insert("labelSelector".to_string(), "app=web".to_string());
+    apply_selectors(&mut services, &params).unwrap();
+
+    assert_eq!(services.len(), 1);
+    assert_eq!(services[0].metadata.name, "svc-web");
+
+    // Filter by tier=backend (should match svc-api and svc-db)
+    let mut services: Vec<Service> = storage.list(&prefix).await.unwrap();
+    let mut params = HashMap::new();
+    params.insert("labelSelector".to_string(), "tier=backend".to_string());
+    apply_selectors(&mut services, &params).unwrap();
+
+    assert_eq!(services.len(), 2);
+    let names: Vec<&str> = services.iter().map(|s| s.metadata.name.as_str()).collect();
+    assert!(names.contains(&"svc-api"));
+    assert!(names.contains(&"svc-db"));
+
+    // Clean up
+    storage.delete(&key1).await.unwrap();
+    storage.delete(&key2).await.unwrap();
+    storage.delete(&key3).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_service_list_field_selector_filtering() {
+    use rusternetes_api_server::handlers::filtering::apply_selectors;
+
+    let storage = Arc::new(MemoryStorage::new());
+
+    let svc1 = create_test_service("svc-alpha", "default", ServiceType::ClusterIP);
+    let svc2 = create_test_service("svc-beta", "default", ServiceType::NodePort);
+    let svc3 = create_test_service("svc-gamma", "default", ServiceType::LoadBalancer);
+
+    let key1 = build_key("services", Some("default"), "svc-alpha");
+    let key2 = build_key("services", Some("default"), "svc-beta");
+    let key3 = build_key("services", Some("default"), "svc-gamma");
+
+    storage.create(&key1, &svc1).await.unwrap();
+    storage.create(&key2, &svc2).await.unwrap();
+    storage.create(&key3, &svc3).await.unwrap();
+
+    // Filter by metadata.name=svc-beta
+    let prefix = build_prefix("services", Some("default"));
+    let mut services: Vec<Service> = storage.list(&prefix).await.unwrap();
+
+    let mut params = HashMap::new();
+    params.insert(
+        "fieldSelector".to_string(),
+        "metadata.name=svc-beta".to_string(),
+    );
+    apply_selectors(&mut services, &params).unwrap();
+
+    assert_eq!(services.len(), 1);
+    assert_eq!(services[0].metadata.name, "svc-beta");
+
+    // Clean up
+    storage.delete(&key1).await.unwrap();
+    storage.delete(&key2).await.unwrap();
+    storage.delete(&key3).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_service_list_combined_selectors() {
+    use rusternetes_api_server::handlers::filtering::apply_selectors;
+
+    let storage = Arc::new(MemoryStorage::new());
+
+    let mut svc1 = create_test_service("svc-one", "default", ServiceType::ClusterIP);
+    svc1.metadata.labels = Some({
+        let mut m = HashMap::new();
+        m.insert("env".to_string(), "prod".to_string());
+        m
+    });
+
+    let mut svc2 = create_test_service("svc-two", "default", ServiceType::ClusterIP);
+    svc2.metadata.labels = Some({
+        let mut m = HashMap::new();
+        m.insert("env".to_string(), "prod".to_string());
+        m
+    });
+
+    let mut svc3 = create_test_service("svc-three", "default", ServiceType::ClusterIP);
+    svc3.metadata.labels = Some({
+        let mut m = HashMap::new();
+        m.insert("env".to_string(), "staging".to_string());
+        m
+    });
+
+    let key1 = build_key("services", Some("default"), "svc-one");
+    let key2 = build_key("services", Some("default"), "svc-two");
+    let key3 = build_key("services", Some("default"), "svc-three");
+
+    storage.create(&key1, &svc1).await.unwrap();
+    storage.create(&key2, &svc2).await.unwrap();
+    storage.create(&key3, &svc3).await.unwrap();
+
+    // Filter by both label and field selector
+    let prefix = build_prefix("services", Some("default"));
+    let mut services: Vec<Service> = storage.list(&prefix).await.unwrap();
+
+    let mut params = HashMap::new();
+    params.insert("labelSelector".to_string(), "env=prod".to_string());
+    params.insert(
+        "fieldSelector".to_string(),
+        "metadata.name=svc-one".to_string(),
+    );
+    apply_selectors(&mut services, &params).unwrap();
+
+    assert_eq!(services.len(), 1);
+    assert_eq!(services[0].metadata.name, "svc-one");
+
+    // Clean up
+    storage.delete(&key1).await.unwrap();
+    storage.delete(&key2).await.unwrap();
+    storage.delete(&key3).await.unwrap();
+}
+
+// ===== Service Status Tests =====
+
+#[tokio::test]
+async fn test_service_status_loadbalancer_update() {
+    use rusternetes_common::resources::{LoadBalancerIngress, LoadBalancerStatus, ServiceStatus};
+
+    let storage = Arc::new(MemoryStorage::new());
+
+    let mut service = create_test_service("test-lb-status", "default", ServiceType::LoadBalancer);
+    // Initialize with empty status like the create handler does
+    service.status = Some(ServiceStatus {
+        load_balancer: Some(LoadBalancerStatus {
+            ingress: vec![],
+        }),
+        conditions: None,
+    });
+
+    let key = build_key("services", Some("default"), "test-lb-status");
+    storage.create(&key, &service).await.unwrap();
+
+    // Update status with loadBalancer ingress (simulating what status update does)
+    let mut retrieved: Service = storage.get(&key).await.unwrap();
+    retrieved.status = Some(ServiceStatus {
+        load_balancer: Some(LoadBalancerStatus {
+            ingress: vec![LoadBalancerIngress {
+                ip: Some("1.2.3.4".to_string()),
+                hostname: None,
+                ip_mode: None,
+                ports: None,
+            }],
+        }),
+        conditions: None,
+    });
+
+    let updated: Service = storage.update(&key, &retrieved).await.unwrap();
+    let lb_status = updated.status.unwrap().load_balancer.unwrap();
+    assert_eq!(lb_status.ingress.len(), 1);
+    assert_eq!(lb_status.ingress[0].ip, Some("1.2.3.4".to_string()));
+
+    // Clean up
+    storage.delete(&key).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_service_create_initializes_status() {
+    // Verify that the ServiceStatus and LoadBalancerStatus structs
+    // serialize correctly when initialized with empty ingress
+    use rusternetes_common::resources::{LoadBalancerStatus, ServiceStatus};
+
+    let status = ServiceStatus {
+        load_balancer: Some(LoadBalancerStatus {
+            ingress: vec![],
+        }),
+        conditions: None,
+    };
+
+    let json = serde_json::to_value(&status).unwrap();
+    // loadBalancer should be present as an empty object (ingress is skip_serializing_if empty)
+    assert!(json.get("loadBalancer").is_some());
+    let lb = json.get("loadBalancer").unwrap();
+    // ingress is skipped when empty due to skip_serializing_if
+    assert!(
+        lb.get("ingress").is_none()
+            || lb.get("ingress")
+                .unwrap()
+                .as_array()
+                .map_or(true, |a| a.is_empty())
+    );
+}

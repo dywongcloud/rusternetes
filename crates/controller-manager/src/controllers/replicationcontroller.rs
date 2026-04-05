@@ -833,7 +833,11 @@ mod tests {
 
         // Verify no pods were created
         let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-        assert_eq!(pods.len(), 0, "No pods should be created when quota is exceeded");
+        assert_eq!(
+            pods.len(),
+            0,
+            "No pods should be created when quota is exceeded"
+        );
 
         // Verify the RC has a ReplicaFailure condition
         let updated_rc: ReplicationController = storage

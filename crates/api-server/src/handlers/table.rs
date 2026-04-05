@@ -310,6 +310,12 @@ impl HasMetadata for rusternetes_common::resources::ReplicationController {
     }
 }
 
+impl HasMetadata for rusternetes_common::resources::ReplicaSet {
+    fn metadata(&self) -> &ObjectMeta {
+        &self.metadata
+    }
+}
+
 impl HasPodInfo for rusternetes_common::resources::Pod {
     fn pod_info(&self) -> PodInfo {
         use rusternetes_common::types::Phase;

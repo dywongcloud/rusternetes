@@ -2,6 +2,7 @@
 //!
 //! Tests all CRUD operations, edge cases, and error handling for replicasets
 
+use rusternetes_api_server::handlers::table::{generic_table, wants_table, HasMetadata};
 use rusternetes_common::resources::{
     Container, PodSpec, PodTemplateSpec, ReplicaSet, ReplicaSetSpec, ReplicaSetStatus,
 };
@@ -460,4 +461,49 @@ async fn test_replicaset_observed_generation() {
 
     // Clean up
     storage.delete(&key).await.unwrap();
+}
+
+#[test]
+fn test_replicaset_table_format() {
+    // Verify HasMetadata is implemented for ReplicaSet
+    let rs1 = create_test_replicaset("table-rs-1", "default", 3);
+    let rs2 = create_test_replicaset("table-rs-2", "default", 5);
+
+    // Verify the trait works
+    let meta = rs1.metadata();
+    assert_eq!(meta.name, "table-rs-1");
+    assert_eq!(meta.namespace, Some("default".to_string()));
+
+    // Build a table from ReplicaSets
+    let table = generic_table(vec![rs1, rs2], Some("100".to_string()), "ReplicaSet");
+
+    assert_eq!(table.kind, "Table");
+    assert_eq!(table.api_version, "meta.k8s.io/v1");
+    assert_eq!(table.metadata.resource_version, Some("100".to_string()));
+    assert_eq!(table.column_definitions.len(), 2);
+    assert_eq!(table.column_definitions[0].name, "NAME");
+    assert_eq!(table.column_definitions[1].name, "AGE");
+    assert_eq!(table.rows.len(), 2);
+
+    // Check cell values
+    assert_eq!(
+        table.rows[0].cells[0],
+        serde_json::Value::String("table-rs-1".to_string())
+    );
+    assert_eq!(
+        table.rows[1].cells[0],
+        serde_json::Value::String("table-rs-2".to_string())
+    );
+
+    // Each row should have the full object embedded
+    assert!(table.rows[0].object.is_some());
+    assert!(table.rows[1].object.is_some());
+
+    // Verify wants_table detection
+    assert!(wants_table(Some(
+        "application/json;as=Table;v=v1;g=meta.k8s.io"
+    )));
+    assert!(wants_table(Some("application/json;as=Table")));
+    assert!(!wants_table(Some("application/json")));
+    assert!(!wants_table(None));
 }

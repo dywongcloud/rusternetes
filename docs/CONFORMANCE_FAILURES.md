@@ -42,8 +42,13 @@
 | 64 | Service handler: add selector filtering + table format | 3 (service tests) | DONE — matches deployment pattern |
 | 65 | Aggregated discovery: fix response format and CRD inclusion | 3 (discovery tests) | DONE — proper APIGroupDiscoveryList |
 | 66 | RC controller: pod adoption + release matching RS pattern | 3 (RC tests) | DONE — 2 unit tests |
+| 67 | Job: auto-generate selector from template labels when not set | 4 (job adoption + successPolicy) | DONE — 1 unit test |
+| 68 | RS list handler: add table format support | 2 (sig-cli RS tests) | DONE — HasMetadata impl |
+| 69 | HostPort: validate port conflicts in scheduler | 1 (HostPort test) | DONE — 1 unit test |
+| 70 | Kubelet: container status with containerID + imageID + started | 2 (container runtime tests) | DONE — field population |
+| 71 | Kubelet: /etc/hosts includes hostAliases entries | 1 (/etc/hosts test) | DONE — verified |
 
-**Projected impact**: ~98 of 112 failures addressed
+**Projected impact**: ~108 of 112 failures addressed
 
 ## Failures by Category
 
@@ -144,11 +149,11 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 45 | should adopt matching orphans and release non-matching pods | | |
+| 45 | should adopt matching orphans and release non-matching pods | Fix #67 | Auto-generate selector + adoption |
 | 46 | should allow to use a pod failure policy to ignore failure matching on DisruptionTarget condition | Fix #52 | Ignore action excludes from failed count |
-| 47 | with successPolicy should succeeded when all indexes succeeded | | |
-| 48 | with successPolicy succeededCount rule should succeeded even when some indexes remain pending | | |
-| 49 | with successPolicy succeededIndexes rule should succeeded even when some indexes remain pending | | |
+| 47 | with successPolicy should succeeded when all indexes succeeded | Fix #67 | SuccessCriteriaMet condition |
+| 48 | with successPolicy succeededCount rule should succeeded even when some indexes remain pending | Fix #67 | succeededCount evaluation |
+| 49 | with successPolicy succeededIndexes rule should succeeded even when some indexes remain pending | Fix #67 | succeededIndexes evaluation |
 
 #### ReplicaSet (3)
 
@@ -201,7 +206,7 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 70 | HostPort — validates no conflict between pods with same hostPort but different hostIP and protocol | | |
+| 70 | HostPort — validates no conflict between pods with same hostPort but different hostIP and protocol | Fix #69 | Scheduler port conflict check |
 | 71 | Proxy — A set of valid responses are returned for both pod and service Proxy | | |
 | 72 | Proxy — should proxy through a service and a pod | | |
 | 73 | Service endpoints latency — should not be very high | | |
@@ -215,12 +220,12 @@
 |---|------|--------|-------|
 | 77 | Container Lifecycle Hook — should execute prestop exec hook properly | | |
 | 78 | Container Runtime — should report termination message from file (FallbackToLogsOnError) | Fix #57 | Reads logs on empty termination file |
-| 79 | Container Runtime — should run with the expected status | | |
+| 79 | Container Runtime — should run with the expected status | Fix #70 | containerID, imageID, started fields |
 | 80 | Ephemeral Containers — should update the ephemeral containers in an existing pod | Fix #62 | Kubelet starts new ephemeral containers |
 | 81 | Ephemeral Containers — will start an ephemeral container in an existing pod | Fix #62 | Kubelet starts new ephemeral containers |
 | 82 | InitContainer — should not start app containers and fail the pod if init containers fail on a RestartNever pod | Fix #56 | Proper init failure handling |
 | 83 | InitContainer — should not start app containers if init containers fail on a RestartAlways pod | Fix #56 | RestartAlways retries init only |
-| 84 | KubeletManagedEtcHosts — should test kubelet managed /etc/hosts file | | |
+| 84 | KubeletManagedEtcHosts — should test kubelet managed /etc/hosts file | Fix #71 | /etc/hosts with hostAliases |
 | 85 | Pod InPlace Resize — 6 containers various operations performed | | |
 | 86 | Pods — should support remote command execution over websockets | | |
 

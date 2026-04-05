@@ -415,6 +415,7 @@ fn is_hop_by_hop_header(name: &str) -> bool {
             | "trailers"
             | "transfer-encoding"
             | "upgrade"
+            | "host"
     )
 }
 

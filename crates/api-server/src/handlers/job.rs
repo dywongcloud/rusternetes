@@ -44,6 +44,31 @@ pub async fn create(
     job.metadata.ensure_uid();
     job.metadata.ensure_creation_timestamp();
 
+    // Auto-generate selector if not set (like real K8s).
+    // When manualSelector is not true, K8s generates a selector from the controller-uid label
+    // and adds the controller-uid label to the pod template.
+    if !job.spec.manual_selector.unwrap_or(false) && job.spec.selector.is_none() {
+        let uid = job.metadata.uid.clone();
+        let mut match_labels = std::collections::HashMap::new();
+        match_labels.insert("controller-uid".to_string(), uid.clone());
+        job.spec.selector = Some(rusternetes_common::types::LabelSelector {
+            match_labels: Some(match_labels),
+            match_expressions: None,
+        });
+
+        // Also ensure the pod template has the controller-uid label
+        let template_labels = job
+            .spec
+            .template
+            .metadata
+            .get_or_insert_with(Default::default)
+            .labels
+            .get_or_insert_with(Default::default);
+        template_labels.insert("controller-uid".to_string(), uid.clone());
+        // Also add the standard job-name label
+        template_labels.insert("job-name".to_string(), job.metadata.name.clone());
+    }
+
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
         info!(

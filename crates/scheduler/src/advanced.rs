@@ -422,6 +422,106 @@ fn matches_pod_affinity_term(
     !matching_pods.is_empty()
 }
 
+/// Check if a pod's hostPort requirements conflict with pods already scheduled on the node.
+/// Two pods conflict if they use the same hostPort AND the same protocol AND overlapping hostIPs.
+/// A hostIP of "0.0.0.0", "::", or "" (empty/unset) means "all interfaces" and overlaps with
+/// any other hostIP.
+pub fn check_host_port_conflicts(node: &Node, pod: &Pod, all_pods: &[Pod]) -> bool {
+    // Collect hostPorts requested by the incoming pod
+    let incoming_ports = collect_host_ports(pod);
+    if incoming_ports.is_empty() {
+        return true; // No hostPort requirements, no conflict possible
+    }
+
+    let node_name = &node.metadata.name;
+
+    // Collect hostPorts already in use on this node
+    for existing_pod in all_pods {
+        // Only consider pods scheduled on this node
+        let on_this_node = existing_pod
+            .spec
+            .as_ref()
+            .and_then(|s| s.node_name.as_ref())
+            .map(|n| n == node_name)
+            .unwrap_or(false);
+        if !on_this_node {
+            continue;
+        }
+
+        // Skip terminated pods
+        let phase = existing_pod.status.as_ref().and_then(|s| s.phase.as_ref());
+        if matches!(
+            phase,
+            Some(rusternetes_common::types::Phase::Succeeded)
+                | Some(rusternetes_common::types::Phase::Failed)
+        ) {
+            continue;
+        }
+
+        let existing_ports = collect_host_ports(existing_pod);
+        for (inc_port, inc_protocol, inc_ip) in &incoming_ports {
+            for (ex_port, ex_protocol, ex_ip) in &existing_ports {
+                if inc_port == ex_port
+                    && inc_protocol == ex_protocol
+                    && host_ips_overlap(inc_ip, ex_ip)
+                {
+                    debug!(
+                        "HostPort conflict: port {} protocol {} hostIP {} vs {} on node {}",
+                        inc_port, inc_protocol, inc_ip, ex_ip, node_name
+                    );
+                    return false;
+                }
+            }
+        }
+    }
+
+    true
+}
+
+/// Collect all (hostPort, protocol, hostIP) tuples from a pod's containers.
+fn collect_host_ports(pod: &Pod) -> Vec<(u16, String, String)> {
+    let mut result = Vec::new();
+    if let Some(spec) = &pod.spec {
+        for container in &spec.containers {
+            if let Some(ports) = &container.ports {
+                for port in ports {
+                    if let Some(host_port) = port.host_port {
+                        let protocol = port.protocol.clone().unwrap_or_else(|| "TCP".to_string());
+                        let host_ip = port.host_ip.clone().unwrap_or_default();
+                        result.push((host_port, protocol, host_ip));
+                    }
+                }
+            }
+        }
+        // Also check init containers
+        if let Some(init_containers) = &spec.init_containers {
+            for container in init_containers {
+                if let Some(ports) = &container.ports {
+                    for port in ports {
+                        if let Some(host_port) = port.host_port {
+                            let protocol =
+                                port.protocol.clone().unwrap_or_else(|| "TCP".to_string());
+                            let host_ip = port.host_ip.clone().unwrap_or_default();
+                            result.push((host_port, protocol, host_ip));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
+/// Check if two hostIP values overlap.
+/// "0.0.0.0", "::", and "" all mean "all interfaces" and overlap with everything.
+fn host_ips_overlap(ip1: &str, ip2: &str) -> bool {
+    let wildcard = |ip: &str| ip.is_empty() || ip == "0.0.0.0" || ip == "::";
+    if wildcard(ip1) || wildcard(ip2) {
+        return true;
+    }
+    ip1 == ip2
+}
+
 /// Calculate resource-based node score
 pub fn calculate_resource_score(node: &Node, pod: &Pod) -> i32 {
     calculate_resource_score_with_pods(node, pod, &[])
@@ -1153,5 +1253,235 @@ mod tests {
             pods_to_evict.contains(&"low-pri".to_string()),
             "Low-priority pod should be evicted"
         );
+    }
+
+    // ---- HostPort conflict detection tests ----
+
+    use rusternetes_common::resources::ContainerPort;
+
+    /// Helper: create a container with a hostPort binding
+    fn make_container_with_host_port(
+        host_port: u16,
+        protocol: &str,
+        host_ip: &str,
+    ) -> rusternetes_common::resources::Container {
+        rusternetes_common::resources::Container {
+            name: "main".to_string(),
+            image: "busybox".to_string(),
+            command: None,
+            args: None,
+            working_dir: None,
+            ports: Some(vec![ContainerPort {
+                container_port: 80,
+                name: None,
+                protocol: Some(protocol.to_string()),
+                host_port: Some(host_port),
+                host_ip: if host_ip.is_empty() {
+                    None
+                } else {
+                    Some(host_ip.to_string())
+                },
+            }]),
+            env: None,
+            env_from: None,
+            resources: None,
+            volume_mounts: None,
+            volume_devices: None,
+            image_pull_policy: None,
+            liveness_probe: None,
+            readiness_probe: None,
+            startup_probe: None,
+            security_context: None,
+            restart_policy: None,
+            resize_policy: None,
+            lifecycle: None,
+            termination_message_path: None,
+            termination_message_policy: None,
+            stdin: None,
+            stdin_once: None,
+            tty: None,
+        }
+    }
+
+    /// Helper: create a pod with a hostPort, scheduled on a node
+    fn make_host_port_pod(
+        name: &str,
+        host_port: u16,
+        protocol: &str,
+        host_ip: &str,
+        node_name: &str,
+    ) -> Pod {
+        let spec = rusternetes_common::resources::PodSpec {
+            containers: vec![make_container_with_host_port(host_port, protocol, host_ip)],
+            node_name: Some(node_name.to_string()),
+            ..Default::default()
+        };
+        let mut pod = Pod::new(name, spec);
+        pod.status = Some(rusternetes_common::resources::PodStatus {
+            phase: Some(rusternetes_common::types::Phase::Running),
+            ..Default::default()
+        });
+        pod
+    }
+
+    /// Helper: create an unscheduled pod with a hostPort (incoming pod)
+    fn make_incoming_host_port_pod(
+        name: &str,
+        host_port: u16,
+        protocol: &str,
+        host_ip: &str,
+    ) -> Pod {
+        let spec = rusternetes_common::resources::PodSpec {
+            containers: vec![make_container_with_host_port(host_port, protocol, host_ip)],
+            ..Default::default()
+        };
+        Pod::new(name, spec)
+    }
+
+    #[test]
+    fn test_host_port_no_conflict_when_no_host_ports() {
+        let node = make_node("node-1", "2", "4Gi");
+        let incoming = make_incoming_pod("pod-a", 0, "100m", "128Mi", None);
+        assert!(
+            check_host_port_conflicts(&node, &incoming, &[]),
+            "Pod without hostPort should have no conflicts"
+        );
+    }
+
+    #[test]
+    fn test_host_port_conflict_same_port_same_protocol_same_ip() {
+        let node = make_node("node-1", "2", "4Gi");
+        let existing = make_host_port_pod("existing", 8080, "TCP", "", "node-1");
+        let incoming = make_incoming_host_port_pod("incoming", 8080, "TCP", "");
+
+        assert!(
+            !check_host_port_conflicts(&node, &incoming, &[existing]),
+            "Same hostPort, same protocol, same (wildcard) hostIP should conflict"
+        );
+    }
+
+    #[test]
+    fn test_host_port_no_conflict_different_port() {
+        let node = make_node("node-1", "2", "4Gi");
+        let existing = make_host_port_pod("existing", 8080, "TCP", "", "node-1");
+        let incoming = make_incoming_host_port_pod("incoming", 9090, "TCP", "");
+
+        assert!(
+            check_host_port_conflicts(&node, &incoming, &[existing]),
+            "Different hostPort should not conflict"
+        );
+    }
+
+    #[test]
+    fn test_host_port_no_conflict_different_protocol() {
+        let node = make_node("node-1", "2", "4Gi");
+        let existing = make_host_port_pod("existing", 8080, "TCP", "", "node-1");
+        let incoming = make_incoming_host_port_pod("incoming", 8080, "UDP", "");
+
+        assert!(
+            check_host_port_conflicts(&node, &incoming, &[existing]),
+            "Same hostPort but different protocol should not conflict"
+        );
+    }
+
+    #[test]
+    fn test_host_port_no_conflict_different_host_ip() {
+        let node = make_node("node-1", "2", "4Gi");
+        let existing = make_host_port_pod("existing", 8080, "TCP", "10.0.0.1", "node-1");
+        let incoming = make_incoming_host_port_pod("incoming", 8080, "TCP", "10.0.0.2");
+
+        assert!(
+            check_host_port_conflicts(&node, &incoming, &[existing]),
+            "Same hostPort and protocol but different specific hostIPs should not conflict"
+        );
+    }
+
+    #[test]
+    fn test_host_port_conflict_wildcard_vs_specific_ip() {
+        let node = make_node("node-1", "2", "4Gi");
+        // Existing pod binds to 0.0.0.0 (all interfaces)
+        let existing = make_host_port_pod("existing", 8080, "TCP", "0.0.0.0", "node-1");
+        // Incoming pod binds to a specific IP
+        let incoming = make_incoming_host_port_pod("incoming", 8080, "TCP", "10.0.0.1");
+
+        assert!(
+            !check_host_port_conflicts(&node, &incoming, &[existing]),
+            "Wildcard hostIP (0.0.0.0) should conflict with any specific IP"
+        );
+    }
+
+    #[test]
+    fn test_host_port_conflict_empty_vs_specific_ip() {
+        let node = make_node("node-1", "2", "4Gi");
+        // Existing pod with empty hostIP (means all interfaces)
+        let existing = make_host_port_pod("existing", 8080, "TCP", "", "node-1");
+        // Incoming pod binds to a specific IP
+        let incoming = make_incoming_host_port_pod("incoming", 8080, "TCP", "10.0.0.1");
+
+        assert!(
+            !check_host_port_conflicts(&node, &incoming, &[existing]),
+            "Empty hostIP (wildcard) should conflict with any specific IP"
+        );
+    }
+
+    #[test]
+    fn test_host_port_no_conflict_on_different_node() {
+        let node = make_node("node-1", "2", "4Gi");
+        // Existing pod on node-2 (different node)
+        let existing = make_host_port_pod("existing", 8080, "TCP", "", "node-2");
+        let incoming = make_incoming_host_port_pod("incoming", 8080, "TCP", "");
+
+        assert!(
+            check_host_port_conflicts(&node, &incoming, &[existing]),
+            "Pods on different nodes should not conflict"
+        );
+    }
+
+    #[test]
+    fn test_host_port_no_conflict_terminated_pod() {
+        let node = make_node("node-1", "2", "4Gi");
+        let mut existing = make_host_port_pod("existing", 8080, "TCP", "", "node-1");
+        // Mark existing pod as Succeeded (terminated)
+        existing.status = Some(rusternetes_common::resources::PodStatus {
+            phase: Some(rusternetes_common::types::Phase::Succeeded),
+            ..Default::default()
+        });
+        let incoming = make_incoming_host_port_pod("incoming", 8080, "TCP", "");
+
+        assert!(
+            check_host_port_conflicts(&node, &incoming, &[existing]),
+            "Terminated pods should not cause conflicts"
+        );
+    }
+
+    #[test]
+    fn test_host_port_allows_same_port_different_ip_and_protocol() {
+        // This is the exact scenario from the conformance test:
+        // Two pods with same hostPort but different hostIP and protocol should coexist
+        let node = make_node("node-1", "2", "4Gi");
+        let existing = make_host_port_pod("pod-tcp", 8080, "TCP", "10.0.0.1", "node-1");
+        let incoming = make_incoming_host_port_pod("pod-udp", 8080, "UDP", "10.0.0.2");
+
+        assert!(
+            check_host_port_conflicts(&node, &incoming, &[existing]),
+            "Same hostPort with different hostIP AND different protocol should not conflict"
+        );
+    }
+
+    #[test]
+    fn test_host_ips_overlap() {
+        // Wildcard cases
+        assert!(host_ips_overlap("", "10.0.0.1"));
+        assert!(host_ips_overlap("10.0.0.1", ""));
+        assert!(host_ips_overlap("0.0.0.0", "10.0.0.1"));
+        assert!(host_ips_overlap("10.0.0.1", "0.0.0.0"));
+        assert!(host_ips_overlap("::", "10.0.0.1"));
+        assert!(host_ips_overlap("", ""));
+        assert!(host_ips_overlap("0.0.0.0", "0.0.0.0"));
+
+        // Specific IPs
+        assert!(host_ips_overlap("10.0.0.1", "10.0.0.1"));
+        assert!(!host_ips_overlap("10.0.0.1", "10.0.0.2"));
+        assert!(!host_ips_overlap("192.168.1.1", "10.0.0.1"));
     }
 }

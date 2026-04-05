@@ -948,7 +948,7 @@ pub async fn create_eviction(
     let pod_labels = pod.metadata.labels.clone().unwrap_or_default();
 
     // Check if any PDB applies to this pod
-    for pdb in pdbs {
+    for pdb in &pdbs {
         // Check if PDB selector matches the pod
         let selector = &pdb.spec.selector;
 
@@ -967,63 +967,91 @@ pub async fn create_eviction(
         };
 
         if matches {
-            // This PDB applies to our pod - check if eviction is allowed
-            if let Some(ref status) = pdb.status {
-                if status.disruptions_allowed <= 0 {
-                    let min_avail_str = pdb
-                        .spec
-                        .min_available
-                        .as_ref()
-                        .map(|v| v.to_string())
-                        .unwrap_or_else(|| "<nil>".to_string());
-                    let max_unavail_str = pdb
-                        .spec
-                        .max_unavailable
-                        .as_ref()
-                        .map(|v| v.to_string())
-                        .unwrap_or_else(|| "<nil>".to_string());
-                    let detail_msg = format!(
-                        "Cannot evict pod {}/{}: PodDisruptionBudget {} does not allow any disruptions. \
-                        Current healthy: {}, Desired healthy: {}, Min available: {}, Max unavailable: {}",
-                        namespace,
-                        name,
-                        pdb.metadata.name,
-                        status.current_healthy,
-                        status.desired_healthy,
-                        min_avail_str,
-                        max_unavail_str
-                    );
-                    // Return 429 with details.causes containing DisruptionBudget
-                    let status_body = serde_json::json!({
-                        "kind": "Status",
-                        "apiVersion": "v1",
-                        "metadata": {},
-                        "status": "Failure",
-                        "message": detail_msg,
-                        "reason": "TooManyRequests",
-                        "details": {
-                            "causes": [{
-                                "reason": "DisruptionBudget",
-                                "message": detail_msg
-                            }]
-                        },
-                        "code": 429
-                    });
-                    return Ok(axum::response::Response::builder()
-                        .status(axum::http::StatusCode::TOO_MANY_REQUESTS)
-                        .header("Content-Type", "application/json")
-                        .body(axum::body::Body::from(
-                            serde_json::to_string(&status_body).unwrap(),
-                        ))
-                        .unwrap()
-                        .into_response());
-                }
+            // This PDB applies to our pod - compute disruptions_allowed inline
+            // by counting matching healthy pods (don't rely solely on pre-computed status)
+            let disruptions_allowed = compute_pdb_disruptions_allowed(
+                state.storage.as_ref(),
+                pdb,
+                &namespace,
+            )
+            .await;
 
-                info!(
-                    "Eviction for pod {}/{} passes PDB {} check (disruptions_allowed = {})",
-                    namespace, name, pdb.metadata.name, status.disruptions_allowed
+            if disruptions_allowed <= 0 {
+                let current_healthy = compute_pdb_healthy_count(
+                    state.storage.as_ref(),
+                    pdb,
+                    &namespace,
+                )
+                .await;
+                let desired_healthy = compute_pdb_desired_healthy(pdb, current_healthy);
+                let detail_msg = format!(
+                    "Cannot evict pod as it would violate the pod's disruption budget. \
+                    The disruption budget {} needs {} healthy pods and has {}, but we can only tolerate {} pod disruptions",
+                    pdb.metadata.name,
+                    desired_healthy,
+                    current_healthy,
+                    disruptions_allowed.max(0)
                 );
+                // Return 429 with details.causes containing DisruptionBudget
+                let status_body = serde_json::json!({
+                    "kind": "Status",
+                    "apiVersion": "v1",
+                    "metadata": {},
+                    "status": "Failure",
+                    "message": detail_msg,
+                    "reason": "TooManyRequests",
+                    "details": {
+                        "causes": [{
+                            "reason": "DisruptionBudget",
+                            "message": detail_msg
+                        }]
+                    },
+                    "code": 429
+                });
+                return Ok(axum::response::Response::builder()
+                    .status(axum::http::StatusCode::TOO_MANY_REQUESTS)
+                    .header("Content-Type", "application/json")
+                    .header("Retry-After", "10")
+                    .body(axum::body::Body::from(
+                        serde_json::to_string(&status_body).unwrap(),
+                    ))
+                    .unwrap()
+                    .into_response());
             }
+
+            info!(
+                "Eviction for pod {}/{} passes PDB {} check (disruptions_allowed = {})",
+                namespace, name, pdb.metadata.name, disruptions_allowed
+            );
+
+            // Update PDB's disruptedPods to record this eviction
+            let mut updated_pdb = pdb.clone();
+            let disrupted_pods = updated_pdb
+                .status
+                .get_or_insert_with(|| rusternetes_common::resources::PodDisruptionBudgetStatus {
+                    current_healthy: 0,
+                    desired_healthy: 0,
+                    disruptions_allowed: 0,
+                    expected_pods: 0,
+                    observed_generation: None,
+                    conditions: None,
+                    disrupted_pods: None,
+                })
+                .disrupted_pods
+                .get_or_insert_with(std::collections::HashMap::new);
+            disrupted_pods.insert(name.clone(), chrono::Utc::now());
+
+            // Also update disruptions_allowed in status
+            if let Some(ref mut status) = updated_pdb.status {
+                status.disruptions_allowed = disruptions_allowed - 1;
+            }
+
+            let pdb_key = rusternetes_storage::build_key(
+                "poddisruptionbudgets",
+                Some(&namespace),
+                &pdb.metadata.name,
+            );
+            let _ = state.storage.update(&pdb_key, &updated_pdb).await;
         }
     }
 
@@ -1056,4 +1084,329 @@ pub async fn create_eviction(
             .to_string(),
         ))
         .unwrap())
+}
+
+/// Check if a pod matches a PDB's label selector
+fn pod_matches_pdb_selector(
+    pod: &rusternetes_common::resources::Pod,
+    selector: &rusternetes_common::types::LabelSelector,
+) -> bool {
+    let pod_labels = match &pod.metadata.labels {
+        Some(labels) => labels,
+        None => return false,
+    };
+
+    if let Some(ref match_labels) = selector.match_labels {
+        for (key, value) in match_labels {
+            if pod_labels.get(key) != Some(value) {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+/// Check if a pod is healthy (Running phase)
+fn is_pod_healthy(pod: &rusternetes_common::resources::Pod) -> bool {
+    pod.status
+        .as_ref()
+        .and_then(|s| s.phase.as_ref())
+        .map(|p| matches!(p, rusternetes_common::types::Phase::Running))
+        .unwrap_or(false)
+}
+
+/// Compute the number of healthy pods matching a PDB's selector
+async fn compute_pdb_healthy_count<S: Storage>(
+    storage: &S,
+    pdb: &rusternetes_common::resources::PodDisruptionBudget,
+    namespace: &str,
+) -> i32 {
+    let pods_prefix = rusternetes_storage::build_prefix("pods", Some(namespace));
+    let all_pods: Vec<rusternetes_common::resources::Pod> =
+        storage.list(&pods_prefix).await.unwrap_or_default();
+
+    let matching_pods: Vec<&rusternetes_common::resources::Pod> = all_pods
+        .iter()
+        .filter(|p| pod_matches_pdb_selector(p, &pdb.spec.selector))
+        .collect();
+
+    matching_pods.iter().filter(|p| is_pod_healthy(p)).count() as i32
+}
+
+/// Compute the desired healthy count from a PDB spec
+fn compute_pdb_desired_healthy(
+    pdb: &rusternetes_common::resources::PodDisruptionBudget,
+    total_pods: i32,
+) -> i32 {
+    if let Some(ref min_available) = pdb.spec.min_available {
+        match min_available {
+            rusternetes_common::resources::IntOrString::Int(value) => *value,
+            rusternetes_common::resources::IntOrString::String(s) => {
+                if let Some(stripped) = s.strip_suffix('%') {
+                    if let Ok(percentage) = stripped.parse::<f64>() {
+                        ((total_pods as f64) * (percentage / 100.0)).ceil() as i32
+                    } else {
+                        total_pods
+                    }
+                } else {
+                    total_pods
+                }
+            }
+        }
+    } else if let Some(ref max_unavailable) = pdb.spec.max_unavailable {
+        let max_unavailable_count = match max_unavailable {
+            rusternetes_common::resources::IntOrString::Int(value) => *value,
+            rusternetes_common::resources::IntOrString::String(s) => {
+                if let Some(stripped) = s.strip_suffix('%') {
+                    if let Ok(percentage) = stripped.parse::<f64>() {
+                        ((total_pods as f64) * (percentage / 100.0)).floor() as i32
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                }
+            }
+        };
+        total_pods - max_unavailable_count
+    } else {
+        // No min_available or max_unavailable - default to requiring all pods
+        total_pods
+    }
+}
+
+/// Compute disruptions_allowed for a PDB by counting matching healthy pods
+async fn compute_pdb_disruptions_allowed<S: Storage>(
+    storage: &S,
+    pdb: &rusternetes_common::resources::PodDisruptionBudget,
+    namespace: &str,
+) -> i32 {
+    let pods_prefix = rusternetes_storage::build_prefix("pods", Some(namespace));
+    let all_pods: Vec<rusternetes_common::resources::Pod> =
+        storage.list(&pods_prefix).await.unwrap_or_default();
+
+    let matching_pods: Vec<&rusternetes_common::resources::Pod> = all_pods
+        .iter()
+        .filter(|p| pod_matches_pdb_selector(p, &pdb.spec.selector))
+        .collect();
+
+    let total_pods = matching_pods.len() as i32;
+    let healthy_pods = matching_pods.iter().filter(|p| is_pod_healthy(p)).count() as i32;
+    let desired_healthy = compute_pdb_desired_healthy(pdb, total_pods);
+
+    healthy_pods - desired_healthy
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusternetes_common::resources::{
+        IntOrString, Pod, PodDisruptionBudget, PodDisruptionBudgetSpec,
+    };
+    use rusternetes_common::types::{LabelSelector, ObjectMeta, TypeMeta};
+    use rusternetes_storage::memory::MemoryStorage;
+    use std::collections::HashMap;
+
+    fn make_pod(name: &str, namespace: &str, labels: HashMap<String, String>, running: bool) -> Pod {
+        let phase = if running { "Running" } else { "Pending" };
+        let labels_json = serde_json::to_value(&labels).unwrap();
+        let json = serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "name": name,
+                "namespace": namespace,
+                "labels": labels_json
+            },
+            "spec": {
+                "containers": [{
+                    "name": "test",
+                    "image": "nginx"
+                }]
+            },
+            "status": {
+                "phase": phase
+            }
+        });
+        serde_json::from_value(json).unwrap()
+    }
+
+    fn make_pdb(
+        name: &str,
+        namespace: &str,
+        min_available: i32,
+        match_labels: HashMap<String, String>,
+    ) -> PodDisruptionBudget {
+        PodDisruptionBudget {
+            type_meta: TypeMeta {
+                api_version: "policy/v1".to_string(),
+                kind: "PodDisruptionBudget".to_string(),
+            },
+            metadata: ObjectMeta {
+                name: name.to_string(),
+                namespace: Some(namespace.to_string()),
+                ..Default::default()
+            },
+            spec: PodDisruptionBudgetSpec {
+                min_available: Some(IntOrString::Int(min_available)),
+                max_unavailable: None,
+                selector: LabelSelector {
+                    match_labels: Some(match_labels),
+                    match_expressions: None,
+                },
+                unhealthy_pod_eviction_policy: None,
+            },
+            status: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pdb_blocks_eviction_then_allows_after_update() {
+        let storage = Arc::new(MemoryStorage::new());
+        let ns = "test-eviction-ns";
+
+        let labels = HashMap::from([("app".to_string(), "web".to_string())]);
+
+        // Create a single running pod matching the PDB
+        let pod = make_pod("test-pod-1", ns, labels.clone(), true);
+        let pod_key = rusternetes_storage::build_key("pods", Some(ns), "test-pod-1");
+        storage.create(&pod_key, &pod).await.unwrap();
+
+        // Create a PDB with minAvailable=1 (so with 1 healthy pod, disruptions_allowed=0)
+        let pdb = make_pdb("test-pdb", ns, 1, labels.clone());
+        let pdb_key = rusternetes_storage::build_key("poddisruptionbudgets", Some(ns), "test-pdb");
+        storage.create(&pdb_key, &pdb).await.unwrap();
+
+        // Compute disruptions_allowed - should be 0 (1 healthy - 1 desired = 0)
+        let pdb_stored: PodDisruptionBudget = storage.get(&pdb_key).await.unwrap();
+        let disruptions = compute_pdb_disruptions_allowed(&*storage, &pdb_stored, ns).await;
+        assert_eq!(disruptions, 0, "Should not allow any disruptions with minAvailable=1 and 1 pod");
+
+        // Verify that the desired_healthy calculation is correct
+        let healthy = compute_pdb_healthy_count(&*storage, &pdb_stored, ns).await;
+        assert_eq!(healthy, 1);
+        let desired = compute_pdb_desired_healthy(&pdb_stored, 1);
+        assert_eq!(desired, 1);
+
+        // Now update PDB to minAvailable=0 (allowing eviction)
+        let mut updated_pdb = pdb_stored.clone();
+        updated_pdb.spec.min_available = Some(IntOrString::Int(0));
+        storage.update(&pdb_key, &updated_pdb).await.unwrap();
+
+        // Now disruptions should be allowed (1 healthy - 0 desired = 1)
+        let pdb_updated: PodDisruptionBudget = storage.get(&pdb_key).await.unwrap();
+        let disruptions_after = compute_pdb_disruptions_allowed(&*storage, &pdb_updated, ns).await;
+        assert_eq!(disruptions_after, 1, "Should allow 1 disruption after lowering minAvailable to 0");
+    }
+
+    #[tokio::test]
+    async fn test_pdb_allows_eviction_with_extra_pods() {
+        let storage = Arc::new(MemoryStorage::new());
+        let ns = "test-eviction-ns2";
+
+        let labels = HashMap::from([("app".to_string(), "web".to_string())]);
+
+        // Create 3 running pods
+        for i in 1..=3 {
+            let name = format!("pod-{}", i);
+            let pod = make_pod(&name, ns, labels.clone(), true);
+            let key = rusternetes_storage::build_key("pods", Some(ns), &name);
+            storage.create(&key, &pod).await.unwrap();
+        }
+
+        // PDB with minAvailable=2 and 3 healthy pods => disruptions_allowed=1
+        let pdb = make_pdb("pdb-extra", ns, 2, labels.clone());
+        let pdb_key = rusternetes_storage::build_key("poddisruptionbudgets", Some(ns), "pdb-extra");
+        storage.create(&pdb_key, &pdb).await.unwrap();
+
+        let pdb_stored: PodDisruptionBudget = storage.get(&pdb_key).await.unwrap();
+        let disruptions = compute_pdb_disruptions_allowed(&*storage, &pdb_stored, ns).await;
+        assert_eq!(disruptions, 1, "Should allow 1 disruption with 3 healthy pods and minAvailable=2");
+    }
+
+    #[tokio::test]
+    async fn test_pdb_no_status_still_blocks() {
+        // This tests the key bug fix: PDB with no status should still block evictions
+        let storage = Arc::new(MemoryStorage::new());
+        let ns = "test-no-status-ns";
+
+        let labels = HashMap::from([("app".to_string(), "web".to_string())]);
+
+        // Create 2 running pods
+        for i in 1..=2 {
+            let name = format!("pod-{}", i);
+            let pod = make_pod(&name, ns, labels.clone(), true);
+            let key = rusternetes_storage::build_key("pods", Some(ns), &name);
+            storage.create(&key, &pod).await.unwrap();
+        }
+
+        // PDB with minAvailable=2 and NO status set (freshly created, controller hasn't reconciled)
+        let pdb = make_pdb("pdb-no-status", ns, 2, labels.clone());
+        assert!(pdb.status.is_none(), "PDB should have no status initially");
+
+        let pdb_key = rusternetes_storage::build_key("poddisruptionbudgets", Some(ns), "pdb-no-status");
+        storage.create(&pdb_key, &pdb).await.unwrap();
+
+        let pdb_stored: PodDisruptionBudget = storage.get(&pdb_key).await.unwrap();
+        let disruptions = compute_pdb_disruptions_allowed(&*storage, &pdb_stored, ns).await;
+        assert_eq!(disruptions, 0, "PDB with no status should still block when minAvailable equals pod count");
+    }
+
+    #[test]
+    fn test_pod_matches_pdb_selector_basic() {
+        let labels = HashMap::from([("app".to_string(), "web".to_string())]);
+        let pod = make_pod("p1", "default", labels, true);
+        let selector = LabelSelector {
+            match_labels: Some(HashMap::from([("app".to_string(), "web".to_string())])),
+            match_expressions: None,
+        };
+        assert!(pod_matches_pdb_selector(&pod, &selector));
+
+        let wrong_selector = LabelSelector {
+            match_labels: Some(HashMap::from([("app".to_string(), "api".to_string())])),
+            match_expressions: None,
+        };
+        assert!(!pod_matches_pdb_selector(&pod, &wrong_selector));
+    }
+
+    #[test]
+    fn test_is_pod_healthy_checks_phase() {
+        let labels = HashMap::new();
+        let running_pod = make_pod("p1", "default", labels.clone(), true);
+        assert!(is_pod_healthy(&running_pod));
+
+        let pending_pod = make_pod("p2", "default", labels, false);
+        assert!(!is_pod_healthy(&pending_pod));
+    }
+
+    #[test]
+    fn test_compute_desired_healthy_min_available() {
+        let labels = HashMap::from([("app".to_string(), "web".to_string())]);
+        let pdb = make_pdb("pdb", "default", 3, labels);
+        assert_eq!(compute_pdb_desired_healthy(&pdb, 5), 3);
+    }
+
+    #[test]
+    fn test_compute_desired_healthy_percentage() {
+        let pdb = PodDisruptionBudget {
+            type_meta: TypeMeta {
+                api_version: "policy/v1".to_string(),
+                kind: "PodDisruptionBudget".to_string(),
+            },
+            metadata: ObjectMeta::new("pdb").with_namespace("default"),
+            spec: PodDisruptionBudgetSpec {
+                min_available: Some(IntOrString::String("50%".to_string())),
+                max_unavailable: None,
+                selector: LabelSelector {
+                    match_labels: Some(HashMap::new()),
+                    match_expressions: None,
+                },
+                unhealthy_pod_eviction_policy: None,
+            },
+            status: None,
+        };
+        // 50% of 10 = 5
+        assert_eq!(compute_pdb_desired_healthy(&pdb, 10), 5);
+    }
 }

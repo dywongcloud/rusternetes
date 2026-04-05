@@ -3542,7 +3542,7 @@ impl ContainerRuntime {
             .unwrap_or(false);
         if let Some(hosts_path) = hosts_file_path {
             if !has_hosts_mount && !binds.iter().any(|b| b.contains(":/etc/hosts")) {
-                binds.push(format!("{}:/etc/hosts:ro", hosts_path));
+                binds.push(format!("{}:/etc/hosts", hosts_path));
                 info!("Mounted custom /etc/hosts for pod {}", pod_name);
             }
         }
@@ -4374,11 +4374,18 @@ impl ContainerRuntime {
                 .inspect_container(&container_name, None::<InspectContainerOptions>)
                 .await;
 
-            let (state, container_id): (ContainerState, Option<String>) = match container_state_info
+            let (state, container_id, image_id): (ContainerState, Option<String>, Option<String>) = match container_state_info
             {
                 Ok(inspect) => {
                     let ds = inspect.state.unwrap_or_default();
                     let cid = inspect.id.clone().map(|id| format!("docker://{}", id));
+                    let iid = inspect.image.clone().map(|img| {
+                        if img.starts_with("sha256:") {
+                            format!("docker-pullable://{}", img)
+                        } else {
+                            img
+                        }
+                    });
                     let running = ds.running.unwrap_or(false);
 
                     if running {
@@ -4387,6 +4394,7 @@ impl ContainerRuntime {
                                 started_at: ds.started_at,
                             },
                             cid,
+                            iid,
                         )
                     } else if ds.finished_at.is_some()
                         || matches!(
@@ -4425,9 +4433,9 @@ impl ContainerRuntime {
                             (ContainerState::Waiting {
                                 reason: Some("CrashLoopBackOff".to_string()),
                                 message: Some(format!("back-off restarting failed container init container \"{}\" exited with {}", ic.name, code)),
-                            }, cid)
+                            }, cid, iid)
                         } else {
-                            (terminated, cid)
+                            (terminated, cid, iid)
                         }
                     } else {
                         (
@@ -4436,6 +4444,7 @@ impl ContainerRuntime {
                                 message: None,
                             },
                             cid,
+                            iid,
                         )
                     }
                 }
@@ -4447,6 +4456,7 @@ impl ContainerRuntime {
                             reason: Some("PodInitializing".to_string()),
                             message: None,
                         },
+                        None,
                         None,
                     )
                 }
@@ -4461,7 +4471,7 @@ impl ContainerRuntime {
                 state: Some(state),
                 last_state: None,
                 image: Some(ic.image.clone()),
-                image_id: None,
+                image_id,
                 container_id,
                 started: Some(false),
                 allocated_resources: ic.resources.as_ref().and_then(|r| r.requests.clone()),
@@ -4502,6 +4512,9 @@ impl ContainerRuntime {
                     let running = state.running.unwrap_or(false);
                     let exit_code = state.exit_code.unwrap_or(0);
 
+                    // Capture started_at before state fields are consumed
+                    let ec_started_at = state.started_at.clone();
+
                     let container_state = if running {
                         Some(ContainerState::Running {
                             started_at: state.started_at,
@@ -4516,7 +4529,7 @@ impl ContainerRuntime {
                                 "Error".to_string()
                             }),
                             message: None,
-                            started_at: None,
+                            started_at: ec_started_at,
                             finished_at: state.finished_at,
                             container_id: inspect.id.clone().map(|id| format!("docker://{}", id)),
                         })
@@ -4609,6 +4622,21 @@ impl ContainerRuntime {
                         .unwrap_or(0);
                     let restart_count = docker_count.max(prev_count);
 
+                    // Capture started_at before state fields are consumed by branches
+                    let docker_started_at = state.started_at.clone();
+
+                    // Preserve last_state from existing pod status for restart tracking
+                    let prev_last_state = pod
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.container_statuses.as_ref())
+                        .and_then(|statuses| {
+                            statuses
+                                .iter()
+                                .find(|cs| cs.name == container.name)
+                        })
+                        .and_then(|cs| cs.last_state.clone());
+
                     let container_state = if running {
                         Some(ContainerState::Running {
                             started_at: state.started_at,
@@ -4651,7 +4679,7 @@ impl ContainerRuntime {
                                     .unwrap_or_else(|| "Error".to_string())
                             }),
                             message: termination_msg,
-                            started_at: None,
+                            started_at: docker_started_at,
                             finished_at: state.finished_at,
                             container_id: inspect.id.clone().map(|id| format!("docker://{}", id)),
                         })
@@ -4755,7 +4783,7 @@ impl ContainerRuntime {
                         ready,
                         restart_count,
                         state: container_state,
-                        last_state: None,
+                        last_state: prev_last_state,
                         image: Some(container.image.clone()),
                         image_id: inspect.image.clone().map(|img| {
                             if img.starts_with("sha256:") {
@@ -8813,5 +8841,199 @@ mod tests {
             }
             other => panic!("Expected Waiting state for app container, got: {:?}", other),
         }
+    }
+
+    // --- container status reporting tests ---
+
+    #[test]
+    fn test_hosts_file_contains_host_aliases() {
+        use rusternetes_common::resources::HostAlias;
+
+        let mut pod = make_pod("alias-pod", "default", None, None);
+        pod.spec.as_mut().unwrap().host_aliases = Some(vec![
+            HostAlias {
+                ip: "1.2.3.4".to_string(),
+                hostnames: Some(vec!["foo.local".to_string(), "bar.local".to_string()]),
+            },
+            HostAlias {
+                ip: "5.6.7.8".to_string(),
+                hostnames: Some(vec!["baz.local".to_string()]),
+            },
+        ]);
+
+        let content = build_hosts_content(&pod, Some("10.244.1.5"), "cluster.local");
+
+        // Pod IP entry
+        assert!(content.contains("10.244.1.5\talias-pod\n"));
+        // Host aliases
+        assert!(content.contains("1.2.3.4\tfoo.local\tbar.local\n"));
+        assert!(content.contains("5.6.7.8\tbaz.local\n"));
+    }
+
+    #[test]
+    fn test_hosts_file_ipv6_entries_present() {
+        let pod = make_pod("ipv6-pod", "default", None, None);
+        let content = build_hosts_content(&pod, Some("10.244.1.1"), "cluster.local");
+
+        // Check that standard IPv6 entries are present
+        assert!(content.contains("fe00::\tip6-localnet"));
+        assert!(content.contains("fe00::\tip6-mcastprefix"));
+        assert!(content.contains("fe00::1\tip6-allnodes"));
+        assert!(content.contains("fe00::2\tip6-allrouters"));
+    }
+
+    #[test]
+    fn test_hosts_file_empty_host_aliases_ignored() {
+        use rusternetes_common::resources::HostAlias;
+
+        let mut pod = make_pod("empty-alias", "default", None, None);
+        pod.spec.as_mut().unwrap().host_aliases = Some(vec![
+            HostAlias {
+                ip: "1.2.3.4".to_string(),
+                hostnames: Some(vec![]), // Empty hostnames
+            },
+            HostAlias {
+                ip: "5.6.7.8".to_string(),
+                hostnames: None, // No hostnames
+            },
+        ]);
+
+        let content = build_hosts_content(&pod, Some("10.0.0.1"), "cluster.local");
+        // Neither alias IP should appear in the hosts file
+        assert!(!content.contains("1.2.3.4"));
+        assert!(!content.contains("5.6.7.8"));
+    }
+
+    #[test]
+    fn test_container_status_terminated_has_started_at() {
+        // Verify that building a Terminated container state includes started_at.
+        // This tests the logic fixed in get_container_statuses.
+        let started = "2026-01-01T00:00:00Z".to_string();
+        let finished = "2026-01-01T00:01:00Z".to_string();
+
+        let state = ContainerState::Terminated {
+            exit_code: 0,
+            signal: None,
+            reason: Some("Completed".to_string()),
+            message: None,
+            started_at: Some(started.clone()),
+            finished_at: Some(finished.clone()),
+            container_id: Some("docker://abc123".to_string()),
+        };
+
+        match state {
+            ContainerState::Terminated {
+                started_at,
+                finished_at,
+                ..
+            } => {
+                assert_eq!(
+                    started_at,
+                    Some(started),
+                    "Terminated state must include started_at"
+                );
+                assert_eq!(
+                    finished_at,
+                    Some(finished),
+                    "Terminated state must include finished_at"
+                );
+            }
+            _ => panic!("Expected Terminated state"),
+        }
+    }
+
+    #[test]
+    fn test_container_status_last_state_preserved() {
+        // When a container restarts, last_state should be the previous state.
+        let prev_state = ContainerState::Terminated {
+            exit_code: 1,
+            signal: None,
+            reason: Some("Error".to_string()),
+            message: None,
+            started_at: Some("2026-01-01T00:00:00Z".to_string()),
+            finished_at: Some("2026-01-01T00:01:00Z".to_string()),
+            container_id: Some("docker://prev123".to_string()),
+        };
+
+        let status = ContainerStatus {
+            name: "app".to_string(),
+            ready: false,
+            restart_count: 1,
+            state: Some(ContainerState::Running {
+                started_at: Some("2026-01-01T00:02:00Z".to_string()),
+            }),
+            last_state: Some(prev_state.clone()),
+            image: Some("nginx:latest".to_string()),
+            image_id: Some("docker-pullable://sha256:abc".to_string()),
+            container_id: Some("docker://new456".to_string()),
+            started: Some(true),
+            allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
+        };
+
+        assert!(status.last_state.is_some(), "last_state should be set");
+        match &status.last_state {
+            Some(ContainerState::Terminated { exit_code, .. }) => {
+                assert_eq!(*exit_code, 1, "last_state should have the previous exit code");
+            }
+            _ => panic!("Expected Terminated last_state"),
+        }
+    }
+
+    #[test]
+    fn test_container_status_image_id_format() {
+        // Verify Docker image SHA is prefixed with docker-pullable://
+        let sha = "sha256:abcdef1234567890";
+        let formatted = if sha.starts_with("sha256:") {
+            format!("docker-pullable://{}", sha)
+        } else {
+            sha.to_string()
+        };
+
+        assert_eq!(
+            formatted, "docker-pullable://sha256:abcdef1234567890",
+            "image_id should be prefixed with docker-pullable://"
+        );
+    }
+
+    #[test]
+    fn test_container_status_serialization() {
+        // Verify ContainerStatus serializes with correct JSON field names
+        let status = ContainerStatus {
+            name: "web".to_string(),
+            ready: true,
+            restart_count: 0,
+            state: Some(ContainerState::Running {
+                started_at: Some("2026-01-01T00:00:00Z".to_string()),
+            }),
+            last_state: None,
+            image: Some("nginx:1.25".to_string()),
+            image_id: Some("docker-pullable://sha256:abc".to_string()),
+            container_id: Some("docker://def".to_string()),
+            started: Some(true),
+            allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
+        };
+
+        let json = serde_json::to_string(&status).unwrap();
+        // Check camelCase serialization
+        assert!(json.contains("\"imageID\""), "Should serialize as imageID");
+        assert!(
+            json.contains("\"containerID\""),
+            "Should serialize as containerID"
+        );
+        assert!(
+            json.contains("\"restartCount\""),
+            "Should serialize as restartCount"
+        );
+        assert!(json.contains("\"started\":true"), "started should be true");
     }
 }

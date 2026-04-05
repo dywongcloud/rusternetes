@@ -73,9 +73,15 @@ impl<S: Storage> JobController<S> {
         let pod_prefix = format!("/registry/pods/{}/", namespace);
         let all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
 
-        // Find pods owned by this Job via ownerReferences (authoritative)
-        // Fall back to label matching for backwards compatibility
+        // Find pods owned by this Job via ownerReferences (authoritative),
+        // or matching selector labels (for orphan adoption).
+        // Also fall back to job-name label matching for backwards compatibility.
         let job_uid = &job.metadata.uid;
+        let selector_labels = job
+            .spec
+            .selector
+            .as_ref()
+            .and_then(|s| s.match_labels.as_ref());
         let job_pods: Vec<Pod> = all_pods
             .into_iter()
             .filter(|pod| {
@@ -85,14 +91,33 @@ impl<S: Storage> JobController<S> {
                     .as_ref()
                     .map(|refs| refs.iter().any(|r| &r.uid == job_uid))
                     .unwrap_or(false);
-                let owned_by_label = pod
+                if owned_by_ref {
+                    return true;
+                }
+                // Check if the pod is an orphan (no controller ownerRef) that matches our selector
+                let has_any_controller = pod
                     .metadata
-                    .labels
+                    .owner_references
                     .as_ref()
+                    .map(|refs| refs.iter().any(|r| r.controller.unwrap_or(false)))
+                    .unwrap_or(false);
+                if has_any_controller {
+                    return false; // Pod is owned by another controller, skip
+                }
+                // Match by selector labels (primary) or job-name label (fallback)
+                let pod_labels = pod.metadata.labels.as_ref();
+                let matches_selector = selector_labels
+                    .map(|sel| {
+                        pod_labels
+                            .map(|pl| sel.iter().all(|(k, v)| pl.get(k) == Some(v)))
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false);
+                let matches_job_name = pod_labels
                     .and_then(|labels| labels.get("job-name"))
                     .map(|j| j == name)
                     .unwrap_or(false);
-                owned_by_ref || owned_by_label
+                matches_selector || matches_job_name
             })
             .collect();
 
@@ -2145,5 +2170,546 @@ mod tests {
             Some(0),
             "Ignored pod should not be counted in status.failed"
         );
+    }
+
+    #[tokio::test]
+    async fn test_adopt_matching_orphans() {
+        let storage = Arc::new(MemoryStorage::new());
+
+        // Create a job with a selector that matches controller-uid
+        let mut job = make_job("adopt-job", "default", 2, 2);
+        let job_uid = "adopt-uid-123";
+        job.metadata.uid = job_uid.to_string();
+        // Set up a selector with controller-uid (like the API server auto-generates)
+        let mut match_labels = HashMap::new();
+        match_labels.insert("controller-uid".to_string(), job_uid.to_string());
+        job.spec.selector = Some(rusternetes_common::types::LabelSelector {
+            match_labels: Some(match_labels),
+            match_expressions: None,
+        });
+        // Also set template labels to include controller-uid
+        job.spec.template.metadata = Some(ObjectMeta {
+            labels: Some({
+                let mut m = HashMap::new();
+                m.insert("controller-uid".to_string(), job_uid.to_string());
+                m.insert("job-name".to_string(), "adopt-job".to_string());
+                m
+            }),
+            ..Default::default()
+        });
+
+        let job_key = "/registry/jobs/default/adopt-job";
+        storage.create(job_key, &job).await.unwrap();
+
+        // Create an orphan pod that has matching labels but NO ownerReference
+        let orphan_pod = Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta {
+                name: "orphan-pod-1".to_string(),
+                namespace: Some("default".to_string()),
+                uid: "orphan-uid-1".to_string(),
+                labels: Some({
+                    let mut m = HashMap::new();
+                    m.insert("controller-uid".to_string(), job_uid.to_string());
+                    m.insert("job-name".to_string(), "adopt-job".to_string());
+                    m
+                }),
+                owner_references: None, // No ownerReference — orphan
+                creation_timestamp: Some(chrono::Utc::now()),
+                ..Default::default()
+            },
+            spec: Some(PodSpec {
+                containers: vec![test_container()],
+                ..Default::default()
+            }),
+            status: Some(PodStatus {
+                phase: Some(Phase::Succeeded),
+                ..Default::default()
+            }),
+        };
+        storage
+            .create("/registry/pods/default/orphan-pod-1", &orphan_pod)
+            .await
+            .unwrap();
+
+        let controller = JobController::new(storage.clone());
+        let mut job: Job = storage.get(job_key).await.unwrap();
+        controller.reconcile(&mut job).await.unwrap();
+
+        // The orphan pod should now have an ownerReference to the job
+        let updated_pod: Pod = storage.get("/registry/pods/default/orphan-pod-1").await.unwrap();
+        let has_owner_ref = updated_pod
+            .metadata
+            .owner_references
+            .as_ref()
+            .map(|refs| refs.iter().any(|r| r.uid == job_uid && r.kind == "Job"))
+            .unwrap_or(false);
+        assert!(
+            has_owner_ref,
+            "Orphan pod should be adopted with ownerReference pointing to the job"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_release_non_matching_pods() {
+        let storage = Arc::new(MemoryStorage::new());
+
+        // Create a job with a selector
+        let mut job = make_job("release-job", "default", 2, 2);
+        let job_uid = "release-uid-456";
+        job.metadata.uid = job_uid.to_string();
+        let mut match_labels = HashMap::new();
+        match_labels.insert("controller-uid".to_string(), job_uid.to_string());
+        job.spec.selector = Some(rusternetes_common::types::LabelSelector {
+            match_labels: Some(match_labels),
+            match_expressions: None,
+        });
+
+        let job_key = "/registry/jobs/default/release-job";
+        storage.create(job_key, &job).await.unwrap();
+
+        // Create a pod that has an ownerReference to this job but WRONG labels
+        let non_matching_pod = Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta {
+                name: "wrong-label-pod".to_string(),
+                namespace: Some("default".to_string()),
+                uid: "wrong-uid-1".to_string(),
+                labels: Some({
+                    let mut m = HashMap::new();
+                    m.insert("controller-uid".to_string(), "different-uid".to_string());
+                    m.insert("job-name".to_string(), "release-job".to_string());
+                    m
+                }),
+                owner_references: Some(vec![OwnerReference {
+                    api_version: "batch/v1".to_string(),
+                    kind: "Job".to_string(),
+                    name: "release-job".to_string(),
+                    uid: job_uid.to_string(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                }]),
+                creation_timestamp: Some(chrono::Utc::now()),
+                ..Default::default()
+            },
+            spec: Some(PodSpec {
+                containers: vec![test_container()],
+                ..Default::default()
+            }),
+            status: Some(PodStatus {
+                phase: Some(Phase::Running),
+                ..Default::default()
+            }),
+        };
+        storage
+            .create("/registry/pods/default/wrong-label-pod", &non_matching_pod)
+            .await
+            .unwrap();
+
+        let controller = JobController::new(storage.clone());
+        let mut job: Job = storage.get(job_key).await.unwrap();
+        controller.reconcile(&mut job).await.unwrap();
+
+        // The non-matching pod should have had its ownerReference removed (released)
+        let updated_pod: Pod = storage
+            .get("/registry/pods/default/wrong-label-pod")
+            .await
+            .unwrap();
+        let still_owned = updated_pod
+            .metadata
+            .owner_references
+            .as_ref()
+            .map(|refs| refs.iter().any(|r| r.uid == job_uid))
+            .unwrap_or(false);
+        assert!(
+            !still_owned,
+            "Pod with non-matching labels should be released (ownerReference removed)"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_do_not_adopt_pods_owned_by_another_controller() {
+        let storage = Arc::new(MemoryStorage::new());
+
+        let mut job = make_job("adopt-job2", "default", 2, 2);
+        let job_uid = "adopt-uid-789";
+        job.metadata.uid = job_uid.to_string();
+        let mut match_labels = HashMap::new();
+        match_labels.insert("controller-uid".to_string(), job_uid.to_string());
+        job.spec.selector = Some(rusternetes_common::types::LabelSelector {
+            match_labels: Some(match_labels),
+            match_expressions: None,
+        });
+
+        let job_key = "/registry/jobs/default/adopt-job2";
+        storage.create(job_key, &job).await.unwrap();
+
+        // Create a pod with matching labels but already owned by ANOTHER controller
+        let owned_pod = Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta {
+                name: "other-owned-pod".to_string(),
+                namespace: Some("default".to_string()),
+                uid: "other-uid-1".to_string(),
+                labels: Some({
+                    let mut m = HashMap::new();
+                    m.insert("controller-uid".to_string(), job_uid.to_string());
+                    m.insert("job-name".to_string(), "adopt-job2".to_string());
+                    m
+                }),
+                owner_references: Some(vec![OwnerReference {
+                    api_version: "batch/v1".to_string(),
+                    kind: "Job".to_string(),
+                    name: "other-job".to_string(),
+                    uid: "other-job-uid".to_string(),
+                    controller: Some(true), // Already owned by another controller
+                    block_owner_deletion: Some(true),
+                }]),
+                creation_timestamp: Some(chrono::Utc::now()),
+                ..Default::default()
+            },
+            spec: Some(PodSpec {
+                containers: vec![test_container()],
+                ..Default::default()
+            }),
+            status: Some(PodStatus {
+                phase: Some(Phase::Running),
+                ..Default::default()
+            }),
+        };
+        storage
+            .create("/registry/pods/default/other-owned-pod", &owned_pod)
+            .await
+            .unwrap();
+
+        let controller = JobController::new(storage.clone());
+        let mut job: Job = storage.get(job_key).await.unwrap();
+        controller.reconcile(&mut job).await.unwrap();
+
+        // The pod should NOT be adopted — it's owned by another controller
+        let updated_pod: Pod = storage
+            .get("/registry/pods/default/other-owned-pod")
+            .await
+            .unwrap();
+        let adopted_by_us = updated_pod
+            .metadata
+            .owner_references
+            .as_ref()
+            .map(|refs| refs.iter().any(|r| r.uid == job_uid))
+            .unwrap_or(false);
+        assert!(
+            !adopted_by_us,
+            "Pod owned by another controller should NOT be adopted"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_auto_selector_adoption_without_explicit_selector() {
+        let storage = Arc::new(MemoryStorage::new());
+
+        // Job WITHOUT an explicit selector (backwards compat — old-style)
+        let mut job = make_job("legacy-job", "default", 1, 1);
+        job.metadata.uid = "legacy-uid".to_string();
+        // No selector set — relies on job-name label
+
+        let job_key = "/registry/jobs/default/legacy-job";
+        storage.create(job_key, &job).await.unwrap();
+
+        // Create orphan pod with just job-name label, no ownerRef
+        let orphan = Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta {
+                name: "legacy-orphan".to_string(),
+                namespace: Some("default".to_string()),
+                uid: "legacy-orphan-uid".to_string(),
+                labels: Some({
+                    let mut m = HashMap::new();
+                    m.insert("job-name".to_string(), "legacy-job".to_string());
+                    m
+                }),
+                owner_references: None,
+                creation_timestamp: Some(chrono::Utc::now()),
+                ..Default::default()
+            },
+            spec: Some(PodSpec {
+                containers: vec![test_container()],
+                ..Default::default()
+            }),
+            status: Some(PodStatus {
+                phase: Some(Phase::Succeeded),
+                ..Default::default()
+            }),
+        };
+        storage
+            .create("/registry/pods/default/legacy-orphan", &orphan)
+            .await
+            .unwrap();
+
+        let controller = JobController::new(storage.clone());
+        let mut job: Job = storage.get(job_key).await.unwrap();
+        controller.reconcile(&mut job).await.unwrap();
+
+        // The orphan should be adopted via job-name label fallback
+        let updated_pod: Pod = storage
+            .get("/registry/pods/default/legacy-orphan")
+            .await
+            .unwrap();
+        let adopted = updated_pod
+            .metadata
+            .owner_references
+            .as_ref()
+            .map(|refs| refs.iter().any(|r| r.uid == "legacy-uid" && r.kind == "Job"))
+            .unwrap_or(false);
+        assert!(
+            adopted,
+            "Orphan pod should be adopted via job-name label fallback"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_success_policy_all_indexes_succeeded() {
+        // Test 47: "with successPolicy should succeeded when all indexes succeeded"
+        let storage = Arc::new(MemoryStorage::new());
+
+        let mut job = make_job("sp-all-job", "default", 3, 3);
+        job.spec.completion_mode = Some("Indexed".to_string());
+        job.spec.success_policy = Some(serde_json::json!({
+            "rules": [
+                {
+                    "succeededIndexes": "0-2"
+                }
+            ]
+        }));
+
+        let job_key = "/registry/jobs/default/sp-all-job";
+        storage.create(job_key, &job).await.unwrap();
+
+        // All indexes succeed
+        for i in 0..3 {
+            let pod = make_indexed_pod(
+                &format!("pod-{}", i),
+                "default",
+                Phase::Succeeded,
+                "sp-all-job",
+                "job-uid-1",
+                i,
+            );
+            storage
+                .create(&format!("/registry/pods/default/pod-{}", i), &pod)
+                .await
+                .unwrap();
+        }
+
+        let controller = JobController::new(storage.clone());
+        let mut job: Job = storage.get(job_key).await.unwrap();
+        controller.reconcile(&mut job).await.unwrap();
+
+        let updated_job: Job = storage.get(job_key).await.unwrap();
+        let status = updated_job.status.unwrap();
+        let conditions = status.conditions.as_ref().unwrap();
+
+        // Should have SuccessCriteriaMet condition
+        assert!(
+            conditions
+                .iter()
+                .any(|c| c.condition_type == "SuccessCriteriaMet"
+                    && c.status == "True"
+                    && c.reason.as_deref() == Some("SuccessPolicy")),
+            "Should have SuccessCriteriaMet condition with reason SuccessPolicy"
+        );
+
+        // Should have Complete condition
+        assert!(
+            conditions
+                .iter()
+                .any(|c| c.condition_type == "Complete"
+                    && c.status == "True"
+                    && c.reason.as_deref() == Some("SuccessPolicy")),
+            "Should have Complete condition with reason SuccessPolicy"
+        );
+
+        assert!(status.completion_time.is_some());
+        assert_eq!(status.succeeded, Some(3));
+        // completedIndexes should list all three
+        assert_eq!(status.completed_indexes.as_deref(), Some("0-2"));
+    }
+
+    #[tokio::test]
+    async fn test_success_policy_succeeded_count_rule() {
+        // Test 48: "with successPolicy succeededCount rule"
+        let storage = Arc::new(MemoryStorage::new());
+
+        let mut job = make_job("sp-count2", "default", 5, 5);
+        job.spec.completion_mode = Some("Indexed".to_string());
+        job.spec.success_policy = Some(serde_json::json!({
+            "rules": [
+                {
+                    "succeededCount": 3
+                }
+            ]
+        }));
+
+        let job_key = "/registry/jobs/default/sp-count2";
+        storage.create(job_key, &job).await.unwrap();
+
+        // 3 indexes succeed, 2 still running
+        for i in 0..3 {
+            let pod = make_indexed_pod(
+                &format!("pod-{}", i),
+                "default",
+                Phase::Succeeded,
+                "sp-count2",
+                "job-uid-1",
+                i,
+            );
+            storage
+                .create(&format!("/registry/pods/default/pod-{}", i), &pod)
+                .await
+                .unwrap();
+        }
+        for i in 3..5 {
+            let pod = make_indexed_pod(
+                &format!("pod-{}", i),
+                "default",
+                Phase::Running,
+                "sp-count2",
+                "job-uid-1",
+                i,
+            );
+            storage
+                .create(&format!("/registry/pods/default/pod-{}", i), &pod)
+                .await
+                .unwrap();
+        }
+
+        let controller = JobController::new(storage.clone());
+        let mut job: Job = storage.get(job_key).await.unwrap();
+        controller.reconcile(&mut job).await.unwrap();
+
+        let updated_job: Job = storage.get(job_key).await.unwrap();
+        let status = updated_job.status.unwrap();
+        let conditions = status.conditions.as_ref().unwrap();
+
+        assert!(
+            conditions
+                .iter()
+                .any(|c| c.condition_type == "SuccessCriteriaMet"
+                    && c.status == "True"
+                    && c.reason.as_deref() == Some("SuccessPolicy")),
+            "SuccessCriteriaMet should be set when succeededCount rule met"
+        );
+        assert!(
+            conditions
+                .iter()
+                .any(|c| c.condition_type == "Complete" && c.status == "True"),
+            "Complete condition should be set"
+        );
+        // Terminating should reflect the 2 active pods that were terminated
+        assert_eq!(status.terminating, Some(2));
+        assert_eq!(status.active, Some(0));
+    }
+
+    #[tokio::test]
+    async fn test_success_policy_succeeded_indexes_rule() {
+        // Test 49: "with successPolicy succeededIndexes rule"
+        let storage = Arc::new(MemoryStorage::new());
+
+        let mut job = make_job("sp-idx-rule", "default", 5, 5);
+        job.spec.completion_mode = Some("Indexed".to_string());
+        // Only indexes 0 and 4 need to succeed
+        job.spec.success_policy = Some(serde_json::json!({
+            "rules": [
+                {
+                    "succeededIndexes": "0,4"
+                }
+            ]
+        }));
+
+        let job_key = "/registry/jobs/default/sp-idx-rule";
+        storage.create(job_key, &job).await.unwrap();
+
+        // Index 0 and 4 succeeded
+        let pod0 = make_indexed_pod(
+            "pod-0",
+            "default",
+            Phase::Succeeded,
+            "sp-idx-rule",
+            "job-uid-1",
+            0,
+        );
+        storage
+            .create("/registry/pods/default/pod-0", &pod0)
+            .await
+            .unwrap();
+        let pod4 = make_indexed_pod(
+            "pod-4",
+            "default",
+            Phase::Succeeded,
+            "sp-idx-rule",
+            "job-uid-1",
+            4,
+        );
+        storage
+            .create("/registry/pods/default/pod-4", &pod4)
+            .await
+            .unwrap();
+
+        // Indexes 1-3 still running
+        for i in 1..4 {
+            let pod = make_indexed_pod(
+                &format!("pod-{}", i),
+                "default",
+                Phase::Running,
+                "sp-idx-rule",
+                "job-uid-1",
+                i,
+            );
+            storage
+                .create(&format!("/registry/pods/default/pod-{}", i), &pod)
+                .await
+                .unwrap();
+        }
+
+        let controller = JobController::new(storage.clone());
+        let mut job: Job = storage.get(job_key).await.unwrap();
+        controller.reconcile(&mut job).await.unwrap();
+
+        let updated_job: Job = storage.get(job_key).await.unwrap();
+        let status = updated_job.status.unwrap();
+        let conditions = status.conditions.as_ref().unwrap();
+
+        assert!(
+            conditions
+                .iter()
+                .any(|c| c.condition_type == "SuccessCriteriaMet"
+                    && c.status == "True"
+                    && c.reason.as_deref() == Some("SuccessPolicy")),
+            "SuccessCriteriaMet should be set when required indexes succeeded"
+        );
+        assert!(
+            conditions
+                .iter()
+                .any(|c| c.condition_type == "Complete"
+                    && c.status == "True"
+                    && c.reason.as_deref() == Some("SuccessPolicy")),
+            "Complete condition should have reason SuccessPolicy"
+        );
+        // The 3 running pods should be terminating
+        assert_eq!(status.terminating, Some(3));
+        assert_eq!(status.active, Some(0));
+        assert_eq!(status.succeeded, Some(2));
+        assert!(status.completion_time.is_some());
     }
 }
