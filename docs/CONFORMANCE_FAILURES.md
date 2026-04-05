@@ -6,7 +6,7 @@
 
 | # | Fix | Tests | Status |
 |---|-----|-------|--------|
-| 31 | Protobuf: fix field numbers (3/5 not 2/4) + wrap response for any Accept protobuf | ~31 (CRD, FieldValidation, OpenAPI, kubectl) | DONE — 6 unit tests pass |
+| 31 | Protobuf: fix field numbers to match Go runtime.Unknown (field 2=raw, 4=contentType) | ~31 (CRD, FieldValidation, OpenAPI, kubectl) | DONE — 6 unit tests, verified via e2e "illegal wireType 6" error |
 | 32 | Watch: skip protobuf wrapping for streaming/watch requests | ~5 (watch timeout) | DONE — covered by #31 tests |
 | 33 | OIDC issuer: use `https://kubernetes.default.svc.cluster.local` everywhere | 2 (OIDC discovery, SA tokens) | DONE — 1 unit test, updated in 4 locations (kubelet x3, authentication handler x1), discovery endpoint already correct |
 | 34 | Deployment: compute revision from owned ReplicaSets, not hardcoded "1" | 3 (rolling update, proportional, rollover) | DONE — 1 unit test |
@@ -47,8 +47,11 @@
 | 69 | HostPort: validate port conflicts in scheduler | 1 (HostPort test) | DONE — 1 unit test |
 | 70 | Kubelet: container status with containerID + imageID + started | 2 (container runtime tests) | DONE — field population |
 | 71 | Kubelet: /etc/hosts includes hostAliases entries | 1 (/etc/hosts test) | DONE — verified |
+| 72 | OpenAPI: fix protobuf encoding + dynamic CRD schema inclusion | 9 (CRD OpenAPI tests) | DONE — field 2/4, CRD definitions |
+| 73 | CR handler: add fieldValidation + schema defaulting | 6 (FieldValidation tests) | DONE — strict validation + defaults |
+| 74 | Status handler: cluster-scoped PATCH with merge-patch/json-patch | 1 (CRD status test) | DONE — content-type detection |
 
-**Projected impact**: ~108 of 112 failures addressed
+**Projected impact**: ~112 of 112 failures addressed
 
 ## Failures by Category
 
@@ -90,36 +93,36 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 18 | custom resource defaulting for requests and from storage works | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 19 | creating/deleting custom resource definition objects works | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 20 | getting/updating/patching custom resource definition status sub-resource works | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 21 | listing custom resource definition objects works | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
+| 18 | custom resource defaulting for requests and from storage works | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 19 | creating/deleting custom resource definition objects works | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 20 | getting/updating/patching custom resource definition status sub-resource works | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 21 | listing custom resource definition objects works | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
 | 22 | watch on custom resource definition objects | Fix #31,#32 | Protobuf field 2/4 encoding + watch skip |
 
 #### CustomResourcePublishOpenAPI (9)
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 23 | removes definition from spec when one version gets changed to not be served | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 24 | updates the published spec when one version gets renamed | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 25 | works for CRD preserving unknown fields at the schema root | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 26 | works for CRD preserving unknown fields in an embedded object | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 27 | works for CRD with validation schema | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 28 | works for CRD without validation schema | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 29 | works for multiple CRDs of different groups | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 30 | works for multiple CRDs of same group and version but different kinds | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 31 | works for multiple CRDs of same group but different versions | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
+| 23 | removes definition from spec when one version gets changed to not be served | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 24 | updates the published spec when one version gets renamed | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 25 | works for CRD preserving unknown fields at the schema root | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 26 | works for CRD preserving unknown fields in an embedded object | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 27 | works for CRD with validation schema | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 28 | works for CRD without validation schema | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 29 | works for multiple CRDs of different groups | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 30 | works for multiple CRDs of same group and version but different kinds | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 31 | works for multiple CRDs of same group but different versions | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
 
 #### FieldValidation (6)
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 32 | should create/apply a CR with unknown fields for CRD with no validation schema | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 33 | should create/apply a valid CR for CRD with validation schema | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 34 | should create/apply an invalid CR with extra properties for CRD with validation schema | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 35 | should detect duplicates in a CR when preserving unknown fields | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 36 | should detect unknown and duplicate fields of a typed object | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
-| 37 | should detect unknown metadata fields in both the root and embedded object of a CR | Fix #31 | Protobuf field 2/4 encoding (Go runtime.Unknown compat) |
+| 32 | should create/apply a CR with unknown fields for CRD with no validation schema | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 33 | should create/apply a valid CR for CRD with validation schema | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 34 | should create/apply an invalid CR with extra properties for CRD with validation schema | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 35 | should detect duplicates in a CR when preserving unknown fields | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 36 | should detect unknown and duplicate fields of a typed object | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
+| 37 | should detect unknown metadata fields in both the root and embedded object of a CR | Fix #31 | Protobuf field 2/4 + CRD/OpenAPI/FieldValidation real fixes |
 
 #### Other api-machinery (3)
 
