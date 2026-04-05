@@ -137,7 +137,13 @@ impl<S: Storage> StatefulSetController<S> {
                 let pod_exists = {
                     let pod_name = format!("{}-{}", name, i);
                     let pod_key = build_key("pods", Some(namespace), &pod_name);
-                    self.storage.get::<Pod>(&pod_key).await.is_ok()
+                    // Treat evicted/terminating pods (deletionTimestamp set) as missing
+                    // so the controller recreates them. An evicted pod still exists
+                    // in storage but should be replaced.
+                    match self.storage.get::<Pod>(&pod_key).await {
+                        Ok(pod) => pod.metadata.deletion_timestamp.is_none(),
+                        Err(_) => false,
+                    }
                 };
                 if pod_exists {
                     continue;

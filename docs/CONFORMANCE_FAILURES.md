@@ -64,7 +64,7 @@
 | 2 | listing validating webhooks should work | Fix #58 | ValidatingWebhookConfiguration LIST handler |
 | 3 | patching/updating a mutating webhook should work | Fix #58 | MutatingWebhookConfiguration PATCH handler |
 | 4 | patching/updating a validating webhook should work | Fix #58 | ValidatingWebhookConfiguration PATCH handler |
-| 5 | should be able to deny attaching pod | Fix #58 | Webhook calling for connect ops |
+| 5 | should be able to deny attaching pod | Fix #58 | Exec handler calls validating webhooks with Operation::Connect |
 | 6 | should be able to deny pod and configmap creation | Fix #58 | Webhook calling on create |
 | 7 | should deny crd creation | Fix #58 | CRD handler now calls webhooks |
 | 8 | should honor timeout | Fix #58 | Webhook timeout handling |
@@ -182,7 +182,7 @@
 | 58 | Scaling should happen in predictable order and halt if any stateful pod is unhealthy | Fix #35,#36 | OrderedReady halts on unhealthy, correct count |
 | 59 | should list, patch and delete a collection of StatefulSets | Fix #35 | deleteCollection API + graceful termination |
 | 60 | should perform canary updates and phased rolling updates of template modifications | Fix #35 | Partition-aware rolling update with deletionTimestamp |
-| 61 | Should recreate evicted statefulset | Fix #35,#36 | Terminating pods excluded from count, triggers recreation |
+| 61 | Should recreate evicted statefulset | Fix #35,#36 | Evicted pods (deletionTimestamp) treated as missing for recreation |
 
 ### sig-network (15 failures)
 

@@ -471,6 +471,39 @@ pub async fn exec(
         }
     }
 
+    // Run admission webhooks for Connect operation (exec/attach)
+    {
+        use rusternetes_common::admission::{GroupVersionKind, GroupVersionResource, Operation};
+        let gvk = GroupVersionKind {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            kind: "Pod".to_string(),
+        };
+        let gvr = GroupVersionResource {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            resource: "pods/exec".to_string(),
+        };
+        let user_info = rusternetes_common::admission::UserInfo {
+            username: "admin".to_string(),
+            uid: "system:admin".to_string(),
+            groups: vec!["system:masters".to_string()],
+        };
+        state
+            .webhook_manager
+            .run_validating_webhooks(
+                &Operation::Connect,
+                &gvk,
+                &gvr,
+                Some(&namespace),
+                &name,
+                None,
+                None,
+                &user_info,
+            )
+            .await?;
+    }
+
     // Get the pod
     let pod_key = rusternetes_storage::build_key("pods", Some(&namespace), &name);
     let pod: rusternetes_common::resources::Pod = state.storage.get(&pod_key).await?;
