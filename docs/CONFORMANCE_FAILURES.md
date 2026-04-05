@@ -1,7 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 125** | 329/441 (74.6%) | 112 failures | 2026-04-04
-**Round 126 fixes** | 44 fixes | 10 commits | ~112 of 112 addressed
+**Round 126 fixes** | 44 fixes | 12 commits | 111 of 112 addressed (1 remaining: Aggregator)
 
 ## Fixes Applied (Round 126)
 
@@ -313,7 +313,7 @@
 ## Fixes Applied (Rounds 103–126)
 
 - Rounds 103–125: 30 fixes. See git log for details.
-- Round 126: 44 fixes across 10 commits. Key areas:
+- Round 126: 44 fixes across 12 commits. Key areas:
   - Protobuf encoding corrected to match Go runtime.Unknown (field 2=raw, 4=contentType)
   - OpenAPI handler: dynamic CRD schema inclusion + correct protobuf wrapping
   - Custom resource handler: fieldValidation=Strict support + schema defaulting
