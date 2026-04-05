@@ -1,6 +1,26 @@
 use clap::Subcommand;
 
 #[derive(Subcommand)]
+pub enum CertificateCommands {
+    /// Approve a certificate signing request
+    Approve {
+        /// CSR names to approve
+        csr_names: Vec<String>,
+        /// Update the CSR even if it is already approved
+        #[arg(long)]
+        force: bool,
+    },
+    /// Deny a certificate signing request
+    Deny {
+        /// CSR names to deny
+        csr_names: Vec<String>,
+        /// Update the CSR even if it is already denied
+        #[arg(long)]
+        force: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum RolloutCommands {
     /// Show rollout status
     Status {
@@ -122,6 +142,60 @@ pub enum AuthCommands {
         #[arg(short = 'o', long)]
         output: Option<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum SetCommands {
+    /// Update container images in a resource
+    Image {
+        /// Resource (TYPE/NAME, e.g., deployment/nginx)
+        resource: String,
+        /// Container=image pairs (e.g., nginx=nginx:1.9.1)
+        container_images: Vec<String>,
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+    },
+    /// Update environment variables on a resource
+    Env {
+        /// Resource (TYPE/NAME, e.g., deployment/registry)
+        resource: String,
+        /// Environment variables (KEY=VALUE or KEY-)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        env_vars: Vec<String>,
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+        /// Container name
+        #[arg(short = 'c', long)]
+        container: Option<String>,
+        /// List environment variables
+        #[arg(long)]
+        list: bool,
+    },
+    /// Update resource requests/limits on a resource
+    Resources {
+        /// Resource (TYPE/NAME, e.g., deployment/nginx)
+        resource: String,
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+        /// Container name
+        #[arg(short = 'c', long)]
+        container: Option<String>,
+        /// Resource limits (cpu=200m,memory=512Mi)
+        #[arg(long)]
+        limits: Option<String>,
+        /// Resource requests (cpu=100m,memory=256Mi)
+        #[arg(long)]
+        requests: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PluginCommands {
+    /// List all available plugin files on a user's PATH
+    List {},
 }
 
 #[derive(Subcommand)]

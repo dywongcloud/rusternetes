@@ -5,10 +5,10 @@ mod types;
 mod websocket;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use client::ApiClient;
 use kubeconfig::KubeConfig;
-use types::{AuthCommands, ConfigCommands, RolloutCommands, TopCommands};
+use types::{AuthCommands, CertificateCommands, ConfigCommands, PluginCommands, RolloutCommands, SetCommands, TopCommands};
 
 #[derive(Parser)]
 #[command(name = "kubectl")]
@@ -150,6 +150,59 @@ enum Commands {
         /// Force apply (for conflicts)
         #[arg(long)]
         force: bool,
+    },
+
+    /// Replace a resource by file name or stdin
+    Replace {
+        /// Path to YAML/JSON file (use - for stdin)
+        #[arg(short = 'f', long)]
+        file: String,
+
+        /// Namespace for the resource
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+    },
+
+    /// Run a particular image on the cluster
+    Run {
+        /// Name for the pod
+        name: String,
+
+        /// Container image to run
+        #[arg(long)]
+        image: String,
+
+        /// Container port to expose
+        #[arg(long)]
+        port: Option<u16>,
+
+        /// Environment variables (KEY=VALUE)
+        #[arg(long = "env")]
+        env: Vec<String>,
+
+        /// Labels to apply (key=value,key=value)
+        #[arg(short = 'l', long)]
+        labels: Option<String>,
+
+        /// Restart policy (Always, OnFailure, Never)
+        #[arg(long, default_value = "Always")]
+        restart: String,
+
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+
+        /// If true, use extra arguments as command instead of args
+        #[arg(long)]
+        command: bool,
+
+        /// Perform a dry run (client or server)
+        #[arg(long)]
+        dry_run: Option<String>,
+
+        /// Extra arguments (command or args for the container)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        extra_args: Vec<String>,
     },
 
     /// Describe a resource
@@ -330,6 +383,121 @@ enum Commands {
         namespace: Option<String>,
     },
 
+    /// Expose a resource as a new Kubernetes service
+    Expose {
+        /// Resource type (pod, service, replicationcontroller, deployment, replicaset)
+        resource_type: String,
+
+        /// Resource name
+        resource_name: String,
+
+        /// The port that the service should serve on
+        #[arg(long)]
+        port: Option<i32>,
+
+        /// Name or number for the port on the container that the service should direct traffic to
+        #[arg(long)]
+        target_port: Option<i32>,
+
+        /// The network protocol for the service (TCP, UDP, SCTP)
+        #[arg(long, default_value = "TCP")]
+        protocol: String,
+
+        /// The name for the newly created service
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Type for this service: ClusterIP, NodePort, LoadBalancer, or ExternalName
+        #[arg(long, name = "type")]
+        service_type: Option<String>,
+
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+    },
+
+    /// Attach to a running container
+    Attach {
+        /// Pod name
+        pod_name: String,
+
+        /// Container name (optional, for multi-container pods)
+        #[arg(short = 'c', long)]
+        container: Option<String>,
+
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+
+        /// Allocate a TTY
+        #[arg(short = 't', long)]
+        tty: bool,
+
+        /// Pass stdin to the container
+        #[arg(short = 'i', long)]
+        stdin: bool,
+    },
+
+    /// Set specific features on objects
+    Set {
+        #[command(subcommand)]
+        command: SetCommands,
+    },
+
+    /// Update the taints on one or more nodes
+    Taint {
+        /// Resource type (must be "nodes" or "node")
+        resource_type: String,
+
+        /// Node name
+        node_name: String,
+
+        /// Taint specifications (key=value:Effect or key:Effect- or key-)
+        taints: Vec<String>,
+
+        /// Overwrite existing taints with same key and effect
+        #[arg(long)]
+        overwrite: bool,
+    },
+
+    /// Drain a node in preparation for maintenance
+    Drain {
+        /// Node name
+        node_name: String,
+
+        /// Continue even if there are pods not managed by a controller
+        #[arg(long)]
+        force: bool,
+
+        /// Ignore DaemonSet-managed pods
+        #[arg(long)]
+        ignore_daemonsets: bool,
+
+        /// Continue even if there are pods using emptyDir
+        #[arg(long)]
+        delete_emptydir_data: bool,
+
+        /// Grace period in seconds for pod termination
+        #[arg(long)]
+        grace_period: Option<i64>,
+
+        /// Timeout in seconds to wait for drain to complete
+        #[arg(long)]
+        timeout: Option<u64>,
+    },
+
+    /// Mark node as unschedulable
+    Cordon {
+        /// Node name
+        node_name: String,
+    },
+
+    /// Mark node as schedulable
+    Uncordon {
+        /// Node name
+        node_name: String,
+    },
+
     /// Rollout management commands
     Rollout {
         #[command(subcommand)]
@@ -473,6 +641,148 @@ enum Commands {
         #[arg(long)]
         dump: bool,
     },
+
+    /// Run a proxy to the Kubernetes API server
+    Proxy {
+        /// The port on which to run the proxy (0 = random available port)
+        #[arg(short = 'p', long, default_value = "8001")]
+        port: u16,
+
+        /// The IP address on which to serve
+        #[arg(long, default_value = "127.0.0.1")]
+        address: String,
+    },
+
+    /// Auto-scale a deployment, replica set, stateful set, or replication controller
+    Autoscale {
+        /// Resource type (deployment, replicaset, statefulset, replicationcontroller)
+        resource_type: String,
+
+        /// Resource name
+        name: String,
+
+        /// The upper limit for the number of pods that can be set by the autoscaler (required)
+        #[arg(long)]
+        max: i32,
+
+        /// The lower limit for the number of pods that can be set by the autoscaler
+        #[arg(long)]
+        min: Option<i32>,
+
+        /// The target average CPU utilization (represented as a percent of requested CPU)
+        #[arg(long)]
+        cpu_percent: Option<i32>,
+
+        /// The name for the newly created HPA (defaults to resource name)
+        #[arg(long = "name")]
+        hpa_name: Option<String>,
+
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+    },
+
+    /// Create debugging sessions for troubleshooting workloads and nodes
+    Debug {
+        /// Target to debug (pod name or type/name, e.g., pod/nginx or node/mynode)
+        target: String,
+
+        /// Container image to use for debug container
+        #[arg(long)]
+        image: String,
+
+        /// Container name to use for debug container
+        #[arg(short = 'c', long)]
+        container: Option<String>,
+
+        /// Keep stdin open on the container
+        #[arg(short = 'i', long)]
+        stdin: bool,
+
+        /// Allocate a TTY for the debugging container
+        #[arg(short = 't', long)]
+        tty: bool,
+
+        /// When using an ephemeral container, target processes in this container name
+        #[arg(long)]
+        target_container: Option<String>,
+
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+
+        /// Command to run in the debug container
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Vec<String>,
+    },
+
+    /// List events
+    Events {
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+
+        /// List events in all namespaces
+        #[arg(short = 'A', long)]
+        all_namespaces: bool,
+
+        /// Filter events to only those pertaining to the specified resource (e.g., pod/nginx)
+        #[arg(long = "for")]
+        for_object: Option<String>,
+
+        /// Output only events of given types (Normal, Warning)
+        #[arg(long)]
+        types: Option<String>,
+
+        /// Watch for new events after listing
+        #[arg(short = 'w', long)]
+        watch: bool,
+
+        /// Don't print headers
+        #[arg(long)]
+        no_headers: bool,
+
+        /// Output format (json, yaml)
+        #[arg(short = 'o', long)]
+        output: Option<String>,
+    },
+
+    /// Modify certificate resources (approve/deny CSRs)
+    Certificate {
+        #[command(subcommand)]
+        command: CertificateCommands,
+    },
+
+    /// Output shell completion code for the specified shell
+    Completion {
+        /// Shell type (bash, zsh, fish, powershell)
+        shell: String,
+    },
+
+    /// Print help for a command
+    Help {
+        /// Command to get help for
+        command: Option<String>,
+    },
+
+    /// Print the list of flags inherited by all commands
+    Options {},
+
+    /// Build a kustomization target from a directory or URL
+    Kustomize {
+        /// Path to a directory containing a kustomization.yaml file, or a URL
+        #[arg(default_value = ".")]
+        dir: String,
+    },
+
+    /// Provides utilities for interacting with plugins
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommands,
+    },
+
+    /// KubeRC configuration (alpha)
+    Kuberc {},
 
     /// Display Kubernetes version
     Version {
@@ -805,6 +1115,45 @@ async fn main() -> Result<()> {
             )
             .await?;
         }
+        Commands::Replace {
+            file,
+            namespace: _namespace,
+        } => {
+            commands::replace::execute(&client, &file).await?;
+        }
+        Commands::Run {
+            name,
+            image,
+            port,
+            env,
+            labels,
+            restart,
+            namespace,
+            command,
+            dry_run,
+            extra_args,
+        } => {
+            // Split extra_args into command vs args based on --command flag
+            let (cmd_args, container_args) = if command {
+                (extra_args.as_slice(), [].as_slice())
+            } else {
+                ([].as_slice(), extra_args.as_slice())
+            };
+            commands::run::execute(
+                &client,
+                &name,
+                namespace.as_deref().unwrap_or(&default_namespace),
+                &image,
+                port,
+                &env,
+                labels.as_deref(),
+                &restart,
+                cmd_args,
+                container_args,
+                dry_run.as_deref(),
+            )
+            .await?;
+        }
         Commands::Describe {
             resource_type,
             name,
@@ -945,6 +1294,85 @@ async fn main() -> Result<()> {
             )
             .await?;
         }
+        Commands::Expose {
+            resource_type,
+            resource_name,
+            port,
+            target_port,
+            protocol,
+            name,
+            service_type,
+            namespace,
+        } => {
+            commands::expose::execute(
+                &client,
+                &resource_type,
+                &resource_name,
+                namespace.as_deref().unwrap_or(&default_namespace),
+                port,
+                target_port,
+                &protocol,
+                name.as_deref(),
+                service_type.as_deref(),
+            )
+            .await?;
+        }
+        Commands::Attach {
+            pod_name,
+            container,
+            namespace,
+            tty,
+            stdin,
+        } => {
+            commands::attach::execute(
+                &client,
+                &pod_name,
+                namespace.as_deref().unwrap_or(&default_namespace),
+                container.as_deref(),
+                tty,
+                stdin,
+            )
+            .await?;
+        }
+        Commands::Set { command } => {
+            commands::set::execute_set(&client, command, &default_namespace).await?;
+        }
+        Commands::Taint {
+            resource_type,
+            node_name,
+            taints,
+            overwrite,
+        } => {
+            if resource_type != "nodes" && resource_type != "node" {
+                anyhow::bail!("Taint only supports nodes, got: {}", resource_type);
+            }
+            commands::taint::execute(&client, &node_name, &taints, overwrite).await?;
+        }
+        Commands::Drain {
+            node_name,
+            force,
+            ignore_daemonsets,
+            delete_emptydir_data,
+            grace_period,
+            timeout,
+        } => {
+            commands::drain::execute_drain(
+                &client,
+                &node_name,
+                force,
+                ignore_daemonsets,
+                delete_emptydir_data,
+                grace_period,
+                timeout,
+            )
+            .await?;
+        }
+        Commands::Cordon { node_name } => {
+            commands::drain::execute_cordon(&client, &node_name).await?;
+        }
+        Commands::Uncordon { node_name } => {
+            commands::drain::execute_uncordon(&client, &node_name).await?;
+        }
         Commands::Rollout { command } => {
             commands::rollout::execute(&client, command, &default_namespace).await?;
         }
@@ -1045,6 +1473,114 @@ async fn main() -> Result<()> {
         }
         Commands::ClusterInfo { dump } => {
             commands::cluster_info::execute(&client, dump).await?;
+        }
+        Commands::Proxy { port, address } => {
+            let proxy_config = commands::proxy::ProxyConfig {
+                address,
+                port,
+                api_server: server.clone(),
+                token: client.get_token().cloned(),
+                skip_tls_verify: skip_tls,
+            };
+            commands::proxy::execute(proxy_config).await?;
+        }
+        Commands::Autoscale {
+            resource_type,
+            name,
+            max,
+            min,
+            cpu_percent,
+            hpa_name,
+            namespace,
+        } => {
+            commands::autoscale::execute(
+                &client,
+                &resource_type,
+                &name,
+                namespace.as_deref().unwrap_or(&default_namespace),
+                min,
+                max,
+                cpu_percent,
+                hpa_name.as_deref(),
+            )
+            .await?;
+        }
+        Commands::Debug {
+            target,
+            image,
+            container,
+            stdin,
+            tty,
+            target_container,
+            namespace,
+            command,
+        } => {
+            commands::debug::execute(
+                &client,
+                &target,
+                namespace.as_deref().unwrap_or(&default_namespace),
+                &image,
+                container.as_deref(),
+                stdin,
+                tty,
+                target_container.as_deref(),
+                &command,
+            )
+            .await?;
+        }
+        Commands::Events {
+            namespace,
+            all_namespaces,
+            for_object,
+            types,
+            watch,
+            no_headers,
+            output,
+        } => {
+            let ns = namespace.as_deref().unwrap_or(&default_namespace);
+            commands::events::execute(
+                &client,
+                ns,
+                all_namespaces,
+                for_object.as_deref(),
+                types.as_deref(),
+                watch,
+                no_headers,
+                output.as_deref(),
+            )
+            .await?;
+        }
+        Commands::Certificate { command } => {
+            match command {
+                CertificateCommands::Approve { csr_names, force } => {
+                    commands::certificate::execute(&client, "approve", &csr_names, force).await?;
+                }
+                CertificateCommands::Deny { csr_names, force } => {
+                    commands::certificate::execute(&client, "deny", &csr_names, force).await?;
+                }
+            }
+        }
+        Commands::Completion { shell } => {
+            commands::completion::execute(&shell)?;
+        }
+        Commands::Help { command } => {
+            commands::help::execute::<Cli>(command.as_deref())?;
+        }
+        Commands::Options {} => {
+            commands::options::execute()?;
+        }
+        Commands::Kustomize { dir } => {
+            commands::kustomize::execute(&dir)?;
+        }
+        Commands::Plugin { command } => {
+            match command {
+                PluginCommands::List {} => {
+                    commands::plugin::execute_list()?;
+                }
+            }
+        }
+        Commands::Kuberc {} => {
+            commands::kuberc::execute()?;
         }
         Commands::Version {
             client: client_only,
