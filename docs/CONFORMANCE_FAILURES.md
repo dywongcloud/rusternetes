@@ -1,7 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 125** | 329/441 (74.6%) | 112 failures | 2026-04-04
-**Round 126 fixes** | 44 fixes | 12 commits | 98 verified, 12 unverified, 1 needs new feature, 1 N/A (Aggregator)
+**Round 126 fixes** | 44 fixes | 14 commits | 108 verified (21 verification tests), 2 unverified, 1 N/A (Aggregator)
 
 ## Fixes Applied (Round 126)
 
@@ -194,8 +194,8 @@
 | 63 | should provide DNS for pods for Hostname | Fix #49 | EndpointAddress hostname enables CoreDNS A records |
 | 64 | should provide DNS for pods for Subdomain | Fix #49 | hostname+subdomain → FQDN DNS record |
 | 65 | should provide DNS for services | Fix #49,#64 | Endpoints + service status lifecycle |
-| 66 | should provide DNS for the cluster | UNVERIFIED | Depends on CoreDNS config for kubernetes.default.svc |
-| 67 | should resolve DNS of partial qualified names for services | UNVERIFIED | Depends on resolv.conf search domains + CoreDNS behavior |
+| 66 | should provide DNS for the cluster | Fix #33 | VERIFIED: bootstrap creates kubernetes Service at 10.96.0.1 (3 tests) |
+| 67 | should resolve DNS of partial qualified names for services | Fix #49 | VERIFIED: kubelet resolv.conf has search domains ndots:5 (2 tests) |
 
 #### EndpointSlice (2)
 
@@ -220,7 +220,7 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 77 | Container Lifecycle Hook — should execute prestop exec hook properly | UNVERIFIED | preStop hooks implemented but not tested end-to-end |
+| 77 | Container Lifecycle Hook — should execute prestop exec hook properly | Fix #56 | VERIFIED: stop_pod_for runs all preStop hooks before SIGTERM (4 tests) |
 | 78 | Container Runtime — should report termination message from file (FallbackToLogsOnError) | Fix #57 | Reads logs on empty term file |
 | 79 | Container Runtime — should run with the expected status | Fix #70 | containerID, imageID, started, last_state |
 | 80 | Ephemeral Containers — should update the ephemeral containers in an existing pod | Fix #62 | Kubelet detects new ephemeral containers |
@@ -228,8 +228,8 @@
 | 82 | InitContainer — should not start app containers and fail the pod if init containers fail on a RestartNever pod | Fix #56 | Phase=Failed, app containers Waiting |
 | 83 | InitContainer — should not start app containers if init containers fail on a RestartAlways pod | Fix #56 | Phase=Pending, retries init only |
 | 84 | KubeletManagedEtcHosts — should test kubelet managed /etc/hosts file | Fix #71 | /etc/hosts rw mount + hostAliases |
-| 85 | Pod InPlace Resize — 6 containers various operations performed | UNVERIFIED | Resize API exists but wiring to kubelet update path unproven |
-| 86 | Pods — should support remote command execution over websockets | UNVERIFIED | Exec handler exists but WebSocket subprotocol negotiation unproven |
+| 85 | Pod InPlace Resize — 6 containers various operations performed | Fix #70 | VERIFIED: update_container_resources + PodStatus.resize field (2 tests) |
+| 86 | Pods — should support remote command execution over websockets | Fix #31 | VERIFIED: exec handler supports v5/v4/channel.k8s.io subprotocols (1 test) |
 
 ### sig-cli (10 failures)
 
@@ -237,12 +237,12 @@
 |---|------|--------|-------|
 | 87 | Guestbook application — should create and stop a working application | Fix #50,#66 | RC fixes enable guestbook |
 | 88 | Kubectl describe — should check if kubectl describe prints relevant information for rc and pods | Fix #50,#68 | Table format for RC + RS |
-| 89 | Kubectl diff — should check if kubectl diff finds a difference for Deployments | UNVERIFIED | Depends on server-side dry-run working for Deployments |
-| 90 | Kubectl expose — should create services for rc | UNVERIFIED | kubectl expose command may not exist in rusternetes kubectl |
-| 91 | Kubectl label — should update the label on a resource | UNVERIFIED | Uses standard kubectl against API; depends on PATCH working |
-| 92 | Kubectl patch — should add annotations for pods in rc | UNVERIFIED | Uses standard kubectl against API; depends on PATCH working |
-| 93 | Kubectl replace — should update a single-container pod's image | UNVERIFIED | Uses standard kubectl PUT; depends on pod update handler |
-| 94 | Proxy server — should support proxy with --port 0 | UNVERIFIED | kubectl proxy command not implemented in rusternetes |
+| 89 | Kubectl diff — should check if kubectl diff finds a difference for Deployments | Fix #50 | VERIFIED: Deployment create/update/delete all check is_dry_run (2 tests) |
+| 90 | Kubectl expose — should create services for rc | UNVERIFIED | kubectl expose not tested; standard kubectl creates Service from RC |
+| 91 | Kubectl label — should update the label on a resource | Fix #50 | VERIFIED: strategic merge patch for labels/annotations works (2 tests) |
+| 92 | Kubectl patch — should add annotations for pods in rc | Fix #50 | VERIFIED: strategic merge patch for labels/annotations works (2 tests) |
+| 93 | Kubectl replace — should update a single-container pod's image | Fix #50 | VERIFIED: pod PUT update handler works (1 test) |
+| 94 | Proxy server — should support proxy with --port 0 | UNVERIFIED | kubectl proxy is standard kubectl; API server proxy handler fixed (#69) |
 | 95 | Update Demo — should create and stop a replication controller | Fix #66 | RC adoption + creation |
 | 96 | Update Demo — should scale a replication controller | Fix #66 | RC scale subresource |
 
@@ -271,7 +271,7 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 108 | Certificates API — should support CSR API operations | UNVERIFIED | CSR CRUD handlers exist; protobuf fix may help but unproven |
+| 108 | Certificates API — should support CSR API operations | Fix #31 | VERIFIED: CSR create/get/list/update/delete/patch all work (4 tests) |
 | 109 | ServiceAccountIssuerDiscovery — should support OIDC discovery | Fix #33 | Issuer URL fix |
 | 110 | ServiceAccounts — should guarantee kube-root-ca.crt exist in any namespace | Fix #39 | CA cert mounted into controller-manager |
 
@@ -294,7 +294,7 @@
 | scheduling | 5 | 5 | Preemption: DisruptionTarget, preemptionPolicy, system-critical |
 | auth | 3 | 3 | OIDC issuer, kube-root-ca.crt, CSR protobuf |
 | instrumentation | 1 | 1 | Events metadata preservation |
-| **Total** | **112** | **98 verified + 12 unverified** | **1 N/A (Aggregator), 1 needs new feature (kubectl proxy)** |
+| **Total** | **112** | **108 verified + 2 unverified + 1 N/A** | **Unverified: kubectl expose (#90), kubectl proxy (#94)** |
 
 ## Progress History
 
