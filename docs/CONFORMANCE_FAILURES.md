@@ -60,10 +60,10 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 1 | listing mutating webhooks should work | Fix #58 | Webhook CRUD + calling |
-| 2 | listing validating webhooks should work | Fix #58 | Webhook CRUD + calling |
-| 3 | patching/updating a mutating webhook should work | Fix #58 | Webhook CRUD + calling |
-| 4 | patching/updating a validating webhook should work | Fix #58 | Webhook CRUD + calling |
+| 1 | listing mutating webhooks should work | Fix #58 | MutatingWebhookConfiguration LIST handler |
+| 2 | listing validating webhooks should work | Fix #58 | ValidatingWebhookConfiguration LIST handler |
+| 3 | patching/updating a mutating webhook should work | Fix #58 | MutatingWebhookConfiguration PATCH handler |
+| 4 | patching/updating a validating webhook should work | Fix #58 | ValidatingWebhookConfiguration PATCH handler |
 | 5 | should be able to deny attaching pod | Fix #58 | Webhook calling for connect ops |
 | 6 | should be able to deny pod and configmap creation | Fix #58 | Webhook calling on create |
 | 7 | should deny crd creation | Fix #58 | CRD handler now calls webhooks |
@@ -102,15 +102,15 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 23 | removes definition from spec when one version gets changed to not be served | Fix #72 | Dynamic CRD schema in OpenAPI |
-| 24 | updates the published spec when one version gets renamed | Fix #72 | Dynamic CRD schema in OpenAPI |
-| 25 | works for CRD preserving unknown fields at the schema root | Fix #72 | Dynamic CRD schema in OpenAPI |
-| 26 | works for CRD preserving unknown fields in an embedded object | Fix #72 | Dynamic CRD schema in OpenAPI |
-| 27 | works for CRD with validation schema | Fix #72 | Dynamic CRD schema in OpenAPI |
-| 28 | works for CRD without validation schema | Fix #72 | Dynamic CRD schema in OpenAPI |
-| 29 | works for multiple CRDs of different groups | Fix #72 | Dynamic CRD schema in OpenAPI |
-| 30 | works for multiple CRDs of same group and version but different kinds | Fix #72 | Dynamic CRD schema in OpenAPI |
-| 31 | works for multiple CRDs of same group but different versions | Fix #72 | Dynamic CRD schema in OpenAPI |
+| 23 | removes definition from spec when one version gets changed to not be served | Fix #72 | `version.served` filter skips non-served versions |
+| 24 | updates the published spec when one version gets renamed | Fix #72 | Definition key includes version name |
+| 25 | works for CRD preserving unknown fields at the schema root | Fix #72 | JSONSchemaProps serializes x-kubernetes-preserve-unknown-fields |
+| 26 | works for CRD preserving unknown fields in an embedded object | Fix #72 | Recursive JSONSchemaProps in nested properties |
+| 27 | works for CRD with validation schema | Fix #72 | Schema serialized into definitions when present |
+| 28 | works for CRD without validation schema | Fix #72 | No definition entry when schema is None |
+| 29 | works for multiple CRDs of different groups | Fix #72 | Group in definition key differentiates CRDs |
+| 30 | works for multiple CRDs of same group and version but different kinds | Fix #72 | Kind in definition key differentiates CRDs |
+| 31 | works for multiple CRDs of same group but different versions | Fix #72 | Version in definition key differentiates CRDs |
 
 #### FieldValidation (6)
 
@@ -178,11 +178,11 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 57 | Burst scaling should run to completion even with unhealthy pods | Fix #35,#36 | Graceful termination + replicas count |
-| 58 | Scaling should happen in predictable order and halt if any stateful pod is unhealthy | Fix #35,#36 | Graceful termination + replicas count |
-| 59 | should list, patch and delete a collection of StatefulSets | Fix #35,#36 | Graceful termination + replicas count |
-| 60 | should perform canary updates and phased rolling updates of template modifications | Fix #35,#36 | Graceful termination + replicas count |
-| 61 | Should recreate evicted statefulset | Fix #35,#36 | Graceful termination + replicas count |
+| 57 | Burst scaling should run to completion even with unhealthy pods | Fix #35,#36 | Parallel pod management continues past unhealthy |
+| 58 | Scaling should happen in predictable order and halt if any stateful pod is unhealthy | Fix #35,#36 | OrderedReady halts on unhealthy, correct count |
+| 59 | should list, patch and delete a collection of StatefulSets | Fix #35 | deleteCollection API + graceful termination |
+| 60 | should perform canary updates and phased rolling updates of template modifications | Fix #35 | Partition-aware rolling update with deletionTimestamp |
+| 61 | Should recreate evicted statefulset | Fix #35,#36 | Terminating pods excluded from count, triggers recreation |
 
 ### sig-network (15 failures)
 
@@ -190,12 +190,12 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 62 | should provide /etc/hosts entries for the cluster | Fix #49 | Endpoints hostname from pod spec |
-| 63 | should provide DNS for pods for Hostname | Fix #49 | Endpoints hostname from pod spec |
-| 64 | should provide DNS for pods for Subdomain | Fix #49 | Endpoints hostname from pod spec |
-| 65 | should provide DNS for services | Fix #49 | Endpoints hostname from pod spec |
-| 66 | should provide DNS for the cluster | Fix #49 | Endpoints hostname from pod spec |
-| 67 | should resolve DNS of partial qualified names for services | Fix #49 | Endpoints hostname from pod spec |
+| 62 | should provide /etc/hosts entries for the cluster | Fix #71 | Kubelet /etc/hosts with pod IP + hostname + hostAliases |
+| 63 | should provide DNS for pods for Hostname | Fix #49 | EndpointAddress hostname enables CoreDNS A records |
+| 64 | should provide DNS for pods for Subdomain | Fix #49 | hostname+subdomain → FQDN DNS record |
+| 65 | should provide DNS for services | Fix #49,#64 | Endpoints + service status lifecycle |
+| 66 | should provide DNS for the cluster | Fix #33 | kubernetes.default.svc resolves to API server |
+| 67 | should resolve DNS of partial qualified names for services | Fix #49 | search domains in resolv.conf |
 
 #### EndpointSlice (2)
 
@@ -260,10 +260,10 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 102 | EmptyDir — should support (non-root,0666,default) | Fix #37,#38 | fsGroup + tmpfs for all emptyDir |
-| 103 | EmptyDir — should support (non-root,0777,default) | Fix #37,#38 | fsGroup + tmpfs for all emptyDir |
-| 104 | EmptyDir — should support (root,0666,default) | Fix #37,#38 | fsGroup + tmpfs for all emptyDir |
-| 105 | EmptyDir — should support (root,0777,default) | Fix #37,#38 | fsGroup + tmpfs for all emptyDir |
+| 102 | EmptyDir — should support (non-root,0666,default) | Fix #37,#38 | fsGroup copies owner→group bits, tmpfs mode=1777 |
+| 103 | EmptyDir — should support (non-root,0777,default) | Fix #37,#38 | fsGroup preserves 0777, tmpfs bypasses umask |
+| 104 | EmptyDir — should support (root,0666,default) | Fix #37,#38 | Root user + fsGroup group bits + tmpfs |
+| 105 | EmptyDir — should support (root,0777,default) | Fix #37,#38 | Root user + world-writable tmpfs |
 | 106 | Projected secret — consumable as non-root with defaultMode and fsGroup | Fix #37 | fsGroup permission fix |
 | 107 | Secrets — consumable as non-root with defaultMode and fsGroup | Fix #37 | fsGroup permission fix |
 

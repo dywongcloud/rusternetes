@@ -382,3 +382,119 @@ async fn test_metadata_preservation_on_status_update() {
     );
     assert_eq!(final_resource["status"]["phase"], "Running");
 }
+
+#[tokio::test]
+async fn test_cluster_scoped_status_merge_patch() {
+    let storage = setup_test().await;
+
+    // Create a CRD (cluster-scoped) with initial status
+    let crd = json!({
+        "apiVersion": "apiextensions.k8s.io/v1",
+        "kind": "CustomResourceDefinition",
+        "metadata": {
+            "name": "widgets.example.com",
+            "uid": "crd-uid-1",
+            "resourceVersion": "1"
+        },
+        "spec": {
+            "group": "example.com",
+            "names": {
+                "kind": "Widget",
+                "plural": "widgets"
+            },
+            "scope": "Namespaced",
+            "versions": [{
+                "name": "v1",
+                "served": true,
+                "storage": true
+            }]
+        },
+        "status": {
+            "conditions": [
+                {
+                    "type": "Established",
+                    "status": "True",
+                    "reason": "InitialSetup"
+                }
+            ],
+            "acceptedNames": {
+                "kind": "Widget",
+                "plural": "widgets"
+            },
+            "storedVersions": ["v1"]
+        }
+    });
+
+    let key = build_key("customresourcedefinitions", None, "widgets.example.com");
+    storage.create(&key, &crd).await.unwrap();
+
+    // Simulate a merge-patch on the status subresource:
+    // Only patch the conditions while preserving acceptedNames and storedVersions.
+    let current: Value = storage.get(&key).await.unwrap();
+    let patch_status = json!({
+        "conditions": [
+            {
+                "type": "Established",
+                "status": "True",
+                "reason": "ApprovedByController"
+            },
+            {
+                "type": "NamesAccepted",
+                "status": "True",
+                "reason": "NoConflicts"
+            }
+        ]
+    });
+
+    // Apply merge-patch logic (same as update_cluster_status with merge-patch content type)
+    let mut merged_status = current
+        .get("status")
+        .cloned()
+        .unwrap_or(Value::Object(serde_json::Map::new()));
+    if let (Some(merged_obj), Some(patch_obj)) =
+        (merged_status.as_object_mut(), patch_status.as_object())
+    {
+        for (k, v) in patch_obj {
+            if v.is_null() {
+                merged_obj.remove(k);
+            } else {
+                merged_obj.insert(k.clone(), v.clone());
+            }
+        }
+    }
+
+    let mut updated = current.clone();
+    updated["status"] = merged_status;
+    if let Some(obj) = updated.as_object_mut() {
+        if let Some(meta) = obj.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+            meta.remove("resourceVersion");
+        }
+    }
+    storage.update(&key, &updated).await.unwrap();
+
+    // Verify the merge-patch result
+    let final_resource: Value = storage.get(&key).await.unwrap();
+
+    // Spec should be unchanged
+    assert_eq!(final_resource["spec"]["group"], "example.com");
+
+    // acceptedNames and storedVersions should be preserved (not overwritten)
+    assert_eq!(
+        final_resource["status"]["acceptedNames"]["kind"],
+        "Widget"
+    );
+    assert_eq!(
+        final_resource["status"]["storedVersions"][0],
+        "v1"
+    );
+
+    // conditions should be replaced by the patch value
+    let conditions = final_resource["status"]["conditions"]
+        .as_array()
+        .expect("conditions should be an array");
+    assert_eq!(conditions.len(), 2);
+    assert_eq!(conditions[0]["type"], "Established");
+    assert_eq!(conditions[0]["reason"], "ApprovedByController");
+    assert_eq!(conditions[1]["type"], "NamesAccepted");
+    assert_eq!(conditions[1]["reason"], "NoConflicts");
+}
