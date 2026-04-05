@@ -66,15 +66,12 @@ impl<S: Storage> EndpointSliceController<S> {
             let ns = slice.metadata.namespace.as_deref().unwrap_or("default");
             let name = &slice.metadata.name;
             // EndpointSlice names match their source Endpoints name (or name-suffix)
-            let base_name = name
-                .split('-')
-                .take(name.matches('-').count())
-                .collect::<Vec<&str>>()
-                .join("-");
-            let source_name = if base_name.is_empty() {
-                name.clone()
-            } else {
-                base_name
+            // Only strip the last segment if it's numeric (i.e., a generated suffix like "-1", "-2")
+            let source_name = match name.rsplit_once('-') {
+                Some((prefix, suffix)) if suffix.chars().all(|c| c.is_ascii_digit()) => {
+                    prefix.to_string()
+                }
+                _ => name.clone(),
             };
             if !endpoints_names.contains(&(ns.to_string(), source_name.clone()))
                 && !endpoints_names.contains(&(ns.to_string(), name.clone()))
@@ -253,10 +250,90 @@ impl<S: Storage> EndpointSliceController<S> {
 mod tests {
     use super::*;
     use rusternetes_storage::MemoryStorage;
+    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_endpointslice_controller_creation() {
         let storage = Arc::new(MemoryStorage::new());
         let _controller = EndpointSliceController::new(storage);
+    }
+
+    /// Helper: extract the source (base) name from an EndpointSlice name,
+    /// mirroring the logic used in reconcile_all() for orphan detection.
+    fn extract_source_name(name: &str) -> String {
+        match name.rsplit_once('-') {
+            Some((prefix, suffix)) if suffix.chars().all(|c| c.is_ascii_digit()) => {
+                prefix.to_string()
+            }
+            _ => name.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_base_name_extraction() {
+        // Primary slice: name matches the service exactly, no numeric suffix
+        assert_eq!(extract_source_name("my-service"), "my-service");
+
+        // Suffixed slice: last segment is numeric
+        assert_eq!(extract_source_name("my-service-1"), "my-service");
+        assert_eq!(extract_source_name("my-service-42"), "my-service");
+
+        // Multi-dash service name with no numeric suffix
+        assert_eq!(
+            extract_source_name("my-multi-dash-service"),
+            "my-multi-dash-service"
+        );
+
+        // Multi-dash service name with numeric suffix
+        assert_eq!(
+            extract_source_name("my-multi-dash-service-3"),
+            "my-multi-dash-service"
+        );
+
+        // Single-word name (no dashes at all)
+        assert_eq!(extract_source_name("kubernetes"), "kubernetes");
+
+        // Name ending with non-numeric suffix (e.g., a hash)
+        assert_eq!(extract_source_name("my-service-abc"), "my-service-abc");
+    }
+
+    #[tokio::test]
+    async fn test_orphan_detection_skips_externally_managed_slices() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = EndpointSliceController::new(Arc::clone(&storage));
+
+        // Create an EndpointSlice NOT managed by the controller (no managed-by label)
+        let mut external_slice = EndpointSlice::new("external-slice", "IPv4");
+        external_slice.metadata.namespace = Some("default".to_string());
+        let key = build_key("endpointslices", Some("default"), "external-slice");
+        storage.create(&key, &external_slice).await.unwrap();
+
+        // Create an EndpointSlice managed by the controller (with managed-by label)
+        let mut managed_slice = EndpointSlice::new("managed-slice", "IPv4");
+        managed_slice.metadata.namespace = Some("default".to_string());
+        let mut labels = HashMap::new();
+        labels.insert(
+            "endpointslice.kubernetes.io/managed-by".to_string(),
+            "endpointslice-controller.k8s.io".to_string(),
+        );
+        managed_slice.metadata.labels = Some(labels);
+        let key2 = build_key("endpointslices", Some("default"), "managed-slice");
+        storage.create(&key2, &managed_slice).await.unwrap();
+
+        // No Endpoints exist, so both slices are orphans.
+        // Only the managed one should be deleted.
+        controller.reconcile_all().await.unwrap();
+
+        // External slice should survive
+        assert!(
+            storage.get::<EndpointSlice>(&key).await.is_ok(),
+            "externally-managed EndpointSlice should NOT be deleted"
+        );
+
+        // Managed slice should be deleted
+        assert!(
+            storage.get::<EndpointSlice>(&key2).await.is_err(),
+            "controller-managed orphan EndpointSlice should be deleted"
+        );
     }
 }

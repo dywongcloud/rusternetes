@@ -1538,65 +1538,86 @@ impl Kubelet {
                     }
                 }
 
-                // Start any ephemeral containers that aren't running yet
-                if let Some(spec) = &pod.spec {
-                    if let Some(ecs) = &spec.ephemeral_containers {
-                        for ec in ecs {
-                            let ec_container_name = format!("{}_{}", pod_name, ec.name);
-                            // Check if this ephemeral container is already running
-                            if self
-                                .runtime
-                                .is_container_running(&ec_container_name)
-                                .await
-                                .unwrap_or(false)
-                            {
-                                continue;
+                // Start any ephemeral containers that aren't running yet.
+                // Re-read the pod from storage to pick up ephemeral containers added
+                // via PATCH since the last list() call.
+                {
+                    let key = build_key("pods", Some(namespace), pod_name);
+                    let ec_pod: Pod = match self.storage.get(&key).await {
+                        Ok(p) => p,
+                        _ => pod.clone(),
+                    };
+                    if let Some(spec) = &ec_pod.spec {
+                        if let Some(ecs) = &spec.ephemeral_containers {
+                            let mut started_any = false;
+                            for ec in ecs {
+                                let ec_container_name = format!("{}_{}", pod_name, ec.name);
+                                // Ephemeral containers are one-shot — never restart them.
+                                // Skip if the container already exists in any state (running,
+                                // exited, created). Only start truly new ephemeral containers.
+                                if self.runtime.container_exists(&ec_container_name).await {
+                                    continue;
+                                }
+                                info!(
+                                    "Starting ephemeral container {} for pod {}/{}",
+                                    ec.name, namespace, pod_name
+                                );
+                                // Convert EphemeralContainer to Container for start_container
+                                let container = rusternetes_common::resources::Container {
+                                    name: ec.name.clone(),
+                                    image: ec.image.clone(),
+                                    command: ec.command.clone(),
+                                    args: ec.args.clone(),
+                                    env: ec.env.clone(),
+                                    volume_mounts: ec.volume_mounts.clone(),
+                                    resources: ec.resources.clone(),
+                                    image_pull_policy: ec.image_pull_policy.clone(),
+                                    security_context: ec.security_context.clone(),
+                                    stdin: ec.stdin,
+                                    tty: ec.tty,
+                                    working_dir: ec.working_dir.clone(),
+                                    ports: None,
+                                    env_from: None,
+                                    liveness_probe: None,
+                                    readiness_probe: None,
+                                    startup_probe: None,
+                                    lifecycle: None,
+                                    termination_message_path: ec.termination_message_path.clone(),
+                                    termination_message_policy: ec
+                                        .termination_message_policy
+                                        .clone(),
+                                    stdin_once: ec.stdin_once,
+                                    restart_policy: None,
+                                    resize_policy: None,
+                                    volume_devices: None,
+                                };
+                                let volume_paths = self
+                                    .runtime
+                                    .create_pod_volumes(&ec_pod)
+                                    .await
+                                    .unwrap_or_default();
+                                if let Err(e) = self
+                                    .runtime
+                                    .start_container(
+                                        &ec_pod,
+                                        &container,
+                                        &volume_paths,
+                                        None,
+                                        None,
+                                        None,
+                                    )
+                                    .await
+                                {
+                                    warn!(
+                                        "Failed to start ephemeral container {}: {}",
+                                        ec.name, e
+                                    );
+                                } else {
+                                    started_any = true;
+                                }
                             }
-                            info!(
-                                "Starting ephemeral container {} for pod {}/{}",
-                                ec.name, namespace, pod_name
-                            );
-                            // Convert EphemeralContainer to Container for start_container
-                            let container = rusternetes_common::resources::Container {
-                                name: ec.name.clone(),
-                                image: ec.image.clone(),
-                                command: ec.command.clone(),
-                                args: ec.args.clone(),
-                                env: ec.env.clone(),
-                                volume_mounts: ec.volume_mounts.clone(),
-                                resources: ec.resources.clone(),
-                                image_pull_policy: ec.image_pull_policy.clone(),
-                                security_context: ec.security_context.clone(),
-                                stdin: ec.stdin,
-                                tty: ec.tty,
-                                working_dir: ec.working_dir.clone(),
-                                ports: None,
-                                env_from: None,
-                                liveness_probe: None,
-                                readiness_probe: None,
-                                startup_probe: None,
-                                lifecycle: None,
-                                termination_message_path: ec.termination_message_path.clone(),
-                                termination_message_policy: ec.termination_message_policy.clone(),
-                                stdin_once: ec.stdin_once,
-                                restart_policy: None,
-                                resize_policy: None,
-                                volume_devices: None,
-                            };
-                            let volume_paths = self
-                                .runtime
-                                .create_pod_volumes(pod)
-                                .await
-                                .unwrap_or_default();
-                            if let Err(e) = self
-                                .runtime
-                                .start_container(pod, &container, &volume_paths, None, None, None)
-                                .await
-                            {
-                                warn!("Failed to start ephemeral container {}: {}", ec.name, e);
-                            } else {
-                                // Update ephemeral container status in pod so the test can observe it
-                                let key = build_key("pods", Some(namespace), pod_name);
+                            // Update ephemeral container statuses after starting new ones
+                            if started_any {
                                 if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
                                     let ec_statuses =
                                         self.runtime.get_ephemeral_container_statuses(&p).await;
@@ -1880,8 +1901,15 @@ impl Kubelet {
                                 Ok(p) => p,
                                 Err(_) => pod.clone(),
                             };
+                            // Update ephemeral container statuses from Docker
+                            let ephemeral_container_statuses = self
+                                .runtime
+                                .get_ephemeral_container_statuses(&new_pod)
+                                .await;
+
                             if let Some(ref mut status) = new_pod.status {
                                 status.container_statuses = Some(container_statuses);
+                                status.ephemeral_container_statuses = ephemeral_container_statuses;
                                 status.observed_generation = new_pod.metadata.generation;
                                 // Update pod IP if we got one and it's different
                                 if pod_ip.is_some() && status.pod_ip != pod_ip {

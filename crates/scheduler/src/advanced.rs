@@ -581,6 +581,10 @@ fn parse_resource_quantity(quantity: &str, resource_type: &str) -> i64 {
     }
 }
 
+/// System-critical priority threshold. Pods at or above this priority
+/// can only be preempted by pods with strictly higher priority.
+const SYSTEM_CRITICAL_PRIORITY: i32 = 2_000_000_000;
+
 /// Check if preemption should occur and return pods to evict
 /// Returns (should_preempt, pods_to_evict)
 pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<String>) {
@@ -589,6 +593,20 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
 
     // If incoming pod has priority <= 0, don't preempt
     if incoming_priority <= 0 {
+        return (false, vec![]);
+    }
+
+    // Check preemptionPolicy on the pod spec — if "Never", do not preempt
+    let preemption_policy = pod
+        .spec
+        .as_ref()
+        .and_then(|s| s.preemption_policy.as_deref())
+        .unwrap_or("PreemptLowerPriority");
+    if preemption_policy == "Never" {
+        debug!(
+            "Pod {} has preemptionPolicy=Never, skipping preemption",
+            pod.metadata.name
+        );
         return (false, vec![]);
     }
 
@@ -616,15 +634,20 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
         .collect();
 
     // Find pods with lower priority that could be evicted
+    // System-critical pods (priority >= 2000000000) are protected:
+    // only pods with strictly higher priority may preempt them.
     let mut candidates: Vec<(&Pod, i32)> = node_pods
         .iter()
         .filter_map(|p| {
             let pod_priority = p.spec.as_ref().and_then(|s| s.priority).unwrap_or(0);
-            if pod_priority < incoming_priority {
-                Some((*p, pod_priority))
-            } else {
-                None
+            if pod_priority >= incoming_priority {
+                return None; // Can't evict equal or higher priority
             }
+            // Protect system-critical pods — only strictly higher priority can preempt
+            if pod_priority >= SYSTEM_CRITICAL_PRIORITY && incoming_priority <= pod_priority {
+                return None;
+            }
+            Some((*p, pod_priority))
         })
         .collect();
 
@@ -964,5 +987,171 @@ mod tests {
         };
 
         assert!(toleration_matches_taint(&toleration, &taint));
+    }
+
+    use rusternetes_common::resources::NodeStatus;
+
+    /// Helper: create a minimal container with resource requests
+    fn make_container(cpu: &str, memory: &str) -> rusternetes_common::resources::Container {
+        let mut requests = HashMap::new();
+        requests.insert("cpu".to_string(), cpu.to_string());
+        requests.insert("memory".to_string(), memory.to_string());
+        rusternetes_common::resources::Container {
+            name: "main".to_string(),
+            image: "busybox".to_string(),
+            command: None,
+            args: None,
+            working_dir: None,
+            ports: None,
+            env: None,
+            env_from: None,
+            resources: Some(rusternetes_common::types::ResourceRequirements {
+                requests: Some(requests),
+                limits: None,
+                claims: None,
+            }),
+            volume_mounts: None,
+            volume_devices: None,
+            image_pull_policy: None,
+            liveness_probe: None,
+            readiness_probe: None,
+            startup_probe: None,
+            security_context: None,
+            restart_policy: None,
+            resize_policy: None,
+            lifecycle: None,
+            termination_message_path: None,
+            termination_message_policy: None,
+            stdin: None,
+            stdin_once: None,
+            tty: None,
+        }
+    }
+
+    /// Helper: create a node with allocatable CPU and memory
+    fn make_node(name: &str, cpu: &str, memory: &str) -> Node {
+        let mut allocatable = HashMap::new();
+        allocatable.insert("cpu".to_string(), cpu.to_string());
+        allocatable.insert("memory".to_string(), memory.to_string());
+        let mut node = Node::new(name);
+        node.status = Some(NodeStatus {
+            capacity: None,
+            allocatable: Some(allocatable),
+            conditions: None,
+            addresses: None,
+            node_info: None,
+            images: None,
+            volumes_in_use: None,
+            volumes_attached: None,
+            daemon_endpoints: None,
+            config: None,
+            features: None,
+            runtime_handlers: None,
+        });
+        node
+    }
+
+    /// Helper: create a pod with given name, priority, and resource requests, scheduled on a node
+    fn make_scheduled_pod(
+        name: &str,
+        priority: i32,
+        cpu: &str,
+        memory: &str,
+        node_name: &str,
+    ) -> Pod {
+        let spec = rusternetes_common::resources::PodSpec {
+            containers: vec![make_container(cpu, memory)],
+            priority: Some(priority),
+            node_name: Some(node_name.to_string()),
+            ..Default::default()
+        };
+        let mut pod = Pod::new(name, spec);
+        pod.status = Some(rusternetes_common::resources::PodStatus {
+            phase: Some(rusternetes_common::types::Phase::Running),
+            ..Default::default()
+        });
+        pod
+    }
+
+    /// Helper: create an unscheduled pod (the incoming pod wanting resources)
+    fn make_incoming_pod(
+        name: &str,
+        priority: i32,
+        cpu: &str,
+        memory: &str,
+        preemption_policy: Option<&str>,
+    ) -> Pod {
+        let spec = rusternetes_common::resources::PodSpec {
+            containers: vec![make_container(cpu, memory)],
+            priority: Some(priority),
+            preemption_policy: preemption_policy.map(|s| s.to_string()),
+            ..Default::default()
+        };
+        Pod::new(name, spec)
+    }
+
+    #[test]
+    fn test_preemption_policy_never_should_not_preempt() {
+        // Node with 2 CPUs
+        let node = make_node("node-1", "2", "4Gi");
+
+        // Existing low-priority pod using 1 CPU on node-1
+        let existing = make_scheduled_pod("low-pri-pod", 100, "1", "1Gi", "node-1");
+
+        // Incoming high-priority pod with preemptionPolicy=Never
+        let incoming = make_incoming_pod("high-pri-pod", 1000, "2", "2Gi", Some("Never"));
+
+        let (can_preempt, pods_to_evict) = check_preemption(&node, &incoming, &[existing]);
+
+        assert!(
+            !can_preempt,
+            "Pod with preemptionPolicy=Never should not preempt"
+        );
+        assert!(
+            pods_to_evict.is_empty(),
+            "No pods should be evicted when preemptionPolicy=Never"
+        );
+    }
+
+    #[test]
+    fn test_system_critical_pod_not_preempted_by_lower_priority() {
+        // Node with 2 CPUs
+        let node = make_node("node-1", "2", "4Gi");
+
+        // Existing system-critical pod (priority 2000000000) using 1 CPU
+        let system_pod =
+            make_scheduled_pod("system-critical", 2_000_000_000, "1", "1Gi", "node-1");
+
+        // Incoming pod with priority 1000000000 — lower than the system-critical pod
+        let incoming = make_incoming_pod("wants-resources", 1_000_000_000, "2", "2Gi", None);
+
+        let (can_preempt, pods_to_evict) = check_preemption(&node, &incoming, &[system_pod]);
+
+        // The incoming pod has lower priority than the system-critical pod,
+        // so it should NOT be able to preempt it
+        assert!(
+            !can_preempt || pods_to_evict.is_empty(),
+            "System-critical pod (priority >= 2000000000) should not be preempted by lower-priority pod"
+        );
+    }
+
+    #[test]
+    fn test_preemption_works_normally_for_lower_priority_pods() {
+        // Sanity check: normal preemption still works
+        let node = make_node("node-1", "2000m", "4Gi");
+
+        // Existing low-priority pod using 1500m CPU
+        let existing = make_scheduled_pod("low-pri", 100, "1500m", "1Gi", "node-1");
+
+        // Incoming high-priority pod needs 1500m CPU (won't fit without eviction)
+        let incoming = make_incoming_pod("high-pri", 1000, "1500m", "1Gi", None);
+
+        let (can_preempt, pods_to_evict) = check_preemption(&node, &incoming, &[existing]);
+
+        assert!(can_preempt, "Normal preemption should work");
+        assert!(
+            pods_to_evict.contains(&"low-pri".to_string()),
+            "Low-priority pod should be evicted"
+        );
     }
 }

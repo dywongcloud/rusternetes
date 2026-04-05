@@ -9,6 +9,7 @@ use axum::{
     Extension, Json,
 };
 use rusternetes_common::{
+    admission::{AdmissionResponse, GroupVersionKind, GroupVersionResource, Operation},
     authz::{Decision, RequestAttributes},
     resources::CustomResourceDefinition,
     List, Result,
@@ -101,6 +102,13 @@ pub async fn create_crd(
     let crd_name = crd.metadata.name.clone();
     info!("Creating CustomResourceDefinition: {}", crd_name);
 
+    // Build user info for admission webhooks (before auth_ctx.user is moved)
+    let user_info = rusternetes_common::admission::UserInfo {
+        username: auth_ctx.user.username.clone(),
+        uid: auth_ctx.user.uid.clone(),
+        groups: auth_ctx.user.groups.clone(),
+    };
+
     // Check authorization (CRDs are cluster-scoped)
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "customresourcedefinitions")
         .with_api_group("apiextensions.k8s.io");
@@ -151,6 +159,78 @@ pub async fn create_crd(
                 ),
             },
         );
+    }
+
+    // Run admission webhooks for CRD creation
+    let gvk = GroupVersionKind {
+        group: "apiextensions.k8s.io".to_string(),
+        version: "v1".to_string(),
+        kind: "CustomResourceDefinition".to_string(),
+    };
+    let gvr = GroupVersionResource {
+        group: "apiextensions.k8s.io".to_string(),
+        version: "v1".to_string(),
+        resource: "customresourcedefinitions".to_string(),
+    };
+
+    let crd_value_for_webhook = serde_json::to_value(&crd)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+
+    // Run mutating webhooks
+    let (mutation_response, mutated_crd_value) = state
+        .webhook_manager
+        .run_mutating_webhooks(
+            &Operation::Create,
+            &gvk,
+            &gvr,
+            None,
+            &crd_name,
+            Some(crd_value_for_webhook),
+            None,
+            &user_info,
+        )
+        .await?;
+
+    match mutation_response {
+        AdmissionResponse::Deny(reason) => {
+            warn!("Mutating webhooks denied CRD creation: {}", reason);
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+        AdmissionResponse::Allow | AdmissionResponse::AllowWithPatch(_) => {
+            if let Some(mutated_value) = mutated_crd_value {
+                crd = serde_json::from_value(mutated_value)
+                    .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+                info!("CRD mutated by webhooks: {}", crd_name);
+            }
+        }
+    }
+
+    // Run validating webhooks
+    let final_crd_value = serde_json::to_value(&crd)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+
+    let validation_response = state
+        .webhook_manager
+        .run_validating_webhooks(
+            &Operation::Create,
+            &gvk,
+            &gvr,
+            None,
+            &crd_name,
+            Some(final_crd_value),
+            None,
+            &user_info,
+        )
+        .await?;
+
+    match validation_response {
+        AdmissionResponse::Deny(reason) => {
+            warn!("Validating webhooks denied CRD creation: {}", reason);
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+        AdmissionResponse::Allow | AdmissionResponse::AllowWithPatch(_) => {
+            info!("Validating webhooks passed for CRD {}", crd_name);
+        }
     }
 
     // Handle dry-run
@@ -353,6 +433,13 @@ pub async fn update_crd(
 
     info!("Updating CustomResourceDefinition: {}", name);
 
+    // Build user info for admission webhooks (before auth_ctx.user is moved)
+    let user_info = rusternetes_common::admission::UserInfo {
+        username: auth_ctx.user.username.clone(),
+        uid: auth_ctx.user.uid.clone(),
+        groups: auth_ctx.user.groups.clone(),
+    };
+
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "customresourcedefinitions")
         .with_api_group("apiextensions.k8s.io")
         .with_name(&name);
@@ -369,6 +456,86 @@ pub async fn update_crd(
 
     crd.metadata.name = name.clone();
 
+    // Get old object for webhook old_object field
+    let key = build_key("customresourcedefinitions", None, &name);
+    let old_crd_value: Option<serde_json::Value> = state
+        .storage
+        .get::<serde_json::Value>(&key)
+        .await
+        .ok();
+
+    // Run admission webhooks for CRD update
+    let gvk = GroupVersionKind {
+        group: "apiextensions.k8s.io".to_string(),
+        version: "v1".to_string(),
+        kind: "CustomResourceDefinition".to_string(),
+    };
+    let gvr = GroupVersionResource {
+        group: "apiextensions.k8s.io".to_string(),
+        version: "v1".to_string(),
+        resource: "customresourcedefinitions".to_string(),
+    };
+
+    let crd_value_for_webhook = serde_json::to_value(&crd)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+
+    // Run mutating webhooks
+    let (mutation_response, mutated_crd_value) = state
+        .webhook_manager
+        .run_mutating_webhooks(
+            &Operation::Update,
+            &gvk,
+            &gvr,
+            None,
+            &name,
+            Some(crd_value_for_webhook),
+            old_crd_value.clone(),
+            &user_info,
+        )
+        .await?;
+
+    match mutation_response {
+        AdmissionResponse::Deny(reason) => {
+            warn!("Mutating webhooks denied CRD update: {}", reason);
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+        AdmissionResponse::Allow | AdmissionResponse::AllowWithPatch(_) => {
+            if let Some(mutated_value) = mutated_crd_value {
+                crd = serde_json::from_value(mutated_value)
+                    .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+                info!("CRD mutated by webhooks: {}", name);
+            }
+        }
+    }
+
+    // Run validating webhooks
+    let final_crd_value = serde_json::to_value(&crd)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+
+    let validation_response = state
+        .webhook_manager
+        .run_validating_webhooks(
+            &Operation::Update,
+            &gvk,
+            &gvr,
+            None,
+            &name,
+            Some(final_crd_value),
+            old_crd_value,
+            &user_info,
+        )
+        .await?;
+
+    match validation_response {
+        AdmissionResponse::Deny(reason) => {
+            warn!("Validating webhooks denied CRD update: {}", reason);
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+        AdmissionResponse::Allow | AdmissionResponse::AllowWithPatch(_) => {
+            info!("Validating webhooks passed for CRD {}", name);
+        }
+    }
+
     // Handle dry-run
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
@@ -376,7 +543,6 @@ pub async fn update_crd(
         return Ok(Json(crd));
     }
 
-    let key = build_key("customresourcedefinitions", None, &name);
     let updated = state.storage.update(&key, &crd).await?;
 
     // Notify dynamic route manager about CRD update
@@ -639,6 +805,105 @@ mod tests {
         let mut crd = create_test_crd();
         crd.metadata.name = "wrong-name".to_string();
         assert!(validate_crd(&crd).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validating_webhook_called_for_crd_creation() {
+        use crate::admission_webhook::AdmissionWebhookManager;
+        use rusternetes_common::admission::{
+            GroupVersionKind, GroupVersionResource, Operation, UserInfo,
+        };
+        use rusternetes_common::resources::{
+            FailurePolicy, OperationType, Rule, RuleWithOperations, SideEffectClass,
+            ValidatingWebhook, ValidatingWebhookConfiguration, WebhookClientConfig,
+        };
+        use rusternetes_storage::memory::MemoryStorage;
+
+        let storage = Arc::new(MemoryStorage::new());
+        let manager = AdmissionWebhookManager::new(storage.clone());
+
+        // Create a ValidatingWebhookConfiguration targeting CRDs with FailurePolicy::Fail
+        let webhook_config = ValidatingWebhookConfiguration {
+            api_version: "admissionregistration.k8s.io/v1".to_string(),
+            kind: "ValidatingWebhookConfiguration".to_string(),
+            metadata: rusternetes_common::types::ObjectMeta::new("deny-crd-creation"),
+            webhooks: Some(vec![ValidatingWebhook {
+                name: "deny-crd.example.com".to_string(),
+                client_config: WebhookClientConfig {
+                    url: Some("https://127.0.0.1:19443/deny-crd".to_string()),
+                    service: None,
+                    ca_bundle: None,
+                },
+                rules: vec![RuleWithOperations {
+                    operations: vec![OperationType::Create],
+                    rule: Rule {
+                        api_groups: vec!["apiextensions.k8s.io".to_string()],
+                        api_versions: vec!["v1".to_string()],
+                        resources: vec!["customresourcedefinitions".to_string()],
+                        scope: None,
+                    },
+                }],
+                failure_policy: Some(FailurePolicy::Fail),
+                match_policy: None,
+                namespace_selector: None,
+                object_selector: None,
+                side_effects: SideEffectClass::None,
+                timeout_seconds: Some(1),
+                admission_review_versions: vec!["v1".to_string()],
+                match_conditions: None,
+            }]),
+        };
+
+        // Store the webhook configuration
+        storage
+            .create(
+                "/registry/validatingwebhookconfigurations/deny-crd-creation",
+                &webhook_config,
+            )
+            .await
+            .unwrap();
+
+        // Build a CRD object and webhook parameters
+        let crd = create_test_crd();
+        let crd_value = serde_json::to_value(&crd).unwrap();
+
+        let gvk = GroupVersionKind {
+            group: "apiextensions.k8s.io".to_string(),
+            version: "v1".to_string(),
+            kind: "CustomResourceDefinition".to_string(),
+        };
+        let gvr = GroupVersionResource {
+            group: "apiextensions.k8s.io".to_string(),
+            version: "v1".to_string(),
+            resource: "customresourcedefinitions".to_string(),
+        };
+        let user_info = UserInfo {
+            username: "admin".to_string(),
+            uid: "admin-uid".to_string(),
+            groups: vec!["system:masters".to_string()],
+        };
+
+        // Call run_validating_webhooks — the webhook URL is unreachable,
+        // and FailurePolicy is Fail, so this should return an error,
+        // proving the webhook infrastructure was consulted for CRDs.
+        let result = manager
+            .run_validating_webhooks(
+                &Operation::Create,
+                &gvk,
+                &gvr,
+                None,
+                &crd.metadata.name,
+                Some(crd_value),
+                None,
+                &user_info,
+            )
+            .await;
+
+        assert!(
+            result.is_err(),
+            "Expected webhook call to fail (proving webhook was consulted for CRD creation), but got: {:?}",
+            result
+        );
     }
 }
 

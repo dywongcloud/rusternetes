@@ -481,6 +481,20 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
         nodes: &[Node],
         all_pods: &[Pod],
     ) -> Option<(String, Vec<String>)> {
+        // If the pod's preemptionPolicy is "Never", skip preemption entirely
+        let preemption_policy = pod
+            .spec
+            .as_ref()
+            .and_then(|s| s.preemption_policy.as_deref())
+            .unwrap_or("PreemptLowerPriority");
+        if preemption_policy == "Never" {
+            debug!(
+                "Pod {} has preemptionPolicy=Never, skipping preemption",
+                pod.metadata.name
+            );
+            return None;
+        }
+
         // Check each node to see if preemption is possible
         // Only consider nodes that pass basic scheduling constraints (except resources)
         for node in nodes {

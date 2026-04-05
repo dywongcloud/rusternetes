@@ -4282,6 +4282,15 @@ impl ContainerRuntime {
         }
     }
 
+    /// Check if a container exists in Docker (in any state: running, exited, created, etc.).
+    /// Returns true if the container can be inspected, false if it doesn't exist.
+    pub async fn container_exists(&self, container_name: &str) -> bool {
+        self.docker
+            .inspect_container(container_name, None::<InspectContainerOptions>)
+            .await
+            .is_ok()
+    }
+
     /// Check if any spec container in a pod has terminated (exited).
     /// This is a lightweight check that only inspects Docker state — it does NOT
     /// run any probes, unlike `get_container_statuses`.

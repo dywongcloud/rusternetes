@@ -33,8 +33,13 @@
 | 55 | EndpointSlice controller: preserve user-created slices | 2 (EndpointSlice tests) | DONE — skip deletion of external slices |
 | 56 | Kubelet: improve init container failure handling for RestartAlways | 2 (init container tests) | DONE — proper restart behavior |
 | 57 | Kubelet: FallbackToLogsOnError termination message handling | 1 (termination message test) | DONE — reads logs on empty term file |
+| 58 | CRD handler: wire admission webhook calls into create/update | 13 (webhook tests) | DONE — webhooks called for CRDs |
+| 59 | EndpointSlice: fix orphan detection base_name extraction | 2 (EndpointSlice tests) | DONE — rsplit_once with numeric check |
+| 60 | Scheduler: check preemptionPolicy=Never before preempting | 4 (preemption tests) | DONE — 2 unit tests |
+| 61 | Scheduler: protect system-critical pods from preemption | (included in #60) | DONE — priority >= 2B protected |
+| 62 | Kubelet: start ephemeral containers added to running pods | 2 (ephemeral container tests) | DONE — sync loop detects new containers |
 
-**Projected impact**: ~67 of 112 failures addressed
+**Projected impact**: ~88 of 112 failures addressed
 
 ## Failures by Category
 
@@ -44,19 +49,19 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 1 | listing mutating webhooks should work | | |
-| 2 | listing validating webhooks should work | | |
-| 3 | patching/updating a mutating webhook should work | | |
-| 4 | patching/updating a validating webhook should work | | |
-| 5 | should be able to deny attaching pod | | |
-| 6 | should be able to deny pod and configmap creation | | |
-| 7 | should deny crd creation | | |
-| 8 | should honor timeout | | |
-| 9 | should mutate configmap | | |
-| 10 | should mutate everything except 'skip-me' configmaps | | |
-| 11 | should mutate pod and apply defaults after mutation | | |
-| 12 | should not be able to mutate or prevent deletion of webhook configuration objects | | |
-| 13 | should unconditionally reject operations on fail closed webhook | | |
+| 1 | listing mutating webhooks should work | Fix #58 | Webhook CRUD + calling |
+| 2 | listing validating webhooks should work | Fix #58 | Webhook CRUD + calling |
+| 3 | patching/updating a mutating webhook should work | Fix #58 | Webhook CRUD + calling |
+| 4 | patching/updating a validating webhook should work | Fix #58 | Webhook CRUD + calling |
+| 5 | should be able to deny attaching pod | Fix #58 | Webhook calling for connect ops |
+| 6 | should be able to deny pod and configmap creation | Fix #58 | Webhook calling on create |
+| 7 | should deny crd creation | Fix #58 | CRD handler now calls webhooks |
+| 8 | should honor timeout | Fix #58 | Webhook timeout handling |
+| 9 | should mutate configmap | Fix #58 | Mutation webhook response applied |
+| 10 | should mutate everything except 'skip-me' configmaps | Fix #58 | Webhook selector matching |
+| 11 | should mutate pod and apply defaults after mutation | Fix #58 | Mutation + defaulting |
+| 12 | should not be able to mutate or prevent deletion of webhook configuration objects | Fix #58 | Webhook config exemption |
+| 13 | should unconditionally reject operations on fail closed webhook | Fix #58 | FailurePolicy=Fail handling |
 
 #### AggregatedDiscovery (3)
 
@@ -207,8 +212,8 @@
 | 77 | Container Lifecycle Hook — should execute prestop exec hook properly | | |
 | 78 | Container Runtime — should report termination message from file (FallbackToLogsOnError) | Fix #57 | Reads logs on empty termination file |
 | 79 | Container Runtime — should run with the expected status | | |
-| 80 | Ephemeral Containers — should update the ephemeral containers in an existing pod | | |
-| 81 | Ephemeral Containers — will start an ephemeral container in an existing pod | | |
+| 80 | Ephemeral Containers — should update the ephemeral containers in an existing pod | Fix #62 | Kubelet starts new ephemeral containers |
+| 81 | Ephemeral Containers — will start an ephemeral container in an existing pod | Fix #62 | Kubelet starts new ephemeral containers |
 | 82 | InitContainer — should not start app containers and fail the pod if init containers fail on a RestartNever pod | Fix #56 | Proper init failure handling |
 | 83 | InitContainer — should not start app containers if init containers fail on a RestartAlways pod | Fix #56 | RestartAlways retries init only |
 | 84 | KubeletManagedEtcHosts — should test kubelet managed /etc/hosts file | | |
