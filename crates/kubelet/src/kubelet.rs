@@ -981,6 +981,21 @@ impl Kubelet {
                                 let observed_gen = fresh_pod.metadata.generation;
 
                                 let mut new_pod = fresh_pod;
+
+                                // Determine phase based on restart policy:
+                                // - RestartNever: pod is Failed (init containers won't be retried)
+                                // - RestartAlways/OnFailure: pod stays Pending (init containers will be retried by sync loop)
+                                let restart_policy = new_pod
+                                    .spec
+                                    .as_ref()
+                                    .and_then(|s| s.restart_policy.as_deref())
+                                    .unwrap_or("Always");
+                                let (phase, reason) = if restart_policy == "Never" {
+                                    (Phase::Failed, "FailedToStart".to_string())
+                                } else {
+                                    (Phase::Pending, "InitContainerFailed".to_string())
+                                };
+
                                 // Build K8s-style message listing incomplete init containers
                                 let incomplete_inits: Vec<String> = new_pod
                                     .spec
@@ -999,14 +1014,49 @@ impl Kubelet {
                                 // Set proper conditions for failed init containers
                                 let failed_conditions =
                                     Self::init_failed_pod_conditions(&incomplete_inits);
+
+                                // Build app container statuses as Waiting/PodInitializing
+                                // since init containers haven't completed, app containers were never started
+                                let app_container_statuses: Option<Vec<ContainerStatus>> =
+                                    new_pod.spec.as_ref().map(|spec| {
+                                        spec.containers
+                                            .iter()
+                                            .map(|c| ContainerStatus {
+                                                name: c.name.clone(),
+                                                ready: false,
+                                                restart_count: 0,
+                                                state: Some(ContainerState::Waiting {
+                                                    reason: Some(
+                                                        "PodInitializing".to_string(),
+                                                    ),
+                                                    message: None,
+                                                }),
+                                                last_state: None,
+                                                image: Some(c.image.clone()),
+                                                image_id: None,
+                                                container_id: None,
+                                                started: Some(false),
+                                                allocated_resources: c
+                                                    .resources
+                                                    .as_ref()
+                                                    .and_then(|r| r.requests.clone()),
+                                                allocated_resources_status: None,
+                                                resources: c.resources.clone(),
+                                                user: None,
+                                                volume_mounts: None,
+                                                stop_signal: None,
+                                            })
+                                            .collect()
+                                    });
+
                                 new_pod.status = Some(PodStatus {
-                                    phase: Some(Phase::Failed),
+                                    phase: Some(phase),
                                     message: Some(status_msg),
-                                    reason: Some("FailedToStart".to_string()),
+                                    reason: Some(reason),
                                     host_ip: Some("127.0.0.1".to_string()),
                                     pod_ip: None,
                                     conditions: Some(failed_conditions),
-                                    container_statuses: None,
+                                    container_statuses: app_container_statuses,
                                     init_container_statuses,
                                     ephemeral_container_statuses: None,
                                     resize: None,
@@ -1025,7 +1075,7 @@ impl Kubelet {
 
                                 if let Err(e) = self.storage.update(&key, &new_pod).await {
                                     warn!(
-                                        "Failed to update pod {}/{} status to Failed: {}",
+                                        "Failed to update pod {}/{} status after init failure: {}",
                                         namespace, pod_name, e
                                     );
                                 }

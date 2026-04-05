@@ -28,8 +28,13 @@
 | 50 | RC list handler: add selector filtering + table format support | 4 (sig-cli RC tests) | DONE — 1 unit test |
 | 51 | RC controller: set ReplicaFailure condition when pod creation fails | 1 (exceeded quota) | DONE — 1 unit test |
 | 52 | Job controller: Ignore action in pod failure policy should not count toward failed | 1 (DisruptionTarget ignore) | DONE — 1 unit test |
+| 53 | ReplicaSet: adopt orphan pods + release non-matching pods | 3 (RS adoption, serve image) | DONE — 2 unit tests |
+| 54 | kube-proxy: store EndpointSlice port info (not just IPs) in routing map | 2 (EndpointSlice multi-port/IP) | DONE — port-aware routing |
+| 55 | EndpointSlice controller: preserve user-created slices | 2 (EndpointSlice tests) | DONE — skip deletion of external slices |
+| 56 | Kubelet: improve init container failure handling for RestartAlways | 2 (init container tests) | DONE — proper restart behavior |
+| 57 | Kubelet: FallbackToLogsOnError termination message handling | 1 (termination message test) | DONE — reads logs on empty term file |
 
-**Projected impact**: ~57 of 112 failures addressed
+**Projected impact**: ~67 of 112 failures addressed
 
 ## Failures by Category
 
@@ -141,8 +146,8 @@
 | # | Test | Status | Notes |
 |---|------|--------|-------|
 | 50 | Replace and Patch tests | | |
-| 51 | should adopt matching pods on creation and release no longer matching pods | | |
-| 52 | should serve a basic image on each replica with a public image | | |
+| 51 | should adopt matching pods on creation and release no longer matching pods | Fix #53 | Pod adoption + release logic |
+| 52 | should serve a basic image on each replica with a public image | Fix #53 | Pod adoption ensures correct replica count |
 
 #### ReplicationController (4)
 
@@ -180,8 +185,8 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 68 | should support a Service with multiple endpoint IPs specified in multiple EndpointSlices | | |
-| 69 | should support a Service with multiple ports specified in multiple EndpointSlices | | |
+| 68 | should support a Service with multiple endpoint IPs specified in multiple EndpointSlices | Fix #54,#55 | Port-aware routing + preserve external slices |
+| 69 | should support a Service with multiple ports specified in multiple EndpointSlices | Fix #54,#55 | Port-aware routing + preserve external slices |
 
 #### Other network (7)
 
@@ -200,12 +205,12 @@
 | # | Test | Status | Notes |
 |---|------|--------|-------|
 | 77 | Container Lifecycle Hook — should execute prestop exec hook properly | | |
-| 78 | Container Runtime — should report termination message from file (FallbackToLogsOnError) | | |
+| 78 | Container Runtime — should report termination message from file (FallbackToLogsOnError) | Fix #57 | Reads logs on empty termination file |
 | 79 | Container Runtime — should run with the expected status | | |
 | 80 | Ephemeral Containers — should update the ephemeral containers in an existing pod | | |
 | 81 | Ephemeral Containers — will start an ephemeral container in an existing pod | | |
-| 82 | InitContainer — should not start app containers and fail the pod if init containers fail on a RestartNever pod | | |
-| 83 | InitContainer — should not start app containers if init containers fail on a RestartAlways pod | | |
+| 82 | InitContainer — should not start app containers and fail the pod if init containers fail on a RestartNever pod | Fix #56 | Proper init failure handling |
+| 83 | InitContainer — should not start app containers if init containers fail on a RestartAlways pod | Fix #56 | RestartAlways retries init only |
 | 84 | KubeletManagedEtcHosts — should test kubelet managed /etc/hosts file | | |
 | 85 | Pod InPlace Resize — 6 containers various operations performed | | |
 | 86 | Pods — should support remote command execution over websockets | | |

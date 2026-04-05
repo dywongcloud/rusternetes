@@ -59,8 +59,10 @@ impl KubeProxy {
             .await
             .unwrap_or_default();
 
-        // Build EndpointSlice map: key = "namespace/service-name" -> list of endpoint IPs
-        let mut endpointslice_map: HashMap<String, Vec<String>> = HashMap::new();
+        // Build EndpointSlice map: key = "namespace/service-name" -> list of (ip, port_name, port_number)
+        // This preserves port information from EndpointSlices so kube-proxy can route multi-port services
+        let mut endpointslice_map: HashMap<String, Vec<(String, Option<String>, u16)>> =
+            HashMap::new();
         for es in &all_endpointslices {
             let namespace = es.metadata.namespace.as_deref().unwrap_or("default");
             // EndpointSlice's label kubernetes.io/service-name tells us which service it belongs to
@@ -79,6 +81,9 @@ impl KubeProxy {
                         .unwrap_or_else(|| es.metadata.name.clone())
                 });
             let key = format!("{}/{}", namespace, service_name);
+
+            // Collect ready endpoint addresses
+            let mut ready_addrs: Vec<String> = Vec::new();
             for endpoint in &es.endpoints {
                 if let Some(conditions) = &endpoint.conditions {
                     if conditions.ready == Some(false) {
@@ -86,10 +91,31 @@ impl KubeProxy {
                     }
                 }
                 for addr in &endpoint.addresses {
-                    endpointslice_map
-                        .entry(key.clone())
-                        .or_default()
-                        .push(addr.clone());
+                    ready_addrs.push(addr.clone());
+                }
+            }
+
+            // For each port in the EndpointSlice, record (ip, port_name, port_number) tuples
+            if es.ports.is_empty() {
+                // No ports defined - just record IPs with port 0 (will use service target_port)
+                for addr in &ready_addrs {
+                    endpointslice_map.entry(key.clone()).or_default().push((
+                        addr.clone(),
+                        None,
+                        0,
+                    ));
+                }
+            } else {
+                for es_port in &es.ports {
+                    let port_num = es_port.port.unwrap_or(0) as u16;
+                    let port_name = es_port.name.clone();
+                    for addr in &ready_addrs {
+                        endpointslice_map.entry(key.clone()).or_default().push((
+                            addr.clone(),
+                            port_name.clone(),
+                            port_num,
+                        ));
+                    }
                 }
             }
         }
@@ -122,7 +148,7 @@ impl KubeProxy {
         &mut self,
         service: &Service,
         endpoints_map: &HashMap<String, Endpoints>,
-        endpointslice_map: &HashMap<String, Vec<String>>,
+        endpointslice_map: &HashMap<String, Vec<(String, Option<String>, u16)>>,
     ) -> Result<()> {
         let namespace = service
             .metadata
@@ -174,21 +200,19 @@ impl KubeProxy {
         let endpoint_key = format!("{}/{}", namespace, name);
         let endpoints = endpoints_map.get(&endpoint_key);
 
-        // Extract endpoint addresses
-        let mut endpoint_addresses = self.extract_endpoint_addresses(endpoints);
+        // Extract endpoint addresses from old-style Endpoints
+        let endpoint_addresses = self.extract_endpoint_addresses(endpoints);
 
-        // Fall back to EndpointSlices if no old-style endpoints found
-        if endpoint_addresses.is_empty() {
-            if let Some(slice_addrs) = endpointslice_map.get(&endpoint_key) {
-                endpoint_addresses = slice_addrs.clone();
-                debug!(
-                    "Using EndpointSlice addresses for {}/{}: {:?}",
-                    namespace, name, endpoint_addresses
-                );
-            }
-        }
+        // Get EndpointSlice data (with port info)
+        let endpointslice_entries = endpointslice_map.get(&endpoint_key);
 
-        if endpoint_addresses.is_empty() {
+        let use_endpointslices = endpoint_addresses.is_empty() && endpointslice_entries.is_some();
+
+        if endpoint_addresses.is_empty()
+            && endpointslice_entries
+                .map(|e| e.is_empty())
+                .unwrap_or(true)
+        {
             info!(
                 "Service {}/{} (ClusterIP={}) has no ready endpoints, rules will have 0 backends",
                 namespace,
@@ -221,10 +245,44 @@ impl KubeProxy {
             };
 
             // Build list of endpoints with the correct port
-            let endpoints_with_port: Vec<(String, u16)> = endpoint_addresses
-                .iter()
-                .map(|ip| (ip.clone(), target_port))
-                .collect();
+            let endpoints_with_port: Vec<(String, u16)> = if use_endpointslices {
+                // Use EndpointSlice port information: match by port name or port number
+                let entries = endpointslice_entries.unwrap();
+                let svc_port_name = service_port.name.as_deref().unwrap_or("");
+                entries
+                    .iter()
+                    .filter(|(_, es_port_name, es_port_num)| {
+                        // Match EndpointSlice port to service port:
+                        // 1. By port name if both have names
+                        // 2. By port number if no name match
+                        // 3. If EndpointSlice port is 0, it means no port info - use target_port
+                        if *es_port_num == 0 {
+                            return true; // No port info, include all
+                        }
+                        if let Some(ref es_name) = es_port_name {
+                            if !es_name.is_empty() && !svc_port_name.is_empty() {
+                                return es_name == svc_port_name;
+                            }
+                        }
+                        // If no name matching possible, match by port number against target port
+                        *es_port_num == target_port
+                    })
+                    .map(|(ip, _, es_port_num)| {
+                        let port = if *es_port_num == 0 {
+                            target_port
+                        } else {
+                            *es_port_num
+                        };
+                        (ip.clone(), port)
+                    })
+                    .collect()
+            } else {
+                // Use old-style Endpoints - just pair IPs with target_port
+                endpoint_addresses
+                    .iter()
+                    .map(|ip| (ip.clone(), target_port))
+                    .collect()
+            };
 
             // Add ClusterIP rules (for ClusterIP, NodePort, and LoadBalancer)
             if let Some(cluster_ip_str) = cluster_ip {

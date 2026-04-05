@@ -75,7 +75,13 @@ impl<S: Storage> ReplicaSetController<S> {
         let pods_prefix = build_prefix("pods", Some(namespace));
         let all_pods: Vec<Pod> = self.storage.list(&pods_prefix).await?;
 
-        // Filter pods that match this replicaset's selector
+        // Adopt orphan pods: pods that match the selector labels but have no controller ownerReference
+        // Release owned pods: pods owned by this RS but whose labels no longer match the selector
+        let all_pods = self
+            .adopt_and_release(replicaset, all_pods, namespace)
+            .await?;
+
+        // Filter pods that match this replicaset's selector (owned + matching labels)
         let replicaset_pods: Vec<Pod> = all_pods
             .into_iter()
             .filter(|p| {
@@ -166,6 +172,134 @@ impl<S: Storage> ReplicaSetController<S> {
         .await?;
 
         Ok(())
+    }
+
+    /// Check if a pod's labels match the ReplicaSet's selector (ignoring ownerReference)
+    fn labels_match_selector(&self, pod: &Pod, replicaset: &ReplicaSet) -> bool {
+        if let Some(match_labels) = &replicaset.spec.selector.match_labels {
+            if let Some(pod_labels) = &pod.metadata.labels {
+                for (key, value) in match_labels {
+                    if pod_labels.get(key) != Some(value) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Check if a pod is owned by this ReplicaSet (has a controller ownerReference pointing to it)
+    fn is_owned_by(&self, pod: &Pod, replicaset: &ReplicaSet) -> bool {
+        pod.metadata
+            .owner_references
+            .as_ref()
+            .map(|refs| {
+                refs.iter().any(|r| {
+                    r.kind == "ReplicaSet"
+                        && r.name == replicaset.metadata.name
+                        && r.controller == Some(true)
+                })
+            })
+            .unwrap_or(false)
+    }
+
+    /// Check if a pod has any controller ownerReference at all
+    fn has_controller_owner(&self, pod: &Pod) -> bool {
+        pod.metadata
+            .owner_references
+            .as_ref()
+            .map(|refs| refs.iter().any(|r| r.controller == Some(true)))
+            .unwrap_or(false)
+    }
+
+    /// Adopt orphan pods that match the selector and release owned pods that no longer match.
+    /// Returns the updated list of all pods (with ownerReferences modified as needed).
+    async fn adopt_and_release(
+        &self,
+        replicaset: &ReplicaSet,
+        mut all_pods: Vec<Pod>,
+        namespace: &str,
+    ) -> rusternetes_common::Result<Vec<Pod>> {
+        for i in 0..all_pods.len() {
+            let pod = &all_pods[i];
+
+            // Skip terminated or deleting pods
+            if let Some(ref status) = pod.status {
+                if let Some(ref phase) = status.phase {
+                    if matches!(phase, Phase::Failed | Phase::Succeeded) {
+                        continue;
+                    }
+                }
+            }
+            if pod.metadata.deletion_timestamp.is_some() {
+                continue;
+            }
+
+            let labels_match = self.labels_match_selector(pod, replicaset);
+            let owned = self.is_owned_by(pod, replicaset);
+
+            if labels_match && !owned && !self.has_controller_owner(pod) {
+                // Adopt orphan pod: labels match, no controller owner
+                let mut adopted_pod = pod.clone();
+                let owner_ref = rusternetes_common::types::OwnerReference {
+                    api_version: "apps/v1".to_string(),
+                    kind: "ReplicaSet".to_string(),
+                    name: replicaset.metadata.name.clone(),
+                    uid: replicaset.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                };
+                adopted_pod
+                    .metadata
+                    .owner_references
+                    .get_or_insert_with(Vec::new)
+                    .push(owner_ref);
+
+                let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                match self.storage.update(&pod_key, &adopted_pod).await {
+                    Ok(_) => {
+                        info!(
+                            "Adopted orphan pod {} for replicaset {}/{}",
+                            pod.metadata.name, namespace, replicaset.metadata.name
+                        );
+                        all_pods[i] = adopted_pod;
+                    }
+                    Err(e) => {
+                        debug!("Failed to adopt pod {}: {}", pod.metadata.name, e);
+                    }
+                }
+            } else if !labels_match && owned {
+                // Release owned pod: labels no longer match
+                let mut released_pod = pod.clone();
+                if let Some(refs) = &mut released_pod.metadata.owner_references {
+                    refs.retain(|r| {
+                        !(r.kind == "ReplicaSet"
+                            && r.name == replicaset.metadata.name
+                            && r.controller == Some(true))
+                    });
+                    if refs.is_empty() {
+                        released_pod.metadata.owner_references = None;
+                    }
+                }
+
+                let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                match self.storage.update(&pod_key, &released_pod).await {
+                    Ok(_) => {
+                        info!(
+                            "Released pod {} from replicaset {}/{}",
+                            pod.metadata.name, namespace, replicaset.metadata.name
+                        );
+                        all_pods[i] = released_pod;
+                    }
+                    Err(e) => {
+                        debug!("Failed to release pod {}: {}", pod.metadata.name, e);
+                    }
+                }
+            }
+        }
+
+        Ok(all_pods)
     }
 
     fn matches_selector(&self, pod: &Pod, replicaset: &ReplicaSet) -> bool {
@@ -397,34 +531,167 @@ impl<S: Storage> ReplicaSetController<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_common::types::LabelSelector;
+    use rusternetes_common::resources::PodSpec;
+    use rusternetes_common::types::{LabelSelector, OwnerReference, TypeMeta};
+    use rusternetes_storage::memory::MemoryStorage;
+    use rusternetes_storage::Storage;
     use std::collections::HashMap;
 
-    #[test]
-    fn test_matches_selector() {
-        // Basic selector matching test
-        let mut labels = HashMap::new();
-        labels.insert("app".to_string(), "test".to_string());
+    fn make_labels(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
 
-        let selector = LabelSelector {
-            match_labels: Some(labels.clone()),
-            match_expressions: None,
-        };
+    fn make_replicaset(name: &str, labels: HashMap<String, String>, replicas: i32) -> ReplicaSet {
+        ReplicaSet {
+            type_meta: TypeMeta {
+                kind: "ReplicaSet".to_string(),
+                api_version: "apps/v1".to_string(),
+            },
+            metadata: ObjectMeta::new(name).with_namespace("default"),
+            spec: rusternetes_common::resources::ReplicaSetSpec {
+                replicas,
+                selector: LabelSelector {
+                    match_labels: Some(labels.clone()),
+                    match_expressions: None,
+                },
+                template: rusternetes_common::resources::PodTemplateSpec {
+                    metadata: Some(ObjectMeta::new("").with_labels(labels)),
+                    spec: PodSpec {
+                        containers: vec![],
+                        ..Default::default()
+                    },
+                },
+                min_ready_seconds: None,
+            },
+            status: None,
+        }
+    }
 
-        let pod_with_labels = Pod {
-            type_meta: rusternetes_common::types::TypeMeta {
+    fn make_pod(name: &str, labels: HashMap<String, String>) -> Pod {
+        Pod {
+            type_meta: TypeMeta {
                 kind: "Pod".to_string(),
                 api_version: "v1".to_string(),
             },
-            metadata: ObjectMeta::new("test-pod")
+            metadata: ObjectMeta::new(name)
                 .with_namespace("default")
                 .with_labels(labels),
-            spec: None,
-            status: None,
-        };
+            spec: Some(PodSpec {
+                containers: vec![],
+                ..Default::default()
+            }),
+            status: Some(PodStatus {
+                phase: Some(Phase::Running),
+                ..Default::default()
+            }),
+        }
+    }
 
-        // TODO: Add integration tests with actual storage
-        // For now, just verify basic struct creation
+    #[test]
+    fn test_matches_selector() {
+        let labels = make_labels(&[("app", "test")]);
+
+        let pod_with_labels = make_pod("test-pod", labels);
         assert_eq!(pod_with_labels.metadata.name, "test-pod");
+    }
+
+    #[tokio::test]
+    async fn test_adopt_orphan_pods_and_release_non_matching() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = ReplicaSetController::new(storage.clone(), 10);
+
+        let labels = make_labels(&[("app", "myapp")]);
+
+        // Create an orphan pod with matching labels but no ownerReference
+        let orphan_pod = make_pod("orphan-pod", labels.clone());
+        let pod_key = build_key("pods", Some("default"), "orphan-pod");
+        storage.create(&pod_key, &orphan_pod).await.unwrap();
+
+        // Create a ReplicaSet with matching selector and replicas=1
+        let rs = make_replicaset("my-rs", labels.clone(), 1);
+        let rs_key = build_key("replicasets", Some("default"), "my-rs");
+        storage.create(&rs_key, &rs).await.unwrap();
+
+        // Run reconciliation
+        controller.reconcile_all().await.unwrap();
+
+        // Verify the orphan pod was adopted (now has ownerReference pointing to the RS)
+        let adopted_pod: Pod = storage.get(&pod_key).await.unwrap();
+        let owner_refs = adopted_pod.metadata.owner_references.as_ref().unwrap();
+        assert_eq!(owner_refs.len(), 1);
+        assert_eq!(owner_refs[0].kind, "ReplicaSet");
+        assert_eq!(owner_refs[0].name, "my-rs");
+        assert_eq!(owner_refs[0].controller, Some(true));
+        assert_eq!(owner_refs[0].block_owner_deletion, Some(true));
+
+        // Since the RS wants 1 replica and has adopted 1, no extra pods should be created
+        let pods_prefix = build_prefix("pods", Some("default"));
+        let all_pods: Vec<Pod> = storage.list(&pods_prefix).await.unwrap();
+        assert_eq!(
+            all_pods.len(),
+            1,
+            "Should have exactly 1 pod (the adopted one), got {}",
+            all_pods.len()
+        );
+
+        // Now change the pod's labels so they no longer match the RS selector
+        let mut modified_pod: Pod = storage.get(&pod_key).await.unwrap();
+        modified_pod.metadata.labels = Some(make_labels(&[("app", "different")]));
+        storage.update(&pod_key, &modified_pod).await.unwrap();
+
+        // Run reconciliation again
+        controller.reconcile_all().await.unwrap();
+
+        // Verify the pod's ownerReference was removed (released)
+        let released_pod: Pod = storage.get(&pod_key).await.unwrap();
+        let has_rs_owner = released_pod
+            .metadata
+            .owner_references
+            .as_ref()
+            .map(|refs| refs.iter().any(|r| r.kind == "ReplicaSet" && r.name == "my-rs"))
+            .unwrap_or(false);
+        assert!(
+            !has_rs_owner,
+            "Pod should no longer have ownerReference to RS after label change"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_adopt_does_not_steal_owned_pods() {
+        // Pods that already have a controller owner should NOT be adopted
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = ReplicaSetController::new(storage.clone(), 10);
+
+        let labels = make_labels(&[("app", "myapp")]);
+
+        // Create a pod owned by a different controller
+        let mut owned_pod = make_pod("owned-pod", labels.clone());
+        owned_pod.metadata.owner_references = Some(vec![OwnerReference {
+            api_version: "apps/v1".to_string(),
+            kind: "ReplicaSet".to_string(),
+            name: "other-rs".to_string(),
+            uid: "other-uid".to_string(),
+            controller: Some(true),
+            block_owner_deletion: Some(true),
+        }]);
+        let pod_key = build_key("pods", Some("default"), "owned-pod");
+        storage.create(&pod_key, &owned_pod).await.unwrap();
+
+        // Create a RS with matching selector
+        let rs = make_replicaset("my-rs", labels.clone(), 1);
+        let rs_key = build_key("replicasets", Some("default"), "my-rs");
+        storage.create(&rs_key, &rs).await.unwrap();
+
+        // Run reconciliation
+        controller.reconcile_all().await.unwrap();
+
+        // Verify the owned pod was NOT adopted (still owned by other-rs)
+        let pod: Pod = storage.get(&pod_key).await.unwrap();
+        let refs = pod.metadata.owner_references.as_ref().unwrap();
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].name, "other-rs");
     }
 }

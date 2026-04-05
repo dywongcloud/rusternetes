@@ -79,14 +79,16 @@ impl<S: Storage> EndpointSliceController<S> {
             if !endpoints_names.contains(&(ns.to_string(), source_name.clone()))
                 && !endpoints_names.contains(&(ns.to_string(), name.clone()))
             {
-                // Check if this slice was auto-generated (has kubernetes.io/service-name label)
+                // Only delete slices managed by the endpointslice-controller (mirrored from Endpoints)
+                // Do NOT delete slices created externally (e.g., by conformance tests or users)
                 let is_mirrored = slice
                     .metadata
                     .labels
                     .as_ref()
                     .map(|l| {
-                        l.contains_key("kubernetes.io/service-name")
-                            || l.contains_key("endpointslice.kubernetes.io/managed-by")
+                        l.get("endpointslice.kubernetes.io/managed-by")
+                            .map(|v| v == "endpointslice-controller.k8s.io")
+                            .unwrap_or(false)
                     })
                     .unwrap_or(false);
                 if is_mirrored {

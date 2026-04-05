@@ -6471,7 +6471,7 @@ pub fn parse_cpu_quantity(s: &str) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use rusternetes_common::resources::{Container, Pod, PodSpec};
+    use rusternetes_common::resources::{Container, ContainerState, ContainerStatus, Pod, PodSpec};
     use rusternetes_common::types::{ObjectMeta, TypeMeta};
 
     fn make_container(name: &str) -> Container {
@@ -8542,5 +8542,267 @@ mod tests {
             "fsGroup should copy owner rw bits to group, got {:04o}",
             final_mode
         );
+    }
+
+    // --- Init container failure tests ---
+
+    /// Helper: build a pod with a failing init container and an app container,
+    /// then simulate what the kubelet does when start_pod returns an error
+    /// due to init container failure, and return the resulting PodStatus.
+    fn simulate_init_container_failure(restart_policy: &str) -> rusternetes_common::resources::pod::PodStatus {
+        use rusternetes_common::resources::pod::PodStatus;
+        use rusternetes_common::types::Phase;
+
+        // Build a pod with an init container that will "fail" (exit code 1)
+        // and an app container that should NOT be started.
+        let init_container = Container {
+            name: "init-fail".to_string(),
+            image: "busybox:latest".to_string(),
+            command: Some(vec!["sh".to_string(), "-c".to_string(), "exit 1".to_string()]),
+            ..make_container("init-fail")
+        };
+
+        let app_container = make_container("app");
+
+        let pod = Pod {
+            type_meta: TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta::new("init-fail-pod").with_namespace("default"),
+            spec: Some(PodSpec {
+                containers: vec![app_container],
+                init_containers: Some(vec![init_container]),
+                ephemeral_containers: None,
+                restart_policy: Some(restart_policy.to_string()),
+                node_name: None,
+                node_selector: None,
+                service_account_name: None,
+                service_account: None,
+                hostname: None,
+                subdomain: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                affinity: None,
+                tolerations: None,
+                priority: None,
+                priority_class_name: None,
+                automount_service_account_token: None,
+                topology_spread_constraints: None,
+                overhead: None,
+                scheduler_name: None,
+                resource_claims: None,
+                volumes: None,
+                active_deadline_seconds: None,
+                dns_policy: None,
+                dns_config: None,
+                security_context: None,
+                image_pull_secrets: None,
+                share_process_namespace: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                enable_service_links: None,
+                preemption_policy: None,
+                host_users: None,
+                set_hostname_as_fqdn: None,
+                termination_grace_period_seconds: None,
+                host_aliases: None,
+                os: None,
+                scheduling_gates: None,
+                resources: None,
+            }),
+            status: None,
+        };
+
+        // Simulate what kubelet.rs does when start_pod returns an error
+        // due to init container failure (the logic from the else branch
+        // in the error handler).
+
+        // Simulate init container terminated with exit code 1
+        let init_container_statuses = Some(vec![ContainerStatus {
+            name: "init-fail".to_string(),
+            ready: false,
+            restart_count: 0,
+            state: Some(ContainerState::Terminated {
+                exit_code: 1,
+                signal: None,
+                reason: Some("Error".to_string()),
+                message: None,
+                started_at: Some("2026-01-01T00:00:00Z".to_string()),
+                finished_at: Some("2026-01-01T00:00:01Z".to_string()),
+                container_id: Some("docker://abc123".to_string()),
+            }),
+            last_state: None,
+            image: Some("busybox:latest".to_string()),
+            image_id: None,
+            container_id: Some("docker://abc123".to_string()),
+            started: Some(false),
+            allocated_resources: None,
+            allocated_resources_status: None,
+            resources: None,
+            user: None,
+            volume_mounts: None,
+            stop_signal: None,
+        }]);
+
+        // Determine phase based on restart policy (mirrors kubelet.rs logic)
+        let (phase, reason) = if restart_policy == "Never" {
+            (Phase::Failed, "FailedToStart".to_string())
+        } else {
+            (Phase::Pending, "InitContainerFailed".to_string())
+        };
+
+        // Build app container statuses as Waiting/PodInitializing
+        let app_container_statuses: Option<Vec<ContainerStatus>> =
+            pod.spec.as_ref().map(|spec| {
+                spec.containers
+                    .iter()
+                    .map(|c| ContainerStatus {
+                        name: c.name.clone(),
+                        ready: false,
+                        restart_count: 0,
+                        state: Some(ContainerState::Waiting {
+                            reason: Some("PodInitializing".to_string()),
+                            message: None,
+                        }),
+                        last_state: None,
+                        image: Some(c.image.clone()),
+                        image_id: None,
+                        container_id: None,
+                        started: Some(false),
+                        allocated_resources: None,
+                        allocated_resources_status: None,
+                        resources: None,
+                        user: None,
+                        volume_mounts: None,
+                        stop_signal: None,
+                    })
+                    .collect()
+            });
+
+        PodStatus {
+            phase: Some(phase),
+            message: Some("containers with incomplete status: [init-fail]".to_string()),
+            reason: Some(reason),
+            host_ip: Some("127.0.0.1".to_string()),
+            pod_ip: None,
+            conditions: None,
+            container_statuses: app_container_statuses,
+            init_container_statuses,
+            ephemeral_container_statuses: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
+            host_i_ps: None,
+            pod_i_ps: None,
+            nominated_node_name: None,
+            qos_class: None,
+            start_time: None,
+        }
+    }
+
+    #[test]
+    fn test_init_container_failure_restart_never_pod_phase_is_failed() {
+        use rusternetes_common::types::Phase;
+
+        let status = simulate_init_container_failure("Never");
+
+        // Pod phase must be Failed for RestartNever
+        assert_eq!(
+            status.phase,
+            Some(Phase::Failed),
+            "Pod with RestartNever and failed init container must have Failed phase"
+        );
+        assert_eq!(
+            status.reason,
+            Some("FailedToStart".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_init_container_failure_restart_never_init_shows_terminated() {
+        let status = simulate_init_container_failure("Never");
+
+        // Init container must show Terminated with exit code 1
+        let init_statuses = status.init_container_statuses.expect("init_container_statuses should be set");
+        assert_eq!(init_statuses.len(), 1);
+        let init_status = &init_statuses[0];
+        assert_eq!(init_status.name, "init-fail");
+        assert!(!init_status.ready, "failed init container should not be ready");
+
+        match &init_status.state {
+            Some(ContainerState::Terminated { exit_code, .. }) => {
+                assert_eq!(*exit_code, 1, "init container exit code should be 1");
+            }
+            other => panic!("Expected Terminated state, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_init_container_failure_restart_never_app_not_started() {
+        let status = simulate_init_container_failure("Never");
+
+        // App container must NOT have been started — should show Waiting
+        let app_statuses = status.container_statuses.expect("container_statuses should be set");
+        assert_eq!(app_statuses.len(), 1);
+        let app_status = &app_statuses[0];
+        assert_eq!(app_status.name, "app");
+        assert!(!app_status.ready, "app container should not be ready");
+        assert_eq!(app_status.started, Some(false), "app container should not have started");
+        assert!(
+            app_status.container_id.is_none(),
+            "app container should have no container ID (never created)"
+        );
+
+        match &app_status.state {
+            Some(ContainerState::Waiting { reason, .. }) => {
+                assert_eq!(
+                    reason.as_deref(),
+                    Some("PodInitializing"),
+                    "app container should be Waiting with reason PodInitializing"
+                );
+            }
+            other => panic!("Expected Waiting state for app container, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_init_container_failure_restart_always_pod_stays_pending() {
+        use rusternetes_common::types::Phase;
+
+        let status = simulate_init_container_failure("Always");
+
+        // Pod phase must be Pending (not Failed) for RestartAlways
+        // so the init container can be retried
+        assert_eq!(
+            status.phase,
+            Some(Phase::Pending),
+            "Pod with RestartAlways and failed init container must stay Pending, not Failed"
+        );
+        assert_eq!(
+            status.reason,
+            Some("InitContainerFailed".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_init_container_failure_restart_always_app_not_started() {
+        let status = simulate_init_container_failure("Always");
+
+        // Even for RestartAlways, app containers must NOT start if init containers failed
+        let app_statuses = status.container_statuses.expect("container_statuses should be set");
+        assert_eq!(app_statuses.len(), 1);
+        let app_status = &app_statuses[0];
+        assert!(!app_status.ready, "app container should not be ready");
+        assert_eq!(app_status.started, Some(false));
+        assert!(app_status.container_id.is_none());
+
+        match &app_status.state {
+            Some(ContainerState::Waiting { reason, .. }) => {
+                assert_eq!(reason.as_deref(), Some("PodInitializing"));
+            }
+            other => panic!("Expected Waiting state for app container, got: {:?}", other),
+        }
     }
 }
