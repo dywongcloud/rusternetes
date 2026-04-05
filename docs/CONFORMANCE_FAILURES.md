@@ -207,9 +207,9 @@
 | # | Test | Status | Notes |
 |---|------|--------|-------|
 | 70 | HostPort — validates no conflict between pods with same hostPort but different hostIP and protocol | Fix #69 | Scheduler port conflict check |
-| 71 | Proxy — A set of valid responses are returned for both pod and service Proxy | | |
-| 72 | Proxy — should proxy through a service and a pod | | |
-| 73 | Service endpoints latency — should not be very high | | |
+| 71 | Proxy — A set of valid responses are returned for both pod and service Proxy | Fix #69 | Host header stripping in proxy |
+| 72 | Proxy — should proxy through a service and a pod | Fix #69 | Proxy forwarding fix |
+| 73 | Service endpoints latency — should not be very high | Fix #69 | Sync interval reduced to 1s |
 | 74 | Services — should complete a service status lifecycle | Fix #64 | Service status lifecycle + filtering |
 | 75 | Services — should serve a basic endpoint from pods | Fix #64 | Service endpoint serving |
 | 76 | Services — should serve multiport endpoints from pods | Fix #54,#64 | Multi-port EndpointSlice + service |
@@ -233,16 +233,16 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 87 | Guestbook application — should create and stop a working application | | |
-| 88 | Kubectl describe — should check if kubectl describe prints relevant information for rc and pods | | |
-| 89 | Kubectl diff — should check if kubectl diff finds a difference for Deployments | | |
-| 90 | Kubectl expose — should create services for rc | | |
-| 91 | Kubectl label — should update the label on a resource | | |
-| 92 | Kubectl patch — should add annotations for pods in rc | | |
-| 93 | Kubectl replace — should update a single-container pod's image | | |
-| 94 | Proxy server — should support proxy with --port 0 | | |
-| 95 | Update Demo — should create and stop a replication controller | | |
-| 96 | Update Demo — should scale a replication controller | | |
+| 87 | Guestbook application — should create and stop a working application | Fix #50,#66 | RC fixes enable guestbook |
+| 88 | Kubectl describe — should check if kubectl describe prints relevant information for rc and pods | Fix #50,#68 | Table format for RC + RS |
+| 89 | Kubectl diff — should check if kubectl diff finds a difference for Deployments | Fix #50 | Dry-run + table format |
+| 90 | Kubectl expose — should create services for rc | | Needs kubectl expose impl |
+| 91 | Kubectl label — should update the label on a resource | Fix #50 | RC list filtering |
+| 92 | Kubectl patch — should add annotations for pods in rc | Fix #50 | RC patch handler |
+| 93 | Kubectl replace — should update a single-container pod's image | Fix #50 | Pod update handler |
+| 94 | Proxy server — should support proxy with --port 0 | | Needs kubectl proxy impl |
+| 95 | Update Demo — should create and stop a replication controller | Fix #66 | RC adoption + creation |
+| 96 | Update Demo — should scale a replication controller | Fix #66 | RC scale subresource |
 
 ### sig-scheduling (5 failures)
 
