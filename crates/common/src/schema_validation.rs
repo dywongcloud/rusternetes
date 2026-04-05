@@ -461,6 +461,55 @@ impl SchemaValidator {
             Value::Null => "null",
         }
     }
+
+    /// Apply default values from a JSONSchemaProps to a JSON value.
+    ///
+    /// Walks the schema recursively and for each property that has a `default`
+    /// value, inserts that default into `value` if the field is missing.
+    /// Handles nested objects recursively.
+    pub fn apply_defaults(schema: &JSONSchemaProps, value: &mut Value) {
+        Self::apply_defaults_recursive(schema, value);
+    }
+
+    fn apply_defaults_recursive(schema: &JSONSchemaProps, value: &mut Value) {
+        // If the value is an object, walk its properties and apply defaults
+        if let Value::Object(ref mut map) = value {
+            if let Some(ref properties) = schema.properties {
+                for (key, prop_schema) in properties {
+                    if map.contains_key(key) {
+                        // Property exists -- recurse into it for nested defaults
+                        if let Some(val) = map.get_mut(key) {
+                            Self::apply_defaults_recursive(prop_schema, val);
+                        }
+                    } else if let Some(ref default_val) = prop_schema.default {
+                        // Property missing -- apply default
+                        map.insert(key.clone(), default_val.clone());
+                    }
+                }
+            }
+        }
+
+        // If the value is an array, apply defaults to each item using the items schema
+        if let Value::Array(ref mut arr) = value {
+            if let Some(ref items) = schema.items {
+                use crate::resources::crd::JSONSchemaPropsOrArray;
+                match items.as_ref() {
+                    JSONSchemaPropsOrArray::Schema(item_schema) => {
+                        for item in arr.iter_mut() {
+                            Self::apply_defaults_recursive(item_schema, item);
+                        }
+                    }
+                    JSONSchemaPropsOrArray::Schemas(schemas) => {
+                        for (i, item) in arr.iter_mut().enumerate() {
+                            if i < schemas.len() {
+                                Self::apply_defaults_recursive(&schemas[i], item);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

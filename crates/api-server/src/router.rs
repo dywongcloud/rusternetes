@@ -239,8 +239,6 @@ async fn custom_resource_fallback(
             let body = axum::body::to_bytes(req.into_body(), usize::MAX)
                 .await
                 .map_err(|_| StatusCode::BAD_REQUEST)?;
-            let cr: rusternetes_common::resources::CustomResource =
-                serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
 
             // Parse query parameters from URI
             let query_params: std::collections::HashMap<String, String> = uri
@@ -262,7 +260,7 @@ async fn custom_resource_fallback(
                     namespace.map(|s| s.to_string()),
                 )),
                 axum::extract::Query(query_params),
-                Json(cr),
+                body,
             )
             .await
             {
@@ -321,8 +319,6 @@ async fn custom_resource_fallback(
             let body = axum::body::to_bytes(req.into_body(), usize::MAX)
                 .await
                 .map_err(|_| StatusCode::BAD_REQUEST)?;
-            let cr: rusternetes_common::resources::CustomResource =
-                serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
 
             // Parse query parameters from URI
             let query_params: std::collections::HashMap<String, String> = uri
@@ -345,7 +341,7 @@ async fn custom_resource_fallback(
                     name.to_string(),
                 )),
                 axum::extract::Query(query_params),
-                Json(cr),
+                body,
             )
             .await
             {

@@ -1,10 +1,15 @@
 /// OpenAPI specification handler
 use crate::openapi::generate_openapi_spec;
+use crate::state::ApiServerState;
 use axum::{
     body::Body,
+    extract::State,
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
+use rusternetes_common::resources::crd::{CustomResourceDefinition, ResourceScope};
+use rusternetes_storage::Storage;
+use std::sync::Arc;
 
 /// Encode a u64 as a protobuf varint
 fn encode_varint(buf: &mut Vec<u8>, mut value: u64) {
@@ -76,35 +81,28 @@ pub async fn get_openapi_spec_path() -> Response {
 
 /// Wrap JSON bytes in the Kubernetes protobuf wire format.
 ///
-/// The K8s protobuf format for OpenAPI is:
+/// Uses the Go runtime.Unknown proto definition field numbering:
 /// - 4 bytes magic: "k8s\0"
 /// - Protobuf message with:
-///   - field 1 (string): content type
-///   - field 2 (bytes): encoding (empty)
-///   - field 3 (bytes): the raw data (JSON spec)
-///   - field 4 (string): content encoding (empty)
-fn wrap_in_k8s_protobuf(content_type: &str, data: &[u8]) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(data.len() + 100);
-    // Magic prefix
-    buf.extend_from_slice(b"k8s\0");
+///   - field 1 (TypeMeta, nested): empty, omitted
+///   - field 2 (raw, bytes): the raw data (JSON spec) -- tag 0x12
+///   - field 3 (contentEncoding, string): empty, omitted
+///   - field 4 (contentType, string): "application/json" -- tag 0x22
+fn wrap_in_k8s_protobuf(_content_type: &str, data: &[u8]) -> Vec<u8> {
+    let content_type_bytes = b"application/json";
+    let mut msg = Vec::with_capacity(data.len() + 30);
 
-    // Build the protobuf message body first to compute its length
-    let mut msg = Vec::with_capacity(data.len() + 80);
-    // Field 1: content type (wire type 2 = length-delimited, field number 1)
-    msg.push((1 << 3) | 2); // tag
-    encode_varint(&mut msg, content_type.len() as u64);
-    msg.extend_from_slice(content_type.as_bytes());
-    // Field 2: encoding (empty string)
-    msg.push((2 << 3) | 2);
-    encode_varint(&mut msg, 0);
-    // Field 3: raw data (the JSON spec bytes)
-    msg.push((3 << 3) | 2);
+    // Field 2: raw bytes (the JSON payload) -- tag = (2 << 3) | 2 = 0x12
+    msg.push(0x12);
     encode_varint(&mut msg, data.len() as u64);
     msg.extend_from_slice(data);
-    // Field 4: content encoding (empty)
-    msg.push((4 << 3) | 2);
-    encode_varint(&mut msg, 0);
+    // Field 4: contentType -- tag = (4 << 3) | 2 = 0x22
+    msg.push(0x22);
+    encode_varint(&mut msg, content_type_bytes.len() as u64);
+    msg.extend_from_slice(content_type_bytes);
 
+    let mut buf = Vec::with_capacity(msg.len() + 4);
+    buf.extend_from_slice(b"k8s\0");
     buf.extend_from_slice(&msg);
     buf
 }
@@ -116,15 +114,101 @@ fn wrap_in_k8s_protobuf(content_type: &str, data: &[u8]) -> Vec<u8> {
 /// When protobuf is requested, wraps JSON in the K8s protobuf envelope and
 /// responds with the MIME-safe content type (using '.' not '@').
 /// See k8s.io/kube-openapi/pkg/handler for the canonical implementation.
-pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
+///
+/// Dynamically includes CRD validation schemas in the definitions section.
+pub async fn get_swagger_spec(
+    State(state): State<Arc<ApiServerState>>,
+    headers: HeaderMap,
+) -> Response {
+    let mut paths = serde_json::Map::new();
+    let mut definitions = serde_json::Map::new();
+
+    // Read CRDs from storage and include their schemas
+    if let Ok(crds) = state
+        .storage
+        .list::<CustomResourceDefinition>("/registry/customresourcedefinitions")
+        .await
+    {
+        for crd in &crds {
+            let group = &crd.spec.group;
+            let plural = &crd.spec.names.plural;
+            let kind = &crd.spec.names.kind;
+
+            for version in &crd.spec.versions {
+                if !version.served {
+                    continue;
+                }
+                let ver = &version.name;
+
+                // Build definition key like "io.example.stable.v1.CronTab"
+                let group_parts: Vec<&str> = group.rsplitn(10, '.').collect();
+                let def_key = format!(
+                    "{}.{}.{}",
+                    group_parts.iter().copied().collect::<Vec<_>>().join("."),
+                    ver,
+                    kind
+                );
+
+                // Add schema from CRD validation if present
+                if let Some(ref schema) = version.schema {
+                    if let Ok(schema_val) = serde_json::to_value(&schema.open_apiv3_schema) {
+                        definitions.insert(def_key.clone(), schema_val);
+                    }
+                }
+
+                // Add path entries for the CRD's API endpoints
+                let base_path = format!("/apis/{}/{}", group, ver);
+
+                if crd.spec.scope == ResourceScope::Namespaced {
+                    let ns_path =
+                        format!("{}/namespaces/{{namespace}}/{}", base_path, plural);
+                    let ns_item_path = format!("{}/{{name}}", ns_path);
+                    paths.insert(
+                        ns_path,
+                        serde_json::json!({
+                            "get": {"description": format!("list {}", kind)},
+                            "post": {"description": format!("create {}", kind)}
+                        }),
+                    );
+                    paths.insert(
+                        ns_item_path,
+                        serde_json::json!({
+                            "get": {"description": format!("get {}", kind)},
+                            "put": {"description": format!("update {}", kind)},
+                            "delete": {"description": format!("delete {}", kind)}
+                        }),
+                    );
+                } else {
+                    let cluster_path = format!("{}/{}", base_path, plural);
+                    let cluster_item_path = format!("{}/{{name}}", cluster_path);
+                    paths.insert(
+                        cluster_path,
+                        serde_json::json!({
+                            "get": {"description": format!("list {}", kind)},
+                            "post": {"description": format!("create {}", kind)}
+                        }),
+                    );
+                    paths.insert(
+                        cluster_item_path,
+                        serde_json::json!({
+                            "get": {"description": format!("get {}", kind)},
+                            "put": {"description": format!("update {}", kind)},
+                            "delete": {"description": format!("delete {}", kind)}
+                        }),
+                    );
+                }
+            }
+        }
+    }
+
     let spec = serde_json::json!({
         "swagger": "2.0",
         "info": {
             "title": "Rusternetes Kubernetes API",
             "version": "v1.35.0"
         },
-        "paths": {},
-        "definitions": {}
+        "paths": paths,
+        "definitions": definitions
     });
     let json_bytes = serde_json::to_vec(&spec).unwrap_or_default();
 
@@ -153,5 +237,82 @@ pub async fn get_swagger_spec(headers: HeaderMap) -> Response {
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(json_bytes))
             .unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wrap_in_k8s_protobuf_uses_correct_field_numbers() {
+        let data = b"{\"test\": true}";
+        let wrapped = wrap_in_k8s_protobuf("ignored-content-type", data);
+
+        // Verify magic prefix
+        assert_eq!(&wrapped[0..4], b"k8s\0");
+
+        // After magic, first byte should be field 2 tag (0x12)
+        // field 2, wire type 2 = (2 << 3) | 2 = 0x12
+        assert_eq!(
+            wrapped[4], 0x12,
+            "first field tag should be 0x12 (field 2, raw bytes)"
+        );
+
+        // Parse past the varint length to find the raw data
+        let mut pos = 5;
+        let mut raw_len: u64 = 0;
+        let mut shift = 0;
+        loop {
+            let byte = wrapped[pos];
+            raw_len |= ((byte & 0x7f) as u64) << shift;
+            pos += 1;
+            if byte & 0x80 == 0 {
+                break;
+            }
+            shift += 7;
+        }
+
+        // Verify raw data matches input
+        assert_eq!(raw_len as usize, data.len());
+        assert_eq!(&wrapped[pos..pos + data.len()], data);
+
+        // After raw data, next byte should be field 4 tag (0x22)
+        let after_raw = pos + data.len();
+        assert_eq!(
+            wrapped[after_raw], 0x22,
+            "second field tag should be 0x22 (field 4, contentType)"
+        );
+
+        // Verify contentType value is "application/json"
+        let ct_len_pos = after_raw + 1;
+        let ct_len = wrapped[ct_len_pos] as usize;
+        let ct_start = ct_len_pos + 1;
+        let ct_bytes = &wrapped[ct_start..ct_start + ct_len];
+        assert_eq!(ct_bytes, b"application/json");
+    }
+
+    #[test]
+    fn test_openapi_spec_has_definitions_key() {
+        // Even with no CRDs, the swagger spec JSON should have a definitions key
+        let spec = serde_json::json!({
+            "swagger": "2.0",
+            "info": {
+                "title": "Rusternetes Kubernetes API",
+                "version": "v1.35.0"
+            },
+            "paths": {},
+            "definitions": {}
+        });
+        let val: serde_json::Value = spec;
+        assert!(
+            val.get("definitions").is_some(),
+            "spec must include definitions"
+        );
+        assert!(val.get("paths").is_some(), "spec must include paths");
+        assert!(
+            val["definitions"].is_object(),
+            "definitions must be an object"
+        );
     }
 }

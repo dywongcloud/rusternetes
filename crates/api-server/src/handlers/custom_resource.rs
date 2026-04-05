@@ -6,6 +6,7 @@
 
 use crate::{middleware::AuthContext, state::ApiServerState};
 use axum::{
+    body::Bytes,
     extract::{Path, State},
     http::StatusCode,
     Extension, Json,
@@ -27,17 +28,28 @@ pub async fn create_custom_resource(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((group, version, plural, namespace)): Path<(String, String, String, Option<String>)>,
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
-    Json(mut cr): Json<CustomResource>,
+    body: Bytes,
 ) -> Result<(StatusCode, Json<CustomResource>)> {
+    // Parse the body manually so we can do strict field validation against the raw bytes
+    let mut cr: CustomResource = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
+
     let cr_name = cr.metadata.name.clone();
     info!(
         "Creating custom resource {}/{}/{}: {}",
         group, version, plural, cr_name
     );
 
+    // Strict field validation: reject unknown fields when requested
+    crate::handlers::validation::validate_strict_fields(&params, &body, &cr)?;
+
     // Find the CRD for this resource type
     let crd_name = format!("{}.{}", plural, group);
     let crd = get_crd_for_resource(&state, &crd_name).await?;
+
+    // Apply schema defaults before validation
+    apply_schema_defaults(&crd, &version, &mut cr);
 
     // Validate the resource against CRD schema
     validate_custom_resource(&crd, &version, &cr)?;
@@ -191,16 +203,27 @@ pub async fn update_custom_resource(
         String,
     )>,
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
-    Json(mut cr): Json<CustomResource>,
+    body: Bytes,
 ) -> Result<Json<CustomResource>> {
+    // Parse the body manually so we can do strict field validation against the raw bytes
+    let mut cr: CustomResource = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e))
+    })?;
+
     info!(
         "Updating custom resource {}/{}/{}: {}",
         group, version, plural, name
     );
 
+    // Strict field validation: reject unknown fields when requested
+    crate::handlers::validation::validate_strict_fields(&params, &body, &cr)?;
+
     // Find the CRD for this resource type
     let crd_name = format!("{}.{}", plural, group);
     let crd = get_crd_for_resource(&state, &crd_name).await?;
+
+    // Apply schema defaults before validation
+    apply_schema_defaults(&crd, &version, &mut cr);
 
     // Validate the resource against CRD schema
     validate_custom_resource(&crd, &version, &cr)?;
@@ -561,6 +584,37 @@ async fn get_crd_for_resource(
 ) -> Result<CustomResourceDefinition> {
     let key = build_key("customresourcedefinitions", None, crd_name);
     state.storage.get(&key).await
+}
+
+/// Apply schema defaults from the CRD to a custom resource's spec.
+/// Walks the CRD's JSONSchemaProps and for each property with a `default`
+/// value, sets it on the CR if the field is missing.
+fn apply_schema_defaults(crd: &CustomResourceDefinition, version: &str, cr: &mut CustomResource) {
+    // Find the version in the CRD
+    let crd_version = match crd.spec.versions.iter().find(|v| v.name == version) {
+        Some(v) => v,
+        None => return,
+    };
+
+    // Apply defaults from schema if present
+    if let Some(ref validation) = crd_version.schema {
+        // The CRD schema's top-level properties typically include "spec", "status", etc.
+        // We need to find the "spec" property schema and apply defaults to cr.spec.
+        if let Some(ref properties) = validation.open_apiv3_schema.properties {
+            if let Some(spec_schema) = properties.get("spec") {
+                let spec = cr.spec.get_or_insert_with(|| serde_json::json!({}));
+                SchemaValidator::apply_defaults(spec_schema, spec);
+            }
+        }
+        // Also apply defaults at the top level for the whole object
+        // (handles cases where the schema defines defaults for top-level fields)
+        let mut cr_value = serde_json::to_value(&*cr).unwrap_or_default();
+        SchemaValidator::apply_defaults(&validation.open_apiv3_schema, &mut cr_value);
+        // Only update spec from the applied defaults (don't overwrite metadata etc.)
+        if let Some(spec_val) = cr_value.get("spec") {
+            cr.spec = Some(spec_val.clone());
+        }
+    }
 }
 
 /// Validate a custom resource against its CRD schema
@@ -1073,5 +1127,218 @@ mod tests {
 
         let result = validate_custom_resource(&crd, "v1", &cr);
         assert!(result.is_err());
+    }
+
+    /// Helper: create a CRD with a schema that has default values
+    fn create_crd_with_defaults() -> CustomResourceDefinition {
+        use rusternetes_common::resources::crd::JSONSchemaProps;
+        use rusternetes_common::resources::CustomResourceValidation;
+
+        let mut spec_properties = std::collections::HashMap::new();
+        spec_properties.insert(
+            "cronSpec".to_string(),
+            JSONSchemaProps {
+                type_: Some("string".to_string()),
+                ..Default::default()
+            },
+        );
+        spec_properties.insert(
+            "image".to_string(),
+            JSONSchemaProps {
+                type_: Some("string".to_string()),
+                default: Some(json!("default-image:latest")),
+                ..Default::default()
+            },
+        );
+        spec_properties.insert(
+            "replicas".to_string(),
+            JSONSchemaProps {
+                type_: Some("integer".to_string()),
+                default: Some(json!(1)),
+                ..Default::default()
+            },
+        );
+        // Nested object with defaults
+        let mut nested_props = std::collections::HashMap::new();
+        nested_props.insert(
+            "enabled".to_string(),
+            JSONSchemaProps {
+                type_: Some("boolean".to_string()),
+                default: Some(json!(true)),
+                ..Default::default()
+            },
+        );
+        spec_properties.insert(
+            "logging".to_string(),
+            JSONSchemaProps {
+                type_: Some("object".to_string()),
+                properties: Some(nested_props),
+                ..Default::default()
+            },
+        );
+
+        let spec_schema = JSONSchemaProps {
+            type_: Some("object".to_string()),
+            properties: Some(spec_properties),
+            ..Default::default()
+        };
+
+        let mut top_properties = std::collections::HashMap::new();
+        top_properties.insert("spec".to_string(), spec_schema);
+
+        let top_schema = JSONSchemaProps {
+            type_: Some("object".to_string()),
+            properties: Some(top_properties),
+            ..Default::default()
+        };
+
+        let mut crd = create_test_crd();
+        crd.spec.versions[0].schema = Some(CustomResourceValidation {
+            open_apiv3_schema: top_schema,
+        });
+        crd
+    }
+
+    #[test]
+    fn test_schema_defaults_applied_to_missing_fields() {
+        let crd = create_crd_with_defaults();
+        // CR with only cronSpec set — image and replicas should get defaults
+        let mut cr = CustomResource {
+            api_version: "stable.example.com/v1".to_string(),
+            kind: "CronTab".to_string(),
+            metadata: ObjectMeta::new("my-crontab"),
+            spec: Some(json!({
+                "cronSpec": "* * * * */5"
+            })),
+            status: None,
+        };
+
+        apply_schema_defaults(&crd, "v1", &mut cr);
+
+        let spec = cr.spec.unwrap();
+        assert_eq!(spec["cronSpec"], json!("* * * * */5"));
+        assert_eq!(
+            spec["image"],
+            json!("default-image:latest"),
+            "Default for 'image' should be applied"
+        );
+        assert_eq!(
+            spec["replicas"],
+            json!(1),
+            "Default for 'replicas' should be applied"
+        );
+    }
+
+    #[test]
+    fn test_schema_defaults_do_not_overwrite_existing() {
+        let crd = create_crd_with_defaults();
+        let mut cr = CustomResource {
+            api_version: "stable.example.com/v1".to_string(),
+            kind: "CronTab".to_string(),
+            metadata: ObjectMeta::new("my-crontab"),
+            spec: Some(json!({
+                "cronSpec": "0 0 * * *",
+                "image": "my-custom-image:v2",
+                "replicas": 3
+            })),
+            status: None,
+        };
+
+        apply_schema_defaults(&crd, "v1", &mut cr);
+
+        let spec = cr.spec.unwrap();
+        assert_eq!(
+            spec["image"],
+            json!("my-custom-image:v2"),
+            "Existing value should not be overwritten"
+        );
+        assert_eq!(
+            spec["replicas"],
+            json!(3),
+            "Existing value should not be overwritten"
+        );
+    }
+
+    #[test]
+    fn test_schema_defaults_nested_objects() {
+        let crd = create_crd_with_defaults();
+        // CR has a logging object but without 'enabled' — default should be applied
+        let mut cr = CustomResource {
+            api_version: "stable.example.com/v1".to_string(),
+            kind: "CronTab".to_string(),
+            metadata: ObjectMeta::new("my-crontab"),
+            spec: Some(json!({
+                "cronSpec": "* * * * */5",
+                "logging": {}
+            })),
+            status: None,
+        };
+
+        apply_schema_defaults(&crd, "v1", &mut cr);
+
+        let spec = cr.spec.unwrap();
+        assert_eq!(
+            spec["logging"]["enabled"],
+            json!(true),
+            "Nested default for 'logging.enabled' should be applied"
+        );
+    }
+
+    #[test]
+    fn test_strict_field_validation_rejects_unknown_cr_fields() {
+        // Simulate strict field validation on a CR body with an unknown top-level field
+        let cr = CustomResource {
+            api_version: "stable.example.com/v1".to_string(),
+            kind: "CronTab".to_string(),
+            metadata: ObjectMeta::new("my-crontab"),
+            spec: Some(json!({"cronSpec": "* * * * */5"})),
+            status: None,
+        };
+
+        // Body includes an unknown field "unknownTopLevel"
+        let body = br#"{"apiVersion":"stable.example.com/v1","kind":"CronTab","metadata":{"name":"my-crontab"},"spec":{"cronSpec":"* * * * */5"},"unknownTopLevel":"bad"}"#;
+
+        let mut params = HashMap::new();
+        params.insert("fieldValidation".to_string(), "Strict".to_string());
+
+        let result = crate::handlers::validation::validate_strict_fields(&params, body, &cr);
+        assert!(
+            result.is_err(),
+            "Strict validation should reject unknown fields"
+        );
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("strict decoding error"),
+            "Error should mention strict decoding: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("unknownTopLevel"),
+            "Error should mention the unknown field name: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_strict_field_validation_allows_valid_cr() {
+        let cr = CustomResource {
+            api_version: "stable.example.com/v1".to_string(),
+            kind: "CronTab".to_string(),
+            metadata: ObjectMeta::new("my-crontab"),
+            spec: Some(json!({"cronSpec": "* * * * */5"})),
+            status: None,
+        };
+
+        let body = br#"{"apiVersion":"stable.example.com/v1","kind":"CronTab","metadata":{"name":"my-crontab"},"spec":{"cronSpec":"* * * * */5"}}"#;
+
+        let mut params = HashMap::new();
+        params.insert("fieldValidation".to_string(), "Strict".to_string());
+
+        let result = crate::handlers::validation::validate_strict_fields(&params, body, &cr);
+        assert!(
+            result.is_ok(),
+            "Strict validation should pass for valid CR: {:?}",
+            result
+        );
     }
 }

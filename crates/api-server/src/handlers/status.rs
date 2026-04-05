@@ -330,9 +330,17 @@ pub async fn update_cluster_status(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     uri: Uri,
+    headers: axum::http::HeaderMap,
     Path(name): Path<String>,
-    Json(new_resource): Json<Value>,
+    body: axum::body::Bytes,
 ) -> Result<Json<Value>> {
+    // Determine content type — check X-Original-Content-Type for middleware-normalized requests
+    let content_type = headers
+        .get("x-original-content-type")
+        .or_else(|| headers.get("content-type"))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/json");
+
     let resource_type = extract_resource_type_from_uri(&uri);
     info!("Updating status for {}/{}", resource_type, name);
 
@@ -348,6 +356,84 @@ pub async fn update_cluster_status(
         }
     }
 
+    // Handle JSON Patch (RFC 6902) — body is an array of patch operations
+    if content_type.contains("json-patch") {
+        let key = build_key(&resource_type, None, &name);
+        let current_resource: Value = state.storage.get(&key).await?;
+        let patch_ops: Value = serde_json::from_slice(&body).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid JSON patch: {}", e))
+        })?;
+
+        let patched = crate::patch::apply_patch(
+            &current_resource,
+            &patch_ops,
+            crate::patch::PatchType::JsonPatch,
+        )
+        .map_err(|e| {
+            rusternetes_common::Error::Internal(format!("Failed to apply JSON patch: {}", e))
+        })?;
+
+        // Keep status changes and metadata changes (annotations/labels) from patch
+        let mut result = current_resource.clone();
+        if let (Some(result_obj), Some(patched_obj)) = (result.as_object_mut(), patched.as_object())
+        {
+            if let Some(new_status) = patched_obj.get("status") {
+                result_obj.insert("status".to_string(), new_status.clone());
+            }
+            // Merge metadata changes from patch (annotations, labels)
+            if let Some(patched_meta) = patched_obj.get("metadata").and_then(|m| m.as_object()) {
+                if let Some(result_meta) = result_obj
+                    .get_mut("metadata")
+                    .and_then(|m| m.as_object_mut())
+                {
+                    if let Some(annotations) = patched_meta.get("annotations") {
+                        result_meta.insert("annotations".to_string(), annotations.clone());
+                    }
+                    if let Some(labels) = patched_meta.get("labels") {
+                        result_meta.insert("labels".to_string(), labels.clone());
+                    }
+                }
+            }
+            result_obj.remove("resourceVersion");
+            // Ensure TypeMeta
+            if !result_obj.contains_key("kind") || !result_obj.contains_key("apiVersion") {
+                let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
+                result_obj
+                    .entry("kind".to_string())
+                    .or_insert_with(|| Value::String(kind));
+                result_obj
+                    .entry("apiVersion".to_string())
+                    .or_insert_with(|| Value::String(api_version));
+            }
+        }
+
+        let mut saved: Value = state.storage.update(&key, &result).await?;
+        // Ensure kind/apiVersion in response
+        if let Some(obj) = saved.as_object_mut() {
+            let (kind, api_version) = resource_type_to_kind_api_version(&resource_type);
+            obj.entry("kind".to_string())
+                .or_insert_with(|| Value::String(kind));
+            obj.entry("apiVersion".to_string())
+                .or_insert_with(|| Value::String(api_version));
+        }
+        return Ok(Json(saved));
+    }
+
+    // Parse body as JSON or YAML (for PUT / merge-patch / apply-patch requests)
+    let new_resource: Value = if content_type.contains("yaml") {
+        serde_yaml::from_slice(&body).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid YAML: {}", e))
+        })?
+    } else {
+        serde_json::from_slice(&body).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid JSON: {}", e))
+        })?
+    };
+
+    // Handle merge-patch and strategic-merge-patch for /status
+    let is_merge_patch =
+        content_type.contains("merge-patch") || content_type.contains("strategic-merge-patch");
+
     // Get the current resource
     let key = build_key(&resource_type, None, &name);
     let current_resource: Value = state.storage.get(&key).await?;
@@ -360,10 +446,35 @@ pub async fn update_cluster_status(
 
     let current_spec = current_resource.get("spec").cloned();
 
-    let new_status = new_resource
-        .get("status")
-        .ok_or_else(|| rusternetes_common::Error::InvalidResource("Missing status".to_string()))?
-        .clone();
+    // For merge-patch, merge the status fields rather than replacing entirely.
+    // This preserves existing status fields when only some fields are patched.
+    let new_status = if is_merge_patch {
+        let patch_status = new_resource
+            .get("status")
+            .cloned()
+            .unwrap_or(Value::Object(serde_json::Map::new()));
+        let mut merged = current_resource
+            .get("status")
+            .cloned()
+            .unwrap_or(Value::Object(serde_json::Map::new()));
+        if let (Some(merged_obj), Some(patch_obj)) =
+            (merged.as_object_mut(), patch_status.as_object())
+        {
+            for (k, v) in patch_obj {
+                if v.is_null() {
+                    merged_obj.remove(k);
+                } else {
+                    merged_obj.insert(k.clone(), v.clone());
+                }
+            }
+        }
+        merged
+    } else {
+        new_resource
+            .get("status")
+            .cloned()
+            .unwrap_or(Value::Object(serde_json::Map::new()))
+    };
 
     // Build the updated resource
     let mut updated_resource = current_resource.clone();
