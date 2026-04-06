@@ -120,6 +120,32 @@ mod tests {
         let result = get_resource_api_path("foobar", "default", "x");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_get_resource_api_path_all_aliases() {
+        // Test that short aliases map to the same path
+        let pairs = vec![
+            ("svc", "service"),
+            ("deploy", "deployment"),
+            ("sts", "statefulset"),
+            ("ds", "daemonset"),
+            ("rs", "replicaset"),
+            ("cj", "cronjob"),
+            ("cm", "configmap"),
+            ("sa", "serviceaccount"),
+            ("ing", "ingress"),
+            ("pvc", "persistentvolumeclaim"),
+            ("pv", "persistentvolume"),
+            ("sc", "storageclass"),
+            ("ns", "namespace"),
+            ("no", "node"),
+        ];
+        for (short, long) in pairs {
+            let short_path = get_resource_api_path(short, "default", "test").unwrap();
+            let long_path = get_resource_api_path(long, "default", "test").unwrap();
+            assert_eq!(short_path, long_path, "Alias mismatch: {} vs {}", short, long);
+        }
+    }
 }
 
 fn get_resource_api_path(resource_type: &str, namespace: &str, name: &str) -> Result<String> {

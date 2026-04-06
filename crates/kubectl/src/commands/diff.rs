@@ -151,6 +151,24 @@ mod tests {
         let result = get_resource_api_path("Unknown", "default", "x");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_get_resource_api_path_service() {
+        let path = get_resource_api_path("Service", "prod", "my-svc").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/prod/services/my-svc");
+    }
+
+    #[test]
+    fn test_get_resource_api_path_configmap() {
+        let path = get_resource_api_path("ConfigMap", "default", "cfg").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/configmaps/cfg");
+    }
+
+    #[test]
+    fn test_get_resource_api_path_namespace_cluster_scoped() {
+        let path = get_resource_api_path("Namespace", "ignored", "kube-system").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/kube-system");
+    }
 }
 
 fn get_resource_api_path(kind: &str, namespace: &str, name: &str) -> Result<String> {

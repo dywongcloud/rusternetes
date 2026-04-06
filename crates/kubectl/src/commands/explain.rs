@@ -116,6 +116,28 @@ mod tests {
             .to_string()
             .contains("not found"));
     }
+
+    #[test]
+    fn test_get_resource_docs_has_standard_fields() {
+        let docs = get_resource_docs();
+        for (_key, doc) in &docs {
+            assert!(doc.fields.contains_key("apiVersion"));
+            assert!(doc.fields.contains_key("kind"));
+            assert!(doc.fields.contains_key("metadata"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_pod_succeeds() {
+        let result = execute("pod", None, false).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_pod_field_path() {
+        let result = execute("pod.spec", None, false).await;
+        assert!(result.is_ok());
+    }
 }
 
 fn get_resource_docs() -> HashMap<&'static str, ResourceDoc> {

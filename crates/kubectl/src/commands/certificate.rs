@@ -335,4 +335,73 @@ mod tests {
             "/apis/certificates.k8s.io/v1/certificatesigningrequests/my-csr/approval"
         );
     }
+
+    #[test]
+    fn test_already_approved_detection() {
+        let csr = json!({
+            "status": {
+                "conditions": [
+                    {"type": "Approved", "status": "True", "reason": "KubectlApprove"}
+                ]
+            }
+        });
+
+        let already_approved = csr
+            .get("status")
+            .and_then(|s| s.get("conditions"))
+            .and_then(|c| c.as_array())
+            .map(|conditions| {
+                conditions.iter().any(|c| {
+                    c.get("type").and_then(|t| t.as_str()) == Some("Approved")
+                })
+            })
+            .unwrap_or(false);
+
+        assert!(already_approved);
+    }
+
+    #[test]
+    fn test_already_denied_detection() {
+        let csr = json!({
+            "status": {
+                "conditions": [
+                    {"type": "Denied", "status": "True", "reason": "KubectlDeny"}
+                ]
+            }
+        });
+
+        let already_denied = csr
+            .get("status")
+            .and_then(|s| s.get("conditions"))
+            .and_then(|c| c.as_array())
+            .map(|conditions| {
+                conditions.iter().any(|c| {
+                    c.get("type").and_then(|t| t.as_str()) == Some("Denied")
+                })
+            })
+            .unwrap_or(false);
+
+        assert!(already_denied);
+    }
+
+    #[test]
+    fn test_csr_no_status_conditions() {
+        let csr = json!({
+            "metadata": {"name": "my-csr"},
+            "spec": {}
+        });
+
+        let already_approved = csr
+            .get("status")
+            .and_then(|s| s.get("conditions"))
+            .and_then(|c| c.as_array())
+            .map(|conditions| {
+                conditions.iter().any(|c| {
+                    c.get("type").and_then(|t| t.as_str()) == Some("Approved")
+                })
+            })
+            .unwrap_or(false);
+
+        assert!(!already_approved);
+    }
 }

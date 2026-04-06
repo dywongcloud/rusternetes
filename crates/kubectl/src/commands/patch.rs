@@ -64,6 +64,13 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(patch_str).unwrap();
         assert_eq!(value["spec"]["replicas"], 3);
     }
+
+    #[test]
+    fn test_patch_invalid_json_fails() {
+        let patch_str = r#"{"spec": invalid}"#;
+        let result: Result<serde_json::Value, _> = serde_json::from_str(patch_str);
+        assert!(result.is_err());
+    }
 }
 
 /// Patch a resource

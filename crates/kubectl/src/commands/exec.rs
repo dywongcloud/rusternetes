@@ -98,6 +98,25 @@ mod tests {
         assert_eq!(urlencoding::encode("hello world"), "hello+world");
         assert_eq!(urlencoding::encode("simple"), "simple");
     }
+
+    #[test]
+    fn test_exec_url_multi_command_args() {
+        let namespace = "default";
+        let pod_name = "my-pod";
+        let mut url_path = format!("/api/v1/namespaces/{}/pods/{}/exec", namespace, pod_name);
+        let mut query_params = vec![];
+        for cmd in &["sh", "-c", "echo hello"] {
+            query_params.push(format!("command={}", urlencoding::encode(cmd)));
+        }
+        query_params.push("stdout=true".to_string());
+        query_params.push("stderr=true".to_string());
+        url_path.push('?');
+        url_path.push_str(&query_params.join("&"));
+
+        assert!(url_path.contains("command=sh"));
+        assert!(url_path.contains("command=-c"));
+        assert!(url_path.contains("command=echo+hello"));
+    }
 }
 
 mod urlencoding {

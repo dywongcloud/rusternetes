@@ -156,6 +156,37 @@ mod tests {
     fn test_parse_duration_empty_fails() {
         assert!(parse_duration_to_seconds("").is_err());
     }
+
+    #[test]
+    fn test_parse_duration_milliseconds() {
+        assert_eq!(parse_duration_to_seconds("5000ms").unwrap(), 5);
+    }
+
+    #[test]
+    fn test_parse_duration_invalid_unit() {
+        assert!(parse_duration_to_seconds("10x").is_err());
+    }
+
+    #[test]
+    fn test_parse_duration_invalid_value() {
+        assert!(parse_duration_to_seconds("abcs").is_err());
+    }
+
+    #[test]
+    fn test_log_url_with_timestamps_and_previous() {
+        let ns = "default";
+        let pod = "app";
+        let mut url = format!("/api/v1/namespaces/{}/pods/{}/log", ns, pod);
+        let mut params = Vec::new();
+        params.push("timestamps=true".to_string());
+        params.push("previous=true".to_string());
+        url.push('?');
+        url.push_str(&params.join("&"));
+        assert_eq!(
+            url,
+            "/api/v1/namespaces/default/pods/app/log?timestamps=true&previous=true"
+        );
+    }
 }
 
 fn parse_duration_to_seconds(duration: &str) -> Result<i64> {

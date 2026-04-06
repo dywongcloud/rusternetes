@@ -484,4 +484,61 @@ mod tests {
             "/apis/policy/v1/namespaces/default/poddisruptionbudgets/my-pdb"
         );
     }
+
+    #[test]
+    fn test_resource_path_hpa() {
+        let path = resource_path(
+            "autoscaling/v2",
+            "HorizontalPodAutoscaler",
+            Some("prod"),
+            "web-hpa",
+        )
+        .unwrap();
+        assert_eq!(
+            path,
+            "/apis/autoscaling/v2/namespaces/prod/horizontalpodautoscalers/web-hpa"
+        );
+    }
+
+    #[test]
+    fn test_resource_path_volume_snapshot() {
+        let path = resource_path(
+            "snapshot.storage.k8s.io/v1",
+            "VolumeSnapshot",
+            Some("default"),
+            "snap-1",
+        )
+        .unwrap();
+        assert_eq!(
+            path,
+            "/apis/snapshot.storage.k8s.io/v1/namespaces/default/volumesnapshots/snap-1"
+        );
+    }
+
+    #[test]
+    fn test_resource_path_volume_snapshot_class() {
+        let path = resource_path(
+            "snapshot.storage.k8s.io/v1",
+            "VolumeSnapshotClass",
+            None,
+            "csi-snap",
+        )
+        .unwrap();
+        assert_eq!(
+            path,
+            "/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses/csi-snap"
+        );
+    }
+
+    #[test]
+    fn test_resource_path_unknown_kind_no_group() {
+        let path = resource_path("v1", "Widget", Some("default"), "w1").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/widgets/w1");
+    }
+
+    #[test]
+    fn test_resource_path_unknown_cluster_scoped_no_group() {
+        let path = resource_path("v1", "Widget", None, "w1").unwrap();
+        assert_eq!(path, "/api/v1/widgets/w1");
+    }
 }

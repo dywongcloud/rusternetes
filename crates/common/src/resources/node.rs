@@ -68,7 +68,7 @@ pub struct Taint {
     pub time_added: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeStatus {
     #[serde(skip_serializing_if = "Option::is_none")]

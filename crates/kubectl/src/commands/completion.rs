@@ -299,4 +299,31 @@ mod tests {
         // which is verified by the fact execute("bash") returns Ok
         assert!(execute("bash").is_ok());
     }
+
+    #[test]
+    fn test_print_bash_completion_returns_ok() {
+        assert!(print_bash_completion().is_ok());
+    }
+
+    #[test]
+    fn test_print_zsh_completion_returns_ok() {
+        assert!(print_zsh_completion().is_ok());
+    }
+
+    #[test]
+    fn test_print_fish_completion_returns_ok() {
+        assert!(print_fish_completion().is_ok());
+    }
+
+    #[test]
+    fn test_print_powershell_completion_returns_ok() {
+        assert!(print_powershell_completion().is_ok());
+    }
+
+    #[test]
+    fn test_execute_case_sensitive_shell() {
+        assert!(execute("BASH").is_err());
+        assert!(execute("Zsh").is_err());
+        assert!(execute("FISH").is_err());
+    }
 }

@@ -476,4 +476,57 @@ mod tests {
     fn test_resource_path_invalid_type() {
         assert!(resource_path("configmap", "default", "foo").is_err());
     }
+
+    #[test]
+    fn test_extract_selector_unsupported_type() {
+        let resource = json!({"spec": {}});
+        let result = extract_selector("configmap", &resource);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_selector_empty_labels_fails() {
+        let pod = json!({
+            "metadata": {
+                "labels": {}
+            }
+        });
+        let result = extract_selector("pod", &pod);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("selectors"));
+    }
+
+    #[test]
+    fn test_extract_ports_multiple_containers() {
+        let resource = json!({
+            "spec": {
+                "containers": [
+                    {"name": "web", "ports": [{"containerPort": 80}]},
+                    {"name": "api", "ports": [{"containerPort": 8080}]}
+                ]
+            }
+        });
+        let ports = extract_ports(&resource);
+        assert_eq!(ports, vec![80, 8080]);
+    }
+
+    #[test]
+    fn test_extract_ports_no_containers() {
+        let resource = json!({"spec": {}});
+        let ports = extract_ports(&resource);
+        assert!(ports.is_empty());
+    }
+
+    #[test]
+    fn test_build_service_multiple_selectors() {
+        let mut selector = BTreeMap::new();
+        selector.insert("app".to_string(), "web".to_string());
+        selector.insert("version".to_string(), "v2".to_string());
+
+        let svc = build_service("web", "staging", &selector, 443, Some(8443), "TCP", Some("ClusterIP"));
+        assert_eq!(svc["spec"]["selector"]["app"], "web");
+        assert_eq!(svc["spec"]["selector"]["version"], "v2");
+        assert_eq!(svc["spec"]["type"], "ClusterIP");
+        assert_eq!(svc["metadata"]["namespace"], "staging");
+    }
 }

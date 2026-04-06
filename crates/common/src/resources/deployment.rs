@@ -29,7 +29,7 @@ impl Deployment {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeploymentSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -95,7 +95,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeploymentStatus {
     #[serde(skip_serializing_if = "Option::is_none")]

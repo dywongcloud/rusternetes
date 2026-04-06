@@ -50,6 +50,18 @@ mod tests {
         });
         assert_eq!(scale_body["spec"]["replicas"], 0);
     }
+
+    #[test]
+    fn test_scale_path_replicaset() {
+        let path = format!(
+            "/apis/apps/v1/namespaces/{}/replicasets/{}/scale",
+            "default", "web-rs"
+        );
+        assert_eq!(
+            path,
+            "/apis/apps/v1/namespaces/default/replicasets/web-rs/scale"
+        );
+    }
 }
 
 /// Scale a resource (Deployment, ReplicaSet, StatefulSet, etc.)

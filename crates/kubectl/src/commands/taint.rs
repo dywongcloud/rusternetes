@@ -252,4 +252,11 @@ mod tests {
         let spec = parse_taint("key=foo:PreferNoSchedule").unwrap();
         assert_eq!(spec.effect, Some("PreferNoSchedule".to_string()));
     }
+
+    #[test]
+    fn test_parse_taint_no_effect_no_dash_fails() {
+        // "key=value" without effect and without dash should fail
+        let result = parse_taint("key=value");
+        assert!(result.is_err());
+    }
 }

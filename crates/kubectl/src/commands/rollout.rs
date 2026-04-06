@@ -459,6 +459,107 @@ mod tests {
         let result = get_resource_api_path("pod", "default", "x");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_rollout_api_path_deployments_plural() {
+        let (path, version) =
+            get_resource_api_path("deployments", "staging", "api").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/staging/deployments/api");
+        assert_eq!(version, "apps/v1");
+    }
+
+    #[test]
+    fn test_rollout_api_path_statefulset_full_name() {
+        let (path, version) =
+            get_resource_api_path("statefulset", "db-ns", "postgres").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/db-ns/statefulsets/postgres");
+        assert_eq!(version, "apps/v1");
+    }
+
+    #[test]
+    fn test_rollout_api_path_statefulsets_plural() {
+        let (path, _) =
+            get_resource_api_path("statefulsets", "default", "redis").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/default/statefulsets/redis");
+    }
+
+    #[test]
+    fn test_rollout_api_path_daemonset_full_name() {
+        let (path, version) =
+            get_resource_api_path("daemonset", "monitoring", "fluentd").unwrap();
+        assert_eq!(
+            path,
+            "/apis/apps/v1/namespaces/monitoring/daemonsets/fluentd"
+        );
+        assert_eq!(version, "apps/v1");
+    }
+
+    #[test]
+    fn test_rollout_api_path_daemonsets_plural() {
+        let (path, _) =
+            get_resource_api_path("daemonsets", "kube-system", "kube-proxy").unwrap();
+        assert_eq!(
+            path,
+            "/apis/apps/v1/namespaces/kube-system/daemonsets/kube-proxy"
+        );
+    }
+
+    #[test]
+    fn test_rollout_api_path_unsupported_service() {
+        let result = get_resource_api_path("service", "default", "x");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported resource type for rollout"));
+    }
+
+    #[test]
+    fn test_rollout_api_path_unsupported_replicaset() {
+        let result = get_resource_api_path("replicaset", "default", "x");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rollout_restart_patch_construction() {
+        let now = "2024-01-01T00:00:00Z";
+        let patch = json!({
+            "spec": {
+                "template": {
+                    "metadata": {
+                        "annotations": {
+                            "kubectl.kubernetes.io/restartedAt": now
+                        }
+                    }
+                }
+            }
+        });
+        assert_eq!(
+            patch["spec"]["template"]["metadata"]["annotations"]
+                ["kubectl.kubernetes.io/restartedAt"],
+            "2024-01-01T00:00:00Z"
+        );
+    }
+
+    #[test]
+    fn test_rollout_pause_patch_construction() {
+        let patch = json!({
+            "spec": {
+                "paused": true
+            }
+        });
+        assert_eq!(patch["spec"]["paused"], true);
+    }
+
+    #[test]
+    fn test_rollout_resume_patch_construction() {
+        let patch = json!({
+            "spec": {
+                "paused": false
+            }
+        });
+        assert_eq!(patch["spec"]["paused"], false);
+    }
 }
 
 fn get_resource_api_path(

@@ -385,4 +385,123 @@ mod tests {
         assert_eq!(rtype, "node");
         assert_eq!(name, "worker-1");
     }
+
+    #[test]
+    fn test_generate_suffix_returns_numeric_string() {
+        let suffix = generate_suffix();
+        assert!(suffix.parse::<u128>().is_ok(), "Suffix should be numeric");
+        assert!(suffix.len() <= 5, "Suffix should be at most 5 digits");
+    }
+
+    #[test]
+    fn test_ephemeral_container_no_command() {
+        // When no command is provided, the "command" field should not be set
+        let command: Vec<String> = vec![];
+        let mut ephemeral_container = json!({
+            "name": "debugger",
+            "image": "alpine",
+            "stdin": true,
+            "tty": true,
+        });
+        if !command.is_empty() {
+            ephemeral_container["command"] = json!(command);
+        }
+        assert!(ephemeral_container.get("command").is_none());
+    }
+
+    #[test]
+    fn test_ephemeral_container_no_target() {
+        // When no targetContainerName is provided, it should not be set
+        let target_container: Option<&str> = None;
+        let mut ephemeral_container = json!({
+            "name": "debugger",
+            "image": "busybox",
+            "stdin": true,
+            "tty": true,
+        });
+        if let Some(target) = target_container {
+            ephemeral_container["targetContainerName"] = json!(target);
+        }
+        assert!(ephemeral_container.get("targetContainerName").is_none());
+    }
+
+    #[test]
+    fn test_node_debug_pod_construction() {
+        let node_name = "worker-1";
+        let image = "ubuntu:latest";
+        let cname = "debugger";
+
+        let pod = json!({
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "name": format!("node-debugger-{}-12345", node_name),
+                "namespace": "default",
+            },
+            "spec": {
+                "nodeName": node_name,
+                "hostPID": true,
+                "hostNetwork": true,
+                "containers": [{
+                    "name": cname,
+                    "image": image,
+                    "stdin": true,
+                    "tty": true,
+                    "securityContext": {
+                        "privileged": true,
+                    },
+                    "volumeMounts": [{
+                        "name": "host-root",
+                        "mountPath": "/host",
+                    }],
+                }],
+                "volumes": [{
+                    "name": "host-root",
+                    "hostPath": {
+                        "path": "/",
+                    },
+                }],
+                "tolerations": [{
+                    "operator": "Exists",
+                }],
+                "restartPolicy": "Never",
+            }
+        });
+
+        // Verify key node-debug properties
+        assert_eq!(pod["spec"]["nodeName"], "worker-1");
+        assert_eq!(pod["spec"]["hostPID"], true);
+        assert_eq!(pod["spec"]["hostNetwork"], true);
+        assert_eq!(pod["spec"]["restartPolicy"], "Never");
+        assert_eq!(
+            pod["spec"]["containers"][0]["securityContext"]["privileged"],
+            true
+        );
+        assert_eq!(
+            pod["spec"]["containers"][0]["volumeMounts"][0]["mountPath"],
+            "/host"
+        );
+        assert_eq!(pod["spec"]["volumes"][0]["hostPath"]["path"], "/");
+        assert_eq!(pod["spec"]["tolerations"][0]["operator"], "Exists");
+    }
+
+    #[test]
+    fn test_node_debug_pod_default_container_name() {
+        // When container_name is None, default to "debugger"
+        let container_name: Option<&str> = None;
+        let cname = container_name.unwrap_or("debugger");
+        assert_eq!(cname, "debugger");
+
+        // When container_name is Some, use it
+        let container_name = Some("my-debugger");
+        let cname = container_name.unwrap_or("debugger");
+        assert_eq!(cname, "my-debugger");
+    }
+
+    #[test]
+    fn test_generate_debug_container_name_no_ephemeral_containers_key() {
+        // Pod with no ephemeralContainers key at all
+        let pod = serde_json::json!({"spec": {"containers": [{"name": "app"}]}});
+        assert_eq!(generate_debug_container_name(&pod), "debugger");
+    }
 }

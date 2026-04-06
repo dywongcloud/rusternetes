@@ -72,6 +72,151 @@ mod tests {
         let result = parse_copy_spec("pod1:/a", "pod2:/b");
         assert!(result.is_err());
     }
+
+    // ===== Additional tests for untested functions =====
+
+    #[test]
+    fn test_parse_copy_spec_pod_with_namespace_colon() {
+        // Pod name with path containing deeper directories
+        let (is_upload, pod, pod_path, local) =
+            parse_copy_spec("my-pod:/var/log/nested/deep/file.txt", "/tmp/out").unwrap();
+        assert!(!is_upload);
+        assert_eq!(pod, "my-pod");
+        assert_eq!(pod_path, "/var/log/nested/deep/file.txt");
+        assert_eq!(local, "/tmp/out");
+    }
+
+    #[test]
+    fn test_parse_copy_spec_upload_relative_local() {
+        let (is_upload, pod, pod_path, local) =
+            parse_copy_spec("./local-file.txt", "my-pod:/tmp/dest").unwrap();
+        assert!(is_upload);
+        assert_eq!(pod, "my-pod");
+        assert_eq!(pod_path, "/tmp/dest");
+        assert_eq!(local, "./local-file.txt");
+    }
+
+    #[test]
+    fn test_parse_copy_spec_root_path() {
+        let (is_upload, pod, pod_path, local) =
+            parse_copy_spec("my-pod:/", "/tmp/backup").unwrap();
+        assert!(!is_upload);
+        assert_eq!(pod, "my-pod");
+        assert_eq!(pod_path, "/");
+        assert_eq!(local, "/tmp/backup");
+    }
+
+    #[test]
+    fn test_parse_copy_spec_empty_pod_path() {
+        // Colon with empty path after it
+        let (is_upload, pod, pod_path, _local) =
+            parse_copy_spec("my-pod:", "/tmp/out").unwrap();
+        assert!(!is_upload);
+        assert_eq!(pod, "my-pod");
+        assert_eq!(pod_path, "");
+    }
+
+    #[test]
+    fn test_create_tar_from_file_roundtrip() {
+        use std::io::Write;
+        // Create a temp file
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.txt");
+        {
+            let mut f = fs::File::create(&file_path).unwrap();
+            f.write_all(b"hello world").unwrap();
+        }
+
+        let tar_data = create_tar_from_file(file_path.to_str().unwrap()).unwrap();
+        assert!(!tar_data.is_empty());
+
+        // Verify tar contains the file
+        let mut archive = tar::Archive::new(tar_data.as_slice());
+        let entries: Vec<_> = archive.entries().unwrap().collect();
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn test_create_tar_from_dir_roundtrip() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("subdir");
+        fs::create_dir(&sub).unwrap();
+        {
+            let mut f = fs::File::create(sub.join("a.txt")).unwrap();
+            f.write_all(b"aaa").unwrap();
+        }
+        {
+            let mut f = fs::File::create(sub.join("b.txt")).unwrap();
+            f.write_all(b"bbb").unwrap();
+        }
+
+        let tar_data = create_tar_from_dir(sub.to_str().unwrap()).unwrap();
+        assert!(!tar_data.is_empty());
+
+        // Verify tar contains both files
+        let mut archive = tar::Archive::new(tar_data.as_slice());
+        let entries: Vec<_> = archive.entries().unwrap().collect();
+        // Should have at least the two files (may also have . directory entry)
+        assert!(entries.len() >= 2);
+    }
+
+    #[test]
+    fn test_extract_tar_to_local() {
+        use std::io::Write;
+        // Create a tar from a file
+        let src_dir = tempfile::tempdir().unwrap();
+        let file_path = src_dir.path().join("extract_me.txt");
+        {
+            let mut f = fs::File::create(&file_path).unwrap();
+            f.write_all(b"extract this content").unwrap();
+        }
+        let tar_data = create_tar_from_file(file_path.to_str().unwrap()).unwrap();
+
+        // Extract to a different directory
+        let dest_dir = tempfile::tempdir().unwrap();
+        extract_tar_to_local(dest_dir.path().to_str().unwrap(), &tar_data).unwrap();
+
+        // Verify the extracted file exists
+        let extracted = dest_dir.path().join("extract_me.txt");
+        assert!(extracted.exists());
+        let content = fs::read_to_string(&extracted).unwrap();
+        assert_eq!(content, "extract this content");
+    }
+
+    #[test]
+    fn test_urlencoding_basic() {
+        assert_eq!(urlencoding::encode("tar"), "tar");
+        assert_eq!(urlencoding::encode("-xf"), "-xf");
+        assert_eq!(urlencoding::encode("-"), "-");
+        assert_eq!(urlencoding::encode("hello world"), "hello+world");
+    }
+
+    #[test]
+    fn test_urlencoding_special_chars() {
+        assert_eq!(urlencoding::encode("/bin/sh"), "%2Fbin%2Fsh");
+        assert_eq!(urlencoding::encode("a&b"), "a%26b");
+        assert_eq!(urlencoding::encode(""), "");
+        assert_eq!(urlencoding::encode("safe_name.txt"), "safe_name.txt");
+        assert_eq!(urlencoding::encode("~tilde"), "~tilde");
+    }
+
+    #[test]
+    fn test_create_tar_from_file_preserves_name() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("my-config.yaml");
+        {
+            let mut f = fs::File::create(&file_path).unwrap();
+            f.write_all(b"key: value").unwrap();
+        }
+
+        let tar_data = create_tar_from_file(file_path.to_str().unwrap()).unwrap();
+        let mut archive = tar::Archive::new(tar_data.as_slice());
+        let entry = archive.entries().unwrap().next().unwrap().unwrap();
+        let path = entry.path().unwrap();
+        assert_eq!(path.to_str().unwrap(), "my-config.yaml");
+    }
 }
 
 fn parse_copy_spec(source: &str, dest: &str) -> Result<(bool, String, String, String)> {

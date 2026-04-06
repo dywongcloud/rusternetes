@@ -466,7 +466,7 @@ pub struct TopologySpreadConstraint {
 }
 
 /// Container represents a single container in a pod
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Container {
     pub name: String,

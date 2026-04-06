@@ -485,4 +485,172 @@ mod tests {
         let event = json!({});
         assert_eq!(get_event_time(&event), "");
     }
+
+    #[test]
+    fn test_event_type_filtering() {
+        use serde_json::json;
+
+        let events = vec![
+            json!({"type": "Normal", "reason": "Scheduled"}),
+            json!({"type": "Warning", "reason": "BackOff"}),
+            json!({"type": "Normal", "reason": "Pulled"}),
+            json!({"type": "Warning", "reason": "Unhealthy"}),
+        ];
+
+        // Filter to Warning only
+        let type_filters = vec!["Warning".to_string()];
+        let filtered: Vec<&Value> = events
+            .iter()
+            .filter(|event| {
+                let event_type = event
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("Normal");
+                type_filters
+                    .iter()
+                    .any(|f| f.eq_ignore_ascii_case(event_type))
+            })
+            .collect();
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0]["reason"], "BackOff");
+        assert_eq!(filtered[1]["reason"], "Unhealthy");
+    }
+
+    #[test]
+    fn test_event_type_filter_case_insensitive() {
+        use serde_json::json;
+
+        let events = vec![
+            json!({"type": "normal", "reason": "Started"}),
+            json!({"type": "WARNING", "reason": "Failed"}),
+        ];
+
+        let type_filters = vec!["warning".to_string()];
+        let filtered: Vec<&Value> = events
+            .iter()
+            .filter(|event| {
+                let event_type = event
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("Normal");
+                type_filters
+                    .iter()
+                    .any(|f| f.eq_ignore_ascii_case(event_type))
+            })
+            .collect();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0]["reason"], "Failed");
+    }
+
+    #[test]
+    fn test_event_sorting_by_timestamp() {
+        use serde_json::json;
+
+        let events = vec![
+            json!({"lastTimestamp": "2024-03-01T00:00:00Z", "reason": "third"}),
+            json!({"lastTimestamp": "2024-01-01T00:00:00Z", "reason": "first"}),
+            json!({"lastTimestamp": "2024-02-01T00:00:00Z", "reason": "second"}),
+        ];
+
+        let mut sorted: Vec<&Value> = events.iter().collect();
+        sorted.sort_by(|a, b| {
+            let time_a = get_event_time(a);
+            let time_b = get_event_time(b);
+            time_a.cmp(&time_b)
+        });
+
+        assert_eq!(sorted[0]["reason"], "first");
+        assert_eq!(sorted[1]["reason"], "second");
+        assert_eq!(sorted[2]["reason"], "third");
+    }
+
+    #[test]
+    fn test_print_event_row_does_not_panic() {
+        use serde_json::json;
+
+        // Full event
+        let event = json!({
+            "type": "Normal",
+            "reason": "Scheduled",
+            "message": "Successfully assigned default/nginx to node-1",
+            "count": 1,
+            "lastTimestamp": "2024-01-01T00:00:00Z",
+            "involvedObject": {
+                "kind": "Pod",
+                "name": "nginx"
+            },
+            "metadata": {
+                "namespace": "default"
+            }
+        });
+        // Should not panic for either namespace mode
+        print_event_row(&event, false);
+        print_event_row(&event, true);
+    }
+
+    #[test]
+    fn test_print_event_row_minimal() {
+        use serde_json::json;
+
+        // Minimal event with missing fields
+        let event = json!({});
+        print_event_row(&event, false);
+        print_event_row(&event, true);
+    }
+
+    #[test]
+    fn test_format_age_recent_timestamps() {
+        // Test with a timestamp from a few seconds ago
+        let now = Utc::now();
+        let recent = now - chrono::Duration::seconds(30);
+        let ts = recent.to_rfc3339();
+        let age = format_age(&ts);
+        // Should be something like "30s" (could be 29s or 31s due to timing)
+        assert!(age.ends_with('s'), "Expected seconds format, got: {}", age);
+
+        // A few minutes ago
+        let minutes_ago = now - chrono::Duration::minutes(5);
+        let ts = minutes_ago.to_rfc3339();
+        let age = format_age(&ts);
+        assert!(age.ends_with('m'), "Expected minutes format, got: {}", age);
+
+        // A few hours ago
+        let hours_ago = now - chrono::Duration::hours(3);
+        let ts = hours_ago.to_rfc3339();
+        let age = format_age(&ts);
+        assert!(age.ends_with('h'), "Expected hours format, got: {}", age);
+
+        // Days ago
+        let days_ago = now - chrono::Duration::days(7);
+        let ts = days_ago.to_rfc3339();
+        let age = format_age(&ts);
+        assert!(age.ends_with('d'), "Expected days format, got: {}", age);
+    }
+
+    #[test]
+    fn test_format_age_invalid_timestamp() {
+        let age = format_age("not-a-timestamp");
+        assert_eq!(age, "not-a-timestamp");
+    }
+
+    #[test]
+    fn test_parse_for_object_more_types() {
+        let (kind, name) = parse_for_object("cj/my-cron").unwrap();
+        assert_eq!(kind, "CronJob");
+        assert_eq!(name, "my-cron");
+
+        let (kind, name) = parse_for_object("secret/my-secret").unwrap();
+        assert_eq!(kind, "Secret");
+        assert_eq!(name, "my-secret");
+
+        let (kind, name) = parse_for_object("pv/my-volume").unwrap();
+        assert_eq!(kind, "PersistentVolume");
+        assert_eq!(name, "my-volume");
+
+        let (kind, name) = parse_for_object("ing/my-ingress").unwrap();
+        assert_eq!(kind, "Ingress");
+        assert_eq!(name, "my-ingress");
+    }
 }

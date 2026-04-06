@@ -37,7 +37,6 @@ pub fn execute<C: CommandFactory>(command: Option<&str>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::CommandFactory;
 
     #[derive(clap::Parser)]
     #[command(name = "test-cli")]

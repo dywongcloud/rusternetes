@@ -895,4 +895,542 @@ mod tests {
         assert_eq!(resource_type_to_kind("job"), "job.batch");
         assert_eq!(resource_type_to_kind("clusterrole"), "clusterrole.rbac.authorization.k8s.io");
     }
+
+    // ===== Additional tests for untested functions =====
+
+    #[test]
+    fn test_cascade_propagation_policy_values() {
+        assert_eq!(CascadeStrategy::Background.propagation_policy(), "Background");
+        assert_eq!(CascadeStrategy::Foreground.propagation_policy(), "Foreground");
+        assert_eq!(CascadeStrategy::Orphan.propagation_policy(), "Orphan");
+    }
+
+    #[test]
+    fn test_delete_options_default_fields() {
+        let opts = DeleteOptions::default();
+        assert_eq!(opts.grace_period, None);
+        assert!(!opts.force);
+        assert_eq!(opts.cascade, CascadeStrategy::Background);
+        assert!(!opts.delete_all);
+        assert!(!opts.dry_run);
+        assert!(!opts.wait);
+        assert!(opts.output.is_none());
+    }
+
+    #[test]
+    fn test_resolve_no_op_when_not_force() {
+        let mut opts = DeleteOptions::default();
+        opts.resolve();
+        assert_eq!(opts.grace_period, None);
+        assert_eq!(opts.cascade, CascadeStrategy::Background);
+    }
+
+    #[test]
+    fn test_resolve_preserves_cascade_when_not_force() {
+        let mut opts = DeleteOptions {
+            cascade: CascadeStrategy::Orphan,
+            ..Default::default()
+        };
+        opts.resolve();
+        assert_eq!(opts.cascade, CascadeStrategy::Orphan);
+    }
+
+    #[test]
+    fn test_query_params_empty_by_default() {
+        let opts = DeleteOptions::default();
+        let params = opts.query_params();
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn test_delete_body_foreground_with_grace_period() {
+        let opts = DeleteOptions {
+            cascade: CascadeStrategy::Foreground,
+            grace_period: Some(30),
+            ..Default::default()
+        };
+        let body = opts.delete_body().unwrap();
+        assert_eq!(body["propagationPolicy"], "Foreground");
+        assert_eq!(body["gracePeriodSeconds"], 30);
+        assert_eq!(body["kind"], "DeleteOptions");
+        assert_eq!(body["apiVersion"], "v1");
+    }
+
+    #[test]
+    fn test_format_output_force_and_dry_run_combined() {
+        let opts = DeleteOptions {
+            force: true,
+            dry_run: true,
+            ..Default::default()
+        };
+        let output = opts.format_output("pod", "nginx");
+        assert_eq!(output, "pod \"nginx\" force deleted (server dry run)");
+    }
+
+    #[test]
+    fn test_format_output_name_mode_for_all_resource_types() {
+        let opts = DeleteOptions {
+            output: Some("name".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(opts.format_output("service", "my-svc"), "service/my-svc");
+        assert_eq!(opts.format_output("svc", "my-svc"), "service/my-svc");
+        assert_eq!(
+            opts.format_output("statefulset", "web"),
+            "statefulset.apps/web"
+        );
+        assert_eq!(opts.format_output("sts", "web"), "statefulset.apps/web");
+        assert_eq!(
+            opts.format_output("daemonset", "agent"),
+            "daemonset.apps/agent"
+        );
+        assert_eq!(opts.format_output("ds", "agent"), "daemonset.apps/agent");
+        assert_eq!(
+            opts.format_output("replicaset", "web-abc"),
+            "replicaset.apps/web-abc"
+        );
+        assert_eq!(
+            opts.format_output("rs", "web-abc"),
+            "replicaset.apps/web-abc"
+        );
+        assert_eq!(opts.format_output("job", "myjob"), "job.batch/myjob");
+        assert_eq!(opts.format_output("cronjob", "cj1"), "cronjob.batch/cj1");
+        assert_eq!(opts.format_output("cj", "cj1"), "cronjob.batch/cj1");
+    }
+
+    #[test]
+    fn test_resource_type_to_kind_remaining_aliases() {
+        assert_eq!(resource_type_to_kind("configmap"), "configmap");
+        assert_eq!(resource_type_to_kind("configmaps"), "configmap");
+        assert_eq!(resource_type_to_kind("cm"), "configmap");
+        assert_eq!(resource_type_to_kind("secret"), "secret");
+        assert_eq!(resource_type_to_kind("secrets"), "secret");
+        assert_eq!(resource_type_to_kind("serviceaccount"), "serviceaccount");
+        assert_eq!(resource_type_to_kind("serviceaccounts"), "serviceaccount");
+        assert_eq!(resource_type_to_kind("sa"), "serviceaccount");
+        assert_eq!(
+            resource_type_to_kind("ingress"),
+            "ingress.networking.k8s.io"
+        );
+        assert_eq!(
+            resource_type_to_kind("ingresses"),
+            "ingress.networking.k8s.io"
+        );
+        assert_eq!(resource_type_to_kind("ing"), "ingress.networking.k8s.io");
+        assert_eq!(
+            resource_type_to_kind("persistentvolumeclaim"),
+            "persistentvolumeclaim"
+        );
+        assert_eq!(resource_type_to_kind("pvc"), "persistentvolumeclaim");
+        assert_eq!(
+            resource_type_to_kind("persistentvolume"),
+            "persistentvolume"
+        );
+        assert_eq!(resource_type_to_kind("pv"), "persistentvolume");
+        assert_eq!(
+            resource_type_to_kind("storageclass"),
+            "storageclass.storage.k8s.io"
+        );
+        assert_eq!(
+            resource_type_to_kind("sc"),
+            "storageclass.storage.k8s.io"
+        );
+        assert_eq!(resource_type_to_kind("namespace"), "namespace");
+        assert_eq!(resource_type_to_kind("ns"), "namespace");
+        assert_eq!(resource_type_to_kind("node"), "node");
+        assert_eq!(
+            resource_type_to_kind("role"),
+            "role.rbac.authorization.k8s.io"
+        );
+        assert_eq!(
+            resource_type_to_kind("rolebinding"),
+            "rolebinding.rbac.authorization.k8s.io"
+        );
+        assert_eq!(
+            resource_type_to_kind("rolebindings"),
+            "rolebinding.rbac.authorization.k8s.io"
+        );
+        assert_eq!(
+            resource_type_to_kind("clusterrolebinding"),
+            "clusterrolebinding.rbac.authorization.k8s.io"
+        );
+        assert_eq!(
+            resource_type_to_kind("clusterrolebindings"),
+            "clusterrolebinding.rbac.authorization.k8s.io"
+        );
+    }
+
+    #[test]
+    fn test_resource_type_to_kind_unknown_passthrough() {
+        assert_eq!(resource_type_to_kind("customresource"), "customresource");
+        assert_eq!(resource_type_to_kind("foobar"), "foobar");
+    }
+
+    #[test]
+    fn test_get_delete_api_path_all_kinds() {
+        assert_eq!(
+            get_delete_api_path("Service", Some("ns1"), "my-svc").unwrap(),
+            "/api/v1/namespaces/ns1/services/my-svc"
+        );
+        assert_eq!(
+            get_delete_api_path("StatefulSet", Some("ns1"), "web").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/statefulsets/web"
+        );
+        assert_eq!(
+            get_delete_api_path("DaemonSet", Some("ns1"), "agent").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/daemonsets/agent"
+        );
+        assert_eq!(
+            get_delete_api_path("ReplicaSet", Some("ns1"), "rs1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/replicasets/rs1"
+        );
+        assert_eq!(
+            get_delete_api_path("Job", Some("ns1"), "j1").unwrap(),
+            "/apis/batch/v1/namespaces/ns1/jobs/j1"
+        );
+        assert_eq!(
+            get_delete_api_path("CronJob", Some("ns1"), "cj1").unwrap(),
+            "/apis/batch/v1/namespaces/ns1/cronjobs/cj1"
+        );
+        assert_eq!(
+            get_delete_api_path("ConfigMap", Some("ns1"), "cfg").unwrap(),
+            "/api/v1/namespaces/ns1/configmaps/cfg"
+        );
+        assert_eq!(
+            get_delete_api_path("Secret", Some("ns1"), "sec").unwrap(),
+            "/api/v1/namespaces/ns1/secrets/sec"
+        );
+        assert_eq!(
+            get_delete_api_path("ServiceAccount", Some("ns1"), "sa1").unwrap(),
+            "/api/v1/namespaces/ns1/serviceaccounts/sa1"
+        );
+        assert_eq!(
+            get_delete_api_path("Ingress", Some("ns1"), "ing1").unwrap(),
+            "/apis/networking.k8s.io/v1/namespaces/ns1/ingresses/ing1"
+        );
+        assert_eq!(
+            get_delete_api_path("PersistentVolumeClaim", Some("ns1"), "pvc1").unwrap(),
+            "/api/v1/namespaces/ns1/persistentvolumeclaims/pvc1"
+        );
+        assert_eq!(
+            get_delete_api_path("PersistentVolume", None, "pv1").unwrap(),
+            "/api/v1/persistentvolumes/pv1"
+        );
+        assert_eq!(
+            get_delete_api_path("StorageClass", None, "standard").unwrap(),
+            "/apis/storage.k8s.io/v1/storageclasses/standard"
+        );
+        assert_eq!(
+            get_delete_api_path("Role", Some("ns1"), "role1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/ns1/roles/role1"
+        );
+        assert_eq!(
+            get_delete_api_path("RoleBinding", Some("ns1"), "rb1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/ns1/rolebindings/rb1"
+        );
+        assert_eq!(
+            get_delete_api_path("ClusterRoleBinding", None, "crb1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/crb1"
+        );
+    }
+
+    #[test]
+    fn test_get_list_api_path_all_types() {
+        assert_eq!(
+            get_list_api_path("services", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/services"
+        );
+        assert_eq!(
+            get_list_api_path("svc", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/services"
+        );
+        assert_eq!(
+            get_list_api_path("statefulsets", "ns1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/statefulsets"
+        );
+        assert_eq!(
+            get_list_api_path("sts", "ns1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/statefulsets"
+        );
+        assert_eq!(
+            get_list_api_path("daemonsets", "ns1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/daemonsets"
+        );
+        assert_eq!(
+            get_list_api_path("ds", "ns1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/daemonsets"
+        );
+        assert_eq!(
+            get_list_api_path("replicasets", "ns1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/replicasets"
+        );
+        assert_eq!(
+            get_list_api_path("rs", "ns1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/replicasets"
+        );
+        assert_eq!(
+            get_list_api_path("jobs", "ns1").unwrap(),
+            "/apis/batch/v1/namespaces/ns1/jobs"
+        );
+        assert_eq!(
+            get_list_api_path("cronjobs", "ns1").unwrap(),
+            "/apis/batch/v1/namespaces/ns1/cronjobs"
+        );
+        assert_eq!(
+            get_list_api_path("cj", "ns1").unwrap(),
+            "/apis/batch/v1/namespaces/ns1/cronjobs"
+        );
+        assert_eq!(
+            get_list_api_path("configmaps", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/configmaps"
+        );
+        assert_eq!(
+            get_list_api_path("cm", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/configmaps"
+        );
+        assert_eq!(
+            get_list_api_path("secrets", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/secrets"
+        );
+        assert_eq!(
+            get_list_api_path("serviceaccounts", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/serviceaccounts"
+        );
+        assert_eq!(
+            get_list_api_path("sa", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/serviceaccounts"
+        );
+        assert_eq!(
+            get_list_api_path("persistentvolumes", "ns1").unwrap(),
+            "/api/v1/persistentvolumes"
+        );
+        assert_eq!(
+            get_list_api_path("pv", "ns1").unwrap(),
+            "/api/v1/persistentvolumes"
+        );
+        assert_eq!(
+            get_list_api_path("clusterroles", "ns1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/clusterroles"
+        );
+        assert_eq!(
+            get_list_api_path("clusterrolebindings", "ns1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings"
+        );
+        assert_eq!(
+            get_list_api_path("roles", "ns1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/ns1/roles"
+        );
+        assert_eq!(
+            get_list_api_path("rolebindings", "ns1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/ns1/rolebindings"
+        );
+    }
+
+    #[test]
+    fn test_get_list_api_path_unsupported() {
+        assert!(get_list_api_path("foobar", "default").is_err());
+    }
+
+    #[test]
+    fn test_get_resource_api_path_all_types() {
+        assert_eq!(
+            get_resource_api_path("service", "svc1", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/services/svc1"
+        );
+        assert_eq!(
+            get_resource_api_path("svc", "svc1", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/services/svc1"
+        );
+        assert_eq!(
+            get_resource_api_path("statefulset", "web", "ns1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/statefulsets/web"
+        );
+        assert_eq!(
+            get_resource_api_path("sts", "web", "ns1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/statefulsets/web"
+        );
+        assert_eq!(
+            get_resource_api_path("daemonset", "ds1", "ns1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/daemonsets/ds1"
+        );
+        assert_eq!(
+            get_resource_api_path("ds", "ds1", "ns1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/daemonsets/ds1"
+        );
+        assert_eq!(
+            get_resource_api_path("replicaset", "rs1", "ns1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/replicasets/rs1"
+        );
+        assert_eq!(
+            get_resource_api_path("rs", "rs1", "ns1").unwrap(),
+            "/apis/apps/v1/namespaces/ns1/replicasets/rs1"
+        );
+        assert_eq!(
+            get_resource_api_path("job", "j1", "ns1").unwrap(),
+            "/apis/batch/v1/namespaces/ns1/jobs/j1"
+        );
+        assert_eq!(
+            get_resource_api_path("cronjob", "cj1", "ns1").unwrap(),
+            "/apis/batch/v1/namespaces/ns1/cronjobs/cj1"
+        );
+        assert_eq!(
+            get_resource_api_path("cj", "cj1", "ns1").unwrap(),
+            "/apis/batch/v1/namespaces/ns1/cronjobs/cj1"
+        );
+        assert_eq!(
+            get_resource_api_path("configmap", "cfg", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/configmaps/cfg"
+        );
+        assert_eq!(
+            get_resource_api_path("cm", "cfg", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/configmaps/cfg"
+        );
+        assert_eq!(
+            get_resource_api_path("secret", "sec", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/secrets/sec"
+        );
+        assert_eq!(
+            get_resource_api_path("serviceaccount", "sa1", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/serviceaccounts/sa1"
+        );
+        assert_eq!(
+            get_resource_api_path("sa", "sa1", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/serviceaccounts/sa1"
+        );
+        assert_eq!(
+            get_resource_api_path("ingress", "ing1", "ns1").unwrap(),
+            "/apis/networking.k8s.io/v1/namespaces/ns1/ingresses/ing1"
+        );
+        assert_eq!(
+            get_resource_api_path("ing", "ing1", "ns1").unwrap(),
+            "/apis/networking.k8s.io/v1/namespaces/ns1/ingresses/ing1"
+        );
+        assert_eq!(
+            get_resource_api_path("persistentvolumeclaim", "pvc1", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/persistentvolumeclaims/pvc1"
+        );
+        assert_eq!(
+            get_resource_api_path("pvc", "pvc1", "ns1").unwrap(),
+            "/api/v1/namespaces/ns1/persistentvolumeclaims/pvc1"
+        );
+        assert_eq!(
+            get_resource_api_path("persistentvolume", "pv1", "ns1").unwrap(),
+            "/api/v1/persistentvolumes/pv1"
+        );
+        assert_eq!(
+            get_resource_api_path("pv", "pv1", "ns1").unwrap(),
+            "/api/v1/persistentvolumes/pv1"
+        );
+        assert_eq!(
+            get_resource_api_path("storageclass", "standard", "ns1").unwrap(),
+            "/apis/storage.k8s.io/v1/storageclasses/standard"
+        );
+        assert_eq!(
+            get_resource_api_path("sc", "standard", "ns1").unwrap(),
+            "/apis/storage.k8s.io/v1/storageclasses/standard"
+        );
+        assert_eq!(
+            get_resource_api_path("ns", "kube-system", "default").unwrap(),
+            "/api/v1/namespaces/kube-system"
+        );
+        assert_eq!(
+            get_resource_api_path("role", "r1", "ns1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/ns1/roles/r1"
+        );
+        assert_eq!(
+            get_resource_api_path("rolebinding", "rb1", "ns1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/ns1/rolebindings/rb1"
+        );
+        assert_eq!(
+            get_resource_api_path("clusterrole", "admin", "ns1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/clusterroles/admin"
+        );
+        assert_eq!(
+            get_resource_api_path("clusterroles", "admin", "ns1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/clusterroles/admin"
+        );
+        assert_eq!(
+            get_resource_api_path("clusterrolebinding", "crb1", "ns1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/crb1"
+        );
+        assert_eq!(
+            get_resource_api_path("clusterrolebindings", "crb1", "ns1").unwrap(),
+            "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/crb1"
+        );
+    }
+
+    #[test]
+    fn test_urlencoding_special_chars() {
+        assert_eq!(urlencoding::encode("key/value"), "key%2Fvalue");
+        assert_eq!(urlencoding::encode("a&b"), "a%26b");
+        assert_eq!(urlencoding::encode("hello world"), "hello+world");
+        assert_eq!(
+            urlencoding::encode("safe-chars_here.ok~"),
+            "safe-chars_here.ok~"
+        );
+        assert_eq!(urlencoding::encode("a=b,c=d"), "a=b,c=d");
+        assert_eq!(urlencoding::encode("!bang"), "!bang");
+        assert_eq!(urlencoding::encode(""), "");
+    }
+
+    #[test]
+    fn test_format_output_default_for_various_types() {
+        let opts = DeleteOptions::default();
+        assert_eq!(
+            opts.format_output("configmap", "cfg1"),
+            "configmap \"cfg1\" deleted"
+        );
+        assert_eq!(
+            opts.format_output("secret", "sec1"),
+            "secret \"sec1\" deleted"
+        );
+        assert_eq!(
+            opts.format_output("sa", "default"),
+            "serviceaccount \"default\" deleted"
+        );
+        assert_eq!(
+            opts.format_output("ingress", "ing1"),
+            "ingress.networking.k8s.io \"ing1\" deleted"
+        );
+        assert_eq!(
+            opts.format_output("pvc", "data"),
+            "persistentvolumeclaim \"data\" deleted"
+        );
+        assert_eq!(
+            opts.format_output("sc", "fast"),
+            "storageclass.storage.k8s.io \"fast\" deleted"
+        );
+        assert_eq!(
+            opts.format_output("ns", "test"),
+            "namespace \"test\" deleted"
+        );
+    }
+
+    #[test]
+    fn test_format_output_non_name_output_option() {
+        let opts = DeleteOptions {
+            output: Some("json".to_string()),
+            ..Default::default()
+        };
+        let output = opts.format_output("pod", "nginx");
+        assert_eq!(output, "pod \"nginx\" deleted");
+    }
+
+    #[test]
+    fn test_delete_body_orphan_no_grace_period() {
+        let opts = DeleteOptions {
+            cascade: CascadeStrategy::Orphan,
+            ..Default::default()
+        };
+        let body = opts.delete_body().unwrap();
+        assert_eq!(body["propagationPolicy"], "Orphan");
+        assert!(body.get("gracePeriodSeconds").is_none());
+    }
+
+    #[test]
+    fn test_cascade_from_str_case_sensitive() {
+        assert!(CascadeStrategy::from_str_value("Background").is_err());
+        assert!(CascadeStrategy::from_str_value("FOREGROUND").is_err());
+        assert!(CascadeStrategy::from_str_value("Orphan").is_err());
+    }
 }

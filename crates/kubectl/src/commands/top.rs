@@ -89,6 +89,15 @@ mod tests {
             "/apis/metrics.k8s.io/v1beta1/namespaces/default/pods"
         );
     }
+
+    #[test]
+    fn test_container_metrics_deserialization() {
+        let json = r#"{"name": "sidecar", "usage": {"cpu": "10m", "memory": "16Mi"}}"#;
+        let metrics: ContainerMetrics = serde_json::from_str(json).unwrap();
+        assert_eq!(metrics.name, "sidecar");
+        assert_eq!(metrics.usage.cpu, "10m");
+        assert_eq!(metrics.usage.memory, "16Mi");
+    }
 }
 
 /// Execute top commands for resource usage

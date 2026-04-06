@@ -379,4 +379,91 @@ mod tests {
         assert!(has_controller(&managed_pod));
         assert!(!has_controller(&unmanaged_pod));
     }
+
+    #[test]
+    fn test_non_mirror_pod_detection() {
+        let pod = json!({
+            "metadata": {
+                "name": "nginx",
+                "namespace": "default",
+                "annotations": {
+                    "some-other-annotation": "value"
+                }
+            }
+        });
+
+        let is_mirror = pod
+            .get("metadata")
+            .and_then(|m| m.get("annotations"))
+            .and_then(|a| a.get("kubernetes.io/config.mirror"))
+            .is_some();
+
+        assert!(!is_mirror);
+    }
+
+    #[test]
+    fn test_non_daemonset_pod() {
+        let pod = json!({
+            "metadata": {
+                "ownerReferences": [{"kind": "ReplicaSet", "name": "web-abc"}]
+            }
+        });
+
+        let is_daemonset = pod
+            .get("metadata")
+            .and_then(|m| m.get("ownerReferences"))
+            .and_then(|refs| refs.as_array())
+            .map(|refs| {
+                refs.iter()
+                    .any(|r| r.get("kind").and_then(|k| k.as_str()) == Some("DaemonSet"))
+            })
+            .unwrap_or(false);
+
+        assert!(!is_daemonset);
+    }
+
+    #[test]
+    fn test_no_emptydir_volumes() {
+        let pod = json!({
+            "spec": {
+                "volumes": [
+                    {"name": "config", "configMap": {"name": "my-config"}}
+                ]
+            }
+        });
+
+        let has_emptydir = pod
+            .get("spec")
+            .and_then(|s| s.get("volumes"))
+            .and_then(|v| v.as_array())
+            .map(|vols| vols.iter().any(|v| v.get("emptyDir").is_some()))
+            .unwrap_or(false);
+
+        assert!(!has_emptydir);
+    }
+
+    #[test]
+    fn test_eviction_body_without_grace_period() {
+        let namespace = "default";
+        let pod_name = "nginx";
+        let grace_period: Option<i64> = None;
+
+        let mut eviction = json!({
+            "apiVersion": "policy/v1",
+            "kind": "Eviction",
+            "metadata": {
+                "name": pod_name,
+                "namespace": namespace,
+            },
+        });
+
+        if let Some(gp) = grace_period {
+            eviction["deleteOptions"] = json!({
+                "gracePeriodSeconds": gp,
+            });
+        }
+
+        assert_eq!(eviction["kind"], "Eviction");
+        assert!(eviction.get("deleteOptions").is_none());
+    }
 }

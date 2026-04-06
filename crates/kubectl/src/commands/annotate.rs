@@ -155,4 +155,22 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_annotation_with_url_value() {
+        let annotations = vec!["link=https://example.com/path?q=1".to_string()];
+        let map = parse_annotations(&annotations).unwrap();
+        // split_once on '=' only splits at the first '='
+        assert_eq!(
+            map.get("link").unwrap(),
+            &Value::String("https://example.com/path?q=1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_annotation_empty_value() {
+        let annotations = vec!["key=".to_string()];
+        let map = parse_annotations(&annotations).unwrap();
+        assert_eq!(map.get("key").unwrap(), &Value::String("".to_string()));
+    }
 }

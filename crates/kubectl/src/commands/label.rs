@@ -145,4 +145,11 @@ mod tests {
         let path = format!("/{}/namespaces/{}/{}/{}", api_path, namespace, resource_name, name);
         assert_eq!(path, "/api/v1/namespaces/kube-system/pods/my-pod");
     }
+
+    #[test]
+    fn test_label_empty_value() {
+        let labels = vec!["key=".to_string()];
+        let map = parse_labels(&labels).unwrap();
+        assert_eq!(map.get("key").unwrap(), &Value::String("".to_string()));
+    }
 }

@@ -58,6 +58,12 @@ mod tests {
         let result = parse_port_mapping("abc:80");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_parse_port_mapping_invalid_remote() {
+        let result = parse_port_mapping("80:abc");
+        assert!(result.is_err());
+    }
 }
 
 fn parse_port_mapping(port_spec: &str) -> Result<(u16, u16)> {

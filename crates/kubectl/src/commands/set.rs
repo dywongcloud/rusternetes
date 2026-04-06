@@ -964,4 +964,227 @@ mod tests {
             );
         }
     }
+
+    // ===== Additional tests for untested functions =====
+
+    #[test]
+    fn test_resolve_resource_path_returns_correct_resource_name() {
+        let (_, res_name) = resolve_resource_path("deployment", "nginx", "default").unwrap();
+        assert_eq!(res_name, "deployments");
+
+        let (_, res_name) = resolve_resource_path("pod", "mypod", "default").unwrap();
+        assert_eq!(res_name, "pods");
+
+        let (_, res_name) = resolve_resource_path("daemonset", "agent", "default").unwrap();
+        assert_eq!(res_name, "daemonsets");
+
+        let (_, res_name) = resolve_resource_path("statefulset", "web", "default").unwrap();
+        assert_eq!(res_name, "statefulsets");
+
+        let (_, res_name) = resolve_resource_path("replicaset", "rs1", "default").unwrap();
+        assert_eq!(res_name, "replicasets");
+
+        let (_, res_name) = resolve_resource_path("replicationcontroller", "rc1", "default").unwrap();
+        assert_eq!(res_name, "replicationcontrollers");
+
+        let (_, res_name) = resolve_resource_path("cronjob", "cj1", "default").unwrap();
+        assert_eq!(res_name, "cronjobs");
+
+        let (_, res_name) = resolve_resource_path("job", "j1", "default").unwrap();
+        assert_eq!(res_name, "jobs");
+    }
+
+    #[test]
+    fn test_resolve_resource_path_full_plural_names() {
+        let (path, _) = resolve_resource_path("pods", "p1", "ns1").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/ns1/pods/p1");
+
+        let (path, _) = resolve_resource_path("deployments", "d1", "ns1").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/ns1/deployments/d1");
+
+        let (path, _) = resolve_resource_path("daemonsets", "ds1", "ns1").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/ns1/daemonsets/ds1");
+
+        let (path, _) = resolve_resource_path("statefulsets", "ss1", "ns1").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/ns1/statefulsets/ss1");
+
+        let (path, _) = resolve_resource_path("replicasets", "rs1", "ns1").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/ns1/replicasets/rs1");
+
+        let (path, _) = resolve_resource_path("replicationcontrollers", "rc1", "ns1").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/ns1/replicationcontrollers/rc1");
+
+        let (path, _) = resolve_resource_path("cronjobs", "cj1", "ns1").unwrap();
+        assert_eq!(path, "/apis/batch/v1/namespaces/ns1/cronjobs/cj1");
+    }
+
+    #[test]
+    fn test_parse_resource_arg_with_slash_in_name() {
+        // splitn(2, '/') means only first slash is used
+        let (rt, name) = parse_resource_arg("deployment/my-app").unwrap();
+        assert_eq!(rt, "deployment");
+        assert_eq!(name, "my-app");
+    }
+
+    #[test]
+    fn test_parse_resource_arg_empty_name() {
+        let (rt, name) = parse_resource_arg("deployment/").unwrap();
+        assert_eq!(rt, "deployment");
+        assert_eq!(name, "");
+    }
+
+    #[test]
+    fn test_parse_resource_spec_empty_string() {
+        let map = parse_resource_spec(Some("")).unwrap();
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn test_parse_resource_spec_trailing_comma() {
+        let map = parse_resource_spec(Some("cpu=100m,")).unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("cpu").unwrap(), "100m");
+    }
+
+    #[test]
+    fn test_parse_resource_spec_whitespace_trimming() {
+        let map = parse_resource_spec(Some(" cpu=100m , memory=256Mi ")).unwrap();
+        assert_eq!(map.get("cpu").unwrap(), "100m");
+        assert_eq!(map.get("memory").unwrap(), "256Mi");
+    }
+
+    #[test]
+    fn test_parse_resource_spec_single_value() {
+        let map = parse_resource_spec(Some("cpu=500m")).unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("cpu").unwrap(), "500m");
+    }
+
+    #[test]
+    fn test_selector_expression_invalid_format() {
+        let expressions = vec!["noequalssign".to_string()];
+        let mut selector = serde_json::Map::new();
+        let mut had_error = false;
+        for expr in &expressions {
+            if let Some((key, value)) = expr.split_once('=') {
+                selector.insert(key.to_string(), json!(value));
+            } else {
+                had_error = true;
+            }
+        }
+        assert!(had_error);
+        assert!(selector.is_empty());
+    }
+
+    #[test]
+    fn test_selector_expression_empty_value() {
+        let expressions = vec!["app=".to_string()];
+        let mut selector = serde_json::Map::new();
+        for expr in &expressions {
+            if let Some((key, value)) = expr.split_once('=') {
+                selector.insert(key.to_string(), json!(value));
+            }
+        }
+        assert_eq!(selector.get("app").unwrap(), "");
+    }
+
+    #[test]
+    fn test_image_patch_construction_for_pod() {
+        // Pod has no template — patch goes directly under spec
+        let patch_containers = vec![
+            json!({"name": "app", "image": "myapp:2.0"}),
+        ];
+        let patch_body = json!({
+            "spec": {
+                "containers": patch_containers,
+            }
+        });
+        assert_eq!(patch_body["spec"]["containers"][0]["name"], "app");
+        assert_eq!(patch_body["spec"]["containers"][0]["image"], "myapp:2.0");
+        // Ensure no template nesting
+        assert!(patch_body["spec"].get("template").is_none());
+    }
+
+    #[test]
+    fn test_image_patch_wildcard_updates_all() {
+        // Simulate wildcard container image update
+        let containers = vec![
+            json!({"name": "web", "image": "nginx:1.19"}),
+            json!({"name": "sidecar", "image": "envoy:1.0"}),
+        ];
+        let new_image = "registry.example.com/latest";
+        let mut patch_containers: Vec<Value> = Vec::new();
+        for c in &containers {
+            if let Some(cname) = c.get("name").and_then(|n| n.as_str()) {
+                patch_containers.push(json!({
+                    "name": cname,
+                    "image": new_image,
+                }));
+            }
+        }
+        assert_eq!(patch_containers.len(), 2);
+        assert_eq!(patch_containers[0]["name"], "web");
+        assert_eq!(patch_containers[0]["image"], new_image);
+        assert_eq!(patch_containers[1]["name"], "sidecar");
+        assert_eq!(patch_containers[1]["image"], new_image);
+    }
+
+    #[test]
+    fn test_serviceaccount_without_namespace_separator() {
+        let sa = "my-sa";
+        let result = sa.split_once(':');
+        assert!(result.is_none());
+        // Falls back to using the default namespace
+        let (sa_namespace, sa_name) = if let Some((ns, n)) = sa.split_once(':') {
+            (ns.to_string(), n.to_string())
+        } else {
+            ("default".to_string(), sa.to_string())
+        };
+        assert_eq!(sa_namespace, "default");
+        assert_eq!(sa_name, "my-sa");
+    }
+
+    #[test]
+    fn test_subject_group_json_construction() {
+        let group_subject = json!({
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "Group",
+            "name": "developers",
+        });
+        assert_eq!(group_subject["kind"].as_str().unwrap(), "Group");
+        assert_eq!(group_subject["name"].as_str().unwrap(), "developers");
+        assert_eq!(group_subject["apiGroup"].as_str().unwrap(), "rbac.authorization.k8s.io");
+    }
+
+    #[test]
+    fn test_subject_serviceaccount_json_construction() {
+        let sa_subject = json!({
+            "kind": "ServiceAccount",
+            "name": "deployer",
+            "namespace": "ci-cd",
+        });
+        assert_eq!(sa_subject["kind"].as_str().unwrap(), "ServiceAccount");
+        assert_eq!(sa_subject["name"].as_str().unwrap(), "deployer");
+        assert_eq!(sa_subject["namespace"].as_str().unwrap(), "ci-cd");
+        // ServiceAccount subjects should NOT have apiGroup
+        assert!(sa_subject.get("apiGroup").is_none());
+    }
+
+    #[test]
+    fn test_env_parsing_invalid_format() {
+        let ev = "NOEQUALSNODASH";
+        let is_remove = ev.strip_suffix('-').is_some();
+        let is_add = ev.split_once('=').is_some();
+        assert!(!is_remove);
+        assert!(!is_add);
+    }
+
+    #[test]
+    fn test_env_parsing_value_with_equals() {
+        // KEY=VAL=UE should split on first = only
+        let ev = "DB_URL=postgres://host:5432/db?opt=val";
+        let (key, value) = ev.split_once('=').unwrap();
+        assert_eq!(key, "DB_URL");
+        assert_eq!(value, "postgres://host:5432/db?opt=val");
+    }
 }

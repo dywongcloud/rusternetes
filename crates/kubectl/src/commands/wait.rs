@@ -282,6 +282,118 @@ mod tests {
         assert_eq!(api, "apis/apps/v1");
         assert_eq!(name, "deployments");
     }
+
+    #[test]
+    fn test_parse_resource_type_all_aliases() {
+        let (api, name) = parse_resource_type("pod").unwrap();
+        assert_eq!(api, "api/v1");
+        assert_eq!(name, "pods");
+
+        let (api, name) = parse_resource_type("svc").unwrap();
+        assert_eq!(api, "api/v1");
+        assert_eq!(name, "services");
+
+        let (api, name) = parse_resource_type("services").unwrap();
+        assert_eq!(api, "api/v1");
+        assert_eq!(name, "services");
+
+        let (api, name) = parse_resource_type("ds").unwrap();
+        assert_eq!(api, "apis/apps/v1");
+        assert_eq!(name, "daemonsets");
+
+        let (api, name) = parse_resource_type("daemonsets").unwrap();
+        assert_eq!(api, "apis/apps/v1");
+        assert_eq!(name, "daemonsets");
+
+        let (api, name) = parse_resource_type("sts").unwrap();
+        assert_eq!(api, "apis/apps/v1");
+        assert_eq!(name, "statefulsets");
+
+        let (api, name) = parse_resource_type("rs").unwrap();
+        assert_eq!(api, "apis/apps/v1");
+        assert_eq!(name, "replicasets");
+
+        let (api, name) = parse_resource_type("jobs").unwrap();
+        assert_eq!(api, "apis/batch/v1");
+        assert_eq!(name, "jobs");
+    }
+
+    #[test]
+    fn test_parse_resource_type_unsupported() {
+        let result = parse_resource_type("configmap");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported resource type"));
+    }
+
+    #[test]
+    fn test_check_condition_no_status_field() {
+        let resource = serde_json::json!({"metadata": {"name": "test"}});
+        assert!(!check_condition(&resource, "Ready", "True").unwrap());
+    }
+
+    #[test]
+    fn test_check_condition_no_conditions_field() {
+        let resource = serde_json::json!({"status": {"phase": "Running"}});
+        assert!(!check_condition(&resource, "Ready", "True").unwrap());
+    }
+
+    #[test]
+    fn test_check_condition_multiple_conditions() {
+        let resource = serde_json::json!({
+            "status": {
+                "conditions": [
+                    {"type": "Initialized", "status": "True"},
+                    {"type": "Ready", "status": "False"},
+                    {"type": "ContainersReady", "status": "False"},
+                    {"type": "PodScheduled", "status": "True"}
+                ]
+            }
+        });
+        assert!(check_condition(&resource, "Initialized", "True").unwrap());
+        assert!(!check_condition(&resource, "Ready", "True").unwrap());
+        assert!(check_condition(&resource, "Ready", "False").unwrap());
+        assert!(check_condition(&resource, "PodScheduled", "True").unwrap());
+        assert!(!check_condition(&resource, "ContainersReady", "True").unwrap());
+    }
+
+    #[test]
+    fn test_parse_duration_invalid() {
+        let result = parse_duration("abc");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_polling_url_construction() {
+        let (api_path, resource_name) = parse_resource_type("pod").unwrap();
+        let path_with_name = format!(
+            "/{}/namespaces/{}/{}/{}",
+            api_path, "default", resource_name, "nginx"
+        );
+        assert_eq!(path_with_name, "/api/v1/namespaces/default/pods/nginx");
+
+        let path_without_name = format!(
+            "/{}/namespaces/{}/{}",
+            api_path, "default", resource_name
+        );
+        assert_eq!(path_without_name, "/api/v1/namespaces/default/pods");
+
+        let (api_path, resource_name) = parse_resource_type("deployment").unwrap();
+        let path = format!(
+            "/{}/namespaces/{}/{}/{}",
+            api_path, "prod", resource_name, "web"
+        );
+        assert_eq!(path, "/apis/apps/v1/namespaces/prod/deployments/web");
+
+        let (api_path, resource_name) = parse_resource_type("job").unwrap();
+        let path = format!(
+            "/{}/namespaces/{}/{}/{}",
+            api_path, "batch-ns", resource_name, "my-job"
+        );
+        assert_eq!(path, "/apis/batch/v1/namespaces/batch-ns/jobs/my-job");
+    }
 }
 
 fn parse_duration(duration: &str) -> Result<Duration> {

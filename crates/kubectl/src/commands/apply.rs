@@ -1296,4 +1296,388 @@ mod tests {
         let qs = build_query_string(&options);
         assert!(qs.contains("dryRun=All"));
     }
+
+    #[test]
+    fn test_build_query_string_dry_run_client() {
+        let options = ApplyOptions {
+            dry_run: Some("client".to_string()),
+            ..Default::default()
+        };
+        let qs = build_query_string(&options);
+        assert!(!qs.contains("dryRun"));
+    }
+
+    #[test]
+    fn test_build_query_string_dry_run_none() {
+        let options = ApplyOptions {
+            dry_run: Some("none".to_string()),
+            ..Default::default()
+        };
+        let qs = build_query_string(&options);
+        assert!(!qs.contains("dryRun"));
+    }
+
+    #[test]
+    fn test_build_query_string_combined() {
+        let options = ApplyOptions {
+            server_side: true,
+            force: true,
+            field_manager: "test-mgr".to_string(),
+            dry_run: Some("server".to_string()),
+            validate: Some("strict".to_string()),
+            ..Default::default()
+        };
+        let qs = build_query_string(&options);
+        assert!(qs.starts_with("?"));
+        assert!(qs.contains("dryRun=All"));
+        assert!(qs.contains("fieldManager=test-mgr"));
+        assert!(qs.contains("force=true"));
+        assert!(qs.contains("fieldValidation=Strict"));
+    }
+
+    #[test]
+    fn test_build_query_string_validate_ignore() {
+        let options = ApplyOptions {
+            validate: Some("ignore".to_string()),
+            ..Default::default()
+        };
+        let qs = build_query_string(&options);
+        assert!(qs.contains("fieldValidation=Ignore"));
+    }
+
+    #[test]
+    fn test_build_query_string_validate_warn_capitalized() {
+        let options = ApplyOptions {
+            validate: Some("Warn".to_string()),
+            ..Default::default()
+        };
+        let qs = build_query_string(&options);
+        assert!(qs.contains("fieldValidation=Warn"));
+    }
+
+    #[test]
+    fn test_build_query_string_validate_strict_capitalized() {
+        let options = ApplyOptions {
+            validate: Some("Strict".to_string()),
+            ..Default::default()
+        };
+        let qs = build_query_string(&options);
+        assert!(qs.contains("fieldValidation=Strict"));
+    }
+
+    #[test]
+    fn test_build_query_string_validate_unknown() {
+        let options = ApplyOptions {
+            validate: Some("custom".to_string()),
+            ..Default::default()
+        };
+        let qs = build_query_string(&options);
+        assert!(qs.contains("fieldValidation=custom"));
+    }
+
+    #[test]
+    fn test_strip_last_applied_removes_annotation() {
+        let val = json!({
+            "metadata": {
+                "name": "test",
+                "annotations": {
+                    LAST_APPLIED_ANNOTATION: "old-config",
+                    "other": "keep"
+                }
+            }
+        });
+        let clean = strip_last_applied(&val);
+        let annotations = clean["metadata"]["annotations"].as_object().unwrap();
+        assert!(!annotations.contains_key(LAST_APPLIED_ANNOTATION));
+        assert_eq!(annotations["other"], "keep");
+    }
+
+    #[test]
+    fn test_strip_last_applied_removes_empty_annotations() {
+        let val = json!({
+            "metadata": {
+                "name": "test",
+                "annotations": {
+                    LAST_APPLIED_ANNOTATION: "old-config"
+                }
+            }
+        });
+        let clean = strip_last_applied(&val);
+        assert!(clean["metadata"].get("annotations").is_none());
+    }
+
+    #[test]
+    fn test_strip_last_applied_no_annotations() {
+        let val = json!({
+            "metadata": {
+                "name": "test"
+            }
+        });
+        let clean = strip_last_applied(&val);
+        assert_eq!(clean["metadata"]["name"], "test");
+    }
+
+    #[test]
+    fn test_format_output_default_created() {
+        let result = ApplyResult {
+            kind: "Pod".to_string(),
+            api_group: "".to_string(),
+            name: "nginx".to_string(),
+            namespace: Some("default".to_string()),
+            action: ApplyAction::Created,
+            response: json!({}),
+        };
+        let options = ApplyOptions::default();
+        format_output(&result, &options);
+    }
+
+    #[test]
+    fn test_format_output_default_configured() {
+        let result = ApplyResult {
+            kind: "Deployment".to_string(),
+            api_group: "apps".to_string(),
+            name: "web".to_string(),
+            namespace: Some("default".to_string()),
+            action: ApplyAction::Configured,
+            response: json!({}),
+        };
+        let options = ApplyOptions::default();
+        format_output(&result, &options);
+    }
+
+    #[test]
+    fn test_format_output_json() {
+        let result = ApplyResult {
+            kind: "Pod".to_string(),
+            api_group: "".to_string(),
+            name: "test".to_string(),
+            namespace: Some("default".to_string()),
+            action: ApplyAction::Created,
+            response: json!({"kind": "Pod", "metadata": {"name": "test"}}),
+        };
+        let options = ApplyOptions {
+            output: Some("json".to_string()),
+            ..Default::default()
+        };
+        format_output(&result, &options);
+    }
+
+    #[test]
+    fn test_format_output_yaml() {
+        let result = ApplyResult {
+            kind: "Pod".to_string(),
+            api_group: "".to_string(),
+            name: "test".to_string(),
+            namespace: Some("default".to_string()),
+            action: ApplyAction::Created,
+            response: json!({"kind": "Pod"}),
+        };
+        let options = ApplyOptions {
+            output: Some("yaml".to_string()),
+            ..Default::default()
+        };
+        format_output(&result, &options);
+    }
+
+    #[test]
+    fn test_format_output_name() {
+        let result = ApplyResult {
+            kind: "Service".to_string(),
+            api_group: "".to_string(),
+            name: "frontend".to_string(),
+            namespace: Some("default".to_string()),
+            action: ApplyAction::Created,
+            response: json!({}),
+        };
+        let options = ApplyOptions {
+            output: Some("name".to_string()),
+            ..Default::default()
+        };
+        format_output(&result, &options);
+    }
+
+    #[test]
+    fn test_apply_action_eq() {
+        assert_eq!(ApplyAction::Created, ApplyAction::Created);
+        assert_eq!(ApplyAction::Configured, ApplyAction::Configured);
+        assert_ne!(ApplyAction::Created, ApplyAction::Configured);
+    }
+
+    #[test]
+    fn test_resource_label_rbac() {
+        let r = ApplyResult {
+            kind: "ClusterRole".to_string(),
+            api_group: "rbac.authorization.k8s.io".to_string(),
+            name: "admin".to_string(),
+            namespace: None,
+            action: ApplyAction::Created,
+            response: json!({}),
+        };
+        assert_eq!(
+            r.resource_label(),
+            "clusterrole.rbac.authorization.k8s.io/admin"
+        );
+    }
+
+    #[test]
+    fn test_resource_label_namespace() {
+        let r = ApplyResult {
+            kind: "Namespace".to_string(),
+            api_group: "".to_string(),
+            name: "test-ns".to_string(),
+            namespace: None,
+            action: ApplyAction::Created,
+            response: json!({}),
+        };
+        assert_eq!(r.resource_label(), "namespace/test-ns");
+    }
+
+    #[test]
+    fn test_resolve_api_path_services() {
+        let path = resolve_api_path("svc", "my-svc", "default").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/services/my-svc");
+    }
+
+    #[test]
+    fn test_resolve_api_path_statefulsets() {
+        let path = resolve_api_path("sts", "my-sts", "default").unwrap();
+        assert_eq!(
+            path,
+            "/apis/apps/v1/namespaces/default/statefulsets/my-sts"
+        );
+    }
+
+    #[test]
+    fn test_resolve_api_path_daemonsets() {
+        let path = resolve_api_path("ds", "my-ds", "default").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/default/daemonsets/my-ds");
+    }
+
+    #[test]
+    fn test_resolve_api_path_configmaps() {
+        let path = resolve_api_path("cm", "my-cm", "default").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/configmaps/my-cm");
+    }
+
+    #[test]
+    fn test_resolve_api_path_secrets() {
+        let path = resolve_api_path("secrets", "my-secret", "default").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/secrets/my-secret");
+    }
+
+    #[test]
+    fn test_resolve_api_path_serviceaccounts() {
+        let path = resolve_api_path("sa", "my-sa", "default").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/serviceaccounts/my-sa");
+    }
+
+    #[test]
+    fn test_resolve_api_path_jobs() {
+        let path = resolve_api_path("jobs", "my-job", "default").unwrap();
+        assert_eq!(path, "/apis/batch/v1/namespaces/default/jobs/my-job");
+    }
+
+    #[test]
+    fn test_resolve_api_path_cronjobs() {
+        let path = resolve_api_path("cj", "my-cj", "default").unwrap();
+        assert_eq!(path, "/apis/batch/v1/namespaces/default/cronjobs/my-cj");
+    }
+
+    #[test]
+    fn test_resolve_api_path_roles() {
+        let path = resolve_api_path("roles", "my-role", "default").unwrap();
+        assert_eq!(
+            path,
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/default/roles/my-role"
+        );
+    }
+
+    #[test]
+    fn test_resolve_api_path_rolebindings() {
+        let path = resolve_api_path("rolebindings", "my-rb", "default").unwrap();
+        assert_eq!(
+            path,
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/default/rolebindings/my-rb"
+        );
+    }
+
+    #[test]
+    fn test_resolve_api_path_clusterrolebindings() {
+        let path = resolve_api_path("clusterrolebindings", "my-crb", "default").unwrap();
+        assert_eq!(
+            path,
+            "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/my-crb"
+        );
+    }
+
+    #[test]
+    fn test_resolve_api_path_namespaces() {
+        let path = resolve_api_path("ns", "test-ns", "default").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/test-ns");
+    }
+
+    #[test]
+    fn test_resolve_api_path_nodes() {
+        let path = resolve_api_path("nodes", "node-1", "default").unwrap();
+        assert_eq!(path, "/api/v1/nodes/node-1");
+    }
+
+    #[test]
+    fn test_is_manifest_file_no_extension() {
+        assert!(!is_manifest_file(Path::new("Dockerfile")));
+    }
+
+    #[test]
+    fn test_is_manifest_file_hidden_yaml() {
+        assert!(is_manifest_file(Path::new(".hidden.yaml")));
+    }
+
+    #[test]
+    fn test_collect_files_empty_input() {
+        let result = collect_files(&[], false).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_set_last_applied_annotation_creates_metadata() {
+        let mut val = json!({
+            "kind": "ConfigMap",
+            "metadata": {}
+        });
+        set_last_applied_annotation(&mut val);
+        assert!(val["metadata"]["annotations"][LAST_APPLIED_ANNOTATION].is_string());
+    }
+
+    #[test]
+    fn test_build_query_string_no_server_side() {
+        let options = ApplyOptions {
+            server_side: false,
+            force: true,
+            ..Default::default()
+        };
+        let qs = build_query_string(&options);
+        assert!(!qs.contains("fieldManager"));
+        assert!(!qs.contains("force"));
+    }
+
+    #[test]
+    fn test_apply_options_custom() {
+        let opts = ApplyOptions {
+            files: vec!["test.yaml".to_string()],
+            namespace: Some("prod".to_string()),
+            dry_run: Some("server".to_string()),
+            server_side: true,
+            force: true,
+            recursive: true,
+            field_manager: "custom-manager".to_string(),
+            output: Some("json".to_string()),
+            validate: Some("strict".to_string()),
+        };
+        assert_eq!(opts.files.len(), 1);
+        assert_eq!(opts.namespace, Some("prod".to_string()));
+        assert!(opts.server_side);
+        assert!(opts.force);
+        assert!(opts.recursive);
+        assert_eq!(opts.field_manager, "custom-manager");
+    }
 }

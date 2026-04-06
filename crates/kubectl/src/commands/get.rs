@@ -1748,4 +1748,372 @@ mod tests {
         print_pods(&pods, false, true);
         print_pods(&pods, true, true);
     }
+
+    #[test]
+    fn test_map_get_error_not_found() {
+        let err = map_get_error(GetError::NotFound);
+        assert_eq!(err.to_string(), "Resource not found");
+    }
+
+    #[test]
+    fn test_map_get_error_other() {
+        let err = map_get_error(GetError::Other(anyhow::anyhow!("connection refused")));
+        assert_eq!(err.to_string(), "connection refused");
+    }
+
+    #[test]
+    fn test_output_format_json() {
+        let fmt = OutputFormat::from_str("json").unwrap();
+        assert_eq!(fmt, OutputFormat::Json);
+    }
+
+    #[test]
+    fn test_output_format_yaml() {
+        let fmt = OutputFormat::from_str("yaml").unwrap();
+        assert_eq!(fmt, OutputFormat::Yaml);
+    }
+
+    #[test]
+    fn test_output_format_wide() {
+        let fmt = OutputFormat::from_str("wide").unwrap();
+        assert_eq!(fmt, OutputFormat::Wide);
+    }
+
+    #[test]
+    fn test_output_format_name() {
+        let fmt = OutputFormat::from_str("name").unwrap();
+        assert_eq!(fmt, OutputFormat::Name);
+    }
+
+    #[test]
+    fn test_output_format_jsonpath() {
+        let fmt = OutputFormat::from_str("jsonpath={.metadata.name}").unwrap();
+        assert_eq!(fmt, OutputFormat::JsonPath("{.metadata.name}".to_string()));
+    }
+
+    #[test]
+    fn test_output_format_unknown() {
+        let result = OutputFormat::from_str("csv");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_evaluate_jsonpath_simple_field() {
+        let val = serde_json::json!({"metadata": {"name": "test"}});
+        let result = evaluate_jsonpath(&val, "{.metadata.name}").unwrap();
+        assert_eq!(result, "test");
+    }
+
+    #[test]
+    fn test_evaluate_jsonpath_no_braces() {
+        let val = serde_json::json!({"metadata": {"name": "test"}});
+        let result = evaluate_jsonpath(&val, ".metadata.name").unwrap();
+        assert_eq!(result, "test");
+    }
+
+    #[test]
+    fn test_evaluate_jsonpath_missing_field() {
+        let val = serde_json::json!({"metadata": {"name": "test"}});
+        let result = evaluate_jsonpath(&val, "{.metadata.labels}").unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_resolve_path_string_literal() {
+        let val = serde_json::json!({});
+        let result = resolve_path(&val, "\"hello\\nworld\"").unwrap();
+        assert_eq!(result, "hello\nworld");
+    }
+
+    #[test]
+    fn test_resolve_path_empty() {
+        let val = serde_json::json!("root_value");
+        let result = resolve_path(&val, ".").unwrap();
+        assert_eq!(result, "root_value");
+    }
+
+    #[test]
+    fn test_resolve_path_array_index() {
+        let val = serde_json::json!({"items": ["a", "b", "c"]});
+        let result = resolve_path(&val, ".items[1]").unwrap();
+        assert_eq!(result, "b");
+    }
+
+    #[test]
+    fn test_resolve_path_array_index_out_of_bounds() {
+        let val = serde_json::json!({"items": ["a"]});
+        let result = resolve_path(&val, ".items[5]").unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_format_value_string() {
+        let val = serde_json::Value::String("hello".to_string());
+        assert_eq!(format_value(&val).unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_format_value_null() {
+        let val = serde_json::Value::Null;
+        assert_eq!(format_value(&val).unwrap(), "");
+    }
+
+    #[test]
+    fn test_format_value_bool() {
+        let val = serde_json::Value::Bool(true);
+        assert_eq!(format_value(&val).unwrap(), "true");
+    }
+
+    #[test]
+    fn test_format_value_number() {
+        let val = serde_json::json!(42);
+        assert_eq!(format_value(&val).unwrap(), "42");
+    }
+
+    #[test]
+    fn test_format_value_array() {
+        let val = serde_json::json!(["a", "b", "c"]);
+        assert_eq!(format_value(&val).unwrap(), "a b c");
+    }
+
+    #[test]
+    fn test_format_value_object() {
+        let val = serde_json::json!({"key": "val"});
+        let result = format_value(&val).unwrap();
+        assert!(result.contains("key"));
+        assert!(result.contains("val"));
+    }
+
+    #[test]
+    fn test_urlencoding_encode_passthrough() {
+        assert_eq!(urlencoding::encode("app=nginx"), "app=nginx");
+    }
+
+    #[test]
+    fn test_urlencoding_encode_spaces() {
+        assert_eq!(urlencoding::encode("hello world"), "hello+world");
+    }
+
+    #[test]
+    fn test_urlencoding_encode_special_chars() {
+        let encoded = urlencoding::encode("key=val&other");
+        assert!(encoded.contains("%26"));
+    }
+
+    #[test]
+    fn test_format_duration_days() {
+        let d = chrono::Duration::days(5);
+        assert_eq!(format_duration(d), "5d");
+    }
+
+    #[test]
+    fn test_format_duration_hours() {
+        let d = chrono::Duration::hours(3);
+        assert_eq!(format_duration(d), "3h");
+    }
+
+    #[test]
+    fn test_format_duration_minutes() {
+        let d = chrono::Duration::minutes(45);
+        assert_eq!(format_duration(d), "45m");
+    }
+
+    #[test]
+    fn test_format_duration_seconds() {
+        let d = chrono::Duration::seconds(30);
+        assert_eq!(format_duration(d), "30s");
+    }
+
+    #[test]
+    fn test_format_duration_zero() {
+        let d = chrono::Duration::seconds(0);
+        assert_eq!(format_duration(d), "0s");
+    }
+
+    #[test]
+    fn test_print_services_no_panic() {
+        let services: Vec<Service> = vec![];
+        print_services(&services, false, false);
+        print_services(&services, true, false);
+        print_services(&services, false, true);
+    }
+
+    #[test]
+    fn test_print_deployments_no_panic() {
+        let deployments: Vec<Deployment> = vec![];
+        print_deployments(&deployments, false, false);
+        print_deployments(&deployments, true, false);
+        print_deployments(&deployments, false, true);
+    }
+
+    #[test]
+    fn test_print_nodes_no_panic() {
+        let nodes: Vec<Node> = vec![];
+        print_nodes(&nodes, false, false);
+        print_nodes(&nodes, true, false);
+        print_nodes(&nodes, false, true);
+    }
+
+    #[test]
+    fn test_print_namespaces_no_panic() {
+        let namespaces: Vec<Namespace> = vec![];
+        print_namespaces(&namespaces, false, false);
+        print_namespaces(&namespaces, true, false);
+        print_namespaces(&namespaces, false, true);
+    }
+
+    #[test]
+    fn test_print_pvs_no_panic() {
+        let pvs: Vec<PersistentVolume> = vec![];
+        print_pvs(&pvs, false, false);
+        print_pvs(&pvs, true, false);
+    }
+
+    #[test]
+    fn test_print_pvcs_no_panic() {
+        let pvcs: Vec<PersistentVolumeClaim> = vec![];
+        print_pvcs(&pvcs, false, false);
+        print_pvcs(&pvcs, true, false);
+    }
+
+    #[test]
+    fn test_print_jobs_no_panic() {
+        let jobs: Vec<Job> = vec![];
+        print_jobs(&jobs, false, false);
+        print_jobs(&jobs, true, false);
+    }
+
+    #[test]
+    fn test_print_cronjobs_no_panic() {
+        let cronjobs: Vec<CronJob> = vec![];
+        print_cronjobs(&cronjobs, false, false);
+        print_cronjobs(&cronjobs, true, false);
+    }
+
+    #[test]
+    fn test_build_list_api_path_pod_alias() {
+        assert_eq!(
+            build_list_api_path("pod", "test-ns"),
+            Some("/api/v1/namespaces/test-ns/pods".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_list_api_path_svc_alias() {
+        assert_eq!(
+            build_list_api_path("svc", "default"),
+            Some("/api/v1/namespaces/default/services".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_list_api_path_deployment_alias() {
+        assert_eq!(
+            build_list_api_path("deployment", "prod"),
+            Some("/apis/apps/v1/namespaces/prod/deployments".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_list_api_path_namespaces_aliases() {
+        assert_eq!(
+            build_list_api_path("namespaces", "ignored"),
+            Some("/api/v1/namespaces".to_string())
+        );
+        assert_eq!(
+            build_list_api_path("ns", "ignored"),
+            Some("/api/v1/namespaces".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_list_api_path_configmaps() {
+        assert_eq!(
+            build_list_api_path("cm", "default"),
+            Some("/api/v1/namespaces/default/configmaps".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_list_api_path_secrets() {
+        assert_eq!(
+            build_list_api_path("secrets", "default"),
+            Some("/api/v1/namespaces/default/secrets".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_list_api_path_endpoints() {
+        assert_eq!(
+            build_list_api_path("ep", "default"),
+            Some("/api/v1/namespaces/default/endpoints".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_list_api_path_jobs() {
+        assert_eq!(
+            build_list_api_path("job", "default"),
+            Some("/apis/batch/v1/namespaces/default/jobs".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_list_api_path_cronjobs() {
+        assert_eq!(
+            build_list_api_path("cj", "default"),
+            Some("/apis/batch/v1/namespaces/default/cronjobs".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_list_api_path_statefulsets() {
+        assert_eq!(
+            build_list_api_path("sts", "default"),
+            Some("/apis/apps/v1/namespaces/default/statefulsets".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_list_api_path_daemonsets() {
+        assert_eq!(
+            build_list_api_path("ds", "default"),
+            Some("/apis/apps/v1/namespaces/default/daemonsets".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_sort_key_number() {
+        let val = serde_json::json!({"spec": {"replicas": 3}});
+        let key = resolve_sort_key(&val, ".spec.replicas");
+        assert!(key.contains("3"));
+    }
+
+    #[test]
+    fn test_resolve_sort_key_bool() {
+        let val = serde_json::json!({"spec": {"active": true}});
+        let key = resolve_sort_key(&val, ".spec.active");
+        assert_eq!(key, "true");
+    }
+
+    #[test]
+    fn test_resolve_sort_key_null() {
+        let val = serde_json::json!({"spec": {"field": null}});
+        let key = resolve_sort_key(&val, ".spec.field");
+        assert_eq!(key, "");
+    }
+
+    #[test]
+    fn test_evaluate_jsonpath_filter_returns_empty() {
+        let val = serde_json::json!({"items": [{"type": "Ready"}]});
+        let result = evaluate_jsonpath(&val, "{.items[?(@.type==\"Ready\")]}").unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_resolve_path_tab_literal() {
+        let val = serde_json::json!({});
+        let result = resolve_path(&val, "\"col1\\tcol2\"").unwrap();
+        assert_eq!(result, "col1\tcol2");
+    }
 }

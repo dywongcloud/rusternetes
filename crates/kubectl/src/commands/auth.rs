@@ -411,4 +411,87 @@ mod auth_reconcile_tests {
 
         assert_eq!(merged.len(), 2);
     }
+
+    #[test]
+    fn test_reconcile_replace_rules_when_remove_extra() {
+        let current_rules = vec![
+            json!({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]}),
+            json!({"apiGroups": [""], "resources": ["nodes"], "verbs": ["list"]}),
+        ];
+        let desired_rules = vec![
+            json!({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]}),
+        ];
+
+        let remove_extra_permissions = true;
+        let result = if remove_extra_permissions {
+            desired_rules.clone()
+        } else {
+            let mut merged = current_rules;
+            for rule in desired_rules {
+                if !merged.contains(&rule) {
+                    merged.push(rule);
+                }
+            }
+            merged
+        };
+
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_reconcile_replace_subjects_when_remove_extra() {
+        let current_subjects = vec![
+            json!({"kind": "User", "name": "alice"}),
+            json!({"kind": "User", "name": "charlie"}),
+        ];
+        let desired_subjects = vec![
+            json!({"kind": "User", "name": "alice"}),
+        ];
+
+        let remove_extra_subjects = true;
+        let result = if remove_extra_subjects {
+            desired_subjects.clone()
+        } else {
+            let mut merged = current_subjects;
+            for sub in desired_subjects {
+                if !merged.contains(&sub) {
+                    merged.push(sub);
+                }
+            }
+            merged
+        };
+
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_self_subject_access_review_serialization() {
+        let review = SelfSubjectAccessReview {
+            api_version: "authorization.k8s.io/v1".to_string(),
+            kind: "SelfSubjectAccessReview".to_string(),
+            spec: SelfSubjectAccessReviewSpec {
+                resource_attributes: Some(ResourceAttributes {
+                    namespace: Some("default".to_string()),
+                    verb: "get".to_string(),
+                    resource: "pods".to_string(),
+                    name: None,
+                }),
+            },
+        };
+
+        let json = serde_json::to_value(&review).unwrap();
+        assert_eq!(json["apiVersion"], "authorization.k8s.io/v1");
+        assert_eq!(json["kind"], "SelfSubjectAccessReview");
+        assert_eq!(json["spec"]["resourceAttributes"]["verb"], "get");
+        assert_eq!(json["spec"]["resourceAttributes"]["resource"], "pods");
+        assert_eq!(json["spec"]["resourceAttributes"]["namespace"], "default");
+        assert!(json["spec"]["resourceAttributes"]["name"].is_null());
+    }
+
+    #[test]
+    fn test_collection_path_from_resource_path() {
+        let path = "/apis/rbac.authorization.k8s.io/v1/clusterroles/admin";
+        let collection_path = path.rsplit_once('/').map(|(p, _)| p).unwrap_or(path);
+        assert_eq!(collection_path, "/apis/rbac.authorization.k8s.io/v1/clusterroles");
+    }
 }

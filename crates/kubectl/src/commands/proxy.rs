@@ -235,4 +235,61 @@ mod tests {
             "https://localhost:6443/api/v1/namespaces/default/pods?limit=10"
         );
     }
+
+    #[test]
+    fn test_proxy_config_defaults() {
+        let config = ProxyConfig {
+            address: "127.0.0.1".to_string(),
+            port: 8001,
+            api_server: "https://localhost:6443".to_string(),
+            token: None,
+            skip_tls_verify: false,
+        };
+        assert_eq!(config.address, "127.0.0.1");
+        assert_eq!(config.port, 8001);
+        assert!(config.token.is_none());
+        assert!(!config.skip_tls_verify);
+    }
+
+    #[test]
+    fn test_proxy_target_url_root_path() {
+        let api_server = "https://localhost:6443";
+        let path_and_query = "/";
+        let target_url = format!("{}{}", api_server, path_and_query);
+        assert_eq!(target_url, "https://localhost:6443/");
+    }
+
+    #[test]
+    fn test_proxy_authorization_header_format() {
+        let token = "my-bearer-token";
+        let header = format!("Bearer {}", token);
+        assert_eq!(header, "Bearer my-bearer-token");
+    }
+
+    #[tokio::test]
+    async fn test_bind_listener_specific_port() {
+        let config = ProxyConfig {
+            address: "127.0.0.1".to_string(),
+            port: 0,
+            api_server: "https://localhost:6443".to_string(),
+            token: None,
+            skip_tls_verify: false,
+        };
+        let listener = bind_listener(&config).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        assert!(addr.port() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_bind_listener_invalid_address_fails() {
+        let config = ProxyConfig {
+            address: "999.999.999.999".to_string(),
+            port: 0,
+            api_server: "https://localhost:6443".to_string(),
+            token: None,
+            skip_tls_verify: false,
+        };
+        let result = bind_listener(&config).await;
+        assert!(result.is_err());
+    }
 }
