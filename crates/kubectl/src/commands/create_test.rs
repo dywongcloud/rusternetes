@@ -1,5 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use crate::commands::create::*;
+    use serde_json::Value;
+
     #[test]
     fn test_kind_extraction_from_yaml() {
         let yaml = r#"
@@ -34,454 +37,635 @@ metadata:
     }
 
     #[test]
-    fn test_pod_deserialization() {
-        let yaml = r#"
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test-pod
-  namespace: default
-spec:
-  containers:
-  - name: nginx
-    image: nginx:latest
-"#;
+    fn test_build_cluster_role() {
+        let result = build_cluster_role(
+            "pod-reader",
+            &["get".into(), "list".into(), "watch".into()],
+            &["pods".into()],
+            &[],
+            &[],
+            &[],
+        )
+        .unwrap();
 
-        use rusternetes_common::resources::Pod;
-        let pod: Pod = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(result["apiVersion"], "rbac.authorization.k8s.io/v1");
+        assert_eq!(result["kind"], "ClusterRole");
+        assert_eq!(result["metadata"]["name"], "pod-reader");
 
-        assert_eq!(pod.metadata.name, "test-pod");
-        assert_eq!(pod.metadata.namespace, Some("default".to_string()));
+        let rules = result["rules"].as_array().unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0]["resources"], serde_json::json!(["pods"]));
+        assert_eq!(
+            rules[0]["verbs"],
+            serde_json::json!(["get", "list", "watch"])
+        );
+        assert_eq!(rules[0]["apiGroups"], serde_json::json!([""]))
     }
 
     #[test]
-    fn test_service_deserialization() {
-        let yaml = r#"
-apiVersion: v1
-kind: Service
-metadata:
-  name: test-service
-  namespace: default
-spec:
-  selector:
-    app: test
-  ports:
-  - port: 80
-    targetPort: 80
-"#;
+    fn test_build_cluster_role_with_aggregation() {
+        let result = build_cluster_role(
+            "monitoring",
+            &[],
+            &[],
+            &[],
+            &[],
+            &["rbac.example.com/aggregate-to-monitoring=true".into()],
+        )
+        .unwrap();
 
-        use rusternetes_common::resources::Service;
-        let service: Service = serde_yaml::from_str(yaml).unwrap();
-
-        assert_eq!(service.metadata.name, "test-service");
-        assert_eq!(service.spec.ports.len(), 1);
-        assert_eq!(service.spec.ports[0].port, 80);
+        assert_eq!(result["kind"], "ClusterRole");
+        let agg = &result["aggregationRule"];
+        let selectors = agg["clusterRoleSelectors"].as_array().unwrap();
+        assert_eq!(selectors.len(), 1);
+        assert_eq!(
+            selectors[0]["matchLabels"]["rbac.example.com/aggregate-to-monitoring"],
+            "true"
+        );
     }
 
     #[test]
-    fn test_deployment_deserialization() {
-        let yaml = r#"
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test-deployment
-  namespace: default
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: test
-  template:
-    metadata:
-      labels:
-        app: test
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:latest
-"#;
+    fn test_build_cluster_role_with_non_resource_url() {
+        let result = build_cluster_role(
+            "log-reader",
+            &["get".into()],
+            &[],
+            &[],
+            &["/logs/*".into()],
+            &[],
+        )
+        .unwrap();
 
-        use rusternetes_common::resources::Deployment;
-        let deployment: Deployment = serde_yaml::from_str(yaml).unwrap();
-
-        assert_eq!(deployment.metadata.name, "test-deployment");
-        assert_eq!(deployment.spec.replicas, Some(3));
+        let rules = result["rules"].as_array().unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0]["nonResourceURLs"], serde_json::json!(["/logs/*"]));
+        assert_eq!(rules[0]["verbs"], serde_json::json!(["get"]));
     }
 
     #[test]
-    fn test_namespace_deserialization() {
-        let yaml = r#"
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: test-namespace
-"#;
+    fn test_build_cluster_role_binding() {
+        let result = build_cluster_role_binding(
+            "admin-binding",
+            "cluster-admin",
+            &["user1".into(), "user2".into()],
+            &["group1".into()],
+            &["kube-system:default".into()],
+        )
+        .unwrap();
 
-        use rusternetes_common::resources::Namespace;
-        let namespace: Namespace = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(result["apiVersion"], "rbac.authorization.k8s.io/v1");
+        assert_eq!(result["kind"], "ClusterRoleBinding");
+        assert_eq!(result["metadata"]["name"], "admin-binding");
+        assert_eq!(result["roleRef"]["kind"], "ClusterRole");
+        assert_eq!(result["roleRef"]["name"], "cluster-admin");
 
-        assert_eq!(namespace.metadata.name, "test-namespace");
+        let subjects = result["subjects"].as_array().unwrap();
+        assert_eq!(subjects.len(), 4);
+        assert_eq!(subjects[0]["kind"], "User");
+        assert_eq!(subjects[0]["name"], "user1");
+        assert_eq!(subjects[1]["kind"], "User");
+        assert_eq!(subjects[1]["name"], "user2");
+        assert_eq!(subjects[2]["kind"], "Group");
+        assert_eq!(subjects[2]["name"], "group1");
+        assert_eq!(subjects[3]["kind"], "ServiceAccount");
+        assert_eq!(subjects[3]["name"], "default");
+        assert_eq!(subjects[3]["namespace"], "kube-system");
     }
 
     #[test]
-    fn test_node_deserialization() {
-        let yaml = r#"
-apiVersion: v1
-kind: Node
-metadata:
-  name: test-node
-spec:
-  podCIDR: "10.244.0.0/24"
-"#;
+    fn test_build_configmap_from_literals() {
+        let result = build_configmap(
+            "my-config",
+            "default",
+            &["key1=value1".into(), "key2=value2".into()],
+            &[],
+        )
+        .unwrap();
 
-        use rusternetes_common::resources::Node;
-        let node: Node = serde_yaml::from_str(yaml).unwrap();
-
-        assert_eq!(node.metadata.name, "test-node");
+        assert_eq!(result["apiVersion"], "v1");
+        assert_eq!(result["kind"], "ConfigMap");
+        assert_eq!(result["metadata"]["name"], "my-config");
+        assert_eq!(result["metadata"]["namespace"], "default");
+        assert_eq!(result["data"]["key1"], "value1");
+        assert_eq!(result["data"]["key2"], "value2");
     }
 
     #[test]
-    fn test_storageclass_deserialization() {
-        let yaml = r#"
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: fast-storage
-provisioner: rusternetes.io/local
-parameters:
-  type: ssd
-  iops: "1000"
-reclaimPolicy: Delete
-volumeBindingMode: Immediate
-allowVolumeExpansion: true
-"#;
+    fn test_build_cronjob() {
+        let result = build_cronjob(
+            "my-cron",
+            "default",
+            "busybox",
+            "*/5 * * * *",
+            "OnFailure",
+            &["echo".into(), "hello".into()],
+        );
 
-        use rusternetes_common::resources::volume::{
-            PersistentVolumeReclaimPolicy, VolumeBindingMode,
-        };
-        use rusternetes_common::resources::StorageClass;
-        let sc: StorageClass = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(result["apiVersion"], "batch/v1");
+        assert_eq!(result["kind"], "CronJob");
+        assert_eq!(result["metadata"]["name"], "my-cron");
+        assert_eq!(result["spec"]["schedule"], "*/5 * * * *");
 
-        assert_eq!(sc.metadata.name, "fast-storage");
-        assert_eq!(sc.provisioner, "rusternetes.io/local");
-        assert!(matches!(
-            sc.reclaim_policy,
-            Some(PersistentVolumeReclaimPolicy::Delete)
-        ));
-        assert!(matches!(
-            sc.volume_binding_mode,
-            Some(VolumeBindingMode::Immediate)
-        ));
-        assert_eq!(sc.allow_volume_expansion, Some(true));
+        let container = &result["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0];
+        assert_eq!(container["name"], "my-cron");
+        assert_eq!(container["image"], "busybox");
+        assert_eq!(
+            container["command"],
+            serde_json::json!(["echo", "hello"])
+        );
 
-        // Check parameters
-        let params = sc.parameters.as_ref().unwrap();
-        assert!(params.contains_key("type"));
-        assert_eq!(params.get("type").map(|s| s.as_str()), Some("ssd"));
-        assert_eq!(params.get("iops").map(|s| s.as_str()), Some("1000"));
+        assert_eq!(
+            result["spec"]["jobTemplate"]["spec"]["template"]["spec"]["restartPolicy"],
+            "OnFailure"
+        );
     }
 
     #[test]
-    fn test_endpoints_deserialization() {
-        let yaml = r#"
-apiVersion: v1
-kind: Endpoints
-metadata:
-  name: test-endpoints
-  namespace: default
-subsets:
-  - addresses:
-    - ip: 192.168.1.1
-    ports:
-    - port: 80
-"#;
+    fn test_build_ingress_simple() {
+        let result = build_ingress(
+            "simple",
+            "default",
+            Some("nginx"),
+            &["foo.com/bar=svc1:8080".into()],
+            None,
+            &[],
+        )
+        .unwrap();
 
-        use rusternetes_common::resources::Endpoints;
-        let ep: Endpoints = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(result["apiVersion"], "networking.k8s.io/v1");
+        assert_eq!(result["kind"], "Ingress");
+        assert_eq!(result["spec"]["ingressClassName"], "nginx");
 
-        assert_eq!(ep.metadata.name, "test-endpoints");
-        assert_eq!(ep.metadata.namespace, Some("default".to_string()));
+        let rules = result["spec"]["rules"].as_array().unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0]["host"], "foo.com");
+
+        let path = &rules[0]["http"]["paths"][0];
+        assert_eq!(path["path"], "/bar");
+        assert_eq!(path["pathType"], "Exact");
+        assert_eq!(path["backend"]["service"]["name"], "svc1");
+        assert_eq!(path["backend"]["service"]["port"]["number"], 8080);
     }
 
     #[test]
-    fn test_volumesnapshot_deserialization() {
-        let yaml = r#"
-apiVersion: snapshot.storage.k8s.io/v1
-kind: VolumeSnapshot
-metadata:
-  name: test-snapshot
-  namespace: default
-spec:
-  volumeSnapshotClassName: test-snapshot-class
-  source:
-    persistentVolumeClaimName: test-pvc
-"#;
+    fn test_build_ingress_with_tls() {
+        let result = build_ingress(
+            "tls-ingress",
+            "default",
+            None,
+            &["foo.com/bar=svc1:8080,tls=my-cert".into()],
+            None,
+            &[],
+        )
+        .unwrap();
 
-        use rusternetes_common::resources::VolumeSnapshot;
-        let vs: VolumeSnapshot = serde_yaml::from_str(yaml).unwrap();
-
-        assert_eq!(vs.metadata.name, "test-snapshot");
-        assert_eq!(vs.metadata.namespace, Some("default".to_string()));
+        let tls = result["spec"]["tls"].as_array().unwrap();
+        assert_eq!(tls.len(), 1);
+        assert_eq!(tls[0]["secretName"], "my-cert");
+        assert_eq!(tls[0]["hosts"], serde_json::json!(["foo.com"]));
     }
 
     #[test]
-    fn test_volumesnapshotclass_deserialization() {
-        let yaml = r#"
-apiVersion: snapshot.storage.k8s.io/v1
-kind: VolumeSnapshotClass
-metadata:
-  name: test-snapshot-class
-driver: rusternetes.io/snapshot
-deletionPolicy: Delete
-"#;
+    fn test_build_ingress_prefix_path() {
+        let result = build_ingress(
+            "prefix",
+            "default",
+            None,
+            &["foo.com/path*=svc1:8080".into()],
+            None,
+            &[],
+        )
+        .unwrap();
 
-        use rusternetes_common::resources::VolumeSnapshotClass;
-        let vsc: VolumeSnapshotClass = serde_yaml::from_str(yaml).unwrap();
-
-        assert_eq!(vsc.metadata.name, "test-snapshot-class");
-        assert_eq!(vsc.driver, "rusternetes.io/snapshot");
+        let path = &result["spec"]["rules"][0]["http"]["paths"][0];
+        assert_eq!(path["path"], "/path");
+        assert_eq!(path["pathType"], "Prefix");
     }
 
     #[test]
-    fn test_resourcequota_deserialization() {
-        let yaml = r#"
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: test-quota
-  namespace: default
-spec:
-  hard:
-    pods: "10"
-    requests.cpu: "4"
-    requests.memory: "8Gi"
-"#;
+    fn test_build_job_with_image() {
+        let result = build_job(
+            "my-job",
+            "default",
+            Some("busybox"),
+            None,
+            &["date".into()],
+        )
+        .unwrap();
 
-        use rusternetes_common::resources::ResourceQuota;
-        let rq: ResourceQuota = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(result["apiVersion"], "batch/v1");
+        assert_eq!(result["kind"], "Job");
+        assert_eq!(result["metadata"]["name"], "my-job");
 
-        assert_eq!(rq.metadata.name, "test-quota");
-        assert_eq!(rq.metadata.namespace, Some("default".to_string()));
+        let container = &result["spec"]["template"]["spec"]["containers"][0];
+        assert_eq!(container["name"], "my-job");
+        assert_eq!(container["image"], "busybox");
+        assert_eq!(container["command"], serde_json::json!(["date"]));
+        assert_eq!(
+            result["spec"]["template"]["spec"]["restartPolicy"],
+            "Never"
+        );
     }
 
     #[test]
-    fn test_limitrange_deserialization() {
-        let yaml = r#"
-apiVersion: v1
-kind: LimitRange
-metadata:
-  name: test-limits
-  namespace: default
-spec:
-  limits:
-  - type: Pod
-    max:
-      cpu: "2"
-      memory: "4Gi"
-    min:
-      cpu: "200m"
-      memory: "256Mi"
-"#;
-
-        use rusternetes_common::resources::LimitRange;
-        let lr: LimitRange = serde_yaml::from_str(yaml).unwrap();
-
-        assert_eq!(lr.metadata.name, "test-limits");
-        assert_eq!(lr.metadata.namespace, Some("default".to_string()));
+    fn test_build_job_requires_image_or_from() {
+        let result = build_job("my-job", "default", None, None, &[]);
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_priorityclass_deserialization() {
-        let yaml = r#"
-apiVersion: scheduling.k8s.io/v1
-kind: PriorityClass
-metadata:
-  name: high-priority
-value: 1000
-globalDefault: false
-description: "High priority class for critical workloads"
-"#;
+    fn test_build_job_from_cronjob() {
+        let result = build_job("my-job", "default", None, Some("cronjob/my-cron"), &[]).unwrap();
 
-        use rusternetes_common::resources::PriorityClass;
-        let pc: PriorityClass = serde_yaml::from_str(yaml).unwrap();
-
-        assert_eq!(pc.metadata.name, "high-priority");
-        assert_eq!(pc.value, 1000);
-        assert_eq!(pc.global_default, Some(false));
+        assert_eq!(result["kind"], "Job");
+        assert_eq!(
+            result["metadata"]["annotations"]["cronjob.kubernetes.io/instantiate"],
+            "manual"
+        );
     }
 
     #[test]
-    fn test_all_supported_resource_kinds() {
-        let test_cases = vec![
-            ("Pod", "v1"),
-            ("Service", "v1"),
-            ("Deployment", "apps/v1"),
-            ("Node", "v1"),
-            ("Namespace", "v1"),
-            ("StorageClass", "storage.k8s.io/v1"),
-            ("Endpoints", "v1"),
-            ("VolumeSnapshot", "snapshot.storage.k8s.io/v1"),
-            ("VolumeSnapshotClass", "snapshot.storage.k8s.io/v1"),
-            ("ResourceQuota", "v1"),
-            ("LimitRange", "v1"),
-            ("PriorityClass", "scheduling.k8s.io/v1"),
-        ];
+    fn test_build_pdb_min_available() {
+        let result = build_pdb("my-pdb", "default", "app=rails", Some("1"), None).unwrap();
 
-        for (kind, api_version) in test_cases {
-            let yaml = format!(
-                r#"
-apiVersion: {}
-kind: {}
-metadata:
-  name: test-resource
-"#,
-                api_version, kind
-            );
-
-            let value: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
-            let extracted_kind = value.get("kind").and_then(|k| k.as_str());
-            let extracted_api = value.get("apiVersion").and_then(|k| k.as_str());
-
-            assert_eq!(extracted_kind, Some(kind), "Kind should match for {}", kind);
-            assert_eq!(
-                extracted_api,
-                Some(api_version),
-                "API version should match for {}",
-                kind
-            );
-        }
+        assert_eq!(result["apiVersion"], "policy/v1");
+        assert_eq!(result["kind"], "PodDisruptionBudget");
+        assert_eq!(result["metadata"]["name"], "my-pdb");
+        assert_eq!(result["spec"]["minAvailable"], 1);
+        assert_eq!(
+            result["spec"]["selector"]["matchLabels"]["app"],
+            "rails"
+        );
     }
 
     #[test]
-    fn test_storageclass_with_minimal_fields() {
-        let yaml = r#"
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: simple-storage
-provisioner: rusternetes.io/simple
-"#;
+    fn test_build_pdb_max_unavailable_percentage() {
+        let result = build_pdb("my-pdb", "default", "app=nginx", None, Some("50%")).unwrap();
 
-        use rusternetes_common::resources::StorageClass;
-        let sc: StorageClass = serde_yaml::from_str(yaml).unwrap();
-
-        assert_eq!(sc.metadata.name, "simple-storage");
-        assert_eq!(sc.provisioner, "rusternetes.io/simple");
-        assert!(sc.parameters.is_none() || sc.parameters.as_ref().unwrap().is_empty());
+        assert_eq!(result["spec"]["maxUnavailable"], "50%");
     }
 
     #[test]
-    fn test_storageclass_with_multiple_parameters() {
-        let yaml = r#"
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: custom-storage
-provisioner: rusternetes.io/custom
-parameters:
-  type: ssd
-  iops: "1000"
-  replication: "3"
-  zone: "us-east-1a"
-"#;
-
-        use rusternetes_common::resources::StorageClass;
-        let sc: StorageClass = serde_yaml::from_str(yaml).unwrap();
-
-        let params = sc.parameters.as_ref().unwrap();
-        assert_eq!(params.len(), 4);
-        assert_eq!(params.get("type").map(|s| s.as_str()), Some("ssd"));
-        assert_eq!(params.get("iops").map(|s| s.as_str()), Some("1000"));
-        assert_eq!(params.get("replication").map(|s| s.as_str()), Some("3"));
-        assert_eq!(params.get("zone").map(|s| s.as_str()), Some("us-east-1a"));
+    fn test_build_pdb_requires_min_or_max() {
+        let result = build_pdb("my-pdb", "default", "app=test", None, None);
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_multi_document_yaml_parsing() {
-        use serde::Deserialize;
+    fn test_build_role() {
+        let result = build_role(
+            "pod-reader",
+            "default",
+            &["get".into(), "list".into(), "watch".into()],
+            &["pods".into()],
+            &[],
+        )
+        .unwrap();
 
-        let yaml = r#"
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: test-ns
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test-pod
-  namespace: test-ns
-spec:
-  containers:
-  - name: nginx
-    image: nginx:latest
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: test-service
-  namespace: test-ns
-spec:
-  selector:
-    app: test
-  ports:
-  - port: 80
-    targetPort: 80
-"#;
+        assert_eq!(result["apiVersion"], "rbac.authorization.k8s.io/v1");
+        assert_eq!(result["kind"], "Role");
+        assert_eq!(result["metadata"]["name"], "pod-reader");
+        assert_eq!(result["metadata"]["namespace"], "default");
 
-        let mut documents = Vec::new();
-        for document in serde_yaml::Deserializer::from_str(yaml) {
-            let value = serde_yaml::Value::deserialize(document).unwrap();
-            if !value.is_null() {
-                documents.push(value);
-            }
-        }
-
-        assert_eq!(documents.len(), 3, "Should parse 3 documents");
-
-        // Verify first document is a Namespace
-        let kind1 = documents[0].get("kind").and_then(|k| k.as_str());
-        assert_eq!(kind1, Some("Namespace"));
-
-        // Verify second document is a Pod
-        let kind2 = documents[1].get("kind").and_then(|k| k.as_str());
-        assert_eq!(kind2, Some("Pod"));
-
-        // Verify third document is a Service
-        let kind3 = documents[2].get("kind").and_then(|k| k.as_str());
-        assert_eq!(kind3, Some("Service"));
+        let rules = result["rules"].as_array().unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0]["resources"], serde_json::json!(["pods"]));
+        assert_eq!(
+            rules[0]["verbs"],
+            serde_json::json!(["get", "list", "watch"])
+        );
     }
 
     #[test]
-    fn test_multi_document_yaml_with_empty_documents() {
-        use serde::Deserialize;
+    fn test_build_role_with_api_group() {
+        let result = build_role(
+            "deploy-reader",
+            "default",
+            &["get".into()],
+            &["deployments.apps".into()],
+            &[],
+        )
+        .unwrap();
 
-        let yaml = r#"
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: test-ns
----
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test-pod
-spec:
-  containers:
-  - name: nginx
-    image: nginx:latest
-"#;
-
-        let mut documents = Vec::new();
-        for document in serde_yaml::Deserializer::from_str(yaml) {
-            let value = serde_yaml::Value::deserialize(document).unwrap();
-            // Skip empty/null documents
-            if !value.is_null() {
-                documents.push(value);
-            }
-        }
-
-        assert_eq!(documents.len(), 2, "Should parse 2 non-empty documents");
+        let rules = result["rules"].as_array().unwrap();
+        assert_eq!(rules[0]["apiGroups"], serde_json::json!(["apps"]));
+        assert_eq!(
+            rules[0]["resources"],
+            serde_json::json!(["deployments"])
+        );
     }
+
+    #[test]
+    fn test_build_role_binding_with_clusterrole() {
+        let result = build_role_binding(
+            "admin-binding",
+            "default",
+            Some("admin"),
+            None,
+            &["user1".into()],
+            &[],
+            &[],
+        )
+        .unwrap();
+
+        assert_eq!(result["apiVersion"], "rbac.authorization.k8s.io/v1");
+        assert_eq!(result["kind"], "RoleBinding");
+        assert_eq!(result["roleRef"]["kind"], "ClusterRole");
+        assert_eq!(result["roleRef"]["name"], "admin");
+
+        let subjects = result["subjects"].as_array().unwrap();
+        assert_eq!(subjects.len(), 1);
+        assert_eq!(subjects[0]["kind"], "User");
+        assert_eq!(subjects[0]["name"], "user1");
+    }
+
+    #[test]
+    fn test_build_role_binding_with_role() {
+        let result = build_role_binding(
+            "dev-binding",
+            "default",
+            None,
+            Some("developer"),
+            &[],
+            &[],
+            &["monitoring:sa-dev".into()],
+        )
+        .unwrap();
+
+        assert_eq!(result["roleRef"]["kind"], "Role");
+        assert_eq!(result["roleRef"]["name"], "developer");
+
+        let subjects = result["subjects"].as_array().unwrap();
+        assert_eq!(subjects[0]["kind"], "ServiceAccount");
+        assert_eq!(subjects[0]["name"], "sa-dev");
+        assert_eq!(subjects[0]["namespace"], "monitoring");
+    }
+
+    #[test]
+    fn test_build_role_binding_requires_one_ref() {
+        let result = build_role_binding("bad", "default", None, None, &[], &[], &[]);
+        assert!(result.is_err());
+
+        let result2 = build_role_binding(
+            "bad",
+            "default",
+            Some("a"),
+            Some("b"),
+            &[],
+            &[],
+            &[],
+        );
+        assert!(result2.is_err());
+    }
+
+    #[test]
+    fn test_build_secret_generic() {
+        let result = build_secret_generic(
+            "my-secret",
+            "default",
+            &["key1=supersecret".into(), "key2=topsecret".into()],
+            &[],
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result["apiVersion"], "v1");
+        assert_eq!(result["kind"], "Secret");
+        assert_eq!(result["metadata"]["name"], "my-secret");
+        assert_eq!(result["type"], "Opaque");
+
+        // Verify base64 encoding
+        let key1_encoded = result["data"]["key1"].as_str().unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(key1_encoded)
+            .unwrap();
+        assert_eq!(String::from_utf8(decoded).unwrap(), "supersecret");
+    }
+
+    #[test]
+    fn test_build_secret_generic_custom_type() {
+        let result = build_secret_generic(
+            "my-secret",
+            "default",
+            &[],
+            &[],
+            Some("my-type"),
+        )
+        .unwrap();
+
+        assert_eq!(result["type"], "my-type");
+    }
+
+    #[test]
+    fn test_build_secret_docker_registry() {
+        let result = build_secret_docker_registry(
+            "my-registry",
+            "default",
+            "https://index.docker.io/v1/",
+            Some("myuser"),
+            Some("mypass"),
+            Some("my@email.com"),
+        )
+        .unwrap();
+
+        assert_eq!(result["kind"], "Secret");
+        assert_eq!(result["type"], "kubernetes.io/dockerconfigjson");
+
+        // Verify the dockerconfigjson data
+        let encoded = result["data"][".dockerconfigjson"].as_str().unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .unwrap();
+        let config: Value = serde_json::from_slice(&decoded).unwrap();
+        let auth_entry = &config["auths"]["https://index.docker.io/v1/"];
+        assert_eq!(auth_entry["username"], "myuser");
+        assert_eq!(auth_entry["password"], "mypass");
+        assert_eq!(auth_entry["email"], "my@email.com");
+    }
+
+    #[test]
+    fn test_build_secret_docker_registry_requires_credentials() {
+        let result = build_secret_docker_registry(
+            "my-registry",
+            "default",
+            "https://index.docker.io/v1/",
+            None,
+            None,
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_build_secret_tls() {
+        // Create temp files for cert and key
+        let temp_dir = std::env::temp_dir();
+        let cert_path = temp_dir.join("test-tls.crt");
+        let key_path = temp_dir.join("test-tls.key");
+        std::fs::write(&cert_path, b"FAKE-CERT-DATA").unwrap();
+        std::fs::write(&key_path, b"FAKE-KEY-DATA").unwrap();
+
+        let result = build_secret_tls(
+            "tls-secret",
+            "default",
+            cert_path.to_str().unwrap(),
+            key_path.to_str().unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(result["kind"], "Secret");
+        assert_eq!(result["type"], "kubernetes.io/tls");
+
+        let cert_encoded = result["data"]["tls.crt"].as_str().unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(cert_encoded)
+            .unwrap();
+        assert_eq!(decoded, b"FAKE-CERT-DATA");
+
+        let key_encoded = result["data"]["tls.key"].as_str().unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(key_encoded)
+            .unwrap();
+        assert_eq!(decoded, b"FAKE-KEY-DATA");
+
+        // Cleanup
+        let _ = std::fs::remove_file(&cert_path);
+        let _ = std::fs::remove_file(&key_path);
+    }
+
+    #[test]
+    fn test_build_service_account() {
+        let result = build_service_account("my-sa", "default");
+
+        assert_eq!(result["apiVersion"], "v1");
+        assert_eq!(result["kind"], "ServiceAccount");
+        assert_eq!(result["metadata"]["name"], "my-sa");
+        assert_eq!(result["metadata"]["namespace"], "default");
+    }
+
+    #[test]
+    fn test_build_token_request_simple() {
+        let result = build_token_request(&[], None, None, None, None).unwrap();
+
+        assert_eq!(result["apiVersion"], "authentication.k8s.io/v1");
+        assert_eq!(result["kind"], "TokenRequest");
+    }
+
+    #[test]
+    fn test_build_token_request_with_audiences() {
+        let result = build_token_request(
+            &["https://example.com".into()],
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result["spec"]["audiences"],
+            serde_json::json!(["https://example.com"])
+        );
+    }
+
+    #[test]
+    fn test_build_token_request_with_duration() {
+        let result = build_token_request(&[], Some("10m"), None, None, None).unwrap();
+
+        assert_eq!(result["spec"]["expirationSeconds"], 600);
+    }
+
+    #[test]
+    fn test_build_token_request_with_bound_object() {
+        let result = build_token_request(
+            &[],
+            None,
+            Some("Secret"),
+            Some("my-secret"),
+            Some("abc-123"),
+        )
+        .unwrap();
+
+        let bound_ref = &result["spec"]["boundObjectRef"];
+        assert_eq!(bound_ref["kind"], "Secret");
+        assert_eq!(bound_ref["apiVersion"], "v1");
+        assert_eq!(bound_ref["name"], "my-secret");
+        assert_eq!(bound_ref["uid"], "abc-123");
+    }
+
+    #[test]
+    fn test_build_token_request_bound_object_requires_name() {
+        let result = build_token_request(&[], None, Some("Pod"), None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_resource_group_simple() {
+        let (resource, group) = parse_resource_group("pods");
+        assert_eq!(resource, "pods");
+        assert_eq!(group, "");
+    }
+
+    #[test]
+    fn test_parse_resource_group_with_api_group() {
+        let (resource, group) = parse_resource_group("deployments.apps");
+        assert_eq!(resource, "deployments");
+        assert_eq!(group, "apps");
+    }
+
+    #[test]
+    fn test_parse_resource_group_with_subresource() {
+        let (resource, group) = parse_resource_group("pods/status");
+        assert_eq!(resource, "pods/status");
+        assert_eq!(group, "");
+    }
+
+    #[test]
+    fn test_build_cluster_role_binding_invalid_sa() {
+        let result = build_cluster_role_binding(
+            "test",
+            "admin",
+            &[],
+            &[],
+            &["invalid-sa".into()],
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_build_ingress_with_default_backend() {
+        let result = build_ingress(
+            "default-backend-ingress",
+            "default",
+            None,
+            &[],
+            Some("defaultsvc:http"),
+            &[],
+        )
+        .unwrap();
+
+        let backend = &result["spec"]["defaultBackend"];
+        assert_eq!(backend["service"]["name"], "defaultsvc");
+        assert_eq!(backend["service"]["port"]["name"], "http");
+    }
+
+    #[test]
+    fn test_build_ingress_with_annotations() {
+        let result = build_ingress(
+            "annotated",
+            "default",
+            Some("nginx"),
+            &["foo.com/bar=svc:80".into()],
+            None,
+            &["nginx.ingress.kubernetes.io/rewrite-target=/$1".into()],
+        )
+        .unwrap();
+
+        assert_eq!(
+            result["metadata"]["annotations"]["nginx.ingress.kubernetes.io/rewrite-target"],
+            "/$1"
+        );
+    }
+
+    use base64::Engine;
 }

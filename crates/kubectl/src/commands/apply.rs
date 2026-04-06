@@ -55,6 +55,7 @@ impl Default for ApplyOptions {
 }
 
 /// Legacy entry point — kept for backward compat.
+#[allow(dead_code)]
 pub async fn execute_enhanced(
     client: &ApiClient,
     file: &str,
@@ -118,6 +119,7 @@ pub async fn execute_with_options(client: &ApiClient, options: &ApplyOptions) ->
 }
 
 /// Legacy entry point.
+#[allow(dead_code)]
 pub async fn execute(client: &ApiClient, file: &str) -> Result<()> {
     execute_enhanced(client, file, None, None, false, false).await
 }
@@ -313,7 +315,7 @@ fn set_last_applied_annotation(value: &mut Value) {
         .and_then(|o| o.entry("metadata").or_insert_with(|| json!({})).as_object_mut().map(|m| m as *mut _));
 
     if let Some(metadata) = metadata {
-        let metadata = unsafe { &mut *metadata };
+        let metadata: &mut serde_json::Map<String, Value> = unsafe { &mut *metadata };
         let annotations = metadata
             .entry("annotations")
             .or_insert_with(|| json!({}));
@@ -344,13 +346,6 @@ fn strip_last_applied(value: &Value) -> Value {
         }
     }
     clean
-}
-
-/// Convert a serde_yaml::Value to serde_json::Value.
-fn yaml_to_json(value: &serde_yaml::Value) -> Result<Value> {
-    let yaml_str = serde_yaml::to_string(value)?;
-    let json_val: Value = serde_yaml::from_str(&yaml_str)?;
-    Ok(json_val)
 }
 
 // ---------------------------------------------------------------------------
@@ -658,7 +653,7 @@ async fn apply_cluster<T: HasMetadata>(
     _resource_plural: &str,
     collection_path: &str,
     query: &str,
-    options: &ApplyOptions,
+    _options: &ApplyOptions,
 ) -> Result<ApplyResult> {
     let mut resource: T = serde_yaml::from_str(yaml_str)?;
     let name = resource.metadata().name.clone();

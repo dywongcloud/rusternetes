@@ -193,7 +193,7 @@ impl ObjectMeta {
 }
 
 /// TypeMeta describes the type of the object
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TypeMeta {
     /// Kind is the object's type

@@ -242,13 +242,11 @@ async fn watch_resources(
     api_path: &str,
     query: &str,
 ) -> Result<()> {
-    let separator = if query.is_empty() { "?" } else { "&" };
-    let watch_path = format!("{}{}{}watch=true", api_path, if query.is_empty() { "?" } else { query }, if query.is_empty() { "" } else { "&" });
-    // Correct: if query already starts with ?, append &watch=true; else ?watch=true
+    // If query already starts with ?, append &watch=true; else ?watch=true
     let watch_path = if query.is_empty() {
         format!("{}?watch=true", api_path)
     } else {
-        format!("{}{}watch=true", api_path, separator)
+        format!("{}{}&watch=true", api_path, query)
     };
 
     let response = client.get_stream(&watch_path).await.map_err(|e| match e {
@@ -317,7 +315,7 @@ pub async fn execute_enhanced(
     resource_type: &str,
     name: Option<&str>,
     namespace: Option<&str>,
-    all_namespaces: bool,
+    _all_namespaces: bool,
     output: Option<&str>,
     no_headers: bool,
     selector: Option<&str>,

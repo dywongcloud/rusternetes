@@ -1000,7 +1000,7 @@ fn build_subjects(
 }
 
 /// Parse "resource.group/subresource" into (resource_with_sub, api_group)
-fn parse_resource_group(input: &str) -> (String, String) {
+pub fn parse_resource_group(input: &str) -> (String, String) {
     let (main, sub) = if let Some(idx) = input.find('/') {
         (&input[..idx], Some(&input[idx + 1..]))
     } else {
