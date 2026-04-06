@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
 use rusternetes_common::resources::{Node, NodeCondition, NodeStatus, Pod, PodStatus};
 use rusternetes_common::types::Phase;
-use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -336,24 +336,17 @@ impl<S: Storage> NodeController<S> {
 mod tests {
     use super::*;
     use rusternetes_common::types::{ObjectMeta, TypeMeta};
+    use rusternetes_storage::memory::MemoryStorage;
 
     #[tokio::test]
     async fn test_node_controller_creation() {
-        let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let _controller = NodeController::new(storage);
     }
 
     #[test]
     fn test_node_ready_check() {
-        let storage = Arc::new(tokio::runtime::Runtime::new().unwrap().block_on(async {
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap()
-        }));
+        let storage = Arc::new(MemoryStorage::new());
         let controller = NodeController::new(storage);
 
         // Node with recent heartbeat

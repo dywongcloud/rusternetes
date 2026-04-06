@@ -62,6 +62,62 @@ pub enum WatchEvent {
 /// Stream of watch events
 pub type WatchStream = futures::stream::BoxStream<'static, Result<WatchEvent>>;
 
+/// Blanket implementation so `Arc<S>` can be used wherever `S: Storage` is required.
+#[async_trait]
+impl<S: Storage> Storage for std::sync::Arc<S> {
+    async fn create<T>(&self, key: &str, value: &T) -> Result<T>
+    where
+        T: Serialize + DeserializeOwned + Send + Sync,
+    {
+        (**self).create(key, value).await
+    }
+
+    async fn get<T>(&self, key: &str) -> Result<T>
+    where
+        T: DeserializeOwned + Send + Sync,
+    {
+        (**self).get(key).await
+    }
+
+    async fn update<T>(&self, key: &str, value: &T) -> Result<T>
+    where
+        T: Serialize + DeserializeOwned + Send + Sync,
+    {
+        (**self).update(key, value).await
+    }
+
+    async fn update_raw(&self, key: &str, value: &serde_json::Value) -> Result<()> {
+        (**self).update_raw(key, value).await
+    }
+
+    async fn delete(&self, key: &str) -> Result<()> {
+        (**self).delete(key).await
+    }
+
+    async fn list<T>(&self, prefix: &str) -> Result<Vec<T>>
+    where
+        T: Serialize + DeserializeOwned + Send + Sync,
+    {
+        (**self).list(prefix).await
+    }
+
+    async fn watch(&self, prefix: &str) -> Result<WatchStream> {
+        (**self).watch(prefix).await
+    }
+
+    async fn watch_from_revision(&self, prefix: &str, revision: i64) -> Result<WatchStream> {
+        (**self).watch_from_revision(prefix, revision).await
+    }
+
+    async fn current_revision(&self) -> Result<i64> {
+        (**self).current_revision().await
+    }
+
+    async fn is_revision_compacted(&self, revision: i64) -> Result<bool> {
+        (**self).is_revision_compacted(revision).await
+    }
+}
+
 /// Helper function to build resource keys
 pub fn build_key(resource_type: &str, namespace: Option<&str>, name: &str) -> String {
     match namespace {

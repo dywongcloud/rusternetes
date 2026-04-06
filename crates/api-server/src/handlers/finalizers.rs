@@ -1,6 +1,6 @@
 use chrono::Utc;
 use rusternetes_common::Result;
-use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use rusternetes_storage::Storage;
 use serde::{de::DeserializeOwned, Serialize};
 use tracing::{debug, info};
 
@@ -36,11 +36,10 @@ use tracing::{debug, info};
 /// use rusternetes_api_server::handlers::finalizers::handle_delete_with_finalizers;
 /// use rusternetes_common::resources::Pod;
 /// use rusternetes_common::Result;
-/// use rusternetes_storage::etcd::EtcdStorage;
 /// use rusternetes_storage::Storage;
 /// use tracing::info;
 ///
-/// async fn delete_pod(storage: &EtcdStorage, key: &str) -> Result<()> {
+/// async fn delete_pod<S: Storage>(storage: &S, key: &str) -> Result<()> {
 ///     // Get the resource
 ///     let pod: Pod = storage.get(key).await?;
 ///
@@ -60,12 +59,13 @@ use tracing::{debug, info};
 ///     Ok(())
 /// }
 /// ```
-pub async fn handle_delete_with_finalizers<T>(
-    storage: &EtcdStorage,
+pub async fn handle_delete_with_finalizers<S, T>(
+    storage: &S,
     key: &str,
     resource: &T,
 ) -> Result<bool>
 where
+    S: Storage,
     T: HasMetadata + Serialize + DeserializeOwned + Clone + Send + Sync,
 {
     handle_delete_with_finalizers_and_propagation(storage, key, resource, None).await
@@ -76,13 +76,14 @@ where
 /// so the garbage collector knows to delete dependents before the owner.
 /// When propagation_policy is "Orphan", adds the "orphan" finalizer so dependents
 /// are not deleted.
-pub async fn handle_delete_with_finalizers_and_propagation<T>(
-    storage: &EtcdStorage,
+pub async fn handle_delete_with_finalizers_and_propagation<S, T>(
+    storage: &S,
     key: &str,
     resource: &T,
     propagation_policy: Option<&str>,
 ) -> Result<bool>
 where
+    S: Storage,
     T: HasMetadata + Serialize + DeserializeOwned + Clone + Send + Sync,
 {
     let metadata = resource.metadata();
@@ -734,20 +735,10 @@ impl HasMetadata for rusternetes_common::resources::CustomResource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_common::resources::Pod;
-    use rusternetes_common::types::ObjectMeta;
-    use rusternetes_storage::etcd::EtcdStorage;
-    use std::sync::Arc;
+    use rusternetes_common::resources::{Pod, PodSpec};
+    use rusternetes_storage::memory::MemoryStorage;
 
-    #[tokio::test]
-    async fn test_delete_without_finalizers() {
-        // Create a storage instance
-        let storage = EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap();
-
-        // Create a pod without finalizers
-        use rusternetes_common::resources::PodSpec;
+    fn make_test_pod(name: &str) -> Pod {
         let spec = PodSpec {
             containers: vec![],
             init_containers: None,
@@ -790,109 +781,47 @@ mod tests {
             scheduling_gates: None,
             resources: None,
         };
-        let mut pod = Pod::new("test-pod", spec);
+        let mut pod = Pod::new(name, spec);
         pod.metadata.namespace = Some("default".to_string());
         pod.metadata.ensure_uid();
         pod.metadata.ensure_creation_timestamp();
+        pod
+    }
 
+    #[tokio::test]
+    async fn test_delete_without_finalizers() {
+        let storage = MemoryStorage::new();
+        let pod = make_test_pod("test-pod");
         let key = "test/pods/default/test-pod";
 
-        // Store the pod
         storage.create(key, &pod).await.unwrap();
 
-        // Delete should remove immediately
         let deleted = handle_delete_with_finalizers(&storage, key, &pod)
             .await
             .unwrap();
 
-        assert_eq!(
-            deleted, false,
-            "Resource without finalizers should be deleted immediately"
-        );
+        assert_eq!(deleted, false, "Resource without finalizers should be deleted immediately");
 
-        // Verify it's gone
         let result = storage.get::<Pod>(key).await;
         assert!(result.is_err(), "Resource should be deleted from storage");
     }
 
     #[tokio::test]
     async fn test_delete_with_finalizers() {
-        // Create a storage instance
-        let storage = EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap();
-
-        // Create a pod with finalizers
-        use rusternetes_common::resources::PodSpec;
-        let spec = PodSpec {
-            containers: vec![],
-            init_containers: None,
-            ephemeral_containers: None,
-            volumes: None,
-            restart_policy: None,
-            node_name: None,
-            node_selector: None,
-            service_account_name: None,
-            service_account: None,
-            hostname: None,
-            subdomain: None,
-            host_network: None,
-            host_pid: None,
-            host_ipc: None,
-            affinity: None,
-            tolerations: None,
-            priority: None,
-            priority_class_name: None,
-            automount_service_account_token: None,
-            topology_spread_constraints: None,
-            overhead: None,
-            scheduler_name: None,
-            resource_claims: None,
-            active_deadline_seconds: None,
-            dns_policy: None,
-            dns_config: None,
-            security_context: None,
-            image_pull_secrets: None,
-            share_process_namespace: None,
-            readiness_gates: None,
-            runtime_class_name: None,
-            enable_service_links: None,
-            preemption_policy: None,
-            host_users: None,
-            set_hostname_as_fqdn: None,
-            termination_grace_period_seconds: None,
-            host_aliases: None,
-            os: None,
-            scheduling_gates: None,
-            resources: None,
-        };
-        let mut pod = Pod::new("test-pod-finalizers", spec);
-        pod.metadata.namespace = Some("default".to_string());
-        pod.metadata.ensure_uid();
-        pod.metadata.ensure_creation_timestamp();
+        let storage = MemoryStorage::new();
+        let mut pod = make_test_pod("test-pod-finalizers");
         pod.metadata.finalizers = Some(vec!["test.finalizer.io".to_string()]);
-
         let key = "test/pods/default/test-pod-finalizers";
 
-        // Store the pod
         storage.create(key, &pod).await.unwrap();
 
-        // First delete should mark for deletion
         let marked = handle_delete_with_finalizers(&storage, key, &pod)
             .await
             .unwrap();
+        assert_eq!(marked, true, "Resource with finalizers should be marked for deletion");
 
-        assert_eq!(
-            marked, true,
-            "Resource with finalizers should be marked for deletion"
-        );
-
-        // Verify it still exists but has deletionTimestamp
         let updated_pod: Pod = storage.get(key).await.unwrap();
-        assert!(
-            updated_pod.metadata.deletion_timestamp.is_some(),
-            "Resource should have deletionTimestamp"
-        );
+        assert!(updated_pod.metadata.deletion_timestamp.is_some(), "Resource should have deletionTimestamp");
         assert_eq!(
             updated_pod.metadata.finalizers,
             Some(vec!["test.finalizer.io".to_string()]),
@@ -903,79 +832,20 @@ mod tests {
         let marked_again = handle_delete_with_finalizers(&storage, key, &updated_pod)
             .await
             .unwrap();
+        assert_eq!(marked_again, true, "Resource should still be marked for deletion");
 
-        assert_eq!(
-            marked_again, true,
-            "Resource should still be marked for deletion"
-        );
-
-        // Clean up
         storage.delete(key).await.unwrap();
     }
 
     #[tokio::test]
     async fn test_finalizer_removed_then_deleted() {
-        // Create a storage instance
-        let storage = EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap();
-
-        // Create a pod with finalizers
-        use rusternetes_common::resources::PodSpec;
-        let spec = PodSpec {
-            containers: vec![],
-            init_containers: None,
-            ephemeral_containers: None,
-            volumes: None,
-            restart_policy: None,
-            node_name: None,
-            node_selector: None,
-            service_account_name: None,
-            service_account: None,
-            hostname: None,
-            subdomain: None,
-            host_network: None,
-            host_pid: None,
-            host_ipc: None,
-            affinity: None,
-            tolerations: None,
-            priority: None,
-            priority_class_name: None,
-            automount_service_account_token: None,
-            topology_spread_constraints: None,
-            overhead: None,
-            scheduler_name: None,
-            resource_claims: None,
-            active_deadline_seconds: None,
-            dns_policy: None,
-            dns_config: None,
-            security_context: None,
-            image_pull_secrets: None,
-            share_process_namespace: None,
-            readiness_gates: None,
-            runtime_class_name: None,
-            enable_service_links: None,
-            preemption_policy: None,
-            host_users: None,
-            set_hostname_as_fqdn: None,
-            termination_grace_period_seconds: None,
-            host_aliases: None,
-            os: None,
-            scheduling_gates: None,
-            resources: None,
-        };
-        let mut pod = Pod::new("test-pod-remove-finalizer", spec);
-        pod.metadata.namespace = Some("default".to_string());
-        pod.metadata.ensure_uid();
-        pod.metadata.ensure_creation_timestamp();
+        let storage = MemoryStorage::new();
+        let mut pod = make_test_pod("test-pod-remove-finalizer");
         pod.metadata.finalizers = Some(vec!["test.finalizer.io".to_string()]);
-
         let key = "test/pods/default/test-pod-remove-finalizer";
 
-        // Store the pod
         storage.create(key, &pod).await.unwrap();
 
-        // First delete marks for deletion
         let marked = handle_delete_with_finalizers(&storage, key, &pod)
             .await
             .unwrap();
@@ -986,17 +856,11 @@ mod tests {
         updated_pod.metadata.finalizers = None;
         storage.update(key, &updated_pod).await.unwrap();
 
-        // Now delete should remove the resource
         let deleted = handle_delete_with_finalizers(&storage, key, &updated_pod)
             .await
             .unwrap();
+        assert_eq!(deleted, false, "Resource without finalizers should be deleted");
 
-        assert_eq!(
-            deleted, false,
-            "Resource without finalizers should be deleted"
-        );
-
-        // Verify it's gone
         let result = storage.get::<Pod>(key).await;
         assert!(result.is_err(), "Resource should be deleted from storage");
     }

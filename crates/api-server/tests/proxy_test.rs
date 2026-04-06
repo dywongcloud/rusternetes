@@ -6,16 +6,12 @@ use rusternetes_common::resources::{
     ServiceType,
 };
 use rusternetes_common::types::{ObjectMeta, Phase, TypeMeta};
-use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use rusternetes_storage::{memory::MemoryStorage, Storage};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_proxy_node_missing_address() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     // Create a node without addresses
     let node = Node {
@@ -70,11 +66,7 @@ async fn test_proxy_node_missing_address() {
 
 #[tokio::test]
 async fn test_proxy_service_missing_clusterip() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     // Create a service without ClusterIP
     let service = Service {
@@ -143,11 +135,7 @@ async fn test_proxy_service_missing_clusterip() {
 
 #[tokio::test]
 async fn test_proxy_pod_missing_ip() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     // Create a pod without IP
     let pod = Pod {

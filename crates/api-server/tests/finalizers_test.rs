@@ -4,7 +4,7 @@ use chrono::Utc;
 use rusternetes_api_server::handlers::finalizers::{handle_delete_with_finalizers, HasMetadata};
 use rusternetes_common::resources::{Pod, PodSpec};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
-use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use rusternetes_storage::{memory::MemoryStorage, Storage};
 use std::sync::Arc;
 
 fn empty_pod_spec() -> PodSpec {
@@ -54,11 +54,7 @@ fn empty_pod_spec() -> PodSpec {
 
 #[tokio::test]
 async fn test_delete_resource_with_empty_finalizers_list() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     // Create pod with empty finalizers list
     let mut pod = Pod::new("test-pod-empty-finalizers", empty_pod_spec());
@@ -87,11 +83,7 @@ async fn test_delete_resource_with_empty_finalizers_list() {
 
 #[tokio::test]
 async fn test_delete_resource_with_multiple_finalizers() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     // Create pod with multiple finalizers
     let mut pod = Pod::new("test-pod-multiple-finalizers", empty_pod_spec());
@@ -125,11 +117,7 @@ async fn test_delete_resource_with_multiple_finalizers() {
 
 #[tokio::test]
 async fn test_delete_already_marked_logs_correctly() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     // Create pod with finalizer and deletion timestamp
     let mut pod = Pod::new("test-pod-already-marked", empty_pod_spec());
@@ -162,11 +150,7 @@ async fn test_delete_already_marked_logs_correctly() {
 
 #[tokio::test]
 async fn test_delete_finalizer_workflow_complete() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     // Step 1: Create pod with finalizers
     let mut pod = Pod::new("test-pod-workflow", empty_pod_spec());
@@ -256,11 +240,7 @@ async fn test_has_metadata_trait_implementations() {
 
 #[tokio::test]
 async fn test_delete_with_finalizer_race_condition() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     // Create pod with finalizer
     let mut pod = Pod::new("test-pod-race", empty_pod_spec());
@@ -295,11 +275,7 @@ async fn test_delete_with_finalizer_race_condition() {
 
 #[tokio::test]
 async fn test_delete_without_finalizers_multiple_times() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     // Create pod without finalizers
     let mut pod = Pod::new("test-pod-no-finalizer", empty_pod_spec());

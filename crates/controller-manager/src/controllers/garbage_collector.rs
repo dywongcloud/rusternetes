@@ -875,14 +875,11 @@ impl Default for DeleteOptions {
 mod tests {
     use super::*;
     use rusternetes_common::types::OwnerReference;
+    use rusternetes_storage::memory::MemoryStorage;
 
     #[tokio::test]
     async fn test_deletion_propagation_policy() {
-        let gc = GarbageCollector::new(Arc::new(
-            rusternetes_storage::etcd::EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
-        ));
+        let gc = GarbageCollector::new(Arc::new(MemoryStorage::new()));
 
         // Test foreground deletion
         let mut metadata = ObjectMeta::new("test");

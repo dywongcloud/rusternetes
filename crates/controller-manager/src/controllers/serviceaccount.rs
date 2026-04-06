@@ -2,7 +2,7 @@ use anyhow::Result;
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use rusternetes_common::resources::{Namespace, Secret, ServiceAccount};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
-use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, build_prefix, Storage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -404,24 +404,17 @@ impl<S: Storage> ServiceAccountController<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusternetes_storage::memory::MemoryStorage;
 
     #[tokio::test]
     async fn test_serviceaccount_controller_creation() {
-        let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap(),
-        );
+        let storage = Arc::new(MemoryStorage::new());
         let _controller = ServiceAccountController::new(storage);
     }
 
     #[test]
     fn test_token_generation() {
-        let storage = Arc::new(tokio::runtime::Runtime::new().unwrap().block_on(async {
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .unwrap()
-        }));
+        let storage = Arc::new(MemoryStorage::new());
         let controller = ServiceAccountController::new(storage);
         let token = controller
             .generate_token("default", "default", "test-uid-123")

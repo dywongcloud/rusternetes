@@ -5,7 +5,7 @@
 use axum::http::StatusCode;
 use rusternetes_common::resources::{Container, Pod, PodSpec};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
-use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
 use std::sync::Arc;
 
 // Helper function to create a test pod
@@ -104,11 +104,7 @@ fn create_test_pod(name: &str, namespace: &str) -> Pod {
 
 #[tokio::test]
 async fn test_pod_create_and_get() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     let pod = create_test_pod("test-pod-create", "default");
     let key = build_key("pods", Some("default"), "test-pod-create");
@@ -128,11 +124,7 @@ async fn test_pod_create_and_get() {
 
 #[tokio::test]
 async fn test_pod_update() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     let mut pod = create_test_pod("test-pod-update", "default");
     let key = build_key("pods", Some("default"), "test-pod-update");
@@ -167,11 +159,7 @@ async fn test_pod_update() {
 
 #[tokio::test]
 async fn test_pod_delete_without_finalizers() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     let pod = create_test_pod("test-pod-delete", "default");
     let key = build_key("pods", Some("default"), "test-pod-delete");
@@ -189,11 +177,7 @@ async fn test_pod_delete_without_finalizers() {
 
 #[tokio::test]
 async fn test_pod_delete_with_finalizers() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     let mut pod = create_test_pod("test-pod-finalizer", "default");
     pod.metadata.finalizers = Some(vec!["kubernetes.io/pv-protection".to_string()]);
@@ -223,11 +207,7 @@ async fn test_pod_delete_with_finalizers() {
 
 #[tokio::test]
 async fn test_pod_list_in_namespace() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     // Create multiple pods
     let pod1 = create_test_pod("pod-list-1", "test-namespace");
@@ -281,11 +261,7 @@ async fn test_pod_list_in_namespace() {
 
 #[tokio::test]
 async fn test_pod_list_all_pods() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     // Create pods in different namespaces
     let pod1 = create_test_pod("pod-all-1", "ns1");
@@ -332,11 +308,7 @@ async fn test_pod_list_all_pods() {
 
 #[tokio::test]
 async fn test_pod_list_with_label_selector() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     // Clean up any existing pods from previous test runs (only this test's pods)
     let _ = storage
@@ -396,11 +368,7 @@ async fn test_pod_list_with_label_selector() {
 
 #[tokio::test]
 async fn test_pod_with_multiple_containers() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     let mut pod = create_test_pod("multi-container-pod", "default");
 
@@ -452,11 +420,7 @@ async fn test_pod_with_multiple_containers() {
 
 #[tokio::test]
 async fn test_pod_not_found() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     let key = build_key("pods", Some("default"), "non-existent-pod");
     let result = storage.get::<Pod>(&key).await;
@@ -472,11 +436,7 @@ async fn test_pod_not_found() {
 
 #[tokio::test]
 async fn test_pod_metadata_immutability() {
-    let storage = Arc::new(
-        EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-            .await
-            .unwrap(),
-    );
+    let storage = Arc::new(MemoryStorage::new());
 
     let pod = create_test_pod("immutable-pod", "default");
     let key = build_key("pods", Some("default"), "immutable-pod");

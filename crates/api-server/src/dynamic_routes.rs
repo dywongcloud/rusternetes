@@ -221,11 +221,8 @@ mod tests {
     };
     use rusternetes_common::types::ObjectMeta;
 
-    // NOTE: These tests cannot use MemoryStorage because ApiServerState is hardcoded
-    // to use EtcdStorage (see state.rs:12). Making ApiServerState generic over Storage
-    // would require refactoring the entire API server codebase including all handlers.
-    // Since these tests only validate route building logic (not actual storage operations),
-    // they remain ignored until ApiServerState can be made generic.
+    // These tests require etcd because ApiServerState hardcodes Arc<EtcdStorage>.
+    // Making ApiServerState generic would require refactoring every handler.
     async fn create_test_state() -> Arc<ApiServerState> {
         use rusternetes_common::auth::TokenManager;
         use rusternetes_common::authz::AlwaysAllowAuthorizer;
@@ -298,7 +295,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // Requires refactoring ApiServerState to be generic over Storage (currently hardcoded to EtcdStorage)
+    #[ignore] // requires etcd
     async fn test_dynamic_route_manager_creation() {
         let state = create_test_state().await;
         let manager = DynamicRouteManager::new(state);
@@ -307,7 +304,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // Requires refactoring ApiServerState to be generic over Storage (currently hardcoded to EtcdStorage)
+    #[ignore] // requires etcd
     async fn test_build_namespaced_crd_routes() {
         let state = create_test_state().await;
         let manager = DynamicRouteManager::new(state);
@@ -318,7 +315,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // Requires refactoring ApiServerState to be generic over Storage (currently hardcoded to EtcdStorage)
+    #[ignore] // requires etcd
     async fn test_build_crd_routes_with_subresources() {
         let state = create_test_state().await;
         let manager = DynamicRouteManager::new(state);
@@ -329,7 +326,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // Requires refactoring ApiServerState to be generic over Storage (currently hardcoded to EtcdStorage)
+    #[ignore] // requires etcd
     async fn test_build_cluster_scoped_crd_routes() {
         let state = create_test_state().await;
         let manager = DynamicRouteManager::new(state);
@@ -341,7 +338,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // Requires refactoring ApiServerState to be generic over Storage (currently hardcoded to EtcdStorage)
+    #[ignore] // requires etcd
     async fn test_register_and_unregister_crd() {
         let state = create_test_state().await;
         let manager = DynamicRouteManager::new(state);

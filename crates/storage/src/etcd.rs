@@ -667,11 +667,11 @@ mod tests {
         assert!(result.contains("\"resourceVersion\":\"99\""));
     }
 
-    // Note: These tests require a running etcd instance
+    // Note: These tests require a running etcd instance and specifically test etcd backend
     // Run with: docker run -d -p 2379:2379 -e ALLOW_NONE_AUTHENTICATION=yes bitnami/etcd
 
     #[tokio::test]
-    #[ignore] // Ignore by default since it requires etcd
+    #[ignore] // requires etcd
     async fn test_create_and_get() {
         let storage = EtcdStorage::new(vec!["http://localhost:2379".to_string()])
             .await
