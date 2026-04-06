@@ -657,8 +657,13 @@ mod tests {
     fn test_get_event_time_with_null_values() {
         use serde_json::json;
 
+        // When eventTime is null, get() returns Some(null), or_else is not called,
+        // as_str() on null returns None, so result is ""
         let event = json!({"eventTime": null, "lastTimestamp": "2024-01-01T00:00:00Z"});
-        // eventTime is present but null, so as_str() returns None, falls back to lastTimestamp
+        assert_eq!(get_event_time(&event), "");
+
+        // When eventTime key is absent, falls through to lastTimestamp
+        let event = json!({"lastTimestamp": "2024-01-01T00:00:00Z"});
         assert_eq!(get_event_time(&event), "2024-01-01T00:00:00Z");
     }
 

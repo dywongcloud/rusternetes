@@ -1610,4 +1610,15 @@ mod tests {
             "/apis/networking.k8s.io/v1/namespaces/default/ingresses/my-ingress"
         );
     }
+
+    #[tokio::test]
+    async fn test_execute_enhanced_with_wait_option() {
+        let client = make_test_client();
+        let opts = DeleteOptions {
+            wait: true,
+            ..Default::default()
+        };
+        let result = execute_enhanced(&client, "service", "my-svc", "default", &opts).await;
+        assert!(result.is_err());
+    }
 }
