@@ -134,16 +134,19 @@ impl<S: Storage> StatefulSetController<S> {
             // During rolling updates, gaps can appear at any ordinal (not just at the end),
             // so we check all ordinals 0..desired rather than current..desired.
             for i in 0..desired_replicas {
-                let pod_exists = {
-                    let pod_name = format!("{}-{}", name, i);
-                    let pod_key = build_key("pods", Some(namespace), &pod_name);
-                    // Treat evicted/terminating pods (deletionTimestamp set) as missing
-                    // so the controller recreates them. An evicted pod still exists
-                    // in storage but should be replaced.
-                    match self.storage.get::<Pod>(&pod_key).await {
-                        Ok(pod) => pod.metadata.deletion_timestamp.is_none(),
-                        Err(_) => false,
+                let pod_name = format!("{}-{}", name, i);
+                let pod_key = build_key("pods", Some(namespace), &pod_name);
+                let pod_exists = match self.storage.get::<Pod>(&pod_key).await {
+                    Ok(pod) => {
+                        if pod.metadata.deletion_timestamp.is_some() {
+                            // Remove terminating pod so it can be recreated with new template
+                            let _ = self.storage.delete(&pod_key).await;
+                            false
+                        } else {
+                            true
+                        }
                     }
+                    Err(_) => false,
                 };
                 if pod_exists {
                     continue;
