@@ -71,6 +71,37 @@ mod tests {
         let result: Result<serde_json::Value, _> = serde_json::from_str(patch_str);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_patch_resource_type_mapping() {
+        let cases = vec![
+            ("pod", "api/v1", "pods"),
+            ("svc", "api/v1", "services"),
+            ("deploy", "apis/apps/v1", "deployments"),
+            ("ds", "apis/apps/v1", "daemonsets"),
+            ("sts", "apis/apps/v1", "statefulsets"),
+            ("rs", "apis/apps/v1", "replicasets"),
+            ("cm", "api/v1", "configmaps"),
+            ("secrets", "api/v1", "secrets"),
+            ("nodes", "api/v1", "nodes"),
+        ];
+        for (input, expected_api, expected_resource) in cases {
+            let (api_path, resource_name) = match input {
+                "pod" | "pods" => ("api/v1", "pods"),
+                "service" | "services" | "svc" => ("api/v1", "services"),
+                "deployment" | "deployments" | "deploy" => ("apis/apps/v1", "deployments"),
+                "daemonset" | "daemonsets" | "ds" => ("apis/apps/v1", "daemonsets"),
+                "statefulset" | "statefulsets" | "sts" => ("apis/apps/v1", "statefulsets"),
+                "replicaset" | "replicasets" | "rs" => ("apis/apps/v1", "replicasets"),
+                "configmap" | "configmaps" | "cm" => ("api/v1", "configmaps"),
+                "secret" | "secrets" => ("api/v1", "secrets"),
+                "node" | "nodes" => ("api/v1", "nodes"),
+                _ => panic!("unexpected"),
+            };
+            assert_eq!(api_path, expected_api, "for input '{}'", input);
+            assert_eq!(resource_name, expected_resource, "for input '{}'", input);
+        }
+    }
 }
 
 /// Patch a resource

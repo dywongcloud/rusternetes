@@ -1187,4 +1187,150 @@ mod tests {
         assert_eq!(key, "DB_URL");
         assert_eq!(value, "postgres://host:5432/db?opt=val");
     }
+
+    // ===== 10 additional tests for untested async functions =====
+
+    fn make_test_client() -> ApiClient {
+        ApiClient::new("http://127.0.0.1:1", true, None).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_execute_image_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = execute_image(
+            &client,
+            "deployment/nginx",
+            &["nginx=nginx:1.21".to_string()],
+            "default",
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_image_invalid_resource_format() {
+        let client = make_test_client();
+        let result = execute_image(
+            &client,
+            "nginx",
+            &["nginx=nginx:1.21".to_string()],
+            "default",
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid resource format"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_env_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = execute_env(
+            &client,
+            "deployment/web",
+            &["FOO=bar".to_string()],
+            "default",
+            None,
+            false,
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_resources_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = execute_resources(
+            &client,
+            "deployment/web",
+            "default",
+            None,
+            Some("cpu=200m"),
+            None,
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_selector_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = execute_selector(
+            &client,
+            "service/web",
+            &["app=web".to_string()],
+            "default",
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_serviceaccount_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = execute_serviceaccount(
+            &client,
+            "deployment/web",
+            "my-sa",
+            "default",
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_subject_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = execute_subject(
+            &client,
+            "clusterrolebinding/admin",
+            "default",
+            None,
+            Some("admin-user"),
+            None,
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_subject_unsupported_resource_type() {
+        let client = make_test_client();
+        let result = execute_subject(
+            &client,
+            "deployment/web",
+            "default",
+            None,
+            Some("user1"),
+            None,
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("set subject only supports"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_image_no_container_images_returns_err() {
+        let client = make_test_client();
+        let result = execute_image(
+            &client,
+            "deployment/nginx",
+            &[],
+            "default",
+        )
+        .await;
+        // Empty container_images should fail (after fetching, but resource fetch fails first)
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_set_dispatches_image_command() {
+        let client = make_test_client();
+        let cmd = SetCommands::Image {
+            resource: "deployment/nginx".to_string(),
+            container_images: vec!["nginx=nginx:1.21".to_string()],
+            namespace: Some("test-ns".to_string()),
+        };
+        let result = execute_set(&client, cmd, "default").await;
+        assert!(result.is_err()); // connection error
+    }
 }

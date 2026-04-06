@@ -146,6 +146,24 @@ mod tests {
             assert_eq!(short_path, long_path, "Alias mismatch: {} vs {}", short, long);
         }
     }
+
+    #[test]
+    fn test_get_resource_api_path_rbac_types() {
+        let path = get_resource_api_path("role", "ns1", "reader").unwrap();
+        assert_eq!(path, "/apis/rbac.authorization.k8s.io/v1/namespaces/ns1/roles/reader");
+
+        let path = get_resource_api_path("clusterrole", "ignored", "admin").unwrap();
+        assert_eq!(path, "/apis/rbac.authorization.k8s.io/v1/clusterroles/admin");
+    }
+
+    #[test]
+    fn test_get_resource_api_path_job_and_cronjob() {
+        let path = get_resource_api_path("job", "default", "my-job").unwrap();
+        assert_eq!(path, "/apis/batch/v1/namespaces/default/jobs/my-job");
+
+        let path = get_resource_api_path("cronjob", "default", "my-cj").unwrap();
+        assert_eq!(path, "/apis/batch/v1/namespaces/default/cronjobs/my-cj");
+    }
 }
 
 fn get_resource_api_path(resource_type: &str, namespace: &str, name: &str) -> Result<String> {

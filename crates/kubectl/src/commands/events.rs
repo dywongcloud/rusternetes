@@ -636,6 +636,59 @@ mod tests {
     }
 
     #[test]
+    fn test_urlencoding_no_special_chars() {
+        let encoded = urlencoding("simple.string");
+        assert_eq!(encoded, "simple.string");
+    }
+
+    #[test]
+    fn test_urlencoding_only_equals() {
+        let encoded = urlencoding("key=value");
+        assert_eq!(encoded, "key%3Dvalue");
+    }
+
+    #[test]
+    fn test_urlencoding_only_commas() {
+        let encoded = urlencoding("a,b,c");
+        assert_eq!(encoded, "a%2Cb%2Cc");
+    }
+
+    #[test]
+    fn test_get_event_time_with_null_values() {
+        use serde_json::json;
+
+        let event = json!({"eventTime": null, "lastTimestamp": "2024-01-01T00:00:00Z"});
+        // eventTime is present but null, so as_str() returns None, falls back to lastTimestamp
+        assert_eq!(get_event_time(&event), "2024-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn test_format_age_valid_rfc3339_variations() {
+        // Test with timezone offset format
+        let age = format_age("2020-01-01T00:00:00+00:00");
+        assert!(age.ends_with('d'), "Expected days format, got: {}", age);
+    }
+
+    #[test]
+    fn test_parse_for_object_empty_name() {
+        // "pod/" gives an empty name
+        let (kind, name) = parse_for_object("pod/").unwrap();
+        assert_eq!(kind, "Pod");
+        assert_eq!(name, "");
+    }
+
+    #[test]
+    fn test_parse_for_object_name_with_slashes() {
+        // Only splits on the first slash
+        let result = parse_for_object("pod/my/complex/name");
+        // split_once splits on first '/', so kind="pod", name="my/complex/name"
+        assert!(result.is_ok());
+        let (kind, name) = result.unwrap();
+        assert_eq!(kind, "Pod");
+        assert_eq!(name, "my/complex/name");
+    }
+
+    #[test]
     fn test_parse_for_object_more_types() {
         let (kind, name) = parse_for_object("cj/my-cron").unwrap();
         assert_eq!(kind, "CronJob");

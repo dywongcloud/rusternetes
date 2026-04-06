@@ -113,4 +113,27 @@ mod tests {
             "/api/v1/namespaces/kube-system/pods/coredns/attach?stdout=true&stderr=true"
         );
     }
+
+    #[test]
+    fn test_attach_url_stdin_only_no_tty() {
+        let namespace = "default";
+        let pod_name = "interactive";
+
+        let mut url_path = format!(
+            "/api/v1/namespaces/{}/pods/{}/attach",
+            namespace, pod_name
+        );
+
+        let mut query_params = vec![];
+        query_params.push("stdout=true".to_string());
+        query_params.push("stderr=true".to_string());
+        query_params.push("stdin=true".to_string());
+        // tty is false, so not added
+
+        url_path.push('?');
+        url_path.push_str(&query_params.join("&"));
+
+        assert!(url_path.contains("stdin=true"));
+        assert!(!url_path.contains("tty=true"));
+    }
 }

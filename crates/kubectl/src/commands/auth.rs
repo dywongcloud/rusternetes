@@ -494,4 +494,80 @@ mod auth_reconcile_tests {
         let collection_path = path.rsplit_once('/').map(|(p, _)| p).unwrap_or(path);
         assert_eq!(collection_path, "/apis/rbac.authorization.k8s.io/v1/clusterroles");
     }
+
+    #[test]
+    fn test_self_subject_access_review_all_namespaces() {
+        // When all_namespaces is true, namespace should be None
+        let review = SelfSubjectAccessReview {
+            api_version: "authorization.k8s.io/v1".to_string(),
+            kind: "SelfSubjectAccessReview".to_string(),
+            spec: SelfSubjectAccessReviewSpec {
+                resource_attributes: Some(ResourceAttributes {
+                    namespace: None,
+                    verb: "list".to_string(),
+                    resource: "pods".to_string(),
+                    name: None,
+                }),
+            },
+        };
+
+        let json = serde_json::to_value(&review).unwrap();
+        assert!(json["spec"]["resourceAttributes"]["namespace"].is_null());
+        assert_eq!(json["spec"]["resourceAttributes"]["verb"], "list");
+    }
+
+    #[test]
+    fn test_self_subject_access_review_with_name() {
+        let review = SelfSubjectAccessReview {
+            api_version: "authorization.k8s.io/v1".to_string(),
+            kind: "SelfSubjectAccessReview".to_string(),
+            spec: SelfSubjectAccessReviewSpec {
+                resource_attributes: Some(ResourceAttributes {
+                    namespace: Some("prod".to_string()),
+                    verb: "delete".to_string(),
+                    resource: "deployments".to_string(),
+                    name: Some("web-app".to_string()),
+                }),
+            },
+        };
+
+        let json = serde_json::to_value(&review).unwrap();
+        assert_eq!(json["spec"]["resourceAttributes"]["name"], "web-app");
+        assert_eq!(json["spec"]["resourceAttributes"]["namespace"], "prod");
+        assert_eq!(json["spec"]["resourceAttributes"]["verb"], "delete");
+        assert_eq!(json["spec"]["resourceAttributes"]["resource"], "deployments");
+    }
+
+    #[test]
+    fn test_collection_path_for_namespaced_resources() {
+        let role_path = "/apis/rbac.authorization.k8s.io/v1/namespaces/default/roles/my-role";
+        let collection = role_path.rsplit_once('/').map(|(p, _)| p).unwrap_or(role_path);
+        assert_eq!(collection, "/apis/rbac.authorization.k8s.io/v1/namespaces/default/roles");
+
+        let binding_path = "/apis/rbac.authorization.k8s.io/v1/namespaces/prod/rolebindings/my-binding";
+        let collection = binding_path.rsplit_once('/').map(|(p, _)| p).unwrap_or(binding_path);
+        assert_eq!(collection, "/apis/rbac.authorization.k8s.io/v1/namespaces/prod/rolebindings");
+    }
+
+    #[test]
+    fn test_reconcile_merge_no_duplicates() {
+        // Merging identical rules should not create duplicates
+        let current_rules = vec![
+            json!({"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]}),
+            json!({"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get"]}),
+        ];
+        let desired_rules = vec![
+            json!({"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]}),
+            json!({"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get"]}),
+        ];
+
+        let mut merged = current_rules;
+        for rule in desired_rules {
+            if !merged.contains(&rule) {
+                merged.push(rule);
+            }
+        }
+
+        assert_eq!(merged.len(), 2);
+    }
 }

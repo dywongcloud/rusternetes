@@ -26,4 +26,14 @@ mod tests {
         let result = execute();
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_execute_returns_ok_not_err() {
+        // options::execute should never fail — it only prints static text
+        let result = execute();
+        assert!(result.is_ok());
+        // Call twice to verify idempotency
+        let result2 = execute();
+        assert!(result2.is_ok());
+    }
 }

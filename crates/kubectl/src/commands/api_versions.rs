@@ -64,6 +64,13 @@ mod tests {
         versions.sort();
         assert_eq!(versions, vec!["apps/v1", "batch/v1", "v1"]);
     }
+
+    #[test]
+    fn test_api_group_list_empty_groups() {
+        let json = r#"{"groups": []}"#;
+        let group_list: ApiGroupList = serde_json::from_str(json).unwrap();
+        assert!(group_list.groups.is_empty());
+    }
 }
 
 /// Display supported API versions

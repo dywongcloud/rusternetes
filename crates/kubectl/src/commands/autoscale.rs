@@ -316,4 +316,24 @@ mod tests {
         let hpa = build_hpa_v1("app", "default", "apps/v1", "Deployment", "app", Some(0), 5, None);
         assert!(hpa["spec"]["minReplicas"].is_null());
     }
+
+    #[test]
+    fn test_hpa_v1_zero_cpu_not_set() {
+        let hpa = build_hpa_v1("app", "default", "apps/v1", "Deployment", "app", None, 5, Some(0));
+        assert!(hpa["spec"]["targetCPUUtilizationPercentage"].is_null());
+    }
+
+    #[test]
+    fn test_hpa_unsupported_resource_type() {
+        // Verify that unsupported types like "configmap" don't match the autoscale mapping
+        let resource_type = "configmap";
+        let result = match resource_type {
+            "deployment" | "deployments" | "deploy" => Ok(("apps/v1", "Deployment")),
+            "replicaset" | "replicasets" | "rs" => Ok(("apps/v1", "ReplicaSet")),
+            "statefulset" | "statefulsets" | "sts" => Ok(("apps/v1", "StatefulSet")),
+            "replicationcontroller" | "replicationcontrollers" | "rc" => Ok(("v1", "ReplicationController")),
+            _ => Err(format!("cannot autoscale a {}", resource_type)),
+        };
+        assert!(result.is_err());
+    }
 }

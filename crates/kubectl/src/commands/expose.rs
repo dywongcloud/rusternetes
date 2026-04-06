@@ -529,4 +529,81 @@ mod tests {
         assert_eq!(svc["spec"]["type"], "ClusterIP");
         assert_eq!(svc["metadata"]["namespace"], "staging");
     }
+
+    #[test]
+    fn test_resource_path_all_aliases() {
+        // Test all aliases resolve correctly
+        assert_eq!(
+            resource_path("po", "default", "x").unwrap(),
+            "/api/v1/namespaces/default/pods/x"
+        );
+        assert_eq!(
+            resource_path("pods", "default", "x").unwrap(),
+            "/api/v1/namespaces/default/pods/x"
+        );
+        assert_eq!(
+            resource_path("services", "default", "x").unwrap(),
+            "/api/v1/namespaces/default/services/x"
+        );
+        assert_eq!(
+            resource_path("replicationcontrollers", "default", "x").unwrap(),
+            "/api/v1/namespaces/default/replicationcontrollers/x"
+        );
+        assert_eq!(
+            resource_path("deployments", "default", "x").unwrap(),
+            "/apis/apps/v1/namespaces/default/deployments/x"
+        );
+        assert_eq!(
+            resource_path("replicasets", "default", "x").unwrap(),
+            "/apis/apps/v1/namespaces/default/replicasets/x"
+        );
+    }
+
+    #[test]
+    fn test_extract_selector_deployment_missing_match_labels() {
+        let deploy = json!({
+            "spec": {
+                "selector": {
+                    "matchExpressions": [{"key": "app", "operator": "In", "values": ["nginx"]}]
+                }
+            }
+        });
+        let result = extract_selector("deployment", &deploy);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_ports_empty_ports_array() {
+        let resource = json!({
+            "spec": {
+                "containers": [{
+                    "name": "app",
+                    "ports": []
+                }]
+            }
+        });
+        let ports = extract_ports(&resource);
+        assert!(ports.is_empty());
+    }
+
+    #[test]
+    fn test_build_service_apiversion_and_kind() {
+        let mut selector = BTreeMap::new();
+        selector.insert("app".to_string(), "test".to_string());
+
+        let svc = build_service("test", "default", &selector, 80, None, "TCP", None);
+        assert_eq!(svc["apiVersion"], "v1");
+        assert_eq!(svc["kind"], "Service");
+    }
+
+    #[test]
+    fn test_extract_selector_service_missing_selector() {
+        let svc = json!({
+            "spec": {
+                "ports": [{"port": 80}]
+            }
+        });
+        let result = extract_selector("svc", &svc);
+        assert!(result.is_err());
+    }
 }

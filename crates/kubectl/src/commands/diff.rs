@@ -169,6 +169,30 @@ mod tests {
         let path = get_resource_api_path("Namespace", "ignored", "kube-system").unwrap();
         assert_eq!(path, "/api/v1/namespaces/kube-system");
     }
+
+    #[test]
+    fn test_get_resource_api_path_statefulset() {
+        let path = get_resource_api_path("StatefulSet", "staging", "mysql").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/staging/statefulsets/mysql");
+    }
+
+    #[test]
+    fn test_get_resource_api_path_cluster_scoped_node() {
+        let path = get_resource_api_path("Node", "ignored", "worker-1").unwrap();
+        assert_eq!(path, "/api/v1/nodes/worker-1");
+    }
+
+    #[test]
+    fn test_get_resource_api_path_rbac_resources() {
+        let path = get_resource_api_path("ClusterRole", "ignored", "admin").unwrap();
+        assert_eq!(path, "/apis/rbac.authorization.k8s.io/v1/clusterroles/admin");
+
+        let path = get_resource_api_path("ClusterRoleBinding", "ignored", "admin-binding").unwrap();
+        assert_eq!(path, "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/admin-binding");
+
+        let path = get_resource_api_path("Role", "default", "pod-reader").unwrap();
+        assert_eq!(path, "/apis/rbac.authorization.k8s.io/v1/namespaces/default/roles/pod-reader");
+    }
 }
 
 fn get_resource_api_path(kind: &str, namespace: &str, name: &str) -> Result<String> {

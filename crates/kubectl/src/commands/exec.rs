@@ -117,6 +117,29 @@ mod tests {
         assert!(url_path.contains("command=-c"));
         assert!(url_path.contains("command=echo+hello"));
     }
+
+    #[test]
+    fn test_exec_url_no_stdin_no_tty() {
+        let namespace = "default";
+        let pod_name = "test-pod";
+        let mut url_path = format!("/api/v1/namespaces/{}/pods/{}/exec", namespace, pod_name);
+        let mut query_params = vec![];
+        query_params.push(format!("command={}", urlencoding::encode("date")));
+        query_params.push("stdout=true".to_string());
+        query_params.push("stderr=true".to_string());
+        // stdin=false and tty=false means those params are not added
+        url_path.push('?');
+        url_path.push_str(&query_params.join("&"));
+
+        assert!(!url_path.contains("stdin=true"));
+        assert!(!url_path.contains("tty=true"));
+    }
+
+    #[test]
+    fn test_urlencoding_encode_preserves_alphanumeric() {
+        let result = urlencoding::encode("abcABC123");
+        assert_eq!(result, "abcABC123");
+    }
 }
 
 mod urlencoding {

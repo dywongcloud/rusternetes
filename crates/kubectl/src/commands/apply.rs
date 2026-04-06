@@ -1680,4 +1680,216 @@ mod tests {
         assert!(opts.recursive);
         assert_eq!(opts.field_manager, "custom-manager");
     }
+
+    // --- 21 additional tests below ---
+
+    #[test]
+    fn test_resolve_api_path_pod_alias_po() {
+        let path = resolve_api_path("po", "my-pod", "default").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/pods/my-pod");
+    }
+
+    #[test]
+    fn test_resolve_api_path_deploy_alias() {
+        let path = resolve_api_path("deploy", "web", "default").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/default/deployments/web");
+    }
+
+    #[test]
+    fn test_resolve_api_path_ingress() {
+        // ingress is not supported in resolve_api_path
+        let result = resolve_api_path("ingress", "my-ing", "default");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_manifest_file_uppercase() {
+        // The function only matches lowercase extensions
+        assert!(!is_manifest_file(Path::new("FILE.YAML")));
+    }
+
+    #[test]
+    fn test_is_manifest_file_json() {
+        assert!(is_manifest_file(Path::new("config.json")));
+    }
+
+    #[test]
+    fn test_is_manifest_file_yml() {
+        assert!(is_manifest_file(Path::new("deploy.yml")));
+    }
+
+    #[test]
+    fn test_strip_last_applied_preserves_other_fields() {
+        let val = json!({
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "name": "test",
+                "labels": {"app": "web"},
+                "annotations": {
+                    LAST_APPLIED_ANNOTATION: "old",
+                    "other-ann": "keep-me"
+                }
+            },
+            "spec": {"containers": []}
+        });
+        let clean = strip_last_applied(&val);
+        assert_eq!(clean["apiVersion"], "v1");
+        assert_eq!(clean["kind"], "Pod");
+        assert_eq!(clean["metadata"]["labels"]["app"], "web");
+        assert_eq!(clean["metadata"]["annotations"]["other-ann"], "keep-me");
+    }
+
+    #[test]
+    fn test_strip_last_applied_no_metadata() {
+        let val = json!({"kind": "Pod"});
+        let clean = strip_last_applied(&val);
+        assert_eq!(clean["kind"], "Pod");
+    }
+
+    #[test]
+    fn test_set_last_applied_annotation_preserves_existing_annotations() {
+        let mut val = json!({
+            "kind": "ConfigMap",
+            "metadata": {
+                "name": "test",
+                "annotations": {
+                    "custom/annotation": "keep"
+                }
+            }
+        });
+        set_last_applied_annotation(&mut val);
+        assert_eq!(val["metadata"]["annotations"]["custom/annotation"], "keep");
+        assert!(val["metadata"]["annotations"][LAST_APPLIED_ANNOTATION].is_string());
+    }
+
+    #[test]
+    fn test_format_output_configured_action() {
+        let result = ApplyResult {
+            kind: "ConfigMap".to_string(),
+            api_group: "".to_string(),
+            name: "my-cm".to_string(),
+            namespace: Some("default".to_string()),
+            action: ApplyAction::Configured,
+            response: json!({}),
+        };
+        let options = ApplyOptions::default();
+        // Should not panic
+        format_output(&result, &options);
+    }
+
+    #[test]
+    fn test_format_output_name_output() {
+        let result = ApplyResult {
+            kind: "Deployment".to_string(),
+            api_group: "apps".to_string(),
+            name: "web".to_string(),
+            namespace: Some("prod".to_string()),
+            action: ApplyAction::Created,
+            response: json!({}),
+        };
+        let options = ApplyOptions {
+            output: Some("name".to_string()),
+            ..Default::default()
+        };
+        format_output(&result, &options);
+    }
+
+    #[test]
+    fn test_resource_label_batch() {
+        let r = ApplyResult {
+            kind: "Job".to_string(),
+            api_group: "batch".to_string(),
+            name: "my-job".to_string(),
+            namespace: Some("default".to_string()),
+            action: ApplyAction::Created,
+            response: json!({}),
+        };
+        assert_eq!(r.resource_label(), "job.batch/my-job");
+    }
+
+    #[test]
+    fn test_resource_label_core_service() {
+        let r = ApplyResult {
+            kind: "Service".to_string(),
+            api_group: "".to_string(),
+            name: "frontend".to_string(),
+            namespace: Some("default".to_string()),
+            action: ApplyAction::Created,
+            response: json!({}),
+        };
+        assert_eq!(r.resource_label(), "service/frontend");
+    }
+
+    #[test]
+    fn test_apply_options_default_field_manager() {
+        let opts = ApplyOptions::default();
+        assert_eq!(opts.field_manager, "kubectl-client-side-apply");
+    }
+
+    #[test]
+    fn test_apply_options_default_force_false() {
+        let opts = ApplyOptions::default();
+        assert!(!opts.force);
+    }
+
+    #[test]
+    fn test_apply_options_default_dry_run_none() {
+        let opts = ApplyOptions::default();
+        assert!(opts.dry_run.is_none());
+    }
+
+    #[test]
+    fn test_collect_files_single_file() {
+        let dir = TempDir::new().unwrap();
+        let f = dir.path().join("pod.yaml");
+        fs::write(&f, "kind: Pod").unwrap();
+        let inputs = vec![f.to_string_lossy().to_string()];
+        let files = collect_files(&inputs, false).unwrap();
+        assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn test_collect_files_directory_excludes_subdirs_nonrecursive() {
+        let dir = TempDir::new().unwrap();
+        let subdir = dir.path().join("subdir");
+        fs::create_dir(&subdir).unwrap();
+        fs::write(dir.path().join("top.yaml"), "kind: Pod").unwrap();
+        fs::write(subdir.join("sub.yaml"), "kind: Service").unwrap();
+        let inputs = vec![dir.path().to_string_lossy().to_string()];
+        let files = collect_files(&inputs, false).unwrap();
+        assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn test_build_query_string_server_side_default_manager() {
+        let options = ApplyOptions {
+            server_side: true,
+            ..Default::default()
+        };
+        let qs = build_query_string(&options);
+        assert!(qs.contains("fieldManager=kubectl-client-side-apply"));
+    }
+
+    #[test]
+    fn test_resolve_api_path_secret_alias() {
+        let path = resolve_api_path("secret", "my-secret", "ns1").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/ns1/secrets/my-secret");
+    }
+
+    #[test]
+    fn test_has_metadata_trait_pod() {
+        let mut pod = Pod {
+            metadata: rusternetes_common::types::ObjectMeta {
+                name: "test".to_string(),
+                ..Default::default()
+            },
+            spec: None,
+            status: None,
+            type_meta: Default::default(),
+        };
+        assert_eq!(pod.metadata().name, "test");
+        pod.metadata_mut().name = "changed".to_string();
+        assert_eq!(pod.metadata().name, "changed");
+    }
 }

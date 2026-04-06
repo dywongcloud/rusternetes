@@ -292,4 +292,59 @@ mod tests {
         let result = bind_listener(&config).await;
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_proxy_target_url_with_query_params() {
+        let api_server = "https://localhost:6443";
+        let path_and_query = "/api/v1/pods?watch=true&resourceVersion=100";
+        let target_url = format!("{}{}", api_server, path_and_query);
+        assert_eq!(
+            target_url,
+            "https://localhost:6443/api/v1/pods?watch=true&resourceVersion=100"
+        );
+    }
+
+    #[test]
+    fn test_proxy_config_with_token() {
+        let config = ProxyConfig {
+            address: "127.0.0.1".to_string(),
+            port: 8001,
+            api_server: "https://localhost:6443".to_string(),
+            token: Some("my-secret-token".to_string()),
+            skip_tls_verify: true,
+        };
+        assert!(config.token.is_some());
+        assert_eq!(config.token.unwrap(), "my-secret-token");
+        assert!(config.skip_tls_verify);
+    }
+
+    #[test]
+    fn test_proxy_api_server_multiple_trailing_slashes() {
+        let api_server = "https://localhost:6443///".trim_end_matches('/');
+        assert_eq!(api_server, "https://localhost:6443");
+    }
+
+    #[tokio::test]
+    async fn test_bind_listener_port_reuse_fails() {
+        // Bind to a random port, then try to bind to the same port
+        let config1 = ProxyConfig {
+            address: "127.0.0.1".to_string(),
+            port: 0,
+            api_server: "https://localhost:6443".to_string(),
+            token: None,
+            skip_tls_verify: false,
+        };
+        let listener1 = bind_listener(&config1).await.unwrap();
+        let bound_port = listener1.local_addr().unwrap().port();
+
+        let config2 = ProxyConfig {
+            address: "127.0.0.1".to_string(),
+            port: bound_port,
+            api_server: "https://localhost:6443".to_string(),
+            token: None,
+            skip_tls_verify: false,
+        };
+        let result = bind_listener(&config2).await;
+        assert!(result.is_err(), "Should fail to bind to an already-bound port");
+    }
 }

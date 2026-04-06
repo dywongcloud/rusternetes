@@ -366,6 +366,74 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_duration_zero_seconds() {
+        let d = parse_duration("0s").unwrap();
+        assert_eq!(d, Duration::from_secs(0));
+    }
+
+    #[test]
+    fn test_parse_duration_zero_minutes() {
+        let d = parse_duration("0m").unwrap();
+        assert_eq!(d, Duration::from_secs(0));
+    }
+
+    #[test]
+    fn test_parse_duration_large_value() {
+        let d = parse_duration("3600s").unwrap();
+        assert_eq!(d, Duration::from_secs(3600));
+    }
+
+    #[test]
+    fn test_parse_condition_bare_complex_type() {
+        let (typ, status) = parse_condition("PodScheduled");
+        assert_eq!(typ, "PodScheduled");
+        assert_eq!(status, "True");
+    }
+
+    #[test]
+    fn test_check_condition_missing_status_in_condition_entry() {
+        let resource = serde_json::json!({
+            "status": {
+                "conditions": [
+                    {"type": "Ready"}
+                ]
+            }
+        });
+        // Condition entry has type but no status field
+        assert!(!check_condition(&resource, "Ready", "True").unwrap());
+    }
+
+    #[test]
+    fn test_check_condition_null_resource() {
+        let resource = serde_json::json!(null);
+        assert!(!check_condition(&resource, "Ready", "True").unwrap());
+    }
+
+    #[test]
+    fn test_parse_resource_type_singular_and_plural_consistency() {
+        // Ensure singular and plural map to the same result
+        let singular = parse_resource_type("deployment").unwrap();
+        let plural = parse_resource_type("deployments").unwrap();
+        assert_eq!(singular, plural);
+
+        let singular = parse_resource_type("statefulset").unwrap();
+        let plural = parse_resource_type("statefulsets").unwrap();
+        assert_eq!(singular, plural);
+
+        let singular = parse_resource_type("replicaset").unwrap();
+        let plural = parse_resource_type("replicasets").unwrap();
+        assert_eq!(singular, plural);
+
+        let singular = parse_resource_type("service").unwrap();
+        let plural = parse_resource_type("services").unwrap();
+        assert_eq!(singular, plural);
+
+        let singular = parse_resource_type("job").unwrap();
+        let plural = parse_resource_type("jobs").unwrap();
+        assert_eq!(singular, plural);
+    }
+
+    #[test]
     fn test_polling_url_construction() {
         let (api_path, resource_name) = parse_resource_type("pod").unwrap();
         let path_with_name = format!(

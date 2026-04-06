@@ -326,4 +326,35 @@ mod tests {
         assert!(execute("Zsh").is_err());
         assert!(execute("FISH").is_err());
     }
+
+    #[test]
+    fn test_invalid_shell_error_message_contains_shell_name() {
+        let result = execute("tcsh");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("tcsh"), "Error should mention the invalid shell name");
+    }
+
+    #[test]
+    fn test_pwsh_alias_matches_powershell() {
+        // Both "powershell" and "pwsh" should succeed
+        assert!(execute("powershell").is_ok());
+        assert!(execute("pwsh").is_ok());
+    }
+
+    #[test]
+    fn test_empty_shell_string_fails() {
+        assert!(execute("").is_err());
+    }
+
+    #[test]
+    fn test_whitespace_shell_string_fails() {
+        assert!(execute(" ").is_err());
+    }
+
+    #[test]
+    fn test_shell_with_special_chars_fails() {
+        assert!(execute("bash;echo").is_err());
+        assert!(execute("zsh\n").is_err());
+    }
 }

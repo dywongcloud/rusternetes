@@ -2116,4 +2116,187 @@ mod tests {
         let result = resolve_path(&val, "\"col1\\tcol2\"").unwrap();
         assert_eq!(result, "col1\tcol2");
     }
+
+    // --- 26 additional tests below ---
+
+    #[test]
+    fn test_format_output_json_mode() {
+        let resource = serde_json::json!({"kind": "Pod", "metadata": {"name": "test"}});
+        let result = format_output(&resource, &OutputFormat::Json);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_format_output_yaml_mode() {
+        let resource = serde_json::json!({"kind": "Pod", "metadata": {"name": "test"}});
+        let result = format_output(&resource, &OutputFormat::Yaml);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_format_output_name_mode() {
+        let resource = serde_json::json!({"kind": "Pod", "metadata": {"name": "nginx"}});
+        let result = format_output(&resource, &OutputFormat::Name);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_format_output_jsonpath_mode() {
+        let resource = serde_json::json!({"kind": "Pod", "metadata": {"name": "test-pod"}});
+        let result = format_output(&resource, &OutputFormat::JsonPath("{.metadata.name}".to_string()));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_format_output_table_mode() {
+        let resource = serde_json::json!({"kind": "Pod"});
+        let result = format_output(&resource, &OutputFormat::Table);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_format_output_wide_mode() {
+        let resource = serde_json::json!({"kind": "Pod"});
+        let result = format_output(&resource, &OutputFormat::Wide);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_resolve_path_nested_array() {
+        let val = serde_json::json!({"spec": {"containers": [{"name": "c1"}, {"name": "c2"}]}});
+        let result = resolve_path(&val, ".spec.containers[0].name").unwrap();
+        assert_eq!(result, "c1");
+    }
+
+    #[test]
+    fn test_resolve_path_missing_field() {
+        let val = serde_json::json!({"metadata": {"name": "test"}});
+        let result = resolve_path(&val, ".spec.nodeName").unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_evaluate_jsonpath_nested_object() {
+        let val = serde_json::json!({"status": {"phase": "Running"}});
+        let result = evaluate_jsonpath(&val, "{.status.phase}").unwrap();
+        assert_eq!(result, "Running");
+    }
+
+    #[test]
+    fn test_evaluate_jsonpath_array() {
+        let val = serde_json::json!({"items": ["a", "b", "c"]});
+        let result = evaluate_jsonpath(&val, "{.items[2]}").unwrap();
+        assert_eq!(result, "c");
+    }
+
+    #[test]
+    fn test_resolve_sort_key_object() {
+        let val = serde_json::json!({"metadata": {"labels": {"app": "nginx"}}});
+        let key = resolve_sort_key(&val, ".metadata.labels");
+        // Object should be serialized as JSON string
+        assert!(key.contains("app"));
+    }
+
+    #[test]
+    fn test_sort_by_jsonpath_empty_vec() {
+        let mut items: Vec<serde_json::Value> = vec![];
+        sort_by_jsonpath(&mut items, ".metadata.name");
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_sort_by_jsonpath_single_item() {
+        let mut items = vec![serde_json::json!({"metadata": {"name": "only"}})];
+        sort_by_jsonpath(&mut items, ".metadata.name");
+        assert_eq!(items.len(), 1);
+    }
+
+    #[test]
+    fn test_build_list_api_path_sa() {
+        // serviceaccounts are not in the map, should return None
+        assert_eq!(build_list_api_path("serviceaccounts", "default"), None);
+    }
+
+    #[test]
+    fn test_build_list_api_path_pv() {
+        // persistentvolumes not in the map
+        assert_eq!(build_list_api_path("persistentvolumes", "default"), None);
+    }
+
+    #[test]
+    fn test_build_list_api_path_ingresses() {
+        assert_eq!(build_list_api_path("ingresses", "default"), None);
+    }
+
+    #[test]
+    fn test_urlencoding_encode_hash() {
+        let encoded = urlencoding::encode("key#value");
+        assert!(encoded.contains("%23"));
+    }
+
+    #[test]
+    fn test_urlencoding_encode_slash() {
+        let encoded = urlencoding::encode("path/to");
+        assert!(encoded.contains("%2F"));
+    }
+
+    #[test]
+    fn test_format_duration_large_days() {
+        let d = chrono::Duration::days(365);
+        assert_eq!(format_duration(d), "365d");
+    }
+
+    #[test]
+    fn test_format_duration_negative() {
+        let d = chrono::Duration::seconds(-10);
+        // Should still produce some output without panic
+        let result = format_duration(d);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_resource_slash_multiple_slashes() {
+        let (rtype, name) = parse_resource_slash("pod/my/pod");
+        assert_eq!(rtype, "pod");
+        assert_eq!(name, Some("my/pod"));
+    }
+
+    #[test]
+    fn test_format_labels_many_labels() {
+        let mut labels = HashMap::new();
+        labels.insert("z".to_string(), "last".to_string());
+        labels.insert("a".to_string(), "first".to_string());
+        labels.insert("m".to_string(), "middle".to_string());
+        let result = format_labels(&Some(labels));
+        assert!(result.starts_with("a=first"));
+        assert!(result.ends_with("z=last"));
+    }
+
+    #[test]
+    fn test_output_format_jsonpath_file_nonexistent() {
+        let result = OutputFormat::from_str("jsonpath-file=/nonexistent/path");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_path_filter_expression() {
+        let val = serde_json::json!({"items": [{"type": "Ready"}, {"type": "NotReady"}]});
+        let result = resolve_path(&val, ".items[?(@.type==\"Ready\")]").unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_resolve_sort_key_empty_path() {
+        let val = serde_json::json!({"name": "test"});
+        let key = resolve_sort_key(&val, "");
+        // empty path with no keys should serialize the whole value
+        assert!(!key.is_empty());
+    }
+
+    #[test]
+    fn test_format_value_nested_array() {
+        let val = serde_json::json!([1, 2, 3]);
+        let result = format_value(&val).unwrap();
+        assert_eq!(result, "1 2 3");
+    }
 }

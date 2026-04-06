@@ -138,6 +138,25 @@ mod tests {
         let result = execute("pod.spec", None, false).await;
         assert!(result.is_ok());
     }
+
+    #[tokio::test]
+    async fn test_execute_unknown_field_path_fails() {
+        let result = execute("pod.nonexistentfield", None, false).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_resource_doc_fields_have_descriptions() {
+        let docs = get_resource_docs();
+        for (_key, doc) in &docs {
+            assert!(!doc.description.is_empty());
+            for (_field_name, field_doc) in &doc.fields {
+                assert!(!field_doc.description.is_empty());
+                assert!(!field_doc.type_info.is_empty());
+            }
+        }
+    }
 }
 
 fn get_resource_docs() -> HashMap<&'static str, ResourceDoc> {

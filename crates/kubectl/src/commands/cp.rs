@@ -217,6 +217,121 @@ mod tests {
         let path = entry.path().unwrap();
         assert_eq!(path.to_str().unwrap(), "my-config.yaml");
     }
+
+    // ===== 10 additional tests for untested functions =====
+
+    fn make_test_client() -> ApiClient {
+        ApiClient::new("http://127.0.0.1:1", true, None).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_execute_upload_returns_err_for_nonexistent_local() {
+        let client = make_test_client();
+        let result = execute(
+            &client,
+            "/nonexistent/file.txt",
+            "my-pod:/tmp/dest",
+            "default",
+            None,
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_download_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let dest = tempfile::tempdir().unwrap();
+        let result = execute(
+            &client,
+            "my-pod:/var/log/app.log",
+            dest.path().to_str().unwrap(),
+            "default",
+            None,
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_copy_to_pod_nonexistent_local_path() {
+        let client = make_test_client();
+        let result = copy_to_pod(
+            &client,
+            "default",
+            "my-pod",
+            "/tmp",
+            "/nonexistent/path/file.txt",
+            None,
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Local path not found"));
+    }
+
+    #[tokio::test]
+    async fn test_copy_from_pod_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let dest = tempfile::tempdir().unwrap();
+        let result = copy_from_pod(
+            &client,
+            "default",
+            "my-pod",
+            "/var/log/app.log",
+            dest.path().to_str().unwrap(),
+            None,
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_both_local_returns_err() {
+        let client = make_test_client();
+        let result = execute(&client, "/tmp/a", "/tmp/b", "default", None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_both_pod_returns_err() {
+        let client = make_test_client();
+        let result = execute(&client, "pod1:/a", "pod2:/b", "default", None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_container_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let dest = tempfile::tempdir().unwrap();
+        let result = execute(
+            &client,
+            "my-pod:/etc/config",
+            dest.path().to_str().unwrap(),
+            "default",
+            Some("sidecar"),
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_tar_from_file_nonexistent_returns_err() {
+        let result = create_tar_from_file("/nonexistent/file.txt");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_tar_from_dir_nonexistent_returns_err() {
+        let result = create_tar_from_dir("/nonexistent/directory");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_tar_to_local_invalid_data_returns_err() {
+        let dest = tempfile::tempdir().unwrap();
+        let result = extract_tar_to_local(dest.path().to_str().unwrap(), b"not a tar");
+        assert!(result.is_err());
+    }
 }
 
 fn parse_copy_spec(source: &str, dest: &str) -> Result<(bool, String, String, String)> {

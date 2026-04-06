@@ -727,6 +727,96 @@ mod tests {
         ));
         assert_eq!(err.to_string(), "connection refused");
     }
+
+    // ===== 10 additional tests for untested functions =====
+
+    fn make_test_client() -> ApiClient {
+        ApiClient::new("http://127.0.0.1:1", true, None).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_execute_pod_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = execute(&client, "pod", "nginx", Some("default")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_service_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = execute(&client, "service", "my-svc", Some("default")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_deployment_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = execute(&client, "deployment", "web", Some("default")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_node_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = execute(&client, "node", "worker-1", Some("default")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_namespace_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = execute(&client, "ns", "kube-system", None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_unknown_resource_type_returns_err() {
+        let client = make_test_client();
+        let result = execute(&client, "foobar", "test", Some("default")).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unknown resource type"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_enhanced_with_name() {
+        let client = make_test_client();
+        let result =
+            execute_enhanced(&client, "pod", Some("nginx"), "default", None, false).await;
+        assert!(result.is_err()); // connection error
+    }
+
+    #[tokio::test]
+    async fn test_execute_enhanced_no_name_returns_err() {
+        let client = make_test_client();
+        let result = execute_enhanced(&client, "pod", None, "default", None, false).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Resource name required"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_enhanced_with_selector_returns_ok() {
+        let client = make_test_client();
+        let result = execute_enhanced(
+            &client,
+            "pod",
+            None,
+            "default",
+            Some("app=nginx"),
+            false,
+        )
+        .await;
+        // Selector-based describe just prints a message and returns Ok
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_enhanced_all_namespaces_returns_ok() {
+        let client = make_test_client();
+        let result =
+            execute_enhanced(&client, "pod", None, "default", None, true).await;
+        // All-namespaces describe just prints a message and returns Ok
+        assert!(result.is_ok());
+    }
 }
 
 fn describe_namespace(namespace: &Namespace) {

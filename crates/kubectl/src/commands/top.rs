@@ -98,6 +98,17 @@ mod tests {
         assert_eq!(metrics.usage.cpu, "10m");
         assert_eq!(metrics.usage.memory, "16Mi");
     }
+
+    #[test]
+    fn test_pod_metrics_empty_containers() {
+        let json = r#"{
+            "metadata": {"name": "empty-pod"},
+            "containers": []
+        }"#;
+        let metrics: PodMetrics = serde_json::from_str(json).unwrap();
+        assert_eq!(metrics.metadata.name, "empty-pod");
+        assert!(metrics.containers.is_empty());
+    }
 }
 
 /// Execute top commands for resource usage

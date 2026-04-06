@@ -64,6 +64,20 @@ mod tests {
         let result = parse_port_mapping("80:abc");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_parse_port_mapping_high_port() {
+        let (local, remote) = parse_port_mapping("65535:443").unwrap();
+        assert_eq!(local, 65535);
+        assert_eq!(remote, 443);
+    }
+
+    #[test]
+    fn test_parse_port_mapping_overflow_fails() {
+        // Port number exceeding u16 max should fail
+        let result = parse_port_mapping("70000");
+        assert!(result.is_err());
+    }
 }
 
 fn parse_port_mapping(port_spec: &str) -> Result<(u16, u16)> {

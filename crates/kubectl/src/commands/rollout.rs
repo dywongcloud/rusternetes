@@ -560,6 +560,80 @@ mod tests {
         });
         assert_eq!(patch["spec"]["paused"], false);
     }
+
+    // ===== 8 additional tests for untested async functions =====
+
+    fn make_test_client() -> ApiClient {
+        ApiClient::new("http://127.0.0.1:1", true, None).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_rollout_status_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = rollout_status(&client, "deployment", "nginx", "default").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_rollout_history_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = rollout_history(&client, "deployment", "nginx", "default", None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_rollout_undo_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = rollout_undo(&client, "deployment", "nginx", "default", None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_rollout_undo_non_deployment_returns_err() {
+        let client = make_test_client();
+        let result = rollout_undo(&client, "statefulset", "db", "default", None).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("only supported for deployments"));
+    }
+
+    #[tokio::test]
+    async fn test_rollout_restart_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = rollout_restart(&client, "deployment", "nginx", "default").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_rollout_pause_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = rollout_pause(&client, "deployment", "nginx", "default").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_rollout_pause_non_deployment_returns_err() {
+        let client = make_test_client();
+        let result = rollout_pause(&client, "statefulset", "db", "default").await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("only supported for deployments"));
+    }
+
+    #[tokio::test]
+    async fn test_rollout_resume_non_deployment_returns_err() {
+        let client = make_test_client();
+        let result = rollout_resume(&client, "statefulset", "db", "default").await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("only supported for deployments"));
+    }
 }
 
 fn get_resource_api_path(

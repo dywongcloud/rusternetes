@@ -259,4 +259,25 @@ mod tests {
         let result = parse_taint("key=value");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_parse_taint_remove_with_value_no_effect() {
+        let spec = parse_taint("key=value-").unwrap();
+        assert_eq!(spec.key, "key");
+        assert_eq!(spec.value, Some("value".to_string()));
+        assert_eq!(spec.effect, None);
+        assert!(spec.remove);
+    }
+
+    #[test]
+    fn test_taint_spec_equality() {
+        let a = TaintSpec {
+            key: "node-role".to_string(),
+            value: Some("master".to_string()),
+            effect: Some("NoSchedule".to_string()),
+            remove: false,
+        };
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
 }

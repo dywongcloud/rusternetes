@@ -498,18 +498,18 @@ metadata:
 
     #[test]
     fn test_build_secret_tls() {
-        // Create temp files for cert and key
-        let temp_dir = std::env::temp_dir();
-        let cert_path = temp_dir.join("test-tls.crt");
-        let key_path = temp_dir.join("test-tls.key");
-        std::fs::write(&cert_path, b"FAKE-CERT-DATA").unwrap();
-        std::fs::write(&key_path, b"FAKE-KEY-DATA").unwrap();
+        use std::io::Write;
+        // Create temp files for cert and key using tempfile for reliability
+        let mut cert_file = tempfile::NamedTempFile::new().unwrap();
+        let mut key_file = tempfile::NamedTempFile::new().unwrap();
+        cert_file.write_all(b"FAKE-CERT-DATA").unwrap();
+        key_file.write_all(b"FAKE-KEY-DATA").unwrap();
 
         let result = build_secret_tls(
             "tls-secret",
             "default",
-            cert_path.to_str().unwrap(),
-            key_path.to_str().unwrap(),
+            cert_file.path().to_str().unwrap(),
+            key_file.path().to_str().unwrap(),
         )
         .unwrap();
 
@@ -527,10 +527,6 @@ metadata:
             .decode(key_encoded)
             .unwrap();
         assert_eq!(decoded, b"FAKE-KEY-DATA");
-
-        // Cleanup
-        let _ = std::fs::remove_file(&cert_path);
-        let _ = std::fs::remove_file(&key_path);
     }
 
     #[test]

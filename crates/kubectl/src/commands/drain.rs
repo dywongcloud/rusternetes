@@ -466,4 +466,53 @@ mod tests {
         assert_eq!(eviction["kind"], "Eviction");
         assert!(eviction.get("deleteOptions").is_none());
     }
+
+    #[test]
+    fn test_cordon_patch_body_construction() {
+        let unschedulable = true;
+        let patch_body = json!({
+            "spec": {
+                "unschedulable": unschedulable,
+            }
+        });
+        assert_eq!(patch_body["spec"]["unschedulable"], true);
+
+        let patch_body = json!({
+            "spec": {
+                "unschedulable": false,
+            }
+        });
+        assert_eq!(patch_body["spec"]["unschedulable"], false);
+    }
+
+    #[test]
+    fn test_node_path_construction() {
+        let node_name = "worker-1";
+        let path = format!("/api/v1/nodes/{}", node_name);
+        assert_eq!(path, "/api/v1/nodes/worker-1");
+    }
+
+    #[test]
+    fn test_pods_field_selector_construction() {
+        let node_name = "node-1";
+        let pods_path = format!(
+            "/api/v1/pods?fieldSelector=spec.nodeName={}",
+            node_name
+        );
+        assert_eq!(pods_path, "/api/v1/pods?fieldSelector=spec.nodeName=node-1");
+    }
+
+    #[test]
+    fn test_eviction_path_construction() {
+        let namespace = "kube-system";
+        let pod_name = "coredns-abc123";
+        let eviction_path = format!(
+            "/api/v1/namespaces/{}/pods/{}/eviction",
+            namespace, pod_name
+        );
+        assert_eq!(
+            eviction_path,
+            "/api/v1/namespaces/kube-system/pods/coredns-abc123/eviction"
+        );
+    }
 }

@@ -187,6 +187,60 @@ mod tests {
             "/api/v1/namespaces/default/pods/app/log?timestamps=true&previous=true"
         );
     }
+
+    #[test]
+    fn test_log_url_with_since_seconds() {
+        let ns = "default";
+        let pod = "app";
+        let mut url = format!("/api/v1/namespaces/{}/pods/{}/log", ns, pod);
+        let seconds = parse_duration_to_seconds("5m").unwrap();
+        let mut params = Vec::new();
+        params.push(format!("sinceSeconds={}", seconds));
+        url.push('?');
+        url.push_str(&params.join("&"));
+        assert_eq!(
+            url,
+            "/api/v1/namespaces/default/pods/app/log?sinceSeconds=300"
+        );
+    }
+
+    #[test]
+    fn test_log_url_no_params() {
+        let ns = "default";
+        let pod = "nginx";
+        let url = format!("/api/v1/namespaces/{}/pods/{}/log", ns, pod);
+        let params: Vec<String> = Vec::new();
+        // When no params, no '?' should be appended
+        assert!(params.is_empty());
+        assert_eq!(url, "/api/v1/namespaces/default/pods/nginx/log");
+    }
+
+    #[test]
+    fn test_parse_duration_zero_ms() {
+        assert_eq!(parse_duration_to_seconds("0ms").unwrap(), 0);
+    }
+
+    #[test]
+    fn test_log_url_with_all_params() {
+        let ns = "prod";
+        let pod = "web";
+        let mut url = format!("/api/v1/namespaces/{}/pods/{}/log", ns, pod);
+        let mut params = Vec::new();
+        params.push("container=app".to_string());
+        params.push("follow=true".to_string());
+        params.push("tailLines=50".to_string());
+        params.push("timestamps=true".to_string());
+        params.push("sinceTime=2024-01-01T00:00:00Z".to_string());
+        params.push("previous=true".to_string());
+        url.push('?');
+        url.push_str(&params.join("&"));
+        assert!(url.contains("container=app"));
+        assert!(url.contains("follow=true"));
+        assert!(url.contains("tailLines=50"));
+        assert!(url.contains("timestamps=true"));
+        assert!(url.contains("sinceTime="));
+        assert!(url.contains("previous=true"));
+    }
 }
 
 fn parse_duration_to_seconds(duration: &str) -> Result<i64> {

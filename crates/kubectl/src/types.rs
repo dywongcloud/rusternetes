@@ -182,6 +182,66 @@ pub enum CreateCommands {
         #[command(subcommand)]
         subcommand: SecretCommands,
     },
+    /// Create a Namespace
+    #[command(name = "namespace", alias = "ns")]
+    Namespace {
+        /// Name of the Namespace
+        name: String,
+    },
+    /// Create a Deployment
+    #[command(name = "deployment")]
+    Deployment {
+        /// Name of the Deployment
+        name: String,
+        /// Container image
+        #[arg(long)]
+        image: String,
+        /// Number of replicas
+        #[arg(long, short = 'r', default_value = "1")]
+        replicas: i32,
+        /// Container port to expose
+        #[arg(long)]
+        port: Option<i32>,
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+    },
+    /// Create a Service
+    #[command(name = "service", alias = "svc")]
+    Service {
+        #[command(subcommand)]
+        subcommand: ServiceCommands,
+    },
+    /// Create a PriorityClass
+    #[command(name = "priorityclass", alias = "pc")]
+    PriorityClass {
+        /// Name of the PriorityClass
+        name: String,
+        /// Priority value
+        #[arg(long)]
+        value: i32,
+        /// Whether this is the global default
+        #[arg(long)]
+        global_default: bool,
+        /// Preemption policy (PreemptLowerPriority or Never)
+        #[arg(long, default_value = "PreemptLowerPriority")]
+        preemption_policy: String,
+        /// Description of the PriorityClass
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// Create a ResourceQuota
+    #[command(name = "quota", alias = "resourcequota")]
+    Quota {
+        /// Name of the ResourceQuota
+        name: String,
+        /// Hard resource limits (e.g., pods=10,services=5)
+        #[arg(long)]
+        hard: Option<String>,
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+    },
     /// Create a ServiceAccount
     #[command(name = "serviceaccount", alias = "sa")]
     ServiceAccount {
@@ -273,6 +333,71 @@ pub enum SecretCommands {
         #[arg(short = 'n', long)]
         namespace: Option<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum ServiceCommands {
+    /// Create a ClusterIP service
+    #[command(name = "clusterip")]
+    ClusterIP {
+        /// Name of the Service
+        name: String,
+        /// Port mappings (port:targetPort)
+        #[arg(long)]
+        tcp: Vec<String>,
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+    },
+    /// Create a NodePort service
+    #[command(name = "nodeport")]
+    NodePort {
+        /// Name of the Service
+        name: String,
+        /// Port mappings (port:targetPort)
+        #[arg(long)]
+        tcp: Vec<String>,
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+    },
+    /// Create a LoadBalancer service
+    #[command(name = "loadbalancer")]
+    LoadBalancer {
+        /// Name of the Service
+        name: String,
+        /// Port mappings (port:targetPort)
+        #[arg(long)]
+        tcp: Vec<String>,
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+    },
+    /// Create an ExternalName service
+    #[command(name = "externalname")]
+    ExternalName {
+        /// Name of the Service
+        name: String,
+        /// External name (DNS name)
+        #[arg(long)]
+        external_name: String,
+        /// Namespace
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum KubercCommands {
+    /// Set kuberc configuration values
+    Set {
+        /// Property path to set
+        property: Option<String>,
+        /// Value to set
+        value: Option<String>,
+    },
+    /// View the current kuberc configuration
+    View {},
 }
 
 #[derive(Subcommand)]

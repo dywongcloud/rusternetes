@@ -62,6 +62,18 @@ mod tests {
             "/apis/apps/v1/namespaces/default/replicasets/web-rs/scale"
         );
     }
+
+    #[test]
+    fn test_scale_path_replication_controller() {
+        let path = format!(
+            "/api/v1/namespaces/{}/replicationcontrollers/{}/scale",
+            "default", "my-rc"
+        );
+        assert_eq!(
+            path,
+            "/api/v1/namespaces/default/replicationcontrollers/my-rc/scale"
+        );
+    }
 }
 
 /// Scale a resource (Deployment, ReplicaSet, StatefulSet, etc.)

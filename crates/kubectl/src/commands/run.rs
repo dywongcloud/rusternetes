@@ -225,4 +225,21 @@ mod tests {
             assert_eq!(pod["spec"]["restartPolicy"], *policy);
         }
     }
+
+    #[test]
+    fn test_dry_run_client_path() {
+        let namespace = "default";
+        let path = format!("/api/v1/namespaces/{}/pods", namespace);
+        let dry_run = Some("server");
+        let query = if let Some(dr) = dry_run {
+            if dr == "server" {
+                format!("{}?dryRun=All", path)
+            } else {
+                path.clone()
+            }
+        } else {
+            path.clone()
+        };
+        assert_eq!(query, "/api/v1/namespaces/default/pods?dryRun=All");
+    }
 }

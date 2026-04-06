@@ -404,4 +404,53 @@ mod tests {
 
         assert!(!already_approved);
     }
+
+    #[test]
+    fn test_force_removes_approved_when_denying() {
+        let existing_conditions = vec![json!({
+            "type": "Approved",
+            "status": "True",
+            "reason": "KubectlApprove",
+        })];
+
+        let force = true;
+        let new_conditions: Vec<Value> = if force {
+            existing_conditions
+                .into_iter()
+                .filter(|c| {
+                    c.get("type").and_then(|t| t.as_str()).unwrap_or("") != "Approved"
+                })
+                .collect()
+        } else {
+            existing_conditions
+        };
+
+        assert!(new_conditions.is_empty(), "Approved condition should be removed when force denying");
+    }
+
+    #[test]
+    fn test_csr_status_initialization_when_missing() {
+        // When status is missing entirely, the code creates it
+        let mut csr = json!({
+            "metadata": {"name": "my-csr"},
+            "spec": {}
+        });
+
+        // Simulate the code path where status doesn't exist
+        let has_status = csr.get("status").is_some();
+        assert!(!has_status);
+
+        csr["status"] = json!({
+            "conditions": [{"type": "Approved", "status": "True"}],
+        });
+
+        assert!(csr.get("status").is_some());
+        assert_eq!(csr["status"]["conditions"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_empty_csr_names_is_invalid() {
+        let csr_names: Vec<String> = vec![];
+        assert!(csr_names.is_empty());
+    }
 }

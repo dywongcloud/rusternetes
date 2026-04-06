@@ -1433,4 +1433,181 @@ mod tests {
         assert!(CascadeStrategy::from_str_value("FOREGROUND").is_err());
         assert!(CascadeStrategy::from_str_value("Orphan").is_err());
     }
+
+    // ===== 20 additional tests for untested functions =====
+
+    fn make_test_client() -> ApiClient {
+        ApiClient::new("http://127.0.0.1:1", true, None).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_execute_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let result = execute(&client, "pod", "nginx", Some("default")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_enhanced_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let opts = DeleteOptions::default();
+        let result = execute_enhanced(&client, "pod", "nginx", "default", &opts).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_selector_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let opts = DeleteOptions::default();
+        let result =
+            execute_with_selector(&client, "pod", "app=nginx", "default", &opts).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_delete_all_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let opts = DeleteOptions::default();
+        let result = execute_delete_all(&client, "pod", "default", &opts).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_delete_single_resource_returns_err_on_unreachable() {
+        let client = make_test_client();
+        let opts = DeleteOptions::default();
+        let result =
+            delete_single_resource(&client, "pod", "nginx", Some("default"), &opts).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_from_file_nonexistent_returns_err() {
+        let client = make_test_client();
+        let result = execute_from_file(&client, "/nonexistent/file.yaml").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_delete_resource_missing_kind_returns_err() {
+        let client = make_test_client();
+        let value = serde_yaml::from_str::<serde_yaml::Value>("metadata:\n  name: test").unwrap();
+        let result = delete_resource(&client, &value).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("kind"));
+    }
+
+    #[tokio::test]
+    async fn test_delete_resource_missing_metadata_returns_err() {
+        let client = make_test_client();
+        let value = serde_yaml::from_str::<serde_yaml::Value>("kind: Pod").unwrap();
+        let result = delete_resource(&client, &value).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("metadata"));
+    }
+
+    #[tokio::test]
+    async fn test_delete_resource_missing_name_returns_err() {
+        let client = make_test_client();
+        let value =
+            serde_yaml::from_str::<serde_yaml::Value>("kind: Pod\nmetadata:\n  namespace: default")
+                .unwrap();
+        let result = delete_resource(&client, &value).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("name"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_enhanced_with_force_option() {
+        let client = make_test_client();
+        let mut opts = DeleteOptions {
+            force: true,
+            ..Default::default()
+        };
+        opts.resolve();
+        assert_eq!(opts.grace_period, Some(0));
+        let result = execute_enhanced(&client, "deployment", "web", "default", &opts).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_enhanced_with_dry_run_option() {
+        let client = make_test_client();
+        let opts = DeleteOptions {
+            dry_run: true,
+            ..Default::default()
+        };
+        let result = execute_enhanced(&client, "pod", "test", "default", &opts).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_no_namespace_defaults() {
+        let client = make_test_client();
+        let result = execute(&client, "pod", "nginx", None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_delete_single_resource_unsupported_type() {
+        let client = make_test_client();
+        let opts = DeleteOptions::default();
+        let result =
+            delete_single_resource(&client, "foobar", "name", Some("default"), &opts).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unknown resource type"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_selector_unsupported_type() {
+        let client = make_test_client();
+        let opts = DeleteOptions::default();
+        let result =
+            execute_with_selector(&client, "foobar", "app=x", "default", &opts).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_delete_all_unsupported_type() {
+        let client = make_test_client();
+        let opts = DeleteOptions::default();
+        let result = execute_delete_all(&client, "foobar", "default", &opts).await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_delete_options_wait_field() {
+        let opts = DeleteOptions {
+            wait: true,
+            ..Default::default()
+        };
+        assert!(opts.wait);
+        assert!(!opts.dry_run);
+        assert!(!opts.force);
+    }
+
+    #[test]
+    fn test_delete_options_delete_all_field() {
+        let opts = DeleteOptions {
+            delete_all: true,
+            ..Default::default()
+        };
+        assert!(opts.delete_all);
+    }
+
+    #[test]
+    fn test_get_list_api_path_ingress_unsupported() {
+        // ingress is not in get_list_api_path
+        let result = get_list_api_path("ingress", "default");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_resource_api_path_ingress() {
+        let path = get_resource_api_path("ing", "my-ingress", "default").unwrap();
+        assert_eq!(
+            path,
+            "/apis/networking.k8s.io/v1/namespaces/default/ingresses/my-ingress"
+        );
+    }
 }

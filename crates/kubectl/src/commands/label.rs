@@ -152,4 +152,43 @@ mod tests {
         let map = parse_labels(&labels).unwrap();
         assert_eq!(map.get("key").unwrap(), &Value::String("".to_string()));
     }
+
+    #[test]
+    fn test_label_resource_type_mapping() {
+        let cases = vec![
+            ("pod", "api/v1", "pods"),
+            ("deploy", "apis/apps/v1", "deployments"),
+            ("svc", "api/v1", "services"),
+            ("ds", "apis/apps/v1", "daemonsets"),
+            ("sts", "apis/apps/v1", "statefulsets"),
+            ("rs", "apis/apps/v1", "replicasets"),
+            ("cm", "api/v1", "configmaps"),
+            ("secret", "api/v1", "secrets"),
+            ("node", "api/v1", "nodes"),
+        ];
+        for (input, expected_api, expected_resource) in cases {
+            let (api_path, resource_name) = match input {
+                "pod" | "pods" => ("api/v1", "pods"),
+                "service" | "services" | "svc" => ("api/v1", "services"),
+                "deployment" | "deployments" | "deploy" => ("apis/apps/v1", "deployments"),
+                "daemonset" | "daemonsets" | "ds" => ("apis/apps/v1", "daemonsets"),
+                "statefulset" | "statefulsets" | "sts" => ("apis/apps/v1", "statefulsets"),
+                "replicaset" | "replicasets" | "rs" => ("apis/apps/v1", "replicasets"),
+                "configmap" | "configmaps" | "cm" => ("api/v1", "configmaps"),
+                "secret" | "secrets" => ("api/v1", "secrets"),
+                "node" | "nodes" => ("api/v1", "nodes"),
+                _ => panic!("unexpected"),
+            };
+            assert_eq!(api_path, expected_api, "for input '{}'", input);
+            assert_eq!(resource_name, expected_resource, "for input '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_label_value_with_equals() {
+        // Values containing '=' should work because split_once only splits on first '='
+        let labels = vec!["key=val=ue".to_string()];
+        let map = parse_labels(&labels).unwrap();
+        assert_eq!(map.get("key").unwrap(), &Value::String("val=ue".to_string()));
+    }
 }

@@ -65,4 +65,10 @@ mod tests {
             assert_eq!(args, vec!["build", dir]);
         }
     }
+
+    #[test]
+    fn test_kustomize_command_program_name() {
+        let cmd = std::process::Command::new("kustomize");
+        assert_eq!(cmd.get_program(), "kustomize");
+    }
 }

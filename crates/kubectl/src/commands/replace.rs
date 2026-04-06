@@ -541,4 +541,57 @@ mod tests {
         let path = resource_path("v1", "Widget", None, "w1").unwrap();
         assert_eq!(path, "/api/v1/widgets/w1");
     }
+
+    #[test]
+    fn test_kind_to_plural_special_endings() {
+        // Ends with "ch" -> add "es"
+        assert_eq!(kind_to_plural("Batch"), "batches");
+        // Ends with "sh" -> add "es"
+        assert_eq!(kind_to_plural("Mesh"), "meshes");
+        // Ends with "x" -> add "es"
+        assert_eq!(kind_to_plural("Box"), "boxes");
+        // Ends with "ss" -> add "es"
+        assert_eq!(kind_to_plural("Class"), "classes");
+        // Ends with "y" but not "ey"/"ay"/"oy" -> "ies"
+        assert_eq!(kind_to_plural("Policy"), "policies");
+    }
+
+    #[test]
+    fn test_kind_to_plural_y_exceptions() {
+        // "ey" ending -> just add "s"
+        assert_eq!(kind_to_plural("Key"), "keys");
+        // "ay" ending -> just add "s"
+        assert_eq!(kind_to_plural("Gateway"), "gateways");
+        // "oy" ending -> just add "s"
+        assert_eq!(kind_to_plural("Decoy"), "decoys");
+    }
+
+    #[test]
+    fn test_kind_to_output_name_empty_api_version() {
+        assert_eq!(kind_to_output_name("Pod", ""), "pod");
+    }
+
+    #[test]
+    fn test_resource_path_remaining_core_types() {
+        let path = resource_path("v1", "Endpoints", Some("default"), "my-ep").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/endpoints/my-ep");
+
+        let path = resource_path("v1", "ResourceQuota", Some("default"), "rq").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/resourcequotas/rq");
+
+        let path = resource_path("v1", "LimitRange", Some("default"), "lr").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/limitranges/lr");
+
+        let path = resource_path("v1", "ReplicationController", Some("default"), "rc").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/replicationcontrollers/rc");
+
+        let path = resource_path("v1", "Event", Some("default"), "ev").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/events/ev");
+    }
+
+    #[test]
+    fn test_resource_path_unknown_cluster_scoped_with_group() {
+        let path = resource_path("custom.example.com/v1", "Widget", None, "w1").unwrap();
+        assert_eq!(path, "/apis/custom.example.com/v1/widgets/w1");
+    }
 }

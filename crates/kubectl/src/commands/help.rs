@@ -66,4 +66,10 @@ mod tests {
         let result = execute::<TestCli>(Some("get"));
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_help_valid_subcommand_delete() {
+        let result = execute::<TestCli>(Some("delete"));
+        assert!(result.is_ok());
+    }
 }

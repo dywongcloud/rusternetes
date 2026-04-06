@@ -173,4 +173,51 @@ mod tests {
         let map = parse_annotations(&annotations).unwrap();
         assert_eq!(map.get("key").unwrap(), &Value::String("".to_string()));
     }
+
+    #[test]
+    fn test_annotation_resource_type_mapping() {
+        let cases = vec![
+            ("svc", "api/v1", "services"),
+            ("deploy", "apis/apps/v1", "deployments"),
+            ("ds", "apis/apps/v1", "daemonsets"),
+            ("sts", "apis/apps/v1", "statefulsets"),
+            ("rs", "apis/apps/v1", "replicasets"),
+            ("cm", "api/v1", "configmaps"),
+            ("secrets", "api/v1", "secrets"),
+        ];
+        for (input, expected_api, expected_resource) in cases {
+            let (api_path, resource_name) = match input {
+                "pod" | "pods" => ("api/v1", "pods"),
+                "service" | "services" | "svc" => ("api/v1", "services"),
+                "deployment" | "deployments" | "deploy" => ("apis/apps/v1", "deployments"),
+                "daemonset" | "daemonsets" | "ds" => ("apis/apps/v1", "daemonsets"),
+                "statefulset" | "statefulsets" | "sts" => ("apis/apps/v1", "statefulsets"),
+                "replicaset" | "replicasets" | "rs" => ("apis/apps/v1", "replicasets"),
+                "configmap" | "configmaps" | "cm" => ("api/v1", "configmaps"),
+                "secret" | "secrets" => ("api/v1", "secrets"),
+                "node" | "nodes" => ("api/v1", "nodes"),
+                _ => panic!("unexpected"),
+            };
+            assert_eq!(api_path, expected_api, "for input '{}'", input);
+            assert_eq!(resource_name, expected_resource, "for input '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_annotation_unsupported_resource_type() {
+        let resource_type = "horizontalpodautoscaler";
+        let result = match resource_type {
+            "pod" | "pods" => Ok(("api/v1", "pods")),
+            "service" | "services" | "svc" => Ok(("api/v1", "services")),
+            "deployment" | "deployments" | "deploy" => Ok(("apis/apps/v1", "deployments")),
+            "daemonset" | "daemonsets" | "ds" => Ok(("apis/apps/v1", "daemonsets")),
+            "statefulset" | "statefulsets" | "sts" => Ok(("apis/apps/v1", "statefulsets")),
+            "replicaset" | "replicasets" | "rs" => Ok(("apis/apps/v1", "replicasets")),
+            "configmap" | "configmaps" | "cm" => Ok(("api/v1", "configmaps")),
+            "secret" | "secrets" => Ok(("api/v1", "secrets")),
+            "node" | "nodes" => Ok(("api/v1", "nodes")),
+            _ => Err(format!("Unsupported resource type: {}", resource_type)),
+        };
+        assert!(result.is_err());
+    }
 }

@@ -8,7 +8,7 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use client::ApiClient;
 use kubeconfig::KubeConfig;
-use types::{ApplyCommands, AuthCommands, CertificateCommands, ConfigCommands, CreateCommands, PluginCommands, RolloutCommands, SetCommands, TopCommands};
+use types::{ApplyCommands, AuthCommands, CertificateCommands, ConfigCommands, CreateCommands, KubercCommands, PluginCommands, RolloutCommands, SetCommands, TopCommands};
 
 #[derive(Parser)]
 #[command(name = "kubectl")]
@@ -826,7 +826,10 @@ enum Commands {
     },
 
     /// KubeRC configuration (alpha)
-    Kuberc {},
+    Kuberc {
+        #[command(subcommand)]
+        subcommand: Option<KubercCommands>,
+    },
 
     /// Display Kubernetes version
     Version {
@@ -1679,8 +1682,8 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        Commands::Kuberc {} => {
-            commands::kuberc::execute()?;
+        Commands::Kuberc { subcommand } => {
+            commands::kuberc::execute(subcommand.as_ref())?;
         }
         Commands::Version {
             client: client_only,

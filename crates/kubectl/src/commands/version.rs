@@ -74,6 +74,22 @@ mod tests {
         assert_eq!(sv.git_version, "v1.29.0");
         assert_eq!(sv.platform, "linux/amd64");
     }
+
+    #[test]
+    fn test_server_version_deserialization_minimal() {
+        // Only major, minor, gitVersion required; rest have defaults
+        let json = r#"{
+            "major": "1",
+            "minor": "35",
+            "gitVersion": "v1.35.0"
+        }"#;
+        let sv: ServerVersion = serde_json::from_str(json).unwrap();
+        assert_eq!(sv.major, "1");
+        assert_eq!(sv.minor, "35");
+        assert_eq!(sv.git_version, "v1.35.0");
+        assert_eq!(sv.git_commit, "");
+        assert_eq!(sv.platform, "");
+    }
 }
 
 /// Display kubectl and Kubernetes version information

@@ -1116,4 +1116,47 @@ users:
         .await;
         assert!(result.is_err());
     }
+
+    #[tokio::test]
+    async fn test_set_credentials_with_cert_data() {
+        let (_f, path) = create_test_kubeconfig();
+        execute(
+            ConfigCommands::SetCredentials {
+                name: "data-user".to_string(),
+                token: None,
+                username: None,
+                password: None,
+                client_certificate: None,
+                client_key: None,
+                client_certificate_data: Some("Y2VydC1kYXRh".to_string()),
+                client_key_data: Some("a2V5LWRhdGE=".to_string()),
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await
+        .unwrap();
+        let config = KubeConfig::load_from_file(&path).unwrap();
+        let user = config.users.iter().find(|u| u.name == "data-user").unwrap();
+        assert_eq!(user.user.client_certificate_data, Some("Y2VydC1kYXRh".to_string()));
+        assert_eq!(user.user.client_key_data, Some("a2V5LWRhdGE=".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_set_context_defaults_namespace_to_default() {
+        let (_f, path) = create_test_kubeconfig();
+        execute(
+            ConfigCommands::SetContext {
+                name: "minimal-ctx".to_string(),
+                cluster: None,
+                user: None,
+                namespace: None,
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await
+        .unwrap();
+        let config = KubeConfig::load_from_file(&path).unwrap();
+        let ctx = config.contexts.iter().find(|c| c.name == "minimal-ctx").unwrap();
+        assert_eq!(ctx.context.namespace, "default");
+    }
 }

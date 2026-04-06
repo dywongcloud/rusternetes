@@ -108,6 +108,24 @@ mod tests {
         // Subresources (containing /) should be filtered in the execute function
         assert!(list.resources[1].name.contains('/'));
     }
+
+    #[test]
+    fn test_api_resource_subresource_filtering() {
+        let resources = vec![
+            ("pods", false),
+            ("pods/log", true),
+            ("pods/status", true),
+            ("deployments", false),
+            ("deployments/scale", true),
+        ];
+        let filtered: Vec<_> = resources
+            .iter()
+            .filter(|(name, _)| !name.contains('/'))
+            .collect();
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].0, "pods");
+        assert_eq!(filtered[1].0, "deployments");
+    }
 }
 
 /// Display available API resources
