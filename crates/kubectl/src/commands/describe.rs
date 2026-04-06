@@ -358,6 +358,41 @@ fn describe_node(node: &Node) {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_duration_days() {
+        let dur = chrono::Duration::days(5);
+        assert_eq!(format_duration(dur), "5d");
+    }
+
+    #[test]
+    fn test_format_duration_hours() {
+        let dur = chrono::Duration::hours(3);
+        assert_eq!(format_duration(dur), "3h");
+    }
+
+    #[test]
+    fn test_format_duration_minutes() {
+        let dur = chrono::Duration::minutes(42);
+        assert_eq!(format_duration(dur), "42m");
+    }
+
+    #[test]
+    fn test_format_duration_seconds() {
+        let dur = chrono::Duration::seconds(15);
+        assert_eq!(format_duration(dur), "15s");
+    }
+
+    #[test]
+    fn test_format_duration_zero() {
+        let dur = chrono::Duration::seconds(0);
+        assert_eq!(format_duration(dur), "0s");
+    }
+}
+
 fn describe_namespace(namespace: &Namespace) {
     println!("Name:         {}", namespace.metadata.name);
 

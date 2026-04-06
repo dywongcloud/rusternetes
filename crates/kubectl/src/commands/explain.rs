@@ -72,6 +72,52 @@ struct FieldDoc {
     required: bool,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_resource_docs_has_pod() {
+        let docs = get_resource_docs();
+        assert!(docs.contains_key("pod"));
+        let pod_doc = &docs["pod"];
+        assert_eq!(pod_doc.kind, "Pod");
+        assert_eq!(pod_doc.version, "v1");
+    }
+
+    #[test]
+    fn test_get_resource_docs_has_service() {
+        let docs = get_resource_docs();
+        assert!(docs.contains_key("service"));
+        assert_eq!(docs["service"].kind, "Service");
+    }
+
+    #[test]
+    fn test_get_resource_docs_has_deployment() {
+        let docs = get_resource_docs();
+        assert!(docs.contains_key("deployment"));
+        assert_eq!(docs["deployment"].version, "apps/v1");
+    }
+
+    #[test]
+    fn test_pod_fields_contain_spec() {
+        let docs = get_resource_docs();
+        let pod_doc = &docs["pod"];
+        assert!(pod_doc.fields.contains_key("spec"));
+        assert_eq!(pod_doc.fields["spec"].type_info, "PodSpec");
+    }
+
+    #[tokio::test]
+    async fn test_execute_unknown_resource_fails() {
+        let result = execute("nonexistent", None, false).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not found"));
+    }
+}
+
 fn get_resource_docs() -> HashMap<&'static str, ResourceDoc> {
     let mut docs = HashMap::new();
 

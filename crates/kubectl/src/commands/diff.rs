@@ -113,6 +113,46 @@ async fn diff_resource(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_resource_api_path_pod() {
+        let path = get_resource_api_path("Pod", "default", "nginx").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/pods/nginx");
+    }
+
+    #[test]
+    fn test_get_resource_api_path_deployment() {
+        let path = get_resource_api_path("Deployment", "prod", "web").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/prod/deployments/web");
+    }
+
+    #[test]
+    fn test_get_resource_api_path_cluster_scoped_pv() {
+        let path = get_resource_api_path("PersistentVolume", "ignored", "pv-1").unwrap();
+        assert_eq!(path, "/api/v1/persistentvolumes/pv-1");
+    }
+
+    #[test]
+    fn test_get_resource_api_path_crd() {
+        let path =
+            get_resource_api_path("CustomResourceDefinition", "ignored", "foos.example.com")
+                .unwrap();
+        assert_eq!(
+            path,
+            "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/foos.example.com"
+        );
+    }
+
+    #[test]
+    fn test_get_resource_api_path_unsupported() {
+        let result = get_resource_api_path("Unknown", "default", "x");
+        assert!(result.is_err());
+    }
+}
+
 fn get_resource_api_path(kind: &str, namespace: &str, name: &str) -> Result<String> {
     Ok(match kind {
         "Pod" => format!("/api/v1/namespaces/{}/pods/{}", namespace, name),

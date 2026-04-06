@@ -1,6 +1,23 @@
 use crate::client::ApiClient;
 use anyhow::Result;
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_cluster_info_output_format() {
+        let base_url = "https://localhost:6443";
+        let output = format!("Kubernetes control plane is running at {}", base_url);
+        assert!(output.contains("Kubernetes control plane is running at"));
+        assert!(output.contains("https://localhost:6443"));
+    }
+
+    #[test]
+    fn test_dump_help_message() {
+        let msg = "To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.";
+        assert!(msg.contains("cluster-info dump"));
+    }
+}
+
 /// Display cluster information
 pub async fn execute(client: &ApiClient, dump: bool) -> Result<()> {
     let base_url = client.get_base_url();

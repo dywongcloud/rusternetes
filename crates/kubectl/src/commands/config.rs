@@ -1,4 +1,4 @@
-use crate::kubeconfig::KubeConfig;
+use crate::kubeconfig::{Cluster, ClusterEntry, Context, ContextEntry, KubeConfig, User, UserEntry};
 use crate::types::ConfigCommands;
 use anyhow::Result;
 use std::path::PathBuf;
@@ -16,28 +16,22 @@ pub async fn execute(command: ConfigCommands, kubeconfig_path: Option<&str>) -> 
             let config = KubeConfig::load_from_file(&config_path)?;
             println!("{}", config.current_context);
         }
-        ConfigCommands::View { minify, flatten } => {
+        ConfigCommands::View { minify: _, flatten: _ } => {
             let config = KubeConfig::load_from_file(&config_path)?;
             let yaml = serde_yaml::to_string(&config)?;
             println!("{}", yaml);
         }
         ConfigCommands::UseContext { name } => {
             let mut config = KubeConfig::load_from_file(&config_path)?;
-
-            // Verify the context exists
             if !config.contexts.iter().any(|ctx| ctx.name == name) {
                 anyhow::bail!("Context '{}' not found in kubeconfig", name);
             }
-
             config.current_context = name.clone();
-
-            // Save the updated config
             let yaml = serde_yaml::to_string(&config)?;
             std::fs::write(&config_path, yaml)?;
-
             println!("Switched to context \"{}\"", name);
         }
-        ConfigCommands::GetContexts { output } => {
+        ConfigCommands::GetContexts { output: _ } => {
             let config = KubeConfig::load_from_file(&config_path)?;
             println!("CURRENT   NAME                CLUSTER             AUTHINFO");
             for ctx in &config.contexts {
@@ -59,19 +53,22 @@ pub async fn execute(command: ConfigCommands, kubeconfig_path: Option<&str>) -> 
                 println!("{}", cluster.name);
             }
         }
+        ConfigCommands::GetUsers {} => {
+            let config = KubeConfig::load_from_file(&config_path)?;
+            println!("NAME");
+            for user in &config.users {
+                println!("{}", user.name);
+            }
+        }
         ConfigCommands::Set { property, value } => {
             let mut config = KubeConfig::load_from_file(&config_path)?;
-
-            // Parse property path (e.g., "current-context", "contexts.default.namespace")
             let parts: Vec<&str> = property.split('.').collect();
-
             match parts.as_slice() {
                 ["current-context"] => {
                     config.current_context = value.clone();
                     println!("Property \"current-context\" set");
                 }
                 ["contexts", ctx_name, "namespace"] => {
-                    // Find and update context namespace
                     let mut found = false;
                     for ctx in &mut config.contexts {
                         if ctx.name == *ctx_name {
@@ -131,18 +128,17 @@ pub async fn execute(command: ConfigCommands, kubeconfig_path: Option<&str>) -> 
                     anyhow::bail!("Unsupported property path: {}. Supported: current-context, contexts.<name>.namespace, contexts.<name>.cluster, contexts.<name>.user, clusters.<name>.server", property);
                 }
             }
-
-            // Save the updated config
             let yaml = serde_yaml::to_string(&config)?;
             std::fs::write(&config_path, yaml)?;
         }
         ConfigCommands::Unset { property } => {
             let mut config = KubeConfig::load_from_file(&config_path)?;
-
-            // Parse property path
             let parts: Vec<&str> = property.split('.').collect();
-
             match parts.as_slice() {
+                ["current-context"] => {
+                    config.current_context = String::new();
+                    println!("Property \"current-context\" unset");
+                }
                 ["contexts", ctx_name, "namespace"] => {
                     let mut found = false;
                     for ctx in &mut config.contexts {
@@ -157,16 +153,535 @@ pub async fn execute(command: ConfigCommands, kubeconfig_path: Option<&str>) -> 
                     }
                     println!("Property \"contexts.{}.namespace\" unset", ctx_name);
                 }
+                ["contexts", ctx_name, "cluster"] => {
+                    let mut found = false;
+                    for ctx in &mut config.contexts {
+                        if ctx.name == *ctx_name {
+                            ctx.context.cluster = String::new();
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        anyhow::bail!("Context '{}' not found", ctx_name);
+                    }
+                    println!("Property \"contexts.{}.cluster\" unset", ctx_name);
+                }
+                ["contexts", ctx_name, "user"] => {
+                    let mut found = false;
+                    for ctx in &mut config.contexts {
+                        if ctx.name == *ctx_name {
+                            ctx.context.user = String::new();
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        anyhow::bail!("Context '{}' not found", ctx_name);
+                    }
+                    println!("Property \"contexts.{}.user\" unset", ctx_name);
+                }
+                ["clusters", cluster_name, "server"] => {
+                    let mut found = false;
+                    for cluster in &mut config.clusters {
+                        if cluster.name == *cluster_name {
+                            cluster.cluster.server = String::new();
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        anyhow::bail!("Cluster '{}' not found", cluster_name);
+                    }
+                    println!("Property \"clusters.{}.server\" unset", cluster_name);
+                }
                 _ => {
-                    anyhow::bail!("Unsupported property path for unset: {}. Supported: contexts.<name>.namespace", property);
+                    anyhow::bail!(
+                        "Unsupported property path for unset: {}. Supported: current-context, contexts.<name>.namespace, contexts.<name>.cluster, contexts.<name>.user, clusters.<name>.server",
+                        property
+                    );
                 }
             }
-
-            // Save the updated config
             let yaml = serde_yaml::to_string(&config)?;
             std::fs::write(&config_path, yaml)?;
+        }
+        ConfigCommands::DeleteCluster { name } => {
+            let mut config = KubeConfig::load_from_file(&config_path)?;
+            let initial_len = config.clusters.len();
+            config.clusters.retain(|c| c.name != name);
+            if config.clusters.len() == initial_len {
+                anyhow::bail!(
+                    "cannot delete cluster \"{}\", not in {}",
+                    name,
+                    config_path.display()
+                );
+            }
+            let yaml = serde_yaml::to_string(&config)?;
+            std::fs::write(&config_path, yaml)?;
+            println!("deleted cluster \"{}\" from {}", name, config_path.display());
+        }
+        ConfigCommands::DeleteContext { name } => {
+            let mut config = KubeConfig::load_from_file(&config_path)?;
+            let initial_len = config.contexts.len();
+            config.contexts.retain(|c| c.name != name);
+            if config.contexts.len() == initial_len {
+                anyhow::bail!(
+                    "cannot delete context \"{}\", not in {}",
+                    name,
+                    config_path.display()
+                );
+            }
+            let yaml = serde_yaml::to_string(&config)?;
+            std::fs::write(&config_path, yaml)?;
+            println!(
+                "deleted context \"{}\" from {}",
+                name,
+                config_path.display()
+            );
+        }
+        ConfigCommands::DeleteUser { name } => {
+            let mut config = KubeConfig::load_from_file(&config_path)?;
+            let initial_len = config.users.len();
+            config.users.retain(|u| u.name != name);
+            if config.users.len() == initial_len {
+                anyhow::bail!(
+                    "cannot delete user \"{}\", not in {}",
+                    name,
+                    config_path.display()
+                );
+            }
+            let yaml = serde_yaml::to_string(&config)?;
+            std::fs::write(&config_path, yaml)?;
+            println!("deleted user \"{}\" from {}", name, config_path.display());
+        }
+        ConfigCommands::RenameContext { old_name, new_name } => {
+            let mut config = KubeConfig::load_from_file(&config_path)?;
+            if config.contexts.iter().any(|c| c.name == new_name) {
+                anyhow::bail!(
+                    "cannot rename context \"{}\": context \"{}\" already exists",
+                    old_name,
+                    new_name
+                );
+            }
+            let mut found = false;
+            for ctx in &mut config.contexts {
+                if ctx.name == old_name {
+                    ctx.name = new_name.clone();
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                anyhow::bail!(
+                    "cannot rename context \"{}\": context not found",
+                    old_name
+                );
+            }
+            if config.current_context == old_name {
+                config.current_context = new_name.clone();
+            }
+            let yaml = serde_yaml::to_string(&config)?;
+            std::fs::write(&config_path, yaml)?;
+            println!("Context \"{}\" renamed to \"{}\".", old_name, new_name);
+        }
+        ConfigCommands::SetCluster {
+            name,
+            server,
+            certificate_authority,
+            certificate_authority_data,
+            insecure_skip_tls_verify,
+        } => {
+            let mut config = KubeConfig::load_from_file(&config_path)?;
+            let cluster_entry = config.clusters.iter_mut().find(|c| c.name == name);
+            if let Some(entry) = cluster_entry {
+                if let Some(s) = server {
+                    entry.cluster.server = s;
+                }
+                if certificate_authority.is_some() {
+                    entry.cluster.certificate_authority = certificate_authority;
+                }
+                if certificate_authority_data.is_some() {
+                    entry.cluster.certificate_authority_data = certificate_authority_data;
+                }
+                if insecure_skip_tls_verify.is_some() {
+                    entry.cluster.insecure_skip_tls_verify = insecure_skip_tls_verify;
+                }
+            } else {
+                config.clusters.push(ClusterEntry {
+                    name: name.clone(),
+                    cluster: Cluster {
+                        server: server.unwrap_or_default(),
+                        certificate_authority,
+                        certificate_authority_data,
+                        insecure_skip_tls_verify,
+                    },
+                });
+            }
+            let yaml = serde_yaml::to_string(&config)?;
+            std::fs::write(&config_path, yaml)?;
+            println!("Cluster \"{}\" set.", name);
+        }
+        ConfigCommands::SetContext {
+            name,
+            cluster,
+            user,
+            namespace,
+        } => {
+            let mut config = KubeConfig::load_from_file(&config_path)?;
+            let ctx_entry = config.contexts.iter_mut().find(|c| c.name == name);
+            if let Some(entry) = ctx_entry {
+                if let Some(c) = cluster {
+                    entry.context.cluster = c;
+                }
+                if let Some(u) = user {
+                    entry.context.user = u;
+                }
+                if let Some(ns) = namespace {
+                    entry.context.namespace = ns;
+                }
+            } else {
+                config.contexts.push(ContextEntry {
+                    name: name.clone(),
+                    context: Context {
+                        cluster: cluster.unwrap_or_default(),
+                        user: user.unwrap_or_default(),
+                        namespace: namespace.unwrap_or_else(|| "default".to_string()),
+                    },
+                });
+            }
+            let yaml = serde_yaml::to_string(&config)?;
+            std::fs::write(&config_path, yaml)?;
+            println!("Context \"{}\" modified.", name);
+        }
+        ConfigCommands::SetCredentials {
+            name,
+            token,
+            username,
+            password,
+            client_certificate,
+            client_key,
+            client_certificate_data,
+            client_key_data,
+        } => {
+            let mut config = KubeConfig::load_from_file(&config_path)?;
+            let user_entry = config.users.iter_mut().find(|u| u.name == name);
+            if let Some(entry) = user_entry {
+                if token.is_some() {
+                    entry.user.token = token;
+                }
+                if username.is_some() {
+                    entry.user.username = username;
+                }
+                if password.is_some() {
+                    entry.user.password = password;
+                }
+                if client_certificate.is_some() {
+                    entry.user.client_certificate = client_certificate;
+                }
+                if client_key.is_some() {
+                    entry.user.client_key = client_key;
+                }
+                if client_certificate_data.is_some() {
+                    entry.user.client_certificate_data = client_certificate_data;
+                }
+                if client_key_data.is_some() {
+                    entry.user.client_key_data = client_key_data;
+                }
+            } else {
+                config.users.push(UserEntry {
+                    name: name.clone(),
+                    user: User {
+                        client_certificate,
+                        client_certificate_data,
+                        client_key,
+                        client_key_data,
+                        token,
+                        username,
+                        password,
+                        auth_provider: None,
+                        exec: None,
+                    },
+                });
+            }
+            let yaml = serde_yaml::to_string(&config)?;
+            std::fs::write(&config_path, yaml)?;
+            println!("User \"{}\" set.", name);
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn create_test_kubeconfig() -> (NamedTempFile, PathBuf) {
+        let yaml = r#"apiVersion: v1
+kind: Config
+current-context: test-ctx
+contexts:
+- name: test-ctx
+  context:
+    cluster: test-cluster
+    user: test-user
+    namespace: default
+- name: other-ctx
+  context:
+    cluster: other-cluster
+    user: other-user
+    namespace: kube-system
+clusters:
+- name: test-cluster
+  cluster:
+    server: https://localhost:6443
+- name: other-cluster
+  cluster:
+    server: https://other:6443
+users:
+- name: test-user
+  user:
+    token: test-token
+- name: other-user
+  user:
+    token: other-token
+"#;
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(yaml.as_bytes()).unwrap();
+        let path = f.path().to_path_buf();
+        (f, path)
+    }
+
+    #[tokio::test]
+    async fn test_config_current_context() {
+        let (_f, path) = create_test_kubeconfig();
+        let result = execute(
+            ConfigCommands::CurrentContext {},
+            Some(path.to_str().unwrap()),
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_config_use_context_valid() {
+        let (_f, path) = create_test_kubeconfig();
+        let result = execute(
+            ConfigCommands::UseContext {
+                name: "other-ctx".to_string(),
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await;
+        assert!(result.is_ok());
+        let updated = KubeConfig::load_from_file(&path).unwrap();
+        assert_eq!(updated.current_context, "other-ctx");
+    }
+
+    #[tokio::test]
+    async fn test_config_use_context_invalid() {
+        let (_f, path) = create_test_kubeconfig();
+        let result = execute(
+            ConfigCommands::UseContext {
+                name: "nonexistent".to_string(),
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_delete_cluster() {
+        let (_f, path) = create_test_kubeconfig();
+        execute(
+            ConfigCommands::DeleteCluster {
+                name: "other-cluster".to_string(),
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await
+        .unwrap();
+        let config = KubeConfig::load_from_file(&path).unwrap();
+        assert_eq!(config.clusters.len(), 1);
+        assert_eq!(config.clusters[0].name, "test-cluster");
+    }
+
+    #[tokio::test]
+    async fn test_delete_cluster_not_found() {
+        let (_f, path) = create_test_kubeconfig();
+        let result = execute(
+            ConfigCommands::DeleteCluster {
+                name: "nonexistent".to_string(),
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_delete_context() {
+        let (_f, path) = create_test_kubeconfig();
+        execute(
+            ConfigCommands::DeleteContext {
+                name: "other-ctx".to_string(),
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await
+        .unwrap();
+        let config = KubeConfig::load_from_file(&path).unwrap();
+        assert_eq!(config.contexts.len(), 1);
+        assert_eq!(config.contexts[0].name, "test-ctx");
+    }
+
+    #[tokio::test]
+    async fn test_delete_user() {
+        let (_f, path) = create_test_kubeconfig();
+        execute(
+            ConfigCommands::DeleteUser {
+                name: "other-user".to_string(),
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await
+        .unwrap();
+        let config = KubeConfig::load_from_file(&path).unwrap();
+        assert_eq!(config.users.len(), 1);
+        assert_eq!(config.users[0].name, "test-user");
+    }
+
+    #[tokio::test]
+    async fn test_get_users() {
+        let (_f, path) = create_test_kubeconfig();
+        let result = execute(ConfigCommands::GetUsers {}, Some(path.to_str().unwrap())).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_rename_context() {
+        let (_f, path) = create_test_kubeconfig();
+        execute(
+            ConfigCommands::RenameContext {
+                old_name: "other-ctx".to_string(),
+                new_name: "renamed-ctx".to_string(),
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await
+        .unwrap();
+        let config = KubeConfig::load_from_file(&path).unwrap();
+        assert!(config.contexts.iter().any(|c| c.name == "renamed-ctx"));
+        assert!(!config.contexts.iter().any(|c| c.name == "other-ctx"));
+    }
+
+    #[tokio::test]
+    async fn test_rename_context_updates_current() {
+        let (_f, path) = create_test_kubeconfig();
+        execute(
+            ConfigCommands::RenameContext {
+                old_name: "test-ctx".to_string(),
+                new_name: "renamed-current".to_string(),
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await
+        .unwrap();
+        let config = KubeConfig::load_from_file(&path).unwrap();
+        assert_eq!(config.current_context, "renamed-current");
+    }
+
+    #[tokio::test]
+    async fn test_set_cluster_new() {
+        let (_f, path) = create_test_kubeconfig();
+        execute(
+            ConfigCommands::SetCluster {
+                name: "new-cluster".to_string(),
+                server: Some("https://new:6443".to_string()),
+                certificate_authority: None,
+                certificate_authority_data: None,
+                insecure_skip_tls_verify: Some(true),
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await
+        .unwrap();
+        let config = KubeConfig::load_from_file(&path).unwrap();
+        let cluster = config
+            .clusters
+            .iter()
+            .find(|c| c.name == "new-cluster")
+            .unwrap();
+        assert_eq!(cluster.cluster.server, "https://new:6443");
+        assert_eq!(cluster.cluster.insecure_skip_tls_verify, Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_set_context_new() {
+        let (_f, path) = create_test_kubeconfig();
+        execute(
+            ConfigCommands::SetContext {
+                name: "new-ctx".to_string(),
+                cluster: Some("test-cluster".to_string()),
+                user: Some("test-user".to_string()),
+                namespace: Some("custom-ns".to_string()),
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await
+        .unwrap();
+        let config = KubeConfig::load_from_file(&path).unwrap();
+        let ctx = config
+            .contexts
+            .iter()
+            .find(|c| c.name == "new-ctx")
+            .unwrap();
+        assert_eq!(ctx.context.cluster, "test-cluster");
+        assert_eq!(ctx.context.namespace, "custom-ns");
+    }
+
+    #[tokio::test]
+    async fn test_set_credentials_new() {
+        let (_f, path) = create_test_kubeconfig();
+        execute(
+            ConfigCommands::SetCredentials {
+                name: "new-user".to_string(),
+                token: Some("my-token".to_string()),
+                username: None,
+                password: None,
+                client_certificate: None,
+                client_key: None,
+                client_certificate_data: None,
+                client_key_data: None,
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await
+        .unwrap();
+        let config = KubeConfig::load_from_file(&path).unwrap();
+        let user = config
+            .users
+            .iter()
+            .find(|u| u.name == "new-user")
+            .unwrap();
+        assert_eq!(user.user.token, Some("my-token".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_unset_current_context() {
+        let (_f, path) = create_test_kubeconfig();
+        execute(
+            ConfigCommands::Unset {
+                property: "current-context".to_string(),
+            },
+            Some(path.to_str().unwrap()),
+        )
+        .await
+        .unwrap();
+        let config = KubeConfig::load_from_file(&path).unwrap();
+        assert_eq!(config.current_context, "");
+    }
 }

@@ -191,4 +191,48 @@ mod tests {
         assert_ne!(addr.port(), 0);
         assert_eq!(addr.ip().to_string(), "127.0.0.1");
     }
+
+    #[test]
+    fn test_proxy_config_address_port_parsing() {
+        // Verify that address:port strings parse to valid SocketAddr
+        let cases = vec![
+            ("127.0.0.1", 8001, "127.0.0.1:8001"),
+            ("0.0.0.0", 9090, "0.0.0.0:9090"),
+            ("127.0.0.1", 0, "127.0.0.1:0"),
+        ];
+        for (addr, port, expected) in cases {
+            let formatted = format!("{}:{}", addr, port);
+            let parsed: std::net::SocketAddr = formatted.parse().unwrap();
+            assert_eq!(parsed.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn test_proxy_config_invalid_address() {
+        let formatted = format!("{}:{}", "not-an-ip", 8001);
+        let result: Result<std::net::SocketAddr, _> = formatted.parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_proxy_api_server_trailing_slash_trimmed() {
+        // The serve function trims trailing slashes from api_server
+        let api_server = "https://localhost:6443/".trim_end_matches('/');
+        assert_eq!(api_server, "https://localhost:6443");
+
+        let api_server_no_slash = "https://localhost:6443".trim_end_matches('/');
+        assert_eq!(api_server_no_slash, "https://localhost:6443");
+    }
+
+    #[test]
+    fn test_proxy_target_url_construction() {
+        // Verify target URL is built as api_server + path_and_query
+        let api_server = "https://localhost:6443";
+        let path_and_query = "/api/v1/namespaces/default/pods?limit=10";
+        let target_url = format!("{}{}", api_server, path_and_query);
+        assert_eq!(
+            target_url,
+            "https://localhost:6443/api/v1/namespaces/default/pods?limit=10"
+        );
+    }
 }

@@ -37,6 +37,43 @@ pub async fn execute(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_copy_spec_from_pod() {
+        let (is_upload, pod, pod_path, local) =
+            parse_copy_spec("my-pod:/var/log/app.log", "/tmp/app.log").unwrap();
+        assert!(!is_upload);
+        assert_eq!(pod, "my-pod");
+        assert_eq!(pod_path, "/var/log/app.log");
+        assert_eq!(local, "/tmp/app.log");
+    }
+
+    #[test]
+    fn test_parse_copy_spec_to_pod() {
+        let (is_upload, pod, pod_path, local) =
+            parse_copy_spec("/tmp/config.yaml", "my-pod:/etc/config").unwrap();
+        assert!(is_upload);
+        assert_eq!(pod, "my-pod");
+        assert_eq!(pod_path, "/etc/config");
+        assert_eq!(local, "/tmp/config.yaml");
+    }
+
+    #[test]
+    fn test_parse_copy_spec_both_local_fails() {
+        let result = parse_copy_spec("/tmp/a", "/tmp/b");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_copy_spec_both_pod_fails() {
+        let result = parse_copy_spec("pod1:/a", "pod2:/b");
+        assert!(result.is_err());
+    }
+}
+
 fn parse_copy_spec(source: &str, dest: &str) -> Result<(bool, String, String, String)> {
     // pod:path format
     if source.contains(':') && !dest.contains(':') {

@@ -19,3 +19,15 @@ pub fn execute() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_kuberc_prints_alpha_message() {
+        // execute() prints to stderr and returns Ok
+        let result = execute();
+        assert!(result.is_ok());
+    }
+}

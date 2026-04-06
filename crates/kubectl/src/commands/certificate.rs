@@ -213,9 +213,10 @@ async fn deny_csr(client: &ApiClient, name: &str, force: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::{json, Value};
+
     #[test]
     fn test_action_validation() {
-        // Just verify the action matching logic
         let action = "approve";
         assert!(matches!(action, "approve" | "deny"));
 
@@ -224,5 +225,114 @@ mod tests {
 
         let action = "invalid";
         assert!(!matches!(action, "approve" | "deny"));
+    }
+
+    #[test]
+    fn test_approve_condition_construction() {
+        // Simulate building the approval condition that approve_csr constructs
+        let csr = json!({
+            "metadata": {"name": "my-csr"},
+            "spec": {},
+            "status": {"conditions": []}
+        });
+
+        let mut updated_csr = csr.clone();
+        let conditions = updated_csr
+            .get_mut("status")
+            .and_then(|s| s.as_object_mut())
+            .map(|s| {
+                s.entry("conditions")
+                    .or_insert_with(|| json!([]))
+                    .as_array_mut()
+                    .unwrap()
+                    .clone()
+            })
+            .unwrap_or_default();
+
+        let mut new_conditions: Vec<Value> = conditions;
+        new_conditions.push(json!({
+            "type": "Approved",
+            "status": "True",
+            "reason": "KubectlApprove",
+            "message": "This CSR was approved by kubectl certificate approve.",
+        }));
+
+        updated_csr["status"]["conditions"] = json!(new_conditions);
+
+        let result_conditions = updated_csr["status"]["conditions"].as_array().unwrap();
+        assert_eq!(result_conditions.len(), 1);
+        assert_eq!(result_conditions[0]["type"], "Approved");
+        assert_eq!(result_conditions[0]["reason"], "KubectlApprove");
+    }
+
+    #[test]
+    fn test_deny_condition_construction() {
+        let csr = json!({
+            "metadata": {"name": "my-csr"},
+            "spec": {},
+            "status": {"conditions": []}
+        });
+
+        let mut updated_csr = csr.clone();
+        let mut new_conditions: Vec<Value> = Vec::new();
+        new_conditions.push(json!({
+            "type": "Denied",
+            "status": "True",
+            "reason": "KubectlDeny",
+            "message": "This CSR was denied by kubectl certificate deny.",
+        }));
+
+        updated_csr["status"]["conditions"] = json!(new_conditions);
+
+        let result_conditions = updated_csr["status"]["conditions"].as_array().unwrap();
+        assert_eq!(result_conditions.len(), 1);
+        assert_eq!(result_conditions[0]["type"], "Denied");
+        assert_eq!(result_conditions[0]["reason"], "KubectlDeny");
+    }
+
+    #[test]
+    fn test_force_removes_opposite_condition() {
+        // When force=true and approving, existing Denied conditions should be removed
+        let existing_conditions = vec![json!({
+            "type": "Denied",
+            "status": "True",
+            "reason": "KubectlDeny",
+        })];
+
+        let force = true;
+        let new_conditions: Vec<Value> = if force {
+            existing_conditions
+                .into_iter()
+                .filter(|c| {
+                    c.get("type").and_then(|t| t.as_str()).unwrap_or("") != "Denied"
+                })
+                .collect()
+        } else {
+            existing_conditions
+        };
+
+        assert!(new_conditions.is_empty(), "Denied condition should be removed when force approving");
+    }
+
+    #[test]
+    fn test_csr_api_path_construction() {
+        let name = "my-csr";
+        let csr_path = format!(
+            "/apis/certificates.k8s.io/v1/certificatesigningrequests/{}",
+            name
+        );
+        assert_eq!(
+            csr_path,
+            "/apis/certificates.k8s.io/v1/certificatesigningrequests/my-csr"
+        );
+
+        let approval_path = format!(
+            "/apis/certificates.k8s.io/v1/certificatesigningrequests/{}/approval",
+            name
+        );
+        assert_eq!(
+            approval_path,
+            "/apis/certificates.k8s.io/v1/certificatesigningrequests/my-csr/approval"
+        );
     }
 }

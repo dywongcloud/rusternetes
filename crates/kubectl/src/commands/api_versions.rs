@@ -21,6 +21,51 @@ struct GroupVersionForDiscovery {
     group_version: String,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_api_group_list_deserialization() {
+        let json = r#"{
+            "groups": [
+                {
+                    "name": "apps",
+                    "versions": [
+                        {"groupVersion": "apps/v1"}
+                    ]
+                },
+                {
+                    "name": "batch",
+                    "versions": [
+                        {"groupVersion": "batch/v1"},
+                        {"groupVersion": "batch/v1beta1"}
+                    ]
+                }
+            ]
+        }"#;
+        let group_list: ApiGroupList = serde_json::from_str(json).unwrap();
+        assert_eq!(group_list.groups.len(), 2);
+        assert_eq!(group_list.groups[0].name, "apps");
+        assert_eq!(group_list.groups[1].versions.len(), 2);
+        assert_eq!(
+            group_list.groups[1].versions[0].group_version,
+            "batch/v1"
+        );
+    }
+
+    #[test]
+    fn test_versions_sorting() {
+        let mut versions = vec![
+            "batch/v1".to_string(),
+            "apps/v1".to_string(),
+            "v1".to_string(),
+        ];
+        versions.sort();
+        assert_eq!(versions, vec!["apps/v1", "batch/v1", "v1"]);
+    }
+}
+
 /// Display supported API versions
 pub async fn execute(client: &ApiClient) -> Result<()> {
     let mut versions = Vec::new();

@@ -193,6 +193,97 @@ fn check_condition(resource: &Value, condition_type: &str, expected_status: &str
     Ok(false)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_condition_bare() {
+        let (typ, status) = parse_condition("Ready");
+        assert_eq!(typ, "Ready");
+        assert_eq!(status, "True");
+    }
+
+    #[test]
+    fn test_parse_condition_with_prefix() {
+        let (typ, status) = parse_condition("condition=Ready");
+        assert_eq!(typ, "Ready");
+        assert_eq!(status, "True");
+    }
+
+    #[test]
+    fn test_parse_condition_with_status() {
+        let (typ, status) = parse_condition("condition=Available=False");
+        assert_eq!(typ, "Available");
+        assert_eq!(status, "False");
+    }
+
+    #[test]
+    fn test_parse_duration_seconds() {
+        let d = parse_duration("30s").unwrap();
+        assert_eq!(d, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_parse_duration_minutes() {
+        let d = parse_duration("5m").unwrap();
+        assert_eq!(d, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn test_parse_duration_hours() {
+        let d = parse_duration("1h").unwrap();
+        assert_eq!(d, Duration::from_secs(3600));
+    }
+
+    #[test]
+    fn test_parse_duration_empty_defaults() {
+        let d = parse_duration("").unwrap();
+        assert_eq!(d, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_parse_duration_raw_number() {
+        let d = parse_duration("60").unwrap();
+        assert_eq!(d, Duration::from_secs(60));
+    }
+
+    #[test]
+    fn test_check_condition_found() {
+        let resource = serde_json::json!({
+            "status": {
+                "conditions": [
+                    {"type": "Ready", "status": "True"},
+                    {"type": "Available", "status": "False"}
+                ]
+            }
+        });
+        assert!(check_condition(&resource, "Ready", "True").unwrap());
+        assert!(!check_condition(&resource, "Available", "True").unwrap());
+        assert!(check_condition(&resource, "Available", "False").unwrap());
+    }
+
+    #[test]
+    fn test_check_condition_not_found() {
+        let resource = serde_json::json!({"status": {"conditions": []}});
+        assert!(!check_condition(&resource, "Ready", "True").unwrap());
+    }
+
+    #[test]
+    fn test_parse_resource_type_pods() {
+        let (api, name) = parse_resource_type("pods").unwrap();
+        assert_eq!(api, "api/v1");
+        assert_eq!(name, "pods");
+    }
+
+    #[test]
+    fn test_parse_resource_type_deploy() {
+        let (api, name) = parse_resource_type("deploy").unwrap();
+        assert_eq!(api, "apis/apps/v1");
+        assert_eq!(name, "deployments");
+    }
+}
+
 fn parse_duration(duration: &str) -> Result<Duration> {
     let duration = duration.trim();
     if duration.is_empty() {

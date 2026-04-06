@@ -8,7 +8,7 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use client::ApiClient;
 use kubeconfig::KubeConfig;
-use types::{AuthCommands, CertificateCommands, ConfigCommands, PluginCommands, RolloutCommands, SetCommands, TopCommands};
+use types::{ApplyCommands, AuthCommands, CertificateCommands, ConfigCommands, CreateCommands, PluginCommands, RolloutCommands, SetCommands, TopCommands};
 
 #[derive(Parser)]
 #[command(name = "kubectl")]
@@ -79,9 +79,13 @@ enum Commands {
         /// Show resource details in additional columns (wider output)
         #[arg(long)]
         show_labels: bool,
+
+        /// Sort output by JSONPath expression (e.g. .metadata.name, .status.startTime)
+        #[arg(long)]
+        sort_by: Option<String>,
     },
 
-    /// Create a resource from a file
+    /// Create a resource from a file or using subcommands
     Create {
         /// Path to YAML file
         #[arg(short = 'f', long)]
@@ -90,6 +94,10 @@ enum Commands {
         /// Namespace for the resource
         #[arg(short = 'n', long)]
         namespace: Option<String>,
+
+        /// Subcommand for specific resource creation
+        #[command(subcommand)]
+        subcommand: Option<CreateCommands>,
 
         /// Inline resource type and name (e.g., kubectl create namespace foo)
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -120,20 +128,36 @@ enum Commands {
         #[arg(long)]
         all: bool,
 
-        /// Force deletion (skip graceful delete)
+        /// Force deletion (grace-period=0 + cascade=Background)
         #[arg(long)]
         force: bool,
 
-        /// Grace period in seconds
+        /// Grace period in seconds before forceful termination
         #[arg(long)]
         grace_period: Option<i64>,
+
+        /// Cascade strategy: background, foreground, or orphan
+        #[arg(long, default_value = "background")]
+        cascade: String,
+
+        /// Server-side dry run (no changes persisted). Use --dry-run=server
+        #[arg(long)]
+        dry_run: Option<String>,
+
+        /// Wait for resources to be fully deleted
+        #[arg(long)]
+        wait: bool,
+
+        /// Output format (only 'name' is supported: prints resource/name)
+        #[arg(short = 'o', long)]
+        output: Option<String>,
     },
 
     /// Apply a configuration to a resource
     Apply {
-        /// Path to YAML file
-        #[arg(short = 'f', long)]
-        file: String,
+        /// Path to YAML/JSON file(s) or directory. Can be specified multiple times.
+        #[arg(short = 'f', long = "filename", num_args = 1..)]
+        file: Vec<String>,
 
         /// Namespace for the resource
         #[arg(short = 'n', long)]
@@ -150,6 +174,26 @@ enum Commands {
         /// Force apply (for conflicts)
         #[arg(long)]
         force: bool,
+
+        /// Process the directory used in -f recursively
+        #[arg(short = 'R', long)]
+        recursive: bool,
+
+        /// Name of the manager used to track field ownership (server-side apply)
+        #[arg(long, default_value = "kubectl-client-side-apply")]
+        field_manager: String,
+
+        /// Output format: json, yaml, or name
+        #[arg(short = 'o', long)]
+        output: Option<String>,
+
+        /// Validation mode: true, false, strict, warn, ignore
+        #[arg(long)]
+        validate: Option<String>,
+
+        /// Apply subcommands
+        #[command(subcommand)]
+        subcommand: Option<ApplyCommands>,
     },
 
     /// Replace a resource by file name or stdin
@@ -1025,6 +1069,7 @@ async fn main() -> Result<()> {
             field_selector,
             watch,
             show_labels,
+            sort_by,
         } => {
             let ns = if all_namespaces {
                 None
@@ -1043,16 +1088,25 @@ async fn main() -> Result<()> {
                 field_selector.as_deref(),
                 watch,
                 show_labels,
+                sort_by.as_deref(),
             )
             .await?;
         }
         Commands::Create {
             file,
             namespace,
+            subcommand,
             args,
         } => {
             if let Some(file_path) = file {
                 commands::create::execute(&client, &file_path).await?;
+            } else if let Some(ref sub) = subcommand {
+                commands::create::execute_subcommand(
+                    &client,
+                    sub,
+                    namespace.as_deref().unwrap_or(&default_namespace),
+                )
+                .await?;
             } else if !args.is_empty() {
                 commands::create::execute_inline(
                     &client,
@@ -1061,7 +1115,7 @@ async fn main() -> Result<()> {
                 )
                 .await?;
             } else {
-                anyhow::bail!("Either --file or resource arguments must be provided");
+                anyhow::bail!("Either --file, a subcommand, or resource arguments must be provided");
             }
         }
         Commands::Delete {
@@ -1070,20 +1124,46 @@ async fn main() -> Result<()> {
             file,
             namespace,
             selector,
-            all: _all,
+            all,
             force,
             grace_period,
+            cascade,
+            dry_run,
+            wait,
+            output,
         } => {
+            let mut opts = commands::delete::DeleteOptions {
+                grace_period,
+                force,
+                cascade: commands::delete::CascadeStrategy::from_str_value(&cascade)?,
+                delete_all: all,
+                dry_run: dry_run.as_deref() == Some("server"),
+                wait,
+                output,
+            };
+            opts.resolve();
+
             if let Some(file_path) = file {
                 commands::delete::execute_from_file(&client, &file_path).await?;
+            } else if all {
+                if let Some(rt) = resource_type {
+                    commands::delete::execute_delete_all(
+                        &client,
+                        &rt,
+                        namespace.as_deref().unwrap_or(&default_namespace),
+                        &opts,
+                    )
+                    .await?;
+                } else {
+                    anyhow::bail!("Must provide resource type when using --all");
+                }
             } else if let (Some(rt), Some(n)) = (resource_type.clone(), name) {
                 commands::delete::execute_enhanced(
                     &client,
                     &rt,
                     &n,
                     namespace.as_deref().unwrap_or(&default_namespace),
-                    force,
-                    grace_period,
+                    &opts,
                 )
                 .await?;
             } else if let (Some(rt), Some(sel)) = (resource_type, selector) {
@@ -1092,6 +1172,7 @@ async fn main() -> Result<()> {
                     &rt,
                     &sel,
                     namespace.as_deref().unwrap_or(&default_namespace),
+                    &opts,
                 )
                 .await?;
             } else {
@@ -1104,16 +1185,35 @@ async fn main() -> Result<()> {
             dry_run,
             server_side,
             force,
+            recursive,
+            field_manager,
+            output,
+            validate,
+            subcommand,
         } => {
-            commands::apply::execute_enhanced(
-                &client,
-                &file,
-                namespace.as_deref(),
-                dry_run.as_deref(),
-                server_side,
-                force,
-            )
-            .await?;
+            if let Some(sub) = subcommand {
+                commands::apply::execute_subcommand(
+                    &client,
+                    sub,
+                    namespace.as_deref().unwrap_or(&default_namespace),
+                )
+                .await?;
+            } else if !file.is_empty() {
+                let options = commands::apply::ApplyOptions {
+                    files: file,
+                    namespace: namespace.clone(),
+                    dry_run: dry_run.clone(),
+                    server_side,
+                    force,
+                    recursive,
+                    field_manager: field_manager.clone(),
+                    output: output.clone(),
+                    validate: validate.clone(),
+                };
+                commands::apply::execute_with_options(&client, &options).await?;
+            } else {
+                anyhow::bail!("Either --filename/-f or a subcommand must be provided");
+            }
         }
         Commands::Replace {
             file,

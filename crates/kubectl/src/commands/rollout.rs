@@ -415,6 +415,52 @@ async fn rollout_resume(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rollout_api_path_deployment() {
+        let (path, version) =
+            get_resource_api_path("deployment", "default", "nginx").unwrap();
+        assert_eq!(
+            path,
+            "/apis/apps/v1/namespaces/default/deployments/nginx"
+        );
+        assert_eq!(version, "apps/v1");
+    }
+
+    #[test]
+    fn test_rollout_api_path_deploy_alias() {
+        let (path, _) = get_resource_api_path("deploy", "prod", "web").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/prod/deployments/web");
+    }
+
+    #[test]
+    fn test_rollout_api_path_statefulset() {
+        let (path, _) = get_resource_api_path("sts", "default", "db").unwrap();
+        assert_eq!(
+            path,
+            "/apis/apps/v1/namespaces/default/statefulsets/db"
+        );
+    }
+
+    #[test]
+    fn test_rollout_api_path_daemonset() {
+        let (path, _) = get_resource_api_path("ds", "kube-system", "proxy").unwrap();
+        assert_eq!(
+            path,
+            "/apis/apps/v1/namespaces/kube-system/daemonsets/proxy"
+        );
+    }
+
+    #[test]
+    fn test_rollout_api_path_unsupported() {
+        let result = get_resource_api_path("pod", "default", "x");
+        assert!(result.is_err());
+    }
+}
+
 fn get_resource_api_path(
     resource_type: &str,
     namespace: &str,

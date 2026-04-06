@@ -99,6 +99,65 @@ pub async fn execute_full(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_log_url_basic() {
+        let url = format!("/api/v1/namespaces/{}/pods/{}/log", "default", "my-pod");
+        assert_eq!(url, "/api/v1/namespaces/default/pods/my-pod/log");
+    }
+
+    #[test]
+    fn test_log_url_with_params() {
+        let ns = "prod";
+        let pod = "web";
+        let mut url = format!("/api/v1/namespaces/{}/pods/{}/log", ns, pod);
+        let mut params = Vec::new();
+        params.push("container=nginx".to_string());
+        params.push("follow=true".to_string());
+        params.push(format!("tailLines={}", 100));
+        url.push('?');
+        url.push_str(&params.join("&"));
+
+        assert_eq!(
+            url,
+            "/api/v1/namespaces/prod/pods/web/log?container=nginx&follow=true&tailLines=100"
+        );
+    }
+
+    #[test]
+    fn test_parse_duration_seconds() {
+        assert_eq!(parse_duration_to_seconds("5s").unwrap(), 5);
+    }
+
+    #[test]
+    fn test_parse_duration_minutes() {
+        assert_eq!(parse_duration_to_seconds("2m").unwrap(), 120);
+    }
+
+    #[test]
+    fn test_parse_duration_hours() {
+        assert_eq!(parse_duration_to_seconds("1h").unwrap(), 3600);
+    }
+
+    #[test]
+    fn test_parse_duration_days() {
+        assert_eq!(parse_duration_to_seconds("1d").unwrap(), 86400);
+    }
+
+    #[test]
+    fn test_parse_duration_raw_number_defaults_seconds() {
+        assert_eq!(parse_duration_to_seconds("30").unwrap(), 30);
+    }
+
+    #[test]
+    fn test_parse_duration_empty_fails() {
+        assert!(parse_duration_to_seconds("").is_err());
+    }
+}
+
 fn parse_duration_to_seconds(duration: &str) -> Result<i64> {
     let duration = duration.trim();
     if duration.is_empty() {

@@ -91,6 +91,37 @@ pub async fn execute(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_resource_api_path_pod_aliases() {
+        for alias in &["pod", "pods", "po"] {
+            let path = get_resource_api_path(alias, "default", "nginx").unwrap();
+            assert_eq!(path, "/api/v1/namespaces/default/pods/nginx");
+        }
+    }
+
+    #[test]
+    fn test_get_resource_api_path_deployment_alias() {
+        let path = get_resource_api_path("deploy", "ns1", "web").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/ns1/deployments/web");
+    }
+
+    #[test]
+    fn test_get_resource_api_path_cluster_scoped_node() {
+        let path = get_resource_api_path("node", "ignored", "node-1").unwrap();
+        assert_eq!(path, "/api/v1/nodes/node-1");
+    }
+
+    #[test]
+    fn test_get_resource_api_path_unsupported() {
+        let result = get_resource_api_path("foobar", "default", "x");
+        assert!(result.is_err());
+    }
+}
+
 fn get_resource_api_path(resource_type: &str, namespace: &str, name: &str) -> Result<String> {
     Ok(match resource_type {
         "pod" | "pods" | "po" => format!("/api/v1/namespaces/{}/pods/{}", namespace, name),

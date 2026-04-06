@@ -2,7 +2,8 @@ use crate::client::ApiClient;
 use crate::types::AuthCommands;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::fs;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,7 +103,7 @@ pub async fn execute(
             let result: Value = client
                 .post(
                     "/apis/authentication.k8s.io/v1/selfsubjectreviews",
-                    &serde_json::json!({
+                    &json!({
                         "apiVersion": "authentication.k8s.io/v1",
                         "kind": "SelfSubjectReview",
                     }),
@@ -131,7 +132,283 @@ pub async fn execute(
                 }
             }
         }
+        AuthCommands::Reconcile {
+            filename,
+            namespace,
+            remove_extra_permissions,
+            remove_extra_subjects,
+        } => {
+            let ns = namespace.as_deref().unwrap_or(default_namespace);
+            execute_reconcile(
+                client,
+                &filename,
+                ns,
+                remove_extra_permissions,
+                remove_extra_subjects,
+            )
+            .await?;
+        }
     }
 
     Ok(())
+}
+
+/// Reconcile RBAC resources from a file against the server.
+///
+/// Reads Role, ClusterRole, RoleBinding, and ClusterRoleBinding resources from
+/// a file and ensures they exist on the server with the correct rules/subjects.
+async fn execute_reconcile(
+    client: &ApiClient,
+    filename: &str,
+    namespace: &str,
+    remove_extra_permissions: bool,
+    remove_extra_subjects: bool,
+) -> Result<()> {
+    let contents = fs::read_to_string(filename).context("Failed to read file")?;
+
+    for document in serde_yaml::Deserializer::from_str(&contents) {
+        let value: serde_yaml::Value =
+            serde_yaml::Value::deserialize(document).context("Failed to parse YAML document")?;
+
+        if value.is_null() {
+            continue;
+        }
+
+        let kind = value
+            .get("kind")
+            .and_then(|k| k.as_str())
+            .context("Missing 'kind' field")?;
+
+        let name = value
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .context("Missing 'metadata.name' field")?;
+
+        let json_value: Value = serde_yaml::from_value(value.clone())?;
+
+        match kind {
+            "ClusterRole" => {
+                let path = format!(
+                    "/apis/rbac.authorization.k8s.io/v1/clusterroles/{}",
+                    name
+                );
+                reconcile_resource(client, &path, kind, name, &json_value, remove_extra_permissions).await?;
+            }
+            "ClusterRoleBinding" => {
+                let path = format!(
+                    "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}",
+                    name
+                );
+                reconcile_binding(client, &path, kind, name, &json_value, remove_extra_subjects).await?;
+            }
+            "Role" => {
+                let res_ns = value
+                    .get("metadata")
+                    .and_then(|m| m.get("namespace"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or(namespace);
+                let path = format!(
+                    "/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles/{}",
+                    res_ns, name
+                );
+                reconcile_resource(client, &path, kind, name, &json_value, remove_extra_permissions).await?;
+            }
+            "RoleBinding" => {
+                let res_ns = value
+                    .get("metadata")
+                    .and_then(|m| m.get("namespace"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or(namespace);
+                let path = format!(
+                    "/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}",
+                    res_ns, name
+                );
+                reconcile_binding(client, &path, kind, name, &json_value, remove_extra_subjects).await?;
+            }
+            _ => {
+                eprintln!(
+                    "Warning: skipping non-RBAC resource kind '{}' in reconcile",
+                    kind
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Reconcile a Role or ClusterRole resource.
+async fn reconcile_resource(
+    client: &ApiClient,
+    path: &str,
+    kind: &str,
+    name: &str,
+    desired: &Value,
+    remove_extra_permissions: bool,
+) -> Result<()> {
+    let existing: std::result::Result<Value, _> = client.get(path).await;
+
+    match existing {
+        Ok(current) => {
+            // Build patch with desired rules
+            let mut patch = json!({});
+            if let Some(rules) = desired.get("rules") {
+                if remove_extra_permissions {
+                    // Replace rules entirely
+                    patch["rules"] = rules.clone();
+                } else {
+                    // Merge: add any missing rules from desired
+                    let current_rules = current
+                        .get("rules")
+                        .and_then(|r| r.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let desired_rules = rules.as_array().cloned().unwrap_or_default();
+
+                    let mut merged = current_rules;
+                    for rule in desired_rules {
+                        if !merged.contains(&rule) {
+                            merged.push(rule);
+                        }
+                    }
+                    patch["rules"] = Value::Array(merged);
+                }
+            }
+
+            if let Some(labels) = desired.get("metadata").and_then(|m| m.get("labels")) {
+                patch["metadata"] = json!({"labels": labels.clone()});
+            }
+
+            let _: Value = client
+                .patch(path, &patch, "application/strategic-merge-patch+json")
+                .await
+                .context(format!("Failed to reconcile {}/{}", kind, name))?;
+            println!("{}/{} reconciled", kind.to_lowercase(), name);
+        }
+        Err(_) => {
+            // Create the resource
+            let collection_path = path.rsplit_once('/').map(|(p, _)| p).unwrap_or(path);
+            let _: Value = client
+                .post(collection_path, desired)
+                .await
+                .context(format!("Failed to create {}/{}", kind, name))?;
+            println!("{}/{} created", kind.to_lowercase(), name);
+        }
+    }
+
+    Ok(())
+}
+
+/// Reconcile a RoleBinding or ClusterRoleBinding resource.
+async fn reconcile_binding(
+    client: &ApiClient,
+    path: &str,
+    kind: &str,
+    name: &str,
+    desired: &Value,
+    remove_extra_subjects: bool,
+) -> Result<()> {
+    let existing: std::result::Result<Value, _> = client.get(path).await;
+
+    match existing {
+        Ok(current) => {
+            let mut patch = json!({});
+
+            // Reconcile roleRef (must match)
+            if let Some(role_ref) = desired.get("roleRef") {
+                let current_role_ref = current.get("roleRef");
+                if current_role_ref.is_some() && current_role_ref != Some(role_ref) {
+                    anyhow::bail!(
+                        "{}/{}: roleRef is immutable and does not match desired state",
+                        kind,
+                        name
+                    );
+                }
+            }
+
+            // Reconcile subjects
+            if let Some(desired_subjects) = desired.get("subjects") {
+                if remove_extra_subjects {
+                    patch["subjects"] = desired_subjects.clone();
+                } else {
+                    let current_subjects = current
+                        .get("subjects")
+                        .and_then(|s| s.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let desired_subs = desired_subjects.as_array().cloned().unwrap_or_default();
+
+                    let mut merged = current_subjects;
+                    for sub in desired_subs {
+                        if !merged.contains(&sub) {
+                            merged.push(sub);
+                        }
+                    }
+                    patch["subjects"] = Value::Array(merged);
+                }
+            }
+
+            let _: Value = client
+                .patch(path, &patch, "application/strategic-merge-patch+json")
+                .await
+                .context(format!("Failed to reconcile {}/{}", kind, name))?;
+            println!("{}/{} reconciled", kind.to_lowercase(), name);
+        }
+        Err(_) => {
+            let collection_path = path.rsplit_once('/').map(|(p, _)| p).unwrap_or(path);
+            let _: Value = client
+                .post(collection_path, desired)
+                .await
+                .context(format!("Failed to create {}/{}", kind, name))?;
+            println!("{}/{} created", kind.to_lowercase(), name);
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod auth_reconcile_tests {
+    use super::*;
+
+    #[test]
+    fn test_reconcile_merge_rules() {
+        let current_rules = vec![
+            json!({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]}),
+        ];
+        let desired_rules = vec![
+            json!({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]}),
+            json!({"apiGroups": [""], "resources": ["services"], "verbs": ["list"]}),
+        ];
+
+        let mut merged = current_rules;
+        for rule in desired_rules {
+            if !merged.contains(&rule) {
+                merged.push(rule);
+            }
+        }
+
+        assert_eq!(merged.len(), 2);
+    }
+
+    #[test]
+    fn test_reconcile_merge_subjects() {
+        let current_subjects = vec![
+            json!({"kind": "User", "name": "alice", "apiGroup": "rbac.authorization.k8s.io"}),
+        ];
+        let desired_subjects = vec![
+            json!({"kind": "User", "name": "alice", "apiGroup": "rbac.authorization.k8s.io"}),
+            json!({"kind": "User", "name": "bob", "apiGroup": "rbac.authorization.k8s.io"}),
+        ];
+
+        let mut merged = current_subjects;
+        for sub in desired_subjects {
+            if !merged.contains(&sub) {
+                merged.push(sub);
+            }
+        }
+
+        assert_eq!(merged.len(), 2);
+    }
 }

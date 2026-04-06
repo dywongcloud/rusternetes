@@ -392,10 +392,36 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_for_object_aliases() {
+        // Test shorthand aliases
+        let (kind, _) = parse_for_object("po/x").unwrap();
+        assert_eq!(kind, "Pod");
+        let (kind, _) = parse_for_object("svc/x").unwrap();
+        assert_eq!(kind, "Service");
+        let (kind, _) = parse_for_object("rs/x").unwrap();
+        assert_eq!(kind, "ReplicaSet");
+        let (kind, _) = parse_for_object("sts/x").unwrap();
+        assert_eq!(kind, "StatefulSet");
+        let (kind, _) = parse_for_object("ds/x").unwrap();
+        assert_eq!(kind, "DaemonSet");
+        let (kind, _) = parse_for_object("cm/x").unwrap();
+        assert_eq!(kind, "ConfigMap");
+        let (kind, _) = parse_for_object("pvc/x").unwrap();
+        assert_eq!(kind, "PersistentVolumeClaim");
+        let (kind, _) = parse_for_object("hpa/x").unwrap();
+        assert_eq!(kind, "HorizontalPodAutoscaler");
+    }
+
+    #[test]
+    fn test_parse_for_object_unknown_capitalizes() {
+        let (kind, name) = parse_for_object("widget/foo").unwrap();
+        assert_eq!(kind, "Widget");
+        assert_eq!(name, "foo");
+    }
+
+    #[test]
     fn test_format_age() {
         assert_eq!(format_age(""), "<unknown>");
-        // Can't test exact values since they depend on current time,
-        // but we can test the format
         let future = "2099-01-01T00:00:00Z";
         assert_eq!(format_age(future), "<future>");
     }
@@ -405,5 +431,58 @@ mod tests {
         let encoded = urlencoding("involvedObject.kind=Pod,involvedObject.name=nginx");
         assert!(encoded.contains("%3D"));
         assert!(encoded.contains("%2C"));
+    }
+
+    #[test]
+    fn test_event_query_url_construction() {
+        // Test namespace-scoped path
+        let namespace = "default";
+        let ns_path = format!("/api/v1/namespaces/{}/events", namespace);
+        assert_eq!(ns_path, "/api/v1/namespaces/default/events");
+
+        // Test all-namespaces path
+        let all_ns_path = "/api/v1/events".to_string();
+        assert_eq!(all_ns_path, "/api/v1/events");
+
+        // Test with --for filter
+        let for_obj = "pod/nginx";
+        let (kind, obj_name) = parse_for_object(for_obj).unwrap();
+        let field_selector = format!(
+            "involvedObject.kind={},involvedObject.name={}",
+            kind, obj_name
+        );
+        let path = format!("{}?fieldSelector={}", ns_path, urlencoding(&field_selector));
+        assert!(path.starts_with("/api/v1/namespaces/default/events?fieldSelector="));
+        assert!(path.contains("involvedObject.kind"));
+        assert!(path.contains("Pod"));
+        assert!(path.contains("nginx"));
+    }
+
+    #[test]
+    fn test_get_event_time_priority() {
+        use serde_json::json;
+
+        // eventTime takes priority
+        let event = json!({
+            "eventTime": "2024-01-01T00:00:00Z",
+            "lastTimestamp": "2023-01-01T00:00:00Z",
+            "firstTimestamp": "2022-01-01T00:00:00Z"
+        });
+        assert_eq!(get_event_time(&event), "2024-01-01T00:00:00Z");
+
+        // Falls back to lastTimestamp
+        let event = json!({
+            "lastTimestamp": "2023-01-01T00:00:00Z",
+            "firstTimestamp": "2022-01-01T00:00:00Z"
+        });
+        assert_eq!(get_event_time(&event), "2023-01-01T00:00:00Z");
+
+        // Falls back to firstTimestamp
+        let event = json!({"firstTimestamp": "2022-01-01T00:00:00Z"});
+        assert_eq!(get_event_time(&event), "2022-01-01T00:00:00Z");
+
+        // Returns empty string when nothing
+        let event = json!({});
+        assert_eq!(get_event_time(&event), "");
     }
 }

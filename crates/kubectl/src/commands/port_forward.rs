@@ -29,6 +29,37 @@ pub async fn execute(
     websocket::port_forward_stream(ws_url, local_port, remote_port, address).await
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_port_mapping_local_remote() {
+        let (local, remote) = parse_port_mapping("8080:80").unwrap();
+        assert_eq!(local, 8080);
+        assert_eq!(remote, 80);
+    }
+
+    #[test]
+    fn test_parse_port_mapping_same_port() {
+        let (local, remote) = parse_port_mapping("3000").unwrap();
+        assert_eq!(local, 3000);
+        assert_eq!(remote, 3000);
+    }
+
+    #[test]
+    fn test_parse_port_mapping_invalid() {
+        let result = parse_port_mapping("abc");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_port_mapping_invalid_local() {
+        let result = parse_port_mapping("abc:80");
+        assert!(result.is_err());
+    }
+}
+
 fn parse_port_mapping(port_spec: &str) -> Result<(u16, u16)> {
     if let Some((local, remote)) = port_spec.split_once(':') {
         let local_port = local.parse::<u16>()?;

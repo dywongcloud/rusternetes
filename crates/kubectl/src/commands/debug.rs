@@ -292,4 +292,97 @@ mod tests {
             "debugger-1"
         );
     }
+
+    #[test]
+    fn test_generate_debug_container_name_multiple_existing() {
+        let pod = serde_json::json!({
+            "spec": {
+                "ephemeralContainers": [
+                    {"name": "debugger"},
+                    {"name": "debugger-1"},
+                    {"name": "debugger-2"}
+                ]
+            }
+        });
+        assert_eq!(generate_debug_container_name(&pod), "debugger-3");
+    }
+
+    #[test]
+    fn test_ephemeral_container_patch_construction() {
+        let image = "busybox:latest";
+        let debug_container_name = "debugger";
+        let target_container = Some("nginx");
+        let command: Vec<String> = vec!["sh".to_string()];
+
+        let mut ephemeral_container = json!({
+            "name": debug_container_name,
+            "image": image,
+            "stdin": true,
+            "tty": true,
+        });
+
+        if let Some(target) = target_container {
+            ephemeral_container["targetContainerName"] = json!(target);
+        }
+
+        if !command.is_empty() {
+            ephemeral_container["command"] = json!(command);
+        }
+
+        let ephemeral_list = vec![ephemeral_container.clone()];
+
+        let patch = json!({
+            "spec": {
+                "ephemeralContainers": ephemeral_list,
+            }
+        });
+
+        let container = &patch["spec"]["ephemeralContainers"][0];
+        assert_eq!(container["name"], "debugger");
+        assert_eq!(container["image"], "busybox:latest");
+        assert_eq!(container["stdin"], true);
+        assert_eq!(container["tty"], true);
+        assert_eq!(container["targetContainerName"], "nginx");
+        assert_eq!(container["command"][0], "sh");
+    }
+
+    #[test]
+    fn test_ephemeral_container_appended_to_existing() {
+        let pod = serde_json::json!({
+            "spec": {
+                "ephemeralContainers": [
+                    {"name": "debugger", "image": "alpine"}
+                ]
+            }
+        });
+
+        let existing_ephemeral = pod
+            .get("spec")
+            .and_then(|s| s.get("ephemeralContainers"))
+            .cloned()
+            .unwrap_or_else(|| json!([]));
+
+        let mut ephemeral_list = existing_ephemeral.as_array().unwrap().clone();
+        ephemeral_list.push(json!({
+            "name": "debugger-1",
+            "image": "busybox",
+            "stdin": true,
+            "tty": true,
+        }));
+
+        assert_eq!(ephemeral_list.len(), 2);
+        assert_eq!(ephemeral_list[0]["name"], "debugger");
+        assert_eq!(ephemeral_list[1]["name"], "debugger-1");
+    }
+
+    #[test]
+    fn test_parse_target_case_insensitive() {
+        let (rtype, name) = parse_target("Pod/nginx").unwrap();
+        assert_eq!(rtype, "pod");
+        assert_eq!(name, "nginx");
+
+        let (rtype, name) = parse_target("NODE/worker-1").unwrap();
+        assert_eq!(rtype, "node");
+        assert_eq!(name, "worker-1");
+    }
 }

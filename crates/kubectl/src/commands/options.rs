@@ -16,3 +16,14 @@ pub fn execute() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_execute_succeeds() {
+        let result = execute();
+        assert!(result.is_ok());
+    }
+}

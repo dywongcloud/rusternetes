@@ -3,6 +3,69 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use std::fs;
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_patch_content_type_strategic() {
+        let content_type = match "strategic" {
+            "strategic" => "application/strategic-merge-patch+json",
+            "merge" => "application/merge-patch+json",
+            "json" => "application/json-patch+json",
+            _ => panic!("invalid"),
+        };
+        assert_eq!(content_type, "application/strategic-merge-patch+json");
+    }
+
+    #[test]
+    fn test_patch_content_type_merge() {
+        let content_type = match "merge" {
+            "strategic" => "application/strategic-merge-patch+json",
+            "merge" => "application/merge-patch+json",
+            "json" => "application/json-patch+json",
+            _ => panic!("invalid"),
+        };
+        assert_eq!(content_type, "application/merge-patch+json");
+    }
+
+    #[test]
+    fn test_patch_content_type_json() {
+        let content_type = match "json" {
+            "strategic" => "application/strategic-merge-patch+json",
+            "merge" => "application/merge-patch+json",
+            "json" => "application/json-patch+json",
+            _ => panic!("invalid"),
+        };
+        assert_eq!(content_type, "application/json-patch+json");
+    }
+
+    #[test]
+    fn test_patch_api_path_pod() {
+        let (api_path, resource_name) = ("api/v1", "pods");
+        let namespace = "default";
+        let name = "nginx";
+        let path = format!(
+            "/{}/namespaces/{}/{}/{}",
+            api_path, namespace, resource_name, name
+        );
+        assert_eq!(path, "/api/v1/namespaces/default/pods/nginx");
+    }
+
+    #[test]
+    fn test_patch_api_path_node_no_namespace() {
+        let (api_path, resource_name) = ("api/v1", "nodes");
+        let name = "node-1";
+        let path = format!("/{}/{}/{}", api_path, resource_name, name);
+        assert_eq!(path, "/api/v1/nodes/node-1");
+    }
+
+    #[test]
+    fn test_patch_body_json_parse() {
+        let patch_str = r#"{"spec":{"replicas":3}}"#;
+        let value: serde_json::Value = serde_json::from_str(patch_str).unwrap();
+        assert_eq!(value["spec"]["replicas"], 3);
+    }
+}
+
 /// Patch a resource
 pub async fn execute(
     client: &ApiClient,

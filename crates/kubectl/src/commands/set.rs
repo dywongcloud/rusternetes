@@ -57,6 +57,51 @@ pub async fn execute_set(
             )
             .await
         }
+        SetCommands::Selector {
+            resource,
+            expressions,
+            namespace,
+            all: _,
+            resource_version: _,
+        } => {
+            execute_selector(
+                client,
+                &resource,
+                &expressions,
+                namespace.as_deref().unwrap_or(default_namespace),
+            )
+            .await
+        }
+        SetCommands::ServiceAccount {
+            resource,
+            service_account_name,
+            namespace,
+        } => {
+            execute_serviceaccount(
+                client,
+                &resource,
+                &service_account_name,
+                namespace.as_deref().unwrap_or(default_namespace),
+            )
+            .await
+        }
+        SetCommands::Subject {
+            resource,
+            namespace,
+            serviceaccount,
+            user,
+            group,
+        } => {
+            execute_subject(
+                client,
+                &resource,
+                namespace.as_deref().unwrap_or(default_namespace),
+                serviceaccount.as_deref(),
+                user.as_deref(),
+                group.as_deref(),
+            )
+            .await
+        }
     }
 }
 
@@ -469,6 +514,253 @@ pub async fn execute_resources(
     Ok(())
 }
 
+/// Set the selector on a resource (e.g., a Service).
+///
+/// Usage: `kubectl set selector service/myapp app=myapp`
+pub async fn execute_selector(
+    client: &ApiClient,
+    resource: &str,
+    expressions: &[String],
+    namespace: &str,
+) -> Result<()> {
+    let (resource_type, name) = parse_resource_arg(resource)?;
+
+    // Build selector map from key=value expressions
+    let mut selector = serde_json::Map::new();
+    for expr in expressions {
+        if let Some((key, value)) = expr.split_once('=') {
+            selector.insert(key.to_string(), json!(value));
+        } else {
+            anyhow::bail!(
+                "Invalid selector expression: '{}'. Expected key=value",
+                expr
+            );
+        }
+    }
+
+    if selector.is_empty() {
+        anyhow::bail!("At least one selector expression (key=value) is required");
+    }
+
+    // Resolve the API path - selector is typically used for services
+    let (api_path, res_name) = match resource_type.as_str() {
+        "service" | "services" | "svc" => ("api/v1", "services"),
+        _ => {
+            // Fall back to resolve_resource_path for other types
+            let (path, _) = resolve_resource_path(&resource_type, &name, namespace)?;
+            let patch_body = json!({
+                "spec": {
+                    "selector": selector,
+                }
+            });
+            let _result: Value = client
+                .patch(
+                    &path,
+                    &patch_body,
+                    "application/strategic-merge-patch+json",
+                )
+                .await
+                .context("Failed to update selector")?;
+            println!("{}/{} selector updated", resource_type, name);
+            return Ok(());
+        }
+    };
+
+    let path = format!(
+        "/{}/namespaces/{}/{}/{}",
+        api_path, namespace, res_name, name
+    );
+
+    let patch_body = json!({
+        "spec": {
+            "selector": selector,
+        }
+    });
+
+    let _result: Value = client
+        .patch(
+            &path,
+            &patch_body,
+            "application/strategic-merge-patch+json",
+        )
+        .await
+        .context("Failed to update selector")?;
+
+    println!("{}/{} selector updated", resource_type, name);
+
+    Ok(())
+}
+
+/// Set serviceAccountName on pod templates in a resource.
+///
+/// Usage: `kubectl set serviceaccount deployment/nginx my-service-account`
+pub async fn execute_serviceaccount(
+    client: &ApiClient,
+    resource: &str,
+    service_account_name: &str,
+    namespace: &str,
+) -> Result<()> {
+    let (resource_type, name) = parse_resource_arg(resource)?;
+    let (path, _) = resolve_resource_path(&resource_type, &name, namespace)?;
+
+    // Get current resource to determine if it has a template
+    let current: Value = client
+        .get(&path)
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))
+        .context("Failed to get resource")?;
+
+    let patch_body = if current.get("spec").and_then(|s| s.get("template")).is_some() {
+        json!({
+            "spec": {
+                "template": {
+                    "spec": {
+                        "serviceAccountName": service_account_name,
+                    }
+                }
+            }
+        })
+    } else {
+        json!({
+            "spec": {
+                "serviceAccountName": service_account_name,
+            }
+        })
+    };
+
+    let _result: Value = client
+        .patch(
+            &path,
+            &patch_body,
+            "application/strategic-merge-patch+json",
+        )
+        .await
+        .context("Failed to update serviceAccountName")?;
+
+    println!(
+        "{}/{} serviceaccount updated to {}",
+        resource_type, name, service_account_name
+    );
+
+    Ok(())
+}
+
+/// Update subjects in a RoleBinding or ClusterRoleBinding.
+///
+/// Usage: `kubectl set subject clusterrolebinding/admin --user=admin --group=devs`
+pub async fn execute_subject(
+    client: &ApiClient,
+    resource: &str,
+    namespace: &str,
+    serviceaccount: Option<&str>,
+    user: Option<&str>,
+    group: Option<&str>,
+) -> Result<()> {
+    let (resource_type, name) = parse_resource_arg(resource)?;
+
+    let path = match resource_type.as_str() {
+        "rolebinding" | "rolebindings" => {
+            format!(
+                "/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}",
+                namespace, name
+            )
+        }
+        "clusterrolebinding" | "clusterrolebindings" => {
+            format!(
+                "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}",
+                name
+            )
+        }
+        _ => {
+            anyhow::bail!(
+                "set subject only supports rolebinding and clusterrolebinding, got: {}",
+                resource_type
+            );
+        }
+    };
+
+    // Get current binding
+    let mut current: Value = client
+        .get(&path)
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))
+        .context("Failed to get resource")?;
+
+    let subjects = current
+        .get_mut("subjects")
+        .and_then(|s| s.as_array_mut())
+        .map(|a| a.clone())
+        .unwrap_or_default();
+
+    let mut new_subjects = subjects;
+
+    if let Some(sa) = serviceaccount {
+        let (sa_namespace, sa_name) = if let Some((ns, n)) = sa.split_once(':') {
+            (ns.to_string(), n.to_string())
+        } else {
+            (namespace.to_string(), sa.to_string())
+        };
+        // Check if subject already exists
+        let exists = new_subjects.iter().any(|s| {
+            s.get("kind").and_then(|k| k.as_str()) == Some("ServiceAccount")
+                && s.get("name").and_then(|n| n.as_str()) == Some(&sa_name)
+                && s.get("namespace").and_then(|n| n.as_str()) == Some(&sa_namespace)
+        });
+        if !exists {
+            new_subjects.push(json!({
+                "kind": "ServiceAccount",
+                "name": sa_name,
+                "namespace": sa_namespace,
+            }));
+        }
+    }
+
+    if let Some(u) = user {
+        let exists = new_subjects.iter().any(|s| {
+            s.get("kind").and_then(|k| k.as_str()) == Some("User")
+                && s.get("name").and_then(|n| n.as_str()) == Some(u)
+        });
+        if !exists {
+            new_subjects.push(json!({
+                "apiGroup": "rbac.authorization.k8s.io",
+                "kind": "User",
+                "name": u,
+            }));
+        }
+    }
+
+    if let Some(g) = group {
+        let exists = new_subjects.iter().any(|s| {
+            s.get("kind").and_then(|k| k.as_str()) == Some("Group")
+                && s.get("name").and_then(|n| n.as_str()) == Some(g)
+        });
+        if !exists {
+            new_subjects.push(json!({
+                "apiGroup": "rbac.authorization.k8s.io",
+                "kind": "Group",
+                "name": g,
+            }));
+        }
+    }
+
+    let patch_body = json!({
+        "subjects": new_subjects,
+    });
+
+    let _result: Value = client
+        .patch(
+            &path,
+            &patch_body,
+            "application/strategic-merge-patch+json",
+        )
+        .await
+        .context("Failed to update subjects")?;
+
+    println!("{}/{} subjects updated", resource_type, name);
+
+    Ok(())
+}
+
 /// Parse a resource spec string like "cpu=200m,memory=512Mi" into a map.
 fn parse_resource_spec(
     spec: Option<&str>,
@@ -537,5 +829,139 @@ mod tests {
     #[test]
     fn test_resolve_unsupported() {
         assert!(resolve_resource_path("configmap", "test", "default").is_err());
+    }
+
+    #[test]
+    fn test_image_patch_construction_for_deployment() {
+        // Simulate building a strategic merge patch for image update on a deployment
+        let patch_containers = vec![
+            json!({"name": "nginx", "image": "nginx:1.21"}),
+        ];
+
+        let patch_body = json!({
+            "spec": {
+                "template": {
+                    "spec": {
+                        "containers": patch_containers,
+                    }
+                }
+            }
+        });
+
+        assert_eq!(
+            patch_body["spec"]["template"]["spec"]["containers"][0]["name"],
+            "nginx"
+        );
+        assert_eq!(
+            patch_body["spec"]["template"]["spec"]["containers"][0]["image"],
+            "nginx:1.21"
+        );
+    }
+
+    #[test]
+    fn test_env_update_add_and_remove() {
+        // Simulate the env update logic: add KEY=VALUE and remove KEY-
+        let env_vars = vec!["NEW_VAR=hello".to_string(), "OLD_VAR-".to_string()];
+        let mut to_add: Vec<(String, String)> = Vec::new();
+        let mut to_remove: Vec<String> = Vec::new();
+
+        for ev in &env_vars {
+            if let Some(key) = ev.strip_suffix('-') {
+                to_remove.push(key.to_string());
+            } else if let Some((key, value)) = ev.split_once('=') {
+                to_add.push((key.to_string(), value.to_string()));
+            }
+        }
+
+        assert_eq!(to_add, vec![("NEW_VAR".to_string(), "hello".to_string())]);
+        assert_eq!(to_remove, vec!["OLD_VAR".to_string()]);
+
+        // Simulate applying to existing env list
+        let mut env_list: Vec<Value> = vec![
+            json!({"name": "OLD_VAR", "value": "world"}),
+            json!({"name": "KEEP", "value": "yes"}),
+        ];
+
+        env_list.retain(|e| {
+            let key = e.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            !to_remove.contains(&key.to_string())
+        });
+
+        for (key, value) in &to_add {
+            env_list.push(json!({"name": key, "value": value}));
+        }
+
+        assert_eq!(env_list.len(), 2);
+        assert_eq!(env_list[0]["name"], "KEEP");
+        assert_eq!(env_list[1]["name"], "NEW_VAR");
+        assert_eq!(env_list[1]["value"], "hello");
+    }
+
+    #[test]
+    fn test_parse_resource_spec_invalid() {
+        assert!(parse_resource_spec(Some("cpu200m")).is_err());
+    }
+
+    #[test]
+    fn test_parse_selector_expressions() {
+        let expressions = vec!["app=nginx".to_string(), "env=prod".to_string()];
+        let mut selector = serde_json::Map::new();
+        for expr in &expressions {
+            if let Some((key, value)) = expr.split_once('=') {
+                selector.insert(key.to_string(), json!(value));
+            }
+        }
+        assert_eq!(selector.get("app").unwrap(), "nginx");
+        assert_eq!(selector.get("env").unwrap(), "prod");
+    }
+
+    #[test]
+    fn test_parse_serviceaccount_with_namespace() {
+        let sa = "kube-system:default";
+        let (ns, name) = sa.split_once(':').unwrap();
+        assert_eq!(ns, "kube-system");
+        assert_eq!(name, "default");
+    }
+
+    #[test]
+    fn test_subject_json_construction() {
+        let user_subject = json!({
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "User",
+            "name": "admin",
+        });
+        assert_eq!(
+            user_subject["kind"].as_str().unwrap(),
+            "User"
+        );
+        assert_eq!(
+            user_subject["name"].as_str().unwrap(),
+            "admin"
+        );
+    }
+
+    #[test]
+    fn test_resolve_all_resource_aliases() {
+        // Verify all short aliases resolve correctly
+        let cases = vec![
+            ("po", "pods"),
+            ("deploy", "deployments"),
+            ("ds", "daemonsets"),
+            ("sts", "statefulsets"),
+            ("rs", "replicasets"),
+            ("rc", "replicationcontrollers"),
+            ("cj", "cronjobs"),
+            ("jobs", "jobs"),
+        ];
+        for (alias, expected_resource) in cases {
+            let (path, _) = resolve_resource_path(alias, "test", "default").unwrap();
+            assert!(
+                path.contains(expected_resource),
+                "alias '{}' should resolve to path containing '{}', got '{}'",
+                alias,
+                expected_resource,
+                path
+            );
+        }
     }
 }

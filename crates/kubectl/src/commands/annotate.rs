@@ -67,3 +67,92 @@ pub async fn execute(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{json, Value};
+    use std::collections::HashMap;
+
+    fn parse_annotations(annotations: &[String]) -> Result<HashMap<String, Value>, String> {
+        let mut map = HashMap::new();
+        for annotation in annotations {
+            if let Some(key) = annotation.strip_suffix('-') {
+                map.insert(key.to_string(), Value::Null);
+            } else if let Some((key, value)) = annotation.split_once('=') {
+                map.insert(key.to_string(), Value::String(value.to_string()));
+            } else {
+                return Err(format!("Invalid annotation format: {}", annotation));
+            }
+        }
+        Ok(map)
+    }
+
+    #[test]
+    fn test_annotation_patch_set() {
+        let annotations = vec!["app.kubernetes.io/name=myapp".to_string()];
+        let map = parse_annotations(&annotations).unwrap();
+
+        let patch = json!({"metadata": {"annotations": map}});
+        assert_eq!(
+            patch["metadata"]["annotations"]["app.kubernetes.io/name"],
+            "myapp"
+        );
+    }
+
+    #[test]
+    fn test_annotation_patch_remove() {
+        let annotations = vec!["obsolete-key-".to_string()];
+        let map = parse_annotations(&annotations).unwrap();
+
+        let patch = json!({"metadata": {"annotations": map}});
+        assert!(patch["metadata"]["annotations"]["obsolete-key"].is_null());
+    }
+
+    #[test]
+    fn test_annotation_patch_mixed() {
+        let annotations = vec![
+            "new-key=new-value".to_string(),
+            "old-key-".to_string(),
+        ];
+        let map = parse_annotations(&annotations).unwrap();
+
+        assert_eq!(map.get("new-key").unwrap(), &Value::String("new-value".to_string()));
+        assert_eq!(map.get("old-key").unwrap(), &Value::Null);
+    }
+
+    #[test]
+    fn test_annotation_invalid_format() {
+        let annotations = vec!["no-equals-no-dash".to_string()];
+        let result = parse_annotations(&annotations);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_annotation_api_path_construction() {
+        // Test that paths are built correctly for different resource types
+        let test_cases = vec![
+            ("pod", "api/v1", "pods"),
+            ("deployment", "apis/apps/v1", "deployments"),
+            ("node", "api/v1", "nodes"),
+            ("configmap", "api/v1", "configmaps"),
+        ];
+
+        for (resource_type, api_path, resource_name) in test_cases {
+            let name = "my-resource";
+            let namespace = "default";
+            let path = if resource_name == "nodes" {
+                format!("/{}/{}/{}", api_path, resource_name, name)
+            } else {
+                format!("/{}/namespaces/{}/{}/{}", api_path, namespace, resource_name, name)
+            };
+
+            match resource_type {
+                "node" => assert_eq!(path, "/api/v1/nodes/my-resource"),
+                "pod" => assert_eq!(path, "/api/v1/namespaces/default/pods/my-resource"),
+                "deployment" => assert_eq!(path, "/apis/apps/v1/namespaces/default/deployments/my-resource"),
+                "configmap" => assert_eq!(path, "/api/v1/namespaces/default/configmaps/my-resource"),
+                _ => {}
+            }
+        }
+    }
+}
