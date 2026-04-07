@@ -258,8 +258,11 @@ pub async fn normalize_content_type_middleware(
             .query()
             .map(|q| q.contains("watch=true") || q.contains("watch=1"))
             .unwrap_or(false);
-    let wants_protobuf = accept_header.contains("application/vnd.kubernetes.protobuf")
-        && !is_watch_request;
+    // Disable protobuf wrapping — client-go expects native protobuf-encoded
+    // messages for known types (NamespaceList, ServiceList, etc.), not JSON
+    // wrapped in a runtime.Unknown envelope. Since we only produce JSON,
+    // return JSON and let client-go fall back via its Accept header negotiation.
+    let wants_protobuf = false;
 
     let response = next.run(request).await;
 
@@ -277,7 +280,13 @@ pub async fn normalize_content_type_middleware(
         if response_ct.starts_with("application/json") {
             let (parts, body) = response.into_parts();
             if let Ok(json_bytes) = axum::body::to_bytes(body, 10 * 1024 * 1024).await {
-                let pb = wrap_json_in_protobuf(&json_bytes);
+                // Extract apiVersion/kind from JSON for the TypeMeta field
+                let (api_version, kind) = extract_api_version_kind(&json_bytes);
+                let pb = wrap_json_in_protobuf_with_type_meta(
+                    &json_bytes,
+                    api_version.as_deref().unwrap_or(""),
+                    kind.as_deref().unwrap_or(""),
+                );
                 let mut resp = Response::from_parts(parts, Body::from(pb));
                 resp.headers_mut().insert(
                     axum::http::header::CONTENT_TYPE,
@@ -293,6 +302,66 @@ pub async fn normalize_content_type_middleware(
     }
 
     Ok(response)
+}
+
+/// Extract apiVersion and kind from JSON bytes without full parsing.
+fn extract_api_version_kind(json: &[u8]) -> (Option<String>, Option<String>) {
+    // Quick parse just the top-level apiVersion and kind
+    if let Ok(v) = serde_json::from_slice::<serde_json::Value>(json) {
+        let api_version = v.get("apiVersion").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let kind = v.get("kind").and_then(|v| v.as_str()).map(|s| s.to_string());
+        (api_version, kind)
+    } else {
+        (None, None)
+    }
+}
+
+/// Wrap JSON bytes in the K8s protobuf envelope with TypeMeta:
+/// "k8s\0" + Unknown{typeMeta: {apiVersion, kind}, raw: json, contentType: "application/json"}
+fn wrap_json_in_protobuf_with_type_meta(json: &[u8], api_version: &str, kind: &str) -> Vec<u8> {
+    // K8s runtime.Unknown protobuf message:
+    //   field 1 (typeMeta, TypeMeta): nested message
+    //     field 1 (apiVersion, string)
+    //     field 2 (kind, string)
+    //   field 2 (raw, bytes): the JSON payload
+    //   field 3 (contentEncoding, string): empty
+    //   field 4 (contentType, string): "application/json"
+    let content_type = b"application/json";
+    let mut msg = Vec::with_capacity(json.len() + 80);
+
+    // Field 1: TypeMeta (nested message) — tag = (1 << 3) | 2 = 0x0a
+    if !api_version.is_empty() || !kind.is_empty() {
+        let mut type_meta = Vec::new();
+        if !api_version.is_empty() {
+            // TypeMeta field 1: apiVersion — tag = (1 << 3) | 2 = 0x0a
+            type_meta.push(0x0a);
+            encode_protobuf_varint(&mut type_meta, api_version.len() as u64);
+            type_meta.extend_from_slice(api_version.as_bytes());
+        }
+        if !kind.is_empty() {
+            // TypeMeta field 2: kind — tag = (2 << 3) | 2 = 0x12
+            type_meta.push(0x12);
+            encode_protobuf_varint(&mut type_meta, kind.len() as u64);
+            type_meta.extend_from_slice(kind.as_bytes());
+        }
+        msg.push(0x0a);
+        encode_protobuf_varint(&mut msg, type_meta.len() as u64);
+        msg.extend_from_slice(&type_meta);
+    }
+
+    // Field 2: raw bytes (the JSON) — tag = (2 << 3) | 2 = 0x12
+    msg.push(0x12);
+    encode_protobuf_varint(&mut msg, json.len() as u64);
+    msg.extend_from_slice(json);
+    // Field 4: contentType — tag = (4 << 3) | 2 = 0x22
+    msg.push(0x22);
+    encode_protobuf_varint(&mut msg, content_type.len() as u64);
+    msg.extend_from_slice(content_type);
+
+    let mut buf = Vec::with_capacity(msg.len() + 4);
+    buf.extend_from_slice(b"k8s\0");
+    buf.extend_from_slice(&msg);
+    buf
 }
 
 /// Wrap JSON bytes in the K8s protobuf envelope: "k8s\0" + Unknown{raw: json}
@@ -1464,5 +1533,53 @@ mod tests {
         let extracted = extract_json_from_k8s_protobuf(&wrapped);
         assert!(extracted.is_some(), "should extract JSON from wrapped protobuf");
         assert_eq!(extracted.unwrap(), json, "extracted JSON must match original");
+    }
+
+    #[test]
+    fn test_is_watch_request_detection() {
+        // Watch requests should be detected via query param watch=true, watch=1, or /watch/ in path.
+        // This ensures protobuf wrapping is skipped for streaming watch responses.
+
+        // watch=true query param
+        let uri: axum::http::Uri = "http://localhost/api/v1/pods?watch=true".parse().unwrap();
+        let has_watch = uri
+            .query()
+            .map(|q| q.contains("watch=true") || q.contains("watch=1"))
+            .unwrap_or(false);
+        assert!(has_watch, "watch=true query param should be detected");
+
+        // watch=1 query param
+        let uri: axum::http::Uri = "http://localhost/api/v1/pods?watch=1".parse().unwrap();
+        let has_watch = uri
+            .query()
+            .map(|q| q.contains("watch=true") || q.contains("watch=1"))
+            .unwrap_or(false);
+        assert!(has_watch, "watch=1 query param should be detected");
+
+        // /watch/ in path
+        let uri: axum::http::Uri = "http://localhost/api/v1/watch/pods".parse().unwrap();
+        assert!(
+            uri.path().contains("/watch/"),
+            "/watch/ in path should be detected"
+        );
+
+        // stream=watch in Accept header
+        let accept = "application/json;stream=watch";
+        assert!(
+            accept.contains("stream=watch"),
+            "stream=watch in Accept should be detected"
+        );
+
+        // Non-watch request should NOT be detected
+        let uri: axum::http::Uri = "http://localhost/api/v1/pods".parse().unwrap();
+        let has_watch = uri
+            .query()
+            .map(|q| q.contains("watch=true") || q.contains("watch=1"))
+            .unwrap_or(false);
+        assert!(!has_watch, "regular request should not be detected as watch");
+        assert!(
+            !uri.path().contains("/watch/"),
+            "regular path should not contain /watch/"
+        );
     }
 }
