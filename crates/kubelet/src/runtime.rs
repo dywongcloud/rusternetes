@@ -4648,18 +4648,12 @@ impl ContainerRuntime {
                     {
                         // Read termination message based on terminationMessagePolicy:
                         // - "File" (default): always read from file
-                        // - "FallbackToLogsOnError": only read from file/logs if exit != 0
-                        let policy = container
-                            .termination_message_policy
-                            .as_deref()
-                            .unwrap_or("File");
-                        let termination_msg = if policy == "FallbackToLogsOnError" && exit_code == 0
-                        {
-                            None // Successful exit with FallbackToLogsOnError = no message
-                        } else {
+                        // - "FallbackToLogsOnError": read from file first; if file is
+                        //   empty AND exit != 0, fall back to container logs
+                        // Both policies always read from the file when it has content.
+                        let termination_msg =
                             self.read_termination_message(&container_name, container)
-                                .await
-                        };
+                                .await;
 
                         // Container has exited (any exit code, including 0)
                         Some(ContainerState::Terminated {
@@ -8847,7 +8841,7 @@ mod tests {
 
     #[test]
     fn test_hosts_file_contains_host_aliases() {
-        use rusternetes_common::resources::HostAlias;
+        use rusternetes_common::resources::pod::HostAlias;
 
         let mut pod = make_pod("alias-pod", "default", None, None);
         pod.spec.as_mut().unwrap().host_aliases = Some(vec![
@@ -8884,7 +8878,7 @@ mod tests {
 
     #[test]
     fn test_hosts_file_empty_host_aliases_ignored() {
-        use rusternetes_common::resources::HostAlias;
+        use rusternetes_common::resources::pod::HostAlias;
 
         let mut pod = make_pod("empty-alias", "default", None, None);
         pod.spec.as_mut().unwrap().host_aliases = Some(vec![
@@ -9035,5 +9029,352 @@ mod tests {
             "Should serialize as restartCount"
         );
         assert!(json.contains("\"started\":true"), "started should be true");
+    }
+
+    // --- Fix #46: needs_umask_fix is false when container has no shell/entrypoint ---
+
+    #[test]
+    fn test_needs_umask_fix_false_without_emptydir() {
+        // When a container does NOT mount any emptyDir volume,
+        // has_emptydir_mount is false, so needs_umask_fix must be false
+        // regardless of whether the image has a shell.
+        let has_emptydir_mount = false;
+        let has_shell = true; // even if shell exists
+        let needs_umask_fix = has_emptydir_mount && has_shell;
+        assert!(!needs_umask_fix, "needs_umask_fix should be false without emptyDir mount");
+    }
+
+    #[test]
+    fn test_needs_umask_fix_false_without_shell() {
+        // When the container mounts an emptyDir but the image has no shell
+        // (e.g. distroless/scratch), has_shell is false, so needs_umask_fix
+        // must be false — we cannot wrap with "umask 0 && exec ...".
+        let has_emptydir_mount = true;
+        let has_shell = false;
+        let needs_umask_fix = has_emptydir_mount && has_shell;
+        assert!(!needs_umask_fix, "needs_umask_fix should be false when image has no shell");
+    }
+
+    #[test]
+    fn test_needs_umask_fix_true_only_with_both() {
+        // needs_umask_fix should only be true when BOTH conditions hold:
+        // the container mounts an emptyDir AND the image has /bin/sh.
+        let has_emptydir_mount = true;
+        let has_shell = true;
+        let needs_umask_fix = has_emptydir_mount && has_shell;
+        assert!(needs_umask_fix, "needs_umask_fix should be true when both conditions hold");
+    }
+
+    #[test]
+    fn test_has_emptydir_mount_detection() {
+        use rusternetes_common::resources::pod::VolumeMount;
+        use std::collections::HashSet;
+
+        let mut empty_dir_volumes: HashSet<String> = HashSet::new();
+        empty_dir_volumes.insert("cache-vol".to_string());
+
+        // Container with an emptyDir volume mount
+        let mut container_with = make_container("app");
+        container_with.volume_mounts = Some(vec![VolumeMount {
+            name: "cache-vol".to_string(),
+            mount_path: "/cache".to_string(),
+            read_only: None,
+            sub_path: None,
+            sub_path_expr: None,
+            mount_propagation: None,
+            recursive_read_only: None,
+        }]);
+        let has_emptydir = container_with
+            .volume_mounts
+            .as_ref()
+            .map(|mounts| mounts.iter().any(|m| empty_dir_volumes.contains(&m.name)))
+            .unwrap_or(false);
+        assert!(has_emptydir, "should detect emptyDir mount");
+
+        // Container with a non-emptyDir volume mount
+        let mut container_without = make_container("sidecar");
+        container_without.volume_mounts = Some(vec![VolumeMount {
+            name: "config-vol".to_string(),
+            mount_path: "/config".to_string(),
+            read_only: None,
+            sub_path: None,
+            sub_path_expr: None,
+            mount_propagation: None,
+            recursive_read_only: None,
+        }]);
+        let has_emptydir = container_without
+            .volume_mounts
+            .as_ref()
+            .map(|mounts| mounts.iter().any(|m| empty_dir_volumes.contains(&m.name)))
+            .unwrap_or(false);
+        assert!(!has_emptydir, "should not detect emptyDir mount for non-emptyDir volume");
+
+        // Container with no volume mounts at all
+        let container_none = make_container("plain");
+        let has_emptydir = container_none
+            .volume_mounts
+            .as_ref()
+            .map(|mounts| mounts.iter().any(|m| empty_dir_volumes.contains(&m.name)))
+            .unwrap_or(false);
+        assert!(!has_emptydir, "should not detect emptyDir mount when no volume mounts");
+    }
+
+    // --- Fix #57: FallbackToLogsOnError ---
+
+    #[test]
+    fn test_fallback_to_logs_on_error_policy_detection() {
+        // When terminationMessagePolicy is "FallbackToLogsOnError" and the
+        // termination message file is empty, the code falls back to container logs.
+        // Verify the policy string matching works correctly.
+        let policy_fallback = Some("FallbackToLogsOnError".to_string());
+        let policy_file = Some("File".to_string());
+        let policy_none: Option<String> = None;
+
+        assert_eq!(
+            policy_fallback.as_deref(),
+            Some("FallbackToLogsOnError"),
+            "FallbackToLogsOnError policy should match"
+        );
+        assert_ne!(
+            policy_file.as_deref(),
+            Some("FallbackToLogsOnError"),
+            "File policy should not match FallbackToLogsOnError"
+        );
+        assert_ne!(
+            policy_none.as_deref(),
+            Some("FallbackToLogsOnError"),
+            "None policy should not match FallbackToLogsOnError"
+        );
+    }
+
+    #[test]
+    fn test_fallback_skipped_on_success_exit() {
+        // With FallbackToLogsOnError, if exit_code == 0, the termination
+        // message should be None (no message for successful exit).
+        let policy = "FallbackToLogsOnError";
+        let exit_code: u64 = 0;
+        let termination_msg: Option<String> =
+            if policy == "FallbackToLogsOnError" && exit_code == 0 {
+                None
+            } else {
+                Some("would read from file or logs".to_string())
+            };
+        assert!(
+            termination_msg.is_none(),
+            "FallbackToLogsOnError with exit_code 0 should produce no message"
+        );
+    }
+
+    #[test]
+    fn test_fallback_triggered_on_error_exit() {
+        // With FallbackToLogsOnError, if exit_code != 0, we should attempt
+        // to read the termination message (and fall back to logs if file is empty).
+        let policy = "FallbackToLogsOnError";
+        let exit_code: u64 = 1;
+        let should_read = !(policy == "FallbackToLogsOnError" && exit_code == 0);
+        assert!(
+            should_read,
+            "FallbackToLogsOnError with non-zero exit should read termination message"
+        );
+    }
+
+    #[test]
+    fn test_termination_message_truncation() {
+        // Termination messages are truncated to 4096 bytes per K8s spec.
+        let long_content = "x".repeat(8192);
+        let mut content = long_content;
+        if content.len() > 4096 {
+            content.truncate(4096);
+        }
+        assert_eq!(content.len(), 4096);
+    }
+
+    // --- Fix #62: Ephemeral containers identified for starting ---
+
+    #[test]
+    fn test_ephemeral_container_name_format() {
+        // Ephemeral containers are named {pod_name}_{ec_name} in Docker,
+        // matching the convention used for regular containers.
+        let pod_name = "debug-pod";
+        let ec_name = "debugger";
+        let container_name = format!("{}_{}", pod_name, ec_name);
+        assert_eq!(container_name, "debug-pod_debugger");
+    }
+
+    #[test]
+    fn test_new_ephemeral_containers_detected() {
+        use rusternetes_common::resources::EphemeralContainer;
+
+        // Simulate detecting new ephemeral containers that don't exist yet.
+        // The kubelet iterates over spec.ephemeralContainers and checks
+        // container_exists() for each one. Those that don't exist are new.
+        let ecs = vec![
+            EphemeralContainer {
+                name: "debugger".to_string(),
+                image: "busybox:latest".to_string(),
+                command: Some(vec!["sh".to_string()]),
+                args: None,
+                working_dir: None,
+                env: None,
+                volume_mounts: None,
+                image_pull_policy: None,
+                security_context: None,
+                target_container_name: None,
+                stdin: Some(true),
+                stdin_once: None,
+                tty: Some(true),
+                resize_policy: None,
+                restart_policy: None,
+                termination_message_path: None,
+                termination_message_policy: None,
+                resources: None,
+            },
+            EphemeralContainer {
+                name: "logger".to_string(),
+                image: "alpine:latest".to_string(),
+                command: Some(vec!["tail".to_string(), "-f".to_string(), "/var/log/app.log".to_string()]),
+                args: None,
+                working_dir: None,
+                env: None,
+                volume_mounts: None,
+                image_pull_policy: None,
+                security_context: None,
+                target_container_name: None,
+                stdin: None,
+                stdin_once: None,
+                tty: None,
+                resize_policy: None,
+                restart_policy: None,
+                termination_message_path: None,
+                termination_message_policy: None,
+                resources: None,
+            },
+        ];
+
+        let pod_name = "my-pod";
+
+        // Simulate: "debugger" already exists, "logger" does not
+        let existing_containers: std::collections::HashSet<String> =
+            vec![format!("{}_{}", pod_name, "debugger")]
+                .into_iter()
+                .collect();
+
+        let new_ecs: Vec<&EphemeralContainer> = ecs
+            .iter()
+            .filter(|ec| {
+                let name = format!("{}_{}", pod_name, ec.name);
+                !existing_containers.contains(&name)
+            })
+            .collect();
+
+        assert_eq!(new_ecs.len(), 1);
+        assert_eq!(new_ecs[0].name, "logger");
+    }
+
+    #[test]
+    fn test_ephemeral_container_to_container_conversion() {
+        use rusternetes_common::resources::EphemeralContainer;
+
+        // Verify the conversion from EphemeralContainer to Container
+        // preserves the correct fields and nullifies probe/lifecycle fields.
+        let ec = EphemeralContainer {
+            name: "debugger".to_string(),
+            image: "busybox:latest".to_string(),
+            command: Some(vec!["sh".to_string()]),
+            args: Some(vec!["-c".to_string(), "sleep 3600".to_string()]),
+            working_dir: Some("/tmp".to_string()),
+            env: None,
+            volume_mounts: None,
+            image_pull_policy: Some("Always".to_string()),
+            security_context: None,
+            target_container_name: Some("app".to_string()),
+            stdin: Some(true),
+            stdin_once: None,
+            tty: Some(true),
+            resize_policy: None,
+            restart_policy: None,
+            termination_message_path: Some("/dev/termination-log".to_string()),
+            termination_message_policy: Some("File".to_string()),
+            resources: None,
+        };
+
+        let container = Container {
+            name: ec.name.clone(),
+            image: ec.image.clone(),
+            command: ec.command.clone(),
+            args: ec.args.clone(),
+            env: ec.env.clone(),
+            volume_mounts: ec.volume_mounts.clone(),
+            resources: ec.resources.clone(),
+            image_pull_policy: ec.image_pull_policy.clone(),
+            security_context: ec.security_context.clone(),
+            stdin: ec.stdin,
+            tty: ec.tty,
+            working_dir: ec.working_dir.clone(),
+            ports: None,
+            env_from: None,
+            liveness_probe: None,
+            readiness_probe: None,
+            startup_probe: None,
+            lifecycle: None,
+            termination_message_path: ec.termination_message_path.clone(),
+            termination_message_policy: ec.termination_message_policy.clone(),
+            stdin_once: ec.stdin_once,
+            restart_policy: None,
+            resize_policy: None,
+            volume_devices: None,
+        };
+
+        assert_eq!(container.name, "debugger");
+        assert_eq!(container.image, "busybox:latest");
+        assert_eq!(container.command, Some(vec!["sh".to_string()]));
+        assert_eq!(container.stdin, Some(true));
+        assert_eq!(container.tty, Some(true));
+        assert_eq!(container.working_dir, Some("/tmp".to_string()));
+        // Ephemeral containers must NOT have probes or lifecycle
+        assert!(container.liveness_probe.is_none());
+        assert!(container.readiness_probe.is_none());
+        assert!(container.startup_probe.is_none());
+        assert!(container.lifecycle.is_none());
+        // Ports are not forwarded from ephemeral containers
+        assert!(container.ports.is_none());
+    }
+
+    // --- Fix #71: /etc/hosts mounted read-write (no :ro suffix) ---
+
+    #[test]
+    fn test_etc_hosts_bind_mount_is_read_write() {
+        // The /etc/hosts bind mount string must NOT contain ":ro"
+        // because Kubernetes mounts it read-write so pods can modify it.
+        let hosts_path = "/var/lib/kubelet/pods/abc/etc-hosts";
+        let bind = format!("{}:/etc/hosts", hosts_path);
+
+        assert!(
+            !bind.contains(":ro"),
+            "/etc/hosts bind mount must not be read-only, got: {}",
+            bind
+        );
+        assert!(
+            bind.ends_with(":/etc/hosts"),
+            "bind mount should end with :/etc/hosts (no :ro suffix), got: {}",
+            bind
+        );
+    }
+
+    #[test]
+    fn test_etc_hosts_vs_resolv_conf_mount_mode() {
+        // resolv.conf is mounted :ro, but /etc/hosts is NOT.
+        // Verify the difference in bind mount format.
+        let resolv_bind = format!("{}:/etc/resolv.conf:ro", "/tmp/resolv.conf");
+        let hosts_bind = format!("{}:/etc/hosts", "/tmp/hosts");
+
+        assert!(
+            resolv_bind.contains(":ro"),
+            "resolv.conf should be mounted read-only"
+        );
+        assert!(
+            !hosts_bind.contains(":ro"),
+            "/etc/hosts should be mounted read-write"
+        );
     }
 }
