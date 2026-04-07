@@ -23,21 +23,26 @@ pub async fn create(
     Query(params): Query<HashMap<String, String>>,
     body: Bytes,
 ) -> Result<(StatusCode, Json<Deployment>)> {
-    // Parse the body manually so we can do strict field validation against the raw bytes
+    // Parse the body manually so we can do strict field validation against the raw bytes.
+    // For strict mode, if serde_json errors on duplicate fields, parse via serde_json::Value
+    // first (which is lenient) and then re-parse as Deployment, so validate_strict_fields
+    // can report all issues (unknown + duplicate) in the correct K8s format.
     let is_strict = params.get("fieldValidation").map(|v| v.as_str()) == Some("Strict");
-    let mut deployment: Deployment = serde_json::from_slice(&body).map_err(|e| {
-        let msg = e.to_string();
-        if is_strict && msg.contains("duplicate field") {
-            // Reformat to match Kubernetes strict decoding error format
-            if let Some(field) = msg.split('`').nth(1) {
-                return rusternetes_common::Error::InvalidResource(format!(
-                    "strict decoding error: json: duplicate field \"{}\"",
-                    field
-                ));
+    let mut deployment: Deployment = match serde_json::from_slice(&body) {
+        Ok(d) => d,
+        Err(e) => {
+            let msg = e.to_string();
+            if is_strict && msg.contains("duplicate field") {
+                // Parse via Value (lenient — takes last duplicate) so validate_strict_fields runs
+                let value: serde_json::Value = serde_json::from_slice(&body)
+                    .map_err(|e2| rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e2)))?;
+                serde_json::from_value(value)
+                    .map_err(|e2| rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e2)))?
+            } else {
+                return Err(rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", msg)));
             }
         }
-        rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", msg))
-    })?;
+    };
 
     info!(
         "Creating deployment: {}/{}",
