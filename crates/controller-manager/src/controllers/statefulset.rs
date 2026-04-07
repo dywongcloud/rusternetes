@@ -136,16 +136,11 @@ impl<S: Storage> StatefulSetController<S> {
             for i in 0..desired_replicas {
                 let pod_name = format!("{}-{}", name, i);
                 let pod_key = build_key("pods", Some(namespace), &pod_name);
+                // Treat evicted/terminating pods (deletionTimestamp set) as missing
+                // so the controller recreates them. The kubelet handles actual
+                // deletion from storage after graceful shutdown.
                 let pod_exists = match self.storage.get::<Pod>(&pod_key).await {
-                    Ok(pod) => {
-                        if pod.metadata.deletion_timestamp.is_some() {
-                            // Remove terminating pod so it can be recreated with new template
-                            let _ = self.storage.delete(&pod_key).await;
-                            false
-                        } else {
-                            true
-                        }
-                    }
+                    Ok(pod) => pod.metadata.deletion_timestamp.is_none(),
                     Err(_) => false,
                 };
                 if pod_exists {
@@ -919,6 +914,18 @@ mod tests {
         }
     }
 
+    /// Simulate kubelet behavior: delete pods with deletionTimestamp from storage
+    async fn simulate_kubelet_cleanup(storage: &Arc<MemoryStorage>, namespace: &str) {
+        let prefix = format!("/registry/pods/{}/", namespace);
+        let pods: Vec<Pod> = storage.list(&prefix).await.unwrap_or_default();
+        for pod in pods {
+            if pod.metadata.deletion_timestamp.is_some() {
+                let key = format!("/registry/pods/{}/{}", namespace, pod.metadata.name);
+                let _ = storage.delete(&key).await;
+            }
+        }
+    }
+
     /// During a rolling update, currentRevision != updateRevision.
     /// After all pods are updated, currentRevision == updateRevision.
     #[tokio::test]
@@ -987,6 +994,9 @@ mod tests {
         // Each cycle: make pods ready → reconcile (deletes one old, creates one new)
         // Need enough cycles for all 3 pods to be replaced + a final reconcile
         for cycle in 0..20 {
+            // Simulate kubelet: remove terminated pods from storage
+            simulate_kubelet_cleanup(&storage, ns).await;
+
             // Make all current pods ready
             for i in 0..3 {
                 let pod_name = format!("web-{}", i);
@@ -1072,6 +1082,8 @@ mod tests {
 
         // Run several reconcile cycles
         for _ in 0..5 {
+            simulate_kubelet_cleanup(&storage, ns).await;
+
             let pod_prefix = format!("/registry/pods/{}/", ns);
             let pods: Vec<Pod> = storage.list(&pod_prefix).await.unwrap();
             for pod in &pods {
