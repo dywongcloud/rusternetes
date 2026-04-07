@@ -108,6 +108,13 @@ pub async fn create(
         .or_else(|_| std::fs::read_to_string("/root/.rusternetes/certs/ca.crt"))
         .unwrap_or_else(|_| "".to_string());
 
+    info!(
+        "kube-root-ca.crt for namespace {}: cert_len={}, ns_name={}",
+        ns_name,
+        ca_cert.len(),
+        namespace.metadata.name
+    );
+
     if !ca_cert.is_empty() {
         let ca_cm = rusternetes_common::resources::ConfigMap {
             type_meta: rusternetes_common::types::TypeMeta {
@@ -115,7 +122,7 @@ pub async fn create(
                 api_version: "v1".to_string(),
             },
             metadata: rusternetes_common::types::ObjectMeta::new("kube-root-ca.crt")
-                .with_namespace(&namespace.metadata.name),
+                .with_namespace(ns_name.clone()),
             data: Some(std::collections::HashMap::from([(
                 "ca.crt".to_string(),
                 ca_cert,
@@ -125,15 +132,18 @@ pub async fn create(
         };
         let cm_key = build_key(
             "configmaps",
-            Some(&namespace.metadata.name),
+            Some(&ns_name),
             "kube-root-ca.crt",
         );
-        if let Err(e) = state.storage.create(&cm_key, &ca_cm).await {
-            warn!(
+        match state.storage.create(&cm_key, &ca_cm).await {
+            Ok(_) => info!("Created kube-root-ca.crt in namespace {}", ns_name),
+            Err(e) => warn!(
                 "Failed to create kube-root-ca.crt in namespace {}: {}",
-                namespace.metadata.name, e
-            );
+                ns_name, e
+            ),
         }
+    } else {
+        warn!("CA cert is empty, skipping kube-root-ca.crt for namespace {}", ns_name);
     }
 
     Ok((StatusCode::CREATED, Json(created)))

@@ -326,6 +326,12 @@ pub async fn list(
         .and_then(|v| v.parse::<bool>().ok())
         .unwrap_or(false)
     {
+        info!(
+            "Configmap watch request for namespace {}: rv={:?}, sendInitialEvents={:?}",
+            namespace,
+            params.get("resourceVersion"),
+            params.get("sendInitialEvents"),
+        );
         let watch_params = crate::handlers::watch::WatchParams {
             resource_version: crate::handlers::watch::normalize_resource_version(
                 params.get("resourceVersion").cloned(),
