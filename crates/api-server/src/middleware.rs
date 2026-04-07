@@ -258,10 +258,11 @@ pub async fn normalize_content_type_middleware(
             .query()
             .map(|q| q.contains("watch=true") || q.contains("watch=1"))
             .unwrap_or(false);
-    // Disable protobuf wrapping — client-go expects native protobuf-encoded
-    // messages for known types (NamespaceList, ServiceList, etc.), not JSON
-    // wrapped in a runtime.Unknown envelope. Since we only produce JSON,
-    // return JSON and let client-go fall back via its Accept header negotiation.
+    // Protobuf disabled. K8s protobuf requires Unknown.raw to contain native
+    // protobuf-encoded bytes (e.g., proto.Marshal(NamespaceList)), not JSON.
+    // We can't produce native protobuf for K8s types in Rust. Client-go always
+    // sends "Accept: application/vnd.kubernetes.protobuf, application/json"
+    // and falls back to JSON when protobuf is unavailable.
     let wants_protobuf = false;
 
     let response = next.run(request).await;
