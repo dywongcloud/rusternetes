@@ -217,27 +217,16 @@ pub async fn get_swagger_spec(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if accept.contains("proto-openapi") || accept.contains("protobuf") {
-        // K8s kube-openapi handler accepts the deprecated '@' subtype but always
-        // responds with the MIME-safe '.' subtype that Go's mime.ParseMediaType
-        // can parse. The internal envelope content-type uses the deprecated form.
-        let internal_ct = "application/com.github.proto-openapi.spec.v2@v1.0+protobuf";
-        let pb_bytes = wrap_in_k8s_protobuf(internal_ct, &json_bytes);
-        Response::builder()
-            .status(StatusCode::OK)
-            .header(
-                header::CONTENT_TYPE,
-                "application/com.github.proto-openapi.spec.v2.v1.0+protobuf",
-            )
-            .body(Body::from(pb_bytes))
-            .unwrap()
-    } else {
-        Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(json_bytes))
-            .unwrap()
-    }
+    // Always return JSON. The protobuf format for OpenAPI v2 requires
+    // proto.Marshal() of a gnostic openapi.v2.Document (no k8s\0 prefix,
+    // no Unknown wrapper) — a completely different serialization than
+    // standard K8s resources. Since we can't produce native gnostic protobuf,
+    // return JSON and let client-go/kubectl fall back via Accept negotiation.
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json_bytes))
+        .unwrap()
 }
 
 #[cfg(test)]
