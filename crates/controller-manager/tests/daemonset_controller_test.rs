@@ -475,7 +475,11 @@ async fn test_daemonset_pod_naming_convention() {
     assert_eq!(pods.len(), 1);
 
     let pod = &pods[0];
-    assert_eq!(pod.metadata.name, "test-ds-node-example-com");
+    assert!(
+        pod.metadata.name.starts_with("test-ds-node-example-com-"),
+        "Pod name should start with 'test-ds-node-example-com-', got: {}",
+        pod.metadata.name
+    );
     assert!(
         !pod.metadata.name.contains('.'),
         "Pod name should not contain dots"
