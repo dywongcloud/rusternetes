@@ -47,11 +47,25 @@ pub async fn check_resource_quota<S: rusternetes_storage::Storage>(
                     let pod_prefix = format!("/registry/pods/{}/", namespace);
                     let current: Vec<serde_json::Value> =
                         storage.list(&pod_prefix).await.unwrap_or_default();
-                    if current.len() as i64 >= limit {
+                    // Only count active pods (not Failed/Succeeded/terminating)
+                    let active_count = current
+                        .iter()
+                        .filter(|p| {
+                            let phase = p
+                                .pointer("/status/phase")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let terminating = p
+                                .pointer("/metadata/deletionTimestamp")
+                                .is_some();
+                            !terminating && phase != "Failed" && phase != "Succeeded"
+                        })
+                        .count();
+                    if active_count as i64 >= limit {
                         return Err(anyhow::anyhow!(
                             "exceeded quota: {}, requested: 1, used: {}, limited: {}",
                             limit_key,
-                            current.len(),
+                            active_count,
                             limit_str
                         ));
                     }
