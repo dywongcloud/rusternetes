@@ -5,6 +5,7 @@ use rusternetes_common::resources::pod::*;
 use rusternetes_common::resources::*;
 use rusternetes_common::types::{LabelSelector, ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::deployment::DeploymentController;
+use rusternetes_controller_manager::controllers::replicaset::ReplicaSetController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -309,10 +310,12 @@ async fn test_deployment_template_change_creates_new_replicaset() {
     deployment.spec.template.spec.containers[0].image = "nginx:1.26-alpine".to_string();
     storage.update(&key, &deployment).await.unwrap();
 
-    // Run controller multiple times to complete the rolling update.
-    // Each cycle: make pods Ready so the controller can scale down old RS,
-    // then reconcile to progress the rollout.
+    // Run controllers multiple times to complete the rolling update.
+    // The RS controller creates pods from ReplicaSets, then we mark them Ready,
+    // then the deployment controller can progress the rollout.
+    let rs_controller = ReplicaSetController::new(storage.clone(), 10);
     for _ in 0..10 {
+        rs_controller.reconcile_all().await.unwrap();
         make_all_pods_ready(&storage, "default").await;
         controller.reconcile_all().await.unwrap();
         sleep(Duration::from_millis(100)).await;
