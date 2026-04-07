@@ -154,7 +154,8 @@ async fn test_namespace_deletion_removes_finalizers() {
     let key = build_key("namespaces", None, "test-namespace-cleanup");
     storage.create(&key, &namespace).await.unwrap();
 
-    // Reconcile should remove finalizers since there are no resources
+    // First reconcile sets conditions, second reconcile removes finalizers
+    controller.reconcile_all().await.unwrap();
     controller.reconcile_all().await.unwrap();
 
     // Check if finalizers were removed
