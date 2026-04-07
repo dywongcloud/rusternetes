@@ -9,15 +9,16 @@
 
 
 ## Fix Conformance Issues Process Loop
-1. Write down all known issues into CONFORMANCE_FAILURES.md file
-2. Continually fix any known issues, do not take shortcuts, do not ignore them even if they are architectural issues
-3. As you fix issues implement a test that verifies your fix was correct and that the fix adheres to expected kubernetes runtime behavior
-4. Make sure the component build works and tests pass
-5. Make a git commit for this issue
-6. Update the CONFORMANCE_FAILURES.md with the status of this fix
-7. Do NOT arbitrarily go to the Clean Redeploy Process as this will delete the test results you need to reference for research fixing issues
-8. Move on to the next known issue fix, using these process steps.
-9. Do not stop this loop until all issues are fixed.
+1. Clean up the CONFORMANCE_FAILURES.md file content from the last run since we are starting a new run.
+2. Write down all known issues into CONFORMANCE_FAILURES.md file
+3. Continually do a deep analysis of the root cause for each issue, and come up with a thorough plan to fix the issue. Then fix the issue according to that plan, do not take shortcuts, do not ignore them even if they are architectural issues. You must implement a test to prove your fix actually fixes the problem.
+4. As you fix issues implement a test that verifies your fix was correct and that the fix adheres to expected kubernetes runtime behavior
+5. Make sure the component build works and tests pass
+6. Make a git commit for this issue
+7. Update the CONFORMANCE_FAILURES.md with the status of this fix
+8. Do NOT arbitrarily go to the Clean Redeploy Process as this will delete the test results you need to reference for research fixing issues
+9. Move on to the next known issue fix, using these process steps.
+10. Do not stop this loop until all issues are fixed.
 
 ## Start Conformance Testing and monitor for errors
 1. Start the conformance testing using the script

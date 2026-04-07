@@ -90,6 +90,7 @@ async fn start_mock_validating_deny_server(reason: String) -> (String, oneshot::
                         code: Some(403),
                         message: Some(reason.clone()),
                         reason: Some("Forbidden".to_string()),
+                        metadata: None,
                     }),
                     patch: None,
                     patch_type: None,

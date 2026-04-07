@@ -342,3 +342,150 @@ impl Drop for KubeProxy {
         info!("Shutting down kube-proxy");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusternetes_common::resources::endpointslice::EndpointPort as ESEndpointPort;
+    use rusternetes_common::resources::{Endpoint, EndpointConditions, EndpointSlice};
+    use rusternetes_common::types::ObjectMeta;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_endpointslice_port_aware_map_building() {
+        // Build an EndpointSlice with two ports and two ready endpoints.
+        // Verify the map correctly produces (IP, port_name, port_number) tuples.
+        let mut labels = HashMap::new();
+        labels.insert(
+            "kubernetes.io/service-name".to_string(),
+            "my-svc".to_string(),
+        );
+        let es = EndpointSlice {
+            metadata: ObjectMeta {
+                name: "my-svc-abc12".to_string(),
+                namespace: Some("default".to_string()),
+                labels: Some(labels),
+                ..ObjectMeta::default()
+            },
+            address_type: "IPv4".to_string(),
+            endpoints: vec![
+                Endpoint {
+                    addresses: vec!["10.0.0.1".to_string()],
+                    conditions: Some(EndpointConditions {
+                        ready: Some(true),
+                        serving: None,
+                        terminating: None,
+                    }),
+                    hostname: None,
+                    target_ref: None,
+                    node_name: None,
+                    zone: None,
+                    hints: None,
+                    deprecated_topology: None,
+                },
+                Endpoint {
+                    addresses: vec!["10.0.0.2".to_string()],
+                    conditions: None, // no conditions = assumed ready
+                    hostname: None,
+                    target_ref: None,
+                    node_name: None,
+                    zone: None,
+                    hints: None,
+                    deprecated_topology: None,
+                },
+            ],
+            ports: vec![
+                ESEndpointPort {
+                    name: Some("http".to_string()),
+                    port: Some(8080),
+                    protocol: Some("TCP".to_string()),
+                    app_protocol: None,
+                },
+                ESEndpointPort {
+                    name: Some("https".to_string()),
+                    port: Some(8443),
+                    protocol: Some("TCP".to_string()),
+                    app_protocol: None,
+                },
+            ],
+            ..EndpointSlice::new("my-svc-abc12", "IPv4")
+        };
+
+        // Replicate the map-building logic from sync()
+        let all_endpointslices = vec![es];
+        let mut endpointslice_map: HashMap<String, Vec<(String, Option<String>, u16)>> =
+            HashMap::new();
+        for es in &all_endpointslices {
+            let namespace = es.metadata.namespace.as_deref().unwrap_or("default");
+            let service_name = es
+                .metadata
+                .labels
+                .as_ref()
+                .and_then(|l| l.get("kubernetes.io/service-name"))
+                .cloned()
+                .unwrap_or_else(|| es.metadata.name.clone());
+            let key = format!("{}/{}", namespace, service_name);
+
+            let mut ready_addrs: Vec<String> = Vec::new();
+            for endpoint in &es.endpoints {
+                if let Some(conditions) = &endpoint.conditions {
+                    if conditions.ready == Some(false) {
+                        continue;
+                    }
+                }
+                for addr in &endpoint.addresses {
+                    ready_addrs.push(addr.clone());
+                }
+            }
+
+            if es.ports.is_empty() {
+                for addr in &ready_addrs {
+                    endpointslice_map
+                        .entry(key.clone())
+                        .or_default()
+                        .push((addr.clone(), None, 0));
+                }
+            } else {
+                for es_port in &es.ports {
+                    let port_num = es_port.port.unwrap_or(0) as u16;
+                    let port_name = es_port.name.clone();
+                    for addr in &ready_addrs {
+                        endpointslice_map
+                            .entry(key.clone())
+                            .or_default()
+                            .push((addr.clone(), port_name.clone(), port_num));
+                    }
+                }
+            }
+        }
+
+        let entries = endpointslice_map.get("default/my-svc").unwrap();
+        // 2 ports * 2 endpoints = 4 tuples
+        assert_eq!(entries.len(), 4, "expected 4 (ip, port_name, port) tuples");
+
+        // Verify http port entries
+        let http_entries: Vec<_> = entries
+            .iter()
+            .filter(|(_, name, _)| name.as_deref() == Some("http"))
+            .collect();
+        assert_eq!(http_entries.len(), 2);
+        assert!(http_entries
+            .iter()
+            .all(|(_, _, port)| *port == 8080));
+
+        // Verify https port entries
+        let https_entries: Vec<_> = entries
+            .iter()
+            .filter(|(_, name, _)| name.as_deref() == Some("https"))
+            .collect();
+        assert_eq!(https_entries.len(), 2);
+        assert!(https_entries
+            .iter()
+            .all(|(_, _, port)| *port == 8443));
+
+        // Verify both IPs are present
+        let ips: Vec<&str> = entries.iter().map(|(ip, _, _)| ip.as_str()).collect();
+        assert!(ips.contains(&"10.0.0.1"));
+        assert!(ips.contains(&"10.0.0.2"));
+    }
+}

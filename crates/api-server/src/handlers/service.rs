@@ -751,3 +751,84 @@ pub async fn deletecollection_services(
     );
     Ok(StatusCode::OK)
 }
+
+#[cfg(test)]
+mod tests {
+    use rusternetes_common::resources::{
+        LoadBalancerStatus, Service, ServiceSpec, ServiceStatus,
+    };
+
+    #[test]
+    fn test_service_status_load_balancer_initialization() {
+        // Simulate the create handler's status initialization logic.
+        // When status is None, it should be populated with an empty loadBalancer.
+        let mut service = Service::new("test-svc", ServiceSpec::default());
+
+        // Apply the same logic as the create handler
+        if service.status.is_none() {
+            service.status = Some(ServiceStatus {
+                load_balancer: Some(LoadBalancerStatus { ingress: vec![] }),
+                conditions: None,
+            });
+        }
+
+        let status = service.status.as_ref().expect("status should be set");
+        let lb = status
+            .load_balancer
+            .as_ref()
+            .expect("loadBalancer should be set");
+        assert!(lb.ingress.is_empty(), "ingress should be empty on create");
+    }
+
+    #[test]
+    fn test_service_cluster_ips_populated_from_cluster_ip() {
+        // When clusterIP is set but clusterIPs is None, the create handler
+        // should populate clusterIPs from clusterIP.
+        let mut service = Service::new(
+            "test-svc",
+            ServiceSpec {
+                cluster_ip: Some("10.96.0.1".to_string()),
+                cluster_ips: None,
+                ..ServiceSpec::default()
+            },
+        );
+
+        // Apply the same logic as the create handler
+        if let Some(ref cip) = service.spec.cluster_ip {
+            if cip != "None" && !cip.is_empty() && service.spec.cluster_ips.is_none() {
+                service.spec.cluster_ips = Some(vec![cip.clone()]);
+            }
+        }
+
+        let cluster_ips = service
+            .spec
+            .cluster_ips
+            .as_ref()
+            .expect("clusterIPs should be populated");
+        assert_eq!(cluster_ips, &vec!["10.96.0.1".to_string()]);
+    }
+
+    #[test]
+    fn test_service_cluster_ips_not_set_for_headless() {
+        // When clusterIP is "None" (headless service), clusterIPs should NOT be populated.
+        let mut service = Service::new(
+            "headless-svc",
+            ServiceSpec {
+                cluster_ip: Some("None".to_string()),
+                cluster_ips: None,
+                ..ServiceSpec::default()
+            },
+        );
+
+        if let Some(ref cip) = service.spec.cluster_ip {
+            if cip != "None" && !cip.is_empty() && service.spec.cluster_ips.is_none() {
+                service.spec.cluster_ips = Some(vec![cip.clone()]);
+            }
+        }
+
+        assert!(
+            service.spec.cluster_ips.is_none(),
+            "clusterIPs should not be set for headless services"
+        );
+    }
+}

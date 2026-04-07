@@ -2,8 +2,8 @@
 // Tests validation and processing of certificate signing requests
 
 use rusternetes_common::resources::{
-    CertificateSigningRequest, CertificateSigningRequestCondition, CertificateSigningRequestStatus,
-    KeyUsage,
+    CertificateSigningRequest, CertificateSigningRequestCondition, CertificateSigningRequestSpec,
+    CertificateSigningRequestStatus, KeyUsage,
 };
 use rusternetes_common::types::ObjectMeta;
 use rusternetes_controller_manager::controllers::certificate_signing_request::CertificateSigningRequestController;

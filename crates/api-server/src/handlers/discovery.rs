@@ -3723,4 +3723,58 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn test_aggregated_discovery_v2_format_and_subresources() {
+        // Verify the /api endpoint returns v2 format with correct apiVersion
+        // and that subresources are nested inside parent resources (not flat).
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "accept",
+            HeaderValue::from_static(
+                "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList",
+            ),
+        );
+
+        let response = get_core_api(headers).await;
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let discovery: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        // Must have v2 apiVersion
+        assert_eq!(
+            discovery["apiVersion"], "apidiscovery.k8s.io/v2",
+            "aggregated discovery must use apidiscovery.k8s.io/v2"
+        );
+
+        // Navigate to core v1 resources
+        let resources = discovery["items"][0]["versions"][0]["resources"]
+            .as_array()
+            .expect("resources array should exist");
+
+        // Find pods and verify it has nested subresources
+        let pods = resources
+            .iter()
+            .find(|r| r.get("resource").and_then(|v| v.as_str()) == Some("pods"))
+            .expect("pods resource must exist");
+
+        let subresources = pods["subresources"]
+            .as_array()
+            .expect("pods must have nested subresources in v2 format");
+
+        // Verify at least status and log subresources exist
+        let sub_names: Vec<&str> = subresources
+            .iter()
+            .filter_map(|s| s.get("subresource").and_then(|v| v.as_str()))
+            .collect();
+        assert!(
+            sub_names.contains(&"status"),
+            "pods should have status subresource"
+        );
+        assert!(
+            sub_names.contains(&"log"),
+            "pods should have log subresource"
+        );
+    }
 }

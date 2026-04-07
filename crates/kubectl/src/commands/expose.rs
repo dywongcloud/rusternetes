@@ -606,4 +606,50 @@ mod tests {
         let result = extract_selector("svc", &svc);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_resource_path_rc_aliases() {
+        // Both "replicationcontroller" and "rc" must resolve to the core v1 API path
+        assert_eq!(
+            resource_path("replicationcontroller", "default", "my-rc").unwrap(),
+            "/api/v1/namespaces/default/replicationcontrollers/my-rc"
+        );
+        assert_eq!(
+            resource_path("rc", "my-ns", "web-rc").unwrap(),
+            "/api/v1/namespaces/my-ns/replicationcontrollers/web-rc"
+        );
+        assert_eq!(
+            resource_path("replicationcontrollers", "prod", "app").unwrap(),
+            "/api/v1/namespaces/prod/replicationcontrollers/app"
+        );
+    }
+
+    #[test]
+    fn test_extract_selector_rc_uses_spec_selector() {
+        // RC selectors live at .spec.selector (flat map), not .spec.selector.matchLabels
+        let rc = json!({
+            "apiVersion": "v1",
+            "kind": "ReplicationController",
+            "metadata": {"name": "web-rc"},
+            "spec": {
+                "selector": {
+                    "app": "web",
+                    "tier": "frontend"
+                },
+                "template": {
+                    "spec": {
+                        "containers": [{"name": "nginx", "image": "nginx"}]
+                    }
+                }
+            }
+        });
+
+        // All three aliases should work
+        for alias in &["replicationcontroller", "replicationcontrollers", "rc"] {
+            let selector = extract_selector(alias, &rc).unwrap();
+            assert_eq!(selector.get("app").unwrap(), "web");
+            assert_eq!(selector.get("tier").unwrap(), "frontend");
+            assert_eq!(selector.len(), 2);
+        }
+    }
 }
