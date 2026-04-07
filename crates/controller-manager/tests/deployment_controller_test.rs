@@ -3,7 +3,7 @@
 
 use rusternetes_common::resources::pod::*;
 use rusternetes_common::resources::*;
-use rusternetes_common::types::{LabelSelector, ObjectMeta, TypeMeta};
+use rusternetes_common::types::{LabelSelector, ObjectMeta, Phase, TypeMeta};
 use rusternetes_controller_manager::controllers::deployment::DeploymentController;
 use rusternetes_storage::{build_key, memory::MemoryStorage, Storage};
 use std::collections::HashMap;
@@ -14,6 +14,31 @@ async fn setup_test() -> Arc<MemoryStorage> {
     let storage = Arc::new(MemoryStorage::new());
     storage.clear();
     storage
+}
+
+/// Mark all pods in a namespace as Running and Ready
+async fn make_all_pods_ready(storage: &Arc<MemoryStorage>, namespace: &str) {
+    let prefix = format!("/registry/pods/{}/", namespace);
+    let pods: Vec<Pod> = storage.list(&prefix).await.unwrap_or_default();
+    for mut pod in pods {
+        if pod.metadata.deletion_timestamp.is_some() {
+            continue;
+        }
+        pod.status = Some(PodStatus {
+            phase: Some(Phase::Running),
+            conditions: Some(vec![PodCondition {
+                condition_type: "Ready".to_string(),
+                status: "True".to_string(),
+                reason: None,
+                message: None,
+                last_transition_time: None,
+                observed_generation: None,
+            }]),
+            ..Default::default()
+        });
+        let key = format!("/registry/pods/{}/{}", namespace, pod.metadata.name);
+        let _ = storage.update(&key, &pod).await;
+    }
 }
 
 fn create_test_deployment(name: &str, namespace: &str, replicas: i32) -> Deployment {
@@ -284,9 +309,11 @@ async fn test_deployment_template_change_creates_new_replicaset() {
     deployment.spec.template.spec.containers[0].image = "nginx:1.26-alpine".to_string();
     storage.update(&key, &deployment).await.unwrap();
 
-    // Run controller multiple times to complete the rolling update
-    // Each reconcile cycle scales up new RS and scales down old RS gradually
+    // Run controller multiple times to complete the rolling update.
+    // Each cycle: make pods Ready so the controller can scale down old RS,
+    // then reconcile to progress the rollout.
     for _ in 0..10 {
+        make_all_pods_ready(&storage, "default").await;
         controller.reconcile_all().await.unwrap();
         sleep(Duration::from_millis(100)).await;
     }
