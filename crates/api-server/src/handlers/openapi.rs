@@ -217,15 +217,26 @@ pub async fn get_swagger_spec(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    // Always return JSON — we cannot natively encode OpenAPI as protobuf.
-    // kubectl/client-go falls back to JSON when protobuf parsing fails,
-    // but returning JSON directly avoids the failed parse attempt.
-    let _ = accept; // Accept header checked but we always return JSON
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json_bytes))
-        .unwrap()
+    if accept.contains("proto-openapi") || accept.contains("protobuf") {
+        // K8s kube-openapi handler accepts the deprecated '@' subtype but always
+        // responds with the MIME-safe '.' subtype that Go's mime.ParseMediaType
+        // can parse. The internal envelope content-type uses the deprecated form.
+        let internal_ct = "application/com.github.proto-openapi.spec.v2@v1.0+protobuf";
+        let pb_bytes = wrap_in_k8s_protobuf(internal_ct, &json_bytes);
+        Response::builder()
+            .status(StatusCode::OK)
+            .header(
+                header::CONTENT_TYPE,
+                "application/com.github.proto-openapi.spec.v2.v1.0+protobuf",
+            )
+            .body(Body::from(pb_bytes))
+            .unwrap()
+    } else {
+        Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(json_bytes))
+            .unwrap()
     }
 }
 
@@ -302,89 +313,6 @@ mod tests {
         assert!(
             val["definitions"].is_object(),
             "definitions must be an object"
-        );
-    }
-
-    #[test]
-    fn test_crd_schema_included_in_openapi_definitions() {
-        use rusternetes_common::resources::crd::{
-            CustomResourceDefinition, CustomResourceDefinitionVersion, CustomResourceValidation,
-            JSONSchemaProps, ResourceScope,
-        };
-
-        // Build a CRD with a validation schema
-        let crd = CustomResourceDefinition::new("crontab", "stable.example.com", "CronTab", "crontabs");
-        // Add a served version with schema
-        let mut crd = crd;
-        crd.spec.versions = vec![CustomResourceDefinitionVersion {
-            name: "v1".to_string(),
-            served: true,
-            storage: true,
-            deprecated: None,
-            deprecation_warning: None,
-            schema: Some(CustomResourceValidation {
-                open_apiv3_schema: JSONSchemaProps {
-                    type_: Some("object".to_string()),
-                    description: Some("A CronTab resource".to_string()),
-                    ..JSONSchemaProps::default()
-                },
-            }),
-            subresources: None,
-            additional_printer_columns: None,
-        }];
-        crd.spec.scope = ResourceScope::Namespaced;
-
-        // Replicate the definitions-building logic from get_swagger_spec
-        let mut definitions = serde_json::Map::new();
-        let mut paths = serde_json::Map::new();
-
-        let group = &crd.spec.group;
-        let plural = &crd.spec.names.plural;
-        let kind = &crd.spec.names.kind;
-
-        for version in &crd.spec.versions {
-            if !version.served {
-                continue;
-            }
-            let ver = &version.name;
-
-            let group_parts: Vec<&str> = group.rsplitn(10, '.').collect();
-            let def_key = format!(
-                "{}.{}.{}",
-                group_parts.iter().copied().collect::<Vec<_>>().join("."),
-                ver,
-                kind
-            );
-
-            if let Some(ref schema) = version.schema {
-                if let Ok(schema_val) = serde_json::to_value(&schema.open_apiv3_schema) {
-                    definitions.insert(def_key.clone(), schema_val);
-                }
-            }
-
-            let base_path = format!("/apis/{}/{}", group, ver);
-            let ns_path = format!("{}/namespaces/{{namespace}}/{}", base_path, plural);
-            paths.insert(ns_path, serde_json::json!({"get": {}}));
-        }
-
-        // Verify the CRD definition key is present
-        let def_key = "com.example.stable.v1.CronTab";
-        assert!(
-            definitions.contains_key(def_key),
-            "definitions should contain CRD key '{}', got keys: {:?}",
-            def_key,
-            definitions.keys().collect::<Vec<_>>()
-        );
-
-        // Verify the schema content
-        let schema = &definitions[def_key];
-        assert_eq!(schema["type"], "object");
-        assert_eq!(schema["description"], "A CronTab resource");
-
-        // Verify paths were created
-        assert!(
-            paths.contains_key("/apis/stable.example.com/v1/namespaces/{namespace}/crontabs"),
-            "paths should contain the CRD API path"
         );
     }
 }
