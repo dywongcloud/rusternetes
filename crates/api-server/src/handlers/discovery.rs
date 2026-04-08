@@ -79,17 +79,22 @@ fn wants_aggregated_discovery(headers: &HeaderMap) -> bool {
             return false;
         }
 
-        // Parse q-values and position to determine preference.
-        // K8s discovery client sends aggregated before plain JSON (both q=1.0).
-        // Sonobuoy sends plain JSON first, then aggregated — expects standard format.
-        // Per HTTP content negotiation, when q-values are equal, the first listed
-        // type is preferred. We use position as tiebreaker.
+        // Return aggregated when client requests it.
+        //
+        // K8s client-go sends: aggregated types first, plain JSON last, all q=1.0.
+        // The conformance test REQUIRES aggregated discovery (checks resourcesByGV
+        // from GroupsAndMaybeResources which only works with aggregated format).
+        //
+        // Return aggregated if:
+        // - No plain JSON alternative (exclusive request), OR
+        // - Aggregated has equal or higher q-value than plain JSON
+        //
+        // This matches real K8s API server behavior: it always returns aggregated
+        // when the Accept header includes apidiscovery.k8s.io.
         let mut agg_q: f32 = 1.0;
         let mut plain_q: f32 = -1.0;
-        let mut agg_pos: usize = usize::MAX;
-        let mut plain_pos: usize = usize::MAX;
 
-        for (i, part) in accept.split(',').enumerate() {
+        for part in accept.split(',') {
             let part = part.trim();
             let q = part
                 .split(";q=")
@@ -99,21 +104,15 @@ fn wants_aggregated_discovery(headers: &HeaderMap) -> bool {
 
             if part.contains("apidiscovery.k8s.io") {
                 agg_q = q;
-                agg_pos = i;
             } else if part.starts_with("application/json") && !part.contains("apidiscovery") {
                 plain_q = q;
-                plain_pos = i;
             }
         }
 
-        // Return aggregated if:
-        // - No plain JSON alternative (exclusive request), OR
-        // - Aggregated has higher q-value, OR
-        // - Equal q-values but aggregated appears first (client preference)
         if plain_q < 0.0 {
             return true; // No plain JSON at all
         }
-        agg_q > plain_q || (agg_q == plain_q && agg_pos < plain_pos)
+        agg_q >= plain_q
     } else {
         false
     }
@@ -3595,8 +3594,9 @@ mod tests {
     }
 
     #[test]
-    fn test_wants_aggregated_discovery_sonobuoy_plain_first() {
-        // Sonobuoy sends plain JSON first, then aggregated — expects standard format
+    fn test_wants_aggregated_discovery_both_equal_q() {
+        // When both aggregated and plain have equal q-values, return aggregated
+        // (matches real K8s API server behavior)
         let mut headers = HeaderMap::new();
         headers.insert(
             "accept",
@@ -3604,7 +3604,7 @@ mod tests {
                 "application/json, application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList",
             ),
         );
-        assert!(!wants_aggregated_discovery(&headers));
+        assert!(wants_aggregated_discovery(&headers));
     }
 
     #[test]
