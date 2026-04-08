@@ -150,24 +150,118 @@ async fn custom_resource_fallback(
     // Handle /apis/{group} — return APIGroup info for the group
     if parts.len() == 1 && !parts[0].is_empty() {
         let group_name = parts[0];
-        // Look up the group in our known groups
+        // Look up CRDs for this group to determine the actual versions
+        let prefix = rusternetes_storage::build_prefix("customresourcedefinitions", None);
+        let crds: Vec<CustomResourceDefinition> =
+            state.storage.list(&prefix).await.unwrap_or_default();
+        let mut versions = Vec::new();
+        for crd in &crds {
+            if crd.spec.group == group_name {
+                for ver in &crd.spec.versions {
+                    if ver.served
+                        && !versions.iter().any(
+                            |v: &serde_json::Value| {
+                                v.get("version").and_then(|v| v.as_str()) == Some(&ver.name)
+                            },
+                        )
+                    {
+                        versions.push(serde_json::json!({
+                            "groupVersion": format!("{}/{}", group_name, ver.name),
+                            "version": ver.name,
+                        }));
+                    }
+                }
+            }
+        }
+        if versions.is_empty() {
+            versions.push(serde_json::json!({
+                "groupVersion": format!("{}/v1", group_name),
+                "version": "v1",
+            }));
+        }
         let group_info = serde_json::json!({
             "kind": "APIGroup",
             "apiVersion": "v1",
             "name": group_name,
-            "versions": [{
-                "groupVersion": format!("{}/v1", group_name),
-                "version": "v1"
-            }],
-            "preferredVersion": {
-                "groupVersion": format!("{}/v1", group_name),
-                "version": "v1"
-            }
+            "versions": versions,
+            "preferredVersion": versions[0],
         });
         return Ok(axum::response::Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "application/json")
             .body(axum::body::Body::from(group_info.to_string()))
+            .unwrap());
+    }
+
+    // Handle /apis/{group}/{version} — return APIResourceList for CRDs in this group/version
+    if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+        let group_name = parts[0];
+        let version_name = parts[1];
+        let prefix = rusternetes_storage::build_prefix("customresourcedefinitions", None);
+        let crds: Vec<CustomResourceDefinition> =
+            state.storage.list(&prefix).await.unwrap_or_default();
+        let mut resources = Vec::new();
+        for crd in &crds {
+            if crd.spec.group != group_name {
+                continue;
+            }
+            let has_version = crd.spec.versions.iter().any(|v| v.name == version_name && v.served);
+            if !has_version {
+                continue;
+            }
+            let namespaced = crd.spec.scope == rusternetes_common::resources::ResourceScope::Namespaced;
+            let verbs = vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"];
+            let mut res = serde_json::json!({
+                "name": crd.spec.names.plural,
+                "singularName": crd.spec.names.singular,
+                "namespaced": namespaced,
+                "kind": crd.spec.names.kind,
+                "verbs": verbs,
+                "storageVersionHash": "",
+            });
+            if let Some(ref short) = crd.spec.names.short_names {
+                res["shortNames"] = serde_json::json!(short);
+            }
+            if let Some(ref categories) = crd.spec.names.categories {
+                res["categories"] = serde_json::json!(categories);
+            }
+            resources.push(res);
+            // Add status and scale subresources if defined
+            if let Some(ref ver) = crd.spec.versions.iter().find(|v| v.name == version_name) {
+                if let Some(ref sub) = ver.subresources {
+                    if sub.status.is_some() {
+                        resources.push(serde_json::json!({
+                            "name": format!("{}/status", crd.spec.names.plural),
+                            "singularName": "",
+                            "namespaced": namespaced,
+                            "kind": crd.spec.names.kind,
+                            "verbs": ["get", "patch", "update"],
+                        }));
+                    }
+                    if sub.scale.is_some() {
+                        resources.push(serde_json::json!({
+                            "name": format!("{}/scale", crd.spec.names.plural),
+                            "singularName": "",
+                            "namespaced": namespaced,
+                            "kind": "Scale",
+                            "group": "autoscaling",
+                            "version": "v1",
+                            "verbs": ["get", "patch", "update"],
+                        }));
+                    }
+                }
+            }
+        }
+        let resource_list = serde_json::json!({
+            "kind": "APIResourceList",
+            "apiVersion": "v1",
+            "groupVersion": format!("{}/{}", group_name, version_name),
+            "resources": resources,
+        });
+        return Ok(axum::response::Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .body(axum::body::Body::from(resource_list.to_string()))
             .unwrap());
     }
 

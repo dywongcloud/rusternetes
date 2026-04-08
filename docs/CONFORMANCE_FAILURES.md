@@ -1,59 +1,87 @@
 # Conformance Failure Tracker
 
 **Round 125** | 329/441 (74.6%) | 112 failures | 2026-04-04
-**Round 126** | Not run (fixes applied, projected ~99.8%)
-**Round 127** | In progress | 2026-04-07
-
-## Round 127 Pre-run Fixes
-
-Before starting conformance, the following issues were fixed:
-
-| # | Fix | Commit | Status |
-|---|-----|--------|--------|
-| 1 | Replace EtcdStorage with MemoryStorage in all tests (tests pass without etcd) | c4ab681 | DONE |
-| 2 | Storage: blanket `impl Storage for Arc<S>` + generic finalizer functions | c4ab681 | DONE |
-| 3 | StatefulSet: don't delete terminating pods from storage (let kubelet handle) | 2adaaf1 | DONE |
-| 4 | DaemonSet: pod naming test accounts for hash suffix | bc9a6fe | DONE |
-| 5 | Deployment: rolling update test runs RS controller + makes pods Ready | 40da32c | DONE |
-| 6 | Namespace: deletion test needs two reconcile cycles | efaa195 | DONE |
-| 7 | Protobuf: disable Unknown wrapper (client-go expects native protobuf for known types) | e16bde2 | DONE |
+**Round 127** | In progress (~34 failures so far) | 2026-04-07
 
 ## Round 127 Conformance Failures
 
-### 1. StatefulSet scaling halts incorrectly when pod is unhealthy
-- **Test**: `[sig-apps] StatefulSet Basic StatefulSet functionality [StatefulSetBasic] Scaling should happen in predictable order and halt if any stateful pod is unhealthy`
-- **Error**: `StatefulSet ss scaled unexpectedly scaled to 3 -> 2 replicas`
-- **Root cause**: Controller was deleting terminating pods from storage during scale-up, bypassing kubelet graceful shutdown. Kubelet saw pods as orphaned and force-removed them.
-- **Fix**: Reverted to leaving terminating pods in storage. Unit tests now simulate kubelet cleanup.
-- **Status**: FIXED (commit 2adaaf1) — awaiting re-run verification
+### 1. CRD Discovery Endpoint Missing (7 failures) — FIXING
+- `crd_publish_openapi.go:202,244,285,451` — failed to create CRD: context deadline exceeded
+- `custom_resource_definition.go:161` — creating/cannot create CRD: context deadline exceeded
+- `aggregated_discovery.go:227` — context deadline exceeded
+- **Root cause**: `/apis/{group}/{version}` returns 404 for CRD groups. Go test creates CRD then polls `waitForDiscoveryResource` which checks this endpoint for an `APIResourceList`. Endpoint was missing from `custom_resource_fallback`.
+- **Fix**: Added handler for `/apis/{group}/{version}` that returns `APIResourceList` by looking up CRDs. Also improved `/apis/{group}` to use actual CRD versions.
+- **Status**: FIX IN PROGRESS — building
 
-### 2. AdmissionWebhook — should mutate pod and apply defaults after mutation
-- **Test**: `[sig-api-machinery] AdmissionWebhook should mutate pod and apply defaults after mutation`
-- **Error**: `waiting for webhook configuration to be ready: timed out waiting for the condition`
-- **Status**: INVESTIGATING
+### 2. OpenAPI/Protobuf Download Failure (3 failures)
+- `kubectl/builder.go:97` (x3, incl BeforeEach/AfterEach) — `failed to download openapi: proto: cannot parse invalid wire-format data`
+- **Root cause**: kubectl tries to download OpenAPI v3 spec for validation and gets data it can't parse as protobuf.
+- **Status**: TODO
 
-### 3/4/8/10+ CRD/webhook/discovery timeouts — kube-root-ca.crt not provisioned
-- **Tests**: Multiple CRD, webhook, discovery, and field validation tests
-- **Error**: `context deadline exceeded` or `timed out waiting for the condition`
-- **Root cause**: `kube-root-ca.crt` ConfigMap was not being created in new namespaces. The Docker image had a stale build. Rebuilt with explicit logging and consistent `ns_name` variable.
-- **Fix**: Rebuilt api-server image with proper logging and `ns_name` usage.
-- **Status**: FIXED (commit ddbde70) — awaiting re-run verification
+### 3. DNS Resolution Failures (2 failures)
+- `dns_common.go:476` (x2) — Unable to read agnhost_udp@... context deadline exceeded
+- **Root cause**: DNS lookups fail — pods can't resolve service names via DNS.
+- **Status**: TODO
 
-### 5. RC failure condition not cleared after quota freed
-- **Test**: `[sig-apps] ReplicationController should surface a failure condition on a common issue like exceeded quota`
-- **Error**: `rc manager never removed the failure condition for rc "condition-test"`
-- **Status**: INVESTIGATING — condition set at 19:48:52, 59s after scale-down. Timing issue with reconcile.
+### 4. StatefulSet Issues (3 failures)
+- `statefulset.go:2479` — scaled unexpectedly 3 -> 2 replicas
+- `statefulset.go:957` — Pod ss-0 expected to be re-created at least once
+- `statefulset.go:454` — Pod ss2-0 has wrong image after rolling update
+- **Status**: TODO
 
-### 6. StatefulSet list/patch/delete — patch not applied
-- **Test**: `[sig-apps] StatefulSet should list, patch and delete a collection of StatefulSets`
-- **Error**: `statefulset not using ssPatchImage. Is using registry.k8s.io/e2e-test-images/agnhost:2.55`
-- **Status**: INVESTIGATING
+### 5. Scheduling/Preemption (2 failures)
+- `preemption.go:181` — Timed out after 300s
+- `preemption.go:1025` — RS never had desired .status.availableReplicas
+- **Status**: TODO
 
-### 7. AdmissionWebhook — fail closed webhook timeout
-- **Test**: `[sig-api-machinery] AdmissionWebhook should unconditionally reject operations on fail closed webhook`
-- **Error**: `waiting for webhook configuration to be ready: timed out waiting for the condition`
-- **Note**: Same timeout pattern as #2 — webhook readiness check failing across all webhook tests
-- **Status**: INVESTIGATING
+### 6. DaemonSet (1 failure)
+- `daemon_set.go:1276` — Expected 0 to equal 1
+- **Status**: TODO
+
+### 7. Pod Exec WebSocket (1 failure)
+- `pods.go:600` — Got message from server that didn't start with channel 1 (STDOUT): sends channel 3 status before STDOUT
+- **Status**: TODO
+
+### 8. Service Endpoint Reachability (1 failure)
+- `service.go:768` — service not reachable within 2m0s timeout
+- **Status**: TODO
+
+### 9. Init Container (1 failure)
+- `init_container.go:565` — init1 should be complete but reported incomplete
+- **Status**: TODO
+
+### 10. Runtime/Termination Message (1 failure)
+- `runtime.go:169` — Expected "DONE" to equal "" (termination message set on success)
+- **Status**: TODO
+
+### 11. Field Validation (1 failure)
+- `field_validation.go:105` — strict decoding error format wrong
+- **Status**: TODO
+
+### 12. Proxy (1 failure)
+- `proxy.go:271` — Unable to reach service through proxy
+- **Status**: TODO
+
+### 13. Deployment Rollover (1 failure)
+- `deployment.go:995` — total pods available: 0
+- **Status**: TODO
+
+### 14. Webhook (2 failures)
+- `webhook.go:2465` — Webhook request failed: error sending request
+- `webhook.go` — timed out waiting for webhook config to be ready
+- **Status**: TODO
+
+### 15. Job (1 failure)
+- `job.go:595` — Expected nil to equal 0 (job.status.ready)
+- **Status**: TODO
+
+### 16. Service Account (1 failure)
+- `service_accounts.go:817` — timed out waiting for the condition
+- **Status**: TODO
+
+### 17. Pod Hostname (1 failure)
+- Gave up waiting 2m0s for 1 pods to come up
+- **Status**: TODO
 
 ## Progress History
 
