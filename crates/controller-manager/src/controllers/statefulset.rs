@@ -238,52 +238,112 @@ impl<S: Storage> StatefulSetController<S> {
                 info!("Created pod {}-{}", name, i);
             }
         } else if current_replicas > desired_replicas {
-            // Scale down: delete ONE pod at a time in reverse order.
-            // K8s StatefulSet controller requires:
-            // 1. No pod is currently terminating
-            // 2. All remaining pods (ordinals < pod being deleted) are Running and Ready
-            // This prevents scaling past an unhealthy pod (OrderedReady policy).
-            let any_terminating = statefulset_pods
-                .iter()
-                .any(|p| p.metadata.deletion_timestamp.is_some());
-            // Check if all pods that will REMAIN after this scale-down are Ready.
-            // For scaling from N to desired, we delete pod N-1. All pods 0..desired must be Ready.
-            let all_remaining_ready = if is_ordered_ready {
-                (0..desired_replicas).all(|ordinal| {
-                    let pod_name = format!("{}-{}", name, ordinal);
-                    statefulset_pods.iter().any(|p| {
-                        p.metadata.name == pod_name
-                            && p.metadata.deletion_timestamp.is_none()
-                            && p.status
-                                .as_ref()
-                                .and_then(|s| s.conditions.as_ref())
-                                .map(|conditions| {
-                                    conditions
-                                        .iter()
-                                        .any(|c| c.condition_type == "Ready" && c.status == "True")
-                                })
-                                .unwrap_or(false)
-                    })
+            // Scale down following K8s processCondemned() logic:
+            // Pods with ordinal >= desired_replicas are "condemned" (to be deleted).
+            // Process them in REVERSE ordinal order (highest first).
+            // For OrderedReady policy, enforce:
+            //   - If any pod is terminating, BLOCK (wait for it)
+            //   - Find the first unhealthy pod (lowest ordinal, any pod not Running+Ready)
+            //   - A condemned pod can only be deleted if:
+            //     a) It IS Running and Ready, OR
+            //     b) It IS the firstUnhealthyPod (the one with lowest ordinal among unhealthy)
+            //   - Delete at most ONE pod per reconcile cycle
+
+            // Find the first unhealthy pod across ALL pods (lowest ordinal first)
+            let first_unhealthy_name = if is_ordered_ready {
+                statefulset_pods.iter().find_map(|p| {
+                    let is_ready = p
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.conditions.as_ref())
+                        .map(|conds| {
+                            conds
+                                .iter()
+                                .any(|c| c.condition_type == "Ready" && c.status == "True")
+                        })
+                        .unwrap_or(false);
+                    let is_running = matches!(
+                        p.status.as_ref().and_then(|s| s.phase.as_ref()),
+                        Some(Phase::Running)
+                    );
+                    if (!is_ready || !is_running) && p.metadata.deletion_timestamp.is_none() {
+                        Some(p.metadata.name.clone())
+                    } else {
+                        None
+                    }
                 })
             } else {
-                true // Parallel policy doesn't require ordered readiness
+                None
             };
-            if any_terminating {
-                debug!(
-                    "StatefulSet {}/{}: waiting for terminating pod before continuing scale-down",
-                    namespace, name
-                );
-            } else if !all_remaining_ready {
-                debug!(
-                    "StatefulSet {}/{}: scale-down halted — not all remaining pods are Ready",
-                    namespace, name
-                );
-            } else {
-                let i = current_replicas - 1;
-                let pod_name = format!("{}-{}", name, i);
-                let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
-                // Set deletionTimestamp for graceful termination (like real K8s).
-                // The kubelet will stop containers and remove the pod.
+
+            // Process condemned pods (ordinal >= desired_replicas) in reverse order
+            let mut condemned: Vec<&Pod> = statefulset_pods
+                .iter()
+                .filter(|p| {
+                    let ordinal = p
+                        .metadata
+                        .name
+                        .rsplit_once('-')
+                        .and_then(|(_, idx)| idx.parse::<i32>().ok())
+                        .unwrap_or(0);
+                    ordinal >= desired_replicas
+                })
+                .collect();
+            condemned.sort_by_key(|p| {
+                std::cmp::Reverse(
+                    p.metadata
+                        .name
+                        .rsplit_once('-')
+                        .and_then(|(_, idx)| idx.parse::<i32>().ok())
+                        .unwrap_or(0),
+                )
+            });
+
+            let mut deleted_one = false;
+            for pod in &condemned {
+                // If pod is already terminating, wait for it
+                if pod.metadata.deletion_timestamp.is_some() {
+                    debug!(
+                        "StatefulSet {}/{}: waiting for pod {} to terminate",
+                        namespace, name, pod.metadata.name
+                    );
+                    break; // Block further deletions
+                }
+
+                if is_ordered_ready {
+                    let is_ready = pod
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.conditions.as_ref())
+                        .map(|conds| {
+                            conds
+                                .iter()
+                                .any(|c| c.condition_type == "Ready" && c.status == "True")
+                        })
+                        .unwrap_or(false);
+                    let is_running = matches!(
+                        pod.status.as_ref().and_then(|s| s.phase.as_ref()),
+                        Some(Phase::Running)
+                    );
+
+                    // Can only delete this pod if it's Ready+Running OR if it's the firstUnhealthyPod
+                    if !(is_ready && is_running) {
+                        let is_first_unhealthy = first_unhealthy_name
+                            .as_ref()
+                            .map(|n| n == &pod.metadata.name)
+                            .unwrap_or(false);
+                        if !is_first_unhealthy {
+                            debug!(
+                                "StatefulSet {}/{}: pod {} is unhealthy but not first unhealthy, blocking scale-down",
+                                namespace, name, pod.metadata.name
+                            );
+                            break; // Block — can't skip unhealthy pods
+                        }
+                    }
+                }
+
+                // Delete this condemned pod
+                let pod_key = format!("/registry/pods/{}/{}", namespace, pod.metadata.name);
                 match self.storage.get::<Pod>(&pod_key).await {
                     Ok(mut pod_to_delete) => {
                         if pod_to_delete.metadata.deletion_timestamp.is_none() {
@@ -296,21 +356,17 @@ impl<S: Storage> StatefulSetController<S> {
                             let _ = self.storage.update(&pod_key, &pod_to_delete).await;
                             info!(
                                 "Scale down: set deletionTimestamp on pod {} ({} -> {})",
-                                pod_name,
-                                current_replicas,
-                                current_replicas - 1
+                                pod.metadata.name, current_replicas, desired_replicas
                             );
+                            deleted_one = true;
                         }
                     }
                     Err(_) => {
-                        // Pod doesn't exist — nothing to delete
-                        info!(
-                            "Scale down: pod {} already gone ({} -> {})",
-                            pod_name,
-                            current_replicas,
-                            current_replicas - 1
-                        );
+                        info!("Scale down: pod {} already gone", pod.metadata.name);
                     }
+                }
+                if deleted_one {
+                    break; // Only delete one per reconcile
                 }
             }
         }
@@ -1485,5 +1541,93 @@ mod tests {
             "replicas ({}) should not double-count terminating pods",
             status.replicas
         );
+    }
+
+    #[tokio::test]
+    async fn test_scale_down_blocked_when_pods_unhealthy() {
+        // Reproduces the conformance test "should not scale past 3 replicas"
+        // When pods are Running but NOT Ready, scale-down must be blocked.
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = StatefulSetController::new(storage.clone());
+
+        let ns = "default";
+        let mut ss = make_statefulset("ss-block", ns, 3, "busybox");
+        // Use OrderedReady policy (the K8s default, used by conformance tests)
+        ss.spec.pod_management_policy = Some("OrderedReady".to_string());
+        storage
+            .create("/registry/statefulsets/default/ss-block", &ss)
+            .await
+            .unwrap();
+
+        // Create all 3 pods by reconciling with Ready status between each
+        for round in 0..3 {
+            let mut ss: StatefulSet = storage
+                .get("/registry/statefulsets/default/ss-block")
+                .await
+                .unwrap();
+            controller.reconcile(&mut ss).await.unwrap();
+            // Make the newly created pod Ready so the next one can be created
+            let pod_key = format!("/registry/pods/default/ss-block-{}", round);
+            if let Ok(mut pod) = storage.get::<Pod>(&pod_key).await {
+                make_pod_ready(&storage, ns, &format!("ss-block-{}", round)).await;
+            }
+        }
+        // One more reconcile to ensure all pods are created
+        let mut ss: StatefulSet = storage
+            .get("/registry/statefulsets/default/ss-block")
+            .await
+            .unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        // Now make all pods Running but NOT Ready (simulate broken readiness probe)
+        for i in 0..3 {
+            let pod_key = format!("/registry/pods/default/ss-block-{}", i);
+            let mut pod: Pod = storage.get(&pod_key).await.unwrap();
+            pod.status = Some(PodStatus {
+                phase: Some(Phase::Running),
+                conditions: Some(vec![PodCondition {
+                    condition_type: "Ready".to_string(),
+                    status: "False".to_string(),
+                    reason: Some("ContainersNotReady".to_string()),
+                    message: Some("Not all containers are ready".to_string()),
+                    last_transition_time: Some(chrono::Utc::now()),
+                    observed_generation: None,
+                }]),
+                ..pod.status.unwrap_or_default()
+            });
+            storage.update(&pod_key, &pod).await.unwrap();
+        }
+
+        // Scale down to 0 — should be BLOCKED because pods are unhealthy
+        let mut ss: StatefulSet = storage
+            .get("/registry/statefulsets/default/ss-block")
+            .await
+            .unwrap();
+        ss.spec.replicas = Some(0);
+        storage
+            .update("/registry/statefulsets/default/ss-block", &ss)
+            .await
+            .unwrap();
+
+        // Reconcile — should NOT delete any pods
+        let mut ss: StatefulSet = storage
+            .get("/registry/statefulsets/default/ss-block")
+            .await
+            .unwrap();
+        controller.reconcile(&mut ss).await.unwrap();
+
+        // ALL 3 pods should still exist (no deletionTimestamp)
+        for i in 0..3 {
+            let pod_key = format!("/registry/pods/default/ss-block-{}", i);
+            let pod: Pod = storage
+                .get(&pod_key)
+                .await
+                .expect(&format!("Pod ss-block-{} should still exist", i));
+            assert!(
+                pod.metadata.deletion_timestamp.is_none(),
+                "Pod ss-block-{} should NOT have deletionTimestamp — scale-down should be blocked when pods are unhealthy",
+                i
+            );
+        }
     }
 }
