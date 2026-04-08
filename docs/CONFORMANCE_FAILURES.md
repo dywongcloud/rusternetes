@@ -95,11 +95,11 @@ Many fixes were committed before and during round 127 but NOT included in the ru
 - `deployment.go:995` — total pods available: 0
 - **Status**: Pods failed to become available due to upstream issues (scheduling, watches). Expected to resolve.
 
-### 19. Service Account TLS (2 failures) — needs investigation
+### 19. Service Account TLS (2 failures) — FIXED
 - `service_accounts.go:667` — `tls: certificate signed by unknown authority`
 - `service_accounts.go:817` — timed out waiting for the condition
-- **Root cause**: OIDC discovery test pod connects to API server via HTTPS using `rest.InClusterConfig()`. The CA cert IS mounted at `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt` and matches the API server cert. Needs live cluster debugging to determine why TLS verification fails inside the pod container.
-- **Status**: Needs live cluster investigation
+- **Root cause**: kube-api-access volume (with ca.crt) was NOT injected into pods that had ANY volume with "token" in the name. The OIDC test creates a custom "sa-token" projected volume, which triggered the false positive. Without ca.crt, `rest.InClusterConfig()` can't verify the API server's TLS cert.
+- **Fix**: Only skip SA volume injection if volume name contains "kube-api-access", not "token" (commit cd7eb36)
 
 ### 20. RC Pod Count (1 failure) — expected to resolve
 - `rc.go:509` — RC creating 92 pods when expecting 1
@@ -118,9 +118,9 @@ Many fixes were committed before and during round 127 but NOT included in the ru
 
 | Category | Count | Details |
 |----------|-------|---------|
-| **FIXED** | 36 | Issues #1-4, #6-7, #9-10, #11:870, #12-17, #16:271, #21-22 |
-| **Expected to resolve** | 5 | DNS #5, Webhooks #8, Deployment #18, RC #20, Proxy #16:503 |
-| **Needs investigation** | 3 | Service #11:768 (networking), SA TLS #19 (cert in pod) |
+| **FIXED** | 38 | Issues #1-4, #6-7, #9-10, #11:870, #12-17, #16:271, #19, #21-22 |
+| **Expected to resolve** | 4 | DNS #5, Webhooks #8, Deployment #18, RC #20 |
+| **Remaining** | 2 | Service #11:768 (networking), Proxy #16:503 (pod startup) |
 
 ## Fix Commits (14 total)
 
@@ -139,6 +139,8 @@ Many fixes were committed before and during round 127 but NOT included in the ru
 | 5dac01a | kubelet | Container restart mechanism |
 | 3a927d1 | kubelet | Termination message fallback |
 | eaba1ef | api-server | Field validation duplicate field format |
+| cd7eb36 | kubelet | Service account volume injection |
+| 9809d59 | api-server | Proxy trailing slash routes |
 | 2d3c799 | controller-manager | Job ready field |
 
 ## Progress History
