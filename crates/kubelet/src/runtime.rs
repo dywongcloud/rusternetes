@@ -4403,7 +4403,7 @@ impl ContainerRuntime {
                         )
                     {
                         let code = ds.exit_code.unwrap_or(0) as i32;
-                        let term_msg = self.read_termination_message(&container_name, ic).await;
+                        let term_msg = self.read_termination_message(&container_name, ic, code as i64).await;
                         let terminated = ContainerState::Terminated {
                             exit_code: code,
                             signal: None,
@@ -4652,7 +4652,7 @@ impl ContainerRuntime {
                         //   empty AND exit != 0, fall back to container logs
                         // Both policies always read from the file when it has content.
                         let termination_msg =
-                            self.read_termination_message(&container_name, container)
+                            self.read_termination_message(&container_name, container, exit_code as i64)
                                 .await;
 
                         // Container has exited (any exit code, including 0)
@@ -5056,6 +5056,7 @@ impl ContainerRuntime {
         &self,
         container_name: &str,
         container: &Container,
+        exit_code: i64,
     ) -> Option<String> {
         let msg_path = container
             .termination_message_path
@@ -5099,7 +5100,10 @@ impl ContainerRuntime {
                 "Termination message file is empty (host-side) for {}",
                 container_name
             );
-            if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
+            // FallbackToLogsOnError: only fall back to logs when the container failed (non-zero exit)
+            if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError")
+                && exit_code != 0
+            {
                 return self.read_container_logs_tail(container_name, 80).await;
             }
             return None;
@@ -5123,6 +5127,7 @@ impl ContainerRuntime {
                     );
                     if container.termination_message_policy.as_deref()
                         == Some("FallbackToLogsOnError")
+                        && exit_code != 0
                     {
                         return self.read_container_logs_tail(container_name, 80).await;
                     }
@@ -5136,7 +5141,9 @@ impl ContainerRuntime {
                 "Termination message file empty or not found in {}",
                 container_name
             );
-            if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
+            if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError")
+                && exit_code != 0
+            {
                 return self.read_container_logs_tail(container_name, 80).await;
             }
             return None;
@@ -5167,7 +5174,9 @@ impl ContainerRuntime {
             "Failed to extract termination message from tar archive for {}",
             container_name
         );
-        if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError") {
+        if container.termination_message_policy.as_deref() == Some("FallbackToLogsOnError")
+            && exit_code != 0
+        {
             return self.read_container_logs_tail(container_name, 80).await;
         }
         None
