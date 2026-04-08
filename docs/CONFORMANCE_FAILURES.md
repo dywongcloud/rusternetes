@@ -42,10 +42,10 @@ Several fixes committed before round 127 were NOT included in the running binary
 - **Root cause**: Webhook deployment may fail to schedule/start due to upstream issues (watch, protobuf, etc.)
 - **Status**: TODO — needs verification after deploying all fixes
 
-### 9. DaemonSet (1 failure)
+### 9. DaemonSet (1 failure) — FIXED
 - `daemon_set.go:1276` — ControllerRevision data doesn't match K8s's getPatch() format
-- **Root cause**: K8s Match() compares ControllerRevision.Data.Raw byte-for-byte with getPatch(ds) output. Our serialization differs.
-- **Status**: TODO — requires matching K8s's exact ControllerRevision data format
+- **Fix**: Changed hash to FNV-32a, data format to `{"spec":{"template":{...,"$patch":"replace"}}}` matching K8s getPatch() (commit f52a6b1)
+- **Status**: FIXED
 
 ### 10. Pod Exec WebSocket (1 failure) — FIXED
 - Fix: Skip channel 3 Success status for v1 protocol (commit 6fc1e55)
@@ -104,9 +104,9 @@ Several fixes committed before round 127 were NOT included in the running binary
 
 ## Summary
 
-**FIXED**: 32 of 44 failures (issues #1-4, #6-7, #10, #12-15, #17, #21-22)
+**FIXED**: 33 of 44 failures (issues #1-4, #6-7, #9-10, #12-15, #17, #21-22)
 **Expected to resolve**: ~5 more (DNS #5, Webhooks #8, Deployment #18, RC #20)
-**Remaining**: ~7 (DaemonSet #9, Service #11, Proxy #16, Service Account #19)
+**Remaining**: ~6 (Service #11, Proxy #16, Service Account #19)
 
 ## Progress History
 
