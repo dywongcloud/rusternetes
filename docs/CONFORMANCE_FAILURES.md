@@ -40,14 +40,16 @@ Several fixes committed before round 127 were NOT included in the running binary
 
 ### 5. DNS Resolution Failures (4 failures)
 - `dns_common.go:476` (x4) — Unable to read agnhost_udp@... context deadline exceeded
-- **Root cause**: DNS lookups fail — pods can't resolve service names via DNS
-- **Status**: TODO
+- **Root cause**: client rate limiter throttling due to excessive API calls from failed watches. Not actually DNS — the test can't exec into pods because the API server is overwhelmed.
+- **Status**: Expected to improve with watch fix (#1)
 
-### 6. StatefulSet Issues (3 failures)
+### 6. StatefulSet Issues (3 failures) — FIXED
 - `statefulset.go:2479` — scaled unexpectedly 3 -> 2 replicas
 - `statefulset.go:957` — Pod ss-0 expected to be re-created at least once
 - `statefulset.go:454` — Pod ss2-0 has wrong image after rolling update
-- **Status**: TODO
+- **Root cause**: Controller created ALL pods with current template regardless of partition. Pods below partition should use old/current revision template.
+- **Fix**: Partition-aware pod creation — look up ControllerRevision for old template, create pods below partition with old template (commit 6b43640)
+- **Status**: FIXED
 
 ### 7. Scheduling/Preemption (3 failures)
 - `preemption.go:181` — Timed out after 300s
@@ -65,9 +67,11 @@ Several fixes committed before round 127 were NOT included in the running binary
 - `daemon_set.go:1276` — Expected 0 to equal 1 (ControllerRevision hash mismatch)
 - **Status**: TODO
 
-### 10. Pod Exec WebSocket (1 failure)
+### 10. Pod Exec WebSocket (1 failure) — FIXED
 - `pods.go:600` — Got message from server that didn't start with channel 1 (STDOUT): sends channel 3 (`{"status":"Success"}`) before STDOUT data
-- **Status**: TODO
+- **Root cause**: v1 channel.k8s.io protocol doesn't use status channel; test rejects non-stdout messages
+- **Fix**: Skip channel 3 Success status for exit code 0 (commit 6fc1e55)
+- **Status**: FIXED
 
 ### 11. Service Endpoint Reachability (2 failures)
 - `service.go:768` — service not reachable within 2m0s timeout
