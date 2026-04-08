@@ -74,10 +74,12 @@ Several fixes committed before round 127 were NOT included in the running binary
 - Fix: Commit eaba1ef
 - **Status**: FIXED
 
-### 16. Proxy (2 failures)
-- `proxy.go:271` — Unable to reach service through proxy
+### 16. Proxy (2 failures) — PARTIALLY FIXED
+- `proxy.go:271` — Unable to reach service through proxy — FIXED
 - `proxy.go:503` — Pod didn't start within timeout
-- **Status**: TODO — networking/proxy issue
+- **Root cause for :271**: Axum doesn't match `/proxy/` (trailing slash) against `/proxy` or `/proxy/*path`. Test uses URLs with trailing slash.
+- **Fix**: Added explicit trailing slash routes for service and pod proxy (commit 9809d59)
+- **Status**: :271 FIXED, :503 needs verification
 
 ### 17. Service Latency — Protobuf Deployment Create (1 failure) — FIXED
 - Fix: Generic protobuf-to-JSON decoder (commit 7ca9160)
@@ -106,9 +108,9 @@ Several fixes committed before round 127 were NOT included in the running binary
 
 ## Summary
 
-**FIXED**: 34 of 44 failures (issues #1-4, #6-7, #9-10, #11(partial), #12-15, #17, #21-22)
+**FIXED**: 36 of 44 failures (issues #1-4, #6-7, #9-10, #11(partial), #12-16(partial), #17, #21-22)
 **Expected to resolve**: ~5 more (DNS #5, Webhooks #8, Deployment #18, RC #20)
-**Remaining**: ~5 (Service #11 partial, Proxy #16, Service Account #19)
+**Remaining**: ~3 (Service #11:768, Proxy #16:503, Service Account #19)
 
 ## Progress History
 
