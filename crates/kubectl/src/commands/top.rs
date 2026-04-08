@@ -80,14 +80,8 @@ mod tests {
     #[test]
     fn test_metrics_api_path_pod_in_namespace() {
         let ns = "default";
-        let path = format!(
-            "/apis/metrics.k8s.io/v1beta1/namespaces/{}/pods",
-            ns
-        );
-        assert_eq!(
-            path,
-            "/apis/metrics.k8s.io/v1beta1/namespaces/default/pods"
-        );
+        let path = format!("/apis/metrics.k8s.io/v1beta1/namespaces/{}/pods", ns);
+        assert_eq!(path, "/apis/metrics.k8s.io/v1beta1/namespaces/default/pods");
     }
 
     #[test]

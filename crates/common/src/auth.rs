@@ -1061,8 +1061,7 @@ mod tests {
             24,
         );
         assert_eq!(
-            claims.iss,
-            "https://kubernetes.default.svc.cluster.local",
+            claims.iss, "https://kubernetes.default.svc.cluster.local",
             "Token issuer must be a valid HTTPS URL for OIDC compliance"
         );
         assert!(

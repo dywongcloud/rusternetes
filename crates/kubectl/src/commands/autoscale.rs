@@ -17,7 +17,10 @@ pub async fn execute(
     hpa_name: Option<&str>,
 ) -> Result<()> {
     if max < 1 {
-        anyhow::bail!("--max=MAXPODS is required and must be at least 1, max: {}", max);
+        anyhow::bail!(
+            "--max=MAXPODS is required and must be at least 1, max: {}",
+            max
+        );
     }
     if let Some(min_val) = min {
         if max < min_val {
@@ -34,7 +37,9 @@ pub async fn execute(
         "deployment" | "deployments" | "deploy" => ("apps/v1", "Deployment"),
         "replicaset" | "replicasets" | "rs" => ("apps/v1", "ReplicaSet"),
         "statefulset" | "statefulsets" | "sts" => ("apps/v1", "StatefulSet"),
-        "replicationcontroller" | "replicationcontrollers" | "rc" => ("v1", "ReplicationController"),
+        "replicationcontroller" | "replicationcontrollers" | "rc" => {
+            ("v1", "ReplicationController")
+        }
         _ => anyhow::bail!(
             "cannot autoscale a {}: resource type not supported for autoscaling",
             resource_type
@@ -44,7 +49,10 @@ pub async fn execute(
     // Verify the target resource exists
     let resource_path = match resource_type {
         "deployment" | "deployments" | "deploy" => {
-            format!("/apis/apps/v1/namespaces/{}/deployments/{}", namespace, name)
+            format!(
+                "/apis/apps/v1/namespaces/{}/deployments/{}",
+                namespace, name
+            )
         }
         "replicaset" | "replicasets" | "rs" => {
             format!(
@@ -130,21 +138,22 @@ pub async fn execute(
         Err(e) => {
             // Fall back to autoscaling/v1
             let hpa_v1 = build_hpa_v1(
-                hpa_name, namespace, api_version, kind, name, min, max, cpu_percent,
+                hpa_name,
+                namespace,
+                api_version,
+                kind,
+                name,
+                min,
+                max,
+                cpu_percent,
             );
             let hpa_v1_path = format!(
                 "/apis/autoscaling/v1/namespaces/{}/horizontalpodautoscalers",
                 namespace
             );
-            let _result: Value = client
-                .post(&hpa_v1_path, &hpa_v1)
-                .await
-                .with_context(|| {
-                    format!(
-                        "failed to create HPA (v2 error: {}, v1 also failed)",
-                        e
-                    )
-                })?;
+            let _result: Value = client.post(&hpa_v1_path, &hpa_v1).await.with_context(|| {
+                format!("failed to create HPA (v2 error: {}, v1 also failed)", e)
+            })?;
             println!(
                 "horizontalpodautoscaler.autoscaling/{} autoscaled",
                 hpa_name
@@ -203,7 +212,16 @@ mod tests {
 
     #[test]
     fn test_build_hpa_v1() {
-        let hpa = build_hpa_v1("nginx", "default", "apps/v1", "Deployment", "nginx", Some(2), 5, Some(80));
+        let hpa = build_hpa_v1(
+            "nginx",
+            "default",
+            "apps/v1",
+            "Deployment",
+            "nginx",
+            Some(2),
+            5,
+            Some(80),
+        );
         assert_eq!(hpa["spec"]["maxReplicas"], 5);
         assert_eq!(hpa["spec"]["minReplicas"], 2);
         assert_eq!(hpa["spec"]["targetCPUUtilizationPercentage"], 80);
@@ -214,7 +232,16 @@ mod tests {
 
     #[test]
     fn test_build_hpa_v1_no_min() {
-        let hpa = build_hpa_v1("nginx", "default", "apps/v1", "Deployment", "nginx", None, 10, None);
+        let hpa = build_hpa_v1(
+            "nginx",
+            "default",
+            "apps/v1",
+            "Deployment",
+            "nginx",
+            None,
+            10,
+            None,
+        );
         assert_eq!(hpa["spec"]["maxReplicas"], 10);
         assert!(hpa["spec"]["minReplicas"].is_null());
         assert!(hpa["spec"]["targetCPUUtilizationPercentage"].is_null());
@@ -313,13 +340,31 @@ mod tests {
     #[test]
     fn test_hpa_v1_zero_min_not_set() {
         // min of 0 should not set minReplicas
-        let hpa = build_hpa_v1("app", "default", "apps/v1", "Deployment", "app", Some(0), 5, None);
+        let hpa = build_hpa_v1(
+            "app",
+            "default",
+            "apps/v1",
+            "Deployment",
+            "app",
+            Some(0),
+            5,
+            None,
+        );
         assert!(hpa["spec"]["minReplicas"].is_null());
     }
 
     #[test]
     fn test_hpa_v1_zero_cpu_not_set() {
-        let hpa = build_hpa_v1("app", "default", "apps/v1", "Deployment", "app", None, 5, Some(0));
+        let hpa = build_hpa_v1(
+            "app",
+            "default",
+            "apps/v1",
+            "Deployment",
+            "app",
+            None,
+            5,
+            Some(0),
+        );
         assert!(hpa["spec"]["targetCPUUtilizationPercentage"].is_null());
     }
 
@@ -331,7 +376,9 @@ mod tests {
             "deployment" | "deployments" | "deploy" => Ok(("apps/v1", "Deployment")),
             "replicaset" | "replicasets" | "rs" => Ok(("apps/v1", "ReplicaSet")),
             "statefulset" | "statefulsets" | "sts" => Ok(("apps/v1", "StatefulSet")),
-            "replicationcontroller" | "replicationcontrollers" | "rc" => Ok(("v1", "ReplicationController")),
+            "replicationcontroller" | "replicationcontrollers" | "rc" => {
+                Ok(("v1", "ReplicationController"))
+            }
             _ => Err(format!("cannot autoscale a {}", resource_type)),
         };
         assert!(result.is_err());

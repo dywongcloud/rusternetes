@@ -137,9 +137,8 @@ mod tests {
 
     #[test]
     fn test_get_resource_api_path_crd() {
-        let path =
-            get_resource_api_path("CustomResourceDefinition", "ignored", "foos.example.com")
-                .unwrap();
+        let path = get_resource_api_path("CustomResourceDefinition", "ignored", "foos.example.com")
+            .unwrap();
         assert_eq!(
             path,
             "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/foos.example.com"
@@ -185,13 +184,22 @@ mod tests {
     #[test]
     fn test_get_resource_api_path_rbac_resources() {
         let path = get_resource_api_path("ClusterRole", "ignored", "admin").unwrap();
-        assert_eq!(path, "/apis/rbac.authorization.k8s.io/v1/clusterroles/admin");
+        assert_eq!(
+            path,
+            "/apis/rbac.authorization.k8s.io/v1/clusterroles/admin"
+        );
 
         let path = get_resource_api_path("ClusterRoleBinding", "ignored", "admin-binding").unwrap();
-        assert_eq!(path, "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/admin-binding");
+        assert_eq!(
+            path,
+            "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/admin-binding"
+        );
 
         let path = get_resource_api_path("Role", "default", "pod-reader").unwrap();
-        assert_eq!(path, "/apis/rbac.authorization.k8s.io/v1/namespaces/default/roles/pod-reader");
+        assert_eq!(
+            path,
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/default/roles/pod-reader"
+        );
     }
 }
 

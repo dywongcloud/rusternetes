@@ -55,10 +55,7 @@ pub async fn execute_drain(
     println!("node/{} cordoned", node_name);
 
     // Step 2: List pods on this node
-    let pods_path = format!(
-        "/api/v1/pods?fieldSelector=spec.nodeName={}",
-        node_name
-    );
+    let pods_path = format!("/api/v1/pods?fieldSelector=spec.nodeName={}", node_name);
     let pods: Value = client
         .get(&pods_path)
         .await
@@ -82,10 +79,7 @@ pub async fn execute_drain(
 
     for pod in &items {
         let metadata = pod.get("metadata").unwrap_or(&Value::Null);
-        let pod_name = metadata
-            .get("name")
-            .and_then(|n| n.as_str())
-            .unwrap_or("");
+        let pod_name = metadata.get("name").and_then(|n| n.as_str()).unwrap_or("");
         let namespace = metadata
             .get("namespace")
             .and_then(|n| n.as_str())
@@ -106,9 +100,8 @@ pub async fn execute_drain(
             .get("ownerReferences")
             .and_then(|refs| refs.as_array())
             .map(|refs| {
-                refs.iter().any(|r| {
-                    r.get("kind").and_then(|k| k.as_str()) == Some("DaemonSet")
-                })
+                refs.iter()
+                    .any(|r| r.get("kind").and_then(|k| k.as_str()) == Some("DaemonSet"))
             })
             .unwrap_or(false);
 
@@ -134,17 +127,15 @@ pub async fn execute_drain(
             .get("spec")
             .and_then(|s| s.get("volumes"))
             .and_then(|v| v.as_array())
-            .map(|vols| {
-                vols.iter()
-                    .any(|v| v.get("emptyDir").is_some())
-            })
+            .map(|vols| vols.iter().any(|v| v.get("emptyDir").is_some()))
             .unwrap_or(false);
 
         if has_emptydir && !delete_emptydir_data {
             if !force {
                 anyhow::bail!(
                     "Cannot drain node: pod {}/{} uses emptyDir. Use --delete-emptydir-data",
-                    namespace, pod_name
+                    namespace,
+                    pod_name
                 );
             }
             warnings.push(format!(
@@ -163,7 +154,8 @@ pub async fn execute_drain(
         if !has_controller && !force {
             anyhow::bail!(
                 "Cannot drain node: pod {}/{} is not managed by a controller. Use --force",
-                namespace, pod_name
+                namespace,
+                pod_name
             );
         }
 
@@ -199,10 +191,7 @@ pub async fn execute_drain(
             });
         }
 
-        match client
-            .post::<Value, Value>(&eviction_path, &eviction)
-            .await
-        {
+        match client.post::<Value, Value>(&eviction_path, &eviction).await {
             Ok(_) => {
                 println!("  evicting pod {}/{}", namespace, pod_name);
             }
@@ -218,15 +207,10 @@ pub async fn execute_drain(
                     client
                         .post::<Value, Value>(&eviction_path, &eviction)
                         .await
-                        .context(format!(
-                            "Failed to evict pod {}/{}",
-                            namespace, pod_name
-                        ))?;
+                        .context(format!("Failed to evict pod {}/{}", namespace, pod_name))?;
                 } else {
-                    return Err(e).context(format!(
-                        "Failed to evict pod {}/{}",
-                        namespace, pod_name
-                    ));
+                    return Err(e)
+                        .context(format!("Failed to evict pod {}/{}", namespace, pod_name));
                 }
             }
         }
@@ -240,7 +224,11 @@ pub async fn execute_drain(
             let pod_path = format!("/api/v1/namespaces/{}/pods/{}", namespace, pod_name);
             loop {
                 if std::time::Instant::now() > deadline {
-                    anyhow::bail!("Timeout waiting for pod {}/{} to be deleted", namespace, pod_name);
+                    anyhow::bail!(
+                        "Timeout waiting for pod {}/{} to be deleted",
+                        namespace,
+                        pod_name
+                    );
                 }
                 match client.get::<Value>(&pod_path).await {
                     Err(crate::client::GetError::NotFound) => break,
@@ -495,10 +483,7 @@ mod tests {
     #[test]
     fn test_pods_field_selector_construction() {
         let node_name = "node-1";
-        let pods_path = format!(
-            "/api/v1/pods?fieldSelector=spec.nodeName={}",
-            node_name
-        );
+        let pods_path = format!("/api/v1/pods?fieldSelector=spec.nodeName={}", node_name);
         assert_eq!(pods_path, "/api/v1/pods?fieldSelector=spec.nodeName=node-1");
     }
 

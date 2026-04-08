@@ -8,7 +8,10 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use client::ApiClient;
 use kubeconfig::KubeConfig;
-use types::{ApplyCommands, AuthCommands, CertificateCommands, ConfigCommands, CreateCommands, KubercCommands, PluginCommands, RolloutCommands, SetCommands, TopCommands};
+use types::{
+    ApplyCommands, AuthCommands, CertificateCommands, ConfigCommands, CreateCommands,
+    KubercCommands, PluginCommands, RolloutCommands, SetCommands, TopCommands,
+};
 
 #[derive(Parser)]
 #[command(name = "kubectl")]
@@ -1118,7 +1121,9 @@ async fn main() -> Result<()> {
                 )
                 .await?;
             } else {
-                anyhow::bail!("Either --file, a subcommand, or resource arguments must be provided");
+                anyhow::bail!(
+                    "Either --file, a subcommand, or resource arguments must be provided"
+                );
             }
         }
         Commands::Delete {
@@ -1653,16 +1658,14 @@ async fn main() -> Result<()> {
             )
             .await?;
         }
-        Commands::Certificate { command } => {
-            match command {
-                CertificateCommands::Approve { csr_names, force } => {
-                    commands::certificate::execute(&client, "approve", &csr_names, force).await?;
-                }
-                CertificateCommands::Deny { csr_names, force } => {
-                    commands::certificate::execute(&client, "deny", &csr_names, force).await?;
-                }
+        Commands::Certificate { command } => match command {
+            CertificateCommands::Approve { csr_names, force } => {
+                commands::certificate::execute(&client, "approve", &csr_names, force).await?;
             }
-        }
+            CertificateCommands::Deny { csr_names, force } => {
+                commands::certificate::execute(&client, "deny", &csr_names, force).await?;
+            }
+        },
         Commands::Completion { shell } => {
             commands::completion::execute(&shell)?;
         }
@@ -1675,13 +1678,11 @@ async fn main() -> Result<()> {
         Commands::Kustomize { dir } => {
             commands::kustomize::execute(&dir)?;
         }
-        Commands::Plugin { command } => {
-            match command {
-                PluginCommands::List {} => {
-                    commands::plugin::execute_list()?;
-                }
+        Commands::Plugin { command } => match command {
+            PluginCommands::List {} => {
+                commands::plugin::execute_list()?;
             }
-        }
+        },
         Commands::Kuberc { subcommand } => {
             commands::kuberc::execute(subcommand.as_ref())?;
         }

@@ -634,11 +634,7 @@ async fn test_rc_list_with_label_selector_filtering() {
     params3.insert("labelSelector".to_string(), "app=nonexistent".to_string());
     filtering::apply_selectors(&mut rcs3, &params3).unwrap();
 
-    assert_eq!(
-        rcs3.len(),
-        0,
-        "Expected 0 RCs matching app=nonexistent"
-    );
+    assert_eq!(rcs3.len(), 0, "Expected 0 RCs matching app=nonexistent");
 
     // Clean up
     storage.delete(&key1).await.unwrap();

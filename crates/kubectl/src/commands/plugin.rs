@@ -185,12 +185,18 @@ mod tests {
             fs::set_permissions(&plugin_path, fs::Permissions::from_mode(0o755)).unwrap();
         }
 
-        let path_var = format!("{}:{}", tmp_dir1.path().display(), tmp_dir2.path().display());
+        let path_var = format!(
+            "{}:{}",
+            tmp_dir1.path().display(),
+            tmp_dir2.path().display()
+        );
         let mut found_plugins: Vec<PathBuf> = Vec::new();
         let mut warnings: Vec<String> = Vec::new();
 
         for dir in path_var.split(':') {
-            if dir.is_empty() { continue; }
+            if dir.is_empty() {
+                continue;
+            }
             let entries = match fs::read_dir(dir) {
                 Ok(entries) => entries,
                 Err(_) => continue,
@@ -198,13 +204,17 @@ mod tests {
             for entry in entries.flatten() {
                 let file_name = entry.file_name();
                 let name = file_name.to_string_lossy();
-                if !name.starts_with("kubectl-") { continue; }
+                if !name.starts_with("kubectl-") {
+                    continue;
+                }
                 let path = entry.path();
                 let metadata = fs::metadata(&path).unwrap();
                 if metadata.is_file() && metadata.permissions().mode() & 0o111 != 0 {
                     let plugin_name = name.to_string();
                     let is_duplicate = found_plugins.iter().any(|p| {
-                        p.file_name().map(|f| f.to_string_lossy() == plugin_name).unwrap_or(false)
+                        p.file_name()
+                            .map(|f| f.to_string_lossy() == plugin_name)
+                            .unwrap_or(false)
                     });
                     if is_duplicate {
                         warnings.push(format!("overshadowed: {}", path.display()));

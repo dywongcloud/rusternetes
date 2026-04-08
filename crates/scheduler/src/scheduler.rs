@@ -27,11 +27,7 @@ impl Scheduler<EtcdStorage> {
 }
 
 impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
-    pub fn new_with_name(
-        storage: Arc<S>,
-        interval_secs: u64,
-        scheduler_name: String,
-    ) -> Self {
+    pub fn new_with_name(storage: Arc<S>, interval_secs: u64, scheduler_name: String) -> Self {
         Self {
             storage,
             interval: Duration::from_secs(interval_secs),
@@ -1063,37 +1059,87 @@ mod tests {
                 containers: vec![rusternetes_common::resources::Container {
                     name: "main".to_string(),
                     image: "busybox".to_string(),
-                    command: None, args: None, working_dir: None, ports: None,
-                    env: None, env_from: None, resources: None, volume_mounts: None,
-                    volume_devices: None, liveness_probe: None, readiness_probe: None,
-                    startup_probe: None, lifecycle: None, termination_message_path: None,
-                    termination_message_policy: None, image_pull_policy: None,
-                    security_context: None, stdin: None, stdin_once: None, tty: None,
-                    resize_policy: None, restart_policy: None,
+                    command: None,
+                    args: None,
+                    working_dir: None,
+                    ports: None,
+                    env: None,
+                    env_from: None,
+                    resources: None,
+                    volume_mounts: None,
+                    volume_devices: None,
+                    liveness_probe: None,
+                    readiness_probe: None,
+                    startup_probe: None,
+                    lifecycle: None,
+                    termination_message_path: None,
+                    termination_message_policy: None,
+                    image_pull_policy: None,
+                    security_context: None,
+                    stdin: None,
+                    stdin_once: None,
+                    tty: None,
+                    resize_policy: None,
+                    restart_policy: None,
                 }],
                 scheduler_name: Some("default-scheduler".to_string()),
-                init_containers: None, ephemeral_containers: None,
-                restart_policy: None, termination_grace_period_seconds: None,
-                dns_policy: None, node_selector: None, service_account_name: None,
-                service_account: None, automount_service_account_token: None,
-                node_name: None, host_network: None, host_pid: None, host_ipc: None,
-                security_context: None, image_pull_secrets: None, hostname: None,
-                subdomain: None, affinity: None, tolerations: None, host_aliases: None,
-                priority_class_name: None, priority: None, preemption_policy: None,
-                overhead: None, topology_spread_constraints: None, volumes: None,
-                active_deadline_seconds: None, dns_config: None, enable_service_links: None,
-                readiness_gates: None, runtime_class_name: None, os: None,
-                set_hostname_as_fqdn: None, share_process_namespace: None,
-                scheduling_gates: None, resource_claims: None, host_users: None,
-                resources: None
+                init_containers: None,
+                ephemeral_containers: None,
+                restart_policy: None,
+                termination_grace_period_seconds: None,
+                dns_policy: None,
+                node_selector: None,
+                service_account_name: None,
+                service_account: None,
+                automount_service_account_token: None,
+                node_name: None,
+                host_network: None,
+                host_pid: None,
+                host_ipc: None,
+                security_context: None,
+                image_pull_secrets: None,
+                hostname: None,
+                subdomain: None,
+                affinity: None,
+                tolerations: None,
+                host_aliases: None,
+                priority_class_name: None,
+                priority: None,
+                preemption_policy: None,
+                overhead: None,
+                topology_spread_constraints: None,
+                volumes: None,
+                active_deadline_seconds: None,
+                dns_config: None,
+                enable_service_links: None,
+                readiness_gates: None,
+                runtime_class_name: None,
+                os: None,
+                set_hostname_as_fqdn: None,
+                share_process_namespace: None,
+                scheduling_gates: None,
+                resource_claims: None,
+                host_users: None,
+                resources: None,
             }),
             status: Some(PodStatus {
                 phase: Some(Phase::Pending),
-                message: None, reason: None, host_ip: None, pod_ip: None,
-                conditions: None, container_statuses: None, init_container_statuses: None,
-                ephemeral_container_statuses: None, start_time: None, qos_class: None,
-                nominated_node_name: None, host_i_ps: None, pod_i_ps: None,
-                resize: None, resource_claim_statuses: None, observed_generation: None,
+                message: None,
+                reason: None,
+                host_ip: None,
+                pod_ip: None,
+                conditions: None,
+                container_statuses: None,
+                init_container_statuses: None,
+                ephemeral_container_statuses: None,
+                start_time: None,
+                qos_class: None,
+                nominated_node_name: None,
+                host_i_ps: None,
+                pod_i_ps: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
             }),
         }
     }
@@ -1101,11 +1147,8 @@ mod tests {
     #[tokio::test]
     async fn test_scheduler_assigns_pod_to_node() {
         let storage = Arc::new(MemoryStorage::new());
-        let scheduler = Scheduler::new_with_name(
-            storage.clone(),
-            1,
-            "default-scheduler".to_string(),
-        );
+        let scheduler =
+            Scheduler::new_with_name(storage.clone(), 1, "default-scheduler".to_string());
 
         // Create two nodes
         let node1 = make_node("node-1");
@@ -1155,20 +1198,18 @@ mod tests {
             .as_ref()
             .and_then(|s| s.conditions.as_ref());
         assert!(conditions.is_some(), "Pod should have conditions");
-        let has_scheduled = conditions.unwrap().iter().any(|c| {
-            c.condition_type == "PodScheduled" && c.status == "True"
-        });
+        let has_scheduled = conditions
+            .unwrap()
+            .iter()
+            .any(|c| c.condition_type == "PodScheduled" && c.status == "True");
         assert!(has_scheduled, "Pod should have PodScheduled=True condition");
     }
 
     #[tokio::test]
     async fn test_scheduler_emits_event_for_unschedulable_pod() {
         let storage = Arc::new(MemoryStorage::new());
-        let scheduler = Scheduler::new_with_name(
-            storage.clone(),
-            1,
-            "default-scheduler".to_string(),
-        );
+        let scheduler =
+            Scheduler::new_with_name(storage.clone(), 1, "default-scheduler".to_string());
 
         // Create a node with a label
         let node1 = make_node("node-1");
@@ -1244,11 +1285,8 @@ mod tests {
     #[tokio::test]
     async fn test_scheduler_does_not_reschedule_already_scheduled_pod() {
         let storage = Arc::new(MemoryStorage::new());
-        let scheduler = Scheduler::new_with_name(
-            storage.clone(),
-            1,
-            "default-scheduler".to_string(),
-        );
+        let scheduler =
+            Scheduler::new_with_name(storage.clone(), 1, "default-scheduler".to_string());
 
         let node1 = make_node("node-1");
         storage
@@ -1274,7 +1312,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            result_pod.spec.as_ref().and_then(|s| s.node_name.as_deref()),
+            result_pod
+                .spec
+                .as_ref()
+                .and_then(|s| s.node_name.as_deref()),
             Some("node-1"),
             "Already-scheduled pod should remain on its node"
         );
@@ -1286,11 +1327,8 @@ mod tests {
     #[tokio::test]
     async fn test_preemption_sets_disruption_target_condition() {
         let storage = Arc::new(MemoryStorage::new());
-        let scheduler = Scheduler::new_with_name(
-            storage.clone(),
-            2,
-            "default-scheduler".to_string(),
-        );
+        let scheduler =
+            Scheduler::new_with_name(storage.clone(), 2, "default-scheduler".to_string());
 
         // Create a node
         let node = make_node("node-1");
@@ -1305,11 +1343,22 @@ mod tests {
         low_pod.spec.as_mut().unwrap().priority = Some(0);
         low_pod.status = Some(PodStatus {
             phase: Some(Phase::Running),
-            message: None, reason: None, host_ip: None, pod_ip: None,
-            conditions: None, container_statuses: None, init_container_statuses: None,
-            ephemeral_container_statuses: None, start_time: None, qos_class: None,
-            nominated_node_name: None, host_i_ps: None, pod_i_ps: None,
-            resize: None, resource_claim_statuses: None, observed_generation: None,
+            message: None,
+            reason: None,
+            host_ip: None,
+            pod_ip: None,
+            conditions: None,
+            container_statuses: None,
+            init_container_statuses: None,
+            ephemeral_container_statuses: None,
+            start_time: None,
+            qos_class: None,
+            nominated_node_name: None,
+            host_i_ps: None,
+            pod_i_ps: None,
+            resize: None,
+            resource_claim_statuses: None,
+            observed_generation: None,
         });
         storage
             .create("/registry/pods/default/low-pod", &low_pod)

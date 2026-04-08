@@ -309,8 +309,14 @@ pub async fn normalize_content_type_middleware(
 fn extract_api_version_kind(json: &[u8]) -> (Option<String>, Option<String>) {
     // Quick parse just the top-level apiVersion and kind
     if let Ok(v) = serde_json::from_slice::<serde_json::Value>(json) {
-        let api_version = v.get("apiVersion").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let kind = v.get("kind").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let api_version = v
+            .get("apiVersion")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let kind = v
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         (api_version, kind)
     } else {
         (None, None)
@@ -1463,7 +1469,10 @@ mod tests {
         let tag1 = wrapped[4];
         let field_num1 = tag1 >> 3;
         let wire_type1 = tag1 & 0x07;
-        assert_eq!(field_num1, 2, "First field should be field 2 (raw) per K8s runtime.Unknown proto");
+        assert_eq!(
+            field_num1, 2,
+            "First field should be field 2 (raw) per K8s runtime.Unknown proto"
+        );
         assert_eq!(wire_type1, 2, "Wire type should be 2 (length-delimited)");
     }
 
@@ -1493,11 +1502,17 @@ mod tests {
         let json = b"{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"name\":\"test\"}}";
         let wrapped = wrap_json_in_protobuf(json);
 
-        assert!(is_protobuf(&wrapped), "wrapped output must have k8s magic prefix");
+        assert!(
+            is_protobuf(&wrapped),
+            "wrapped output must have k8s magic prefix"
+        );
 
         // Verify our own extractor can decode it (handles field 2 and 3)
         let extracted = extract_json_from_k8s_protobuf(&wrapped);
-        assert!(extracted.is_some(), "extract_json_from_k8s_protobuf must decode the wrapper");
+        assert!(
+            extracted.is_some(),
+            "extract_json_from_k8s_protobuf must decode the wrapper"
+        );
 
         // The extracted JSON should match the original
         let original: serde_json::Value = serde_json::from_slice(json).unwrap();
@@ -1514,7 +1529,10 @@ mod tests {
         let wrapped = wrap_json_in_protobuf(json);
 
         // After k8s\0 (4 bytes), first byte should be field 2 tag
-        assert_eq!(wrapped[4], 0x12, "first field tag should be 0x12 (field 2, wire type 2)");
+        assert_eq!(
+            wrapped[4], 0x12,
+            "first field tag should be 0x12 (field 2, wire type 2)"
+        );
 
         // Find field 4 tag after the raw field data
         // raw field: tag(1) + varint_len + json_data
@@ -1529,11 +1547,19 @@ mod tests {
     fn test_wrap_and_extract_roundtrip_with_correct_fields() {
         // End-to-end test: wrap JSON in protobuf, then extract it back.
         // This proves the encoding is compatible with the decoder.
-        let json = b"{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"spec\":{\"replicas\":3}}";
+        let json =
+            b"{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"spec\":{\"replicas\":3}}";
         let wrapped = wrap_json_in_protobuf(json);
         let extracted = extract_json_from_k8s_protobuf(&wrapped);
-        assert!(extracted.is_some(), "should extract JSON from wrapped protobuf");
-        assert_eq!(extracted.unwrap(), json, "extracted JSON must match original");
+        assert!(
+            extracted.is_some(),
+            "should extract JSON from wrapped protobuf"
+        );
+        assert_eq!(
+            extracted.unwrap(),
+            json,
+            "extracted JSON must match original"
+        );
     }
 
     #[test]
@@ -1577,7 +1603,10 @@ mod tests {
             .query()
             .map(|q| q.contains("watch=true") || q.contains("watch=1"))
             .unwrap_or(false);
-        assert!(!has_watch, "regular request should not be detected as watch");
+        assert!(
+            !has_watch,
+            "regular request should not be detected as watch"
+        );
         assert!(
             !uri.path().contains("/watch/"),
             "regular path should not contain /watch/"

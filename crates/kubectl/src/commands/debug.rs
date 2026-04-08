@@ -226,7 +226,11 @@ fn generate_debug_container_name(pod: &Value) -> String {
         .and_then(|c| c.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|c| c.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                .filter_map(|c| {
+                    c.get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string())
+                })
                 .collect()
         })
         .unwrap_or_default();

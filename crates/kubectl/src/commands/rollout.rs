@@ -421,12 +421,8 @@ mod tests {
 
     #[test]
     fn test_rollout_api_path_deployment() {
-        let (path, version) =
-            get_resource_api_path("deployment", "default", "nginx").unwrap();
-        assert_eq!(
-            path,
-            "/apis/apps/v1/namespaces/default/deployments/nginx"
-        );
+        let (path, version) = get_resource_api_path("deployment", "default", "nginx").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/default/deployments/nginx");
         assert_eq!(version, "apps/v1");
     }
 
@@ -439,10 +435,7 @@ mod tests {
     #[test]
     fn test_rollout_api_path_statefulset() {
         let (path, _) = get_resource_api_path("sts", "default", "db").unwrap();
-        assert_eq!(
-            path,
-            "/apis/apps/v1/namespaces/default/statefulsets/db"
-        );
+        assert_eq!(path, "/apis/apps/v1/namespaces/default/statefulsets/db");
     }
 
     #[test]
@@ -462,31 +455,27 @@ mod tests {
 
     #[test]
     fn test_rollout_api_path_deployments_plural() {
-        let (path, version) =
-            get_resource_api_path("deployments", "staging", "api").unwrap();
+        let (path, version) = get_resource_api_path("deployments", "staging", "api").unwrap();
         assert_eq!(path, "/apis/apps/v1/namespaces/staging/deployments/api");
         assert_eq!(version, "apps/v1");
     }
 
     #[test]
     fn test_rollout_api_path_statefulset_full_name() {
-        let (path, version) =
-            get_resource_api_path("statefulset", "db-ns", "postgres").unwrap();
+        let (path, version) = get_resource_api_path("statefulset", "db-ns", "postgres").unwrap();
         assert_eq!(path, "/apis/apps/v1/namespaces/db-ns/statefulsets/postgres");
         assert_eq!(version, "apps/v1");
     }
 
     #[test]
     fn test_rollout_api_path_statefulsets_plural() {
-        let (path, _) =
-            get_resource_api_path("statefulsets", "default", "redis").unwrap();
+        let (path, _) = get_resource_api_path("statefulsets", "default", "redis").unwrap();
         assert_eq!(path, "/apis/apps/v1/namespaces/default/statefulsets/redis");
     }
 
     #[test]
     fn test_rollout_api_path_daemonset_full_name() {
-        let (path, version) =
-            get_resource_api_path("daemonset", "monitoring", "fluentd").unwrap();
+        let (path, version) = get_resource_api_path("daemonset", "monitoring", "fluentd").unwrap();
         assert_eq!(
             path,
             "/apis/apps/v1/namespaces/monitoring/daemonsets/fluentd"
@@ -496,8 +485,7 @@ mod tests {
 
     #[test]
     fn test_rollout_api_path_daemonsets_plural() {
-        let (path, _) =
-            get_resource_api_path("daemonsets", "kube-system", "kube-proxy").unwrap();
+        let (path, _) = get_resource_api_path("daemonsets", "kube-system", "kube-proxy").unwrap();
         assert_eq!(
             path,
             "/apis/apps/v1/namespaces/kube-system/daemonsets/kube-proxy"

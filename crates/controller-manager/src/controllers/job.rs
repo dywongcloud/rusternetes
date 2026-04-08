@@ -226,7 +226,10 @@ impl<S: Storage> JobController<S> {
                 }
                 // Count pods with Ready condition = True
                 if let Some(conditions) = &status.conditions {
-                    if conditions.iter().any(|c| c.condition_type == "Ready" && c.status == "True") {
+                    if conditions
+                        .iter()
+                        .any(|c| c.condition_type == "Ready" && c.status == "True")
+                    {
                         ready += 1;
                     }
                 }
@@ -2247,7 +2250,10 @@ mod tests {
         controller.reconcile(&mut job).await.unwrap();
 
         // The orphan pod should now have an ownerReference to the job
-        let updated_pod: Pod = storage.get("/registry/pods/default/orphan-pod-1").await.unwrap();
+        let updated_pod: Pod = storage
+            .get("/registry/pods/default/orphan-pod-1")
+            .await
+            .unwrap();
         let has_owner_ref = updated_pod
             .metadata
             .owner_references
@@ -2477,7 +2483,10 @@ mod tests {
             .metadata
             .owner_references
             .as_ref()
-            .map(|refs| refs.iter().any(|r| r.uid == "legacy-uid" && r.kind == "Job"))
+            .map(|refs| {
+                refs.iter()
+                    .any(|r| r.uid == "legacy-uid" && r.kind == "Job")
+            })
             .unwrap_or(false);
         assert!(
             adopted,
@@ -2539,11 +2548,9 @@ mod tests {
 
         // Should have Complete condition
         assert!(
-            conditions
-                .iter()
-                .any(|c| c.condition_type == "Complete"
-                    && c.status == "True"
-                    && c.reason.as_deref() == Some("SuccessPolicy")),
+            conditions.iter().any(|c| c.condition_type == "Complete"
+                && c.status == "True"
+                && c.reason.as_deref() == Some("SuccessPolicy")),
             "Should have Complete condition with reason SuccessPolicy"
         );
 
@@ -2706,11 +2713,9 @@ mod tests {
             "SuccessCriteriaMet should be set when required indexes succeeded"
         );
         assert!(
-            conditions
-                .iter()
-                .any(|c| c.condition_type == "Complete"
-                    && c.status == "True"
-                    && c.reason.as_deref() == Some("SuccessPolicy")),
+            conditions.iter().any(|c| c.condition_type == "Complete"
+                && c.status == "True"
+                && c.reason.as_deref() == Some("SuccessPolicy")),
             "Complete condition should have reason SuccessPolicy"
         );
         // The 3 running pods should be terminating

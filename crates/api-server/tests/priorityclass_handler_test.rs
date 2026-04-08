@@ -471,7 +471,10 @@ async fn test_priorityclass_value_immutability_revert_uses_correct_resource_vers
     correct_revert.value = 1;
     correct_revert.metadata.resource_version = new_rv;
     let reverted: PriorityClass = storage.update(&key, &correct_revert).await.unwrap();
-    assert_eq!(reverted.value, 1, "value should be reverted back to 1 after correct revert");
+    assert_eq!(
+        reverted.value, 1,
+        "value should be reverted back to 1 after correct revert"
+    );
 
     // Verify in storage
     let final_pc: PriorityClass = storage.get(&key).await.unwrap();

@@ -34,12 +34,17 @@ pub async fn create(
             let msg = e.to_string();
             if is_strict && msg.contains("duplicate field") {
                 // Parse via Value (lenient — takes last duplicate) so validate_strict_fields runs
-                let value: serde_json::Value = serde_json::from_slice(&body)
-                    .map_err(|e2| rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e2)))?;
-                serde_json::from_value(value)
-                    .map_err(|e2| rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e2)))?
+                let value: serde_json::Value = serde_json::from_slice(&body).map_err(|e2| {
+                    rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e2))
+                })?;
+                serde_json::from_value(value).map_err(|e2| {
+                    rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", e2))
+                })?
             } else {
-                return Err(rusternetes_common::Error::InvalidResource(format!("failed to decode: {}", msg)));
+                return Err(rusternetes_common::Error::InvalidResource(format!(
+                    "failed to decode: {}",
+                    msg
+                )));
             }
         }
     };

@@ -95,8 +95,7 @@ pub async fn execute_with_options(client: &ApiClient, options: &ApplyOptions) ->
                 .context("Failed to read from stdin")?;
             buffer
         } else {
-            fs::read_to_string(path)
-                .with_context(|| format!("Failed to read file: {}", path))?
+            fs::read_to_string(path).with_context(|| format!("Failed to read file: {}", path))?
         };
 
         // Support for multi-document YAML files
@@ -310,15 +309,16 @@ fn set_last_applied_annotation(value: &mut Value) {
     let annotation_value = serde_json::to_string(&clean).unwrap_or_default();
 
     // Ensure metadata.annotations exists.
-    let metadata = value
-        .as_object_mut()
-        .and_then(|o| o.entry("metadata").or_insert_with(|| json!({})).as_object_mut().map(|m| m as *mut _));
+    let metadata = value.as_object_mut().and_then(|o| {
+        o.entry("metadata")
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .map(|m| m as *mut _)
+    });
 
     if let Some(metadata) = metadata {
         let metadata: &mut serde_json::Map<String, Value> = unsafe { &mut *metadata };
-        let annotations = metadata
-            .entry("annotations")
-            .or_insert_with(|| json!({}));
+        let annotations = metadata.entry("annotations").or_insert_with(|| json!({}));
         if let Some(ann) = annotations.as_object_mut() {
             ann.insert(
                 LAST_APPLIED_ANNOTATION.to_string(),
@@ -368,191 +368,332 @@ async fn apply_resource(
     match kind {
         "Pod" => {
             apply_namespaced::<Pod>(
-                client, &yaml_str, kind, "", "pods",
-                "/api/v1", query, options,
+                client, &yaml_str, kind, "", "pods", "/api/v1", query, options,
             )
             .await
         }
         "Service" => {
             apply_namespaced::<Service>(
-                client, &yaml_str, kind, "", "services",
-                "/api/v1", query, options,
+                client, &yaml_str, kind, "", "services", "/api/v1", query, options,
             )
             .await
         }
         "Deployment" => {
             apply_namespaced::<Deployment>(
-                client, &yaml_str, kind, "apps", "deployments",
-                "/apis/apps/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "apps",
+                "deployments",
+                "/apis/apps/v1",
+                query,
+                options,
             )
             .await
         }
         "StatefulSet" => {
             apply_namespaced::<StatefulSet>(
-                client, &yaml_str, kind, "apps", "statefulsets",
-                "/apis/apps/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "apps",
+                "statefulsets",
+                "/apis/apps/v1",
+                query,
+                options,
             )
             .await
         }
         "DaemonSet" => {
             apply_namespaced::<DaemonSet>(
-                client, &yaml_str, kind, "apps", "daemonsets",
-                "/apis/apps/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "apps",
+                "daemonsets",
+                "/apis/apps/v1",
+                query,
+                options,
             )
             .await
         }
         "Job" => {
             apply_namespaced::<Job>(
-                client, &yaml_str, kind, "batch", "jobs",
-                "/apis/batch/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "batch",
+                "jobs",
+                "/apis/batch/v1",
+                query,
+                options,
             )
             .await
         }
         "CronJob" => {
             apply_namespaced::<CronJob>(
-                client, &yaml_str, kind, "batch", "cronjobs",
-                "/apis/batch/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "batch",
+                "cronjobs",
+                "/apis/batch/v1",
+                query,
+                options,
             )
             .await
         }
         "ConfigMap" => {
             apply_namespaced::<ConfigMap>(
-                client, &yaml_str, kind, "", "configmaps",
-                "/api/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "",
+                "configmaps",
+                "/api/v1",
+                query,
+                options,
             )
             .await
         }
         "Secret" => {
             apply_namespaced::<Secret>(
-                client, &yaml_str, kind, "", "secrets",
-                "/api/v1", query, options,
+                client, &yaml_str, kind, "", "secrets", "/api/v1", query, options,
             )
             .await
         }
         "ServiceAccount" => {
             apply_namespaced::<ServiceAccount>(
-                client, &yaml_str, kind, "", "serviceaccounts",
-                "/api/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "",
+                "serviceaccounts",
+                "/api/v1",
+                query,
+                options,
             )
             .await
         }
         "Endpoints" => {
             apply_namespaced::<Endpoints>(
-                client, &yaml_str, kind, "", "endpoints",
-                "/api/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "",
+                "endpoints",
+                "/api/v1",
+                query,
+                options,
             )
             .await
         }
         "PersistentVolumeClaim" => {
             apply_namespaced::<PersistentVolumeClaim>(
-                client, &yaml_str, kind, "", "persistentvolumeclaims",
-                "/api/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "",
+                "persistentvolumeclaims",
+                "/api/v1",
+                query,
+                options,
             )
             .await
         }
         "ResourceQuota" => {
             apply_namespaced::<ResourceQuota>(
-                client, &yaml_str, kind, "", "resourcequotas",
-                "/api/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "",
+                "resourcequotas",
+                "/api/v1",
+                query,
+                options,
             )
             .await
         }
         "LimitRange" => {
             apply_namespaced::<LimitRange>(
-                client, &yaml_str, kind, "", "limitranges",
-                "/api/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "",
+                "limitranges",
+                "/api/v1",
+                query,
+                options,
             )
             .await
         }
         "Role" => {
             apply_namespaced::<Role>(
-                client, &yaml_str, kind, "rbac.authorization.k8s.io", "roles",
-                "/apis/rbac.authorization.k8s.io/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "rbac.authorization.k8s.io",
+                "roles",
+                "/apis/rbac.authorization.k8s.io/v1",
+                query,
+                options,
             )
             .await
         }
         "RoleBinding" => {
             apply_namespaced::<RoleBinding>(
-                client, &yaml_str, kind, "rbac.authorization.k8s.io", "rolebindings",
-                "/apis/rbac.authorization.k8s.io/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "rbac.authorization.k8s.io",
+                "rolebindings",
+                "/apis/rbac.authorization.k8s.io/v1",
+                query,
+                options,
             )
             .await
         }
         "Ingress" => {
             apply_namespaced::<Ingress>(
-                client, &yaml_str, kind, "networking.k8s.io", "ingresses",
-                "/apis/networking.k8s.io/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "networking.k8s.io",
+                "ingresses",
+                "/apis/networking.k8s.io/v1",
+                query,
+                options,
             )
             .await
         }
         "VolumeSnapshot" => {
             apply_namespaced::<VolumeSnapshot>(
-                client, &yaml_str, kind, "snapshot.storage.k8s.io", "volumesnapshots",
-                "/apis/snapshot.storage.k8s.io/v1", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "snapshot.storage.k8s.io",
+                "volumesnapshots",
+                "/apis/snapshot.storage.k8s.io/v1",
+                query,
+                options,
             )
             .await
         }
         // Cluster-scoped resources
         "Namespace" => {
             apply_cluster::<Namespace>(
-                client, &yaml_str, kind, "", "namespaces",
-                "/api/v1/namespaces", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "",
+                "namespaces",
+                "/api/v1/namespaces",
+                query,
+                options,
             )
             .await
         }
         "Node" => {
             apply_cluster::<Node>(
-                client, &yaml_str, kind, "", "nodes",
-                "/api/v1/nodes", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "",
+                "nodes",
+                "/api/v1/nodes",
+                query,
+                options,
             )
             .await
         }
         "PersistentVolume" => {
             apply_cluster::<PersistentVolume>(
-                client, &yaml_str, kind, "", "persistentvolumes",
-                "/api/v1/persistentvolumes", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "",
+                "persistentvolumes",
+                "/api/v1/persistentvolumes",
+                query,
+                options,
             )
             .await
         }
         "ClusterRole" => {
             apply_cluster::<ClusterRole>(
-                client, &yaml_str, kind, "rbac.authorization.k8s.io", "clusterroles",
-                "/apis/rbac.authorization.k8s.io/v1/clusterroles", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "rbac.authorization.k8s.io",
+                "clusterroles",
+                "/apis/rbac.authorization.k8s.io/v1/clusterroles",
+                query,
+                options,
             )
             .await
         }
         "ClusterRoleBinding" => {
             apply_cluster::<ClusterRoleBinding>(
-                client, &yaml_str, kind, "rbac.authorization.k8s.io", "clusterrolebindings",
-                "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "rbac.authorization.k8s.io",
+                "clusterrolebindings",
+                "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings",
+                query,
+                options,
             )
             .await
         }
         "StorageClass" => {
             apply_cluster::<StorageClass>(
-                client, &yaml_str, kind, "storage.k8s.io", "storageclasses",
-                "/apis/storage.k8s.io/v1/storageclasses", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "storage.k8s.io",
+                "storageclasses",
+                "/apis/storage.k8s.io/v1/storageclasses",
+                query,
+                options,
             )
             .await
         }
         "VolumeSnapshotClass" => {
             apply_cluster::<VolumeSnapshotClass>(
-                client, &yaml_str, kind, "snapshot.storage.k8s.io", "volumesnapshotclasses",
-                "/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "snapshot.storage.k8s.io",
+                "volumesnapshotclasses",
+                "/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses",
+                query,
+                options,
             )
             .await
         }
         "PriorityClass" => {
             apply_cluster::<PriorityClass>(
-                client, &yaml_str, kind, "scheduling.k8s.io", "priorityclasses",
-                "/apis/scheduling.k8s.io/v1/priorityclasses", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "scheduling.k8s.io",
+                "priorityclasses",
+                "/apis/scheduling.k8s.io/v1/priorityclasses",
+                query,
+                options,
             )
             .await
         }
         "CustomResourceDefinition" => {
             apply_cluster::<CustomResourceDefinition>(
-                client, &yaml_str, kind, "apiextensions.k8s.io", "customresourcedefinitions",
-                "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", query, options,
+                client,
+                &yaml_str,
+                kind,
+                "apiextensions.k8s.io",
+                "customresourcedefinitions",
+                "/apis/apiextensions.k8s.io/v1/customresourcedefinitions",
+                query,
+                options,
             )
             .await
         }
@@ -583,11 +724,33 @@ macro_rules! impl_has_metadata {
 }
 
 impl_has_metadata!(
-    Pod, Service, Deployment, StatefulSet, DaemonSet, Job, CronJob,
-    ConfigMap, Secret, ServiceAccount, Endpoints, PersistentVolumeClaim,
-    ResourceQuota, LimitRange, Role, RoleBinding, Ingress, VolumeSnapshot,
-    Namespace, Node, PersistentVolume, ClusterRole, ClusterRoleBinding,
-    StorageClass, VolumeSnapshotClass, PriorityClass, CustomResourceDefinition,
+    Pod,
+    Service,
+    Deployment,
+    StatefulSet,
+    DaemonSet,
+    Job,
+    CronJob,
+    ConfigMap,
+    Secret,
+    ServiceAccount,
+    Endpoints,
+    PersistentVolumeClaim,
+    ResourceQuota,
+    LimitRange,
+    Role,
+    RoleBinding,
+    Ingress,
+    VolumeSnapshot,
+    Namespace,
+    Node,
+    PersistentVolume,
+    ClusterRole,
+    ClusterRoleBinding,
+    StorageClass,
+    VolumeSnapshotClass,
+    PriorityClass,
+    CustomResourceDefinition,
 );
 
 /// Apply a namespaced resource.
@@ -615,7 +778,10 @@ async fn apply_namespaced<T: HasMetadata>(
     // Re-deserialize with annotation applied.
     resource = serde_json::from_value(json_val)?;
 
-    let item_path = format!("{}/namespaces/{}/{}/{}", api_base, ns, resource_plural, name);
+    let item_path = format!(
+        "{}/namespaces/{}/{}/{}",
+        api_base, ns, resource_plural, name
+    );
     let collection_path = format!("{}/namespaces/{}/{}", api_base, ns, resource_plural);
 
     let exists = resource_exists::<T>(client, &item_path).await?;
@@ -717,10 +883,7 @@ fn resolve_api_path(resource_type: &str, name: &str, namespace: &str) -> Result<
             )
         }
         "daemonset" | "daemonsets" | "ds" => {
-            format!(
-                "/apis/apps/v1/namespaces/{}/daemonsets/{}",
-                namespace, name
-            )
+            format!("/apis/apps/v1/namespaces/{}/daemonsets/{}", namespace, name)
         }
         "configmap" | "configmaps" | "cm" => {
             format!("/api/v1/namespaces/{}/configmaps/{}", namespace, name)
@@ -729,22 +892,13 @@ fn resolve_api_path(resource_type: &str, name: &str, namespace: &str) -> Result<
             format!("/api/v1/namespaces/{}/secrets/{}", namespace, name)
         }
         "serviceaccount" | "serviceaccounts" | "sa" => {
-            format!(
-                "/api/v1/namespaces/{}/serviceaccounts/{}",
-                namespace, name
-            )
+            format!("/api/v1/namespaces/{}/serviceaccounts/{}", namespace, name)
         }
         "job" | "jobs" => {
-            format!(
-                "/apis/batch/v1/namespaces/{}/jobs/{}",
-                namespace, name
-            )
+            format!("/apis/batch/v1/namespaces/{}/jobs/{}", namespace, name)
         }
         "cronjob" | "cronjobs" | "cj" => {
-            format!(
-                "/apis/batch/v1/namespaces/{}/cronjobs/{}",
-                namespace, name
-            )
+            format!("/apis/batch/v1/namespaces/{}/cronjobs/{}", namespace, name)
         }
         "role" | "roles" => {
             format!(
@@ -759,10 +913,7 @@ fn resolve_api_path(resource_type: &str, name: &str, namespace: &str) -> Result<
             )
         }
         "clusterrole" | "clusterroles" => {
-            format!(
-                "/apis/rbac.authorization.k8s.io/v1/clusterroles/{}",
-                name
-            )
+            format!("/apis/rbac.authorization.k8s.io/v1/clusterroles/{}", name)
         }
         "clusterrolebinding" | "clusterrolebindings" => {
             format!(
@@ -776,7 +927,10 @@ fn resolve_api_path(resource_type: &str, name: &str, namespace: &str) -> Result<
         "node" | "nodes" => {
             format!("/api/v1/nodes/{}", name)
         }
-        _ => anyhow::bail!("Unsupported resource type for apply subcommands: {}", resource_type),
+        _ => anyhow::bail!(
+            "Unsupported resource type for apply subcommands: {}",
+            resource_type
+        ),
     };
     Ok(path)
 }
@@ -844,8 +998,7 @@ pub async fn execute_subcommand(
             let ns = namespace.as_deref().unwrap_or(default_namespace);
 
             // Read the file
-            let contents = fs::read_to_string(&filename)
-                .context("Failed to read file")?;
+            let contents = fs::read_to_string(&filename).context("Failed to read file")?;
 
             // Parse to get kind/name
             let value: serde_yaml::Value = serde_yaml::from_str(&contents)?;
@@ -882,10 +1035,7 @@ pub async fn execute_subcommand(
                         .patch(&path, &patch, "application/strategic-merge-patch+json")
                         .await
                         .context("Failed to set last-applied-configuration")?;
-                    println!(
-                        "{}/{} last-applied-configuration set",
-                        resource_type, name
-                    );
+                    println!("{}/{} last-applied-configuration set", resource_type, name);
                 }
                 Err(_) if create_annotation => {
                     anyhow::bail!(
@@ -895,8 +1045,7 @@ pub async fn execute_subcommand(
                     );
                 }
                 Err(e) => {
-                    return Err(anyhow::anyhow!("{}", e))
-                        .context("Failed to get resource");
+                    return Err(anyhow::anyhow!("{}", e)).context("Failed to get resource");
                 }
             }
         }
@@ -1024,7 +1173,11 @@ mod tests {
 
         let inputs = vec![dir.path().to_string_lossy().to_string()];
         let files = collect_files(&inputs, false).unwrap();
-        assert_eq!(files.len(), 3, "should include .yaml, .yml, .json but not .txt");
+        assert_eq!(
+            files.len(),
+            3,
+            "should include .yaml, .yml, .json but not .txt"
+        );
         // Verify .txt was excluded
         assert!(!files.iter().any(|f| f.ends_with(".txt")));
     }
@@ -1213,10 +1366,7 @@ mod tests {
     #[test]
     fn test_resolve_api_path_deployments() {
         let path = resolve_api_path("deployment", "web", "production").unwrap();
-        assert_eq!(
-            path,
-            "/apis/apps/v1/namespaces/production/deployments/web"
-        );
+        assert_eq!(path, "/apis/apps/v1/namespaces/production/deployments/web");
     }
 
     #[test]
@@ -1541,10 +1691,7 @@ mod tests {
     #[test]
     fn test_resolve_api_path_statefulsets() {
         let path = resolve_api_path("sts", "my-sts", "default").unwrap();
-        assert_eq!(
-            path,
-            "/apis/apps/v1/namespaces/default/statefulsets/my-sts"
-        );
+        assert_eq!(path, "/apis/apps/v1/namespaces/default/statefulsets/my-sts");
     }
 
     #[test]

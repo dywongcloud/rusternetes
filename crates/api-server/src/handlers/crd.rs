@@ -458,11 +458,8 @@ pub async fn update_crd(
 
     // Get old object for webhook old_object field
     let key = build_key("customresourcedefinitions", None, &name);
-    let old_crd_value: Option<serde_json::Value> = state
-        .storage
-        .get::<serde_json::Value>(&key)
-        .await
-        .ok();
+    let old_crd_value: Option<serde_json::Value> =
+        state.storage.get::<serde_json::Value>(&key).await.ok();
 
     // Run admission webhooks for CRD update
     let gvk = GroupVersionKind {

@@ -1026,9 +1026,7 @@ impl Kubelet {
                                                 ready: false,
                                                 restart_count: 0,
                                                 state: Some(ContainerState::Waiting {
-                                                    reason: Some(
-                                                        "PodInitializing".to_string(),
-                                                    ),
+                                                    reason: Some("PodInitializing".to_string()),
                                                     message: None,
                                                 }),
                                                 last_state: None,
@@ -1608,10 +1606,7 @@ impl Kubelet {
                                     )
                                     .await
                                 {
-                                    warn!(
-                                        "Failed to start ephemeral container {}: {}",
-                                        ec.name, e
-                                    );
+                                    warn!("Failed to start ephemeral container {}: {}", ec.name, e);
                                 } else {
                                     started_any = true;
                                 }

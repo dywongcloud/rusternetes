@@ -21,7 +21,10 @@ pub async fn execute(
         match action {
             "approve" => approve_csr(client, csr_name, force).await?,
             "deny" => deny_csr(client, csr_name, force).await?,
-            _ => anyhow::bail!("unknown certificate action: {}. Use 'approve' or 'deny'", action),
+            _ => anyhow::bail!(
+                "unknown certificate action: {}. Use 'approve' or 'deny'",
+                action
+            ),
         }
     }
 
@@ -78,9 +81,7 @@ async fn approve_csr(client: &ApiClient, name: &str, force: bool) -> Result<()> 
     let mut new_conditions: Vec<Value> = if force {
         conditions
             .into_iter()
-            .filter(|c| {
-                c.get("type").and_then(|t| t.as_str()).unwrap_or("") != "Denied"
-            })
+            .filter(|c| c.get("type").and_then(|t| t.as_str()).unwrap_or("") != "Denied")
             .collect()
     } else {
         conditions
@@ -170,9 +171,7 @@ async fn deny_csr(client: &ApiClient, name: &str, force: bool) -> Result<()> {
     let mut new_conditions: Vec<Value> = if force {
         conditions
             .into_iter()
-            .filter(|c| {
-                c.get("type").and_then(|t| t.as_str()).unwrap_or("") != "Approved"
-            })
+            .filter(|c| c.get("type").and_then(|t| t.as_str()).unwrap_or("") != "Approved")
             .collect()
     } else {
         conditions
@@ -303,15 +302,16 @@ mod tests {
         let new_conditions: Vec<Value> = if force {
             existing_conditions
                 .into_iter()
-                .filter(|c| {
-                    c.get("type").and_then(|t| t.as_str()).unwrap_or("") != "Denied"
-                })
+                .filter(|c| c.get("type").and_then(|t| t.as_str()).unwrap_or("") != "Denied")
                 .collect()
         } else {
             existing_conditions
         };
 
-        assert!(new_conditions.is_empty(), "Denied condition should be removed when force approving");
+        assert!(
+            new_conditions.is_empty(),
+            "Denied condition should be removed when force approving"
+        );
     }
 
     #[test]
@@ -351,9 +351,9 @@ mod tests {
             .and_then(|s| s.get("conditions"))
             .and_then(|c| c.as_array())
             .map(|conditions| {
-                conditions.iter().any(|c| {
-                    c.get("type").and_then(|t| t.as_str()) == Some("Approved")
-                })
+                conditions
+                    .iter()
+                    .any(|c| c.get("type").and_then(|t| t.as_str()) == Some("Approved"))
             })
             .unwrap_or(false);
 
@@ -375,9 +375,9 @@ mod tests {
             .and_then(|s| s.get("conditions"))
             .and_then(|c| c.as_array())
             .map(|conditions| {
-                conditions.iter().any(|c| {
-                    c.get("type").and_then(|t| t.as_str()) == Some("Denied")
-                })
+                conditions
+                    .iter()
+                    .any(|c| c.get("type").and_then(|t| t.as_str()) == Some("Denied"))
             })
             .unwrap_or(false);
 
@@ -396,9 +396,9 @@ mod tests {
             .and_then(|s| s.get("conditions"))
             .and_then(|c| c.as_array())
             .map(|conditions| {
-                conditions.iter().any(|c| {
-                    c.get("type").and_then(|t| t.as_str()) == Some("Approved")
-                })
+                conditions
+                    .iter()
+                    .any(|c| c.get("type").and_then(|t| t.as_str()) == Some("Approved"))
             })
             .unwrap_or(false);
 
@@ -417,15 +417,16 @@ mod tests {
         let new_conditions: Vec<Value> = if force {
             existing_conditions
                 .into_iter()
-                .filter(|c| {
-                    c.get("type").and_then(|t| t.as_str()).unwrap_or("") != "Approved"
-                })
+                .filter(|c| c.get("type").and_then(|t| t.as_str()).unwrap_or("") != "Approved")
                 .collect()
         } else {
             existing_conditions
         };
 
-        assert!(new_conditions.is_empty(), "Approved condition should be removed when force denying");
+        assert!(
+            new_conditions.is_empty(),
+            "Approved condition should be removed when force denying"
+        );
     }
 
     #[test]

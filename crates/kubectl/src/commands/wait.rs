@@ -442,10 +442,7 @@ mod tests {
         );
         assert_eq!(path_with_name, "/api/v1/namespaces/default/pods/nginx");
 
-        let path_without_name = format!(
-            "/{}/namespaces/{}/{}",
-            api_path, "default", resource_name
-        );
+        let path_without_name = format!("/{}/namespaces/{}/{}", api_path, "default", resource_name);
         assert_eq!(path_without_name, "/api/v1/namespaces/default/pods");
 
         let (api_path, resource_name) = parse_resource_type("deployment").unwrap();

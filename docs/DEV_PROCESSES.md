@@ -12,7 +12,7 @@
 1. Clean up the CONFORMANCE_FAILURES.md file content from the last run since we are starting a new run.
 2. Write down all known issues into CONFORMANCE_FAILURES.md file
 3. Continually do a deep analysis of the root cause for each issue, and come up with a thorough plan to fix the issue. Then fix the issue according to that plan, do not take shortcuts, do not ignore them even if they are architectural issues. You must implement a test to prove your fix actually fixes the problem.
-4. As you fix issues implement a test that verifies your fix was correct and that the fix adheres to expected kubernetes runtime behavior
+4. As you fix issues implement a test that verifies your fix was correct and that the fix adheres to expected kubernetes runtime behavior. If you aren't sure how to fix an issue, consult the kubernetes source code which has already been saved to ~/Downloads.
 5. Make sure the component build works and tests pass
 6. Make a git commit for this issue
 7. Update the CONFORMANCE_FAILURES.md with the status of this fix

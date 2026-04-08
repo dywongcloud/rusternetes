@@ -1283,8 +1283,9 @@ mod tests {
 
         // The pod should still exist (not directly deleted) with deletionTimestamp set
         let pod1_key = "/registry/pods/default/ss-grace-1";
-        let pod1: Pod = storage.get(pod1_key).await
-            .expect("Pod ss-grace-1 should still exist after rolling update (graceful termination)");
+        let pod1: Pod = storage.get(pod1_key).await.expect(
+            "Pod ss-grace-1 should still exist after rolling update (graceful termination)",
+        );
         assert!(
             pod1.metadata.deletion_timestamp.is_some(),
             "Rolling update should set deletionTimestamp for graceful termination, not direct delete"

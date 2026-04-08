@@ -52,7 +52,10 @@ pub async fn execute(
             if let Some((k, v)) = env.split_once('=') {
                 env_list.push(json!({"name": k, "value": v}));
             } else {
-                anyhow::bail!("Invalid environment variable format: '{}'. Expected KEY=VALUE", env);
+                anyhow::bail!(
+                    "Invalid environment variable format: '{}'. Expected KEY=VALUE",
+                    env
+                );
             }
         }
         container["env"] = json!(env_list);

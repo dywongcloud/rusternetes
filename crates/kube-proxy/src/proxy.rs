@@ -99,11 +99,10 @@ impl KubeProxy {
             if es.ports.is_empty() {
                 // No ports defined - just record IPs with port 0 (will use service target_port)
                 for addr in &ready_addrs {
-                    endpointslice_map.entry(key.clone()).or_default().push((
-                        addr.clone(),
-                        None,
-                        0,
-                    ));
+                    endpointslice_map
+                        .entry(key.clone())
+                        .or_default()
+                        .push((addr.clone(), None, 0));
                 }
             } else {
                 for es_port in &es.ports {
@@ -209,9 +208,7 @@ impl KubeProxy {
         let use_endpointslices = endpoint_addresses.is_empty() && endpointslice_entries.is_some();
 
         if endpoint_addresses.is_empty()
-            && endpointslice_entries
-                .map(|e| e.is_empty())
-                .unwrap_or(true)
+            && endpointslice_entries.map(|e| e.is_empty()).unwrap_or(true)
         {
             info!(
                 "Service {}/{} (ClusterIP={}) has no ready endpoints, rules will have 0 backends",
@@ -450,10 +447,11 @@ mod tests {
                     let port_num = es_port.port.unwrap_or(0) as u16;
                     let port_name = es_port.name.clone();
                     for addr in &ready_addrs {
-                        endpointslice_map
-                            .entry(key.clone())
-                            .or_default()
-                            .push((addr.clone(), port_name.clone(), port_num));
+                        endpointslice_map.entry(key.clone()).or_default().push((
+                            addr.clone(),
+                            port_name.clone(),
+                            port_num,
+                        ));
                     }
                 }
             }
@@ -469,9 +467,7 @@ mod tests {
             .filter(|(_, name, _)| name.as_deref() == Some("http"))
             .collect();
         assert_eq!(http_entries.len(), 2);
-        assert!(http_entries
-            .iter()
-            .all(|(_, _, port)| *port == 8080));
+        assert!(http_entries.iter().all(|(_, _, port)| *port == 8080));
 
         // Verify https port entries
         let https_entries: Vec<_> = entries
@@ -479,9 +475,7 @@ mod tests {
             .filter(|(_, name, _)| name.as_deref() == Some("https"))
             .collect();
         assert_eq!(https_entries.len(), 2);
-        assert!(https_entries
-            .iter()
-            .all(|(_, _, port)| *port == 8443));
+        assert!(https_entries.iter().all(|(_, _, port)| *port == 8443));
 
         // Verify both IPs are present
         let ips: Vec<&str> = entries.iter().map(|(ip, _, _)| ip.as_str()).collect();

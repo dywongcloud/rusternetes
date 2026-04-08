@@ -598,9 +598,7 @@ async fn test_service_status_loadbalancer_update() {
     let mut service = create_test_service("test-lb-status", "default", ServiceType::LoadBalancer);
     // Initialize with empty status like the create handler does
     service.status = Some(ServiceStatus {
-        load_balancer: Some(LoadBalancerStatus {
-            ingress: vec![],
-        }),
+        load_balancer: Some(LoadBalancerStatus { ingress: vec![] }),
         conditions: None,
     });
 
@@ -637,9 +635,7 @@ async fn test_service_create_initializes_status() {
     use rusternetes_common::resources::{LoadBalancerStatus, ServiceStatus};
 
     let status = ServiceStatus {
-        load_balancer: Some(LoadBalancerStatus {
-            ingress: vec![],
-        }),
+        load_balancer: Some(LoadBalancerStatus { ingress: vec![] }),
         conditions: None,
     };
 
@@ -650,7 +646,8 @@ async fn test_service_create_initializes_status() {
     // ingress is skipped when empty due to skip_serializing_if
     assert!(
         lb.get("ingress").is_none()
-            || lb.get("ingress")
+            || lb
+                .get("ingress")
                 .unwrap()
                 .as_array()
                 .map_or(true, |a| a.is_empty())

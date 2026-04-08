@@ -800,7 +800,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(deleted, false, "Resource without finalizers should be deleted immediately");
+        assert_eq!(
+            deleted, false,
+            "Resource without finalizers should be deleted immediately"
+        );
 
         let result = storage.get::<Pod>(key).await;
         assert!(result.is_err(), "Resource should be deleted from storage");
@@ -818,10 +821,16 @@ mod tests {
         let marked = handle_delete_with_finalizers(&storage, key, &pod)
             .await
             .unwrap();
-        assert_eq!(marked, true, "Resource with finalizers should be marked for deletion");
+        assert_eq!(
+            marked, true,
+            "Resource with finalizers should be marked for deletion"
+        );
 
         let updated_pod: Pod = storage.get(key).await.unwrap();
-        assert!(updated_pod.metadata.deletion_timestamp.is_some(), "Resource should have deletionTimestamp");
+        assert!(
+            updated_pod.metadata.deletion_timestamp.is_some(),
+            "Resource should have deletionTimestamp"
+        );
         assert_eq!(
             updated_pod.metadata.finalizers,
             Some(vec!["test.finalizer.io".to_string()]),
@@ -832,7 +841,10 @@ mod tests {
         let marked_again = handle_delete_with_finalizers(&storage, key, &updated_pod)
             .await
             .unwrap();
-        assert_eq!(marked_again, true, "Resource should still be marked for deletion");
+        assert_eq!(
+            marked_again, true,
+            "Resource should still be marked for deletion"
+        );
 
         storage.delete(key).await.unwrap();
     }
@@ -859,7 +871,10 @@ mod tests {
         let deleted = handle_delete_with_finalizers(&storage, key, &updated_pod)
             .await
             .unwrap();
-        assert_eq!(deleted, false, "Resource without finalizers should be deleted");
+        assert_eq!(
+            deleted, false,
+            "Resource without finalizers should be deleted"
+        );
 
         let result = storage.get::<Pod>(key).await;
         assert!(result.is_err(), "Resource should be deleted from storage");

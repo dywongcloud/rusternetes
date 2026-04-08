@@ -332,7 +332,10 @@ mod tests {
         let result = execute("tcsh");
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("tcsh"), "Error should mention the invalid shell name");
+        assert!(
+            msg.contains("tcsh"),
+            "Error should mention the invalid shell name"
+        );
     }
 
     #[test]

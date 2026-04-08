@@ -91,10 +91,7 @@ async fn handle_request(
 ) -> Result<Response<Full<bytes::Bytes>>, hyper::Error> {
     let method = req.method().clone();
     let uri = req.uri().clone();
-    let path_and_query = uri
-        .path_and_query()
-        .map(|pq| pq.as_str())
-        .unwrap_or("/");
+    let path_and_query = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
 
     let target_url = format!("{}{}", state.api_server, path_and_query);
 
@@ -163,9 +160,7 @@ async fn handle_request(
         response_builder = response_builder.header(key, value);
     }
 
-    let response = response_builder
-        .body(Full::new(response_bytes))
-        .unwrap();
+    let response = response_builder.body(Full::new(response_bytes)).unwrap();
 
     Ok(response)
 }
@@ -345,6 +340,9 @@ mod tests {
             skip_tls_verify: false,
         };
         let result = bind_listener(&config2).await;
-        assert!(result.is_err(), "Should fail to bind to an already-bound port");
+        assert!(
+            result.is_err(),
+            "Should fail to bind to an already-bound port"
+        );
     }
 }

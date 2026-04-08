@@ -111,10 +111,7 @@ mod tests {
     async fn test_execute_unknown_resource_fails() {
         let result = execute("nonexistent", None, false).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("not found"));
+        assert!(result.unwrap_err().to_string().contains("not found"));
     }
 
     #[test]

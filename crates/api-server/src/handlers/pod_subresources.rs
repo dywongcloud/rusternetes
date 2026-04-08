@@ -1002,20 +1002,12 @@ pub async fn create_eviction(
         if matches {
             // This PDB applies to our pod - compute disruptions_allowed inline
             // by counting matching healthy pods (don't rely solely on pre-computed status)
-            let disruptions_allowed = compute_pdb_disruptions_allowed(
-                state.storage.as_ref(),
-                pdb,
-                &namespace,
-            )
-            .await;
+            let disruptions_allowed =
+                compute_pdb_disruptions_allowed(state.storage.as_ref(), pdb, &namespace).await;
 
             if disruptions_allowed <= 0 {
-                let current_healthy = compute_pdb_healthy_count(
-                    state.storage.as_ref(),
-                    pdb,
-                    &namespace,
-                )
-                .await;
+                let current_healthy =
+                    compute_pdb_healthy_count(state.storage.as_ref(), pdb, &namespace).await;
                 let desired_healthy = compute_pdb_desired_healthy(pdb, current_healthy);
                 let detail_msg = format!(
                     "Cannot evict pod as it would violate the pod's disruption budget. \
@@ -1061,15 +1053,17 @@ pub async fn create_eviction(
             let mut updated_pdb = pdb.clone();
             let disrupted_pods = updated_pdb
                 .status
-                .get_or_insert_with(|| rusternetes_common::resources::PodDisruptionBudgetStatus {
-                    current_healthy: 0,
-                    desired_healthy: 0,
-                    disruptions_allowed: 0,
-                    expected_pods: 0,
-                    observed_generation: None,
-                    conditions: None,
-                    disrupted_pods: None,
-                })
+                .get_or_insert_with(
+                    || rusternetes_common::resources::PodDisruptionBudgetStatus {
+                        current_healthy: 0,
+                        desired_healthy: 0,
+                        disruptions_allowed: 0,
+                        expected_pods: 0,
+                        observed_generation: None,
+                        conditions: None,
+                        disrupted_pods: None,
+                    },
+                )
                 .disrupted_pods
                 .get_or_insert_with(std::collections::HashMap::new);
             disrupted_pods.insert(name.clone(), chrono::Utc::now());
@@ -1241,7 +1235,12 @@ mod tests {
     use rusternetes_storage::memory::MemoryStorage;
     use std::collections::HashMap;
 
-    fn make_pod(name: &str, namespace: &str, labels: HashMap<String, String>, running: bool) -> Pod {
+    fn make_pod(
+        name: &str,
+        namespace: &str,
+        labels: HashMap<String, String>,
+        running: bool,
+    ) -> Pod {
         let phase = if running { "Running" } else { "Pending" };
         let labels_json = serde_json::to_value(&labels).unwrap();
         let json = serde_json::json!({
@@ -1314,7 +1313,10 @@ mod tests {
         // Compute disruptions_allowed - should be 0 (1 healthy - 1 desired = 0)
         let pdb_stored: PodDisruptionBudget = storage.get(&pdb_key).await.unwrap();
         let disruptions = compute_pdb_disruptions_allowed(&*storage, &pdb_stored, ns).await;
-        assert_eq!(disruptions, 0, "Should not allow any disruptions with minAvailable=1 and 1 pod");
+        assert_eq!(
+            disruptions, 0,
+            "Should not allow any disruptions with minAvailable=1 and 1 pod"
+        );
 
         // Verify that the desired_healthy calculation is correct
         let healthy = compute_pdb_healthy_count(&*storage, &pdb_stored, ns).await;
@@ -1330,7 +1332,10 @@ mod tests {
         // Now disruptions should be allowed (1 healthy - 0 desired = 1)
         let pdb_updated: PodDisruptionBudget = storage.get(&pdb_key).await.unwrap();
         let disruptions_after = compute_pdb_disruptions_allowed(&*storage, &pdb_updated, ns).await;
-        assert_eq!(disruptions_after, 1, "Should allow 1 disruption after lowering minAvailable to 0");
+        assert_eq!(
+            disruptions_after, 1,
+            "Should allow 1 disruption after lowering minAvailable to 0"
+        );
     }
 
     #[tokio::test]
@@ -1355,7 +1360,10 @@ mod tests {
 
         let pdb_stored: PodDisruptionBudget = storage.get(&pdb_key).await.unwrap();
         let disruptions = compute_pdb_disruptions_allowed(&*storage, &pdb_stored, ns).await;
-        assert_eq!(disruptions, 1, "Should allow 1 disruption with 3 healthy pods and minAvailable=2");
+        assert_eq!(
+            disruptions, 1,
+            "Should allow 1 disruption with 3 healthy pods and minAvailable=2"
+        );
     }
 
     #[tokio::test]
@@ -1378,12 +1386,16 @@ mod tests {
         let pdb = make_pdb("pdb-no-status", ns, 2, labels.clone());
         assert!(pdb.status.is_none(), "PDB should have no status initially");
 
-        let pdb_key = rusternetes_storage::build_key("poddisruptionbudgets", Some(ns), "pdb-no-status");
+        let pdb_key =
+            rusternetes_storage::build_key("poddisruptionbudgets", Some(ns), "pdb-no-status");
         storage.create(&pdb_key, &pdb).await.unwrap();
 
         let pdb_stored: PodDisruptionBudget = storage.get(&pdb_key).await.unwrap();
         let disruptions = compute_pdb_disruptions_allowed(&*storage, &pdb_stored, ns).await;
-        assert_eq!(disruptions, 0, "PDB with no status should still block when minAvailable equals pod count");
+        assert_eq!(
+            disruptions, 0,
+            "PDB with no status should still block when minAvailable equals pod count"
+        );
     }
 
     #[test]

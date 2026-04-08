@@ -142,7 +142,10 @@ mod tests {
         let resource_name = "pods";
         let name = "my-pod";
         let namespace = "kube-system";
-        let path = format!("/{}/namespaces/{}/{}/{}", api_path, namespace, resource_name, name);
+        let path = format!(
+            "/{}/namespaces/{}/{}/{}",
+            api_path, namespace, resource_name, name
+        );
         assert_eq!(path, "/api/v1/namespaces/kube-system/pods/my-pod");
     }
 
@@ -189,6 +192,9 @@ mod tests {
         // Values containing '=' should work because split_once only splits on first '='
         let labels = vec!["key=val=ue".to_string()];
         let map = parse_labels(&labels).unwrap();
-        assert_eq!(map.get("key").unwrap(), &Value::String("val=ue".to_string()));
+        assert_eq!(
+            map.get("key").unwrap(),
+            &Value::String("val=ue".to_string())
+        );
     }
 }

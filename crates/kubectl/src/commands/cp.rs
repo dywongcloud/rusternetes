@@ -98,8 +98,7 @@ mod tests {
 
     #[test]
     fn test_parse_copy_spec_root_path() {
-        let (is_upload, pod, pod_path, local) =
-            parse_copy_spec("my-pod:/", "/tmp/backup").unwrap();
+        let (is_upload, pod, pod_path, local) = parse_copy_spec("my-pod:/", "/tmp/backup").unwrap();
         assert!(!is_upload);
         assert_eq!(pod, "my-pod");
         assert_eq!(pod_path, "/");
@@ -109,8 +108,7 @@ mod tests {
     #[test]
     fn test_parse_copy_spec_empty_pod_path() {
         // Colon with empty path after it
-        let (is_upload, pod, pod_path, _local) =
-            parse_copy_spec("my-pod:", "/tmp/out").unwrap();
+        let (is_upload, pod, pod_path, _local) = parse_copy_spec("my-pod:", "/tmp/out").unwrap();
         assert!(!is_upload);
         assert_eq!(pod, "my-pod");
         assert_eq!(pod_path, "");
@@ -266,7 +264,10 @@ mod tests {
         )
         .await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Local path not found"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Local path not found"));
     }
 
     #[tokio::test]

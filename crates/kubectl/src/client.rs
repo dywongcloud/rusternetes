@@ -98,10 +98,7 @@ impl ApiClient {
     }
 
     /// Get a streaming response for watch mode
-    pub async fn get_stream(
-        &self,
-        path: &str,
-    ) -> Result<reqwest::Response, GetError> {
+    pub async fn get_stream(&self, path: &str) -> Result<reqwest::Response, GetError> {
         let url = format!("{}{}", self.base_url, path);
         let mut request = self.client.get(&url);
 
@@ -217,9 +214,7 @@ impl ApiClient {
         }
 
         if let Some(b) = body {
-            request = request
-                .header("Content-Type", "application/json")
-                .json(b);
+            request = request.header("Content-Type", "application/json").json(b);
         }
 
         let response = request
@@ -246,10 +241,7 @@ impl ApiClient {
             request = request.header("Authorization", format!("Bearer {}", token));
         }
 
-        let response = request
-            .send()
-            .await
-            .context("Failed to send GET request")?;
+        let response = request.send().await.context("Failed to send GET request")?;
 
         Ok(response.status().is_success())
     }

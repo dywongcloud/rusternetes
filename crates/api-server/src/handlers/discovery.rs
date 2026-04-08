@@ -647,33 +647,32 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
     };
 
     // Helper to build a top-level resource entry with optional subresources
-    let res =
-        |name: &str,
-         singular: &str,
-         kind: &str,
-         namespaced: bool,
-         verbs: &[&str],
-         subresources: Vec<serde_json::Value>| {
-            let scope = if namespaced { "Namespaced" } else { "Cluster" };
-            let mut entry = serde_json::json!({
-                "resource": name,
-                "responseKind": {
-                    "group": group,
-                    "version": version,
-                    "kind": kind
-                },
-                "scope": scope,
-                "singularResource": singular,
-                "verbs": verbs
-            });
-            if !subresources.is_empty() {
-                entry
-                    .as_object_mut()
-                    .unwrap()
-                    .insert("subresources".to_string(), serde_json::json!(subresources));
-            }
+    let res = |name: &str,
+               singular: &str,
+               kind: &str,
+               namespaced: bool,
+               verbs: &[&str],
+               subresources: Vec<serde_json::Value>| {
+        let scope = if namespaced { "Namespaced" } else { "Cluster" };
+        let mut entry = serde_json::json!({
+            "resource": name,
+            "responseKind": {
+                "group": group,
+                "version": version,
+                "kind": kind
+            },
+            "scope": scope,
+            "singularResource": singular,
+            "verbs": verbs
+        });
+        if !subresources.is_empty() {
             entry
-        };
+                .as_object_mut()
+                .unwrap()
+                .insert("subresources".to_string(), serde_json::json!(subresources));
+        }
+        entry
+    };
 
     let all_verbs: &[&str] = &[
         "create",
@@ -726,10 +725,21 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                 all_verbs,
                 vec![
                     sub("status", "Service", status_verbs),
-                    sub("proxy", "Service", &["get", "put", "post", "delete", "patch"]),
+                    sub(
+                        "proxy",
+                        "Service",
+                        &["get", "put", "post", "delete", "patch"],
+                    ),
                 ],
             ),
-            res("endpoints", "endpoints", "Endpoints", true, all_verbs, vec![]),
+            res(
+                "endpoints",
+                "endpoints",
+                "Endpoints",
+                true,
+                all_verbs,
+                vec![],
+            ),
             res(
                 "nodes",
                 "node",
@@ -741,7 +751,14 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                     sub("proxy", "Node", &["get", "put", "post", "delete", "patch"]),
                 ],
             ),
-            res("configmaps", "configmap", "ConfigMap", true, all_verbs, vec![]),
+            res(
+                "configmaps",
+                "configmap",
+                "ConfigMap",
+                true,
+                all_verbs,
+                vec![],
+            ),
             res("secrets", "secret", "Secret", true, all_verbs, vec![]),
             res(
                 "serviceaccounts",
@@ -776,7 +793,14 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                 all_verbs,
                 vec![sub("status", "ResourceQuota", status_verbs)],
             ),
-            res("limitranges", "limitrange", "LimitRange", true, all_verbs, vec![]),
+            res(
+                "limitranges",
+                "limitrange",
+                "LimitRange",
+                true,
+                all_verbs,
+                vec![],
+            ),
             res(
                 "replicationcontrollers",
                 "replicationcontroller",
@@ -796,7 +820,14 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                 &["get", "list"],
                 vec![],
             ),
-            res("podtemplates", "podtemplate", "PodTemplate", true, all_verbs, vec![]),
+            res(
+                "podtemplates",
+                "podtemplate",
+                "PodTemplate",
+                true,
+                all_verbs,
+                vec![],
+            ),
         ],
         "admissionregistration.k8s.io" => vec![
             res(
@@ -902,7 +933,14 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
             ),
         ],
         "networking.k8s.io" => vec![
-            res("networkpolicies", "networkpolicy", "NetworkPolicy", true, all_verbs, vec![]),
+            res(
+                "networkpolicies",
+                "networkpolicy",
+                "NetworkPolicy",
+                true,
+                all_verbs,
+                vec![],
+            ),
             res(
                 "ingresses",
                 "ingress",
@@ -911,12 +949,33 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                 all_verbs,
                 vec![sub("status", "Ingress", status_verbs)],
             ),
-            res("ingressclasses", "ingressclass", "IngressClass", false, all_verbs, vec![]),
+            res(
+                "ingressclasses",
+                "ingressclass",
+                "IngressClass",
+                false,
+                all_verbs,
+                vec![],
+            ),
         ],
         "rbac.authorization.k8s.io" => vec![
             res("roles", "role", "Role", true, all_verbs, vec![]),
-            res("rolebindings", "rolebinding", "RoleBinding", true, all_verbs, vec![]),
-            res("clusterroles", "clusterrole", "ClusterRole", false, all_verbs, vec![]),
+            res(
+                "rolebindings",
+                "rolebinding",
+                "RoleBinding",
+                true,
+                all_verbs,
+                vec![],
+            ),
+            res(
+                "clusterroles",
+                "clusterrole",
+                "ClusterRole",
+                false,
+                all_verbs,
+                vec![],
+            ),
             res(
                 "clusterrolebindings",
                 "clusterrolebinding",
@@ -927,7 +986,14 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
             ),
         ],
         "storage.k8s.io" => vec![
-            res("storageclasses", "storageclass", "StorageClass", false, all_verbs, vec![]),
+            res(
+                "storageclasses",
+                "storageclass",
+                "StorageClass",
+                false,
+                all_verbs,
+                vec![],
+            ),
             res(
                 "volumeattachments",
                 "volumeattachment",
@@ -937,7 +1003,14 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                 vec![sub("status", "VolumeAttachment", status_verbs)],
             ),
             res("csinodes", "csinode", "CSINode", false, all_verbs, vec![]),
-            res("csidrivers", "csidriver", "CSIDriver", false, all_verbs, vec![]),
+            res(
+                "csidrivers",
+                "csidriver",
+                "CSIDriver",
+                false,
+                all_verbs,
+                vec![],
+            ),
             res(
                 "csistoragecapacities",
                 "csistoragecapacity",
@@ -972,7 +1045,11 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
             all_verbs,
             vec![
                 sub("status", "CertificateSigningRequest", status_verbs),
-                sub("approval", "CertificateSigningRequest", &["get", "patch", "update"]),
+                sub(
+                    "approval",
+                    "CertificateSigningRequest",
+                    &["get", "patch", "update"],
+                ),
             ],
         )],
         "discovery.k8s.io" => vec![res(
@@ -1069,7 +1146,14 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
         ],
         "events.k8s.io" => vec![res("events", "event", "Event", true, all_verbs, vec![])],
         "snapshot.storage.k8s.io" => vec![
-            res("volumesnapshots", "volumesnapshot", "VolumeSnapshot", true, all_verbs, vec![]),
+            res(
+                "volumesnapshots",
+                "volumesnapshot",
+                "VolumeSnapshot",
+                true,
+                all_verbs,
+                vec![],
+            ),
             res(
                 "volumesnapshotclasses",
                 "volumesnapshotclass",
@@ -1088,7 +1172,14 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
             ),
         ],
         "metrics.k8s.io" => vec![
-            res("nodes", "node", "NodeMetrics", false, &["get", "list"], vec![]),
+            res(
+                "nodes",
+                "node",
+                "NodeMetrics",
+                false,
+                &["get", "list"],
+                vec![],
+            ),
             res("pods", "pod", "PodMetrics", true, &["get", "list"], vec![]),
         ],
         "custom.metrics.k8s.io" => vec![],
@@ -1109,8 +1200,22 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                 all_verbs,
                 vec![],
             ),
-            res("resourceslices", "resourceslice", "ResourceSlice", false, all_verbs, vec![]),
-            res("deviceclasses", "deviceclass", "DeviceClass", false, all_verbs, vec![]),
+            res(
+                "resourceslices",
+                "resourceslice",
+                "ResourceSlice",
+                false,
+                all_verbs,
+                vec![],
+            ),
+            res(
+                "deviceclasses",
+                "deviceclass",
+                "DeviceClass",
+                false,
+                all_verbs,
+                vec![],
+            ),
         ],
         "apiregistration.k8s.io" => vec![res(
             "apiservices",

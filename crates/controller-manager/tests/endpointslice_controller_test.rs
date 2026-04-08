@@ -635,10 +635,7 @@ async fn test_endpointslice_multi_port_multi_ip_service() {
         .iter()
         .flat_map(|ep| ep.addresses.iter().map(|a| a.as_str()))
         .collect();
-    assert!(
-        ips.contains(&"10.244.0.100"),
-        "Should contain first pod IP"
-    );
+    assert!(ips.contains(&"10.244.0.100"), "Should contain first pod IP");
     assert!(
         ips.contains(&"10.244.0.101"),
         "Should contain second pod IP"
@@ -672,8 +669,7 @@ async fn test_externally_created_endpointslice_not_deleted() {
     let controller = EndpointSliceController::new(storage.clone());
 
     // Create an EndpointSlice directly (simulating what conformance tests do)
-    let mut external_slice =
-        EndpointSlice::new("my-svc-external-abc12", "IPv4");
+    let mut external_slice = EndpointSlice::new("my-svc-external-abc12", "IPv4");
     external_slice.metadata.namespace = Some("test-ns".to_string());
     let labels = external_slice
         .metadata
@@ -684,26 +680,32 @@ async fn test_externally_created_endpointslice_not_deleted() {
         "my-svc".to_string(),
     );
     // Note: no "endpointslice.kubernetes.io/managed-by" label set to our controller
-    external_slice.endpoints.push(rusternetes_common::resources::endpointslice::Endpoint {
-        addresses: vec!["10.244.1.50".to_string()],
-        conditions: Some(rusternetes_common::resources::endpointslice::EndpointConditions {
-            ready: Some(true),
-            serving: Some(true),
-            terminating: Some(false),
-        }),
-        hostname: None,
-        target_ref: None,
-        node_name: None,
-        zone: None,
-        hints: None,
-        deprecated_topology: None,
-    });
-    external_slice.ports.push(rusternetes_common::resources::endpointslice::EndpointPort {
-        name: Some("http".to_string()),
-        port: Some(80),
-        protocol: Some("TCP".to_string()),
-        app_protocol: None,
-    });
+    external_slice
+        .endpoints
+        .push(rusternetes_common::resources::endpointslice::Endpoint {
+            addresses: vec!["10.244.1.50".to_string()],
+            conditions: Some(
+                rusternetes_common::resources::endpointslice::EndpointConditions {
+                    ready: Some(true),
+                    serving: Some(true),
+                    terminating: Some(false),
+                },
+            ),
+            hostname: None,
+            target_ref: None,
+            node_name: None,
+            zone: None,
+            hints: None,
+            deprecated_topology: None,
+        });
+    external_slice
+        .ports
+        .push(rusternetes_common::resources::endpointslice::EndpointPort {
+            name: Some("http".to_string()),
+            port: Some(80),
+            protocol: Some("TCP".to_string()),
+            app_protocol: None,
+        });
 
     storage
         .create(

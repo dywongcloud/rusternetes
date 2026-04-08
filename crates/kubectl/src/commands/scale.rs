@@ -24,10 +24,7 @@ mod tests {
             "/apis/apps/v1/namespaces/{}/statefulsets/{}/scale",
             "prod", "db"
         );
-        assert_eq!(
-            path,
-            "/apis/apps/v1/namespaces/prod/statefulsets/db/scale"
-        );
+        assert_eq!(path, "/apis/apps/v1/namespaces/prod/statefulsets/db/scale");
     }
 
     #[test]

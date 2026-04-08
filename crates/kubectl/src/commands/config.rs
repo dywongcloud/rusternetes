@@ -1,4 +1,6 @@
-use crate::kubeconfig::{Cluster, ClusterEntry, Context, ContextEntry, KubeConfig, User, UserEntry};
+use crate::kubeconfig::{
+    Cluster, ClusterEntry, Context, ContextEntry, KubeConfig, User, UserEntry,
+};
 use crate::types::ConfigCommands;
 use anyhow::Result;
 use std::path::PathBuf;
@@ -16,7 +18,10 @@ pub async fn execute(command: ConfigCommands, kubeconfig_path: Option<&str>) -> 
             let config = KubeConfig::load_from_file(&config_path)?;
             println!("{}", config.current_context);
         }
-        ConfigCommands::View { minify: _, flatten: _ } => {
+        ConfigCommands::View {
+            minify: _,
+            flatten: _,
+        } => {
             let config = KubeConfig::load_from_file(&config_path)?;
             let yaml = serde_yaml::to_string(&config)?;
             println!("{}", yaml);
@@ -218,7 +223,11 @@ pub async fn execute(command: ConfigCommands, kubeconfig_path: Option<&str>) -> 
             }
             let yaml = serde_yaml::to_string(&config)?;
             std::fs::write(&config_path, yaml)?;
-            println!("deleted cluster \"{}\" from {}", name, config_path.display());
+            println!(
+                "deleted cluster \"{}\" from {}",
+                name,
+                config_path.display()
+            );
         }
         ConfigCommands::DeleteContext { name } => {
             let mut config = KubeConfig::load_from_file(&config_path)?;
@@ -272,10 +281,7 @@ pub async fn execute(command: ConfigCommands, kubeconfig_path: Option<&str>) -> 
                 }
             }
             if !found {
-                anyhow::bail!(
-                    "cannot rename context \"{}\": context not found",
-                    old_name
-                );
+                anyhow::bail!("cannot rename context \"{}\": context not found", old_name);
             }
             if config.current_context == old_name {
                 config.current_context = new_name.clone();
@@ -662,11 +668,7 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let user = config
-            .users
-            .iter()
-            .find(|u| u.name == "new-user")
-            .unwrap();
+        let user = config.users.iter().find(|u| u.name == "new-user").unwrap();
         assert_eq!(user.user.token, Some("my-token".to_string()));
     }
 
@@ -713,11 +715,7 @@ users:
     #[tokio::test]
     async fn test_get_clusters() {
         let (_f, path) = create_test_kubeconfig();
-        let result = execute(
-            ConfigCommands::GetClusters {},
-            Some(path.to_str().unwrap()),
-        )
-        .await;
+        let result = execute(ConfigCommands::GetClusters {}, Some(path.to_str().unwrap())).await;
         assert!(result.is_ok());
     }
 
@@ -750,7 +748,11 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let ctx = config.contexts.iter().find(|c| c.name == "test-ctx").unwrap();
+        let ctx = config
+            .contexts
+            .iter()
+            .find(|c| c.name == "test-ctx")
+            .unwrap();
         assert_eq!(ctx.context.namespace, "my-ns");
     }
 
@@ -767,7 +769,11 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let ctx = config.contexts.iter().find(|c| c.name == "test-ctx").unwrap();
+        let ctx = config
+            .contexts
+            .iter()
+            .find(|c| c.name == "test-ctx")
+            .unwrap();
         assert_eq!(ctx.context.cluster, "new-cluster");
     }
 
@@ -784,7 +790,11 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let ctx = config.contexts.iter().find(|c| c.name == "test-ctx").unwrap();
+        let ctx = config
+            .contexts
+            .iter()
+            .find(|c| c.name == "test-ctx")
+            .unwrap();
         assert_eq!(ctx.context.user, "new-user");
     }
 
@@ -801,7 +811,11 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let cluster = config.clusters.iter().find(|c| c.name == "test-cluster").unwrap();
+        let cluster = config
+            .clusters
+            .iter()
+            .find(|c| c.name == "test-cluster")
+            .unwrap();
         assert_eq!(cluster.cluster.server, "https://new-server:6443");
     }
 
@@ -845,7 +859,11 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let ctx = config.contexts.iter().find(|c| c.name == "test-ctx").unwrap();
+        let ctx = config
+            .contexts
+            .iter()
+            .find(|c| c.name == "test-ctx")
+            .unwrap();
         assert_eq!(ctx.context.namespace, "");
     }
 
@@ -861,7 +879,11 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let ctx = config.contexts.iter().find(|c| c.name == "test-ctx").unwrap();
+        let ctx = config
+            .contexts
+            .iter()
+            .find(|c| c.name == "test-ctx")
+            .unwrap();
         assert_eq!(ctx.context.cluster, "");
     }
 
@@ -877,7 +899,11 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let ctx = config.contexts.iter().find(|c| c.name == "test-ctx").unwrap();
+        let ctx = config
+            .contexts
+            .iter()
+            .find(|c| c.name == "test-ctx")
+            .unwrap();
         assert_eq!(ctx.context.user, "");
     }
 
@@ -893,7 +919,11 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let cluster = config.clusters.iter().find(|c| c.name == "test-cluster").unwrap();
+        let cluster = config
+            .clusters
+            .iter()
+            .find(|c| c.name == "test-cluster")
+            .unwrap();
         assert_eq!(cluster.cluster.server, "");
     }
 
@@ -1006,7 +1036,11 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let cluster = config.clusters.iter().find(|c| c.name == "test-cluster").unwrap();
+        let cluster = config
+            .clusters
+            .iter()
+            .find(|c| c.name == "test-cluster")
+            .unwrap();
         assert_eq!(cluster.cluster.server, "https://updated:9443");
     }
 
@@ -1025,7 +1059,11 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let ctx = config.contexts.iter().find(|c| c.name == "test-ctx").unwrap();
+        let ctx = config
+            .contexts
+            .iter()
+            .find(|c| c.name == "test-ctx")
+            .unwrap();
         assert_eq!(ctx.context.namespace, "updated-ns");
         // Original cluster should be preserved
         assert_eq!(ctx.context.cluster, "test-cluster");
@@ -1070,10 +1108,20 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let cluster = config.clusters.iter().find(|c| c.name == "new-cluster-full").unwrap();
+        let cluster = config
+            .clusters
+            .iter()
+            .find(|c| c.name == "new-cluster-full")
+            .unwrap();
         assert_eq!(cluster.cluster.server, "https://full:6443");
-        assert_eq!(cluster.cluster.certificate_authority, Some("/path/to/ca.crt".to_string()));
-        assert_eq!(cluster.cluster.certificate_authority_data, Some("base64data".to_string()));
+        assert_eq!(
+            cluster.cluster.certificate_authority,
+            Some("/path/to/ca.crt".to_string())
+        );
+        assert_eq!(
+            cluster.cluster.certificate_authority_data,
+            Some("base64data".to_string())
+        );
         assert_eq!(cluster.cluster.insecure_skip_tls_verify, Some(true));
     }
 
@@ -1099,7 +1147,10 @@ users:
         let user = config.users.iter().find(|u| u.name == "cert-user").unwrap();
         assert_eq!(user.user.username, Some("admin".to_string()));
         assert_eq!(user.user.password, Some("secret".to_string()));
-        assert_eq!(user.user.client_certificate, Some("/path/cert.pem".to_string()));
+        assert_eq!(
+            user.user.client_certificate,
+            Some("/path/cert.pem".to_string())
+        );
         assert_eq!(user.user.client_key, Some("/path/key.pem".to_string()));
     }
 
@@ -1137,7 +1188,10 @@ users:
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
         let user = config.users.iter().find(|u| u.name == "data-user").unwrap();
-        assert_eq!(user.user.client_certificate_data, Some("Y2VydC1kYXRh".to_string()));
+        assert_eq!(
+            user.user.client_certificate_data,
+            Some("Y2VydC1kYXRh".to_string())
+        );
         assert_eq!(user.user.client_key_data, Some("a2V5LWRhdGE=".to_string()));
     }
 
@@ -1156,7 +1210,11 @@ users:
         .await
         .unwrap();
         let config = KubeConfig::load_from_file(&path).unwrap();
-        let ctx = config.contexts.iter().find(|c| c.name == "minimal-ctx").unwrap();
+        let ctx = config
+            .contexts
+            .iter()
+            .find(|c| c.name == "minimal-ctx")
+            .unwrap();
         assert_eq!(ctx.context.namespace, "default");
     }
 }

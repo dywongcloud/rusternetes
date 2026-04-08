@@ -128,10 +128,7 @@ impl<S: Storage> DeploymentController<S> {
                     .metadata
                     .annotations
                     .get_or_insert_with(std::collections::HashMap::new)
-                    .insert(
-                        "deployment.kubernetes.io/revision".to_string(),
-                        revision,
-                    );
+                    .insert("deployment.kubernetes.io/revision".to_string(), revision);
                 let key = build_key("deployments", Some(namespace), &deployment.metadata.name);
                 let _ = self.storage.update(&key, &updated).await;
             }

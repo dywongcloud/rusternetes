@@ -160,8 +160,7 @@ pub async fn get_swagger_spec(
                 let base_path = format!("/apis/{}/{}", group, ver);
 
                 if crd.spec.scope == ResourceScope::Namespaced {
-                    let ns_path =
-                        format!("{}/namespaces/{{namespace}}/{}", base_path, plural);
+                    let ns_path = format!("{}/namespaces/{{namespace}}/{}", base_path, plural);
                     let ns_item_path = format!("{}/{{name}}", ns_path);
                     paths.insert(
                         ns_path,

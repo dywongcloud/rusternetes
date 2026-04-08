@@ -192,7 +192,9 @@ impl<S: Storage> EventsController<S> {
                         cs.iter().any(|c| {
                             matches!(
                                 c.state,
-                                Some(rusternetes_common::resources::ContainerState::Terminated { .. })
+                                Some(
+                                    rusternetes_common::resources::ContainerState::Terminated { .. }
+                                )
                             )
                         })
                     }) {
@@ -451,11 +453,16 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let controller = EventsController::new(storage.clone(), 5);
 
-        let mut pod = create_test_pod("quick-pod", "default", "Succeeded", Some("node-1".to_string()));
+        let mut pod = create_test_pod(
+            "quick-pod",
+            "default",
+            "Succeeded",
+            Some("node-1".to_string()),
+        );
         if let Some(ref mut status) = pod.status {
             status.phase = Some(Phase::Succeeded);
-            status.container_statuses = Some(vec![
-                rusternetes_common::resources::ContainerStatus {
+            status.container_statuses =
+                Some(vec![rusternetes_common::resources::ContainerStatus {
                     name: "main".to_string(),
                     ready: false,
                     restart_count: 0,
@@ -479,8 +486,7 @@ mod tests {
                     user: None,
                     volume_mounts: None,
                     stop_signal: None,
-                },
-            ]);
+                }]);
         }
         storage
             .create("/registry/pods/default/quick-pod", &pod)
@@ -489,15 +495,16 @@ mod tests {
 
         controller.reconcile_all().await.unwrap();
 
-        let events: Vec<Event> = storage
-            .list("/registry/events/default/")
-            .await
-            .unwrap();
+        let events: Vec<Event> = storage.list("/registry/events/default/").await.unwrap();
 
         let has_started = events.iter().any(|e| e.reason == "Started");
         let has_completed = events.iter().any(|e| e.reason == "Completed");
 
-        assert!(has_started, "Succeeded pod should have Started event. Events: {:?}", events.iter().map(|e| &e.reason).collect::<Vec<_>>());
+        assert!(
+            has_started,
+            "Succeeded pod should have Started event. Events: {:?}",
+            events.iter().map(|e| &e.reason).collect::<Vec<_>>()
+        );
         assert!(has_completed, "Succeeded pod should have Completed event");
     }
 
@@ -515,8 +522,8 @@ mod tests {
             status.phase = Some(Phase::Failed);
             status.reason = Some("Error".to_string());
             status.message = Some("Container exited with error".to_string());
-            status.container_statuses = Some(vec![
-                rusternetes_common::resources::ContainerStatus {
+            status.container_statuses =
+                Some(vec![rusternetes_common::resources::ContainerStatus {
                     name: "main".to_string(),
                     ready: false,
                     restart_count: 0,
@@ -540,8 +547,7 @@ mod tests {
                     user: None,
                     volume_mounts: None,
                     stop_signal: None,
-                },
-            ]);
+                }]);
         }
         storage
             .create("/registry/pods/default/fail-pod", &pod)
@@ -550,15 +556,16 @@ mod tests {
 
         controller.reconcile_all().await.unwrap();
 
-        let events: Vec<Event> = storage
-            .list("/registry/events/default/")
-            .await
-            .unwrap();
+        let events: Vec<Event> = storage.list("/registry/events/default/").await.unwrap();
 
         let has_started = events.iter().any(|e| e.reason == "Started");
         let has_failed = events.iter().any(|e| e.reason == "Failed");
 
-        assert!(has_started, "Failed pod with terminated containers should have Started event. Events: {:?}", events.iter().map(|e| &e.reason).collect::<Vec<_>>());
+        assert!(
+            has_started,
+            "Failed pod with terminated containers should have Started event. Events: {:?}",
+            events.iter().map(|e| &e.reason).collect::<Vec<_>>()
+        );
         assert!(has_failed, "Failed pod should have Failed event");
     }
 }

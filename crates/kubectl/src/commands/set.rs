@@ -163,10 +163,7 @@ pub async fn execute_image(
         if let Some((container, image)) = ci.split_once('=') {
             image_updates.push((container.to_string(), image.to_string()));
         } else {
-            anyhow::bail!(
-                "Invalid image format: '{}'. Expected CONTAINER=IMAGE",
-                ci
-            );
+            anyhow::bail!("Invalid image format: '{}'. Expected CONTAINER=IMAGE", ci);
         }
     }
 
@@ -182,7 +179,11 @@ pub async fn execute_image(
         .context("Failed to get resource")?;
 
     // Find the containers array path (handles both pod and pod template specs)
-    let containers = if current.get("spec").and_then(|s| s.get("template")).is_some() {
+    let containers = if current
+        .get("spec")
+        .and_then(|s| s.get("template"))
+        .is_some()
+    {
         // Deployment/StatefulSet/DaemonSet/ReplicaSet/Job/CronJob
         current["spec"]["template"]["spec"]["containers"]
             .as_array()
@@ -230,7 +231,11 @@ pub async fn execute_image(
     }
 
     // Build patch based on resource type
-    let patch_body = if current.get("spec").and_then(|s| s.get("template")).is_some() {
+    let patch_body = if current
+        .get("spec")
+        .and_then(|s| s.get("template"))
+        .is_some()
+    {
         json!({
             "spec": {
                 "template": {
@@ -249,11 +254,7 @@ pub async fn execute_image(
     };
 
     let _result: Value = client
-        .patch(
-            &path,
-            &patch_body,
-            "application/strategic-merge-patch+json",
-        )
+        .patch(&path, &patch_body, "application/strategic-merge-patch+json")
         .await
         .context("Failed to update image")?;
 
@@ -295,7 +296,11 @@ pub async fn execute_env(
         .map_err(|e| anyhow::anyhow!("{}", e))
         .context("Failed to get resource")?;
 
-    let containers = if current.get("spec").and_then(|s| s.get("template")).is_some() {
+    let containers = if current
+        .get("spec")
+        .and_then(|s| s.get("template"))
+        .is_some()
+    {
         current["spec"]["template"]["spec"]["containers"]
             .as_array()
             .cloned()
@@ -338,10 +343,7 @@ pub async fn execute_env(
         } else if let Some((key, value)) = ev.split_once('=') {
             to_add.push((key.to_string(), value.to_string()));
         } else {
-            anyhow::bail!(
-                "Invalid env format: '{}'. Expected KEY=VALUE or KEY-",
-                ev
-            );
+            anyhow::bail!("Invalid env format: '{}'. Expected KEY=VALUE or KEY-", ev);
         }
     }
 
@@ -386,7 +388,11 @@ pub async fn execute_env(
         }));
     }
 
-    let patch_body = if current.get("spec").and_then(|s| s.get("template")).is_some() {
+    let patch_body = if current
+        .get("spec")
+        .and_then(|s| s.get("template"))
+        .is_some()
+    {
         json!({
             "spec": {
                 "template": {
@@ -405,11 +411,7 @@ pub async fn execute_env(
     };
 
     let _result: Value = client
-        .patch(
-            &path,
-            &patch_body,
-            "application/strategic-merge-patch+json",
-        )
+        .patch(&path, &patch_body, "application/strategic-merge-patch+json")
         .await
         .context("Failed to update environment variables")?;
 
@@ -439,7 +441,11 @@ pub async fn execute_resources(
         .map_err(|e| anyhow::anyhow!("{}", e))
         .context("Failed to get resource")?;
 
-    let containers = if current.get("spec").and_then(|s| s.get("template")).is_some() {
+    let containers = if current
+        .get("spec")
+        .and_then(|s| s.get("template"))
+        .is_some()
+    {
         current["spec"]["template"]["spec"]["containers"]
             .as_array()
             .cloned()
@@ -482,7 +488,11 @@ pub async fn execute_resources(
         }));
     }
 
-    let patch_body = if current.get("spec").and_then(|s| s.get("template")).is_some() {
+    let patch_body = if current
+        .get("spec")
+        .and_then(|s| s.get("template"))
+        .is_some()
+    {
         json!({
             "spec": {
                 "template": {
@@ -501,11 +511,7 @@ pub async fn execute_resources(
     };
 
     let _result: Value = client
-        .patch(
-            &path,
-            &patch_body,
-            "application/strategic-merge-patch+json",
-        )
+        .patch(&path, &patch_body, "application/strategic-merge-patch+json")
         .await
         .context("Failed to update resource requirements")?;
 
@@ -554,11 +560,7 @@ pub async fn execute_selector(
                 }
             });
             let _result: Value = client
-                .patch(
-                    &path,
-                    &patch_body,
-                    "application/strategic-merge-patch+json",
-                )
+                .patch(&path, &patch_body, "application/strategic-merge-patch+json")
                 .await
                 .context("Failed to update selector")?;
             println!("{}/{} selector updated", resource_type, name);
@@ -578,11 +580,7 @@ pub async fn execute_selector(
     });
 
     let _result: Value = client
-        .patch(
-            &path,
-            &patch_body,
-            "application/strategic-merge-patch+json",
-        )
+        .patch(&path, &patch_body, "application/strategic-merge-patch+json")
         .await
         .context("Failed to update selector")?;
 
@@ -610,7 +608,11 @@ pub async fn execute_serviceaccount(
         .map_err(|e| anyhow::anyhow!("{}", e))
         .context("Failed to get resource")?;
 
-    let patch_body = if current.get("spec").and_then(|s| s.get("template")).is_some() {
+    let patch_body = if current
+        .get("spec")
+        .and_then(|s| s.get("template"))
+        .is_some()
+    {
         json!({
             "spec": {
                 "template": {
@@ -629,11 +631,7 @@ pub async fn execute_serviceaccount(
     };
 
     let _result: Value = client
-        .patch(
-            &path,
-            &patch_body,
-            "application/strategic-merge-patch+json",
-        )
+        .patch(&path, &patch_body, "application/strategic-merge-patch+json")
         .await
         .context("Failed to update serviceAccountName")?;
 
@@ -748,11 +746,7 @@ pub async fn execute_subject(
     });
 
     let _result: Value = client
-        .patch(
-            &path,
-            &patch_body,
-            "application/strategic-merge-patch+json",
-        )
+        .patch(&path, &patch_body, "application/strategic-merge-patch+json")
         .await
         .context("Failed to update subjects")?;
 
@@ -762,9 +756,7 @@ pub async fn execute_subject(
 }
 
 /// Parse a resource spec string like "cpu=200m,memory=512Mi" into a map.
-fn parse_resource_spec(
-    spec: Option<&str>,
-) -> Result<std::collections::HashMap<String, String>> {
+fn parse_resource_spec(spec: Option<&str>) -> Result<std::collections::HashMap<String, String>> {
     let mut map = std::collections::HashMap::new();
     if let Some(s) = spec {
         for pair in s.split(',') {
@@ -820,10 +812,7 @@ mod tests {
         assert_eq!(path, "/api/v1/namespaces/kube-system/pods/mypod");
 
         let (path, _) = resolve_resource_path("sts", "myapp", "default").unwrap();
-        assert_eq!(
-            path,
-            "/apis/apps/v1/namespaces/default/statefulsets/myapp"
-        );
+        assert_eq!(path, "/apis/apps/v1/namespaces/default/statefulsets/myapp");
     }
 
     #[test]
@@ -834,9 +823,7 @@ mod tests {
     #[test]
     fn test_image_patch_construction_for_deployment() {
         // Simulate building a strategic merge patch for image update on a deployment
-        let patch_containers = vec![
-            json!({"name": "nginx", "image": "nginx:1.21"}),
-        ];
+        let patch_containers = vec![json!({"name": "nginx", "image": "nginx:1.21"})];
 
         let patch_body = json!({
             "spec": {
@@ -930,14 +917,8 @@ mod tests {
             "kind": "User",
             "name": "admin",
         });
-        assert_eq!(
-            user_subject["kind"].as_str().unwrap(),
-            "User"
-        );
-        assert_eq!(
-            user_subject["name"].as_str().unwrap(),
-            "admin"
-        );
+        assert_eq!(user_subject["kind"].as_str().unwrap(), "User");
+        assert_eq!(user_subject["name"].as_str().unwrap(), "admin");
     }
 
     #[test]
@@ -984,7 +965,8 @@ mod tests {
         let (_, res_name) = resolve_resource_path("replicaset", "rs1", "default").unwrap();
         assert_eq!(res_name, "replicasets");
 
-        let (_, res_name) = resolve_resource_path("replicationcontroller", "rc1", "default").unwrap();
+        let (_, res_name) =
+            resolve_resource_path("replicationcontroller", "rc1", "default").unwrap();
         assert_eq!(res_name, "replicationcontrollers");
 
         let (_, res_name) = resolve_resource_path("cronjob", "cj1", "default").unwrap();
@@ -1091,9 +1073,7 @@ mod tests {
     #[test]
     fn test_image_patch_construction_for_pod() {
         // Pod has no template — patch goes directly under spec
-        let patch_containers = vec![
-            json!({"name": "app", "image": "myapp:2.0"}),
-        ];
+        let patch_containers = vec![json!({"name": "app", "image": "myapp:2.0"})];
         let patch_body = json!({
             "spec": {
                 "containers": patch_containers,
@@ -1153,7 +1133,10 @@ mod tests {
         });
         assert_eq!(group_subject["kind"].as_str().unwrap(), "Group");
         assert_eq!(group_subject["name"].as_str().unwrap(), "developers");
-        assert_eq!(group_subject["apiGroup"].as_str().unwrap(), "rbac.authorization.k8s.io");
+        assert_eq!(
+            group_subject["apiGroup"].as_str().unwrap(),
+            "rbac.authorization.k8s.io"
+        );
     }
 
     #[test]
@@ -1218,7 +1201,10 @@ mod tests {
         )
         .await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid resource format"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid resource format"));
     }
 
     #[tokio::test]
@@ -1254,26 +1240,15 @@ mod tests {
     #[tokio::test]
     async fn test_execute_selector_returns_err_on_unreachable() {
         let client = make_test_client();
-        let result = execute_selector(
-            &client,
-            "service/web",
-            &["app=web".to_string()],
-            "default",
-        )
-        .await;
+        let result =
+            execute_selector(&client, "service/web", &["app=web".to_string()], "default").await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_execute_serviceaccount_returns_err_on_unreachable() {
         let client = make_test_client();
-        let result = execute_serviceaccount(
-            &client,
-            "deployment/web",
-            "my-sa",
-            "default",
-        )
-        .await;
+        let result = execute_serviceaccount(&client, "deployment/web", "my-sa", "default").await;
         assert!(result.is_err());
     }
 
@@ -1305,19 +1280,16 @@ mod tests {
         )
         .await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("set subject only supports"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("set subject only supports"));
     }
 
     #[tokio::test]
     async fn test_execute_image_no_container_images_returns_err() {
         let client = make_test_client();
-        let result = execute_image(
-            &client,
-            "deployment/nginx",
-            &[],
-            "default",
-        )
-        .await;
+        let result = execute_image(&client, "deployment/nginx", &[], "default").await;
         // Empty container_images should fail (after fetching, but resource fetch fails first)
         assert!(result.is_err());
     }

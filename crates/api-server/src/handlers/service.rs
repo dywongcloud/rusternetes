@@ -754,9 +754,7 @@ pub async fn deletecollection_services(
 
 #[cfg(test)]
 mod tests {
-    use rusternetes_common::resources::{
-        LoadBalancerStatus, Service, ServiceSpec, ServiceStatus,
-    };
+    use rusternetes_common::resources::{LoadBalancerStatus, Service, ServiceSpec, ServiceStatus};
 
     #[test]
     fn test_service_status_load_balancer_initialization() {

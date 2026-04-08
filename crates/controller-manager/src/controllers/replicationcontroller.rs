@@ -851,10 +851,7 @@ mod tests {
             .find(|c| c.condition_type == "ReplicaFailure")
             .expect("RC should have a ReplicaFailure condition");
         assert_eq!(failure_condition.status, "True");
-        assert_eq!(
-            failure_condition.reason.as_deref(),
-            Some("FailedCreate")
-        );
+        assert_eq!(failure_condition.reason.as_deref(), Some("FailedCreate"));
         assert!(
             failure_condition
                 .message
@@ -945,7 +942,10 @@ mod tests {
 
         // Verify pod was actually created
         let pods: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-        assert!(!pods.is_empty(), "Pod should be created after quota removed");
+        assert!(
+            !pods.is_empty(),
+            "Pod should be created after quota removed"
+        );
     }
 
     #[tokio::test]

@@ -55,9 +55,7 @@ pub async fn check_resource_quota<S: rusternetes_storage::Storage>(
                                 .pointer("/status/phase")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("");
-                            let terminating = p
-                                .pointer("/metadata/deletionTimestamp")
-                                .is_some();
+                            let terminating = p.pointer("/metadata/deletionTimestamp").is_some();
                             !terminating && phase != "Failed" && phase != "Succeeded"
                         })
                         .count();

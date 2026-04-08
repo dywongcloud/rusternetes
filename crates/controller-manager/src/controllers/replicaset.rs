@@ -651,7 +651,10 @@ mod tests {
             .metadata
             .owner_references
             .as_ref()
-            .map(|refs| refs.iter().any(|r| r.kind == "ReplicaSet" && r.name == "my-rs"))
+            .map(|refs| {
+                refs.iter()
+                    .any(|r| r.kind == "ReplicaSet" && r.name == "my-rs")
+            })
             .unwrap_or(false);
         assert!(
             !has_rs_owner,

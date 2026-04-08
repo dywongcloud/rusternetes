@@ -479,14 +479,8 @@ async fn test_cluster_scoped_status_merge_patch() {
     assert_eq!(final_resource["spec"]["group"], "example.com");
 
     // acceptedNames and storedVersions should be preserved (not overwritten)
-    assert_eq!(
-        final_resource["status"]["acceptedNames"]["kind"],
-        "Widget"
-    );
-    assert_eq!(
-        final_resource["status"]["storedVersions"][0],
-        "v1"
-    );
+    assert_eq!(final_resource["status"]["acceptedNames"]["kind"], "Widget");
+    assert_eq!(final_resource["status"]["storedVersions"][0], "v1");
 
     // conditions should be replaced by the patch value
     let conditions = final_resource["status"]["conditions"]

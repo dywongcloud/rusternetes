@@ -15,10 +15,7 @@ pub async fn execute(
     stdin: bool,
 ) -> Result<()> {
     // Build the attach URL path
-    let mut url_path = format!(
-        "/api/v1/namespaces/{}/pods/{}/attach",
-        namespace, pod_name
-    );
+    let mut url_path = format!("/api/v1/namespaces/{}/pods/{}/attach", namespace, pod_name);
 
     // Add query parameters
     let mut query_params = vec![];
@@ -61,10 +58,7 @@ mod tests {
         let stdin = true;
         let tty = true;
 
-        let mut url_path = format!(
-            "/api/v1/namespaces/{}/pods/{}/attach",
-            namespace, pod_name
-        );
+        let mut url_path = format!("/api/v1/namespaces/{}/pods/{}/attach", namespace, pod_name);
 
         let mut query_params = vec![];
         if let Some(cont) = container {
@@ -94,10 +88,7 @@ mod tests {
         let namespace = "kube-system";
         let pod_name = "coredns";
 
-        let mut url_path = format!(
-            "/api/v1/namespaces/{}/pods/{}/attach",
-            namespace, pod_name
-        );
+        let mut url_path = format!("/api/v1/namespaces/{}/pods/{}/attach", namespace, pod_name);
 
         let mut query_params = vec![];
         query_params.push("stdout=true".to_string());
@@ -119,10 +110,7 @@ mod tests {
         let namespace = "default";
         let pod_name = "interactive";
 
-        let mut url_path = format!(
-            "/api/v1/namespaces/{}/pods/{}/attach",
-            namespace, pod_name
-        );
+        let mut url_path = format!("/api/v1/namespaces/{}/pods/{}/attach", namespace, pod_name);
 
         let mut query_params = vec![];
         query_params.push("stdout=true".to_string());

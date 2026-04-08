@@ -1217,10 +1217,8 @@ impl ContainerRuntime {
                     let mode = meta.permissions().mode();
                     let owner_bits = (mode >> 6) & 0o7;
                     let new_mode = (mode & !0o070) | (owner_bits << 3) | 0o2000;
-                    let _ = std::fs::set_permissions(
-                        path,
-                        std::fs::Permissions::from_mode(new_mode),
-                    );
+                    let _ =
+                        std::fs::set_permissions(path, std::fs::Permissions::from_mode(new_mode));
                 }
             }
             info!(
@@ -4374,93 +4372,95 @@ impl ContainerRuntime {
                 .inspect_container(&container_name, None::<InspectContainerOptions>)
                 .await;
 
-            let (state, container_id, image_id): (ContainerState, Option<String>, Option<String>) = match container_state_info
-            {
-                Ok(inspect) => {
-                    let ds = inspect.state.unwrap_or_default();
-                    let cid = inspect.id.clone().map(|id| format!("docker://{}", id));
-                    let iid = inspect.image.clone().map(|img| {
-                        if img.starts_with("sha256:") {
-                            format!("docker-pullable://{}", img)
-                        } else {
-                            img
-                        }
-                    });
-                    let running = ds.running.unwrap_or(false);
-
-                    if running {
-                        (
-                            ContainerState::Running {
-                                started_at: ds.started_at,
-                            },
-                            cid,
-                            iid,
-                        )
-                    } else if ds.finished_at.is_some()
-                        || matches!(
-                            ds.status,
-                            Some(bollard::secret::ContainerStateStatusEnum::EXITED)
-                        )
-                    {
-                        let code = ds.exit_code.unwrap_or(0) as i32;
-                        let term_msg = self.read_termination_message(&container_name, ic, code as i64).await;
-                        let terminated = ContainerState::Terminated {
-                            exit_code: code,
-                            signal: None,
-                            reason: Some(if code == 0 {
-                                "Completed".to_string()
+            let (state, container_id, image_id): (ContainerState, Option<String>, Option<String>) =
+                match container_state_info {
+                    Ok(inspect) => {
+                        let ds = inspect.state.unwrap_or_default();
+                        let cid = inspect.id.clone().map(|id| format!("docker://{}", id));
+                        let iid = inspect.image.clone().map(|img| {
+                            if img.starts_with("sha256:") {
+                                format!("docker-pullable://{}", img)
                             } else {
-                                ds.error
-                                    .clone()
-                                    .filter(|e| !e.is_empty())
-                                    .unwrap_or_else(|| "Error".to_string())
-                            }),
-                            message: term_msg,
-                            started_at: ds.started_at.clone(),
-                            finished_at: ds.finished_at.clone(),
-                            container_id: cid.clone(),
-                        };
-                        // For non-zero exit with restartPolicy=Always, show CrashLoopBackOff
-                        let restart_always = pod
-                            .spec
-                            .as_ref()
-                            .and_then(|s| s.restart_policy.as_deref())
-                            .unwrap_or("Always")
-                            == "Always";
-                        if code != 0 && restart_always {
-                            // Store terminated as lastState, show Waiting/CrashLoopBackOff as current
-                            // We'll handle lastState below
-                            (ContainerState::Waiting {
+                                img
+                            }
+                        });
+                        let running = ds.running.unwrap_or(false);
+
+                        if running {
+                            (
+                                ContainerState::Running {
+                                    started_at: ds.started_at,
+                                },
+                                cid,
+                                iid,
+                            )
+                        } else if ds.finished_at.is_some()
+                            || matches!(
+                                ds.status,
+                                Some(bollard::secret::ContainerStateStatusEnum::EXITED)
+                            )
+                        {
+                            let code = ds.exit_code.unwrap_or(0) as i32;
+                            let term_msg = self
+                                .read_termination_message(&container_name, ic, code as i64)
+                                .await;
+                            let terminated = ContainerState::Terminated {
+                                exit_code: code,
+                                signal: None,
+                                reason: Some(if code == 0 {
+                                    "Completed".to_string()
+                                } else {
+                                    ds.error
+                                        .clone()
+                                        .filter(|e| !e.is_empty())
+                                        .unwrap_or_else(|| "Error".to_string())
+                                }),
+                                message: term_msg,
+                                started_at: ds.started_at.clone(),
+                                finished_at: ds.finished_at.clone(),
+                                container_id: cid.clone(),
+                            };
+                            // For non-zero exit with restartPolicy=Always, show CrashLoopBackOff
+                            let restart_always = pod
+                                .spec
+                                .as_ref()
+                                .and_then(|s| s.restart_policy.as_deref())
+                                .unwrap_or("Always")
+                                == "Always";
+                            if code != 0 && restart_always {
+                                // Store terminated as lastState, show Waiting/CrashLoopBackOff as current
+                                // We'll handle lastState below
+                                (ContainerState::Waiting {
                                 reason: Some("CrashLoopBackOff".to_string()),
                                 message: Some(format!("back-off restarting failed container init container \"{}\" exited with {}", ic.name, code)),
                             }, cid, iid)
+                            } else {
+                                (terminated, cid, iid)
+                            }
                         } else {
-                            (terminated, cid, iid)
+                            (
+                                ContainerState::Waiting {
+                                    reason: Some("PodInitializing".to_string()),
+                                    message: None,
+                                },
+                                cid,
+                                iid,
+                            )
                         }
-                    } else {
+                    }
+                    Err(_) => {
+                        // Container doesn't exist — it hasn't been created yet.
+                        // Report as Waiting, not Terminated.
                         (
                             ContainerState::Waiting {
                                 reason: Some("PodInitializing".to_string()),
                                 message: None,
                             },
-                            cid,
-                            iid,
+                            None,
+                            None,
                         )
                     }
-                }
-                Err(_) => {
-                    // Container doesn't exist — it hasn't been created yet.
-                    // Report as Waiting, not Terminated.
-                    (
-                        ContainerState::Waiting {
-                            reason: Some("PodInitializing".to_string()),
-                            message: None,
-                        },
-                        None,
-                        None,
-                    )
-                }
-            };
+                };
 
             let is_terminated = matches!(state, ContainerState::Terminated { .. });
 
@@ -4630,11 +4630,7 @@ impl ContainerRuntime {
                         .status
                         .as_ref()
                         .and_then(|s| s.container_statuses.as_ref())
-                        .and_then(|statuses| {
-                            statuses
-                                .iter()
-                                .find(|cs| cs.name == container.name)
-                        })
+                        .and_then(|statuses| statuses.iter().find(|cs| cs.name == container.name))
                         .and_then(|cs| cs.last_state.clone());
 
                     let container_state = if running {
@@ -4651,9 +4647,9 @@ impl ContainerRuntime {
                         // - "FallbackToLogsOnError": read from file first; if file is
                         //   empty AND exit != 0, fall back to container logs
                         // Both policies always read from the file when it has content.
-                        let termination_msg =
-                            self.read_termination_message(&container_name, container, exit_code as i64)
-                                .await;
+                        let termination_msg = self
+                            .read_termination_message(&container_name, container, exit_code as i64)
+                            .await;
 
                         // Container has exited (any exit code, including 0)
                         Some(ContainerState::Terminated {
@@ -8589,7 +8585,9 @@ mod tests {
     /// Helper: build a pod with a failing init container and an app container,
     /// then simulate what the kubelet does when start_pod returns an error
     /// due to init container failure, and return the resulting PodStatus.
-    fn simulate_init_container_failure(restart_policy: &str) -> rusternetes_common::resources::pod::PodStatus {
+    fn simulate_init_container_failure(
+        restart_policy: &str,
+    ) -> rusternetes_common::resources::pod::PodStatus {
         use rusternetes_common::resources::pod::PodStatus;
         use rusternetes_common::types::Phase;
 
@@ -8598,7 +8596,11 @@ mod tests {
         let init_container = Container {
             name: "init-fail".to_string(),
             image: "busybox:latest".to_string(),
-            command: Some(vec!["sh".to_string(), "-c".to_string(), "exit 1".to_string()]),
+            command: Some(vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "exit 1".to_string(),
+            ]),
             ..make_container("init-fail")
         };
 
@@ -8694,32 +8696,31 @@ mod tests {
         };
 
         // Build app container statuses as Waiting/PodInitializing
-        let app_container_statuses: Option<Vec<ContainerStatus>> =
-            pod.spec.as_ref().map(|spec| {
-                spec.containers
-                    .iter()
-                    .map(|c| ContainerStatus {
-                        name: c.name.clone(),
-                        ready: false,
-                        restart_count: 0,
-                        state: Some(ContainerState::Waiting {
-                            reason: Some("PodInitializing".to_string()),
-                            message: None,
-                        }),
-                        last_state: None,
-                        image: Some(c.image.clone()),
-                        image_id: None,
-                        container_id: None,
-                        started: Some(false),
-                        allocated_resources: None,
-                        allocated_resources_status: None,
-                        resources: None,
-                        user: None,
-                        volume_mounts: None,
-                        stop_signal: None,
-                    })
-                    .collect()
-            });
+        let app_container_statuses: Option<Vec<ContainerStatus>> = pod.spec.as_ref().map(|spec| {
+            spec.containers
+                .iter()
+                .map(|c| ContainerStatus {
+                    name: c.name.clone(),
+                    ready: false,
+                    restart_count: 0,
+                    state: Some(ContainerState::Waiting {
+                        reason: Some("PodInitializing".to_string()),
+                        message: None,
+                    }),
+                    last_state: None,
+                    image: Some(c.image.clone()),
+                    image_id: None,
+                    container_id: None,
+                    started: Some(false),
+                    allocated_resources: None,
+                    allocated_resources_status: None,
+                    resources: None,
+                    user: None,
+                    volume_mounts: None,
+                    stop_signal: None,
+                })
+                .collect()
+        });
 
         PodStatus {
             phase: Some(phase),
@@ -8754,10 +8755,7 @@ mod tests {
             Some(Phase::Failed),
             "Pod with RestartNever and failed init container must have Failed phase"
         );
-        assert_eq!(
-            status.reason,
-            Some("FailedToStart".to_string()),
-        );
+        assert_eq!(status.reason, Some("FailedToStart".to_string()),);
     }
 
     #[test]
@@ -8765,11 +8763,16 @@ mod tests {
         let status = simulate_init_container_failure("Never");
 
         // Init container must show Terminated with exit code 1
-        let init_statuses = status.init_container_statuses.expect("init_container_statuses should be set");
+        let init_statuses = status
+            .init_container_statuses
+            .expect("init_container_statuses should be set");
         assert_eq!(init_statuses.len(), 1);
         let init_status = &init_statuses[0];
         assert_eq!(init_status.name, "init-fail");
-        assert!(!init_status.ready, "failed init container should not be ready");
+        assert!(
+            !init_status.ready,
+            "failed init container should not be ready"
+        );
 
         match &init_status.state {
             Some(ContainerState::Terminated { exit_code, .. }) => {
@@ -8784,12 +8787,18 @@ mod tests {
         let status = simulate_init_container_failure("Never");
 
         // App container must NOT have been started — should show Waiting
-        let app_statuses = status.container_statuses.expect("container_statuses should be set");
+        let app_statuses = status
+            .container_statuses
+            .expect("container_statuses should be set");
         assert_eq!(app_statuses.len(), 1);
         let app_status = &app_statuses[0];
         assert_eq!(app_status.name, "app");
         assert!(!app_status.ready, "app container should not be ready");
-        assert_eq!(app_status.started, Some(false), "app container should not have started");
+        assert_eq!(
+            app_status.started,
+            Some(false),
+            "app container should not have started"
+        );
         assert!(
             app_status.container_id.is_none(),
             "app container should have no container ID (never created)"
@@ -8820,10 +8829,7 @@ mod tests {
             Some(Phase::Pending),
             "Pod with RestartAlways and failed init container must stay Pending, not Failed"
         );
-        assert_eq!(
-            status.reason,
-            Some("InitContainerFailed".to_string()),
-        );
+        assert_eq!(status.reason, Some("InitContainerFailed".to_string()),);
     }
 
     #[test]
@@ -8831,7 +8837,9 @@ mod tests {
         let status = simulate_init_container_failure("Always");
 
         // Even for RestartAlways, app containers must NOT start if init containers failed
-        let app_statuses = status.container_statuses.expect("container_statuses should be set");
+        let app_statuses = status
+            .container_statuses
+            .expect("container_statuses should be set");
         assert_eq!(app_statuses.len(), 1);
         let app_status = &app_statuses[0];
         assert!(!app_status.ready, "app container should not be ready");
@@ -8981,7 +8989,10 @@ mod tests {
         assert!(status.last_state.is_some(), "last_state should be set");
         match &status.last_state {
             Some(ContainerState::Terminated { exit_code, .. }) => {
-                assert_eq!(*exit_code, 1, "last_state should have the previous exit code");
+                assert_eq!(
+                    *exit_code, 1,
+                    "last_state should have the previous exit code"
+                );
             }
             _ => panic!("Expected Terminated last_state"),
         }
@@ -9050,7 +9061,10 @@ mod tests {
         let has_emptydir_mount = false;
         let has_shell = true; // even if shell exists
         let needs_umask_fix = has_emptydir_mount && has_shell;
-        assert!(!needs_umask_fix, "needs_umask_fix should be false without emptyDir mount");
+        assert!(
+            !needs_umask_fix,
+            "needs_umask_fix should be false without emptyDir mount"
+        );
     }
 
     #[test]
@@ -9061,7 +9075,10 @@ mod tests {
         let has_emptydir_mount = true;
         let has_shell = false;
         let needs_umask_fix = has_emptydir_mount && has_shell;
-        assert!(!needs_umask_fix, "needs_umask_fix should be false when image has no shell");
+        assert!(
+            !needs_umask_fix,
+            "needs_umask_fix should be false when image has no shell"
+        );
     }
 
     #[test]
@@ -9071,7 +9088,10 @@ mod tests {
         let has_emptydir_mount = true;
         let has_shell = true;
         let needs_umask_fix = has_emptydir_mount && has_shell;
-        assert!(needs_umask_fix, "needs_umask_fix should be true when both conditions hold");
+        assert!(
+            needs_umask_fix,
+            "needs_umask_fix should be true when both conditions hold"
+        );
     }
 
     #[test]
@@ -9116,7 +9136,10 @@ mod tests {
             .as_ref()
             .map(|mounts| mounts.iter().any(|m| empty_dir_volumes.contains(&m.name)))
             .unwrap_or(false);
-        assert!(!has_emptydir, "should not detect emptyDir mount for non-emptyDir volume");
+        assert!(
+            !has_emptydir,
+            "should not detect emptyDir mount for non-emptyDir volume"
+        );
 
         // Container with no volume mounts at all
         let container_none = make_container("plain");
@@ -9125,7 +9148,10 @@ mod tests {
             .as_ref()
             .map(|mounts| mounts.iter().any(|m| empty_dir_volumes.contains(&m.name)))
             .unwrap_or(false);
-        assert!(!has_emptydir, "should not detect emptyDir mount when no volume mounts");
+        assert!(
+            !has_emptydir,
+            "should not detect emptyDir mount when no volume mounts"
+        );
     }
 
     // --- Fix #57: FallbackToLogsOnError ---
@@ -9162,12 +9188,12 @@ mod tests {
         // message should be None (no message for successful exit).
         let policy = "FallbackToLogsOnError";
         let exit_code: u64 = 0;
-        let termination_msg: Option<String> =
-            if policy == "FallbackToLogsOnError" && exit_code == 0 {
-                None
-            } else {
-                Some("would read from file or logs".to_string())
-            };
+        let termination_msg: Option<String> = if policy == "FallbackToLogsOnError" && exit_code == 0
+        {
+            None
+        } else {
+            Some("would read from file or logs".to_string())
+        };
         assert!(
             termination_msg.is_none(),
             "FallbackToLogsOnError with exit_code 0 should produce no message"
@@ -9241,7 +9267,11 @@ mod tests {
             EphemeralContainer {
                 name: "logger".to_string(),
                 image: "alpine:latest".to_string(),
-                command: Some(vec!["tail".to_string(), "-f".to_string(), "/var/log/app.log".to_string()]),
+                command: Some(vec![
+                    "tail".to_string(),
+                    "-f".to_string(),
+                    "/var/log/app.log".to_string(),
+                ]),
                 args: None,
                 working_dir: None,
                 env: None,

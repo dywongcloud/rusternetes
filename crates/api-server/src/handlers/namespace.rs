@@ -130,11 +130,7 @@ pub async fn create(
             binary_data: None,
             immutable: None,
         };
-        let cm_key = build_key(
-            "configmaps",
-            Some(&ns_name),
-            "kube-root-ca.crt",
-        );
+        let cm_key = build_key("configmaps", Some(&ns_name), "kube-root-ca.crt");
         match state.storage.create(&cm_key, &ca_cm).await {
             Ok(_) => info!("Created kube-root-ca.crt in namespace {}", ns_name),
             Err(e) => warn!(
@@ -143,7 +139,10 @@ pub async fn create(
             ),
         }
     } else {
-        warn!("CA cert is empty, skipping kube-root-ca.crt for namespace {}", ns_name);
+        warn!(
+            "CA cert is empty, skipping kube-root-ca.crt for namespace {}",
+            ns_name
+        );
     }
 
     Ok((StatusCode::CREATED, Json(created)))

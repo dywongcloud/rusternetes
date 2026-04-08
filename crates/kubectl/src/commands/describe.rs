@@ -574,10 +574,7 @@ mod tests {
             spec: DeploymentSpec {
                 replicas: Some(3),
                 selector: LabelSelector {
-                    match_labels: Some(HashMap::from([(
-                        "app".to_string(),
-                        "web".to_string(),
-                    )])),
+                    match_labels: Some(HashMap::from([("app".to_string(), "web".to_string())])),
                     ..Default::default()
                 },
                 template: PodTemplateSpec {
@@ -722,9 +719,9 @@ mod tests {
 
     #[test]
     fn test_map_get_error_other() {
-        let err = map_get_error(crate::client::GetError::Other(
-            anyhow::anyhow!("connection refused"),
-        ));
+        let err = map_get_error(crate::client::GetError::Other(anyhow::anyhow!(
+            "connection refused"
+        )));
         assert_eq!(err.to_string(), "connection refused");
     }
 
@@ -774,14 +771,16 @@ mod tests {
         let client = make_test_client();
         let result = execute(&client, "foobar", "test", Some("default")).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unknown resource type"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown resource type"));
     }
 
     #[tokio::test]
     async fn test_execute_enhanced_with_name() {
         let client = make_test_client();
-        let result =
-            execute_enhanced(&client, "pod", Some("nginx"), "default", None, false).await;
+        let result = execute_enhanced(&client, "pod", Some("nginx"), "default", None, false).await;
         assert!(result.is_err()); // connection error
     }
 
@@ -790,21 +789,17 @@ mod tests {
         let client = make_test_client();
         let result = execute_enhanced(&client, "pod", None, "default", None, false).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Resource name required"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Resource name required"));
     }
 
     #[tokio::test]
     async fn test_execute_enhanced_with_selector_returns_ok() {
         let client = make_test_client();
-        let result = execute_enhanced(
-            &client,
-            "pod",
-            None,
-            "default",
-            Some("app=nginx"),
-            false,
-        )
-        .await;
+        let result =
+            execute_enhanced(&client, "pod", None, "default", Some("app=nginx"), false).await;
         // Selector-based describe just prints a message and returns Ok
         assert!(result.is_ok());
     }
@@ -812,8 +807,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_enhanced_all_namespaces_returns_ok() {
         let client = make_test_client();
-        let result =
-            execute_enhanced(&client, "pod", None, "default", None, true).await;
+        let result = execute_enhanced(&client, "pod", None, "default", None, true).await;
         // All-namespaces describe just prints a message and returns Ok
         assert!(result.is_ok());
     }

@@ -71,10 +71,7 @@ fn resource_path(
 
         // storage.k8s.io/v1
         "StorageClass" => {
-            return Ok(format!(
-                "/apis/storage.k8s.io/v1/storageclasses/{}",
-                name
-            ));
+            return Ok(format!("/apis/storage.k8s.io/v1/storageclasses/{}", name));
         }
 
         // scheduling.k8s.io/v1
@@ -145,11 +142,19 @@ fn resource_path(
 /// Simple heuristic to pluralize a Kind name.
 fn kind_to_plural(kind: &str) -> String {
     let lower = kind.to_lowercase();
-    if lower.ends_with("ss") || lower.ends_with("ch") || lower.ends_with("sh") || lower.ends_with('x') {
+    if lower.ends_with("ss")
+        || lower.ends_with("ch")
+        || lower.ends_with("sh")
+        || lower.ends_with('x')
+    {
         format!("{}es", lower)
     } else if lower.ends_with('s') {
         lower
-    } else if lower.ends_with('y') && !lower.ends_with("ey") && !lower.ends_with("ay") && !lower.ends_with("oy") {
+    } else if lower.ends_with('y')
+        && !lower.ends_with("ey")
+        && !lower.ends_with("ay")
+        && !lower.ends_with("oy")
+    {
         format!("{}ies", &lower[..lower.len() - 1])
     } else {
         format!("{}s", lower)
@@ -250,12 +255,8 @@ mod tests {
         let path = resource_path("v1", "Secret", Some("default"), "my-secret").unwrap();
         assert_eq!(path, "/api/v1/namespaces/default/secrets/my-secret");
 
-        let path =
-            resource_path("v1", "ServiceAccount", Some("default"), "my-sa").unwrap();
-        assert_eq!(
-            path,
-            "/api/v1/namespaces/default/serviceaccounts/my-sa"
-        );
+        let path = resource_path("v1", "ServiceAccount", Some("default"), "my-sa").unwrap();
+        assert_eq!(path, "/api/v1/namespaces/default/serviceaccounts/my-sa");
     }
 
     #[test]
@@ -272,22 +273,13 @@ mod tests {
 
     #[test]
     fn test_resource_path_apps_v1() {
-        let path =
-            resource_path("apps/v1", "Deployment", Some("default"), "nginx").unwrap();
-        assert_eq!(
-            path,
-            "/apis/apps/v1/namespaces/default/deployments/nginx"
-        );
+        let path = resource_path("apps/v1", "Deployment", Some("default"), "nginx").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/default/deployments/nginx");
 
-        let path =
-            resource_path("apps/v1", "StatefulSet", Some("default"), "redis").unwrap();
-        assert_eq!(
-            path,
-            "/apis/apps/v1/namespaces/default/statefulsets/redis"
-        );
+        let path = resource_path("apps/v1", "StatefulSet", Some("default"), "redis").unwrap();
+        assert_eq!(path, "/apis/apps/v1/namespaces/default/statefulsets/redis");
 
-        let path =
-            resource_path("apps/v1", "DaemonSet", Some("kube-system"), "proxy").unwrap();
+        let path = resource_path("apps/v1", "DaemonSet", Some("kube-system"), "proxy").unwrap();
         assert_eq!(
             path,
             "/apis/apps/v1/namespaces/kube-system/daemonsets/proxy"
@@ -297,17 +289,10 @@ mod tests {
     #[test]
     fn test_resource_path_batch_v1() {
         let path = resource_path("batch/v1", "Job", Some("default"), "my-job").unwrap();
-        assert_eq!(
-            path,
-            "/apis/batch/v1/namespaces/default/jobs/my-job"
-        );
+        assert_eq!(path, "/apis/batch/v1/namespaces/default/jobs/my-job");
 
-        let path =
-            resource_path("batch/v1", "CronJob", Some("default"), "my-cron").unwrap();
-        assert_eq!(
-            path,
-            "/apis/batch/v1/namespaces/default/cronjobs/my-cron"
-        );
+        let path = resource_path("batch/v1", "CronJob", Some("default"), "my-cron").unwrap();
+        assert_eq!(path, "/apis/batch/v1/namespaces/default/cronjobs/my-cron");
     }
 
     #[test]
@@ -324,13 +309,8 @@ mod tests {
             "/apis/rbac.authorization.k8s.io/v1/namespaces/default/roles/my-role"
         );
 
-        let path = resource_path(
-            "rbac.authorization.k8s.io/v1",
-            "ClusterRole",
-            None,
-            "admin",
-        )
-        .unwrap();
+        let path =
+            resource_path("rbac.authorization.k8s.io/v1", "ClusterRole", None, "admin").unwrap();
         assert_eq!(
             path,
             "/apis/rbac.authorization.k8s.io/v1/clusterroles/admin"
@@ -351,17 +331,8 @@ mod tests {
 
     #[test]
     fn test_resource_path_cluster_scoped_special() {
-        let path = resource_path(
-            "storage.k8s.io/v1",
-            "StorageClass",
-            None,
-            "standard",
-        )
-        .unwrap();
-        assert_eq!(
-            path,
-            "/apis/storage.k8s.io/v1/storageclasses/standard"
-        );
+        let path = resource_path("storage.k8s.io/v1", "StorageClass", None, "standard").unwrap();
+        assert_eq!(path, "/apis/storage.k8s.io/v1/storageclasses/standard");
 
         let path = resource_path(
             "scheduling.k8s.io/v1",
@@ -450,20 +421,20 @@ mod tests {
     #[test]
     fn test_kind_to_output_name() {
         assert_eq!(kind_to_output_name("Pod", "v1"), "pod");
-        assert_eq!(kind_to_output_name("Deployment", "apps/v1"), "deployment.apps");
-        assert_eq!(kind_to_output_name("ClusterRole", "rbac.authorization.k8s.io/v1"), "clusterrole.rbac.authorization.k8s.io");
+        assert_eq!(
+            kind_to_output_name("Deployment", "apps/v1"),
+            "deployment.apps"
+        );
+        assert_eq!(
+            kind_to_output_name("ClusterRole", "rbac.authorization.k8s.io/v1"),
+            "clusterrole.rbac.authorization.k8s.io"
+        );
         assert_eq!(kind_to_output_name("Service", "v1"), "service");
     }
 
     #[test]
     fn test_resource_path_pvc() {
-        let path = resource_path(
-            "v1",
-            "PersistentVolumeClaim",
-            Some("default"),
-            "my-pvc",
-        )
-        .unwrap();
+        let path = resource_path("v1", "PersistentVolumeClaim", Some("default"), "my-pvc").unwrap();
         assert_eq!(
             path,
             "/api/v1/namespaces/default/persistentvolumeclaims/my-pvc"

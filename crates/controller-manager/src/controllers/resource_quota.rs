@@ -290,9 +290,7 @@ impl<S: Storage> ResourceQuotaController<S> {
             .iter()
             .any(|k| k == "secrets" || k == "count/secrets");
         let needs_replicasets = hard_keys.iter().any(|k| {
-            k == "count/replicasets"
-                || k == "count/replicasets.apps"
-                || k == "replicasets"
+            k == "count/replicasets" || k == "count/replicasets.apps" || k == "replicasets"
         });
         let needs_pvcs = hard_keys
             .iter()

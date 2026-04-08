@@ -169,10 +169,7 @@ metadata:
         let container = &result["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0];
         assert_eq!(container["name"], "my-cron");
         assert_eq!(container["image"], "busybox");
-        assert_eq!(
-            container["command"],
-            serde_json::json!(["echo", "hello"])
-        );
+        assert_eq!(container["command"], serde_json::json!(["echo", "hello"]));
 
         assert_eq!(
             result["spec"]["jobTemplate"]["spec"]["template"]["spec"]["restartPolicy"],
@@ -244,14 +241,8 @@ metadata:
 
     #[test]
     fn test_build_job_with_image() {
-        let result = build_job(
-            "my-job",
-            "default",
-            Some("busybox"),
-            None,
-            &["date".into()],
-        )
-        .unwrap();
+        let result =
+            build_job("my-job", "default", Some("busybox"), None, &["date".into()]).unwrap();
 
         assert_eq!(result["apiVersion"], "batch/v1");
         assert_eq!(result["kind"], "Job");
@@ -261,10 +252,7 @@ metadata:
         assert_eq!(container["name"], "my-job");
         assert_eq!(container["image"], "busybox");
         assert_eq!(container["command"], serde_json::json!(["date"]));
-        assert_eq!(
-            result["spec"]["template"]["spec"]["restartPolicy"],
-            "Never"
-        );
+        assert_eq!(result["spec"]["template"]["spec"]["restartPolicy"], "Never");
     }
 
     #[test]
@@ -292,10 +280,7 @@ metadata:
         assert_eq!(result["kind"], "PodDisruptionBudget");
         assert_eq!(result["metadata"]["name"], "my-pdb");
         assert_eq!(result["spec"]["minAvailable"], 1);
-        assert_eq!(
-            result["spec"]["selector"]["matchLabels"]["app"],
-            "rails"
-        );
+        assert_eq!(result["spec"]["selector"]["matchLabels"]["app"], "rails");
     }
 
     #[test]
@@ -349,10 +334,7 @@ metadata:
 
         let rules = result["rules"].as_array().unwrap();
         assert_eq!(rules[0]["apiGroups"], serde_json::json!(["apps"]));
-        assert_eq!(
-            rules[0]["resources"],
-            serde_json::json!(["deployments"])
-        );
+        assert_eq!(rules[0]["resources"], serde_json::json!(["deployments"]));
     }
 
     #[test]
@@ -406,15 +388,7 @@ metadata:
         let result = build_role_binding("bad", "default", None, None, &[], &[], &[]);
         assert!(result.is_err());
 
-        let result2 = build_role_binding(
-            "bad",
-            "default",
-            Some("a"),
-            Some("b"),
-            &[],
-            &[],
-            &[],
-        );
+        let result2 = build_role_binding("bad", "default", Some("a"), Some("b"), &[], &[], &[]);
         assert!(result2.is_err());
     }
 
@@ -444,14 +418,8 @@ metadata:
 
     #[test]
     fn test_build_secret_generic_custom_type() {
-        let result = build_secret_generic(
-            "my-secret",
-            "default",
-            &[],
-            &[],
-            Some("my-type"),
-        )
-        .unwrap();
+        let result =
+            build_secret_generic("my-secret", "default", &[], &[], Some("my-type")).unwrap();
 
         assert_eq!(result["type"], "my-type");
     }
@@ -549,14 +517,8 @@ metadata:
 
     #[test]
     fn test_build_token_request_with_audiences() {
-        let result = build_token_request(
-            &["https://example.com".into()],
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let result =
+            build_token_request(&["https://example.com".into()], None, None, None, None).unwrap();
 
         assert_eq!(
             result["spec"]["audiences"],
@@ -618,13 +580,7 @@ metadata:
 
     #[test]
     fn test_build_cluster_role_binding_invalid_sa() {
-        let result = build_cluster_role_binding(
-            "test",
-            "admin",
-            &[],
-            &[],
-            &["invalid-sa".into()],
-        );
+        let result = build_cluster_role_binding("test", "admin", &[], &[], &["invalid-sa".into()]);
         assert!(result.is_err());
     }
 

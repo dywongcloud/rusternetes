@@ -233,9 +233,9 @@ async fn execute_watch(
 }
 
 fn parse_for_object(for_obj: &str) -> Result<(String, &str)> {
-    let (kind_str, name) = for_obj.split_once('/').ok_or_else(|| {
-        anyhow::anyhow!("--for must be in resource/name form (e.g., pod/nginx)")
-    })?;
+    let (kind_str, name) = for_obj
+        .split_once('/')
+        .ok_or_else(|| anyhow::anyhow!("--for must be in resource/name form (e.g., pod/nginx)"))?;
 
     // Capitalize and singularize the kind
     let kind = match kind_str.to_lowercase().as_str() {
@@ -254,17 +254,14 @@ fn parse_for_object(for_obj: &str) -> Result<(String, &str)> {
         "persistentvolumeclaim" | "persistentvolumeclaims" | "pvc" => "PersistentVolumeClaim",
         "persistentvolume" | "persistentvolumes" | "pv" => "PersistentVolume",
         "ingress" | "ingresses" | "ing" => "Ingress",
-        "horizontalpodautoscaler" | "horizontalpodautoscalers" | "hpa" => {
-            "HorizontalPodAutoscaler"
-        }
+        "horizontalpodautoscaler" | "horizontalpodautoscalers" | "hpa" => "HorizontalPodAutoscaler",
         other => {
             // Try to capitalize first letter
             let mut chars = other.chars();
             match chars.next() {
                 None => return Err(anyhow::anyhow!("empty resource type")),
                 Some(first) => {
-                    let capitalized: String =
-                        first.to_uppercase().chain(chars).collect();
+                    let capitalized: String = first.to_uppercase().chain(chars).collect();
                     return Ok((capitalized, name));
                 }
             }
@@ -323,18 +320,9 @@ fn print_event_row(event: &Value, all_namespaces: bool) {
         .get("type")
         .and_then(|t| t.as_str())
         .unwrap_or("Normal");
-    let reason = event
-        .get("reason")
-        .and_then(|r| r.as_str())
-        .unwrap_or("");
-    let message = event
-        .get("message")
-        .and_then(|m| m.as_str())
-        .unwrap_or("");
-    let count = event
-        .get("count")
-        .and_then(|c| c.as_i64())
-        .unwrap_or(1);
+    let reason = event.get("reason").and_then(|r| r.as_str()).unwrap_or("");
+    let message = event.get("message").and_then(|m| m.as_str()).unwrap_or("");
+    let count = event.get("count").and_then(|c| c.as_i64()).unwrap_or(1);
 
     // Build object reference
     let involved = event.get("involvedObject");

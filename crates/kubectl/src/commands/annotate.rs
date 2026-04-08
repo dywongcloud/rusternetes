@@ -110,13 +110,13 @@ mod tests {
 
     #[test]
     fn test_annotation_patch_mixed() {
-        let annotations = vec![
-            "new-key=new-value".to_string(),
-            "old-key-".to_string(),
-        ];
+        let annotations = vec!["new-key=new-value".to_string(), "old-key-".to_string()];
         let map = parse_annotations(&annotations).unwrap();
 
-        assert_eq!(map.get("new-key").unwrap(), &Value::String("new-value".to_string()));
+        assert_eq!(
+            map.get("new-key").unwrap(),
+            &Value::String("new-value".to_string())
+        );
         assert_eq!(map.get("old-key").unwrap(), &Value::Null);
     }
 
@@ -143,14 +143,22 @@ mod tests {
             let path = if resource_name == "nodes" {
                 format!("/{}/{}/{}", api_path, resource_name, name)
             } else {
-                format!("/{}/namespaces/{}/{}/{}", api_path, namespace, resource_name, name)
+                format!(
+                    "/{}/namespaces/{}/{}/{}",
+                    api_path, namespace, resource_name, name
+                )
             };
 
             match resource_type {
                 "node" => assert_eq!(path, "/api/v1/nodes/my-resource"),
                 "pod" => assert_eq!(path, "/api/v1/namespaces/default/pods/my-resource"),
-                "deployment" => assert_eq!(path, "/apis/apps/v1/namespaces/default/deployments/my-resource"),
-                "configmap" => assert_eq!(path, "/api/v1/namespaces/default/configmaps/my-resource"),
+                "deployment" => assert_eq!(
+                    path,
+                    "/apis/apps/v1/namespaces/default/deployments/my-resource"
+                ),
+                "configmap" => {
+                    assert_eq!(path, "/api/v1/namespaces/default/configmaps/my-resource")
+                }
                 _ => {}
             }
         }

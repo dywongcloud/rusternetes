@@ -143,17 +143,27 @@ mod tests {
         for (short, long) in pairs {
             let short_path = get_resource_api_path(short, "default", "test").unwrap();
             let long_path = get_resource_api_path(long, "default", "test").unwrap();
-            assert_eq!(short_path, long_path, "Alias mismatch: {} vs {}", short, long);
+            assert_eq!(
+                short_path, long_path,
+                "Alias mismatch: {} vs {}",
+                short, long
+            );
         }
     }
 
     #[test]
     fn test_get_resource_api_path_rbac_types() {
         let path = get_resource_api_path("role", "ns1", "reader").unwrap();
-        assert_eq!(path, "/apis/rbac.authorization.k8s.io/v1/namespaces/ns1/roles/reader");
+        assert_eq!(
+            path,
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/ns1/roles/reader"
+        );
 
         let path = get_resource_api_path("clusterrole", "ignored", "admin").unwrap();
-        assert_eq!(path, "/apis/rbac.authorization.k8s.io/v1/clusterroles/admin");
+        assert_eq!(
+            path,
+            "/apis/rbac.authorization.k8s.io/v1/clusterroles/admin"
+        );
     }
 
     #[test]

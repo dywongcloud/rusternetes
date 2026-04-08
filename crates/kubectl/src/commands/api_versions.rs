@@ -48,10 +48,7 @@ mod tests {
         assert_eq!(group_list.groups.len(), 2);
         assert_eq!(group_list.groups[0].name, "apps");
         assert_eq!(group_list.groups[1].versions.len(), 2);
-        assert_eq!(
-            group_list.groups[1].versions[0].group_version,
-            "batch/v1"
-        );
+        assert_eq!(group_list.groups[1].versions[0].group_version, "batch/v1");
     }
 
     #[test]

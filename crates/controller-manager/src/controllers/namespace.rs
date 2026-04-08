@@ -275,10 +275,8 @@ impl<S: Storage> NamespaceController<S> {
             let key = build_key("namespaces", None, name);
             let mut ns: Namespace = self.storage.get(&key).await?;
 
-            let conditions = Self::build_deletion_conditions(
-                remaining_count > 0,
-                any_finalizers_remaining,
-            );
+            let conditions =
+                Self::build_deletion_conditions(remaining_count > 0, any_finalizers_remaining);
 
             ns.status = Some(NamespaceStatus {
                 phase: Some(Phase::Terminating),
@@ -289,8 +287,10 @@ impl<S: Storage> NamespaceController<S> {
             if let Err(e) = self.storage.update(&key, &ns).await {
                 debug!("Namespace status update CAS conflict, retrying: {}", e);
                 if let Ok(mut fresh_ns) = self.storage.get::<Namespace>(&key).await {
-                    let conditions =
-                        Self::build_deletion_conditions(remaining_count > 0, any_finalizers_remaining);
+                    let conditions = Self::build_deletion_conditions(
+                        remaining_count > 0,
+                        any_finalizers_remaining,
+                    );
                     fresh_ns.status = Some(NamespaceStatus {
                         phase: Some(Phase::Terminating),
                         conditions: Some(conditions),
@@ -435,11 +435,7 @@ impl<S: Storage> NamespaceController<S> {
     /// Returns `true` if any resources had finalizers and could not be fully deleted.
     /// Resources with finalizers get a deletionTimestamp set but remain in storage
     /// until their finalizers are removed (matching real K8s behavior).
-    async fn delete_all_resources(
-        &self,
-        namespace: &str,
-        resource_type: &str,
-    ) -> Result<bool> {
+    async fn delete_all_resources(&self, namespace: &str, resource_type: &str) -> Result<bool> {
         let prefix = build_prefix(resource_type, Some(namespace));
 
         // List all resources
@@ -486,9 +482,7 @@ impl<S: Storage> NamespaceController<S> {
                                 meta.as_object_mut().map(|m| {
                                     m.insert(
                                         "deletionTimestamp".to_string(),
-                                        serde_json::Value::String(
-                                            chrono::Utc::now().to_rfc3339(),
-                                        ),
+                                        serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
                                     )
                                 });
                             }

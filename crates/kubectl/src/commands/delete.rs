@@ -122,7 +122,11 @@ impl DeleteOptions {
             } else {
                 "deleted"
             };
-            let dry_run_suffix = if self.dry_run { " (server dry run)" } else { "" };
+            let dry_run_suffix = if self.dry_run {
+                " (server dry run)"
+            } else {
+                ""
+            };
             format!(
                 "{} \"{}\" {}{}",
                 resource_type_to_kind(resource_type),
@@ -370,9 +374,7 @@ fn get_list_api_path(resource_type: &str, namespace: &str) -> Result<String> {
         }
         "node" | "nodes" => "/api/v1/nodes".to_string(),
         "namespace" | "namespaces" | "ns" => "/api/v1/namespaces".to_string(),
-        "persistentvolume" | "persistentvolumes" | "pv" => {
-            "/api/v1/persistentvolumes".to_string()
-        }
+        "persistentvolume" | "persistentvolumes" | "pv" => "/api/v1/persistentvolumes".to_string(),
         "clusterrole" | "clusterroles" => {
             "/apis/rbac.authorization.k8s.io/v1/clusterroles".to_string()
         }
@@ -391,10 +393,7 @@ fn get_list_api_path(resource_type: &str, namespace: &str) -> Result<String> {
                 namespace
             )
         }
-        _ => anyhow::bail!(
-            "Unsupported resource type for deletion: {}",
-            resource_type
-        ),
+        _ => anyhow::bail!("Unsupported resource type for deletion: {}", resource_type),
     })
 }
 
@@ -432,10 +431,7 @@ fn get_resource_api_path(resource_type: &str, name: &str, namespace: &str) -> Re
             )
         }
         "daemonset" | "daemonsets" | "ds" => {
-            format!(
-                "/apis/apps/v1/namespaces/{}/daemonsets/{}",
-                namespace, name
-            )
+            format!("/apis/apps/v1/namespaces/{}/daemonsets/{}", namespace, name)
         }
         "replicaset" | "replicasets" | "rs" => {
             format!(
@@ -454,10 +450,7 @@ fn get_resource_api_path(resource_type: &str, name: &str, namespace: &str) -> Re
             format!("/api/v1/namespaces/{}/secrets/{}", namespace, name)
         }
         "serviceaccount" | "serviceaccounts" | "sa" => {
-            format!(
-                "/api/v1/namespaces/{}/serviceaccounts/{}",
-                namespace, name
-            )
+            format!("/api/v1/namespaces/{}/serviceaccounts/{}", namespace, name)
         }
         "ingress" | "ingresses" | "ing" => {
             format!(
@@ -524,7 +517,11 @@ async fn delete_single_resource(
         .context(format!("Failed to delete {} {}", resource_type, name))?;
 
     if status == reqwest::StatusCode::NOT_FOUND {
-        anyhow::bail!("{} \"{}\" not found", resource_type_to_kind(resource_type), name);
+        anyhow::bail!(
+            "{} \"{}\" not found",
+            resource_type_to_kind(resource_type),
+            name
+        );
     }
 
     println!("{}", opts.format_output(resource_type, name));
@@ -591,10 +588,7 @@ mod tests {
     #[test]
     fn test_get_delete_api_path_deployment() {
         let path = get_delete_api_path("Deployment", Some("prod"), "my-deploy").unwrap();
-        assert_eq!(
-            path,
-            "/apis/apps/v1/namespaces/prod/deployments/my-deploy"
-        );
+        assert_eq!(path, "/apis/apps/v1/namespaces/prod/deployments/my-deploy");
     }
 
     #[test]
@@ -893,15 +887,24 @@ mod tests {
         assert_eq!(resource_type_to_kind("deployment"), "deployment.apps");
         assert_eq!(resource_type_to_kind("deploy"), "deployment.apps");
         assert_eq!(resource_type_to_kind("job"), "job.batch");
-        assert_eq!(resource_type_to_kind("clusterrole"), "clusterrole.rbac.authorization.k8s.io");
+        assert_eq!(
+            resource_type_to_kind("clusterrole"),
+            "clusterrole.rbac.authorization.k8s.io"
+        );
     }
 
     // ===== Additional tests for untested functions =====
 
     #[test]
     fn test_cascade_propagation_policy_values() {
-        assert_eq!(CascadeStrategy::Background.propagation_policy(), "Background");
-        assert_eq!(CascadeStrategy::Foreground.propagation_policy(), "Foreground");
+        assert_eq!(
+            CascadeStrategy::Background.propagation_policy(),
+            "Background"
+        );
+        assert_eq!(
+            CascadeStrategy::Foreground.propagation_policy(),
+            "Foreground"
+        );
         assert_eq!(CascadeStrategy::Orphan.propagation_policy(), "Orphan");
     }
 
@@ -1031,10 +1034,7 @@ mod tests {
             resource_type_to_kind("storageclass"),
             "storageclass.storage.k8s.io"
         );
-        assert_eq!(
-            resource_type_to_kind("sc"),
-            "storageclass.storage.k8s.io"
-        );
+        assert_eq!(resource_type_to_kind("sc"), "storageclass.storage.k8s.io");
         assert_eq!(resource_type_to_kind("namespace"), "namespace");
         assert_eq!(resource_type_to_kind("ns"), "namespace");
         assert_eq!(resource_type_to_kind("node"), "node");
@@ -1459,8 +1459,7 @@ mod tests {
     async fn test_execute_with_selector_returns_err_on_unreachable() {
         let client = make_test_client();
         let opts = DeleteOptions::default();
-        let result =
-            execute_with_selector(&client, "pod", "app=nginx", "default", &opts).await;
+        let result = execute_with_selector(&client, "pod", "app=nginx", "default", &opts).await;
         assert!(result.is_err());
     }
 
@@ -1476,8 +1475,7 @@ mod tests {
     async fn test_delete_single_resource_returns_err_on_unreachable() {
         let client = make_test_client();
         let opts = DeleteOptions::default();
-        let result =
-            delete_single_resource(&client, "pod", "nginx", Some("default"), &opts).await;
+        let result = delete_single_resource(&client, "pod", "nginx", Some("default"), &opts).await;
         assert!(result.is_err());
     }
 
@@ -1555,15 +1553,17 @@ mod tests {
         let result =
             delete_single_resource(&client, "foobar", "name", Some("default"), &opts).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unknown resource type"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown resource type"));
     }
 
     #[tokio::test]
     async fn test_execute_with_selector_unsupported_type() {
         let client = make_test_client();
         let opts = DeleteOptions::default();
-        let result =
-            execute_with_selector(&client, "foobar", "app=x", "default", &opts).await;
+        let result = execute_with_selector(&client, "foobar", "app=x", "default", &opts).await;
         assert!(result.is_err());
     }
 

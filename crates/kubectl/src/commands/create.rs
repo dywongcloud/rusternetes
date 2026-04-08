@@ -28,7 +28,14 @@ pub async fn execute_subcommand(
             non_resource_url,
             aggregation_rule,
         } => {
-            let body = build_cluster_role(name, verb, resource, resource_name, non_resource_url, aggregation_rule)?;
+            let body = build_cluster_role(
+                name,
+                verb,
+                resource,
+                resource_name,
+                non_resource_url,
+                aggregation_rule,
+            )?;
             let _: Value = client
                 .post("/apis/rbac.authorization.k8s.io/v1/clusterroles", &body)
                 .await?;
@@ -87,7 +94,14 @@ pub async fn execute_subcommand(
             namespace,
         } => {
             let ns = namespace.as_deref().unwrap_or(default_namespace);
-            let body = build_ingress(name, ns, ingress_class.as_deref(), rule, default_backend.as_deref(), annotation)?;
+            let body = build_ingress(
+                name,
+                ns,
+                ingress_class.as_deref(),
+                rule,
+                default_backend.as_deref(),
+                annotation,
+            )?;
             let _: Value = client
                 .post(
                     &format!("/apis/networking.k8s.io/v1/namespaces/{}/ingresses", ns),
@@ -118,7 +132,13 @@ pub async fn execute_subcommand(
             namespace,
         } => {
             let ns = namespace.as_deref().unwrap_or(default_namespace);
-            let body = build_pdb(name, ns, selector, min_available.as_deref(), max_unavailable.as_deref())?;
+            let body = build_pdb(
+                name,
+                ns,
+                selector,
+                min_available.as_deref(),
+                max_unavailable.as_deref(),
+            )?;
             let _: Value = client
                 .post(
                     &format!("/apis/policy/v1/namespaces/{}/poddisruptionbudgets", ns),
@@ -138,10 +158,7 @@ pub async fn execute_subcommand(
             let body = build_role(name, ns, verb, resource, resource_name)?;
             let _: Value = client
                 .post(
-                    &format!(
-                        "/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles",
-                        ns
-                    ),
+                    &format!("/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles", ns),
                     &body,
                 )
                 .await?;
@@ -184,10 +201,7 @@ pub async fn execute_subcommand(
             let ns = namespace.as_deref().unwrap_or(default_namespace);
             let body = build_service_account(name, ns);
             let _: Value = client
-                .post(
-                    &format!("/api/v1/namespaces/{}/serviceaccounts", ns),
-                    &body,
-                )
+                .post(&format!("/api/v1/namespaces/{}/serviceaccounts", ns), &body)
                 .await?;
             println!("serviceaccount/{} created", name);
         }
@@ -210,10 +224,7 @@ pub async fn execute_subcommand(
             )?;
             let response: Value = client
                 .post(
-                    &format!(
-                        "/api/v1/namespaces/{}/serviceaccounts/{}/token",
-                        ns, name
-                    ),
+                    &format!("/api/v1/namespaces/{}/serviceaccounts/{}/token", ns, name),
                     &body,
                 )
                 .await?;
@@ -279,10 +290,7 @@ pub async fn execute_subcommand(
             let ns = namespace.as_deref().unwrap_or(default_namespace);
             let body = build_quota(name, ns, hard.as_deref())?;
             let _: Value = client
-                .post(
-                    &format!("/api/v1/namespaces/{}/resourcequotas", ns),
-                    &body,
-                )
+                .post(&format!("/api/v1/namespaces/{}/resourcequotas", ns), &body)
                 .await?;
             println!("resourcequota/{} created", name);
         }
@@ -304,7 +312,8 @@ async fn execute_secret_subcommand(
             namespace,
         } => {
             let ns = namespace.as_deref().unwrap_or(default_namespace);
-            let body = build_secret_generic(name, ns, from_literal, from_file, secret_type.as_deref())?;
+            let body =
+                build_secret_generic(name, ns, from_literal, from_file, secret_type.as_deref())?;
             let _: Value = client
                 .post(&format!("/api/v1/namespaces/{}/secrets", ns), &body)
                 .await?;
@@ -421,8 +430,8 @@ pub fn build_configmap(
 
     for file_src in from_file {
         let (key, path) = parse_file_source(file_src)?;
-        let content = fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read file: {}", path))?;
+        let content =
+            fs::read_to_string(&path).with_context(|| format!("Failed to read file: {}", path))?;
         data.insert(key, json!(content));
     }
 
@@ -496,7 +505,10 @@ pub fn build_ingress(
         if parts.len() != 2 {
             anyhow::bail!("default-backend should be in format servicename:serviceport");
         }
-        spec.insert("defaultBackend".to_string(), build_ingress_backend(parts[0], parts[1]));
+        spec.insert(
+            "defaultBackend".to_string(),
+            build_ingress_backend(parts[0], parts[1]),
+        );
     }
 
     // Build rules
@@ -821,8 +833,7 @@ pub fn build_secret_generic(
 
     for file_src in from_file {
         let (key, path) = parse_file_source(file_src)?;
-        let content = fs::read(&path)
-            .with_context(|| format!("Failed to read file: {}", path))?;
+        let content = fs::read(&path).with_context(|| format!("Failed to read file: {}", path))?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(&content);
         data.insert(key, json!(encoded));
     }
@@ -897,10 +908,10 @@ pub fn build_secret_tls(
     cert_path: &str,
     key_path: &str,
 ) -> Result<Value> {
-    let cert_data = fs::read(cert_path)
-        .with_context(|| format!("Failed to read cert file: {}", cert_path))?;
-    let key_data = fs::read(key_path)
-        .with_context(|| format!("Failed to read key file: {}", key_path))?;
+    let cert_data =
+        fs::read(cert_path).with_context(|| format!("Failed to read cert file: {}", cert_path))?;
+    let key_data =
+        fs::read(key_path).with_context(|| format!("Failed to read key file: {}", key_path))?;
 
     let cert_encoded = base64::engine::general_purpose::STANDARD.encode(&cert_data);
     let key_encoded = base64::engine::general_purpose::STANDARD.encode(&key_data);
@@ -1206,10 +1217,7 @@ fn build_policy_rules(
 
     for res in resources {
         let (resource, group) = parse_resource_group(res);
-        group_map
-            .entry(group)
-            .or_default()
-            .push(resource);
+        group_map.entry(group).or_default().push(resource);
     }
 
     let verb_list: Vec<&str> = verbs.iter().map(|s| s.as_str()).collect();
@@ -1651,8 +1659,7 @@ mod tests {
     #[test]
     fn test_build_ingress_annotations() {
         let annotations = vec!["nginx.ingress.kubernetes.io/rewrite-target=/".to_string()];
-        let result =
-            build_ingress("ann-ing", "default", None, &[], None, &annotations).unwrap();
+        let result = build_ingress("ann-ing", "default", None, &[], None, &annotations).unwrap();
         assert!(result["metadata"]["annotations"]
             .as_object()
             .unwrap()
@@ -1674,7 +1681,10 @@ mod tests {
     #[test]
     fn test_build_job_from_cronjob() {
         let result = build_job("manual-job", "default", None, Some("cronjob/my-cj"), &[]).unwrap();
-        assert_eq!(result["metadata"]["annotations"]["cronjob.kubernetes.io/instantiate"], "manual");
+        assert_eq!(
+            result["metadata"]["annotations"]["cronjob.kubernetes.io/instantiate"],
+            "manual"
+        );
     }
 
     // 13. build_job — error: neither image nor from
@@ -1727,10 +1737,9 @@ mod tests {
     #[test]
     fn test_build_role_binding_clusterrole() {
         let users = vec!["user1".to_string()];
-        let result = build_role_binding(
-            "test-rb", "default", Some("admin"), None, &users, &[], &[],
-        )
-        .unwrap();
+        let result =
+            build_role_binding("test-rb", "default", Some("admin"), None, &users, &[], &[])
+                .unwrap();
         assert_eq!(result["kind"], "RoleBinding");
         assert_eq!(result["roleRef"]["kind"], "ClusterRole");
     }
@@ -1740,7 +1749,13 @@ mod tests {
     fn test_build_role_binding_role() {
         let groups = vec!["devs".to_string()];
         let result = build_role_binding(
-            "test-rb2", "default", None, Some("my-role"), &[], &groups, &[],
+            "test-rb2",
+            "default",
+            None,
+            Some("my-role"),
+            &[],
+            &groups,
+            &[],
         )
         .unwrap();
         assert_eq!(result["roleRef"]["kind"], "Role");
@@ -1751,8 +1766,7 @@ mod tests {
     #[test]
     fn test_build_secret_generic() {
         let literals = vec!["password=s3cr3t".to_string()];
-        let result =
-            build_secret_generic("test-secret", "default", &literals, &[], None).unwrap();
+        let result = build_secret_generic("test-secret", "default", &literals, &[], None).unwrap();
         assert_eq!(result["kind"], "Secret");
         assert_eq!(result["type"], "Opaque");
         // data should be base64-encoded
@@ -1782,9 +1796,7 @@ mod tests {
     // 23. build_secret_docker_registry — missing credentials
     #[test]
     fn test_build_secret_docker_registry_missing_creds() {
-        let result = build_secret_docker_registry(
-            "bad-reg", "default", "server", None, None, None,
-        );
+        let result = build_secret_docker_registry("bad-reg", "default", "server", None, None, None);
         assert!(result.is_err());
     }
 
@@ -1984,7 +1996,12 @@ mod tests {
 
     #[test]
     fn test_build_secret_tls_missing_cert() {
-        let result = build_secret_tls("tls-secret", "default", "/nonexistent/cert.pem", "/nonexistent/key.pem");
+        let result = build_secret_tls(
+            "tls-secret",
+            "default",
+            "/nonexistent/cert.pem",
+            "/nonexistent/key.pem",
+        );
         assert!(result.is_err());
     }
 
@@ -2003,10 +2020,8 @@ mod tests {
 
     #[test]
     fn test_build_token_request_bound_object() {
-        let result = build_token_request(
-            &[], None, Some("Pod"), Some("my-pod"), Some("abc-123"),
-        )
-        .unwrap();
+        let result =
+            build_token_request(&[], None, Some("Pod"), Some("my-pod"), Some("abc-123")).unwrap();
         let bound = &result["spec"]["boundObjectRef"];
         assert_eq!(bound["kind"], "Pod");
         assert_eq!(bound["name"], "my-pod");
@@ -2043,7 +2058,10 @@ mod tests {
         let container = &result["spec"]["template"]["spec"]["containers"][0];
         assert_eq!(container["ports"][0]["containerPort"], 80);
         assert_eq!(result["spec"]["selector"]["matchLabels"]["app"], "web");
-        assert_eq!(result["spec"]["template"]["metadata"]["labels"]["app"], "web");
+        assert_eq!(
+            result["spec"]["template"]["metadata"]["labels"]["app"],
+            "web"
+        );
     }
 
     #[test]
@@ -2100,7 +2118,13 @@ mod tests {
 
     #[test]
     fn test_build_priority_class_basic() {
-        let result = build_priority_class("high-priority", 1000000, false, "PreemptLowerPriority", None);
+        let result = build_priority_class(
+            "high-priority",
+            1000000,
+            false,
+            "PreemptLowerPriority",
+            None,
+        );
         assert_eq!(result["apiVersion"], "scheduling.k8s.io/v1");
         assert_eq!(result["kind"], "PriorityClass");
         assert_eq!(result["metadata"]["name"], "high-priority");

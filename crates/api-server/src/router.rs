@@ -48,8 +48,7 @@ async fn custom_resource_fallback(
         let group = parts[0];
         let version = parts[1];
         let apiservice_name = format!("{}.{}", version, group);
-        let apiservice_key =
-            rusternetes_storage::build_key("apiservices", None, &apiservice_name);
+        let apiservice_key = rusternetes_storage::build_key("apiservices", None, &apiservice_name);
         if let Ok(apiservice) = state
             .storage
             .get::<serde_json::Value>(&apiservice_key)
@@ -69,8 +68,7 @@ async fn custom_resource_fallback(
                     group, version, svc_ns, svc_name
                 );
                 // Resolve the service to a pod IP via endpoints
-                let ep_key =
-                    rusternetes_storage::build_key("endpoints", Some(svc_ns), svc_name);
+                let ep_key = rusternetes_storage::build_key("endpoints", Some(svc_ns), svc_name);
                 if let Ok(ep) = state
                     .storage
                     .get::<rusternetes_common::resources::Endpoints>(&ep_key)
@@ -89,8 +87,7 @@ async fn custom_resource_fallback(
                             .next()
                             .map(|p| p.port)
                             .unwrap_or(443);
-                        let target_url =
-                            format!("https://{}:{}{}", addr.ip, port, path);
+                        let target_url = format!("https://{}:{}{}", addr.ip, port, path);
                         info!("API aggregation proxy: {} -> {}", path, target_url);
                         // Forward the request using reqwest with TLS cert verification disabled
                         // (the APIService has a caBundle but we skip verification for simplicity)
@@ -159,11 +156,9 @@ async fn custom_resource_fallback(
             if crd.spec.group == group_name {
                 for ver in &crd.spec.versions {
                     if ver.served
-                        && !versions.iter().any(
-                            |v: &serde_json::Value| {
-                                v.get("version").and_then(|v| v.as_str()) == Some(&ver.name)
-                            },
-                        )
+                        && !versions.iter().any(|v: &serde_json::Value| {
+                            v.get("version").and_then(|v| v.as_str()) == Some(&ver.name)
+                        })
                     {
                         versions.push(serde_json::json!({
                             "groupVersion": format!("{}/{}", group_name, ver.name),
@@ -205,12 +200,26 @@ async fn custom_resource_fallback(
             if crd.spec.group != group_name {
                 continue;
             }
-            let has_version = crd.spec.versions.iter().any(|v| v.name == version_name && v.served);
+            let has_version = crd
+                .spec
+                .versions
+                .iter()
+                .any(|v| v.name == version_name && v.served);
             if !has_version {
                 continue;
             }
-            let namespaced = crd.spec.scope == rusternetes_common::resources::ResourceScope::Namespaced;
-            let verbs = vec!["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"];
+            let namespaced =
+                crd.spec.scope == rusternetes_common::resources::ResourceScope::Namespaced;
+            let verbs = vec![
+                "create",
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ];
             let mut res = serde_json::json!({
                 "name": crd.spec.names.plural,
                 "singularName": crd.spec.names.singular,

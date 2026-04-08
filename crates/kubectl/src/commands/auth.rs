@@ -189,18 +189,31 @@ async fn execute_reconcile(
 
         match kind {
             "ClusterRole" => {
-                let path = format!(
-                    "/apis/rbac.authorization.k8s.io/v1/clusterroles/{}",
-                    name
-                );
-                reconcile_resource(client, &path, kind, name, &json_value, remove_extra_permissions).await?;
+                let path = format!("/apis/rbac.authorization.k8s.io/v1/clusterroles/{}", name);
+                reconcile_resource(
+                    client,
+                    &path,
+                    kind,
+                    name,
+                    &json_value,
+                    remove_extra_permissions,
+                )
+                .await?;
             }
             "ClusterRoleBinding" => {
                 let path = format!(
                     "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/{}",
                     name
                 );
-                reconcile_binding(client, &path, kind, name, &json_value, remove_extra_subjects).await?;
+                reconcile_binding(
+                    client,
+                    &path,
+                    kind,
+                    name,
+                    &json_value,
+                    remove_extra_subjects,
+                )
+                .await?;
             }
             "Role" => {
                 let res_ns = value
@@ -212,7 +225,15 @@ async fn execute_reconcile(
                     "/apis/rbac.authorization.k8s.io/v1/namespaces/{}/roles/{}",
                     res_ns, name
                 );
-                reconcile_resource(client, &path, kind, name, &json_value, remove_extra_permissions).await?;
+                reconcile_resource(
+                    client,
+                    &path,
+                    kind,
+                    name,
+                    &json_value,
+                    remove_extra_permissions,
+                )
+                .await?;
             }
             "RoleBinding" => {
                 let res_ns = value
@@ -224,7 +245,15 @@ async fn execute_reconcile(
                     "/apis/rbac.authorization.k8s.io/v1/namespaces/{}/rolebindings/{}",
                     res_ns, name
                 );
-                reconcile_binding(client, &path, kind, name, &json_value, remove_extra_subjects).await?;
+                reconcile_binding(
+                    client,
+                    &path,
+                    kind,
+                    name,
+                    &json_value,
+                    remove_extra_subjects,
+                )
+                .await?;
             }
             _ => {
                 eprintln!(
@@ -374,9 +403,8 @@ mod auth_reconcile_tests {
 
     #[test]
     fn test_reconcile_merge_rules() {
-        let current_rules = vec![
-            json!({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]}),
-        ];
+        let current_rules =
+            vec![json!({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]})];
         let desired_rules = vec![
             json!({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]}),
             json!({"apiGroups": [""], "resources": ["services"], "verbs": ["list"]}),
@@ -394,9 +422,8 @@ mod auth_reconcile_tests {
 
     #[test]
     fn test_reconcile_merge_subjects() {
-        let current_subjects = vec![
-            json!({"kind": "User", "name": "alice", "apiGroup": "rbac.authorization.k8s.io"}),
-        ];
+        let current_subjects =
+            vec![json!({"kind": "User", "name": "alice", "apiGroup": "rbac.authorization.k8s.io"})];
         let desired_subjects = vec![
             json!({"kind": "User", "name": "alice", "apiGroup": "rbac.authorization.k8s.io"}),
             json!({"kind": "User", "name": "bob", "apiGroup": "rbac.authorization.k8s.io"}),
@@ -418,9 +445,8 @@ mod auth_reconcile_tests {
             json!({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]}),
             json!({"apiGroups": [""], "resources": ["nodes"], "verbs": ["list"]}),
         ];
-        let desired_rules = vec![
-            json!({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]}),
-        ];
+        let desired_rules =
+            vec![json!({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]})];
 
         let remove_extra_permissions = true;
         let result = if remove_extra_permissions {
@@ -444,9 +470,7 @@ mod auth_reconcile_tests {
             json!({"kind": "User", "name": "alice"}),
             json!({"kind": "User", "name": "charlie"}),
         ];
-        let desired_subjects = vec![
-            json!({"kind": "User", "name": "alice"}),
-        ];
+        let desired_subjects = vec![json!({"kind": "User", "name": "alice"})];
 
         let remove_extra_subjects = true;
         let result = if remove_extra_subjects {
@@ -492,7 +516,10 @@ mod auth_reconcile_tests {
     fn test_collection_path_from_resource_path() {
         let path = "/apis/rbac.authorization.k8s.io/v1/clusterroles/admin";
         let collection_path = path.rsplit_once('/').map(|(p, _)| p).unwrap_or(path);
-        assert_eq!(collection_path, "/apis/rbac.authorization.k8s.io/v1/clusterroles");
+        assert_eq!(
+            collection_path,
+            "/apis/rbac.authorization.k8s.io/v1/clusterroles"
+        );
     }
 
     #[test]
@@ -535,18 +562,34 @@ mod auth_reconcile_tests {
         assert_eq!(json["spec"]["resourceAttributes"]["name"], "web-app");
         assert_eq!(json["spec"]["resourceAttributes"]["namespace"], "prod");
         assert_eq!(json["spec"]["resourceAttributes"]["verb"], "delete");
-        assert_eq!(json["spec"]["resourceAttributes"]["resource"], "deployments");
+        assert_eq!(
+            json["spec"]["resourceAttributes"]["resource"],
+            "deployments"
+        );
     }
 
     #[test]
     fn test_collection_path_for_namespaced_resources() {
         let role_path = "/apis/rbac.authorization.k8s.io/v1/namespaces/default/roles/my-role";
-        let collection = role_path.rsplit_once('/').map(|(p, _)| p).unwrap_or(role_path);
-        assert_eq!(collection, "/apis/rbac.authorization.k8s.io/v1/namespaces/default/roles");
+        let collection = role_path
+            .rsplit_once('/')
+            .map(|(p, _)| p)
+            .unwrap_or(role_path);
+        assert_eq!(
+            collection,
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/default/roles"
+        );
 
-        let binding_path = "/apis/rbac.authorization.k8s.io/v1/namespaces/prod/rolebindings/my-binding";
-        let collection = binding_path.rsplit_once('/').map(|(p, _)| p).unwrap_or(binding_path);
-        assert_eq!(collection, "/apis/rbac.authorization.k8s.io/v1/namespaces/prod/rolebindings");
+        let binding_path =
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/prod/rolebindings/my-binding";
+        let collection = binding_path
+            .rsplit_once('/')
+            .map(|(p, _)| p)
+            .unwrap_or(binding_path);
+        assert_eq!(
+            collection,
+            "/apis/rbac.authorization.k8s.io/v1/namespaces/prod/rolebindings"
+        );
     }
 
     #[test]

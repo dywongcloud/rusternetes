@@ -82,10 +82,7 @@ fn test_66_kubernetes_service_deserializes() {
     let svc: Service = serde_json::from_value(svc_json).expect("Service should deserialize");
     assert_eq!(svc.metadata.name, "kubernetes");
     assert_eq!(svc.spec.cluster_ip.as_deref(), Some("10.96.0.1"));
-    assert_eq!(
-        svc.metadata.namespace.as_deref(),
-        Some("default")
-    );
+    assert_eq!(svc.metadata.namespace.as_deref(), Some("default"));
 }
 
 #[tokio::test]
@@ -544,7 +541,13 @@ async fn test_93_pod_put_update() {
     let retrieved: Pod = storage.get(&key).await.unwrap();
     assert!(retrieved.metadata.labels.is_some());
     assert_eq!(
-        retrieved.metadata.labels.as_ref().unwrap().get("app").unwrap(),
+        retrieved
+            .metadata
+            .labels
+            .as_ref()
+            .unwrap()
+            .get("app")
+            .unwrap(),
         "nginx"
     );
 
@@ -655,19 +658,21 @@ async fn test_108_csr_update() {
 
     // Update with status (simulating approval)
     let mut updated_csr = csr.clone();
-    updated_csr.status = Some(rusternetes_common::resources::CertificateSigningRequestStatus {
-        conditions: Some(vec![
-            rusternetes_common::resources::CertificateSigningRequestCondition {
-                type_: "Approved".to_string(),
-                status: "True".to_string(),
-                reason: Some("AutoApproved".to_string()),
-                message: Some("Auto-approved by test".to_string()),
-                last_update_time: None,
-                last_transition_time: None,
-            },
-        ]),
-        certificate: Some("LS0tLS1CRUdJTi...cert...".to_string()),
-    });
+    updated_csr.status = Some(
+        rusternetes_common::resources::CertificateSigningRequestStatus {
+            conditions: Some(vec![
+                rusternetes_common::resources::CertificateSigningRequestCondition {
+                    type_: "Approved".to_string(),
+                    status: "True".to_string(),
+                    reason: Some("AutoApproved".to_string()),
+                    message: Some("Auto-approved by test".to_string()),
+                    last_update_time: None,
+                    last_transition_time: None,
+                },
+            ]),
+            certificate: Some("LS0tLS1CRUdJTi...cert...".to_string()),
+        },
+    );
 
     let result: CertificateSigningRequest = storage.update(&key, &updated_csr).await.unwrap();
     assert!(result.status.is_some());

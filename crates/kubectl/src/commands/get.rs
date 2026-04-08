@@ -190,7 +190,10 @@ fn parse_resource_slash(resource_type: &str) -> (&str, Option<&str>) {
 
 /// Resolve a JSONPath expression to a sortable value from a serde_json::Value
 fn resolve_sort_key(value: &serde_json::Value, sort_expr: &str) -> String {
-    let path = sort_expr.trim().strip_prefix('{').unwrap_or(sort_expr.trim());
+    let path = sort_expr
+        .trim()
+        .strip_prefix('{')
+        .unwrap_or(sort_expr.trim());
     let path = path.strip_suffix('}').unwrap_or(path);
     let path = path.strip_prefix('.').unwrap_or(path);
 
@@ -237,11 +240,7 @@ fn format_labels(labels: &Option<std::collections::HashMap<String, String>>) -> 
 }
 
 /// Watch resources by streaming newline-delimited JSON from the API
-async fn watch_resources(
-    client: &ApiClient,
-    api_path: &str,
-    query: &str,
-) -> Result<()> {
+async fn watch_resources(client: &ApiClient, api_path: &str, query: &str) -> Result<()> {
     // If query already starts with ?, append &watch=true; else ?watch=true
     let watch_path = if query.is_empty() {
         format!("{}?watch=true", api_path)
@@ -345,7 +344,11 @@ pub async fn execute_enhanced(
     for (i, rtype) in resource_types.iter().enumerate() {
         // Support type/name syntax: "pod/nginx"
         let (resolved_type, slash_name) = parse_resource_slash(rtype.trim());
-        let effective_name = slash_name.or(if resource_types.len() == 1 { name } else { None });
+        let effective_name = slash_name.or(if resource_types.len() == 1 {
+            name
+        } else {
+            None
+        });
 
         if watch {
             // For watch mode, build the API path and stream
@@ -389,15 +392,11 @@ fn build_list_api_path(resource_type: &str, ns: &str) -> Option<String> {
         }
         "node" | "nodes" => Some("/api/v1/nodes".to_string()),
         "namespace" | "namespaces" | "ns" => Some("/api/v1/namespaces".to_string()),
-        "configmap" | "configmaps" | "cm" => {
-            Some(format!("/api/v1/namespaces/{}/configmaps", ns))
-        }
+        "configmap" | "configmaps" | "cm" => Some(format!("/api/v1/namespaces/{}/configmaps", ns)),
         "secret" | "secrets" => Some(format!("/api/v1/namespaces/{}/secrets", ns)),
         "endpoints" | "ep" => Some(format!("/api/v1/namespaces/{}/endpoints", ns)),
         "job" | "jobs" => Some(format!("/apis/batch/v1/namespaces/{}/jobs", ns)),
-        "cronjob" | "cronjobs" | "cj" => {
-            Some(format!("/apis/batch/v1/namespaces/{}/cronjobs", ns))
-        }
+        "cronjob" | "cronjobs" | "cj" => Some(format!("/apis/batch/v1/namespaces/{}/cronjobs", ns)),
         "statefulset" | "statefulsets" | "sts" => {
             Some(format!("/apis/apps/v1/namespaces/{}/statefulsets", ns))
         }
@@ -454,7 +453,9 @@ pub async fn execute_with_query(
                     sort_by_jsonpath(&mut resources, sort_expr);
                 }
                 match format {
-                    OutputFormat::Table | OutputFormat::Wide => $print_fn(&resources, no_headers, show_labels),
+                    OutputFormat::Table | OutputFormat::Wide => {
+                        $print_fn(&resources, no_headers, show_labels)
+                    }
                     _ => format_output(&resources, &format)?,
                 }
             }
@@ -682,7 +683,9 @@ pub async fn execute(
                     .await
                     .map_err(map_get_error)?;
                 match format {
-                    OutputFormat::Table | OutputFormat::Wide => print_pods(&pods, no_headers, false),
+                    OutputFormat::Table | OutputFormat::Wide => {
+                        print_pods(&pods, no_headers, false)
+                    }
                     _ => format_output(&pods, &format)?,
                 }
             }
@@ -779,7 +782,9 @@ pub async fn execute(
                     .await
                     .map_err(map_get_error)?;
                 match format {
-                    OutputFormat::Table | OutputFormat::Wide => print_jobs(&jobs, no_headers, false),
+                    OutputFormat::Table | OutputFormat::Wide => {
+                        print_jobs(&jobs, no_headers, false)
+                    }
                     _ => format_output(&jobs, &format)?,
                 }
             }
@@ -820,7 +825,9 @@ pub async fn execute(
                     .await
                     .map_err(map_get_error)?;
                 match format {
-                    OutputFormat::Table | OutputFormat::Wide => print_nodes(&nodes, no_headers, false),
+                    OutputFormat::Table | OutputFormat::Wide => {
+                        print_nodes(&nodes, no_headers, false)
+                    }
                     _ => format_output(&nodes, &format)?,
                 }
             }
@@ -879,7 +886,9 @@ pub async fn execute(
                     .await
                     .map_err(map_get_error)?;
                 match format {
-                    OutputFormat::Table | OutputFormat::Wide => print_pvcs(&pvcs, no_headers, false),
+                    OutputFormat::Table | OutputFormat::Wide => {
+                        print_pvcs(&pvcs, no_headers, false)
+                    }
                     _ => format_output(&pvcs, &format)?,
                 }
             }
@@ -1241,7 +1250,10 @@ pub async fn execute(
 fn print_pods(pods: &[Pod], no_headers: bool, show_labels: bool) {
     if !no_headers {
         if show_labels {
-            println!("{:<30} {:<15} {:<15} {}", "NAME", "STATUS", "NODE", "LABELS");
+            println!(
+                "{:<30} {:<15} {:<15} {}",
+                "NAME", "STATUS", "NODE", "LABELS"
+            );
         } else {
             println!("{:<30} {:<15} {:<15}", "NAME", "STATUS", "NODE");
         }
@@ -1259,7 +1271,13 @@ fn print_pods(pods: &[Pod], no_headers: bool, show_labels: bool) {
             .map(|n| n.as_str())
             .unwrap_or("<none>");
         if show_labels {
-            println!("{:<30} {:<15} {:<15} {}", pod.metadata.name, status, node, format_labels(&pod.metadata.labels));
+            println!(
+                "{:<30} {:<15} {:<15} {}",
+                pod.metadata.name,
+                status,
+                node,
+                format_labels(&pod.metadata.labels)
+            );
         } else {
             println!("{:<30} {:<15} {:<15}", pod.metadata.name, status, node);
         }
@@ -1269,7 +1287,10 @@ fn print_pods(pods: &[Pod], no_headers: bool, show_labels: bool) {
 fn print_services(services: &[Service], no_headers: bool, show_labels: bool) {
     if !no_headers {
         if show_labels {
-            println!("{:<30} {:<20} {:<10} {}", "NAME", "CLUSTER-IP", "PORTS", "LABELS");
+            println!(
+                "{:<30} {:<20} {:<10} {}",
+                "NAME", "CLUSTER-IP", "PORTS", "LABELS"
+            );
         } else {
             println!("{:<30} {:<20} {:<10}", "NAME", "CLUSTER-IP", "PORTS");
         }
@@ -1291,7 +1312,10 @@ fn print_services(services: &[Service], no_headers: bool, show_labels: bool) {
         if show_labels {
             println!(
                 "{:<30} {:<20} {:<10} {}",
-                service.metadata.name, cluster_ip, ports, format_labels(&service.metadata.labels)
+                service.metadata.name,
+                cluster_ip,
+                ports,
+                format_labels(&service.metadata.labels)
             );
         } else {
             println!(
@@ -1395,7 +1419,12 @@ fn print_nodes(nodes: &[Node], no_headers: bool, show_labels: bool) {
             .map(|c| c.status.as_str())
             .unwrap_or("Unknown");
         if show_labels {
-            println!("{:<30} {:<15} {}", node.metadata.name, status, format_labels(&node.metadata.labels));
+            println!(
+                "{:<30} {:<15} {}",
+                node.metadata.name,
+                status,
+                format_labels(&node.metadata.labels)
+            );
         } else {
             println!("{:<30} {:<15}", node.metadata.name, status);
         }
@@ -1417,7 +1446,12 @@ fn print_namespaces(namespaces: &[Namespace], no_headers: bool, show_labels: boo
             .map(|s| format!("{:?}", s.phase))
             .unwrap_or_else(|| "Unknown".to_string());
         if show_labels {
-            println!("{:<30} {:<15} {}", namespace.metadata.name, status, format_labels(&namespace.metadata.labels));
+            println!(
+                "{:<30} {:<15} {}",
+                namespace.metadata.name,
+                status,
+                format_labels(&namespace.metadata.labels)
+            );
         } else {
             println!("{:<30} {:<15}", namespace.metadata.name, status);
         }
@@ -2143,7 +2177,10 @@ mod tests {
     #[test]
     fn test_format_output_jsonpath_mode() {
         let resource = serde_json::json!({"kind": "Pod", "metadata": {"name": "test-pod"}});
-        let result = format_output(&resource, &OutputFormat::JsonPath("{.metadata.name}".to_string()));
+        let result = format_output(
+            &resource,
+            &OutputFormat::JsonPath("{.metadata.name}".to_string()),
+        );
         assert!(result.is_ok());
     }
 

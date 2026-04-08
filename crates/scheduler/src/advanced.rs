@@ -1219,8 +1219,7 @@ mod tests {
         let node = make_node("node-1", "2", "4Gi");
 
         // Existing system-critical pod (priority 2000000000) using 1 CPU
-        let system_pod =
-            make_scheduled_pod("system-critical", 2_000_000_000, "1", "1Gi", "node-1");
+        let system_pod = make_scheduled_pod("system-critical", 2_000_000_000, "1", "1Gi", "node-1");
 
         // Incoming pod with priority 1000000000 — lower than the system-critical pod
         let incoming = make_incoming_pod("wants-resources", 1_000_000_000, "2", "2Gi", None);

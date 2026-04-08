@@ -151,10 +151,14 @@ pub async fn execute(
 ) -> Result<()> {
     // 1. GET the resource from the API server
     let path = resource_path(resource_type, namespace, resource_name)?;
-    let resource: Value = client
-        .get(&path)
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to get resource {}/{}: {}", resource_type, resource_name, e))?;
+    let resource: Value = client.get(&path).await.map_err(|e| {
+        anyhow::anyhow!(
+            "failed to get resource {}/{}: {}",
+            resource_type,
+            resource_name,
+            e
+        )
+    })?;
 
     // 2. Extract selector labels
     let selector = extract_selector(resource_type, &resource)?;
@@ -171,7 +175,11 @@ pub async fn execute(
                 1 => ports[0],
                 _ => anyhow::bail!(
                     "resource has multiple ports ({}); use --port to specify which one",
-                    ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ")
+                    ports
+                        .iter()
+                        .map(|p| p.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             }
         }
@@ -363,7 +371,15 @@ mod tests {
         let mut selector = BTreeMap::new();
         selector.insert("app".to_string(), "web".to_string());
 
-        let svc = build_service("web-svc", "production", &selector, 80, Some(8080), "TCP", None);
+        let svc = build_service(
+            "web-svc",
+            "production",
+            &selector,
+            80,
+            Some(8080),
+            "TCP",
+            None,
+        );
 
         assert_eq!(svc["spec"]["ports"][0]["port"], 80);
         assert_eq!(svc["spec"]["ports"][0]["targetPort"], 8080);
@@ -374,7 +390,15 @@ mod tests {
         let mut selector = BTreeMap::new();
         selector.insert("app".to_string(), "frontend".to_string());
 
-        let svc = build_service("frontend", "default", &selector, 443, None, "TCP", Some("NodePort"));
+        let svc = build_service(
+            "frontend",
+            "default",
+            &selector,
+            443,
+            None,
+            "TCP",
+            Some("NodePort"),
+        );
 
         assert_eq!(svc["spec"]["type"], "NodePort");
     }
@@ -394,7 +418,15 @@ mod tests {
         let mut selector = BTreeMap::new();
         selector.insert("app".to_string(), "nginx".to_string());
 
-        let svc = build_service("my-custom-name", "default", &selector, 80, None, "TCP", Some("LoadBalancer"));
+        let svc = build_service(
+            "my-custom-name",
+            "default",
+            &selector,
+            80,
+            None,
+            "TCP",
+            Some("LoadBalancer"),
+        );
 
         assert_eq!(svc["metadata"]["name"], "my-custom-name");
         assert_eq!(svc["spec"]["type"], "LoadBalancer");
@@ -523,7 +555,15 @@ mod tests {
         selector.insert("app".to_string(), "web".to_string());
         selector.insert("version".to_string(), "v2".to_string());
 
-        let svc = build_service("web", "staging", &selector, 443, Some(8443), "TCP", Some("ClusterIP"));
+        let svc = build_service(
+            "web",
+            "staging",
+            &selector,
+            443,
+            Some(8443),
+            "TCP",
+            Some("ClusterIP"),
+        );
         assert_eq!(svc["spec"]["selector"]["app"], "web");
         assert_eq!(svc["spec"]["selector"]["version"], "v2");
         assert_eq!(svc["spec"]["type"], "ClusterIP");
