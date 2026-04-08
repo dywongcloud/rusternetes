@@ -227,19 +227,23 @@ pub async fn get_swagger_spec(
     // won't find definitions for the resource, so validation is skipped.
     let wants_protobuf = accept.contains("proto-openapi.spec.v2");
     if wants_protobuf {
-        // Encode a minimal gnostic openapi.v2.Document in protobuf.
-        // Field 1 (swagger): string "2.0" → tag 0x0A, len 3, "2.0"
-        let mut proto_bytes: Vec<u8> = Vec::new();
-        proto_bytes.push(0x0A); // field 1, wire type 2 (length-delimited)
-        proto_bytes.push(0x03); // length 3
-        proto_bytes.extend_from_slice(b"2.0");
+        // Return an empty gnostic openapi.v2.Document protobuf message.
+        // In proto3, an empty message (zero bytes) is valid — all fields
+        // take their default values (empty strings, nil submessages).
+        // This lets client-go's OpenAPISchema() call succeed without errors.
+        // The resulting Document has no definitions, so kubectl validation
+        // is effectively skipped (no schema to validate against).
+        //
+        // We CANNOT return our JSON OpenAPI spec here because the client
+        // does proto.Unmarshal(data, &Document{}) directly — it expects
+        // native gnostic protobuf, not JSON.
         return Response::builder()
             .status(StatusCode::OK)
             .header(
                 header::CONTENT_TYPE,
-                "application/com.github.proto-openapi.spec.v2.v1.0+protobuf",
+                "application/com.github.proto-openapi.spec.v2@v1.0+protobuf",
             )
-            .body(Body::from(proto_bytes))
+            .body(Body::empty())
             .unwrap();
     }
 
