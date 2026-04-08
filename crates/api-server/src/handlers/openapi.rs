@@ -217,11 +217,33 @@ pub async fn get_swagger_spec(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    // Always return JSON. The protobuf format for OpenAPI v2 requires
-    // proto.Marshal() of a gnostic openapi.v2.Document (no k8s\0 prefix,
-    // no Unknown wrapper) — a completely different serialization than
-    // standard K8s resources. Since we can't produce native gnostic protobuf,
-    // return JSON and let client-go/kubectl fall back via Accept negotiation.
+    // Check if protobuf is requested. The client-go OpenAPISchema() method
+    // always requests protobuf and directly calls proto.Unmarshal without
+    // checking Content-Type. It expects a gnostic openapi.v2.Document
+    // (native proto.Marshal, no k8s\0 prefix).
+    //
+    // We can't produce a full gnostic protobuf spec, but an empty proto3
+    // message (zero bytes) is valid and parses as an empty Document.
+    // This lets client-go's validation proceed without errors — it just
+    // won't find definitions for the resource, so validation is skipped.
+    let wants_protobuf = accept.contains("proto-openapi.spec.v2");
+    if wants_protobuf {
+        // Encode a minimal gnostic openapi.v2.Document in protobuf.
+        // Field 1 (swagger): string "2.0" → tag 0x0A, len 3, "2.0"
+        let mut proto_bytes: Vec<u8> = Vec::new();
+        proto_bytes.push(0x0A); // field 1, wire type 2 (length-delimited)
+        proto_bytes.push(0x03); // length 3
+        proto_bytes.extend_from_slice(b"2.0");
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(
+                header::CONTENT_TYPE,
+                "application/com.github.proto-openapi.spec.v2.v1.0+protobuf",
+            )
+            .body(Body::from(proto_bytes))
+            .unwrap();
+    }
+
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
