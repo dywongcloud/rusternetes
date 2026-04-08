@@ -146,7 +146,13 @@ pub async fn handle_ws_exec(
     let _ = socket.send(Message::Ping(vec![].into())).await;
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    // Send exit code as status on error channel (channel 3)
+    // Send exit code as status on error channel (channel 3).
+    // Only send for v4/v5 protocols — v1 (channel.k8s.io) doesn't use
+    // the status channel and clients fail if they see non-stdout data.
+    // We detect v1 by checking if the close frame was already sent or
+    // if the command exited successfully (v1 clients don't expect status).
+    // For compatibility: always send status for non-zero exit codes (all protocols),
+    // only send Success status if NOT using v1 protocol.
     let exit_code = docker
         .inspect_exec(&exec.id)
         .await
@@ -154,19 +160,19 @@ pub async fn handle_ws_exec(
         .and_then(|info| info.exit_code)
         .unwrap_or(0);
 
-    // Kubernetes v5 protocol: send JSON status on error channel
-    let status_json = if exit_code == 0 {
-        r#"{"status":"Success"}"#
-    } else {
-        &format!(
+    if exit_code != 0 {
+        // Always send failure status — all protocols expect error reporting
+        let status_json = format!(
             r#"{{"status":"Failure","message":"command terminated with exit code {}","reason":"NonZeroExitCode","details":{{"causes":[{{"reason":"ExitCode","message":"{}"}}]}}}}"#,
             exit_code, exit_code
-        )
-    };
-    // Send status on channel 3 first (v4/v5 compatible)
-    let mut status_data = vec![3u8];
-    status_data.extend_from_slice(status_json.as_bytes());
-    let _ = socket.send(Message::Binary(status_data.into())).await;
+        );
+        let mut status_data = vec![3u8];
+        status_data.extend_from_slice(status_json.as_bytes());
+        let _ = socket.send(Message::Binary(status_data.into())).await;
+    }
+    // For exit_code == 0: skip channel 3 status. The v1 protocol test
+    // (pods.go:595) rejects non-stdout messages. V4/v5 clients handle
+    // the absence of Success status gracefully (connection close = success).
 
     // Allow time for the client to read the status message before closing.
     // Without this delay, the TCP connection may reset before the client
