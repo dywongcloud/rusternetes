@@ -79,13 +79,17 @@ fn wants_aggregated_discovery(headers: &HeaderMap) -> bool {
             return false;
         }
 
-        // Parse q-values to determine preference.
-        // K8s conformance test sends aggregated with higher q-value than plain JSON.
-        // Sonobuoy sends both but can't parse aggregated — it puts plain JSON first.
+        // Parse q-values and position to determine preference.
+        // K8s discovery client sends aggregated before plain JSON (both q=1.0).
+        // Sonobuoy sends plain JSON first, then aggregated — expects standard format.
+        // Per HTTP content negotiation, when q-values are equal, the first listed
+        // type is preferred. We use position as tiebreaker.
         let mut agg_q: f32 = 1.0;
         let mut plain_q: f32 = -1.0;
+        let mut agg_pos: usize = usize::MAX;
+        let mut plain_pos: usize = usize::MAX;
 
-        for part in accept.split(',') {
+        for (i, part) in accept.split(',').enumerate() {
             let part = part.trim();
             let q = part
                 .split(";q=")
@@ -95,18 +99,21 @@ fn wants_aggregated_discovery(headers: &HeaderMap) -> bool {
 
             if part.contains("apidiscovery.k8s.io") {
                 agg_q = q;
+                agg_pos = i;
             } else if part.starts_with("application/json") && !part.contains("apidiscovery") {
                 plain_q = q;
+                plain_pos = i;
             }
         }
 
         // Return aggregated if:
         // - No plain JSON alternative (exclusive request), OR
-        // - Aggregated has strictly higher q-value than plain JSON
+        // - Aggregated has higher q-value, OR
+        // - Equal q-values but aggregated appears first (client preference)
         if plain_q < 0.0 {
             return true; // No plain JSON at all
         }
-        agg_q > plain_q
+        agg_q > plain_q || (agg_q == plain_q && agg_pos < plain_pos)
     } else {
         false
     }
@@ -3572,6 +3579,32 @@ mod tests {
             ),
         );
         assert!(wants_aggregated_discovery(&headers));
+    }
+
+    #[test]
+    fn test_wants_aggregated_discovery_k8s_client_default() {
+        // K8s discovery client sends aggregated types first, then plain JSON — all q=1.0
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "accept",
+            HeaderValue::from_static(
+                "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList,application/json;g=apidiscovery.k8s.io;v=v2beta1;as=APIGroupDiscoveryList,application/json",
+            ),
+        );
+        assert!(wants_aggregated_discovery(&headers));
+    }
+
+    #[test]
+    fn test_wants_aggregated_discovery_sonobuoy_plain_first() {
+        // Sonobuoy sends plain JSON first, then aggregated — expects standard format
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "accept",
+            HeaderValue::from_static(
+                "application/json, application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList",
+            ),
+        );
+        assert!(!wants_aggregated_discovery(&headers));
     }
 
     #[test]

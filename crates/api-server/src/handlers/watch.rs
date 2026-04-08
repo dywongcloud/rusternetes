@@ -2100,6 +2100,9 @@ pub async fn watch_cluster_scoped_json(
     let should_send_initial =
         send_initial_events || requested_rv.as_deref() == Some("0") || requested_rv.is_none();
 
+    let prefix_for_reconnect = prefix.clone();
+    let state_for_reconnect = state.clone();
+
     tokio::spawn(async move {
         let mut latest_resource_version: Option<String> = Some(current_rev_str);
 
@@ -2142,7 +2145,7 @@ pub async fn watch_cluster_scoped_json(
         }
 
         let mut bookmark_interval = if allow_bookmarks || send_initial_events {
-            Some(interval(Duration::from_secs(15)))
+            Some(interval(Duration::from_secs(5)))
         } else {
             None
         };
@@ -2178,12 +2181,15 @@ pub async fn watch_cluster_scoped_json(
                                 }
                             }
                             Some(Err(e)) => {
-                                error!("Watch error: {}", e);
-                                return;
+                                debug!("Watch stream transient error (continuing): {}", e);
+                                continue;
                             }
                             None => {
-                                debug!("Watch stream ended");
-                                return;
+                                // Watch stream ended — resubscribe from cache
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                                let new_rx = state_for_reconnect.watch_cache.subscribe(&prefix_for_reconnect).await;
+                                watch_stream = Box::pin(crate::watch_cache::broadcast_to_stream(new_rx));
+                                continue;
                             }
                         }
                     }
@@ -2206,9 +2212,7 @@ pub async fn watch_cluster_scoped_json(
                                 }
                             });
                             if let Ok(json) = serde_json::to_string(&bookmark) {
-                                if tx.try_send(Ok(format!("{}\n", json))).is_err() {
-                                    return;
-                                }
+                                let _ = tx.try_send(Ok(format!("{}\n", json)));
                             }
                         }
                     }
@@ -2275,12 +2279,15 @@ pub async fn watch_namespaced_json(
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
-    // Always send initial events for cluster-scoped JSON watches.
+    // Always send initial events for namespaced JSON watches.
     // When the client watches with a specific resourceVersion (from a CREATE),
     // our broadcast subscription only gets future events, missing the MODIFIED
     // event that already happened. Sending current state as ADDED ensures the
     // client sees the latest status (e.g. CRD Established=True condition).
     let should_send_initial = true;
+
+    let prefix_for_reconnect = prefix.clone();
+    let state_for_reconnect = state.clone();
 
     tokio::spawn(async move {
         let mut latest_resource_version: Option<String> = Some(current_rev_str);
@@ -2324,7 +2331,7 @@ pub async fn watch_namespaced_json(
         }
 
         let mut bookmark_interval = if allow_bookmarks || send_initial_events {
-            Some(interval(Duration::from_secs(15)))
+            Some(interval(Duration::from_secs(5)))
         } else {
             None
         };
@@ -2360,12 +2367,15 @@ pub async fn watch_namespaced_json(
                                 }
                             }
                             Some(Err(e)) => {
-                                error!("Watch error: {}", e);
-                                return;
+                                debug!("Watch stream transient error (continuing): {}", e);
+                                continue;
                             }
                             None => {
-                                debug!("Watch stream ended");
-                                return;
+                                // Watch stream ended — resubscribe from cache
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                                let new_rx = state_for_reconnect.watch_cache.subscribe(&prefix_for_reconnect).await;
+                                watch_stream = Box::pin(crate::watch_cache::broadcast_to_stream(new_rx));
+                                continue;
                             }
                         }
                     }
@@ -2388,9 +2398,7 @@ pub async fn watch_namespaced_json(
                                 }
                             });
                             if let Ok(json) = serde_json::to_string(&bookmark) {
-                                if tx.try_send(Ok(format!("{}\n", json))).is_err() {
-                                    return;
-                                }
+                                let _ = tx.try_send(Ok(format!("{}\n", json)));
                             }
                         }
                     }

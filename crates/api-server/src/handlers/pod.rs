@@ -1223,6 +1223,16 @@ pub async fn patch(
         return Ok(Json(patched_pod));
     }
 
+    // Increment generation if spec changed — use STORED generation, not client's
+    patched_pod.metadata.generation = current_pod.metadata.generation;
+    let patched_pod_value = serde_json::to_value(&patched_pod)
+        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+    crate::handlers::lifecycle::maybe_increment_generation(
+        &current_json,
+        &patched_pod_value,
+        &mut patched_pod.metadata,
+    );
+
     // For PATCH operations, clear resourceVersion to skip optimistic concurrency.
     // PATCH is a read-modify-write operation, and between our read and write the
     // kubelet may update the pod status (incrementing resourceVersion). The patch
