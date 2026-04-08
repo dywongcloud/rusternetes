@@ -996,12 +996,41 @@ impl Kubelet {
                                     (Phase::Pending, "InitContainerFailed".to_string())
                                 };
 
-                                // Build K8s-style message listing incomplete init containers
+                                // Build K8s-style message listing only INCOMPLETE init containers.
+                                // An init container is "incomplete" if it didn't terminate with exit code 0.
+                                // Successfully completed init containers (exit 0) should NOT be listed.
+                                let init_statuses = new_pod
+                                    .status
+                                    .as_ref()
+                                    .and_then(|s| s.init_container_statuses.as_ref());
                                 let incomplete_inits: Vec<String> = new_pod
                                     .spec
                                     .as_ref()
                                     .and_then(|s| s.init_containers.as_ref())
-                                    .map(|ics| ics.iter().map(|c| c.name.clone()).collect())
+                                    .map(|ics| {
+                                        ics.iter()
+                                            .filter(|c| {
+                                                // Check if this init container completed successfully
+                                                let completed = init_statuses
+                                                    .and_then(|statuses| {
+                                                        statuses.iter().find(|s| s.name == c.name)
+                                                    })
+                                                    .map(|s| {
+                                                        matches!(
+                                                            &s.state,
+                                                            Some(
+                                                                rusternetes_common::resources::ContainerState::Terminated {
+                                                                    exit_code: 0, ..
+                                                                }
+                                                            )
+                                                        )
+                                                    })
+                                                    .unwrap_or(false);
+                                                !completed
+                                            })
+                                            .map(|c| c.name.clone())
+                                            .collect()
+                                    })
                                     .unwrap_or_default();
                                 let status_msg = if !incomplete_inits.is_empty() {
                                     format!(
