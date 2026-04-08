@@ -51,10 +51,12 @@ Several fixes committed before round 127 were NOT included in the running binary
 - Fix: Skip channel 3 Success status for v1 protocol (commit 6fc1e55)
 - **Status**: FIXED
 
-### 11. Service Endpoint Reachability (2 failures)
-- `service.go:768` — service not reachable within 2m0s timeout
-- `service.go:870` — extra port mappings on slices, context deadline exceeded
-- **Status**: TODO — networking/kube-proxy issue
+### 11. Service Endpoint Reachability (2 failures) — PARTIALLY FIXED
+- `service.go:768` — service not reachable within 2m0s timeout (networking/kube-proxy)
+- `service.go:870` — extra port mappings on slices — FIXED
+- **Root cause for :870**: EndpointSlice controller mirrored from Endpoints, including ALL ports for ALL pods. K8s builds from Service+Pods, filtering ports per pod.
+- **Fix**: Rewrote EndpointSlice controller to build directly from Service+Pods with FindPort logic (commit 01d2d72)
+- **Status**: :870 FIXED, :768 needs networking investigation
 
 ### 12. Init Container (1 failure) — FIXED
 - Fix: Only list incomplete init containers in PodInitialized message (commit d31aaed)
@@ -104,9 +106,9 @@ Several fixes committed before round 127 were NOT included in the running binary
 
 ## Summary
 
-**FIXED**: 33 of 44 failures (issues #1-4, #6-7, #9-10, #12-15, #17, #21-22)
+**FIXED**: 34 of 44 failures (issues #1-4, #6-7, #9-10, #11(partial), #12-15, #17, #21-22)
 **Expected to resolve**: ~5 more (DNS #5, Webhooks #8, Deployment #18, RC #20)
-**Remaining**: ~6 (Service #11, Proxy #16, Service Account #19)
+**Remaining**: ~5 (Service #11 partial, Proxy #16, Service Account #19)
 
 ## Progress History
 
