@@ -849,7 +849,7 @@ impl ContainerRuntime {
         let hosts_path = format!("{}/hosts", pod_dir);
 
         let mut content = String::from(
-            "# Kubernetes-managed hosts file\n\
+            "# Kubernetes-managed hosts file.\n\
              127.0.0.1\tlocalhost\n\
              ::1\tlocalhost ip6-localhost ip6-loopback\n\
              fe00::\tip6-localnet\n\
@@ -6608,7 +6608,7 @@ mod tests {
         };
 
         let mut content = String::from(
-            "# Kubernetes-managed hosts file\n\
+            "# Kubernetes-managed hosts file.\n\
              127.0.0.1\tlocalhost\n\
              ::1\tlocalhost ip6-localhost ip6-loopback\n\
              fe00::\tip6-localnet\n\
@@ -6652,7 +6652,7 @@ mod tests {
 
         assert!(content.contains("127.0.0.1\tlocalhost"));
         assert!(content.contains("::1\tlocalhost ip6-localhost ip6-loopback"));
-        assert!(content.contains("# Kubernetes-managed hosts file"));
+        assert!(content.contains("# Kubernetes-managed hosts file."));
     }
 
     #[test]
