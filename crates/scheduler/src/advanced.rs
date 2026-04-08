@@ -448,13 +448,13 @@ pub fn check_host_port_conflicts(node: &Node, pod: &Pod, all_pods: &[Pod]) -> bo
             continue;
         }
 
-        // Skip terminated pods
+        // Skip non-running pods: Pending pods haven't acquired resources,
+        // Succeeded/Failed have released them, terminating pods are being evicted.
         let phase = existing_pod.status.as_ref().and_then(|s| s.phase.as_ref());
-        if matches!(
-            phase,
-            Some(rusternetes_common::types::Phase::Succeeded)
-                | Some(rusternetes_common::types::Phase::Failed)
-        ) {
+        if !matches!(phase, Some(rusternetes_common::types::Phase::Running)) {
+            continue;
+        }
+        if existing_pod.metadata.deletion_timestamp.is_some() {
             continue;
         }
 
@@ -581,13 +581,13 @@ pub fn calculate_resource_score_with_pods(node: &Node, pod: &Pod, all_pods: &[Po
         if !scheduled_on_this_node {
             continue;
         }
-        // Skip terminated pods
+        // Skip non-running pods: Pending pods haven't acquired resources,
+        // Succeeded/Failed have released them, terminating pods are being evicted.
         let phase = existing_pod.status.as_ref().and_then(|s| s.phase.as_ref());
-        if matches!(
-            phase,
-            Some(rusternetes_common::types::Phase::Succeeded)
-                | Some(rusternetes_common::types::Phase::Failed)
-        ) {
+        if !matches!(phase, Some(rusternetes_common::types::Phase::Running)) {
+            continue;
+        }
+        if existing_pod.metadata.deletion_timestamp.is_some() {
             continue;
         }
         if let Some(spec) = &existing_pod.spec {
@@ -723,13 +723,10 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
             if !on_this_node {
                 return false;
             }
-            // Skip terminated pods — they don't consume resources
+            // Only count Running, non-terminating pods as resource consumers
             let phase = p.status.as_ref().and_then(|s| s.phase.as_ref());
-            !matches!(
-                phase,
-                Some(rusternetes_common::types::Phase::Succeeded)
-                    | Some(rusternetes_common::types::Phase::Failed)
-            )
+            matches!(phase, Some(rusternetes_common::types::Phase::Running))
+                && p.metadata.deletion_timestamp.is_none()
         })
         .collect();
 

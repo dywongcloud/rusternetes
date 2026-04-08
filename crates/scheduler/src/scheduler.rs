@@ -131,15 +131,29 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
                     );
 
                     // Evict lower-priority pods
-                    for pod_name in pods_to_evict {
-                        if let Err(e) = self.evict_pod(&pod_name).await {
+                    for pod_name in &pods_to_evict {
+                        if let Err(e) = self.evict_pod(pod_name).await {
                             error!("Failed to evict pod {}: {}", pod_name, e);
                         }
                     }
 
-                    // Bind the high-priority pod
-                    if let Err(e) = self.bind_pod_to_node(pod, &node_name).await {
-                        error!("Failed to bind preempting pod to node: {}", e);
+                    // Set nominatedNodeName on the pod instead of binding immediately.
+                    // K8s doesn't bind the preemptor right away — it waits for victims
+                    // to terminate, then the next scheduling cycle picks up the pod.
+                    // The resource counting fix (only count Running non-terminating pods)
+                    // ensures the preemptor will be schedulable once victims stop running.
+                    let pod_ns = pod.metadata.namespace.as_deref().unwrap_or("default");
+                    let pod_key =
+                        rusternetes_storage::build_key("pods", Some(pod_ns), &pod.metadata.name);
+                    if let Ok(mut p) = self.storage.get::<Pod>(&pod_key).await {
+                        if let Some(ref mut status) = p.status {
+                            status.nominated_node_name = Some(node_name.clone());
+                        }
+                        let _ = self.storage.update(&pod_key, &p).await;
+                        info!(
+                            "Set nominatedNodeName={} on preempting pod {}",
+                            node_name, pod.metadata.name
+                        );
                     }
                 } else {
                     warn!(
