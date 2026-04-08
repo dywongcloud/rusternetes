@@ -527,10 +527,7 @@ impl ContainerRuntime {
             let has_sa_volume = spec
                 .volumes
                 .as_ref()
-                .map(|vols| {
-                    vols.iter()
-                        .any(|v| v.name.contains("kube-api-access") || v.name.contains("token"))
-                })
+                .map(|vols| vols.iter().any(|v| v.name.contains("kube-api-access")))
                 .unwrap_or(false);
             if !has_sa_volume {
                 // Add projected SA token volume
