@@ -175,7 +175,16 @@ impl<S: Storage> CRDController<S> {
         let crd_key = format!("/registry/customresourcedefinitions/{}", crd_name);
         let mut crd: CustomResourceDefinition = self.storage.get(&crd_key).await?;
 
-        let mut conditions = Vec::new();
+        // Preserve existing conditions and only update/add Established and NamesAccepted.
+        // Other conditions (e.g., set by tests or external controllers) must be kept.
+        let mut conditions: Vec<CustomResourceDefinitionCondition> = crd
+            .status
+            .as_ref()
+            .and_then(|s| s.conditions.clone())
+            .unwrap_or_default();
+
+        // Remove existing Established and NamesAccepted conditions (we'll re-add them)
+        conditions.retain(|c| c.type_ != "Established" && c.type_ != "NamesAccepted");
 
         if names_accepted {
             conditions.push(CustomResourceDefinitionCondition {
