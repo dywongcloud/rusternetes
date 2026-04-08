@@ -1,17 +1,28 @@
 use anyhow::Result;
-use rusternetes_common::resources::{EndpointSlice, Endpoints};
-use rusternetes_storage::{build_key, Storage};
+use rusternetes_common::resources::endpointslice::{
+    Endpoint, EndpointConditions, EndpointPort, EndpointReference,
+};
+use rusternetes_common::resources::{EndpointSlice, Pod, Service};
+use rusternetes_common::types::Phase;
+use rusternetes_storage::{build_key, build_prefix, Storage};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
-/// EndpointSliceController watches Endpoints and automatically maintains EndpointSlice resources.
-/// EndpointSlices are the modern replacement for Endpoints in Kubernetes, providing better
-/// scalability for services with many endpoints.
+/// EndpointSliceController builds EndpointSlices directly from Services and Pods,
+/// following the same approach as the K8s endpointslice controller.
 ///
-/// This controller:
-/// 1. Watches all Endpoints resources
-/// 2. For each Endpoints object, creates corresponding EndpointSlice(s)
-/// 3. Syncs changes from Endpoints to EndpointSlices
+/// Key behavior (matching K8s):
+/// - Iterates over Services with selectors
+/// - Finds matching pods by label selector
+/// - For each pod, computes which service ports the pod actually serves
+///   using FindPort logic (matching containerPort to service targetPort)
+/// - Groups pods by their port mapping
+/// - Creates separate EndpointSlices for each port group
+///
+/// This ensures that pods only appear in EndpointSlices with the ports
+/// they actually serve, fixing the conformance test failure where pods
+/// were incorrectly associated with all service ports.
 pub struct EndpointSliceController<S: Storage> {
     storage: Arc<S>,
 }
@@ -21,77 +32,67 @@ impl<S: Storage> EndpointSliceController<S> {
         Self { storage }
     }
 
-    /// Main reconciliation loop - syncs all endpoints to endpointslices
+    /// Main reconciliation loop — syncs EndpointSlices for all Services
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting endpointslice reconciliation");
 
-        // List all endpoints across all namespaces
-        let endpoints_list: Vec<Endpoints> = self.storage.list("/registry/endpoints/").await?;
+        // List all services across all namespaces
+        let services: Vec<Service> = self
+            .storage
+            .list(&build_prefix("services", None))
+            .await
+            .unwrap_or_default();
 
-        // Build a set of existing endpoints names for orphan detection
-        let mut endpoints_names: std::collections::HashSet<(String, String)> =
+        // Track which service names we've seen for orphan cleanup
+        let mut service_names: std::collections::HashSet<(String, String)> =
             std::collections::HashSet::new();
-        for ep in &endpoints_list {
-            let ns = ep
-                .metadata
-                .namespace
-                .as_deref()
-                .unwrap_or("default")
-                .to_string();
-            endpoints_names.insert((ns, ep.metadata.name.clone()));
-        }
 
-        for endpoints in endpoints_list {
-            if let Err(e) = self.reconcile_endpoints(&endpoints).await {
+        for service in &services {
+            let ns = service.metadata.namespace.as_deref().unwrap_or("default");
+            service_names.insert((ns.to_string(), service.metadata.name.clone()));
+
+            if let Err(e) = self.reconcile_service(service).await {
                 error!(
-                    "Failed to reconcile endpointslices for endpoints {}/{}: {}",
-                    endpoints
-                        .metadata
-                        .namespace
-                        .as_ref()
-                        .unwrap_or(&"default".to_string()),
-                    &endpoints.metadata.name,
-                    e
+                    "Failed to reconcile endpointslices for service {}/{}: {}",
+                    ns, service.metadata.name, e
                 );
             }
         }
 
-        // Clean up orphaned EndpointSlices (whose source Endpoints no longer exist)
+        // Clean up orphaned EndpointSlices (whose Service no longer exists)
         let all_slices: Vec<EndpointSlice> = self
             .storage
-            .list("/registry/endpointslices/")
+            .list(&build_prefix("endpointslices", None))
             .await
             .unwrap_or_default();
+
         for slice in all_slices {
             let ns = slice.metadata.namespace.as_deref().unwrap_or("default");
-            let name = &slice.metadata.name;
-            // EndpointSlice names match their source Endpoints name (or name-suffix)
-            // Only strip the last segment if it's numeric (i.e., a generated suffix like "-1", "-2")
-            let source_name = match name.rsplit_once('-') {
-                Some((prefix, suffix)) if suffix.chars().all(|c| c.is_ascii_digit()) => {
-                    prefix.to_string()
-                }
-                _ => name.clone(),
-            };
-            if !endpoints_names.contains(&(ns.to_string(), source_name.clone()))
-                && !endpoints_names.contains(&(ns.to_string(), name.clone()))
-            {
-                // Only delete slices managed by the endpointslice-controller (mirrored from Endpoints)
-                // Do NOT delete slices created externally (e.g., by conformance tests or users)
-                let is_mirrored = slice
-                    .metadata
-                    .labels
-                    .as_ref()
-                    .map(|l| {
-                        l.get("endpointslice.kubernetes.io/managed-by")
-                            .map(|v| v == "endpointslice-controller.k8s.io")
-                            .unwrap_or(false)
-                    })
-                    .unwrap_or(false);
-                if is_mirrored {
-                    let key = rusternetes_storage::build_key("endpointslices", Some(ns), name);
-                    debug!("Deleting orphaned EndpointSlice {}/{}", ns, name);
-                    let _ = self.storage.delete(&key).await;
+            let svc_name = slice
+                .metadata
+                .labels
+                .as_ref()
+                .and_then(|l| l.get("kubernetes.io/service-name"))
+                .map(|s| s.as_str());
+
+            if let Some(svc_name) = svc_name {
+                if !service_names.contains(&(ns.to_string(), svc_name.to_string())) {
+                    // Only delete slices managed by our controller
+                    let is_managed = slice
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| l.get("endpointslice.kubernetes.io/managed-by"))
+                        .map(|v| v == "endpointslice-controller.k8s.io")
+                        .unwrap_or(false);
+                    if is_managed {
+                        let key = build_key("endpointslices", Some(ns), &slice.metadata.name);
+                        debug!(
+                            "Deleting orphaned EndpointSlice {}/{}",
+                            ns, slice.metadata.name
+                        );
+                        let _ = self.storage.delete(&key).await;
+                    }
                 }
             }
         }
@@ -99,79 +100,199 @@ impl<S: Storage> EndpointSliceController<S> {
         Ok(())
     }
 
-    /// Reconcile endpointslices for a single endpoints object
-    async fn reconcile_endpoints(&self, endpoints: &Endpoints) -> Result<()> {
-        let namespace = endpoints
-            .metadata
-            .namespace
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Endpoints has no namespace"))?;
-        let endpoints_name = &endpoints.metadata.name;
+    /// Reconcile EndpointSlices for a single Service
+    async fn reconcile_service(&self, service: &Service) -> Result<()> {
+        let namespace = service.metadata.namespace.as_deref().unwrap_or("default");
+        let service_name = &service.metadata.name;
+
+        // Skip services without selectors (ExternalName, headless without selector)
+        let selector = match &service.spec.selector {
+            Some(s) if !s.is_empty() => s,
+            _ => return Ok(()),
+        };
+
+        // Skip ExternalName services
+        if matches!(
+            service.spec.service_type,
+            Some(rusternetes_common::resources::ServiceType::ExternalName)
+        ) {
+            return Ok(());
+        }
 
         debug!(
-            "Reconciling endpointslices for endpoints {}/{}",
-            namespace, endpoints_name
+            "Reconciling endpointslices for service {}/{}",
+            namespace, service_name
         );
 
-        // Convert Endpoints to EndpointSlice(s)
-        let endpointslices = EndpointSlice::from_endpoints(endpoints);
+        // Find all pods matching the service's label selector
+        let all_pods: Vec<Pod> = self
+            .storage
+            .list(&build_prefix("pods", Some(namespace)))
+            .await
+            .unwrap_or_default();
 
-        // For simplicity, we create one EndpointSlice per Endpoints object
-        // In real Kubernetes, EndpointSlices are split when they exceed size limits
-        for (idx, mut endpointslice) in endpointslices.into_iter().enumerate() {
-            // Set the name - for the first slice, use the service name
-            // For additional slices, append a suffix
-            let slice_name = if idx == 0 {
-                endpoints_name.clone()
-            } else {
-                format!("{}-{}", endpoints_name, idx)
+        let matching_pods: Vec<&Pod> = all_pods
+            .iter()
+            .filter(|pod| {
+                // Match label selector
+                if let Some(pod_labels) = &pod.metadata.labels {
+                    selector.iter().all(|(k, v)| pod_labels.get(k) == Some(v))
+                } else {
+                    false
+                }
+            })
+            .filter(|pod| {
+                // Skip pods that shouldn't be in endpoints
+                // (terminated, not yet assigned to a node)
+                let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
+                !matches!(phase, Some(Phase::Succeeded) | Some(Phase::Failed))
+                    && pod.metadata.deletion_timestamp.is_none()
+            })
+            .collect();
+
+        // Group pods by their resolved port mapping.
+        // Each group gets its own EndpointSlice with only the ports those pods serve.
+        // This follows K8s's reconcileByAddressType / getEndpointPorts pattern.
+        // Use (serialized ports, ports) as key since EndpointPort doesn't implement Hash.
+        let mut port_groups: HashMap<String, (Vec<EndpointPort>, Vec<Endpoint>)> = HashMap::new();
+
+        for pod in &matching_pods {
+            let endpoint_ports = self.get_endpoint_ports(service, pod);
+            if endpoint_ports.is_empty() {
+                continue; // Pod doesn't serve any of the service's ports
+            }
+
+            let pod_ip = pod
+                .status
+                .as_ref()
+                .and_then(|s| s.pod_ip.as_ref())
+                .filter(|ip| !ip.is_empty());
+
+            let Some(ip) = pod_ip else {
+                continue; // Pod has no IP
             };
 
-            endpointslice.metadata.name = slice_name.clone();
-            endpointslice.metadata.namespace = Some(namespace.clone());
+            let is_ready = pod
+                .status
+                .as_ref()
+                .and_then(|s| s.conditions.as_ref())
+                .map(|conditions| {
+                    conditions
+                        .iter()
+                        .any(|c| c.condition_type == "Ready" && c.status == "True")
+                })
+                .unwrap_or(false);
 
-            // Set owner reference to the Endpoints object
-            // This ensures EndpointSlices are garbage collected when Endpoints are deleted
-            endpointslice.metadata.owner_references =
+            let endpoint = Endpoint {
+                addresses: vec![ip.clone()],
+                conditions: Some(EndpointConditions {
+                    ready: Some(is_ready),
+                    serving: Some(is_ready),
+                    terminating: Some(false),
+                }),
+                hostname: pod.spec.as_ref().and_then(|s| {
+                    if s.subdomain.is_some() {
+                        s.hostname.clone().or(Some(pod.metadata.name.clone()))
+                    } else {
+                        None
+                    }
+                }),
+                target_ref: Some(EndpointReference {
+                    kind: Some("Pod".to_string()),
+                    namespace: pod.metadata.namespace.clone(),
+                    name: Some(pod.metadata.name.clone()),
+                    uid: Some(pod.metadata.uid.clone()),
+                    resource_version: None,
+                    field_path: None,
+                }),
+                node_name: pod.spec.as_ref().and_then(|s| s.node_name.clone()),
+                zone: None,
+                hints: None,
+                deprecated_topology: None,
+            };
+
+            let port_key = serde_json::to_string(&endpoint_ports).unwrap_or_default();
+            port_groups
+                .entry(port_key)
+                .or_insert_with(|| (endpoint_ports, Vec::new()))
+                .1
+                .push(endpoint);
+        }
+
+        // If no port groups were created but the service has ports,
+        // create an empty slice with the service's ports
+        if port_groups.is_empty() && !service.spec.ports.is_empty() {
+            let ports: Vec<EndpointPort> = service
+                .spec
+                .ports
+                .iter()
+                .map(|sp| EndpointPort {
+                    name: sp.name.clone(),
+                    port: Some(sp.port as i32),
+                    protocol: sp.protocol.clone(),
+                    app_protocol: sp.app_protocol.clone(),
+                })
+                .collect();
+            let port_key = serde_json::to_string(&ports).unwrap_or_default();
+            port_groups.insert(port_key, (ports, Vec::new()));
+        }
+
+        // Create/update EndpointSlices for each port group
+        for (idx, (_key, (ports, endpoints))) in port_groups.into_iter().enumerate() {
+            let slice_name = if idx == 0 {
+                service_name.clone()
+            } else {
+                format!("{}-{}", service_name, idx)
+            };
+
+            let mut slice = EndpointSlice::new(&slice_name, "IPv4");
+            slice.metadata.namespace = Some(namespace.to_string());
+            slice.ports = ports;
+            slice.endpoints = endpoints;
+
+            // Set labels
+            let labels = slice.metadata.labels.get_or_insert_with(Default::default);
+            labels.insert(
+                "kubernetes.io/service-name".to_string(),
+                service_name.clone(),
+            );
+            labels.insert(
+                "endpointslice.kubernetes.io/managed-by".to_string(),
+                "endpointslice-controller.k8s.io".to_string(),
+            );
+
+            // Set owner reference to the Service
+            slice.metadata.owner_references =
                 Some(vec![rusternetes_common::types::OwnerReference {
                     api_version: "v1".to_string(),
-                    kind: "Endpoints".to_string(),
-                    name: endpoints_name.clone(),
-                    uid: endpoints.metadata.uid.clone(),
+                    kind: "Service".to_string(),
+                    name: service_name.clone(),
+                    uid: service.metadata.uid.clone(),
                     controller: Some(true),
                     block_owner_deletion: Some(true),
                 }]);
 
             let slice_key = build_key("endpointslices", Some(namespace), &slice_name);
 
-            // Check if existing endpointslice matches — skip write if nothing changed
+            // Check if existing slice matches — skip write if nothing changed
             if let Ok(existing) = self.storage.get::<EndpointSlice>(&slice_key).await {
-                // Compare endpoints and ports (the fields that actually change)
-                if existing.endpoints == endpointslice.endpoints
-                    && existing.ports == endpointslice.ports
-                {
-                    debug!(
-                        "Endpointslice {}/{} unchanged, skipping write",
-                        namespace, slice_name
-                    );
+                if existing.endpoints == slice.endpoints && existing.ports == slice.ports {
                     continue;
                 }
-                // Preserve resource version for update
-                endpointslice.metadata.resource_version = existing.metadata.resource_version;
+                slice.metadata.resource_version = existing.metadata.resource_version;
             }
 
-            // Try to update first, if it doesn't exist, create it
-            match self.storage.update(&slice_key, &endpointslice).await {
+            match self.storage.update(&slice_key, &slice).await {
                 Ok(_) => {
-                    info!(
-                        "Updated endpointslice {}/{} from endpoints",
+                    debug!(
+                        "Updated endpointslice {}/{} for service",
                         namespace, slice_name
                     );
                 }
                 Err(rusternetes_common::Error::NotFound(_)) => {
-                    self.storage.create(&slice_key, &endpointslice).await?;
+                    self.storage.create(&slice_key, &slice).await?;
                     info!(
-                        "Created endpointslice {}/{} from endpoints",
+                        "Created endpointslice {}/{} for service",
                         namespace, slice_name
                     );
                 }
@@ -182,66 +303,72 @@ impl<S: Storage> EndpointSliceController<S> {
         Ok(())
     }
 
-    /// Clean up orphaned EndpointSlices that no longer have corresponding Endpoints
-    pub async fn cleanup_orphans(&self) -> Result<()> {
-        debug!("Cleaning up orphaned endpointslices");
+    /// Compute endpoint ports for a pod based on the service's port definitions.
+    /// Follows K8s's getEndpointPorts() logic:
+    /// - For each service port, try to find a matching containerPort on the pod
+    /// - If the service uses a named targetPort, look up the container port by name
+    /// - If the service uses a numeric targetPort, use it directly
+    /// - If no match is found, skip that port (don't include it)
+    fn get_endpoint_ports(&self, service: &Service, pod: &Pod) -> Vec<EndpointPort> {
+        let mut endpoint_ports = Vec::new();
 
-        // List all endpointslices
-        let all_slices: Vec<EndpointSlice> = self.storage.list("/registry/endpointslices/").await?;
-
-        for slice in all_slices {
-            let namespace = match &slice.metadata.namespace {
-                Some(ns) => ns,
-                None => {
-                    debug!(
-                        "EndpointSlice {} has no namespace, skipping",
-                        slice.metadata.name
-                    );
-                    continue;
-                }
+        for sp in &service.spec.ports {
+            let port_num = match self.find_port(pod, sp) {
+                Some(p) => p,
+                None => continue, // Pod doesn't serve this port
             };
 
-            // Check if the slice has the service label
-            let service_name = match &slice.metadata.labels {
-                Some(labels) => match labels.get("kubernetes.io/service-name") {
-                    Some(name) => name,
-                    None => continue, // Not managed by us
-                },
-                None => continue,
-            };
-
-            // Check if corresponding endpoints exist
-            let endpoints_key = build_key("endpoints", Some(namespace), service_name);
-            match self.storage.get::<Endpoints>(&endpoints_key).await {
-                Ok(_) => {
-                    // Endpoints exist, keep the slice
-                    continue;
-                }
-                Err(rusternetes_common::Error::NotFound(_)) => {
-                    // Endpoints don't exist, delete the slice
-                    let slice_key =
-                        build_key("endpointslices", Some(namespace), &slice.metadata.name);
-                    if let Err(e) = self.storage.delete(&slice_key).await {
-                        error!(
-                            "Failed to delete orphaned endpointslice {}/{}: {}",
-                            namespace, slice.metadata.name, e
-                        );
-                    } else {
-                        info!(
-                            "Deleted orphaned endpointslice {}/{}",
-                            namespace, slice.metadata.name
-                        );
-                    }
-                }
-                Err(e) => {
-                    error!(
-                        "Error checking endpoints {}/{}: {}",
-                        namespace, service_name, e
-                    );
-                }
-            }
+            endpoint_ports.push(EndpointPort {
+                name: sp.name.clone(),
+                port: Some(port_num),
+                protocol: sp.protocol.clone(),
+                app_protocol: sp.app_protocol.clone(),
+            });
         }
 
+        endpoint_ports
+    }
+
+    /// Find the container port on a pod that corresponds to a service port.
+    /// Implements K8s's FindPort logic:
+    /// - If targetPort is a string (named port), search pod containers for a
+    ///   containerPort with that name
+    /// - If targetPort is a number, use it directly
+    /// - If targetPort is not set, use the service port number
+    fn find_port(
+        &self,
+        pod: &Pod,
+        service_port: &rusternetes_common::resources::ServicePort,
+    ) -> Option<i32> {
+        match &service_port.target_port {
+            Some(rusternetes_common::resources::IntOrString::String(name)) => {
+                // Named port — search pod containers
+                if let Ok(port_num) = name.parse::<i32>() {
+                    // It's actually a numeric string
+                    return Some(port_num);
+                }
+                // Look up named port in pod containers
+                if let Some(spec) = &pod.spec {
+                    for container in &spec.containers {
+                        if let Some(ports) = &container.ports {
+                            for cp in ports {
+                                if cp.name.as_deref() == Some(name.as_str()) {
+                                    return Some(cp.container_port as i32);
+                                }
+                            }
+                        }
+                    }
+                }
+                None // Pod doesn't have this named port
+            }
+            Some(rusternetes_common::resources::IntOrString::Int(port)) => Some(*port),
+            None => Some(service_port.port as i32), // Default to service port
+        }
+    }
+
+    /// Clean up orphaned EndpointSlices
+    pub async fn cleanup_orphans(&self) -> Result<()> {
+        // Handled in reconcile_all
         Ok(())
     }
 }
@@ -249,8 +376,9 @@ impl<S: Storage> EndpointSliceController<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusternetes_common::resources::{ContainerPort, ServicePort, ServiceSpec};
+    use rusternetes_common::types::ObjectMeta;
     use rusternetes_storage::MemoryStorage;
-    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_endpointslice_controller_creation() {
@@ -258,43 +386,78 @@ mod tests {
         let _controller = EndpointSliceController::new(storage);
     }
 
-    /// Helper: extract the source (base) name from an EndpointSlice name,
-    /// mirroring the logic used in reconcile_all() for orphan detection.
-    fn extract_source_name(name: &str) -> String {
-        match name.rsplit_once('-') {
-            Some((prefix, suffix)) if suffix.chars().all(|c| c.is_ascii_digit()) => {
-                prefix.to_string()
-            }
-            _ => name.to_string(),
-        }
-    }
+    #[tokio::test]
+    async fn test_pod_port_filtering_named_ports() {
+        let storage = Arc::new(MemoryStorage::new());
+        let controller = EndpointSliceController::new(Arc::clone(&storage));
 
-    #[test]
-    fn test_base_name_extraction() {
-        // Primary slice: name matches the service exactly, no numeric suffix
-        assert_eq!(extract_source_name("my-service"), "my-service");
+        // Create a service with two named target ports
+        let service = Service {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Service".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta::new("test-svc").with_namespace("default"),
+            spec: ServiceSpec {
+                ports: vec![
+                    ServicePort {
+                        name: Some("portname1".to_string()),
+                        port: 80,
+                        target_port: Some(rusternetes_common::resources::IntOrString::String(
+                            "svc1".to_string(),
+                        )),
+                        protocol: Some("TCP".to_string()),
+                        node_port: None,
+                        app_protocol: None,
+                    },
+                    ServicePort {
+                        name: Some("portname2".to_string()),
+                        port: 81,
+                        target_port: Some(rusternetes_common::resources::IntOrString::String(
+                            "svc2".to_string(),
+                        )),
+                        protocol: Some("TCP".to_string()),
+                        node_port: None,
+                        app_protocol: None,
+                    },
+                ],
+                selector: Some(HashMap::from([("app".to_string(), "test".to_string())])),
+                ..Default::default()
+            },
+            status: None,
+        };
 
-        // Suffixed slice: last segment is numeric
-        assert_eq!(extract_source_name("my-service-1"), "my-service");
-        assert_eq!(extract_source_name("my-service-42"), "my-service");
+        // Pod1 only has containerPort named "svc1" (serves portname1 only)
+        let pod1 = Pod {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata: ObjectMeta::new("pod1")
+                .with_namespace("default")
+                .with_labels(HashMap::from([("app".to_string(), "test".to_string())])),
+            spec: Some(rusternetes_common::resources::PodSpec {
+                containers: vec![rusternetes_common::resources::Container {
+                    name: "c1".to_string(),
+                    ports: Some(vec![ContainerPort {
+                        container_port: 100,
+                        name: Some("svc1".to_string()),
+                        protocol: None,
+                        host_port: None,
+                        host_ip: None,
+                    }]),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            status: None,
+        };
 
-        // Multi-dash service name with no numeric suffix
-        assert_eq!(
-            extract_source_name("my-multi-dash-service"),
-            "my-multi-dash-service"
-        );
-
-        // Multi-dash service name with numeric suffix
-        assert_eq!(
-            extract_source_name("my-multi-dash-service-3"),
-            "my-multi-dash-service"
-        );
-
-        // Single-word name (no dashes at all)
-        assert_eq!(extract_source_name("kubernetes"), "kubernetes");
-
-        // Name ending with non-numeric suffix (e.g., a hash)
-        assert_eq!(extract_source_name("my-service-abc"), "my-service-abc");
+        // Pod1 should only get portname1 (svc1→100), NOT portname2 (svc2 not found)
+        let ports = controller.get_endpoint_ports(&service, &pod1);
+        assert_eq!(ports.len(), 1, "Pod1 should only match portname1");
+        assert_eq!(ports[0].name, Some("portname1".to_string()));
+        assert_eq!(ports[0].port, Some(100));
     }
 
     #[tokio::test]
@@ -302,13 +465,13 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let controller = EndpointSliceController::new(Arc::clone(&storage));
 
-        // Create an EndpointSlice NOT managed by the controller (no managed-by label)
+        // Create an EndpointSlice NOT managed by the controller
         let mut external_slice = EndpointSlice::new("external-slice", "IPv4");
         external_slice.metadata.namespace = Some("default".to_string());
         let key = build_key("endpointslices", Some("default"), "external-slice");
         storage.create(&key, &external_slice).await.unwrap();
 
-        // Create an EndpointSlice managed by the controller (with managed-by label)
+        // Create an EndpointSlice managed by the controller
         let mut managed_slice = EndpointSlice::new("managed-slice", "IPv4");
         managed_slice.metadata.namespace = Some("default".to_string());
         let mut labels = HashMap::new();
@@ -316,12 +479,14 @@ mod tests {
             "endpointslice.kubernetes.io/managed-by".to_string(),
             "endpointslice-controller.k8s.io".to_string(),
         );
+        labels.insert(
+            "kubernetes.io/service-name".to_string(),
+            "nonexistent-service".to_string(),
+        );
         managed_slice.metadata.labels = Some(labels);
         let key2 = build_key("endpointslices", Some("default"), "managed-slice");
         storage.create(&key2, &managed_slice).await.unwrap();
 
-        // No Endpoints exist, so both slices are orphans.
-        // Only the managed one should be deleted.
         controller.reconcile_all().await.unwrap();
 
         // External slice should survive
@@ -330,7 +495,7 @@ mod tests {
             "externally-managed EndpointSlice should NOT be deleted"
         );
 
-        // Managed slice should be deleted
+        // Managed slice should be deleted (orphaned)
         assert!(
             storage.get::<EndpointSlice>(&key2).await.is_err(),
             "controller-managed orphan EndpointSlice should be deleted"
