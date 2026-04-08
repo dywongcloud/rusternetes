@@ -34,8 +34,8 @@ Several fixes committed before round 127 were NOT included in the running binary
 
 ### 4. OpenAPI/Protobuf Download Failure (3 failures)
 - `kubectl/builder.go:97` (x3) — `failed to download openapi` / error running kubectl create
-- **Root cause**: kubectl's client-go calls OpenAPISchema() which requests protobuf Accept. Previous fix returned minimal protobuf, but still failing.
-- **Status**: TODO
+- **Root cause**: kubectl's client-go calls OpenAPISchema() which requests protobuf Accept. The generic protobuf decoder may help with request bodies, but OpenAPI v2 response protobuf (gnostic format) remains unsupported.
+- **Status**: TODO — likely needs OpenAPI v2 protobuf response support
 
 ### 5. DNS Resolution Failures (4 failures)
 - `dns_common.go:476` (x4) — Unable to read agnhost_udp@... context deadline exceeded
@@ -99,10 +99,11 @@ Several fixes committed before round 127 were NOT included in the running binary
 - `proxy.go:503` — Pod didn't start within timeout
 - **Status**: TODO
 
-### 17. Service Latency — Protobuf Deployment Create (1 failure)
+### 17. Service Latency — Protobuf Deployment Create (1 failure) — FIXED
 - `service_latency.go:142` — failed to decode: missing field `template` at line 1 column 493
-- **Root cause**: Client-go sends Deployment CREATE as native protobuf. Our middleware can't decode native protobuf for standard K8s types — brace-scanning the binary produces incomplete JSON missing the template field.
-- **Status**: TODO — architectural issue with protobuf handling
+- **Root cause**: Client-go sends Deployment CREATE as native protobuf. Previous brace-scanning approach produced incomplete JSON.
+- **Fix**: Implemented generic protobuf-to-JSON decoder (protobuf.rs) with schema registry for all standard K8s types. Field number→name mappings from K8s .proto definitions.
+- **Status**: FIXED (commit 7ca9160)
 
 ### 18. Deployment Rollover (1 failure)
 - `deployment.go:995` — total pods available: 0
