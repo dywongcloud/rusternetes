@@ -106,23 +106,31 @@ impl<S: Storage> DeploymentController<S> {
             .filter(|rs| self.is_owned_by_deployment(rs, deployment))
             .collect();
 
-        // Ensure the deployment has a revision annotation.
-        // Compute from owned ReplicaSets to get the correct value (not hardcoded "1").
+        // Update the deployment's revision annotation to match the max across
+        // owned ReplicaSets. In K8s, the deployment revision tracks the highest
+        // RS revision. This must be updated every reconcile (not just when missing)
+        // because new RSes may be adopted with higher revisions.
         {
-            let annotations = deployment.metadata.annotations.clone().unwrap_or_default();
-            if !annotations.contains_key("deployment.kubernetes.io/revision") {
-                let max_revision = owned_replicasets
-                    .iter()
-                    .filter_map(|rs| {
-                        rs.metadata
-                            .annotations
-                            .as_ref()
-                            .and_then(|a| a.get("deployment.kubernetes.io/revision"))
-                            .and_then(|v| v.parse::<i64>().ok())
-                    })
-                    .max()
-                    .unwrap_or(0);
-                let revision = std::cmp::max(max_revision, 1).to_string();
+            let max_revision = owned_replicasets
+                .iter()
+                .filter_map(|rs| {
+                    rs.metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+                        .and_then(|v| v.parse::<i64>().ok())
+                })
+                .max()
+                .unwrap_or(0);
+            let revision = std::cmp::max(max_revision, 1).to_string();
+            let current_revision = deployment
+                .metadata
+                .annotations
+                .as_ref()
+                .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+                .cloned()
+                .unwrap_or_default();
+            if current_revision != revision {
                 let mut updated = deployment.clone();
                 updated
                     .metadata
