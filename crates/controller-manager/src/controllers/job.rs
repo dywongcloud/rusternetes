@@ -214,6 +214,7 @@ impl<S: Storage> JobController<S> {
         let mut active = 0;
         let mut succeeded = 0;
         let mut failed = 0;
+        let mut ready = 0i32;
 
         for pod in job_pods.iter() {
             if let Some(status) = &pod.status {
@@ -222,6 +223,12 @@ impl<S: Storage> JobController<S> {
                     Some(Phase::Succeeded) => succeeded += 1,
                     Some(Phase::Failed) => failed += 1,
                     _ => {}
+                }
+                // Count pods with Ready condition = True
+                if let Some(conditions) = &status.conditions {
+                    if conditions.iter().any(|c| c.condition_type == "Ready" && c.status == "True") {
+                        ready += 1;
+                    }
                 }
             }
         }
@@ -251,7 +258,7 @@ impl<S: Storage> JobController<S> {
                 conditions: existing_conditions,
                 start_time: existing_start_time,
                 completion_time: None,
-                ready: None,
+                ready: Some(ready),
                 terminating: None,
                 completed_indexes: None,
                 failed_indexes: None,
@@ -303,7 +310,7 @@ impl<S: Storage> JobController<S> {
                         }]),
                         start_time: job.status.as_ref().and_then(|s| s.start_time),
                         completion_time: Some(chrono::Utc::now()),
-                        ready: None,
+                        ready: Some(ready),
                         terminating: None,
                         completed_indexes: None,
                         failed_indexes: None,
@@ -702,7 +709,7 @@ impl<S: Storage> JobController<S> {
                 ]),
                 start_time,
                 completion_time: Some(chrono::Utc::now()),
-                ready: None,
+                ready: Some(ready),
                 terminating: Some(active),
                 completed_indexes: completed_indexes.clone(),
                 failed_indexes: failed_indexes.clone(),
@@ -734,7 +741,7 @@ impl<S: Storage> JobController<S> {
                 }]),
                 start_time,
                 completion_time: Some(chrono::Utc::now()),
-                ready: None,
+                ready: Some(ready),
                 terminating: None,
                 completed_indexes: completed_indexes.clone(),
                 failed_indexes: failed_indexes.clone(),
@@ -784,7 +791,7 @@ impl<S: Storage> JobController<S> {
                 }]),
                 start_time,
                 completion_time: Some(chrono::Utc::now()),
-                ready: None,
+                ready: Some(ready),
                 terminating: None,
                 completed_indexes: completed_indexes.clone(),
                 failed_indexes: failed_indexes.clone(),
@@ -896,7 +903,7 @@ impl<S: Storage> JobController<S> {
                     conditions: existing_conditions,
                     start_time,
                     completion_time: existing_completion,
-                    ready: None,
+                    ready: Some(ready),
                     terminating: None,
                     completed_indexes: completed_indexes.clone(),
                     failed_indexes: failed_indexes.clone(),
