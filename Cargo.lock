@@ -3260,6 +3260,7 @@ dependencies = [
  "chrono",
  "clap",
  "cron",
+ "fnv",
  "futures",
  "jsonwebtoken",
  "pem",
