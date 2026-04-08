@@ -894,6 +894,14 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
                 .delete(handlers::proxy::proxy_pod_root),
         )
         .route(
+            "/api/v1/namespaces/:namespace/pods/:name/proxy/",
+            get(handlers::proxy::proxy_pod_root)
+                .post(handlers::proxy::proxy_pod_root)
+                .put(handlers::proxy::proxy_pod_root)
+                .patch(handlers::proxy::proxy_pod_root)
+                .delete(handlers::proxy::proxy_pod_root),
+        )
+        .route(
             "/api/v1/namespaces/:namespace/pods/:name/proxy/*path",
             get(handlers::proxy::proxy_pod)
                 .post(handlers::proxy::proxy_pod)
@@ -931,6 +939,14 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         )
         .route(
             "/api/v1/namespaces/:namespace/services/:name/proxy",
+            get(handlers::proxy::proxy_service_root)
+                .post(handlers::proxy::proxy_service_root)
+                .put(handlers::proxy::proxy_service_root)
+                .patch(handlers::proxy::proxy_service_root)
+                .delete(handlers::proxy::proxy_service_root),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace/services/:name/proxy/",
             get(handlers::proxy::proxy_service_root)
                 .post(handlers::proxy::proxy_service_root)
                 .put(handlers::proxy::proxy_service_root)
