@@ -8,8 +8,12 @@ use axum::{
     Extension,
 };
 use rusternetes_common::auth::{BootstrapTokenManager, TokenManager, UserInfo};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tracing::{debug, error, info, warn};
+
+/// Global protobuf schema registry — initialized once on first use
+static PROTO_REGISTRY: LazyLock<crate::protobuf::ProtoRegistry> =
+    LazyLock::new(crate::protobuf::ProtoRegistry::new);
 
 /// Extension type to carry UserInfo through the request
 #[derive(Clone, Debug)]
@@ -160,18 +164,48 @@ pub async fn normalize_content_type_middleware(
                         hex_preview
                     );
 
-                    // Try structured protobuf-to-JSON decoder first (handles CRDs, etc.)
-                    if let Some(json_bytes) = decode_k8s_protobuf_to_json(&body_bytes) {
+                    // Try the generic proto schema-based decoder first.
+                    // This handles ALL standard K8s types (Deployment, Pod, Service, etc.)
+                    // by using field number → name mappings from the K8s .proto definitions.
+                    if let Some(json_bytes) = PROTO_REGISTRY.decode_k8s_resource(&body_bytes) {
+                        if serde_json::from_slice::<serde_json::Value>(&json_bytes).is_ok() {
+                            info!(
+                                "Decoded K8s protobuf via schema registry ({} bytes)",
+                                json_bytes.len()
+                            );
+                            json_bytes
+                        } else {
+                            warn!(
+                                "Schema-decoded protobuf produced invalid JSON, trying CRD decoder"
+                            );
+                            // Fall through to CRD-specific decoder
+                            if let Some(json_bytes) = decode_k8s_protobuf_to_json(&body_bytes) {
+                                if serde_json::from_slice::<serde_json::Value>(&json_bytes).is_ok()
+                                {
+                                    info!(
+                                        "Decoded K8s protobuf to JSON ({} bytes)",
+                                        json_bytes.len()
+                                    );
+                                    json_bytes
+                                } else {
+                                    try_brace_scan_or_type_meta(&body_bytes)
+                                }
+                            } else {
+                                try_brace_scan_or_type_meta(&body_bytes)
+                            }
+                        }
+                    }
+                    // Schema-based decode returned None (unknown kind) — try CRD decoder
+                    else if let Some(json_bytes) = decode_k8s_protobuf_to_json(&body_bytes) {
                         if serde_json::from_slice::<serde_json::Value>(&json_bytes).is_ok() {
                             info!("Decoded K8s protobuf to JSON ({} bytes)", json_bytes.len());
                             json_bytes
                         } else {
                             warn!("Decoded protobuf produced invalid JSON, trying brace scan");
-                            // Fall through to brace scan below
                             try_brace_scan_or_type_meta(&body_bytes)
                         }
                     } else {
-                        // Structured decode failed — try brace scan, then TypeMeta
+                        // Both decoders failed — try brace scan, then TypeMeta
                         try_brace_scan_or_type_meta(&body_bytes)
                     }
                 }
@@ -1135,29 +1169,49 @@ fn scan_balanced_braces(data: &[u8]) -> Option<Vec<u8>> {
 /// result with serde_json. If no valid JSON is found, fall back to extracting
 /// TypeMeta (apiVersion/kind) to construct a minimal JSON object.
 fn try_brace_scan_or_type_meta(body_bytes: &[u8]) -> Vec<u8> {
-    // Scan for a valid JSON object embedded in the binary data
+    // Scan for a valid JSON object embedded in the binary data.
+    // We must validate that the JSON looks like a K8s resource (has apiVersion/kind/metadata
+    // or at least metadata with a name) — protobuf binary can contain accidental JSON
+    // fragments (like string field values) that parse as valid JSON but aren't the resource.
     let skip = if body_bytes.starts_with(b"k8s\0") {
         4
     } else {
         0
     };
+    // First pass: look for JSON that looks like a K8s resource
     for i in skip..body_bytes.len() {
         if body_bytes[i] == b'{' {
             if let Some(candidate) = scan_balanced_braces(&body_bytes[i..]) {
-                if serde_json::from_slice::<serde_json::Value>(&candidate).is_ok() {
-                    info!(
-                        "Found valid JSON via brace scan at offset {} ({} bytes)",
-                        i,
-                        candidate.len()
+                if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&candidate) {
+                    // Validate this looks like a K8s resource object, not a random fragment.
+                    // A valid resource must have either:
+                    // - "apiVersion" and "kind" fields, OR
+                    // - a "metadata" field with "name"
+                    let has_api_version = val.get("apiVersion").is_some();
+                    let has_kind = val.get("kind").is_some();
+                    let has_metadata_name =
+                        val.get("metadata").and_then(|m| m.get("name")).is_some();
+                    let has_spec = val.get("spec").is_some();
+
+                    if (has_api_version && has_kind) || (has_metadata_name && has_spec) {
+                        info!(
+                            "Found valid K8s JSON via brace scan at offset {} ({} bytes)",
+                            i,
+                            candidate.len()
+                        );
+                        return candidate;
+                    }
+                    debug!(
+                        "Skipping non-resource JSON at offset {} ({} bytes, has_api={}, has_kind={}, has_meta_name={}, has_spec={})",
+                        i, candidate.len(), has_api_version, has_kind, has_metadata_name, has_spec
                     );
-                    return candidate;
                 }
             }
-            // This `{` wasn't valid JSON, try next occurrence
+            // This `{` wasn't valid K8s JSON, try next occurrence
         }
     }
 
-    // No valid JSON found — extract TypeMeta to construct minimal JSON
+    // No valid resource JSON found — extract TypeMeta to construct minimal JSON
     let type_meta = extract_type_meta_from_protobuf(body_bytes);
     if let Some((api_version, kind)) = type_meta {
         let minimal = format!(

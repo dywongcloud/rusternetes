@@ -7,6 +7,7 @@ pub mod middleware;
 pub mod openapi;
 pub mod patch;
 pub mod prometheus_client;
+pub mod protobuf;
 pub mod response;
 pub mod spdy;
 pub mod spdy_handlers;

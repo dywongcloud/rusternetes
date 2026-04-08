@@ -10,6 +10,7 @@ mod middleware;
 mod openapi;
 mod patch;
 mod prometheus_client;
+pub mod protobuf;
 mod response;
 mod router;
 mod spdy;
