@@ -51,15 +51,16 @@ NOTE: Round 128 binary was built from commit 36ed11a. Commits df93155 (v2beta1 d
 - **Root cause**: TODO
 - **Status**: TODO
 
-### 9. CRD (1 failure)
-- `custom_resource_definition.go:405` — CRD condition not found
-- **Root cause**: TODO — CRD status conditions not being set
-- **Status**: TODO
+### 9. CRD conditions (1 failure) — FIXED
+- `custom_resource_definition.go:405` — Condition with Message:"updated" not found
+- **Root cause**: CRD controller replaced ALL conditions with just Established/NamesAccepted, erasing conditions set by tests. K8s uses SetCRDCondition() which updates by type and preserves others.
+- **Fix**: Retain existing conditions, only replace Established/NamesAccepted (commit 2b30373)
+- **Status**: FIXED
 
-### 10. Field Validation (1 failure)
-- `field_validation.go:305` — unknown metadata fields
-- **Root cause**: TODO
-- **Status**: TODO
+### 10. Field Validation / CRD creation (1 failure)
+- `field_validation.go:305` — cannot create crd context deadline exceeded
+- **Root cause**: CRD creation watch timeout — downstream of CRD watch mechanism
+- **Status**: TODO — needs CRD watch verification
 
 ## Progress History
 
