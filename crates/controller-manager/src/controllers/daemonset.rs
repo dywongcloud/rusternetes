@@ -89,19 +89,12 @@ impl<S: Storage> DaemonSetController<S> {
 
         info!("Reconciling DaemonSet {}/{}", namespace, name);
 
-        // Ensure a ControllerRevision exists for the current template
-        let template_hash = {
-            use sha2::{Digest, Sha256};
-            // Normalize via serde_json::Value to sort HashMap keys deterministically
-            let value = serde_json::to_value(&daemonset.spec.template).unwrap_or_default();
-            let serialized = serde_json::to_string(&value).unwrap_or_default();
-            let hash = Sha256::digest(serialized.as_bytes());
-            format!(
-                "{:010x}",
-                u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8]))
-            )
-        };
-        let cr_name = format!("{}-{}", name, &template_hash[..10]);
+        // Ensure a ControllerRevision exists for the current template.
+        // K8s uses FNV-32a hash of the template (via controller.ComputeHash).
+        // The ControllerRevision data must match getPatch() format exactly:
+        //   {"spec":{"template":{...,"$patch":"replace"}}}
+        let template_hash = Self::compute_template_hash(&daemonset.spec.template);
+        let cr_name = format!("{}-{}", name, &template_hash);
 
         // Check if ControllerRevision already exists before creating
         let cr_key =
@@ -165,8 +158,10 @@ impl<S: Storage> DaemonSetController<S> {
                 block_owner_deletion: Some(true),
             }]);
 
-            // Store pod template spec as the revision data
-            cr.data = serde_json::to_value(&daemonset.spec.template).ok();
+            // Store revision data in K8s getPatch() format:
+            // {"spec":{"template":{...,"$patch":"replace"}}}
+            // This format is required for daemon.Match() to work in conformance tests.
+            cr.data = Self::build_patch_data(&daemonset.spec.template);
 
             if self.storage.create(&cr_key, &cr).await.is_ok() {
                 info!(
@@ -516,16 +511,7 @@ impl<S: Storage> DaemonSetController<S> {
         labels.insert("app".to_string(), daemonset_name.clone());
         labels.insert("controller-uid".to_string(), daemonset.metadata.uid.clone());
         // Add controller-revision-hash label (computed from template)
-        let template_hash = {
-            use sha2::{Digest, Sha256};
-            let value = serde_json::to_value(&daemonset.spec.template).unwrap_or_default();
-            let serialized = serde_json::to_string(&value).unwrap_or_default();
-            let hash = Sha256::digest(serialized.as_bytes());
-            format!(
-                "{:010x}",
-                u64::from_be_bytes(hash[..8].try_into().unwrap_or([0u8; 8]))
-            )
-        };
+        let template_hash = { Self::compute_template_hash(&daemonset.spec.template) };
         labels.insert("controller-revision-hash".to_string(), template_hash);
 
         let mut spec = template.spec.clone();
@@ -731,6 +717,39 @@ impl<S: Storage> DaemonSetController<S> {
                 }
             }
         }
+    }
+
+    /// Compute template hash matching K8s's controller.ComputeHash.
+    /// K8s uses FNV-32a hash of DeepHashObject of the template.
+    /// We approximate this with FNV-32a of the JSON-serialized template.
+    fn compute_template_hash(template: &rusternetes_common::resources::PodTemplateSpec) -> String {
+        use std::hash::Hasher;
+        let value = serde_json::to_value(template).unwrap_or_default();
+        let serialized = serde_json::to_string(&value).unwrap_or_default();
+        let mut hasher = fnv::FnvHasher::with_key(0x811c9dc5);
+        hasher.write(serialized.as_bytes());
+        let hash = hasher.finish() as u32;
+        // K8s uses rand.SafeEncodeString(fmt.Sprint(hash)) which produces
+        // a base-36ish encoding. We use a simpler decimal string approach
+        // matching K8s's fmt.Sprint output of the uint32 hash.
+        format!("{}", hash)
+    }
+
+    /// Build ControllerRevision data in K8s getPatch() format.
+    /// Format: {"spec":{"template":{...,"$patch":"replace"}}}
+    fn build_patch_data(
+        template: &rusternetes_common::resources::PodTemplateSpec,
+    ) -> Option<serde_json::Value> {
+        let mut template_value = serde_json::to_value(template).ok()?;
+        // Add $patch: "replace" to the template object (K8s strategic merge patch marker)
+        if let Some(obj) = template_value.as_object_mut() {
+            obj.insert("$patch".to_string(), serde_json::json!("replace"));
+        }
+        Some(serde_json::json!({
+            "spec": {
+                "template": template_value
+            }
+        }))
     }
 }
 
