@@ -128,6 +128,15 @@ impl<S: Storage> StatefulSetController<S> {
             .map(|p| p == "OrderedReady")
             .unwrap_or(true);
 
+        // Extract partition for rolling update — pods below partition use current (old) template
+        let partition = statefulset
+            .spec
+            .update_strategy
+            .as_ref()
+            .and_then(|s| s.rolling_update.as_ref())
+            .and_then(|ru| ru.partition)
+            .unwrap_or(0);
+
         // Scale up or down
         if current_replicas < desired_replicas {
             // Scale up: create any missing pods in ordinal order.
@@ -186,6 +195,45 @@ impl<S: Storage> StatefulSetController<S> {
                 // Ensure PVCs exist for this ordinal before creating the pod
                 self.ensure_pvcs_for_ordinal(statefulset, i, namespace)
                     .await?;
+                // For rolling updates with partition: pods below partition should
+                // use the CURRENT revision (old template), not the update revision.
+                // This matches K8s behavior where newVersionedStatefulSetPod creates
+                // pods with the appropriate template based on ordinal vs partition.
+                let current_rev = statefulset
+                    .status
+                    .as_ref()
+                    .and_then(|s| s.current_revision.as_deref());
+                let update_rev_str = Self::compute_revision(&statefulset.spec.template);
+                if i < partition {
+                    if let Some(cr_rev) = current_rev {
+                        if cr_rev != update_rev_str {
+                            // Pod is below partition — try to create with the old template
+                            // by looking up the ControllerRevision
+                            if let Some(old_template) = self
+                                .get_template_from_revision(
+                                    namespace,
+                                    &statefulset.metadata.name,
+                                    cr_rev,
+                                )
+                                .await
+                            {
+                                self.create_pod_with_template(
+                                    statefulset,
+                                    i,
+                                    namespace,
+                                    &old_template,
+                                    cr_rev,
+                                )
+                                .await?;
+                                info!(
+                                    "Created pod {}-{} with current revision {}",
+                                    name, i, cr_rev
+                                );
+                                continue;
+                            }
+                        }
+                    }
+                }
                 self.create_pod(statefulset, i, namespace).await?;
                 info!("Created pod {}-{}", name, i);
             }
@@ -276,14 +324,6 @@ impl<S: Storage> StatefulSetController<S> {
             .as_ref()
             .and_then(|s| s.strategy_type.as_deref())
             .unwrap_or("RollingUpdate");
-
-        let partition = statefulset
-            .spec
-            .update_strategy
-            .as_ref()
-            .and_then(|s| s.rolling_update.as_ref())
-            .and_then(|ru| ru.partition)
-            .unwrap_or(0);
 
         if current_replicas == desired_replicas
             && desired_replicas > 0
@@ -744,6 +784,117 @@ impl<S: Storage> StatefulSetController<S> {
             }
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Create a pod with a specific template and revision (for pods below the partition
+    /// that should use the old/current template, not the update template).
+    async fn create_pod_with_template(
+        &self,
+        statefulset: &StatefulSet,
+        ordinal: i32,
+        namespace: &str,
+        template: &rusternetes_common::resources::PodTemplateSpec,
+        revision: &str,
+    ) -> Result<()> {
+        let statefulset_name = &statefulset.metadata.name;
+        let pod_name = format!("{}-{}", statefulset_name, ordinal);
+
+        let mut labels = template
+            .metadata
+            .as_ref()
+            .and_then(|m| m.labels.clone())
+            .unwrap_or_default();
+        labels.insert("app".to_string(), statefulset_name.clone());
+        labels.insert(
+            "statefulset.kubernetes.io/pod-name".to_string(),
+            pod_name.clone(),
+        );
+        labels.insert("controller-revision-hash".to_string(), revision.to_string());
+
+        let mut metadata = rusternetes_common::types::ObjectMeta::new(pod_name.clone())
+            .with_namespace(namespace.to_string())
+            .with_labels(labels)
+            .with_owner_reference(OwnerReference {
+                api_version: "apps/v1".to_string(),
+                kind: "StatefulSet".to_string(),
+                name: statefulset_name.clone(),
+                uid: statefulset.metadata.uid.clone(),
+                controller: Some(true),
+                block_owner_deletion: Some(true),
+            });
+
+        if let Some(template_meta) = &template.metadata {
+            if let Some(ref annotations) = template_meta.annotations {
+                metadata.annotations = Some(annotations.clone());
+            }
+        }
+
+        let pod = Pod {
+            type_meta: rusternetes_common::types::TypeMeta {
+                kind: "Pod".to_string(),
+                api_version: "v1".to_string(),
+            },
+            metadata,
+            spec: Some(template.spec.clone()),
+            status: Some(PodStatus {
+                phase: Some(Phase::Pending),
+                message: None,
+                reason: None,
+                pod_ip: None,
+                host_ip: None,
+                conditions: None,
+                container_statuses: None,
+                init_container_statuses: None,
+                ephemeral_container_statuses: None,
+                resize: None,
+                resource_claim_statuses: None,
+                observed_generation: None,
+                host_i_ps: None,
+                pod_i_ps: None,
+                nominated_node_name: None,
+                qos_class: None,
+                start_time: None,
+            }),
+        };
+
+        super::check_resource_quota(&*self.storage, namespace).await?;
+
+        let key = format!("/registry/pods/{}/{}", namespace, pod_name);
+        match self.storage.create(&key, &pod).await {
+            Ok(_) => Ok(()),
+            Err(rusternetes_common::Error::AlreadyExists(_)) => {
+                info!("Pod {} already exists, skipping creation", pod_name);
+                Ok(())
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Look up a ControllerRevision and extract the PodTemplateSpec from its data field.
+    async fn get_template_from_revision(
+        &self,
+        namespace: &str,
+        statefulset_name: &str,
+        revision_hash: &str,
+    ) -> Option<rusternetes_common::resources::PodTemplateSpec> {
+        // ControllerRevision names follow the pattern: {ss-name}-{revision-hash-prefix}
+        let cr_name = format!(
+            "{}-{}",
+            statefulset_name,
+            &revision_hash[..std::cmp::min(10, revision_hash.len())]
+        );
+        let cr_key = format!("/registry/controllerrevisions/{}/{}", namespace, cr_name);
+        if let Ok(cr) = self.storage.get::<serde_json::Value>(&cr_key).await {
+            if let Some(data) = cr.get("data") {
+                if let Ok(template) = serde_json::from_value::<
+                    rusternetes_common::resources::PodTemplateSpec,
+                >(data.clone())
+                {
+                    return Some(template);
+                }
+            }
+        }
+        None
     }
 }
 
