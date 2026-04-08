@@ -73,60 +73,66 @@ pub struct GroupVersionForDiscovery {
 /// Only return aggregated format if the client explicitly prefers it
 /// (i.e., the aggregated type appears BEFORE plain application/json).
 /// Some clients (like sonobuoy) send both types in Accept but expect the standard format.
-fn wants_aggregated_discovery(headers: &HeaderMap) -> bool {
-    if let Some(accept) = headers.get("accept").and_then(|v| v.to_str().ok()) {
-        if !accept.contains("apidiscovery.k8s.io") {
-            return false;
-        }
-
-        // Return aggregated when client requests it.
-        //
-        // K8s client-go sends: aggregated types first, plain JSON last, all q=1.0.
-        // The conformance test REQUIRES aggregated discovery (checks resourcesByGV
-        // from GroupsAndMaybeResources which only works with aggregated format).
-        //
-        // Return aggregated if:
-        // - No plain JSON alternative (exclusive request), OR
-        // - Aggregated has equal or higher q-value than plain JSON
-        //
-        // This matches real K8s API server behavior: it always returns aggregated
-        // when the Accept header includes apidiscovery.k8s.io.
-        let mut agg_q: f32 = 1.0;
-        let mut plain_q: f32 = -1.0;
-
-        for part in accept.split(',') {
-            let part = part.trim();
-            let q = part
-                .split(";q=")
-                .nth(1)
-                .and_then(|q| q.trim().parse::<f32>().ok())
-                .unwrap_or(1.0);
-
-            if part.contains("apidiscovery.k8s.io") {
-                agg_q = q;
-            } else if part.starts_with("application/json") && !part.contains("apidiscovery") {
-                plain_q = q;
-            }
-        }
-
-        if plain_q < 0.0 {
-            return true; // No plain JSON at all
-        }
-        agg_q >= plain_q
-    } else {
-        false
+/// Returns the aggregated discovery version to use based on Accept header,
+/// or None if the client doesn't want aggregated discovery.
+fn aggregated_discovery_version(headers: &HeaderMap) -> Option<&'static str> {
+    let accept = headers.get("accept").and_then(|v| v.to_str().ok())?;
+    if !accept.contains("apidiscovery.k8s.io") {
+        return None;
     }
+
+    // Determine which version the client prefers
+    let wants_v2 = accept.contains("v=v2;as=APIGroupDiscoveryList")
+        || accept.contains("v=v2;as=APIGroupDiscoveryList;profile=nopeer");
+    let wants_v2beta1 = accept.contains("v=v2beta1;as=APIGroupDiscoveryList");
+
+    // Check q-values
+    let mut agg_q: f32 = 1.0;
+    let mut plain_q: f32 = -1.0;
+
+    for part in accept.split(',') {
+        let part = part.trim();
+        let q = part
+            .split(";q=")
+            .nth(1)
+            .and_then(|q| q.trim().parse::<f32>().ok())
+            .unwrap_or(1.0);
+
+        if part.contains("apidiscovery.k8s.io") {
+            agg_q = q;
+        } else if part.starts_with("application/json") && !part.contains("apidiscovery") {
+            plain_q = q;
+        }
+    }
+
+    if plain_q >= 0.0 && agg_q < plain_q {
+        return None; // Plain JSON explicitly preferred
+    }
+
+    // Return the version the client asked for
+    if wants_v2 {
+        Some("v2")
+    } else if wants_v2beta1 {
+        Some("v2beta1")
+    } else {
+        Some("v2") // Default to v2
+    }
+}
+
+fn wants_aggregated_discovery(headers: &HeaderMap) -> bool {
+    aggregated_discovery_version(headers).is_some()
 }
 
 /// GET /api
 /// Returns the list of API versions available at /api/v1
 pub async fn get_core_api(headers: HeaderMap) -> Response {
-    if wants_aggregated_discovery(&headers) {
+    if let Some(disc_version) = aggregated_discovery_version(&headers) {
         // Return aggregated discovery format for /api (core API)
         let core_resources = get_aggregated_resources_for_group("", "v1");
+        let api_version = format!("apidiscovery.k8s.io/{}", disc_version);
         let discovery = serde_json::json!({
             "kind": "APIGroupDiscoveryList",
-            "apiVersion": "apidiscovery.k8s.io/v2",
+            "apiVersion": api_version,
             "metadata": {},
             "items": [
                 {
@@ -143,15 +149,16 @@ pub async fn get_core_api(headers: HeaderMap) -> Response {
                 }
             ]
         });
-        return (
-            StatusCode::OK,
-            [(
-                "content-type",
-                "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList",
-            )],
-            Json(discovery),
-        )
-            .into_response();
+        let ct = format!(
+            "application/json;g=apidiscovery.k8s.io;v={};as=APIGroupDiscoveryList",
+            disc_version
+        );
+        let json_bytes = serde_json::to_vec(&discovery).unwrap_or_default();
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, ct)
+            .body(Body::from(json_bytes))
+            .unwrap();
     }
 
     let api_versions = APIVersions {
@@ -179,7 +186,7 @@ pub async fn get_api_groups(
     state: Option<axum::extract::State<std::sync::Arc<crate::state::ApiServerState>>>,
     headers: HeaderMap,
 ) -> Response {
-    if wants_aggregated_discovery(&headers) {
+    if let Some(disc_version) = aggregated_discovery_version(&headers) {
         // Return aggregated discovery format for /apis with inline resources
         // Build groups, handling autoscaling specially (v1 + v2)
         let mut groups: Vec<serde_json::Value> = Vec::new();
@@ -296,19 +303,20 @@ pub async fn get_api_groups(
 
         let discovery = serde_json::json!({
             "kind": "APIGroupDiscoveryList",
-            "apiVersion": "apidiscovery.k8s.io/v2",
+            "apiVersion": format!("apidiscovery.k8s.io/{}", disc_version),
             "metadata": {},
             "items": groups
         });
-        return (
-            StatusCode::OK,
-            [(
-                "content-type",
-                "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList",
-            )],
-            Json(discovery),
-        )
-            .into_response();
+        let ct = format!(
+            "application/json;g=apidiscovery.k8s.io;v={};as=APIGroupDiscoveryList",
+            disc_version
+        );
+        let json_bytes = serde_json::to_vec(&discovery).unwrap_or_default();
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, ct)
+            .body(Body::from(json_bytes))
+            .unwrap();
     }
 
     let groups = vec![
