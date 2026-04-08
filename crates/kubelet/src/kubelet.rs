@@ -1543,22 +1543,52 @@ impl Kubelet {
                                 }
                                 let _ = self.storage.update(&key, &new_pod).await;
 
-                                // Remove terminated containers before restarting
-                                // (Docker won't allow creating a container with the same name)
+                                // Restart only the terminated containers (not the entire pod).
+                                // start_pod() would redo init containers, networking, etc.
+                                // We just need to remove and recreate the exited containers.
                                 if let Some(spec) = &pod.spec {
                                     for c in &spec.containers {
                                         let cname = format!("{}_{}", pod_name, c.name);
-                                        let _ =
-                                            self.runtime.remove_terminated_container(&cname).await;
+                                        // Check if this specific container is terminated
+                                        if !self
+                                            .runtime
+                                            .is_container_running(&cname)
+                                            .await
+                                            .unwrap_or(true)
+                                        {
+                                            let _ = self
+                                                .runtime
+                                                .remove_terminated_container(&cname)
+                                                .await;
+                                            // Recreate just this container
+                                            let pod_ip = pod
+                                                .status
+                                                .as_ref()
+                                                .and_then(|s| s.pod_ip.as_deref());
+                                            if let Err(e) = self
+                                                .runtime
+                                                .start_container(
+                                                    pod,
+                                                    c,
+                                                    &std::collections::HashMap::new(),
+                                                    None,
+                                                    None,
+                                                    pod_ip,
+                                                )
+                                                .await
+                                            {
+                                                debug!(
+                                                    "Failed to restart container {} in pod {}/{}: {}",
+                                                    c.name, namespace, pod_name, e
+                                                );
+                                            } else {
+                                                info!(
+                                                    "Restarted container {} in pod {}/{}",
+                                                    c.name, namespace, pod_name
+                                                );
+                                            }
+                                        }
                                     }
-                                }
-
-                                // Restart the exited containers
-                                if let Err(e) = self.runtime.start_pod(pod).await {
-                                    debug!(
-                                        "Failed to restart containers for pod {}/{}: {}",
-                                        namespace, pod_name, e
-                                    );
                                 }
                             }
                         }
