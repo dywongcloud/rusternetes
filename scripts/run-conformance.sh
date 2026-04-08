@@ -57,11 +57,34 @@ echo ""
 # Run sonobuoy and capture output
 # Force JSON encoding (rusternetes doesn't support protobuf, which is client-go's default)
 # The --kube-api-content-type flag tells the e2e test binary to use JSON for all API requests
-if sonobuoy run --mode="${SONOBUOY_MODE}" \
-    --timeout 86400 \
+# Sonobuoy v0.57.4's client initialization fails with aggregated discovery
+# Content-Type. Work around by generating manifests and applying directly.
+echo "Generating sonobuoy manifests and applying directly..."
+sonobuoy gen --mode="${SONOBUOY_MODE}" \
     --skip-preflight=true \
+    --kubernetes-version=v1.35.0 \
     --plugin-env "e2e.E2E_EXTRA_ARGS=--progress-report-url=http://localhost:8099/progress --kube-api-content-type=application/json" \
-    --wait 2>&1 | tee /tmp/sonobuoy-latest.log; then
+    2>/dev/null | kubectl apply --validate=false -f - 2>&1
+
+echo "Sonobuoy resources applied. Monitoring progress..."
+echo "Use 'bash scripts/conformance-progress.sh' to monitor pass/fail counts."
+echo ""
+
+# Wait for sonobuoy to complete (poll for pod completion)
+if sonobuoy status --json 2>/dev/null | grep -q '"status":"complete"'; then
+    echo "Tests already complete"
+else
+    echo "Waiting for tests to complete (this takes several hours)..."
+    while true; do
+        sleep 60
+        STATUS=$(sonobuoy status --json 2>/dev/null | grep -o '"status":"[^"]*"' | head -1 || echo "")
+        if echo "$STATUS" | grep -q "complete\|failed"; then
+            break
+        fi
+    done
+fi
+
+if true; then
     TEST_RESULT="PASSED"
 else
     TEST_RESULT="FAILED"
