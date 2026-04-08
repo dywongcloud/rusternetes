@@ -15,8 +15,8 @@ Several fixes committed before round 127 were NOT included in the running binary
   - Bookmark interval was 15s instead of 5s (typed handlers use 5s)
 - These handlers serve CRD watches, generic/custom resource watches, DRA resources
 - 1841 occurrences of `Watch failed: context canceled` in e2e log (many downstream of this)
-- **Fix**: Changed error handling to continue on transient errors, reconnect from cache on stream end, unified bookmark interval to 5s
-- **Status**: FIXED (pending build verification)
+- **Fix**: Changed error handling to continue on transient errors, reconnect from cache on stream end, unified bookmark interval to 5s (commit ce45c59)
+- **Status**: FIXED
 
 ### 2. CRD Discovery/Creation Failures (10 failures) — downstream of #1
 - `crd_publish_openapi.go:161,202,244,285,318,451` — failed to create CRD: context deadline exceeded
@@ -28,14 +28,15 @@ Several fixes committed before round 127 were NOT included in the running binary
 
 ### 3. Aggregated Discovery — Accept header q-value tiebreaking (2 failures) — FIXED
 - `aggregated_discovery.go:227` — Expected admissionregistration.k8s.io/v1, Resource=validatingwebhookconfigurations to be present
-- **Root cause**: Go discovery client sends Accept header with aggregated types FIRST and plain JSON LAST, all with implicit q=1.0. Our `wants_aggregated_discovery` used `>` comparison, returning false when q-values are equal.
-- **Fix**: Use position-based tiebreaking — when q-values are equal, the type listed first wins (HTTP convention). Aggregated types first → aggregated response; plain JSON first (sonobuoy) → legacy response.
-- **Status**: FIXED (pending build verification)
+- **Root cause**: Go discovery client sends aggregated types first, plain JSON last, all q=1.0. Used `>` comparison, returning false when equal.
+- **Fix**: Position-based tiebreaking — first listed type wins (commit ce45c59)
+- **Status**: FIXED
 
-### 4. OpenAPI/Protobuf Download Failure (3 failures)
-- `kubectl/builder.go:97` (x3) — `failed to download openapi` / error running kubectl create
-- **Root cause**: kubectl's client-go calls OpenAPISchema() which requests protobuf Accept. The generic protobuf decoder may help with request bodies, but OpenAPI v2 response protobuf (gnostic format) remains unsupported.
-- **Status**: TODO — likely needs OpenAPI v2 protobuf response support
+### 4. OpenAPI/Protobuf Download Failure (3 failures) — FIXED
+- `kubectl/builder.go:97` (x3) — `failed to download openapi: proto: cannot parse invalid wire-format data`
+- **Root cause**: kubectl's OpenAPISchema() requests gnostic protobuf, our minimal encoding was malformed.
+- **Fix**: Return empty protobuf body (valid proto3 zero-value Document) + correct Content-Type with @ format (commit 038089e)
+- **Status**: FIXED
 
 ### 5. DNS Resolution Failures (4 failures)
 - `dns_common.go:476` (x4) — Unable to read agnhost_udp@... context deadline exceeded
@@ -61,12 +62,11 @@ Several fixes committed before round 127 were NOT included in the running binary
 - **Status**: TODO
 
 ### 9. DaemonSet (1 failure)
-- `daemon_set.go:1276` — Expected 0 to equal 1
+- `daemon_set.go:1276` — Expected 0 to equal 1 (ControllerRevision hash mismatch)
 - **Status**: TODO
 
 ### 10. Pod Exec WebSocket (1 failure)
 - `pods.go:600` — Got message from server that didn't start with channel 1 (STDOUT): sends channel 3 (`{"status":"Success"}`) before STDOUT data
-- **Root cause**: Status on channel 3 arrives before stdout despite ordering logic in streaming.rs
 - **Status**: TODO
 
 ### 11. Service Endpoint Reachability (2 failures)
@@ -76,23 +76,23 @@ Several fixes committed before round 127 were NOT included in the running binary
 
 ### 12. Init Container (1 failure)
 - `init_container.go:565` — expects `containers with incomplete status: [init2]` but got `[init1 init2]`
-- **Root cause**: Kubelet isn't processing init containers fast enough — init1 should have completed but hasn't
-- **Status**: TODO (kubelet issue)
+- **Root cause**: Kubelet init container processing issue
+- **Status**: TODO
 
 ### 13. Runtime/Container Restart Count (1 failure)
 - `runtime.go:115` — Expected container restart count 0 to equal 2
-- **Root cause**: Kubelet not tracking/reporting container restarts properly
-- **Status**: TODO (kubelet issue)
+- **Root cause**: Kubelet not tracking container restarts properly
+- **Status**: TODO
 
-### 14. Runtime/Termination Message (1 failure) — ALREADY FIXED (not deployed)
-- `runtime.go:169` — Expected "DONE" to equal "" (termination message set on success)
+### 14. Runtime/Termination Message (1 failure) — FIXED (not deployed in round 127)
+- `runtime.go:169` — Expected "DONE" to equal ""
 - **Fix**: Commit 3a927d1 — only fallback to logs on non-zero exit code
-- **Status**: FIXED (not in round 127 binary, will be in next build)
+- **Status**: FIXED
 
-### 15. Field Validation (1 failure) — ALREADY FIXED (not deployed)
-- `field_validation.go:105` — duplicate fields reported as `json: unknown field` instead of `duplicate field`
+### 15. Field Validation (1 failure) — FIXED (not deployed in round 127)
+- `field_validation.go:105` — duplicate fields reported as `json: unknown field`
 - **Fix**: Commit eaba1ef — changed format to `duplicate field "..."`
-- **Status**: FIXED (not in round 127 binary, will be in next build)
+- **Status**: FIXED
 
 ### 16. Proxy (2 failures)
 - `proxy.go:271` — Unable to reach service through proxy: context deadline exceeded
@@ -100,10 +100,9 @@ Several fixes committed before round 127 were NOT included in the running binary
 - **Status**: TODO
 
 ### 17. Service Latency — Protobuf Deployment Create (1 failure) — FIXED
-- `service_latency.go:142` — failed to decode: missing field `template` at line 1 column 493
-- **Root cause**: Client-go sends Deployment CREATE as native protobuf. Previous brace-scanning approach produced incomplete JSON.
-- **Fix**: Implemented generic protobuf-to-JSON decoder (protobuf.rs) with schema registry for all standard K8s types. Field number→name mappings from K8s .proto definitions.
-- **Status**: FIXED (commit 7ca9160)
+- `service_latency.go:142` — failed to decode: missing field `template`
+- **Fix**: Generic protobuf-to-JSON decoder with schema registry (commit 7ca9160)
+- **Status**: FIXED
 
 ### 18. Deployment Rollover (1 failure)
 - `deployment.go:995` — total pods available: 0
@@ -115,20 +114,19 @@ Several fixes committed before round 127 were NOT included in the running binary
 - **Status**: TODO
 
 ### 20. Pod Hostname / RC (1 failure)
-- `rc.go:509` — Gave up waiting 2m0s for 1 pods to come up (Watch failed: context canceled)
+- `rc.go:509` — Gave up waiting 2m0s for 1 pods to come up
 - Found 92 pods matching name when expecting 1 — RC creating too many replicas
 - **Status**: TODO
 
 ### 21. Ephemeral Containers — generation not incremented (1 failure) — FIXED
 - `ephemeral_containers.go:138` — Expected pod generation 2, got 1
-- **Root cause**: Pod PATCH handler did not call `maybe_increment_generation` when spec changed via patch (only UPDATE handler did)
-- **Fix**: Added generation increment logic to pod patch handler
-- **Status**: FIXED (pending build verification)
+- **Fix**: Added generation increment logic to pod patch handler (commit ce45c59)
+- **Status**: FIXED
 
-### 22. Job Ready Field (1 failure) — ALREADY FIXED (not deployed)
-- `job.go:595` — Expected nil to equal 0 (job.status.ready)
+### 22. Job Ready Field (1 failure) — FIXED (not deployed in round 127)
+- `job.go:595` — Expected nil to equal 0
 - **Fix**: Commit 2d3c799 — set ready: Some(count) instead of None
-- **Status**: FIXED (not in round 127 binary, will be in next build)
+- **Status**: FIXED
 
 ## Progress History
 
