@@ -465,7 +465,13 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         .call_webhook(&resolved_url, &review, timeout)
                         .await
                     {
-                        Ok(resp) => resp,
+                        Ok(resp) => {
+                            debug!(
+                                "Webhook {} response: allowed={}, url={}",
+                                webhook.name, resp.allowed, resolved_url
+                            );
+                            resp
+                        }
                         Err(e) => {
                             let fp = webhook
                                 .failure_policy
@@ -608,7 +614,13 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         .call_webhook(&resolved_url, &review, timeout)
                         .await
                     {
-                        Ok(resp) => resp,
+                        Ok(resp) => {
+                            debug!(
+                                "Webhook {} response: allowed={}, url={}",
+                                webhook.name, resp.allowed, resolved_url
+                            );
+                            resp
+                        }
                         Err(e) => {
                             let fp = webhook
                                 .failure_policy
