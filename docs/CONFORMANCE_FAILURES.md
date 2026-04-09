@@ -16,7 +16,7 @@
 ### NEEDS FIX (6 failures)
 | Test | Error | Status |
 |------|-------|--------|
-| `field_validation.go:245,428` | "cannot create crd context deadline exceeded" | CRD creation times out — test waits for CRD to appear in API discovery |
+| `field_validation.go:245,428` | "cannot create crd context deadline exceeded" | FIXED (f7dfb20) — CRD watch support added |
 | `job.go:555` | Job successPolicy wrong index | Missing SuccessPolicy type + controller logic |
 | `webhook.go:463` | Webhook rule update not taking effect | ConfigMap creation still denied after rule change |
 | `namespace.go:579` | Missing NamespaceDeletionContentFailure condition | Conditions may not persist (CAS conflict?) — c5ad02d adds logging |
@@ -29,7 +29,7 @@
 | `kubectl/builder.go:97` | kubectl label exit code 1 |
 | `aggregated_discovery.go:336` | Unknown |
 
-## Fix Commits (43 total)
+## Fix Commits (44 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -71,6 +71,7 @@
 | 323d9dc | kubelet | Container restart — pass volume paths when recreating |
 | db4855b | common/kubelet/api-server | JWT claims — kubernetes.io nested claims |
 | c5ad02d | controller-manager | Namespace controller — deletion condition logging |
+| f7dfb20 | api-server | CRD watch — watch support for custom resource instances |
 
 ## Progress History
 
