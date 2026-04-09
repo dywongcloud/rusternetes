@@ -3324,18 +3324,27 @@ impl ContainerRuntime {
                         } else {
                             host_path.clone()
                         };
-                        // Use tmpfs for ALL emptyDir volumes (both default and Memory medium).
-                        // This ensures correct file permissions (mode=1777) because:
-                        // 1. Docker's default umask (0022) strips write bits from bind-mounted files
-                        // 2. tmpfs allows setting mode directly, bypassing umask issues
-                        // 3. Real K8s also uses tmpfs-backed directories for emptyDir
+                        // emptyDir volumes must be BIND-MOUNTED from the shared host
+                        // directory, NOT tmpfs. tmpfs mounts are per-container and not
+                        // shared between containers in the same pod. K8s emptyDir is
+                        // a shared directory on the node visible to all containers.
+                        //
+                        // Only use tmpfs for Memory medium emptyDir (sizeLimit from RAM).
                         let is_emptydir = empty_dir_volumes.contains(&mount.name);
+                        let is_memory_medium = pod
+                            .spec
+                            .as_ref()
+                            .and_then(|s| s.volumes.as_ref())
+                            .and_then(|vols| vols.iter().find(|v| v.name == mount.name))
+                            .and_then(|v| v.empty_dir.as_ref())
+                            .and_then(|ed| ed.medium.as_deref())
+                            == Some("Memory");
 
-                        let use_tmpfs = is_emptydir && expanded_sub_path.is_none();
+                        let use_tmpfs =
+                            is_emptydir && is_memory_medium && expanded_sub_path.is_none();
 
                         if use_tmpfs {
-                            // Use tmpfs for emptyDir volumes.
-                            // Set mode=1777 (world-writable + sticky bit) to match K8s emptyDir behavior.
+                            // Memory-backed emptyDir — use tmpfs
                             let opts = if read_only {
                                 "ro,mode=1777".to_string()
                             } else {
