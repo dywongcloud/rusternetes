@@ -89,7 +89,15 @@
 - **Root cause**: Nodes registered with empty labels. K8s kubelet `initialNode()` sets `kubernetes.io/os=linux`, `kubernetes.io/arch=amd64`, `kubernetes.io/hostname` on all nodes. Without these, pods with `nodeSelector: {"kubernetes.io/os": "linux"}` (like sonobuoy e2e pod) couldn't be scheduled at all. Round 130 had 0 tests run.
 - **Fix**: Add default node labels in `register_node()` and `update_node_status()` (commit c10e449)
 
-## All Fix Commits (37 total)
+### Category 19: SA Token Volume Resync — FIXED
+- **Root cause**: Projected volume resync code tracked expected_files for ConfigMap, Secret, DownwardAPI but NOT ServiceAccountToken. The "delete stale files" pass deleted the token file written by create_volume. Pods couldn't authenticate to API server.
+- **Fix**: Add SA token path to expected_files in resync (commit 3136c2a)
+
+### Category 20: CRD OpenAPI Schema — FIXED
+- **Root cause**: `x-kubernetes-embedded-resource: false` and `x-kubernetes-int-or-string: false` included in CRD OpenAPI definitions. K8s uses Go's `omitempty` on bools which omits `false`. Our serde only skipped `None`, not `Some(false)`.
+- **Fix**: Custom `skip_false_or_none()` for x-kubernetes-* boolean extensions (commit f34bd51)
+
+## All Fix Commits (39 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -131,6 +139,7 @@
 | 2d3c799 | controller-manager | Job ready field (pre-session) |
 | c10e449 | kubelet | Node labels — kubernetes.io/os, arch, hostname |
 | 3136c2a | kubelet | Projected volume — preserve SA token during resync |
+| f34bd51 | common | CRD OpenAPI — omit x-kubernetes-* false booleans |
 
 ## Progress History
 
