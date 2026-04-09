@@ -178,10 +178,7 @@ impl Kubelet {
         // Set default node labels matching K8s kubelet initialNode()
         // See: pkg/kubelet/kubelet_node_status.go:initialNode()
         node.metadata.labels = Some(HashMap::from([
-            (
-                "kubernetes.io/hostname".to_string(),
-                self.node_name.clone(),
-            ),
+            ("kubernetes.io/hostname".to_string(), self.node_name.clone()),
             ("kubernetes.io/os".to_string(), "linux".to_string()),
             ("kubernetes.io/arch".to_string(), "amd64".to_string()),
             ("beta.kubernetes.io/os".to_string(), "linux".to_string()),
