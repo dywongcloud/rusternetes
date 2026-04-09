@@ -1186,8 +1186,19 @@ pub async fn patch(
         .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch: {}", e)))?;
 
     // Apply patch
-    let patched_json = apply_patch(&current_json, &patch_json, patch_type)
+    let mut patched_json = apply_patch(&current_json, &patch_json, patch_type)
         .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+
+    // Ensure metadata.name and metadata.namespace are set before deserializing.
+    // Merge patches may omit metadata.name, causing it to be null in the result.
+    // K8s preserves these from the URL path, not from the patch body.
+    if let Some(metadata) = patched_json.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+        metadata.insert("name".to_string(), serde_json::json!(name));
+        metadata.insert(
+            "namespace".to_string(),
+            serde_json::json!(namespace),
+        );
+    }
 
     // Convert back to Pod
     let mut patched_pod: Pod = serde_json::from_value(patched_json).map_err(|e| {
