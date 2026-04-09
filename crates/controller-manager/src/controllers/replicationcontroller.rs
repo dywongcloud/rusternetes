@@ -472,9 +472,24 @@ impl<S: Storage> ReplicationControllerController<S> {
                 message: Some(msg.to_string()),
             }])
         } else {
-            // Clear failure conditions when no creation failure — K8s removes
-            // the ReplicaFailure condition once pods can be created again
-            None
+            // Clear ReplicaFailure condition when no creation failure.
+            // K8s removes the ReplicaFailure condition once pods can be
+            // created successfully again. Preserve other conditions.
+            let existing = rc
+                .status
+                .as_ref()
+                .and_then(|s| s.conditions.as_ref())
+                .cloned()
+                .unwrap_or_default();
+            let filtered: Vec<_> = existing
+                .into_iter()
+                .filter(|c| c.condition_type != "ReplicaFailure")
+                .collect();
+            if filtered.is_empty() {
+                None
+            } else {
+                Some(filtered)
+            }
         };
 
         // Re-read from storage for fresh resourceVersion to avoid CAS conflicts
