@@ -374,24 +374,98 @@ async fn custom_resource_fallback(
                 }
             }
         }
-        // GET with no name = list
+        // GET with no name = list (or watch if ?watch=true)
         (Method::GET, None, None) => {
-            match handlers::custom_resource::list_custom_resources(
-                State(state.clone()),
-                Extension(auth_ctx.clone()),
-                axum::extract::Path((
-                    group.to_string(),
-                    version.to_string(),
-                    plural.to_string(),
-                    namespace.map(|s| s.to_string()),
-                )),
-            )
-            .await
-            {
-                Ok(json) => json.into_response(),
-                Err(e) => {
-                    warn!("Error listing custom resources: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+            // Parse query params to check for watch
+            let query_params: std::collections::HashMap<String, String> = uri
+                .query()
+                .map(|q| {
+                    url::form_urlencoded::parse(q.as_bytes())
+                        .into_owned()
+                        .collect()
+                })
+                .unwrap_or_default();
+            let is_watch = query_params
+                .get("watch")
+                .and_then(|v| v.parse::<bool>().ok())
+                .unwrap_or(false);
+
+            if is_watch {
+                // Watch custom resources using the JSON watch handler
+                let resource_type = format!("{}_{}", group.replace('.', "_"), plural);
+                let watch_params = crate::handlers::watch::WatchParams {
+                    resource_version: crate::handlers::watch::normalize_resource_version(
+                        query_params.get("resourceVersion").cloned(),
+                    ),
+                    timeout_seconds: query_params
+                        .get("timeoutSeconds")
+                        .and_then(|v| v.parse::<u64>().ok()),
+                    label_selector: query_params.get("labelSelector").cloned(),
+                    field_selector: query_params.get("fieldSelector").cloned(),
+                    watch: Some(true),
+                    allow_watch_bookmarks: query_params
+                        .get("allowWatchBookmarks")
+                        .and_then(|v| v.parse::<bool>().ok()),
+                    send_initial_events: query_params
+                        .get("sendInitialEvents")
+                        .and_then(|v| v.parse::<bool>().ok()),
+                };
+                if let Some(ns) = namespace {
+                    match crate::handlers::watch::watch_namespaced::<
+                        rusternetes_common::resources::CustomResource,
+                    >(
+                        state.clone(),
+                        auth_ctx.clone(),
+                        ns.to_string(),
+                        &resource_type,
+                        &group,
+                        watch_params,
+                    )
+                    .await
+                    {
+                        Ok(resp) => resp,
+                        Err(e) => {
+                            warn!("Error watching custom resources: {}", e);
+                            (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                        }
+                    }
+                } else {
+                    match crate::handlers::watch::watch_cluster_scoped::<
+                        rusternetes_common::resources::CustomResource,
+                    >(
+                        state.clone(),
+                        auth_ctx.clone(),
+                        &resource_type,
+                        &group,
+                        watch_params,
+                    )
+                    .await
+                    {
+                        Ok(resp) => resp,
+                        Err(e) => {
+                            warn!("Error watching custom resources: {}", e);
+                            (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                        }
+                    }
+                }
+            } else {
+                match handlers::custom_resource::list_custom_resources(
+                    State(state.clone()),
+                    Extension(auth_ctx.clone()),
+                    axum::extract::Path((
+                        group.to_string(),
+                        version.to_string(),
+                        plural.to_string(),
+                        namespace.map(|s| s.to_string()),
+                    )),
+                )
+                .await
+                {
+                    Ok(json) => json.into_response(),
+                    Err(e) => {
+                        warn!("Error listing custom resources: {}", e);
+                        (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                    }
                 }
             }
         }

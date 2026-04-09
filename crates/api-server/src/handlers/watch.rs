@@ -1247,7 +1247,8 @@ impl_has_metadata!(
     rusternetes_common::resources::FlowSchema,
     rusternetes_common::resources::PriorityLevelConfiguration,
     rusternetes_common::resources::IngressClass,
-    rusternetes_common::resources::CSIStorageCapacity
+    rusternetes_common::resources::CSIStorageCapacity,
+    rusternetes_common::resources::CustomResource
 );
 
 // Concrete handler functions for specific resources
