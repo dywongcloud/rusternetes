@@ -824,10 +824,13 @@ pub async fn inject_service_account_token<S: Storage>(
     // The service account token secret name follows the pattern: {sa-name}-token
     let token_secret_name = format!("{}-token", sa_name);
 
-    // Define the service account token volume as a PROJECTED volume
-    // with ServiceAccountTokenProjection. This generates a pod-bound
-    // JWT token with pod_name, pod_uid, node_name claims — matching
-    // K8s behavior where the kubelet generates bound tokens.
+    // Define the service account token volume as a Projected volume
+    // with three sources, matching K8s TokenVolumeSource() exactly:
+    //   1. ServiceAccountToken — kubelet generates bound JWT with pod claims
+    //   2. ConfigMap (kube-root-ca.crt) — provides ca.crt for API server TLS
+    //   3. DownwardAPI — provides namespace from pod metadata
+    //
+    // See K8s source: plugin/pkg/admission/serviceaccount/admission.go
     let sa_token_volume = Volume {
         name: "kube-api-access".to_string(),
         empty_dir: None,
@@ -841,19 +844,56 @@ pub async fn inject_service_account_token<S: Storage>(
         nfs: None,
         iscsi: None,
         projected: Some(rusternetes_common::resources::ProjectedVolumeSource {
-            sources: Some(vec![rusternetes_common::resources::VolumeProjection {
-                service_account_token: Some(
-                    rusternetes_common::resources::ServiceAccountTokenProjection {
-                        path: "token".to_string(),
-                        expiration_seconds: Some(3607),
-                        audience: None,
-                    },
-                ),
-                config_map: None,
-                secret: None,
-                downward_api: None,
-                cluster_trust_bundle: None,
-            }]),
+            sources: Some(vec![
+                // Source 1: ServiceAccountToken — kubelet generates bound JWT
+                rusternetes_common::resources::VolumeProjection {
+                    service_account_token: Some(
+                        rusternetes_common::resources::ServiceAccountTokenProjection {
+                            path: "token".to_string(),
+                            expiration_seconds: Some(3607),
+                            audience: None,
+                        },
+                    ),
+                    config_map: None,
+                    secret: None,
+                    downward_api: None,
+                    cluster_trust_bundle: None,
+                },
+                // Source 2: ConfigMap kube-root-ca.crt — provides ca.crt
+                rusternetes_common::resources::VolumeProjection {
+                    service_account_token: None,
+                    config_map: Some(rusternetes_common::resources::ConfigMapProjection {
+                        name: Some("kube-root-ca.crt".to_string()),
+                        items: Some(vec![rusternetes_common::resources::KeyToPath {
+                            key: "ca.crt".to_string(),
+                            path: "ca.crt".to_string(),
+                            mode: None,
+                        }]),
+                        optional: None,
+                    }),
+                    secret: None,
+                    downward_api: None,
+                    cluster_trust_bundle: None,
+                },
+                // Source 3: DownwardAPI — provides namespace
+                rusternetes_common::resources::VolumeProjection {
+                    service_account_token: None,
+                    config_map: None,
+                    secret: None,
+                    downward_api: Some(rusternetes_common::resources::DownwardAPIProjection {
+                        items: Some(vec![rusternetes_common::resources::DownwardAPIVolumeFile {
+                            path: "namespace".to_string(),
+                            field_ref: Some(rusternetes_common::resources::ObjectFieldSelector {
+                                api_version: Some("v1".to_string()),
+                                field_path: "metadata.namespace".to_string(),
+                            }),
+                            resource_field_ref: None,
+                            mode: None,
+                        }]),
+                    }),
+                    cluster_trust_bundle: None,
+                },
+            ]),
             default_mode: Some(0o644),
         }),
         image: None,
