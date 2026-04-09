@@ -60,9 +60,10 @@ Round 128 binary: commit 36ed11a. Many fixes committed AFTER this binary was bui
 - `crd_selectable_fields.go:232` — CRD with selectable fields
 - **Root cause**: Likely CRD creation via protobuf. Fix in commit 019f470 (CRD proto schemas) should resolve.
 
-### 13. Job status (1 failure) — ANALYZED
-- `job.go:514` — job status assertion failure
-- **Root cause**: Needs deeper analysis of specific assertion.
+### 13. Job status terminating (1 failure) — FIXED
+- `job.go:514` — job.Status.Terminating = 2, expected 0
+- **Root cause**: Controller set `terminating` to active pod count instead of counting pods with deletionTimestamp that haven't reached terminal phase. K8s Terminating = pods with Ready condition AND deletionTimestamp.
+- **Fix**: Count pods with deletionTimestamp not in Succeeded/Failed phase (commit 2898a00)
 
 ### 14. Service Account (1 failure) — FIXED
 - `service_accounts.go:817` — timed out waiting
@@ -81,10 +82,11 @@ Round 128 binary: commit 36ed11a. Many fixes committed AFTER this binary was bui
 - **Fix**: Resource counting fix (commit 6124087) — only count Running non-terminating pods. Use nominatedNodeName for eviction.
 
 ### 18. EndpointSlice mirroring (1 failure) — FIXED
-- `endpointslicemirroring.go:129` — mirroring issue
-- **Fix**: EndpointSlice controller rewrite (commit 01d2d72) builds from Service+Pods with FindPort.
+- `endpointslicemirroring.go:129` — no EndpointSlice exists for manually-created Endpoints
+- **Root cause**: Rewritten EndpointSlice controller only built from Services, losing Endpoints mirroring. K8s has a separate mirroring controller for Endpoints without matching Services.
+- **Fix**: Added Endpoints mirroring fallback for Endpoints without a matching Service (commit 06b6644)
 
-## All Fix Commits (22 total)
+## All Fix Commits (30 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -110,6 +112,15 @@ Round 128 binary: commit 36ed11a. Many fixes committed AFTER this binary was bui
 | 873edac | kubelet | /etc/hosts header period |
 | 3a927d1 | kubelet | Termination message fallback (pre-session) |
 | eaba1ef | api-server | Field validation duplicate field (pre-session) |
+| 8db2024 | controller-manager | StatefulSet scale-down processCondemned |
+| 5c2d7ec | controller-manager | Deployment revision — update every reconcile |
+| 2b30373 | controller-manager | CRD controller — preserve existing conditions |
+| 2898a00 | controller-manager | Job status terminating — count actual terminating pods |
+| 06b6644 | controller-manager | EndpointSlice mirroring — Endpoints without Service |
+| 873edac | kubelet | /etc/hosts header period |
+| 019f470 | api-server | Protobuf decoder — CRD schemas with JSONSchemaProps |
+| e23b7bc | api-server | Exec handler — search ephemeral and init containers |
+| df93155 | api-server | Aggregated discovery v2/v2beta1 version negotiation |
 | 2d3c799 | controller-manager | Job ready field (pre-session) |
 
 ## Progress History
