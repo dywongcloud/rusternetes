@@ -466,7 +466,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         .await
                     {
                         Ok(resp) => {
-                            debug!(
+                            info!(
                                 "Webhook {} response: allowed={}, url={}",
                                 webhook.name, resp.allowed, resolved_url
                             );
@@ -615,7 +615,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         .await
                     {
                         Ok(resp) => {
-                            debug!(
+                            info!(
                                 "Webhook {} response: allowed={}, url={}",
                                 webhook.name, resp.allowed, resolved_url
                             );
