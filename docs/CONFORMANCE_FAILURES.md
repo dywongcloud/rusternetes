@@ -2,60 +2,34 @@
 
 **Round 131** | Running (~86/98 so far, 87.8%) | 2026-04-09
 
-## Round 131 Active Failures (12 so far, need fixing)
+## Round 131 Active Failures (15 at 128/441, 88.3%)
 
-### 1. `webhook.go:2129` — CRD webhook deny — FIXED (next round)
-- **Error**: CR creation should be denied by ValidatingWebhookConfiguration but was allowed
-- **Root cause**: `create_custom_resource` didn't call admission webhooks
-- **Fix**: commit 6edb6be — added mutating + validating webhook calls
+### FIXED (next round — 5 failures)
+| Test | Error | Fix |
+|------|-------|-----|
+| `webhook.go:2129` | CR creation not denied by webhook | 6edb6be — CRD webhook calls |
+| `runtime.go:115` | RestartCount stays 0 | 323d9dc — volume paths on restart |
+| `crd_publish_openapi.go:285` | x-kubernetes-* false booleans | f34bd51 — skip_false_or_none |
+| `crd_publish_openapi.go:211,253,366` | Same CRD OpenAPI issue | f34bd51 — same fix |
+| `service_accounts.go:667` | JWT missing kubernetes.io claims | db4855b — nested KubernetesClaims |
 
-### 2. `runtime.go:115` — Container restart count — FIXED (next round)
-- **Error**: RestartCount stays 0 after container exits and restarts
-- **Root cause**: Restarted containers got empty volume_paths, so emptyDir tracking files were missing
-- **Fix**: commit 323d9dc — rebuild volume_paths from pod spec on restart
+### NEEDS FIX (6 failures)
+| Test | Error | Status |
+|------|-------|--------|
+| `field_validation.go:245,428` | "cannot create crd context deadline exceeded" | CRD creation times out — test waits for CRD to appear in API discovery |
+| `job.go:555` | Job successPolicy wrong index | Missing SuccessPolicy type + controller logic |
+| `webhook.go:463` | Webhook rule update not taking effect | ConfigMap creation still denied after rule change |
+| `namespace.go:579` | Missing NamespaceDeletionContentFailure condition | Conditions may not persist (CAS conflict?) — c5ad02d adds logging |
+| `dns_common.go:476` | Rate limiter context deadline | Client rate limiter cascade |
+| `aggregated_discovery.go:336` | Discovery response issue | Needs investigation |
 
-### 3. `kubectl/builder.go:97` — kubectl label
-- **Error**: `error running kubectl label pods pause testing-label-` (exit code 1)
-- **Status**: NEEDS INVESTIGATION — kubectl label command failing
+### NEEDS INVESTIGATION (2 failures)
+| Test | Error |
+|------|-------|
+| `kubectl/builder.go:97` | kubectl label exit code 1 |
+| `aggregated_discovery.go:336` | Unknown |
 
-### 4. `field_validation.go:245` — CRD field validation timeout
-- **Error**: "cannot create crd context deadline exceeded"
-- **Status**: NEEDS FIX — CRD creation times out waiting for API to serve it. Our CRD handler sets Established immediately but test may wait for API discovery/OpenAPI to update.
-
-### 5. `field_validation.go:428` — CRD field validation (second test)
-- **Error**: Same "cannot create crd context deadline exceeded"
-- **Status**: Same root cause as #4
-
-### 6. `job.go:555` — Job successPolicy
-- **Error**: Job with successPolicy succeededIndexes rule — wrong index succeeded
-- **Status**: NEEDS FIX — SuccessPolicy type and controller logic missing entirely
-
-### 7. `crd_publish_openapi.go:285` — CRD OpenAPI schema — FIXED (next round)
-- **Error**: x-kubernetes-embedded-resource:false and x-kubernetes-int-or-string:false in schema
-- **Root cause**: serde skip_serializing_if only skipped None, not Some(false)
-- **Fix**: commit f34bd51 — custom skip_false_or_none() for x-kubernetes-* booleans
-
-### 8. `dns_common.go:476` — DNS resolution
-- **Error**: "client rate limiter Wait returned an error: context deadline exceeded"
-- **Status**: NEEDS INVESTIGATION — may be rate limiter cascade or CoreDNS issue
-
-### 9. `service_accounts.go:667` — SA OIDC discovery
-- **Error**: "tls: failed to verify certificate: x509: certificate signed by unknown authority" + JWT claims missing kubernetes-specific fields (namespace, SA name, UID empty)
-- **Status**: NEEDS FIX — JWT ServiceAccountClaims struct doesn't include K8s-specific nested claims
-
-### 10. `webhook.go:463` — Webhook rule update timing
-- **Error**: After updating webhook rules to remove CREATE, ConfigMap creation still denied (timeout)
-- **Status**: NEEDS INVESTIGATION — webhook configs read from etcd on each request, should see updates
-
-### 11. `aggregated_discovery.go:336` — Aggregated discovery
-- **Error**: Unknown (need more context)
-- **Status**: NEEDS INVESTIGATION
-
-### 12. `namespace.go:579` — Namespace deletion ordering
-- **Error**: "Namespace does not yet have a NamespaceDeletionContentFailure condition"
-- **Status**: NEEDS FIX — namespace controller not setting NamespaceDeletionContentFailure condition fast enough, or condition format wrong
-
-## Fix Commits (41 total)
+## Fix Commits (43 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -95,6 +69,8 @@
 | c10e449 | kubelet | Node labels — kubernetes.io/os, arch, hostname |
 | 3136c2a | kubelet | Projected volume — preserve SA token during resync |
 | 323d9dc | kubelet | Container restart — pass volume paths when recreating |
+| db4855b | common/kubelet/api-server | JWT claims — kubernetes.io nested claims |
+| c5ad02d | controller-manager | Namespace controller — deletion condition logging |
 
 ## Progress History
 
