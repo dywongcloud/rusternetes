@@ -284,8 +284,12 @@ impl<S: Storage> NamespaceController<S> {
             });
 
             // Save the updated status with conditions (retry on CAS conflict)
+            info!(
+                "Setting deletion conditions on namespace {} (remaining={}, finalizers={})",
+                name, remaining_count > 0, any_finalizers_remaining
+            );
             if let Err(e) = self.storage.update(&key, &ns).await {
-                debug!("Namespace status update CAS conflict, retrying: {}", e);
+                warn!("Namespace status update failed, retrying: {}", e);
                 if let Ok(mut fresh_ns) = self.storage.get::<Namespace>(&key).await {
                     let conditions = Self::build_deletion_conditions(
                         remaining_count > 0,
