@@ -19,9 +19,9 @@
 - **Root cause**: Pod proxy returns 404 when pod has no IP (restart or scheduling delay). DNS queries inside pods work when pods are stable. Client rate limiter storms from watch failures amplify the issue.
 - **Mitigated by**: Watch fix (ce45c59), protobuf fix (2411448) reducing API call storms
 
-### Category 4: Webhooks (12 failures) — INVESTIGATING
-- **Root cause**: API server calls webhooks (confirmed in logs) but ConfigMap creates succeed despite webhook server running. Webhook response logging added at info level (commit b1b7761) for next round diagnostics.
-- **Status**: Need round 130 data with response logging
+### Category 4: Webhooks (12 failures) — FIXED
+- **Root cause**: `run_validating_webhooks()` returns `Ok(Deny)` but configmap handler used `.await?` which only propagates `Err`. The Deny was silently discarded and ConfigMap created anyway.
+- **Fix**: Match on AdmissionResponse::Deny and return Error::Forbidden (commit 0d0ed97)
 
 ### Category 5: Scheduling/Preemption (4 failures) — FIXED
 - **Fix**: Resource counting only counts Running non-terminating pods, use nominatedNodeName (commit 6124087)
@@ -66,7 +66,7 @@
 - `service_accounts.go:151` — FIXED: API server admission used Secret-based volume instead of Projected volume for kube-api-access. Static token had no pod-specific claims. Changed to projected ServiceAccountTokenProjection (commit 4496809)
 - `service_accounts.go:817` — timeout, mitigated by upstream fixes
 
-### Category 16: Kubelet/Runtime (5 failures) — PARTIALLY FIXED
+### Category 16: Kubelet/Runtime (5 failures) — MOSTLY FIXED
 - `kubelet_etc_hosts.go:147` — host network hosts file fix (188eb6a)
 - `runtime.go:115` — container restart, fix (5dac01a)
 - `pod_resize.go:857` — pod resize not implemented
