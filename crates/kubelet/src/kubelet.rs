@@ -175,6 +175,19 @@ impl Kubelet {
 
         let mut node = Node::new(&self.node_name);
 
+        // Set default node labels matching K8s kubelet initialNode()
+        // See: pkg/kubelet/kubelet_node_status.go:initialNode()
+        node.metadata.labels = Some(HashMap::from([
+            (
+                "kubernetes.io/hostname".to_string(),
+                self.node_name.clone(),
+            ),
+            ("kubernetes.io/os".to_string(), "linux".to_string()),
+            ("kubernetes.io/arch".to_string(), "amd64".to_string()),
+            ("beta.kubernetes.io/os".to_string(), "linux".to_string()),
+            ("beta.kubernetes.io/arch".to_string(), "amd64".to_string()),
+        ]));
+
         // Set node spec to mark it as schedulable
         node.spec = Some(NodeSpec {
             pod_cidr: None,
@@ -305,6 +318,24 @@ impl Kubelet {
             eviction_manager.update_node_conditions(&mut node, &[])?;
         }
         drop(eviction_manager); // Release lock before async operations
+
+        // Ensure default node labels are always set (K8s kubelet updateDefaultLabels)
+        let labels = node.metadata.labels.get_or_insert_with(HashMap::new);
+        labels
+            .entry("kubernetes.io/hostname".to_string())
+            .or_insert_with(|| self.node_name.clone());
+        labels
+            .entry("kubernetes.io/os".to_string())
+            .or_insert_with(|| "linux".to_string());
+        labels
+            .entry("kubernetes.io/arch".to_string())
+            .or_insert_with(|| "amd64".to_string());
+        labels
+            .entry("beta.kubernetes.io/os".to_string())
+            .or_insert_with(|| "linux".to_string());
+        labels
+            .entry("beta.kubernetes.io/arch".to_string())
+            .or_insert_with(|| "amd64".to_string());
 
         // Ensure capacity, allocatable, and nodeInfo are always set
         if let Some(ref mut status) = node.status {
