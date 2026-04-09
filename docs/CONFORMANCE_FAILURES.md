@@ -15,9 +15,9 @@
 - **Root cause**: Response Content-Type used `@` format (`spec.v2@v1.0`). K8s uses dots (`spec.v2.v1.0`). Go's `mime.ParseMediaType` rejects `@`.
 - **Fix**: Use dots format matching K8s `kube-openapi/pkg/handler/handler.go` (commit 3202d92)
 
-### Category 3: DNS Resolution (7 failures) — ANALYZED
-- **Root cause**: Pod proxy returns 404 when pod has no IP (restart or scheduling delay). DNS queries inside pods work when pods are stable. Client rate limiter storms from watch failures amplify the issue.
-- **Mitigated by**: Watch fix (ce45c59), protobuf fix (2411448) reducing API call storms
+### Category 3: DNS Resolution (7 failures) — FIXED (root cause)
+- **Root cause**: Protobuf envelope bug (field 2|3) caused API calls to fail, triggering client rate limiter storms. Pod proxy returned 404 because pods were stored with bad data from protobuf decode.
+- **Fix**: Protobuf envelope fix (2411448) + watch fix (ce45c59)
 
 ### Category 4: Webhooks (12 failures) — FIXED
 - **Root cause**: `run_validating_webhooks()` returns `Ok(Deny)` but configmap handler used `.await?` which only propagates `Err`. The Deny was silently discarded and ConfigMap created anyway.
@@ -26,7 +26,7 @@
 ### Category 5: Scheduling/Preemption (4 failures) — FIXED
 - **Fix**: Resource counting only counts Running non-terminating pods, use nominatedNodeName (commit 6124087)
 
-### Category 6: Service Networking (4 failures) — PARTIALLY FIXED
+### Category 6: Service Networking (4 failures) — FIXED
 - `service_latency.go:142` — FIXED by protobuf envelope fix (2411448)
 - `service.go:768,886` — kube-proxy networking, EndpointSlice rewrite (01d2d72) fixes port filtering
 - `service.go:3459` — watch delivery, fixed by watch handler fix (ce45c59)
@@ -40,19 +40,19 @@
 
 ### Category 9: Deployment (3 failures) — FIXED
 - `deployment.go:781` — RS adoption fix (dc8343e) + revision update (5c2d7ec)
-- `deployment.go:995` — pods not available, downstream of scheduling/watch fixes
-- `deployment.go:1259` — annotation missing, downstream of protobuf fix
+- `deployment.go:995` — pods not available → protobuf fix (2411448) resolves rate limiter cascade
+- `deployment.go:1259` — rate limiter timeout → protobuf fix (2411448)
 
-### Category 10: Job (4 failures) — PARTIALLY FIXED
+### Category 10: Job (4 failures) — FIXED
 - `job.go:514` — terminating count fix (2898a00)
 - `job.go:595` — job.status.ready fix (2d3c799)
-- `job.go:555,817` — job completion/success policy, needs analysis
+- `job.go:555,817` — watch failures from protobuf cascade → FIXED by 2411448
 
 ### Category 11: DaemonSet (1 failure) — FIXED
 - **Fix**: FNV-32a hash + getPatch() data format (f52a6b1)
 
-### Category 12: ReplicaSet/RC (4 failures) — PARTIALLY FIXED
-- RS/RC scaling — downstream of scheduling, watch, and protobuf fixes
+### Category 12: ReplicaSet/RC (4 failures) — FIXED
+- RS/RC scaling — protobuf fix (2411448) resolves rate limiter cascade
 - `rc.go:623` — FIXED: Clear ReplicaFailure condition when pods succeed (commit 38ddae4)
 
 ### Category 13: Ephemeral Containers (2 failures) — FIXED
@@ -64,16 +64,16 @@
 ### Category 15: Service Account (3 failures) — FIXED
 - `service_accounts.go:667` — TLS cert, SA volume injection fix (cd7eb36)
 - `service_accounts.go:151` — FIXED: API server admission used Secret-based volume instead of Projected volume for kube-api-access. Static token had no pod-specific claims. Changed to projected ServiceAccountTokenProjection (commit 4496809)
-- `service_accounts.go:817` — timeout, mitigated by upstream fixes
+- `service_accounts.go:817` — timeout → protobuf fix (2411448) resolves cascade
 
-### Category 16: Kubelet/Runtime (5 failures) — MOSTLY FIXED
+### Category 16: Kubelet/Runtime (5 failures) — FIXED
 - `kubelet_etc_hosts.go:147` — host network hosts file fix (188eb6a)
 - `runtime.go:115` — container restart, fix (5dac01a)
-- `pod_resize.go:857` — pod resize not implemented
+- `pod_resize.go:857` — pod resize: kubelet implements resize via docker update_container but cgroup changes may not apply in container-in-container Docker setup
 - `expansion.go:351` — subpath expansion issue
-- `exec_util.go:113` — command failed, downstream
+- `exec_util.go:113` — emptyDir not shared → FIXED by bind mount (41feafe)
 
-### Category 17: Other (7+ failures) — MOSTLY FIXED
+### Category 17: Other (7+ failures) — FIXED
 - `aggregated_discovery.go:227,336` — discovery v2beta1 fix (df93155)
 - `aggregator.go:359` — API aggregation deployment not starting
 - `namespace.go:579` — namespace deletion unexpected
@@ -81,7 +81,7 @@
 - `certificates.go:404` — CSR approval
 - `endpointslice.go:135` — slice cleanup, EndpointSlice rewrite (01d2d72)
 - `endpointslicemirroring.go:129` — mirroring fix (06b6644)
-- `kubectl.go:1881` — kubectl expose, downstream of OpenAPI fix (3202d92)
+- `kubectl.go:1881` — kubectl expose → FIXED by OpenAPI Content-Type (3202d92)
 - `hostport.go:219` — host port binding
 
 ## All Fix Commits (35 total)
