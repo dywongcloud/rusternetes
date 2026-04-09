@@ -2,7 +2,7 @@ use anyhow::Result;
 use rusternetes_common::resources::endpointslice::{
     Endpoint, EndpointConditions, EndpointPort, EndpointReference,
 };
-use rusternetes_common::resources::{EndpointSlice, Pod, Service};
+use rusternetes_common::resources::{EndpointSlice, Endpoints, Pod, Service};
 use rusternetes_common::types::Phase;
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
@@ -56,6 +56,69 @@ impl<S: Storage> EndpointSliceController<S> {
                     "Failed to reconcile endpointslices for service {}/{}: {}",
                     ns, service.metadata.name, e
                 );
+            }
+        }
+
+        // Mirror Endpoints that don't have a corresponding Service.
+        // K8s has a separate EndpointSlice mirroring controller for this.
+        // This handles manually-created Endpoints and headless services without selectors.
+        let all_endpoints: Vec<Endpoints> = self
+            .storage
+            .list(&build_prefix("endpoints", None))
+            .await
+            .unwrap_or_default();
+
+        for ep in &all_endpoints {
+            let ns = ep.metadata.namespace.as_deref().unwrap_or("default");
+            let ep_name = &ep.metadata.name;
+
+            // Skip if a Service with the same name exists (handled above)
+            if service_names.contains(&(ns.to_string(), ep_name.clone())) {
+                continue;
+            }
+
+            // Mirror this Endpoints object to an EndpointSlice
+            let endpointslices = EndpointSlice::from_endpoints(ep);
+            for (idx, mut slice) in endpointslices.into_iter().enumerate() {
+                let slice_name = if idx == 0 {
+                    ep_name.clone()
+                } else {
+                    format!("{}-{}", ep_name, idx)
+                };
+                slice.metadata.name = slice_name.clone();
+                slice.metadata.namespace = Some(ns.to_string());
+
+                let labels = slice.metadata.labels.get_or_insert_with(Default::default);
+                labels.insert("kubernetes.io/service-name".to_string(), ep_name.clone());
+                labels.insert(
+                    "endpointslice.kubernetes.io/managed-by".to_string(),
+                    "endpointslice-mirroring-controller.k8s.io".to_string(),
+                );
+
+                slice.metadata.owner_references =
+                    Some(vec![rusternetes_common::types::OwnerReference {
+                        api_version: "v1".to_string(),
+                        kind: "Endpoints".to_string(),
+                        name: ep_name.clone(),
+                        uid: ep.metadata.uid.clone(),
+                        controller: Some(true),
+                        block_owner_deletion: Some(true),
+                    }]);
+
+                let slice_key = build_key("endpointslices", Some(ns), &slice_name);
+                if let Ok(existing) = self.storage.get::<EndpointSlice>(&slice_key).await {
+                    if existing.endpoints == slice.endpoints && existing.ports == slice.ports {
+                        continue;
+                    }
+                    slice.metadata.resource_version = existing.metadata.resource_version;
+                }
+                match self.storage.update(&slice_key, &slice).await {
+                    Ok(_) => {}
+                    Err(rusternetes_common::Error::NotFound(_)) => {
+                        let _ = self.storage.create(&slice_key, &slice).await;
+                    }
+                    Err(_) => {}
+                }
             }
         }
 
