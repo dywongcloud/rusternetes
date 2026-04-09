@@ -12,8 +12,8 @@
 - **Fix**: Only capture field 2 as raw bytes (commit 2411448)
 
 ### Category 2: kubectl / OpenAPI (8 failures) — FIXED
-- **Root cause**: Response Content-Type used `@` format which Go's mime.ParseMediaType rejects
-- **Fix**: Use dots format matching K8s source: `spec.v2.v1.0+protobuf` (commit 3202d92)
+- **Root cause**: Response Content-Type used `@` format (`spec.v2@v1.0`). K8s uses dots (`spec.v2.v1.0`). Go's `mime.ParseMediaType` rejects `@`.
+- **Fix**: Use dots format matching K8s `kube-openapi/pkg/handler/handler.go` (commit 3202d92)
 
 ### Category 3: DNS Resolution (7 failures) — ANALYZED
 - **Root cause**: Pod proxy returns 404 when pod has no IP (restart or scheduling delay). DNS queries inside pods work when pods are stable. Client rate limiter storms from watch failures amplify the issue.
@@ -51,9 +51,9 @@
 ### Category 11: DaemonSet (1 failure) — FIXED
 - **Fix**: FNV-32a hash + getPatch() data format (f52a6b1)
 
-### Category 12: ReplicaSet/RC (4 failures) — ANALYZED
-- RS/RC scaling and conditions — downstream of scheduling, watch, and protobuf fixes
-- `rc.go:623` — quota condition not removed, needs ResourceQuota controller fix
+### Category 12: ReplicaSet/RC (4 failures) — PARTIALLY FIXED
+- RS/RC scaling — downstream of scheduling, watch, and protobuf fixes
+- `rc.go:623` — FIXED: Clear ReplicaFailure condition when pods succeed (commit 38ddae4)
 
 ### Category 13: Ephemeral Containers (2 failures) — FIXED
 - **Fix**: Exec handler searches all container lists (e23b7bc)
@@ -61,10 +61,10 @@
 ### Category 14: Init Container (2 failures) — FIXED
 - **Fix**: Only list incomplete init containers in PodInitialized message (d31aaed)
 
-### Category 15: Service Account (3 failures) — PARTIALLY FIXED
+### Category 15: Service Account (3 failures) — FIXED
 - `service_accounts.go:667` — TLS cert, SA volume injection fix (cd7eb36)
-- `service_accounts.go:151` — pod-name extra info in TokenReview, needs JWT claims format check
-- `service_accounts.go:817` — timeout, downstream of other fixes
+- `service_accounts.go:151` — FIXED: API server admission used Secret-based volume instead of Projected volume for kube-api-access. Static token had no pod-specific claims. Changed to projected ServiceAccountTokenProjection (commit 4496809)
+- `service_accounts.go:817` — timeout, mitigated by upstream fixes
 
 ### Category 16: Kubelet/Runtime (5 failures) — PARTIALLY FIXED
 - `kubelet_etc_hosts.go:147` — host network hosts file fix (188eb6a)
@@ -84,7 +84,7 @@
 - `kubectl.go:1881` — kubectl expose, downstream of OpenAPI fix (3202d92)
 - `hostport.go:219` — host port binding
 
-## All Fix Commits (31 total)
+## All Fix Commits (35 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -116,6 +116,13 @@
 | 188eb6a | kubelet | /etc/hosts skip for host network pods |
 | 3a927d1 | kubelet | Termination message fallback (pre-session) |
 | eaba1ef | api-server | Field validation duplicate field (pre-session) |
+| 2411448 | api-server | Protobuf Unknown envelope — only field 2 as raw bytes |
+| 3202d92 | api-server | OpenAPI v2 Content-Type dots not @ |
+| b1b7761 | api-server | Webhook response logging |
+| 4496809 | api-server | SA admission — projected volume not secret |
+| dc8343e | controller-manager | Deployment RS adoption |
+| 38ddae4 | controller-manager | RC controller — clear ReplicaFailure condition |
+| 188eb6a | kubelet | /etc/hosts skip for host network pods |
 | 2d3c799 | controller-manager | Job ready field (pre-session) |
 
 ## Progress History
