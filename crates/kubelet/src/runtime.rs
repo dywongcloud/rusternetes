@@ -251,6 +251,10 @@ impl ContainerRuntime {
         Ok(cni)
     }
 
+    pub fn volumes_base_path(&self) -> &str {
+        &self.volumes_base_path
+    }
+
     pub fn with_storage(mut self, storage: Arc<rusternetes_storage::etcd::EtcdStorage>) -> Self {
         self.storage = Some(storage);
         self

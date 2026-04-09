@@ -1597,6 +1597,25 @@ impl Kubelet {
                                 // start_pod() would redo init containers, networking, etc.
                                 // We just need to remove and recreate the exited containers.
                                 if let Some(spec) = &pod.spec {
+                                    // Rebuild volume paths from existing pod volumes on disk.
+                                    // Volumes were created during start_pod and persist on disk.
+                                    let volume_paths: std::collections::HashMap<String, String> =
+                                        spec.volumes
+                                            .as_ref()
+                                            .map(|vols| {
+                                                vols.iter()
+                                                    .map(|v| {
+                                                        let path = format!(
+                                                            "{}/{}/{}",
+                                                            self.runtime.volumes_base_path(),
+                                                            pod_name,
+                                                            v.name
+                                                        );
+                                                        (v.name.clone(), path)
+                                                    })
+                                                    .collect()
+                                            })
+                                            .unwrap_or_default();
                                     for c in &spec.containers {
                                         let cname = format!("{}_{}", pod_name, c.name);
                                         // Check if this specific container is terminated
@@ -1610,7 +1629,7 @@ impl Kubelet {
                                                 .runtime
                                                 .remove_terminated_container(&cname)
                                                 .await;
-                                            // Recreate just this container
+                                            // Recreate just this container with its volumes
                                             let pod_ip = pod
                                                 .status
                                                 .as_ref()
@@ -1620,7 +1639,7 @@ impl Kubelet {
                                                 .start_container(
                                                     pod,
                                                     c,
-                                                    &std::collections::HashMap::new(),
+                                                    &volume_paths,
                                                     None,
                                                     None,
                                                     pod_ip,
