@@ -1,23 +1,24 @@
 # Conformance Failure Tracker
 
-**Round 131** | Running (~86/98 so far, 87.8%) | 2026-04-09
+**Round 131** | Running (123/142, 86.6%) | 2026-04-09
 
-## Round 131 Active Failures (15 at 128/441, 88.3%)
+## Round 131 Active Failures (19 at 142/441)
 
 ### FIXED (next round — 5 failures)
 | Test | Error | Fix |
 |------|-------|-----|
 | `webhook.go:2129` | CR creation not denied by webhook | 6edb6be — CRD webhook calls |
 | `runtime.go:115` | RestartCount stays 0 | 323d9dc — volume paths on restart |
-| `crd_publish_openapi.go:285` | x-kubernetes-* false booleans | f34bd51 — skip_false_or_none |
-| `crd_publish_openapi.go:211,253,366` | Same CRD OpenAPI issue | f34bd51 — same fix |
+| `crd_publish_openapi.go:285,211,253,366,451` | x-kubernetes-* false booleans + CRD watch | f34bd51 + f7dfb20 |
 | `service_accounts.go:667` | JWT missing kubernetes.io claims | db4855b — nested KubernetesClaims |
+| `field_validation.go:245,428` | CRD creation timeout (no watch) | f7dfb20 — CRD watch support |
+| `job.go:555` | Job successPolicy ready != 0 | c4d3fa7 — set ready=0 on completion |
 
 ### NEEDS FIX (6 failures)
 | Test | Error | Status |
 |------|-------|--------|
-| `field_validation.go:245,428` | "cannot create crd context deadline exceeded" | FIXED (f7dfb20) — CRD watch support added |
-| `job.go:555` | Job successPolicy wrong index | Missing SuccessPolicy type + controller logic |
+| `daemon_set.go:1276` | ControllerRevision Match fails (foundCurHistories=0) | Needs investigation — CR data format mismatch? |
+| `dns_common.go:476` (x3) | Rate limiter context deadline | Client rate limiter cascade |
 | `webhook.go:463` | Webhook rule update not taking effect | ConfigMap creation still denied after rule change |
 | `namespace.go:579` | Missing NamespaceDeletionContentFailure condition | Conditions may not persist (CAS conflict?) — c5ad02d adds logging |
 | `dns_common.go:476` | Rate limiter context deadline | Client rate limiter cascade |
@@ -29,7 +30,7 @@
 | `kubectl/builder.go:97` | kubectl label exit code 1 |
 | `aggregated_discovery.go:336` | Unknown |
 
-## Fix Commits (44 total)
+## Fix Commits (45 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -72,6 +73,7 @@
 | db4855b | common/kubelet/api-server | JWT claims — kubernetes.io nested claims |
 | c5ad02d | controller-manager | Namespace controller — deletion condition logging |
 | f7dfb20 | api-server | CRD watch — watch support for custom resource instances |
+| c4d3fa7 | controller-manager | Job successPolicy — ready=0 on completion |
 
 ## Progress History
 
