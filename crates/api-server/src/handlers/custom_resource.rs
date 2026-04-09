@@ -60,7 +60,7 @@ pub async fn create_custom_resource(
             .with_api_group(&group)
             .with_namespace(ns)
     } else {
-        RequestAttributes::new(auth_ctx.user, "create", &plural).with_api_group(&group)
+        RequestAttributes::new(auth_ctx.user.clone(), "create", &plural).with_api_group(&group)
     };
 
     match state.authorizer.authorize(&attrs).await? {
@@ -75,8 +75,73 @@ pub async fn create_custom_resource(
     cr.metadata.ensure_creation_timestamp();
 
     // Set API version and kind
+    let kind = crd.spec.names.kind.clone();
     cr.api_version = format!("{}/{}", group, version);
-    cr.kind = crd.spec.names.kind.clone();
+    cr.kind = kind.clone();
+
+    // Run admission webhooks (mutating + validating) for custom resources
+    // K8s runs webhooks for ALL resource types including CRDs
+    {
+        use crate::admission_webhook::AdmissionWebhookClient;
+        let gvk = rusternetes_common::admission::GroupVersionKind {
+            group: group.clone(),
+            version: version.clone(),
+            kind: kind.clone(),
+        };
+        let gvr = rusternetes_common::admission::GroupVersionResource {
+            group: group.clone(),
+            version: version.clone(),
+            resource: plural.clone(),
+        };
+        let user_info = rusternetes_common::admission::UserInfo {
+            username: auth_ctx.user.username.clone(),
+            uid: auth_ctx.user.uid.clone(),
+            groups: auth_ctx.user.groups.clone(),
+        };
+        let cr_val = serde_json::to_value(&cr).ok();
+        // Run mutating webhooks
+        let (_response, mutated_obj) = state
+            .webhook_manager
+            .run_mutating_webhooks(
+                &rusternetes_common::admission::Operation::Create,
+                &gvk,
+                &gvr,
+                namespace.as_deref(),
+                &cr_name,
+                cr_val.clone(),
+                None,
+                &user_info,
+            )
+            .await?;
+        if let Some(mutated) = mutated_obj {
+            if let Ok(m) = serde_json::from_value::<CustomResource>(mutated) {
+                cr = m;
+            }
+        }
+        // Run validating webhooks
+        match state
+            .webhook_manager
+            .run_validating_webhooks(
+                &rusternetes_common::admission::Operation::Create,
+                &gvk,
+                &gvr,
+                namespace.as_deref(),
+                &cr_name,
+                serde_json::to_value(&cr).ok(),
+                None,
+                &user_info,
+            )
+            .await?
+        {
+            rusternetes_common::admission::AdmissionResponse::Deny(reason) => {
+                return Err(rusternetes_common::Error::Forbidden(format!(
+                    "admission webhook denied the request: {}",
+                    reason
+                )));
+            }
+            _ => {}
+        }
+    }
 
     // Check for dry-run
     if crate::handlers::dryrun::is_dry_run(&params) {
