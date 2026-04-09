@@ -97,7 +97,22 @@
 - **Root cause**: `x-kubernetes-embedded-resource: false` and `x-kubernetes-int-or-string: false` included in CRD OpenAPI definitions. K8s uses Go's `omitempty` on bools which omits `false`. Our serde only skipped `None`, not `Some(false)`.
 - **Fix**: Custom `skip_false_or_none()` for x-kubernetes-* boolean extensions (commit f34bd51)
 
-## All Fix Commits (39 total)
+### Category 21: CRD Webhooks — FIXED
+- **Root cause**: `create_custom_resource` handler didn't call admission webhooks at all. K8s runs both mutating and validating webhooks for ALL resources including CRDs. Webhook conformance test at webhook.go:2129 expected custom resource creation to be denied by a ValidatingWebhookConfiguration.
+- **Fix**: Add mutating + validating webhook calls to custom resource create handler (commit 6edb6be)
+
+## Round 131 Early Failures (in progress — 60/70 passing, 85.7%)
+- `webhook.go:2129` — CR webhook deny → FIXED (6edb6be, next round)
+- `runtime.go:115` — container restart count not incrementing
+- `kubectl/builder.go:97` — kubectl label
+- `field_validation.go:245` — CRD field validation timeout
+- `job.go:555` — job successPolicy
+- `crd_publish_openapi.go:285` — CRD OpenAPI schema → FIXED (f34bd51, next round)
+- `dns_common.go:476` — DNS resolution
+- `service_accounts.go:667` — SA OIDC discovery TLS
+- `webhook.go:463` — webhook rule update timing
+
+## All Fix Commits (40 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -140,6 +155,7 @@
 | c10e449 | kubelet | Node labels — kubernetes.io/os, arch, hostname |
 | 3136c2a | kubelet | Projected volume — preserve SA token during resync |
 | f34bd51 | common | CRD OpenAPI — omit x-kubernetes-* false booleans |
+| 6edb6be | api-server | CRD webhooks — run admission on custom resource create |
 
 ## Progress History
 
