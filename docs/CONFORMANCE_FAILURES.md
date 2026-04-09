@@ -1,9 +1,11 @@
 # Conformance Failure Tracker
 
 **Round 127** | 397/441 (90.0%) | 44 failures | 2026-04-08
-**Round 128** | In progress | 29 failures / 57 done so far | 2026-04-08
+**Round 128** | 340/441 (77.1%) | 101 failures | 2026-04-08
+**Round 129** | In progress | 2 passed, 0 failed so far | 2026-04-08
 
-Round 128 binary: commit 36ed11a. Many fixes committed AFTER this binary was built.
+Round 128 regressed due to aggregated discovery v2 response breaking sonobuoy's client-go v0.27.
+Round 129 binary includes ALL 26 fix commits including v2beta1 negotiation.
 
 ## Round 128 Failures (25 unique test locations, 57/441 done)
 
@@ -136,4 +138,5 @@ Round 128 binary: commit 36ed11a. Many fixes committed AFTER this binary was bui
 | 124 | 295 | 146 | 441 | 66.9% |
 | 125 | 329 | 112 | 441 | 74.6% |
 | 127 | 397 | 44 | 441 | 90.0% |
-| 128 | TBD | TBD | 441 | TBD |
+| 128 | 340 | 101 | 441 | 77.1% |
+| 129 | TBD | TBD | 441 | TBD |
