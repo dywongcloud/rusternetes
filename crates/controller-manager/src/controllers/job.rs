@@ -713,7 +713,23 @@ impl<S: Storage> JobController<S> {
                 start_time,
                 completion_time: Some(chrono::Utc::now()),
                 ready: Some(ready),
-                terminating: Some(active),
+                // Terminating = pods with deletionTimestamp that are still running.
+                // When job completes, remaining active pods may be terminating.
+                // Count pods that have deletionTimestamp but haven't reached
+                // terminal phase (Succeeded/Failed).
+                terminating: {
+                    let terminating_count = job_pods
+                        .iter()
+                        .filter(|p| {
+                            p.metadata.deletion_timestamp.is_some()
+                                && !matches!(
+                                    p.status.as_ref().and_then(|s| s.phase.as_ref()),
+                                    Some(Phase::Succeeded) | Some(Phase::Failed)
+                                )
+                        })
+                        .count() as i32;
+                    Some(terminating_count)
+                },
                 completed_indexes: completed_indexes.clone(),
                 failed_indexes: failed_indexes.clone(),
                 uncounted_terminated_pods: None,
