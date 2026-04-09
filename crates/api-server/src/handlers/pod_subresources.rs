@@ -489,7 +489,7 @@ pub async fn exec(
             uid: "system:admin".to_string(),
             groups: vec!["system:masters".to_string()],
         };
-        state
+        match state
             .webhook_manager
             .run_validating_webhooks(
                 &Operation::Connect,
@@ -501,7 +501,16 @@ pub async fn exec(
                 None,
                 &user_info,
             )
-            .await?;
+            .await?
+        {
+            rusternetes_common::admission::AdmissionResponse::Deny(reason) => {
+                return Err(Error::Forbidden(format!(
+                    "admission webhook denied the request: {}",
+                    reason
+                )));
+            }
+            _ => {}
+        }
     }
 
     // Get the pod

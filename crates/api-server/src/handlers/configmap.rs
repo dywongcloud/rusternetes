@@ -111,7 +111,7 @@ pub async fn create(
             }
         }
         // Run validating webhooks
-        state
+        match state
             .webhook_manager
             .run_validating_webhooks(
                 &rusternetes_common::admission::Operation::Create,
@@ -123,7 +123,16 @@ pub async fn create(
                 None,
                 &user_info,
             )
-            .await?;
+            .await?
+        {
+            rusternetes_common::admission::AdmissionResponse::Deny(reason) => {
+                return Err(rusternetes_common::Error::Forbidden(format!(
+                    "admission webhook denied the request: {}",
+                    reason
+                )));
+            }
+            _ => {}
+        }
     }
 
     let key = build_key("configmaps", Some(&namespace), &configmap.metadata.name);
