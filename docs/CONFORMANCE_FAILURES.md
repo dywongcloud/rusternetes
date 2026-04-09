@@ -24,13 +24,15 @@
 | `dns_common.go:476` | Rate limiter context deadline | Client rate limiter cascade |
 | `aggregated_discovery.go:336` | Discovery response issue | Needs investigation |
 
-### NEEDS INVESTIGATION (2 failures)
+### NEEDS INVESTIGATION (4 failures)
 | Test | Error |
 |------|-------|
-| `kubectl/builder.go:97` | kubectl label exit code 1 |
-| `aggregated_discovery.go:336` | Unknown |
+| `kubectl/builder.go:97` | kubectl label — FIXED (eb07e78) metadata.name null in merge patch |
+| `aggregated_discovery.go:336` | Discovery timeout |
+| `daemon_set.go:1276` | ControllerRevision Match — 0 matching histories |
+| `preemption.go:181` | Pods not running after scheduling (timeout) |
 
-## Fix Commits (45 total)
+## Fix Commits (47 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -74,6 +76,7 @@
 | c5ad02d | controller-manager | Namespace controller — deletion condition logging |
 | f7dfb20 | api-server | CRD watch — watch support for custom resource instances |
 | c4d3fa7 | controller-manager | Job successPolicy — ready=0 on completion |
+| eb07e78 | api-server | Pod PATCH — preserve metadata.name before deserialization |
 
 ## Progress History
 
