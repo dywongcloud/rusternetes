@@ -1,112 +1,152 @@
 # Conformance Failure Tracker
 
 **Round 127** | 397/441 (90.0%) | 44 failures | 2026-04-08
-**Round 128** | 340/441 (77.1%) | 101 failures | 2026-04-08
-**Round 129** | In progress | 2 passed, 0 failed so far | 2026-04-08
+**Round 128** | 340/441 (77.1%) | 101 failures | 2026-04-08 (regressed — v2 discovery broke sonobuoy)
+**Round 129** | 346/441 (78.5%) | 95 failures | 2026-04-09 (all 26 fixes deployed, but regressions remain)
 
-Round 128 regressed due to aggregated discovery v2 response breaking sonobuoy's client-go v0.27.
-Round 129 binary includes ALL 26 fix commits including v2beta1 negotiation.
+## Round 129 Failures — Complete List (95 failures, 80 unique tests)
 
-## Round 128 Failures (25 unique test locations, 57/441 done)
+### Category 1: CRD Protobuf Decode — `missing field 'spec'` (10+ failures) — REGRESSION
+- `custom_resource_definition.go:72,104,161,288`
+- `crd_publish_openapi.go:77,161,202,244,285,318,366,400,451`
+- `crd_watch.go:72`
+- `field_validation.go:245,305,428,570,700`
+- **Error**: `failed to decode CRD: missing field 'spec'` / `creating CustomResourceDefinition: failed to decode CRD: missing field 'spec'`
+- **Root cause**: The generic protobuf decoder (commit 019f470) added CRD schemas, but the CRD-specific decoder in middleware.rs (`decode_k8s_protobuf_to_json`) runs FIRST and produces incomplete JSON. The new generic decoder isn't being reached for CRDs because the old CRD decoder returns partial JSON that passes the serde_json::Value check.
+- **Status**: MUST FIX — this is a REGRESSION from round 127 where CRDs worked
 
-### 1. StatefulSet scaling — vacuous truth in scale-down (1 failure) — FIXED
-- `statefulset.go:2479` — scaled 3 -> 2 replicas when pods were unhealthy
-- **Root cause**: `(0..0).all()` is vacuously true when desired=0, allowing scale-down. K8s uses processCondemned() with firstUnhealthyPod tracking.
-- **Fix**: Rewrote scale-down using K8s condemned pod pattern (commit 8db2024)
-- **Test**: `test_scale_down_blocked_when_pods_unhealthy`
+### Category 2: kubectl / OpenAPI protobuf (8 failures)
+- `builder.go:97` (x8 across different namespaces)
+- **Error**: `error running kubectl create/replace: error validating data: failed to download openapi: proto: cannot parse invalid wire-format data`
+- **Root cause**: kubectl still can't parse our OpenAPI v2 protobuf response despite the empty body fix
+- **Status**: TODO
 
-### 2. DNS Resolution (2 failures) — ANALYZED
-- `dns_common.go:476` — context deadline exceeded reading from pod proxy
-- **Root cause**: Pod proxy reaches the agnhost container but DNS queries inside the pod time out. CoreDNS service (10.96.0.10) has correct iptables DNAT rules. Actual DNS network path between pod containers and CoreDNS may have timing issues.
-- **Status**: Networking infrastructure issue. Watch fix (ce45c59) reduces API call storms that contribute to timeouts.
+### Category 3: DNS Resolution (7 failures)
+- `dns_common.go:476` (x7)
+- **Error**: `client rate limiter Wait returned an error: context deadline exceeded`
+- **Root cause**: DNS pod proxy requests fail due to rate limiting from excessive API calls
+- **Status**: TODO
 
-### 3. kubectl / OpenAPI protobuf (1 failure) — FIXED
-- `builder.go:97` — error running kubectl create: failed to download openapi
-- **Fix**: Return empty protobuf body for OpenAPI v2 (commit 038089e). OpenAPI v2 also returns JSON-only for CRD schemas.
+### Category 4: Webhooks (12 failures)
+- `webhook.go:425,520,601,675,904,1194,1244,1269,1334,1549,1631,2338,2465`
+- **Error**: `waiting for webhook configuration to be ready: timed out` / `Webhook request failed: error sending request`
+- **Root cause**: Webhook server IS called (confirmed in API server logs) but responses aren't denying requests. Need HTTP-level debugging.
+- **Status**: TODO
 
-### 4. Webhook readiness (5 failures) — ANALYZED
-- `webhook.go:601,675,904,1194,2032` — webhook config not ready: timed out
-- **Root cause**: Webhook deployment pod creates a webhook server. The server must be running and intercepting ConfigMap creates. Our API server DOES call webhooks (confirmed in logs). The webhook deployment pod may not start in time due to scheduling, image pull, or networking delays.
-- **Status**: Downstream of scheduling, watch, and protobuf fixes that aren't deployed yet.
+### Category 5: Scheduling/Preemption (4 failures)
+- `preemption.go:181,268,516,1025`
+- **Error**: Timeouts waiting for pods to schedule, `0/2 nodes available`, RS never had available replicas
+- **Status**: TODO
 
-### 5. Service deletion watch (1 failure) — ANALYZED
-- `service.go:3459` — failed to delete Service: timed out waiting for condition
-- **Root cause**: Watch not delivering deletion event. JSON watch handler fix (ce45c59) addresses watch reliability.
+### Category 6: Service Networking (4 failures)
+- `service.go:768,886,3459`
+- `service_latency.go:142`
+- **Error**: Service not reachable, failed to delete service (watch timeout), protobuf decode (`missing field 'metadata'`)
+- **Status**: TODO
 
-### 6. Deployment revision + rollover (2 failures) — PARTIALLY FIXED
-- `deployment.go:781` — revision not set — **FIXED**: Update revision every reconcile, not just when missing (commit 5c2d7ec)
-- `deployment.go:995` — total pods available: 0 — pods not becoming available due to scheduling/watch issues
+### Category 7: Proxy (2 failures)
+- `proxy.go:271,503`
+- **Error**: Unable to reach service through proxy, pod didn't start
+- **Status**: TODO
 
-### 7. Ephemeral containers exec (2 failures) — FIXED
-- `exec_util.go:113` — Container debugger not found in pod
-- **Fix**: Search all container lists (regular, init, ephemeral) in exec handler (commit e23b7bc)
+### Category 8: StatefulSet (2 failures)
+- `statefulset.go:957` — Pod ss-0 not recreated
+- `statefulset.go:1092` — wrong image after update
+- **Status**: TODO
 
-### 8. RC pod count (1 failure) — ANALYZED
-- `rc.go:509` — 1 pod expected, many created
-- **Root cause**: Watch failures cause client-go rate limiter storms. Watch fix (ce45c59) and scheduler fix (6124087) address upstream issues.
+### Category 9: Deployment (3 failures)
+- `deployment.go:781` — revision not set (fix didn't work)
+- `deployment.go:995` — pods not available
+- `deployment.go:1259` — patched object missing annotation
+- **Status**: TODO
 
-### 9. CRD conditions (1 failure) — FIXED
-- `custom_resource_definition.go:405` — custom condition erased by controller
-- **Fix**: Preserve existing conditions, only replace Established/NamesAccepted (commit 2b30373). Matches K8s SetCRDCondition() pattern.
+### Category 10: Job (4 failures)
+- `job.go:514,555,595,817`
+- **Error**: Various job status issues, completion timeout
+- **Status**: TODO
 
-### 10. CRD creation timeout (1 failure) — FIXED (watch fix)
-- `field_validation.go:305` — cannot create crd context deadline exceeded
-- **Fix**: JSON watch handler fix (ce45c59) fixes CRD watch delivery.
+### Category 11: DaemonSet (1 failure)
+- `daemon_set.go:1276` — ControllerRevision hash mismatch (fix didn't work?)
+- **Status**: TODO
 
-### 11. CRD OpenAPI schema (3 failures) — FIXED
-- `crd_publish_openapi.go:77,161,253` — CRD schema not in OpenAPI spec
-- **Root cause**: CRDs sent via protobuf lost their openAPIV3Schema during decoding. Our protobuf decoder didn't have CRD schemas.
-- **Fix**: Added full CRD proto schemas including JSONSchemaProps with 40+ fields and MessageMap for map<string, JSONSchemaProps> (commit 019f470)
+### Category 12: ReplicaSet/RC (4 failures)
+- `replica_set.go:232,560` — RS not scaling, available replicas
+- `rc.go:509,623` — pods not coming up, failure condition not removed
+- **Status**: TODO
 
-### 12. CRD selectable fields (1 failure) — ANALYZED
-- `crd_selectable_fields.go:232` — CRD with selectable fields
-- **Root cause**: Likely CRD creation via protobuf. Fix in commit 019f470 (CRD proto schemas) should resolve.
+### Category 13: Ephemeral Containers (2 failures)
+- `ephemeral_containers.go:92,145` — pod logs/exec for ephemeral container fails
+- **Error**: `the server could not find the requested resource (get pods ...)`
+- **Status**: TODO
 
-### 13. Job status terminating (1 failure) — FIXED
-- `job.go:514` — job.Status.Terminating = 2, expected 0
-- **Root cause**: Controller set `terminating` to active pod count instead of counting pods with deletionTimestamp that haven't reached terminal phase. K8s Terminating = pods with Ready condition AND deletionTimestamp.
-- **Fix**: Count pods with deletionTimestamp not in Succeeded/Failed phase (commit 2898a00)
+### Category 14: Init Container (2 failures)
+- `init_container.go:440,565` — init containers incomplete
+- **Status**: TODO
 
-### 14. Service Account (1 failure) — FIXED
-- `service_accounts.go:817` — timed out waiting
-- **Fix**: kube-api-access volume injection fix — don't skip for pods with custom "token" volumes (commit cd7eb36)
+### Category 15: Service Account (3 failures)
+- `service_accounts.go:151,667,817`
+- **Error**: Extra info missing, TLS cert verification, timeout
+- **Status**: TODO
 
-### 15. /etc/hosts (1 failure) — FIXED
-- `kubelet_etc_hosts.go:143` — hosts file not recognized as kubelet-managed
-- **Fix**: Added missing period to header: "# Kubernetes-managed hosts file." (commit 873edac). Matches K8s `managedHostsHeader` constant.
+### Category 16: Kubelet/Runtime (5 failures)
+- `kubelet_etc_hosts.go:147` — host network pod hosts file
+- `runtime.go:115` — container restart count
+- `pod_resize.go:857` (x2) — pod resize
+- `expansion.go:351` — subpath expansion
+- `exec_util.go:113` — command failed in container
+- **Status**: TODO
 
-### 16. Service reachability (1 failure) — PARTIALLY FIXED
-- `service.go:886` — service not reachable
-- **Fix**: EndpointSlice controller rewrite (commit 01d2d72) fixes port filtering. Remaining networking issues are kube-proxy/CNI.
+### Category 17: Other (7 failures)
+- `aggregated_discovery.go:227,336` — discovery issues
+- `aggregator.go:359` — API aggregation
+- `namespace.go:579` — namespace deletion
+- `resource_quota.go:282` — quota not removed
+- `certificates.go:404` — certificate signing
+- `endpointslice.go:135` — endpoint slice deletion
+- `endpointslicemirroring.go:129` — mirroring
+- `kubectl.go:1881` — kubectl expose
+- `hostport.go:219` — host port binding
+- **Status**: TODO
 
-### 17. Preemption (1 failure) — FIXED
-- `preemption.go:268` — pods not scheduled
-- **Fix**: Resource counting fix (commit 6124087) — only count Running non-terminating pods. Use nominatedNodeName for eviction.
+## Key Regressions from Round 127 → 129
 
-### 18. EndpointSlice mirroring (1 failure) — FIXED
-- `endpointslicemirroring.go:129` — no EndpointSlice exists for manually-created Endpoints
-- **Root cause**: Rewritten EndpointSlice controller only built from Services, losing Endpoints mirroring. K8s has a separate mirroring controller for Endpoints without matching Services.
-- **Fix**: Added Endpoints mirroring fallback for Endpoints without a matching Service (commit 06b6644)
+| Issue | Round 127 | Round 129 | Status |
+|-------|-----------|-----------|--------|
+| CRD creation | 10 failures (watch timeout) | 10+ failures (`missing field 'spec'`) | **WORSE — protobuf regression** |
+| kubectl/OpenAPI | 3 failures | 8 failures | **WORSE** |
+| DNS | 4 failures | 7 failures | **WORSE** |
+| Webhooks | 3 failures | 12 failures | **WORSE** |
+| StatefulSet | 3 failures | 2 failures | Slightly better |
+| Preemption | 3 failures | 4 failures | Same |
+| Service | 2 failures | 4 failures | **WORSE** |
 
-## All Fix Commits (30 total)
+## Priority Fixes Needed
+
+1. **CRD protobuf decode regression** — The generic protobuf decoder for CRDs is producing JSON without `spec`. This MUST be fixed first as it causes 10+ cascading failures.
+2. **kubectl OpenAPI** — Still broken, 8 failures
+3. **Webhook interceptor** — 12 failures, webhook calls succeed but don't deny
+
+## All Fix Commits (26 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
-| ce45c59 | api-server | Watch handlers error/reconnect, aggregated discovery, pod patch generation |
+| ce45c59 | api-server | Watch handlers, aggregated discovery, pod patch generation |
 | 7ca9160 | api-server | Generic protobuf-to-JSON decoder (60+ K8s types) |
 | 038089e | api-server | OpenAPI v2 protobuf response format |
 | 6fc1e55 | api-server | WebSocket exec channel 3 status |
 | 9809d59 | api-server | Proxy trailing slash routes |
-| 36ed11a | api-server | Aggregated discovery — always return when Accept includes it |
 | df93155 | api-server | Aggregated discovery v2/v2beta1 version negotiation |
 | e23b7bc | api-server | Exec handler — search ephemeral and init containers |
 | 019f470 | api-server | Protobuf decoder — CRD schemas with JSONSchemaProps |
+| f7c16a0 | api-server | Webhook response logging |
 | 6b43640 | controller-manager | StatefulSet partition-aware pod creation |
 | 8db2024 | controller-manager | StatefulSet scale-down processCondemned |
 | f52a6b1 | controller-manager | DaemonSet ControllerRevision hash + data format |
 | 01d2d72 | controller-manager | EndpointSlice controller rewrite (Service+Pods) |
+| 06b6644 | controller-manager | EndpointSlice mirroring for orphan Endpoints |
 | 5c2d7ec | controller-manager | Deployment revision — update every reconcile |
 | 2b30373 | controller-manager | CRD controller — preserve existing conditions |
+| 2898a00 | controller-manager | Job status terminating count |
 | 6124087 | scheduler | Preemption resource counting + eviction handling |
 | d31aaed | kubelet | Init container incomplete status list |
 | 5dac01a | kubelet | Container restart mechanism |
@@ -114,15 +154,6 @@ Round 129 binary includes ALL 26 fix commits including v2beta1 negotiation.
 | 873edac | kubelet | /etc/hosts header period |
 | 3a927d1 | kubelet | Termination message fallback (pre-session) |
 | eaba1ef | api-server | Field validation duplicate field (pre-session) |
-| 8db2024 | controller-manager | StatefulSet scale-down processCondemned |
-| 5c2d7ec | controller-manager | Deployment revision — update every reconcile |
-| 2b30373 | controller-manager | CRD controller — preserve existing conditions |
-| 2898a00 | controller-manager | Job status terminating — count actual terminating pods |
-| 06b6644 | controller-manager | EndpointSlice mirroring — Endpoints without Service |
-| 873edac | kubelet | /etc/hosts header period |
-| 019f470 | api-server | Protobuf decoder — CRD schemas with JSONSchemaProps |
-| e23b7bc | api-server | Exec handler — search ephemeral and init containers |
-| df93155 | api-server | Aggregated discovery v2/v2beta1 version negotiation |
 | 2d3c799 | controller-manager | Job ready field (pre-session) |
 
 ## Progress History
@@ -139,4 +170,4 @@ Round 129 binary includes ALL 26 fix commits including v2beta1 negotiation.
 | 125 | 329 | 112 | 441 | 74.6% |
 | 127 | 397 | 44 | 441 | 90.0% |
 | 128 | 340 | 101 | 441 | 77.1% |
-| 129 | TBD | TBD | 441 | TBD |
+| 129 | 346 | 95 | 441 | 78.5% |
