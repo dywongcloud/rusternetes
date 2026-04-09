@@ -824,25 +824,38 @@ pub async fn inject_service_account_token<S: Storage>(
     // The service account token secret name follows the pattern: {sa-name}-token
     let token_secret_name = format!("{}-token", sa_name);
 
-    // Define the service account token volume
+    // Define the service account token volume as a PROJECTED volume
+    // with ServiceAccountTokenProjection. This generates a pod-bound
+    // JWT token with pod_name, pod_uid, node_name claims — matching
+    // K8s behavior where the kubelet generates bound tokens.
     let sa_token_volume = Volume {
         name: "kube-api-access".to_string(),
         empty_dir: None,
         host_path: None,
         config_map: None,
-        secret: Some(SecretVolumeSource {
-            secret_name: Some(token_secret_name.clone()),
-            items: None,
-            default_mode: None,
-            optional: None,
-        }),
+        secret: None,
         persistent_volume_claim: None,
         downward_api: None,
         csi: None,
         ephemeral: None,
         nfs: None,
         iscsi: None,
-        projected: None,
+        projected: Some(rusternetes_common::resources::ProjectedVolumeSource {
+            sources: Some(vec![rusternetes_common::resources::VolumeProjection {
+                service_account_token: Some(
+                    rusternetes_common::resources::ServiceAccountTokenProjection {
+                        path: "token".to_string(),
+                        expiration_seconds: Some(3607),
+                        audience: None,
+                    },
+                ),
+                config_map: None,
+                secret: None,
+                downward_api: None,
+                cluster_trust_bundle: None,
+            }]),
+            default_mode: Some(0o644),
+        }),
         image: None,
     };
 
