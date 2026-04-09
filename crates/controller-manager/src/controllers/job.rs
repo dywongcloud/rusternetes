@@ -712,7 +712,7 @@ impl<S: Storage> JobController<S> {
                 ]),
                 start_time,
                 completion_time: Some(chrono::Utc::now()),
-                ready: Some(ready),
+                ready: Some(0), // Job is complete, no ready pods
                 // Terminating = pods with deletionTimestamp that are still running.
                 // When job completes, remaining active pods may be terminating.
                 // Count pods that have deletionTimestamp but haven't reached
