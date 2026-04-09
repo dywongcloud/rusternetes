@@ -101,18 +101,22 @@
 - **Root cause**: `create_custom_resource` handler didn't call admission webhooks at all. K8s runs both mutating and validating webhooks for ALL resources including CRDs. Webhook conformance test at webhook.go:2129 expected custom resource creation to be denied by a ValidatingWebhookConfiguration.
 - **Fix**: Add mutating + validating webhook calls to custom resource create handler (commit 6edb6be)
 
-## Round 131 Early Failures (in progress — 60/70 passing, 85.7%)
+### Category 22: Container Restart Volumes — FIXED
+- **Root cause**: When restarting terminated containers (restartPolicy=Always), empty volume_paths were passed to start_container. Restarted containers had no volumes, breaking tests that use emptyDir to track restart state.
+- **Fix**: Rebuild volume_paths from pod spec using volumes_base_path (commit 323d9dc)
+
+## Round 131 Failures (in progress — 69/79 passing, 87.3%)
 - `webhook.go:2129` — CR webhook deny → FIXED (6edb6be, next round)
-- `runtime.go:115` — container restart count not incrementing
+- `runtime.go:115` — container restart count → FIXED (323d9dc, next round)
 - `kubectl/builder.go:97` — kubectl label
 - `field_validation.go:245` — CRD field validation timeout
-- `job.go:555` — job successPolicy
+- `job.go:555` — job successPolicy (missing SuccessPolicy type + controller support)
 - `crd_publish_openapi.go:285` — CRD OpenAPI schema → FIXED (f34bd51, next round)
 - `dns_common.go:476` — DNS resolution
 - `service_accounts.go:667` — SA OIDC discovery TLS
 - `webhook.go:463` — webhook rule update timing
 
-## All Fix Commits (40 total)
+## All Fix Commits (41 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -156,6 +160,7 @@
 | 3136c2a | kubelet | Projected volume — preserve SA token during resync |
 | f34bd51 | common | CRD OpenAPI — omit x-kubernetes-* false booleans |
 | 6edb6be | api-server | CRD webhooks — run admission on custom resource create |
+| 323d9dc | kubelet | Container restart — pass volume paths when recreating |
 
 ## Progress History
 
