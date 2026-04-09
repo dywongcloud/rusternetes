@@ -73,7 +73,7 @@
 - `expansion.go:351` — subpath expansion issue
 - `exec_util.go:113` — command failed, downstream
 
-### Category 17: Other (7+ failures) — PARTIALLY FIXED
+### Category 17: Other (7+ failures) — MOSTLY FIXED
 - `aggregated_discovery.go:227,336` — discovery v2beta1 fix (df93155)
 - `aggregator.go:359` — API aggregation deployment not starting
 - `namespace.go:579` — namespace deletion unexpected
