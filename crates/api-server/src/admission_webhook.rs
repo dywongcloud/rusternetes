@@ -186,6 +186,13 @@ impl AdmissionWebhookClient {
             ))
         })?;
 
+        // Log raw response for diagnostics
+        tracing::info!(
+            "Webhook raw response ({} bytes): {}",
+            body_bytes.len(),
+            String::from_utf8_lossy(&body_bytes[..body_bytes.len().min(300)])
+        );
+
         // Try parsing as AdmissionReview first, fall back to parsing as raw Value
         // to extract the response even if there are unknown fields
         let review_response: AdmissionReview = match serde_json::from_slice(&body_bytes) {
