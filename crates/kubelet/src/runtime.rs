@@ -1480,6 +1480,11 @@ impl ContainerRuntime {
                                     }
                                 }
                             }
+                            // ServiceAccountToken projection resync — preserve the token file
+                            if let Some(sa_token) = &source.service_account_token {
+                                let file_path = format!("{}/{}", volume_dir, sa_token.path);
+                                expected_files.insert(file_path);
+                            }
                             // DownwardAPI projection resync
                             if let Some(downward_api) = &source.downward_api {
                                 if let Some(items) = &downward_api.items {
