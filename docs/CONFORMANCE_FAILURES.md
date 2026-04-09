@@ -6,14 +6,15 @@
 
 ## Round 129 Failures — Complete List (95 failures, 80 unique tests)
 
-### Category 1: CRD Protobuf Decode — `missing field 'spec'` (10+ failures) — REGRESSION
+### Category 1: CRD Protobuf Decode — `missing field 'spec'` (10+ failures) — FIXED
 - `custom_resource_definition.go:72,104,161,288`
 - `crd_publish_openapi.go:77,161,202,244,285,318,366,400,451`
 - `crd_watch.go:72`
 - `field_validation.go:245,305,428,570,700`
-- **Error**: `failed to decode CRD: missing field 'spec'` / `creating CustomResourceDefinition: failed to decode CRD: missing field 'spec'`
-- **Root cause**: The generic protobuf decoder (commit 019f470) added CRD schemas, but the CRD-specific decoder in middleware.rs (`decode_k8s_protobuf_to_json`) runs FIRST and produces incomplete JSON. The new generic decoder isn't being reached for CRDs because the old CRD decoder returns partial JSON that passes the serde_json::Value check.
-- **Status**: MUST FIX — this is a REGRESSION from round 127 where CRDs worked
+- **Error**: `failed to decode CRD: missing field 'spec'`
+- **Root cause**: The protobuf Unknown envelope parser used `field_number == 2 || field_number == 3` to capture raw bytes. Field 3 is contentEncoding (a string), not raw resource data. When field 3 appeared after field 2, it OVERWROTE raw_bytes with the encoding string, losing the actual CRD data. Result: decoded to just `{"apiVersion":"...","kind":"..."}` with no metadata or spec.
+- **Fix**: Only capture field 2 as raw bytes (commit 2411448). Same bug fixed in both extract_json_from_k8s_protobuf and decode_k8s_resource.
+- **Status**: FIXED
 
 ### Category 2: kubectl / OpenAPI protobuf (8 failures)
 - `builder.go:97` (x8 across different namespaces)
