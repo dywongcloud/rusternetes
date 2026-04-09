@@ -97,10 +97,66 @@ impl<S: Storage> DeploymentController<S> {
             namespace, deployment.metadata.name
         );
 
-        // Get all ReplicaSets owned by this deployment
+        // Get all ReplicaSets and claim/adopt matching ones (K8s ClaimReplicaSets pattern)
         let rs_prefix = build_prefix("replicasets", Some(namespace));
         let all_replicasets: Vec<ReplicaSet> = self.storage.list(&rs_prefix).await?;
 
+        // Adopt orphan ReplicaSets whose labels match the deployment's selector
+        let selector = &deployment.spec.selector;
+        for rs in &all_replicasets {
+            // Skip if already owned by this deployment
+            if self.is_owned_by_deployment(rs, deployment) {
+                continue;
+            }
+            // Skip if owned by another controller
+            let has_controller_owner = rs
+                .metadata
+                .owner_references
+                .as_ref()
+                .map(|refs| refs.iter().any(|r| r.controller == Some(true)))
+                .unwrap_or(false);
+            if has_controller_owner {
+                continue;
+            }
+            // Check if RS labels match deployment selector
+            let labels_match = if let Some(match_labels) = &selector.match_labels {
+                if let Some(rs_labels) = &rs.metadata.labels {
+                    match_labels
+                        .iter()
+                        .all(|(k, v)| rs_labels.get(k) == Some(v))
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            if labels_match {
+                // Adopt: add ownerReference
+                let mut adopted = rs.clone();
+                let owner_ref = rusternetes_common::types::OwnerReference {
+                    api_version: "apps/v1".to_string(),
+                    kind: "Deployment".to_string(),
+                    name: deployment.metadata.name.clone(),
+                    uid: deployment.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                };
+                adopted
+                    .metadata
+                    .owner_references
+                    .get_or_insert_with(Vec::new)
+                    .push(owner_ref);
+                let rs_key = build_key("replicasets", Some(namespace), &rs.metadata.name);
+                let _ = self.storage.update(&rs_key, &adopted).await;
+                info!(
+                    "Adopted orphan ReplicaSet {} into Deployment {}/{}",
+                    rs.metadata.name, namespace, deployment.metadata.name
+                );
+            }
+        }
+
+        // Re-fetch after adoption
+        let all_replicasets: Vec<ReplicaSet> = self.storage.list(&rs_prefix).await?;
         let mut owned_replicasets: Vec<ReplicaSet> = all_replicasets
             .into_iter()
             .filter(|rs| self.is_owned_by_deployment(rs, deployment))
