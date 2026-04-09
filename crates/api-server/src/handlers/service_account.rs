@@ -469,12 +469,21 @@ pub async fn create_token(
     let now = chrono::Utc::now();
     let claims = rusternetes_common::auth::ServiceAccountClaims {
         sub: format!("system:serviceaccount:{}:{}", namespace, name),
-        iss: "rusternetes".to_string(),
+        iss: "https://kubernetes.default.svc.cluster.local".to_string(),
         namespace: namespace.clone(),
         uid: _sa.metadata.uid.clone(),
         iat: now.timestamp(),
         exp: (now + chrono::Duration::hours(1)).timestamp(),
         aud: vec!["https://kubernetes.default.svc".to_string()],
+        kubernetes: Some(rusternetes_common::auth::KubernetesClaims {
+            namespace: namespace.clone(),
+            svcacct: rusternetes_common::auth::KubeRef {
+                name: name.clone(),
+                uid: _sa.metadata.uid.clone(),
+            },
+            pod: None,
+            node: None,
+        }),
         pod_name: None,
         pod_uid: None,
         node_name: None,

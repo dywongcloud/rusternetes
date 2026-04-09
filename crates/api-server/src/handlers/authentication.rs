@@ -170,6 +170,15 @@ pub async fn create_token_request(
         exp: expiration_timestamp.timestamp(),
         iss: "https://kubernetes.default.svc.cluster.local".to_string(),
         aud: vec!["rusternetes".to_string()],
+        kubernetes: Some(rusternetes_common::auth::KubernetesClaims {
+            namespace: namespace.clone(),
+            svcacct: rusternetes_common::auth::KubeRef {
+                name: service_account_name.clone(),
+                uid: sa.metadata.uid.clone(),
+            },
+            pod: None,
+            node: None,
+        }),
         pod_name: None,
         pod_uid: None,
         node_name: None,

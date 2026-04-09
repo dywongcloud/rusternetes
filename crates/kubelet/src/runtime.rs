@@ -1891,11 +1891,26 @@ impl ContainerRuntime {
                 let claims = rusternetes_common::auth::ServiceAccountClaims {
                     sub: format!("system:serviceaccount:{}:{}", namespace, sa_name),
                     namespace: namespace.to_string(),
-                    uid: sa_uid,
+                    uid: sa_uid.clone(),
                     iat: now.timestamp(),
                     exp: (now + chrono::Duration::hours(1)).timestamp(),
                     iss: "https://kubernetes.default.svc.cluster.local".to_string(),
                     aud: vec!["rusternetes".to_string()],
+                    kubernetes: Some(rusternetes_common::auth::KubernetesClaims {
+                        namespace: namespace.to_string(),
+                        svcacct: rusternetes_common::auth::KubeRef {
+                            name: sa_name.to_string(),
+                            uid: sa_uid,
+                        },
+                        pod: Some(rusternetes_common::auth::KubeRef {
+                            name: pod_name.to_string(),
+                            uid: pod.metadata.uid.clone(),
+                        }),
+                        node: node_name.as_ref().map(|nn| rusternetes_common::auth::KubeRef {
+                            name: nn.clone(),
+                            uid: node_uid.clone().unwrap_or_default(),
+                        }),
+                    }),
                     pod_name: Some(pod_name.to_string()),
                     pod_uid: Some(pod.metadata.uid.clone()),
                     node_name,
@@ -2549,11 +2564,28 @@ impl ContainerRuntime {
                         let claims = rusternetes_common::auth::ServiceAccountClaims {
                             sub: format!("system:serviceaccount:{}:{}", namespace, sa_name),
                             namespace: namespace.to_string(),
-                            uid: sa_uid,
+                            uid: sa_uid.clone(),
                             iat: now.timestamp(),
                             exp,
                             iss: "https://kubernetes.default.svc.cluster.local".to_string(),
                             aud: audiences,
+                            kubernetes: Some(rusternetes_common::auth::KubernetesClaims {
+                                namespace: namespace.to_string(),
+                                svcacct: rusternetes_common::auth::KubeRef {
+                                    name: sa_name.to_string(),
+                                    uid: sa_uid,
+                                },
+                                pod: Some(rusternetes_common::auth::KubeRef {
+                                    name: pod_name.clone(),
+                                    uid: pod.metadata.uid.clone(),
+                                }),
+                                node: node_name.as_ref().map(|nn| {
+                                    rusternetes_common::auth::KubeRef {
+                                        name: nn.clone(),
+                                        uid: node_uid.clone().unwrap_or_default(),
+                                    }
+                                }),
+                            }),
                             pod_name: Some(pod_name.clone()),
                             pod_uid: Some(pod.metadata.uid.clone()),
                             node_name,
@@ -2690,11 +2722,26 @@ impl ContainerRuntime {
         let claims = rusternetes_common::auth::ServiceAccountClaims {
             sub: format!("system:serviceaccount:{}:{}", namespace, sa_name),
             namespace: namespace.to_string(),
-            uid: sa_uid,
+            uid: sa_uid.clone(),
             iat: now.timestamp(),
             exp: (now + chrono::Duration::hours(1)).timestamp(),
             iss: "https://kubernetes.default.svc.cluster.local".to_string(),
             aud: vec!["rusternetes".to_string()],
+            kubernetes: Some(rusternetes_common::auth::KubernetesClaims {
+                namespace: namespace.to_string(),
+                svcacct: rusternetes_common::auth::KubeRef {
+                    name: sa_name.to_string(),
+                    uid: sa_uid,
+                },
+                pod: Some(rusternetes_common::auth::KubeRef {
+                    name: pod_name.clone(),
+                    uid: pod.metadata.uid.clone(),
+                }),
+                node: node_name.as_ref().map(|nn| rusternetes_common::auth::KubeRef {
+                    name: nn.clone(),
+                    uid: node_uid.clone().unwrap_or_default(),
+                }),
+            }),
             pod_name: Some(pod_name.clone()),
             pod_uid: Some(pod.metadata.uid.clone()),
             node_name,

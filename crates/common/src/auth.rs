@@ -6,16 +6,38 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
+/// Nested kubernetes.io claim in JWT tokens (matches K8s pkg/serviceaccount/claims.go)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KubernetesClaims {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub namespace: String,
+    #[serde(rename = "serviceaccount")]
+    pub svcacct: KubeRef,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pod: Option<KubeRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node: Option<KubeRef>,
+}
+
+/// Name+UID reference used in kubernetes.io JWT claims
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KubeRef {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub uid: String,
+}
+
 /// JWT claims for service account tokens
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceAccountClaims {
     /// Subject (service account name)
     pub sub: String,
 
-    /// Namespace
+    /// Namespace (kept for backward compat with our auth middleware)
     pub namespace: String,
 
-    /// Service account UID
+    /// Service account UID (kept for backward compat)
     pub uid: String,
 
     /// Issued at timestamp
@@ -29,6 +51,10 @@ pub struct ServiceAccountClaims {
 
     /// Audience
     pub aud: Vec<String>,
+
+    /// Nested kubernetes.io claims (matches K8s JWT structure)
+    #[serde(rename = "kubernetes.io", skip_serializing_if = "Option::is_none")]
+    pub kubernetes: Option<KubernetesClaims>,
 
     /// Bound pod name (for projected service account tokens)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -57,14 +83,24 @@ impl ServiceAccountClaims {
         let now = Utc::now();
         let exp = now + Duration::hours(expiration_hours);
 
+        let sa_name = service_account.clone();
         Self {
-            sub: format!("system:serviceaccount:{}:{}", namespace, service_account),
-            namespace,
-            uid,
+            sub: format!("system:serviceaccount:{}:{}", namespace, sa_name),
+            namespace: namespace.clone(),
+            uid: uid.clone(),
             iat: now.timestamp(),
             exp: exp.timestamp(),
             iss: "https://kubernetes.default.svc.cluster.local".to_string(),
             aud: vec!["rusternetes".to_string()],
+            kubernetes: Some(KubernetesClaims {
+                namespace,
+                svcacct: KubeRef {
+                    name: sa_name,
+                    uid,
+                },
+                pod: None,
+                node: None,
+            }),
             pod_name: None,
             pod_uid: None,
             node_name: None,
