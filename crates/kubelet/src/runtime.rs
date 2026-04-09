@@ -833,6 +833,12 @@ impl ContainerRuntime {
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
         let spec = pod.spec.as_ref().unwrap();
 
+        // Host network pods should NOT have kubelet-managed /etc/hosts.
+        // They use the host's /etc/hosts directly.
+        if spec.host_network == Some(true) {
+            return Ok(None);
+        }
+
         // Determine the pod's hostname: spec.hostname if set, otherwise pod name
         // Linux hostnames limited to 63 chars
         let raw_hostname = spec.hostname.as_deref().unwrap_or(pod_name);
