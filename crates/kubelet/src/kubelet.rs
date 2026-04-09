@@ -656,15 +656,37 @@ impl Kubelet {
                 );
             }
 
-            // Now delete the pod from storage (triggers watch DELETED event)
+            // Delete the pod from storage ONLY if it has no finalizers.
+            // K8s keeps pods with finalizers in storage (with deletionTimestamp)
+            // until the finalizer is removed by the owner/controller.
             let key = build_key("pods", Some(namespace), pod_name);
-            if let Err(e) = self.storage.delete(&key).await {
-                warn!(
-                    "Error deleting pod {}/{} from storage: {}",
-                    namespace, pod_name, e
+            let has_finalizers = pod
+                .metadata
+                .finalizers
+                .as_ref()
+                .map(|f| !f.is_empty())
+                .unwrap_or(false);
+            if has_finalizers {
+                info!(
+                    "Pod {}/{} has finalizers, keeping in storage with deletionTimestamp",
+                    namespace, pod_name
                 );
+                // Update status to show pod is terminated but not deleted
+                if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
+                    if let Some(ref mut status) = p.status {
+                        status.phase = Some(Phase::Succeeded);
+                    }
+                    let _ = self.storage.update(&key, &p).await;
+                }
             } else {
-                info!("Pod {}/{} deleted from storage", namespace, pod_name);
+                if let Err(e) = self.storage.delete(&key).await {
+                    warn!(
+                        "Error deleting pod {}/{} from storage: {}",
+                        namespace, pod_name, e
+                    );
+                } else {
+                    info!("Pod {}/{} deleted from storage", namespace, pod_name);
+                }
             }
             return Ok(());
         }
