@@ -503,8 +503,8 @@ fn extract_json_from_k8s_protobuf(data: &[u8]) -> Option<Vec<u8>> {
                     }
                     shift += 7;
                 }
-                if (field_number == 2 || field_number == 3) && pos + len <= data.len() {
-                    // Field 2 or 3 may contain the raw JSON bytes
+                if field_number == 2 && pos + len <= data.len() {
+                    // Field 2 contains the raw bytes (serialized resource)
                     let raw = &data[pos..pos + len];
                     if !raw.is_empty() && (raw[0] == b'{' || raw[0] == b'[') {
                         return Some(raw.to_vec());

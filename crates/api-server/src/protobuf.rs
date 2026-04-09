@@ -2916,10 +2916,12 @@ impl ProtoRegistry {
                             }
                         }
                     }
-                    2 | 3 => {
-                        // raw bytes (field 2) or field 3
+                    2 => {
+                        // raw bytes — the serialized resource
                         raw_bytes = Some(field_data);
                     }
+                    // field 3 = contentEncoding (string, skip)
+                    // field 4 = contentType (string, skip)
                     _ => {}
                 }
             } else if wire_type == WIRE_VARINT {
