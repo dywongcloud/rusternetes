@@ -7,6 +7,12 @@ use crate::types::ObjectMeta;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Skip serializing Option<bool> when None or Some(false).
+/// K8s omits x-kubernetes-* boolean extensions when false (the default).
+fn skip_false_or_none(v: &Option<bool>) -> bool {
+    !matches!(v, Some(true))
+}
+
 /// CustomResourceDefinition defines a new custom resource type in the cluster
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -266,13 +272,13 @@ pub struct JSONSchemaProps {
     pub x_kubernetes_preserve_unknown_fields: Option<bool>,
 
     #[serde(
-        skip_serializing_if = "Option::is_none",
+        skip_serializing_if = "skip_false_or_none",
         rename = "x-kubernetes-embedded-resource"
     )]
     pub x_kubernetes_embedded_resource: Option<bool>,
 
     #[serde(
-        skip_serializing_if = "Option::is_none",
+        skip_serializing_if = "skip_false_or_none",
         rename = "x-kubernetes-int-or-string"
     )]
     pub x_kubernetes_int_or_string: Option<bool>,
