@@ -241,7 +241,7 @@ pub async fn get_swagger_spec(
             .status(StatusCode::OK)
             .header(
                 header::CONTENT_TYPE,
-                "application/com.github.proto-openapi.spec.v2@v1.0+protobuf",
+                "application/com.github.proto-openapi.spec.v2.v1.0+protobuf",
             )
             .body(Body::empty())
             .unwrap();
