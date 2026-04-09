@@ -4,7 +4,7 @@
 **Round 128** | 340/441 (77.1%) | 101 failures | 2026-04-08 (regressed — v2 discovery broke sonobuoy)
 **Round 129** | 346/441 (78.5%) | 95 failures | 2026-04-09 (protobuf envelope bug caused CRD regression)
 **Round 130** | 0/441 (0%) | e2e pod couldn't schedule — nodes had no labels | 2026-04-09
-**Round 131** | Pending clean redeploy | Node labels fix committed | 2026-04-09
+**Round 131** | Running | Node labels + SA token resync fixes | 2026-04-09
 
 ## Round 129 Failures — Status After Fixes
 
@@ -89,7 +89,7 @@
 - **Root cause**: Nodes registered with empty labels. K8s kubelet `initialNode()` sets `kubernetes.io/os=linux`, `kubernetes.io/arch=amd64`, `kubernetes.io/hostname` on all nodes. Without these, pods with `nodeSelector: {"kubernetes.io/os": "linux"}` (like sonobuoy e2e pod) couldn't be scheduled at all. Round 130 had 0 tests run.
 - **Fix**: Add default node labels in `register_node()` and `update_node_status()` (commit c10e449)
 
-## All Fix Commits (36 total)
+## All Fix Commits (37 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -130,6 +130,7 @@
 | 188eb6a | kubelet | /etc/hosts skip for host network pods |
 | 2d3c799 | controller-manager | Job ready field (pre-session) |
 | c10e449 | kubelet | Node labels — kubernetes.io/os, arch, hostname |
+| 3136c2a | kubelet | Projected volume — preserve SA token during resync |
 
 ## Progress History
 
