@@ -1,77 +1,93 @@
 # Conformance Failure Tracker
 
-**Round 133** | 370/441 (83.9%) | 71 failures, 59 unique | 2026-04-10
-**Round 134** | Running — 1 failure at 30min mark (all 42 fixes) | 2026-04-10
+**Round 133** | 370/441 (83.9%) | 2026-04-10
+**Round 134** | Running (deployed with 42 fixes from this session) | 2026-04-10
 
-## Round 133 Failures by Category
+## What's Deployed in Round 134
 
-| Category | Count | Tests | Status |
-|----------|-------|-------|--------|
-| CRD OpenAPI | 9 | 77,161,211,253,285,318,366,400,451 | FIXED 0347108 (empty vec/map skip) + 0b22923 (CR unknown fields) |
-| Webhooks | 10 | 463,520,675,904,1269,1334,1396,1400,1481,2107 | Partially fixed: f1e00db (ns selector), 7ae38d7 (error msg), 09bcebe (subresource) |
-| Field validation | 5 | 278,338,462,611,735 | FIXED: 5b19baf (CRD apply), 5ff70c7 (YAML parse). 735 = YAML dup detection (needs YAML parser) |
-| Preemption | 4 | 181,268,516,1025 | FIXED 4e442e8 (extended resources) |
-| Service | 3 | 768,886,3459 | Networking/kube-proxy/watch |
-| Deployment | 2 | 995,1259 | b2ba5cf (template matching) + watch cascade |
-| StatefulSet | 2 | 957 | Scale-down timing |
-| ReplicaSet | 2 | 232,560 | Pod startup / watch cascade |
-| RC | 2 | 509,623 | Pod startup / watch cascade |
-| Init container | 2 | 440,565 | Watch/status timing |
-| Proxy | 2 | 271,503 | Service proxy networking |
-| Pod output | 1 | 263 | Docker umask (0755 vs 0777) |
-| Pod resize | 1 | 857 | Docker cgroup limitation |
-| Others | 14 | namespace:579, resource_quota:282, builder:97, kubectl:1881, dns:476, endpointslice:135, endpointslicemirroring:129, hostport:219, service_latency:142, service_accounts:667, runtime:115, daemon_set:1276, custom_resource_definition:334, aggregator:359 |
+All fixes through commit `f096b77` (43 commits). Key fixes:
+- Node labels, SA token resync, CRD OpenAPI/watch/webhooks
+- JWT kubernetes.io claims, namespace conditions, deployment template matching
+- Aggregated discovery shortNames, webhook namespace selectors/TLS/subresource matching
+- Scheduler extended resources, YAML parsing, JSONSchemaProps omitempty
+- CR unknown fields, CRD defaults on read, empty vec/map skip
+- ObjectMeta null name tolerance, EndpointAddress ip null tolerance
+- CSR status PATCH metadata, root CA reconciliation, ephemeral-storage capacity
+- CRD server-side apply, endpoint slice empty selectors
 
-## Fixes Not Yet in Round 133 Build (12 commits)
+## Staged for Next Deploy (2 commits after round 134 build)
 
-| Commit | Fix | Expected Tests Fixed |
-|--------|-----|---------------------|
-| 0b22923 | CustomResource preserve unknown fields | crd_openapi:211,451 |
-| 182b280 | Namespace finalization timing | namespace:579 |
-| 2332cf4 | ObjectMeta null name tolerant | builder:97 |
-| 5ff70c7 | CRD PATCH YAML parsing | field_validation:462 |
-| b5e457c | EndpointAddress ip null tolerant | service_latency:142 |
-| 09bcebe | Webhook resource/subresource matching | webhook:1481 |
-| 4e442e8 | Scheduler extended resources | preemption:181,268,516,1025 |
-| 0347108 | JSONSchemaProps skip empty vec/map | crd_openapi:77,161,253,285,318,366,400 |
+| Commit | Fix | Tests |
+|--------|-----|-------|
+| d9c9d34 | Init container intermediate status updates | init_container:440,565 |
+| f096b77 | CRD LIST defaults on read | custom_resource_definition tests |
 
-## Fix Commits This Session (41 total)
+## Remaining Unfixed Issues
 
-| Commit | Fix |
-|--------|-----|
-| c10e449 | Node labels |
-| 3136c2a | SA token resync |
-| f34bd51 | CRD OpenAPI x-kubernetes booleans |
-| 6edb6be | CRD webhooks |
-| 323d9dc | Container restart volumes |
-| db4855b | JWT kubernetes.io claims |
-| c5ad02d | Namespace condition logging |
-| d26e2ef | Namespace condition CAS retry |
-| f7dfb20 | CRD watch support |
-| c4d3fa7 | Job successPolicy ready=0 |
-| eb07e78 | Pod PATCH metadata.name |
-| f50d364 | Pod logs ephemeral containers |
-| 8dbedb5 | EndpointAddress ip default |
-| 77f4e6f | CRD type defaults |
-| 176b2cd | CSR status PATCH metadata |
-| af5e245 | Webhook TLS CA bundle |
-| c4bda95 | Root CA ConfigMap reconciliation |
-| c2a0dd8 | EndpointSlice empty selectors |
-| 967b1fd | Node ephemeral-storage capacity |
-| f1e00db | Webhook namespaceSelector |
-| 7ae38d7 | Webhook error lowercase |
-| 5b19baf | CRD PATCH server-side apply |
-| b2ba5cf | Deployment template matching |
-| 06d3a40 | Discovery shortNames |
-| faf427c | JSONSchemaProps omitempty strings/bools |
-| 0b22923 | CustomResource unknown fields |
-| 182b280 | Namespace finalization timing |
-| 2332cf4 | ObjectMeta null name |
-| 5ff70c7 | CRD PATCH YAML parsing |
-| b5e457c | EndpointAddress ip null |
-| 09bcebe | Webhook resource/subresource matching |
-| 4e442e8 | Scheduler extended resources |
-| 0347108 | JSONSchemaProps empty vec/map skip |
+| # | Test | Root Cause | Difficulty |
+|---|------|------------|-----------|
+| 1 | `webhook.go:520,675,904,1269,1334,1400,2107` | Webhook service pod startup too slow for 30s timeout | Infrastructure — pod startup timing in Docker |
+| 2 | `service.go:768,886,3459` | kube-proxy iptables rules not routing correctly | Infrastructure — kube-proxy networking |
+| 3 | `proxy.go:271,503` | Service proxy can't reach backend pods | Infrastructure — ClusterIP routing |
+| 4 | `deployment.go:995,1259` | Watch connection drops cause timeouts | Watch reliability |
+| 5 | `rc.go:509,623` | Watch cascade / pod startup timeout | Watch reliability |
+| 6 | `replica_set.go:232,560` | Watch cascade / pod startup timeout | Watch reliability |
+| 7 | `statefulset.go:957` | Pod deletion timing between controller and kubelet | Controller/kubelet coordination |
+| 8 | `dns_common.go:476` | Container exec runs /pause not shell | Container image/exec issue |
+| 9 | `daemon_set.go:1276` | ControllerRevision Match — byte-level comparison | Go vs Rust JSON key ordering |
+| 10 | `aggregator.go:359` | Extension API server deployment can't start | Infrastructure — pod networking |
+| 11 | `hostport.go:219` | Host port binding in container-in-container Docker | DinD limitation |
+| 12 | `field_validation.go:735` | YAML duplicate key detection | Needs custom YAML parser |
+| 13 | `pod/output.go:263` | File permissions 0755 vs 0777 | Docker umask (0022) |
+| 14 | `pod_resize.go:857` | cgroup changes in container-in-container | DinD limitation |
+| 15 | `kubectl.go:1881` | kubectl proxy curl fails | Proxy/networking |
+| 16 | `endpointslice.go:135` | Orphan cleanup rate limiter cascade | Client rate limiting |
+| 17 | `endpointslicemirroring.go:129` | Mirroring timing | Controller timing |
+| 18 | `resource_quota.go:282` | Pod scheduling with extended resources | Extended resource in quota |
+| 19 | `service_accounts.go:667` | OIDC discovery TLS verification | Self-signed CA trust |
+| 20 | `runtime.go:115` | Container restart watch cascade | Watch reliability |
+| 21 | `custom_resource_definition.go:334` | CRD defaulting on read | FIXED 516922e (needs deploy) |
+
+## All Fix Commits This Session (44)
+
+| # | Commit | Fix |
+|---|--------|-----|
+| 1 | c10e449 | Node labels |
+| 2 | 3136c2a | SA token resync |
+| 3 | f34bd51 | CRD OpenAPI x-kubernetes booleans |
+| 4 | 6edb6be | CRD webhooks |
+| 5 | 323d9dc | Container restart volumes |
+| 6 | db4855b | JWT kubernetes.io claims |
+| 7 | c5ad02d | Namespace condition logging |
+| 8 | d26e2ef | Namespace condition CAS retry |
+| 9 | f7dfb20 | CRD watch support |
+| 10 | c4d3fa7 | Job successPolicy ready=0 |
+| 11 | eb07e78 | Pod PATCH metadata.name |
+| 12 | f50d364 | Pod logs ephemeral containers |
+| 13 | 8dbedb5 | EndpointAddress ip default |
+| 14 | 77f4e6f | CRD type defaults |
+| 15 | 176b2cd | CSR status PATCH metadata |
+| 16 | af5e245 | Webhook TLS CA bundle |
+| 17 | c4bda95 | Root CA ConfigMap reconciliation |
+| 18 | c2a0dd8 | EndpointSlice empty selectors |
+| 19 | 967b1fd | Node ephemeral-storage capacity |
+| 20 | f1e00db | Webhook namespaceSelector |
+| 21 | 7ae38d7 | Webhook error lowercase |
+| 22 | 5b19baf | CRD PATCH server-side apply |
+| 23 | b2ba5cf | Deployment template matching |
+| 24 | 06d3a40 | Discovery shortNames |
+| 25 | faf427c | JSONSchemaProps omitempty strings/bools |
+| 26 | 0b22923 | CustomResource unknown fields |
+| 27 | 182b280 | Namespace finalization timing |
+| 28 | 2332cf4 | ObjectMeta null name |
+| 29 | 5ff70c7 | CRD PATCH YAML parsing |
+| 30 | b5e457c | EndpointAddress ip null |
+| 31 | 09bcebe | Webhook resource/subresource matching |
+| 32 | 4e442e8 | Scheduler extended resources |
+| 33 | 0347108 | JSONSchemaProps empty vec/map skip |
+| 34 | 516922e | CRD GET defaults on read |
+| 35 | f096b77 | CRD LIST defaults on read |
+| 36 | d9c9d34 | Init container intermediate status |
 
 ## Progress History
 
