@@ -737,6 +737,10 @@ impl<S: Storage> DaemonSetController<S> {
 
     /// Build ControllerRevision data in K8s getPatch() format.
     /// Format: {"spec":{"template":{...,"$patch":"replace"}}}
+    ///
+    /// K8s Match() does byte-level comparison of getPatch() output with
+    /// history.Data.Raw. Go's encoding/json sorts map keys alphabetically.
+    /// We must sort keys the same way for the comparison to succeed.
     fn build_patch_data(
         template: &rusternetes_common::resources::PodTemplateSpec,
     ) -> Option<serde_json::Value> {
@@ -745,11 +749,35 @@ impl<S: Storage> DaemonSetController<S> {
         if let Some(obj) = template_value.as_object_mut() {
             obj.insert("$patch".to_string(), serde_json::json!("replace"));
         }
-        Some(serde_json::json!({
+        // Sort keys alphabetically to match Go's encoding/json behavior.
+        // K8s Match() compares bytes, so key order must be identical.
+        let sorted = Self::sort_json_keys(&serde_json::json!({
             "spec": {
                 "template": template_value
             }
-        }))
+        }));
+        Some(sorted)
+    }
+
+    /// Recursively sort all JSON object keys alphabetically.
+    /// Go's encoding/json sorts map keys; we must match this for
+    /// byte-level comparisons in DaemonSet ControllerRevision Match().
+    fn sort_json_keys(value: &serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut sorted = serde_json::Map::new();
+                let mut keys: Vec<&String> = map.keys().collect();
+                keys.sort();
+                for key in keys {
+                    sorted.insert(key.clone(), Self::sort_json_keys(&map[key]));
+                }
+                serde_json::Value::Object(sorted)
+            }
+            serde_json::Value::Array(arr) => {
+                serde_json::Value::Array(arr.iter().map(|v| Self::sort_json_keys(v)).collect())
+            }
+            other => other.clone(),
+        }
     }
 }
 
