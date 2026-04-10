@@ -382,10 +382,7 @@ impl<S: Storage> ResourceQuotaController<S> {
                 }
             }
             for (res_name, total) in &extended_requests {
-                usage.insert(
-                    format!("requests.{}", res_name),
-                    total.to_string(),
-                );
+                usage.insert(format!("requests.{}", res_name), total.to_string());
             }
 
             // Always insert resource usage values (even when zero, K8s expects "0" in status.used)

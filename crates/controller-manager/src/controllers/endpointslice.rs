@@ -80,7 +80,11 @@ impl<S: Storage> EndpointSliceController<S> {
             let svc_has_selector = services.iter().any(|s| {
                 s.metadata.namespace.as_deref().unwrap_or("default") == ns
                     && s.metadata.name == *ep_name
-                    && s.spec.selector.as_ref().map(|sel| !sel.is_empty()).unwrap_or(false)
+                    && s.spec
+                        .selector
+                        .as_ref()
+                        .map(|sel| !sel.is_empty())
+                        .unwrap_or(false)
             });
             if svc_has_selector {
                 continue;
