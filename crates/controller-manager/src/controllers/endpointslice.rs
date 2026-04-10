@@ -305,7 +305,9 @@ impl<S: Storage> EndpointSliceController<S> {
                 .ports
                 .iter()
                 .map(|sp| EndpointPort {
-                    name: sp.name.clone(),
+                    // K8s always sets port name, even if empty string.
+                    // A nil name causes kubectl describe to crash (nil pointer deref).
+                    name: Some(sp.name.clone().unwrap_or_default()),
                     port: Some(sp.port as i32),
                     protocol: sp.protocol.clone(),
                     app_protocol: sp.app_protocol.clone(),
@@ -397,7 +399,8 @@ impl<S: Storage> EndpointSliceController<S> {
             };
 
             endpoint_ports.push(EndpointPort {
-                name: sp.name.clone(),
+                // K8s always sets port name, even if empty string
+                name: Some(sp.name.clone().unwrap_or_default()),
                 port: Some(port_num),
                 protocol: sp.protocol.clone(),
                 app_protocol: sp.app_protocol.clone(),
