@@ -278,10 +278,16 @@ impl<S: Storage> DeploymentController<S> {
                 let min_available = (desired_replicas - max_unavailable).max(0);
 
                 // How many new pods can we add while respecting maxSurge?
+                // K8s scales up new RS within maxSurge, then scales down old RS.
+                // See: pkg/controller/deployment/rolling.go rolloutRolling()
                 let current_total = active_replicas + old_rs_total;
                 let can_add = (max_total - current_total).max(0);
                 let want_to_add = desired_replicas - active_replicas;
-                let scale_up_by = can_add.min(want_to_add).max(1); // At least 1 to make progress
+                let scale_up_by = if can_add > 0 {
+                    can_add.min(want_to_add).max(1)
+                } else {
+                    0 // Can't add — need to scale down old RS first
+                };
 
                 let new_active_replicas = (active_replicas + scale_up_by).min(desired_replicas);
 
