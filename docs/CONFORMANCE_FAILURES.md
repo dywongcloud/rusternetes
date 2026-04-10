@@ -1,38 +1,51 @@
 # Conformance Failure Tracker
 
-**Round 131** | Running (123/142, 86.6%) | 2026-04-09
+**Round 131** | Running | 2026-04-09
 
-## Round 131 Active Failures (19 at 142/441)
+## Round 131 Failures — Fix Status
 
-### FIXED (next round — 5 failures)
-| Test | Error | Fix |
-|------|-------|-----|
-| `webhook.go:2129` | CR creation not denied by webhook | 6edb6be — CRD webhook calls |
-| `runtime.go:115` | RestartCount stays 0 | 323d9dc — volume paths on restart |
-| `crd_publish_openapi.go:285,211,253,366,451` | x-kubernetes-* false booleans + CRD watch | f34bd51 + f7dfb20 |
-| `service_accounts.go:667` | JWT missing kubernetes.io claims | db4855b — nested KubernetesClaims |
-| `field_validation.go:245,428` | CRD creation timeout (no watch) | f7dfb20 — CRD watch support |
-| `job.go:555` | Job successPolicy ready != 0 | c4d3fa7 — set ready=0 on completion |
+### FIXED for next round (13 failures covered by 10 fix commits)
 
-### NEEDS FIX (6 failures)
-| Test | Error | Status |
-|------|-------|--------|
-| `daemon_set.go:1276` | ControllerRevision Match fails (foundCurHistories=0) | Needs investigation — CR data format mismatch? |
-| `dns_common.go:476` (x3) | Rate limiter context deadline | Client rate limiter cascade |
-| `webhook.go:463` | Webhook rule update not taking effect | ConfigMap creation still denied after rule change |
-| `namespace.go:579` | Missing NamespaceDeletionContentFailure condition | Conditions may not persist (CAS conflict?) — c5ad02d adds logging |
-| `dns_common.go:476` | Rate limiter context deadline | Client rate limiter cascade |
-| `aggregated_discovery.go:336` | Discovery response issue | Needs investigation |
+| # | Test | Root Cause | Fix |
+|---|------|------------|-----|
+| 1 | `webhook.go:2129` | CRD create didn't call webhooks | 6edb6be |
+| 2 | `runtime.go:115` | Container restart — empty volume_paths | 323d9dc |
+| 3 | `crd_publish_openapi.go:285` | x-kubernetes-* false booleans in schema | f34bd51 |
+| 4 | `crd_publish_openapi.go:211,253,366,451` | Same + CRD watch needed | f34bd51 + f7dfb20 |
+| 5 | `field_validation.go:245,428` | CRD watch missing → isWatchCachePrimed timeout | f7dfb20 |
+| 6 | `service_accounts.go:667` | JWT missing kubernetes.io nested claims | db4855b |
+| 7 | `job.go:555` | Job successPolicy set ready=current instead of 0 | c4d3fa7 |
+| 8 | `kubectl/builder.go:97` | Merge patch — metadata.name null before deser | eb07e78 |
+| 9 | `aggregated_discovery.go:336` | Same CRD watch issue as field_validation | f7dfb20 |
 
-### NEEDS INVESTIGATION (4 failures)
-| Test | Error |
-|------|-------|
-| `kubectl/builder.go:97` | kubectl label — FIXED (eb07e78) metadata.name null in merge patch |
-| `aggregated_discovery.go:336` | Discovery timeout |
-| `daemon_set.go:1276` | ControllerRevision Match — 0 matching histories |
-| `preemption.go:181` | Pods not running after scheduling (timeout) |
+### Still failing (need fix or investigation)
 
-## Fix Commits (47 total)
+| # | Test | Error | Status |
+|---|------|-------|--------|
+| 10 | `webhook.go:463` | Rule update to remove CREATE not taking effect | Webhook rules read from etcd each time — investigating |
+| 11 | `webhook.go:904` | Webhook config never ready (service not reachable) | Pod/service startup timing |
+| 12 | `namespace.go:579` | NamespaceDeletionContentFailure condition missing | Controller sets conditions — may be CAS conflict |
+| 13 | `dns_common.go:476` (x4) | Rate limiter context deadline / shell syntax error in containers | Container exec issue |
+| 14 | `daemon_set.go:1276` | ControllerRevision Match — 0 matching histories | CR data format mismatch? |
+| 15 | `statefulset.go:957` | Pod not deleted during scale-down | Kubelet sync timing |
+| 16 | `preemption.go:181` | Pods not running after scheduling (timeout) | Pod startup timing |
+
+## Fix Commits This Session (13 commits)
+
+| Commit | Component | Fix |
+|--------|-----------|-----|
+| c10e449 | kubelet | Node labels — kubernetes.io/os, arch, hostname |
+| 3136c2a | kubelet | Projected volume — preserve SA token during resync |
+| f34bd51 | common | CRD OpenAPI — omit x-kubernetes-* false booleans |
+| 6edb6be | api-server | CRD webhooks — run admission on custom resource create |
+| 323d9dc | kubelet | Container restart — pass volume paths when recreating |
+| db4855b | common/kubelet/api-server | JWT claims — kubernetes.io nested claims |
+| c5ad02d | controller-manager | Namespace controller — deletion condition logging |
+| f7dfb20 | api-server | CRD watch — watch support for custom resource instances |
+| c4d3fa7 | controller-manager | Job successPolicy — ready=0 on completion |
+| eb07e78 | api-server | Pod PATCH — preserve metadata.name before deserialization |
+
+## All Fix Commits (47 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -51,6 +64,8 @@
 | eaba1ef | api-server | Field validation duplicate field |
 | f34bd51 | common | CRD OpenAPI — omit x-kubernetes-* false booleans |
 | 6edb6be | api-server | CRD webhooks — run admission on custom resource create |
+| f7dfb20 | api-server | CRD watch — watch support for custom resource instances |
+| eb07e78 | api-server | Pod PATCH — preserve metadata.name before deserialization |
 | 6b43640 | controller-manager | StatefulSet partition-aware pod creation |
 | 8db2024 | controller-manager | StatefulSet scale-down processCondemned |
 | f52a6b1 | controller-manager | DaemonSet ControllerRevision hash + data format |
@@ -62,6 +77,8 @@
 | 2898a00 | controller-manager | Job status terminating count |
 | 38ddae4 | controller-manager | RC controller — clear ReplicaFailure condition |
 | 2d3c799 | controller-manager | Job ready field |
+| c5ad02d | controller-manager | Namespace controller — deletion condition logging |
+| c4d3fa7 | controller-manager | Job successPolicy — ready=0 on completion |
 | 6124087 | scheduler | Preemption resource counting + eviction handling |
 | d31aaed | kubelet | Init container incomplete status list |
 | 5dac01a | kubelet | Container restart mechanism |
@@ -73,10 +90,6 @@
 | 3136c2a | kubelet | Projected volume — preserve SA token during resync |
 | 323d9dc | kubelet | Container restart — pass volume paths when recreating |
 | db4855b | common/kubelet/api-server | JWT claims — kubernetes.io nested claims |
-| c5ad02d | controller-manager | Namespace controller — deletion condition logging |
-| f7dfb20 | api-server | CRD watch — watch support for custom resource instances |
-| c4d3fa7 | controller-manager | Job successPolicy — ready=0 on completion |
-| eb07e78 | api-server | Pod PATCH — preserve metadata.name before deserialization |
 
 ## Progress History
 
