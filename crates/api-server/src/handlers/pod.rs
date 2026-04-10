@@ -1071,108 +1071,114 @@ pub async fn patch(
     // K8s ref: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go
     let is_apply = content_type.contains("apply-patch");
     if is_apply {
-    if let Some(field_manager) = params.get("fieldManager") {
-        use rusternetes_common::server_side_apply::{server_side_apply, ApplyParams, ApplyResult};
+        if let Some(field_manager) = params.get("fieldManager") {
+            use rusternetes_common::server_side_apply::{
+                server_side_apply, ApplyParams, ApplyResult,
+            };
 
-        info!(
-            "Server-side apply for pod {}/{} by manager {}",
-            namespace, name, field_manager
-        );
+            info!(
+                "Server-side apply for pod {}/{} by manager {}",
+                namespace, name, field_manager
+            );
 
-        // Get current resource (if exists)
-        let key = build_key("pods", Some(&namespace), &name);
-        let current_json = match state.storage.get::<Pod>(&key).await {
-            Ok(current) => Some(
-                serde_json::to_value(&current)
-                    .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?,
-            ),
-            Err(rusternetes_common::Error::NotFound(_)) => None,
-            Err(e) => return Err(e),
-        };
+            // Get current resource (if exists)
+            let key = build_key("pods", Some(&namespace), &name);
+            let current_json = match state.storage.get::<Pod>(&key).await {
+                Ok(current) => Some(
+                    serde_json::to_value(&current)
+                        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?,
+                ),
+                Err(rusternetes_common::Error::NotFound(_)) => None,
+                Err(e) => return Err(e),
+            };
 
-        // Parse desired resource
-        let desired_json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
-            rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e))
-        })?;
+            // Parse desired resource
+            let desired_json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
+                rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e))
+            })?;
 
-        // Apply with server-side apply semantics
-        let force = params
-            .get("force")
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+            // Apply with server-side apply semantics
+            let force = params
+                .get("force")
+                .and_then(|v| v.parse::<bool>().ok())
+                .unwrap_or(false);
 
-        let apply_params = if force {
-            ApplyParams::new(field_manager.clone()).with_force()
-        } else {
-            ApplyParams::new(field_manager.clone())
-        };
+            let apply_params = if force {
+                ApplyParams::new(field_manager.clone()).with_force()
+            } else {
+                ApplyParams::new(field_manager.clone())
+            };
 
-        let result = server_side_apply(current_json.as_ref(), &desired_json, &apply_params)
-            .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+            let result = server_side_apply(current_json.as_ref(), &desired_json, &apply_params)
+                .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
 
-        match result {
-            ApplyResult::Success(applied_json) => {
-                // Convert to Pod type
-                let mut applied_pod: Pod = serde_json::from_value(applied_json).map_err(|e| {
-                    rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e))
-                })?;
+            match result {
+                ApplyResult::Success(applied_json) => {
+                    // Convert to Pod type
+                    let mut applied_pod: Pod =
+                        serde_json::from_value(applied_json).map_err(|e| {
+                            rusternetes_common::Error::InvalidResource(format!(
+                                "Invalid result: {}",
+                                e
+                            ))
+                        })?;
 
-                // Ensure metadata matches URL
-                applied_pod.metadata.name = name.clone();
-                applied_pod.metadata.namespace = Some(namespace.clone());
+                    // Ensure metadata matches URL
+                    applied_pod.metadata.name = name.clone();
+                    applied_pod.metadata.namespace = Some(namespace.clone());
 
-                // Detect in-place pod resize for server-side apply
-                if let Some(ref current) = current_json {
-                    if let Ok(current_pod) = serde_json::from_value::<Pod>(current.clone()) {
-                        if detect_container_resource_change(&current_pod, &applied_pod) {
-                            info!("Pod {}/{} resource resize detected (SSA), setting status.resize=Proposed", namespace, name);
-                            if let Some(ref mut status) = applied_pod.status {
-                                status.resize = Some("Proposed".to_string());
+                    // Detect in-place pod resize for server-side apply
+                    if let Some(ref current) = current_json {
+                        if let Ok(current_pod) = serde_json::from_value::<Pod>(current.clone()) {
+                            if detect_container_resource_change(&current_pod, &applied_pod) {
+                                info!("Pod {}/{} resource resize detected (SSA), setting status.resize=Proposed", namespace, name);
+                                if let Some(ref mut status) = applied_pod.status {
+                                    status.resize = Some("Proposed".to_string());
+                                }
                             }
                         }
                     }
+
+                    // Check dry-run before persisting
+                    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+                    if is_dry_run {
+                        info!(
+                            "Dry-run: Pod {}/{} server-side apply validated (not persisted)",
+                            namespace, name
+                        );
+                        return Ok(Json(applied_pod));
+                    }
+
+                    // Save to storage (create or update)
+                    let saved = if current_json.is_some() {
+                        state.storage.update(&key, &applied_pod).await?
+                    } else {
+                        applied_pod.metadata.ensure_uid();
+                        applied_pod.metadata.ensure_creation_timestamp();
+                        state.storage.create(&key, &applied_pod).await?
+                    };
+
+                    return Ok(Json(saved));
                 }
+                ApplyResult::Conflicts(conflicts) => {
+                    // Return 409 Conflict with details
+                    let conflict_details: Vec<String> = conflicts
+                        .iter()
+                        .map(|c| {
+                            format!(
+                                "Field '{}' is owned by '{}' (applying as '{}')",
+                                c.field, c.current_manager, c.applying_manager
+                            )
+                        })
+                        .collect();
 
-                // Check dry-run before persisting
-                let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
-                if is_dry_run {
-                    info!(
-                        "Dry-run: Pod {}/{} server-side apply validated (not persisted)",
-                        namespace, name
-                    );
-                    return Ok(Json(applied_pod));
+                    return Err(rusternetes_common::Error::Conflict(format!(
+                        "Apply conflict: {}. Use force=true to override.",
+                        conflict_details.join("; ")
+                    )));
                 }
-
-                // Save to storage (create or update)
-                let saved = if current_json.is_some() {
-                    state.storage.update(&key, &applied_pod).await?
-                } else {
-                    applied_pod.metadata.ensure_uid();
-                    applied_pod.metadata.ensure_creation_timestamp();
-                    state.storage.create(&key, &applied_pod).await?
-                };
-
-                return Ok(Json(saved));
-            }
-            ApplyResult::Conflicts(conflicts) => {
-                // Return 409 Conflict with details
-                let conflict_details: Vec<String> = conflicts
-                    .iter()
-                    .map(|c| {
-                        format!(
-                            "Field '{}' is owned by '{}' (applying as '{}')",
-                            c.field, c.current_manager, c.applying_manager
-                        )
-                    })
-                    .collect();
-
-                return Err(rusternetes_common::Error::Conflict(format!(
-                    "Apply conflict: {}. Use force=true to override.",
-                    conflict_details.join("; ")
-                )));
             }
         }
-    }
     }
 
     // Standard PATCH operation (not server-side apply)

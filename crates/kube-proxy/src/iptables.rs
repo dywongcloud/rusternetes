@@ -281,24 +281,49 @@ impl IptablesManager {
         {
             let forward_chain = "KUBE-FORWARD";
             self.ensure_chain("filter", forward_chain)?;
-            self.ensure_jump_rule("filter", "FORWARD", forward_chain, "kubernetes forwarding rules")?;
+            self.ensure_jump_rule(
+                "filter",
+                "FORWARD",
+                forward_chain,
+                "kubernetes forwarding rules",
+            )?;
 
             // Accept packets that have been DNATed (conntrack state DNAT)
             let dnat_accept_check = Command::new(&self.iptables_cmd)
                 .args([
-                    "-t", "filter", "-C", forward_chain,
-                    "-m", "conntrack", "--ctstate", "DNAT",
-                    "-m", "comment", "--comment", "kubernetes forwarding DNAT conntrack",
-                    "-j", "ACCEPT",
+                    "-t",
+                    "filter",
+                    "-C",
+                    forward_chain,
+                    "-m",
+                    "conntrack",
+                    "--ctstate",
+                    "DNAT",
+                    "-m",
+                    "comment",
+                    "--comment",
+                    "kubernetes forwarding DNAT conntrack",
+                    "-j",
+                    "ACCEPT",
                 ])
                 .output();
             if dnat_accept_check.map_or(true, |o| !o.status.success()) {
                 let output = Command::new(&self.iptables_cmd)
                     .args([
-                        "-t", "filter", "-A", forward_chain,
-                        "-m", "conntrack", "--ctstate", "DNAT",
-                        "-m", "comment", "--comment", "kubernetes forwarding DNAT conntrack",
-                        "-j", "ACCEPT",
+                        "-t",
+                        "filter",
+                        "-A",
+                        forward_chain,
+                        "-m",
+                        "conntrack",
+                        "--ctstate",
+                        "DNAT",
+                        "-m",
+                        "comment",
+                        "--comment",
+                        "kubernetes forwarding DNAT conntrack",
+                        "-j",
+                        "ACCEPT",
                     ])
                     .output()
                     .context("Failed to add KUBE-FORWARD DNAT accept rule")?;
@@ -317,19 +342,35 @@ impl IptablesManager {
                 for flag in &["-s", "-d"] {
                     let check = Command::new(&self.iptables_cmd)
                         .args([
-                            "-t", "filter", "-C", forward_chain,
-                            flag, cidr,
-                            "-m", "comment", "--comment", "kubernetes forwarding service CIDR",
-                            "-j", "ACCEPT",
+                            "-t",
+                            "filter",
+                            "-C",
+                            forward_chain,
+                            flag,
+                            cidr,
+                            "-m",
+                            "comment",
+                            "--comment",
+                            "kubernetes forwarding service CIDR",
+                            "-j",
+                            "ACCEPT",
                         ])
                         .output();
                     if check.map_or(true, |o| !o.status.success()) {
                         let _ = Command::new(&self.iptables_cmd)
                             .args([
-                                "-t", "filter", "-A", forward_chain,
-                                flag, cidr,
-                                "-m", "comment", "--comment", "kubernetes forwarding service CIDR",
-                                "-j", "ACCEPT",
+                                "-t",
+                                "filter",
+                                "-A",
+                                forward_chain,
+                                flag,
+                                cidr,
+                                "-m",
+                                "comment",
+                                "--comment",
+                                "kubernetes forwarding service CIDR",
+                                "-j",
+                                "ACCEPT",
                             ])
                             .output();
                     }

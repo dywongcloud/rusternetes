@@ -75,20 +75,30 @@ async fn custom_resource_fallback(
                     .get::<rusternetes_common::resources::Service>(&svc_key)
                     .await
                 {
-                    let cluster_ip = svc.spec.cluster_ip.clone().filter(|ip| !ip.is_empty() && ip != "None");
-                    let port = svc.spec.ports.first()
-                        .map(|p| p.port)
-                        .unwrap_or(443u16);
+                    let cluster_ip = svc
+                        .spec
+                        .cluster_ip
+                        .clone()
+                        .filter(|ip| !ip.is_empty() && ip != "None");
+                    let port = svc.spec.ports.first().map(|p| p.port).unwrap_or(443u16);
                     cluster_ip.map(|ip| (ip, port))
                 } else {
                     // Fallback: try endpoints directly
-                    let ep_key = rusternetes_storage::build_key("endpoints", Some(svc_ns), svc_name);
-                    if let Ok(ep) = state.storage.get::<rusternetes_common::resources::Endpoints>(&ep_key).await {
-                        ep.subsets.iter()
+                    let ep_key =
+                        rusternetes_storage::build_key("endpoints", Some(svc_ns), svc_name);
+                    if let Ok(ep) = state
+                        .storage
+                        .get::<rusternetes_common::resources::Endpoints>(&ep_key)
+                        .await
+                    {
+                        ep.subsets
+                            .iter()
                             .flat_map(|s| s.addresses.iter().flatten())
                             .next()
                             .map(|addr| {
-                                let port = ep.subsets.iter()
+                                let port = ep
+                                    .subsets
+                                    .iter()
                                     .flat_map(|s| s.ports.iter().flatten())
                                     .next()
                                     .map(|p| p.port)

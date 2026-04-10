@@ -80,95 +80,99 @@ where
         .unwrap_or(false);
 
     if is_apply {
-    if let Some(field_manager) = params.get("fieldManager") {
-        info!(
-            "Server-side apply for {} {}/{} by manager {}",
-            resource_type, namespace, name, field_manager
-        );
+        if let Some(field_manager) = params.get("fieldManager") {
+            info!(
+                "Server-side apply for {} {}/{} by manager {}",
+                resource_type, namespace, name, field_manager
+            );
 
-        // Get current resource (if exists)
-        let key = build_key(resource_type, Some(&namespace), &name);
-        let current_json = match state.storage.get::<T>(&key).await {
-            Ok(current) => Some(
-                serde_json::to_value(&current)
-                    .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?,
-            ),
-            Err(rusternetes_common::Error::NotFound(_)) => None,
-            Err(e) => return Err(e),
-        };
+            // Get current resource (if exists)
+            let key = build_key(resource_type, Some(&namespace), &name);
+            let current_json = match state.storage.get::<T>(&key).await {
+                Ok(current) => Some(
+                    serde_json::to_value(&current)
+                        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?,
+                ),
+                Err(rusternetes_common::Error::NotFound(_)) => None,
+                Err(e) => return Err(e),
+            };
 
-        // Parse desired resource
-        let desired_json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
-            rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e))
-        })?;
+            // Parse desired resource
+            let desired_json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
+                rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e))
+            })?;
 
-        // Apply with server-side apply semantics
-        let force = params
-            .get("force")
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+            // Apply with server-side apply semantics
+            let force = params
+                .get("force")
+                .and_then(|v| v.parse::<bool>().ok())
+                .unwrap_or(false);
 
-        let apply_params = if force {
-            ApplyParams::new(field_manager.clone()).with_force()
-        } else {
-            ApplyParams::new(field_manager.clone())
-        };
+            let apply_params = if force {
+                ApplyParams::new(field_manager.clone()).with_force()
+            } else {
+                ApplyParams::new(field_manager.clone())
+            };
 
-        let result = server_side_apply(current_json.as_ref(), &desired_json, &apply_params)
-            .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+            let result = server_side_apply(current_json.as_ref(), &desired_json, &apply_params)
+                .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
 
-        match result {
-            ApplyResult::Success(mut applied_json) => {
-                // Set the last-applied-configuration annotation
-                if let Some(metadata) = applied_json.get_mut("metadata") {
-                    if let Some(obj) = metadata.as_object_mut() {
-                        let ann = obj
-                            .entry("annotations")
-                            .or_insert_with(|| serde_json::json!({}));
-                        if let Some(ann_obj) = ann.as_object_mut() {
-                            ann_obj.insert(
-                                "kubectl.kubernetes.io/last-applied-configuration".to_string(),
-                                serde_json::Value::String(
-                                    serde_json::to_string(&desired_json).unwrap_or_default(),
-                                ),
-                            );
+            match result {
+                ApplyResult::Success(mut applied_json) => {
+                    // Set the last-applied-configuration annotation
+                    if let Some(metadata) = applied_json.get_mut("metadata") {
+                        if let Some(obj) = metadata.as_object_mut() {
+                            let ann = obj
+                                .entry("annotations")
+                                .or_insert_with(|| serde_json::json!({}));
+                            if let Some(ann_obj) = ann.as_object_mut() {
+                                ann_obj.insert(
+                                    "kubectl.kubernetes.io/last-applied-configuration".to_string(),
+                                    serde_json::Value::String(
+                                        serde_json::to_string(&desired_json).unwrap_or_default(),
+                                    ),
+                                );
+                            }
                         }
                     }
+
+                    // Convert to resource type
+                    let applied_resource: T =
+                        serde_json::from_value(applied_json).map_err(|e| {
+                            rusternetes_common::Error::InvalidResource(format!(
+                                "Invalid result: {}",
+                                e
+                            ))
+                        })?;
+
+                    // Save to storage (create or update)
+                    let saved = if current_json.is_some() {
+                        state.storage.update(&key, &applied_resource).await?
+                    } else {
+                        state.storage.create(&key, &applied_resource).await?
+                    };
+
+                    return Ok(Json(saved));
                 }
+                ApplyResult::Conflicts(conflicts) => {
+                    // Return 409 Conflict with details
+                    let conflict_details: Vec<String> = conflicts
+                        .iter()
+                        .map(|c| {
+                            format!(
+                                "Field '{}' is owned by '{}' (applying as '{}')",
+                                c.field, c.current_manager, c.applying_manager
+                            )
+                        })
+                        .collect();
 
-                // Convert to resource type
-                let applied_resource: T = serde_json::from_value(applied_json).map_err(|e| {
-                    rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e))
-                })?;
-
-                // Save to storage (create or update)
-                let saved = if current_json.is_some() {
-                    state.storage.update(&key, &applied_resource).await?
-                } else {
-                    state.storage.create(&key, &applied_resource).await?
-                };
-
-                return Ok(Json(saved));
-            }
-            ApplyResult::Conflicts(conflicts) => {
-                // Return 409 Conflict with details
-                let conflict_details: Vec<String> = conflicts
-                    .iter()
-                    .map(|c| {
-                        format!(
-                            "Field '{}' is owned by '{}' (applying as '{}')",
-                            c.field, c.current_manager, c.applying_manager
-                        )
-                    })
-                    .collect();
-
-                return Err(rusternetes_common::Error::Conflict(format!(
-                    "Apply conflict: {}. Use force=true to override.",
-                    conflict_details.join("; ")
-                )));
+                    return Err(rusternetes_common::Error::Conflict(format!(
+                        "Apply conflict: {}. Use force=true to override.",
+                        conflict_details.join("; ")
+                    )));
+                }
             }
         }
-    }
     }
 
     // Standard PATCH operation (not server-side apply)
@@ -280,95 +284,99 @@ where
         .unwrap_or(false);
 
     if is_apply {
-    if let Some(field_manager) = params.get("fieldManager") {
-        info!(
-            "Server-side apply for {} {} by manager {}",
-            resource_type, name, field_manager
-        );
+        if let Some(field_manager) = params.get("fieldManager") {
+            info!(
+                "Server-side apply for {} {} by manager {}",
+                resource_type, name, field_manager
+            );
 
-        // Get current resource (if exists)
-        let key = build_key(resource_type, None, &name);
-        let current_json = match state.storage.get::<T>(&key).await {
-            Ok(current) => Some(
-                serde_json::to_value(&current)
-                    .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?,
-            ),
-            Err(rusternetes_common::Error::NotFound(_)) => None,
-            Err(e) => return Err(e),
-        };
+            // Get current resource (if exists)
+            let key = build_key(resource_type, None, &name);
+            let current_json = match state.storage.get::<T>(&key).await {
+                Ok(current) => Some(
+                    serde_json::to_value(&current)
+                        .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?,
+                ),
+                Err(rusternetes_common::Error::NotFound(_)) => None,
+                Err(e) => return Err(e),
+            };
 
-        // Parse desired resource
-        let desired_json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
-            rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e))
-        })?;
+            // Parse desired resource
+            let desired_json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
+                rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e))
+            })?;
 
-        // Apply with server-side apply semantics
-        let force = params
-            .get("force")
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+            // Apply with server-side apply semantics
+            let force = params
+                .get("force")
+                .and_then(|v| v.parse::<bool>().ok())
+                .unwrap_or(false);
 
-        let apply_params = if force {
-            ApplyParams::new(field_manager.clone()).with_force()
-        } else {
-            ApplyParams::new(field_manager.clone())
-        };
+            let apply_params = if force {
+                ApplyParams::new(field_manager.clone()).with_force()
+            } else {
+                ApplyParams::new(field_manager.clone())
+            };
 
-        let result = server_side_apply(current_json.as_ref(), &desired_json, &apply_params)
-            .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+            let result = server_side_apply(current_json.as_ref(), &desired_json, &apply_params)
+                .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
 
-        match result {
-            ApplyResult::Success(mut applied_json) => {
-                // Set the last-applied-configuration annotation
-                if let Some(metadata) = applied_json.get_mut("metadata") {
-                    if let Some(obj) = metadata.as_object_mut() {
-                        let ann = obj
-                            .entry("annotations")
-                            .or_insert_with(|| serde_json::json!({}));
-                        if let Some(ann_obj) = ann.as_object_mut() {
-                            ann_obj.insert(
-                                "kubectl.kubernetes.io/last-applied-configuration".to_string(),
-                                serde_json::Value::String(
-                                    serde_json::to_string(&desired_json).unwrap_or_default(),
-                                ),
-                            );
+            match result {
+                ApplyResult::Success(mut applied_json) => {
+                    // Set the last-applied-configuration annotation
+                    if let Some(metadata) = applied_json.get_mut("metadata") {
+                        if let Some(obj) = metadata.as_object_mut() {
+                            let ann = obj
+                                .entry("annotations")
+                                .or_insert_with(|| serde_json::json!({}));
+                            if let Some(ann_obj) = ann.as_object_mut() {
+                                ann_obj.insert(
+                                    "kubectl.kubernetes.io/last-applied-configuration".to_string(),
+                                    serde_json::Value::String(
+                                        serde_json::to_string(&desired_json).unwrap_or_default(),
+                                    ),
+                                );
+                            }
                         }
                     }
+
+                    // Convert to resource type
+                    let applied_resource: T =
+                        serde_json::from_value(applied_json).map_err(|e| {
+                            rusternetes_common::Error::InvalidResource(format!(
+                                "Invalid result: {}",
+                                e
+                            ))
+                        })?;
+
+                    // Save to storage (create or update)
+                    let saved = if current_json.is_some() {
+                        state.storage.update(&key, &applied_resource).await?
+                    } else {
+                        state.storage.create(&key, &applied_resource).await?
+                    };
+
+                    return Ok(Json(saved));
                 }
+                ApplyResult::Conflicts(conflicts) => {
+                    // Return 409 Conflict with details
+                    let conflict_details: Vec<String> = conflicts
+                        .iter()
+                        .map(|c| {
+                            format!(
+                                "Field '{}' is owned by '{}' (applying as '{}')",
+                                c.field, c.current_manager, c.applying_manager
+                            )
+                        })
+                        .collect();
 
-                // Convert to resource type
-                let applied_resource: T = serde_json::from_value(applied_json).map_err(|e| {
-                    rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e))
-                })?;
-
-                // Save to storage (create or update)
-                let saved = if current_json.is_some() {
-                    state.storage.update(&key, &applied_resource).await?
-                } else {
-                    state.storage.create(&key, &applied_resource).await?
-                };
-
-                return Ok(Json(saved));
-            }
-            ApplyResult::Conflicts(conflicts) => {
-                // Return 409 Conflict with details
-                let conflict_details: Vec<String> = conflicts
-                    .iter()
-                    .map(|c| {
-                        format!(
-                            "Field '{}' is owned by '{}' (applying as '{}')",
-                            c.field, c.current_manager, c.applying_manager
-                        )
-                    })
-                    .collect();
-
-                return Err(rusternetes_common::Error::Conflict(format!(
-                    "Apply conflict: {}. Use force=true to override.",
-                    conflict_details.join("; ")
-                )));
+                    return Err(rusternetes_common::Error::Conflict(format!(
+                        "Apply conflict: {}. Use force=true to override.",
+                        conflict_details.join("; ")
+                    )));
+                }
             }
         }
-    }
     }
 
     // Standard PATCH operation (not server-side apply)
