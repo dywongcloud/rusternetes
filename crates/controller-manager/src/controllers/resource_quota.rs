@@ -359,6 +359,35 @@ impl<S: Storage> ResourceQuotaController<S> {
                 }
             }
 
+            // Track extended resource requests (non-cpu/memory).
+            // K8s quota controller counts ALL resources specified in the quota spec.
+            let mut extended_requests: std::collections::HashMap<String, i64> =
+                std::collections::HashMap::new();
+            for pod in pods.iter() {
+                if let Some(spec) = &pod.spec {
+                    for container in &spec.containers {
+                        if let Some(resources) = &container.resources {
+                            if let Some(requests) = &resources.requests {
+                                for (res_name, qty) in requests {
+                                    if res_name == "cpu" || res_name == "memory" {
+                                        continue;
+                                    }
+                                    // Parse quantity (extended resources are integers)
+                                    let val = qty.parse::<i64>().unwrap_or(0);
+                                    *extended_requests.entry(res_name.clone()).or_insert(0) += val;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (res_name, total) in &extended_requests {
+                usage.insert(
+                    format!("requests.{}", res_name),
+                    total.to_string(),
+                );
+            }
+
             // Always insert resource usage values (even when zero, K8s expects "0" in status.used)
             let cpu_req_str = format!("{}m", total_cpu_requests);
             usage.insert("requests.cpu".to_string(), cpu_req_str.clone());
