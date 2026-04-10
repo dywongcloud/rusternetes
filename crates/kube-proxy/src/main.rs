@@ -26,7 +26,7 @@ struct Args {
     log_level: String,
 
     /// Sync interval in seconds
-    #[arg(long, default_value = "3")]
+    #[arg(long, default_value = "1")]
     sync_interval: u64,
 }
 
