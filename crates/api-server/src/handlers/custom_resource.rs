@@ -386,7 +386,9 @@ pub async fn patch_custom_resource(
         build_key(&resource_type, None, &name)
     };
 
-    let current: CustomResource = state.storage.get(&key).await?;
+    // Get current resource (may not exist for server-side apply)
+    let current_result: rusternetes_common::Result<CustomResource> =
+        state.storage.get(&key).await;
 
     // Split request into parts to avoid borrow/move conflict
     let (parts, body) = req.into_parts();
@@ -408,19 +410,34 @@ pub async fn patch_custom_resource(
         rusternetes_common::Error::InvalidResource(format!("Invalid patch JSON: {}", e))
     })?;
 
-    // Apply the patch based on Content-Type
-    let current_json = serde_json::to_value(&current).map_err(|e| {
-        rusternetes_common::Error::Internal(format!("Failed to serialize current resource: {}", e))
-    })?;
+    // For server-side apply (application/apply-patch+yaml), create if not found
+    let is_apply = content_type.contains("apply-patch");
 
-    let patch_type = crate::patch::PatchType::from_content_type(content_type).map_err(|e| {
-        rusternetes_common::Error::InvalidResource(format!("Unsupported patch content type: {}", e))
-    })?;
-
-    let patched_json =
+    let patched_json = if let Ok(current) = &current_result {
+        // Resource exists — apply patch
+        let current_json = serde_json::to_value(current).map_err(|e| {
+            rusternetes_common::Error::Internal(format!(
+                "Failed to serialize current resource: {}",
+                e
+            ))
+        })?;
+        let patch_type =
+            crate::patch::PatchType::from_content_type(content_type).map_err(|e| {
+                rusternetes_common::Error::InvalidResource(format!(
+                    "Unsupported patch content type: {}",
+                    e
+                ))
+            })?;
         crate::patch::apply_patch(&current_json, &patch_value, patch_type).map_err(|e| {
             rusternetes_common::Error::InvalidResource(format!("Failed to apply patch: {}", e))
-        })?;
+        })?
+    } else if is_apply {
+        // Resource doesn't exist + server-side apply = create from patch body
+        patch_value.clone()
+    } else {
+        // Resource doesn't exist + regular patch = error
+        return Err(current_result.unwrap_err());
+    };
 
     // Deserialize the patched JSON back to CustomResource
     let mut patched: CustomResource = serde_json::from_value(patched_json).map_err(|e| {
@@ -438,8 +455,15 @@ pub async fn patch_custom_resource(
     patched.api_version = format!("{}/{}", group, version);
     patched.kind = crd.spec.names.kind.clone();
 
-    // Update the resource in storage
-    let updated = state.storage.update(&key, &patched).await?;
+    // Update or create the resource in storage
+    let updated = if current_result.is_ok() {
+        state.storage.update(&key, &patched).await?
+    } else {
+        // Server-side apply creates new resource
+        patched.metadata.ensure_uid();
+        patched.metadata.ensure_creation_timestamp();
+        state.storage.create(&key, &patched).await?
+    };
 
     Ok(Json(updated))
 }
