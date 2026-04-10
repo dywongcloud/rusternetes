@@ -88,9 +88,10 @@
 - `pod_resize.go:857`
 - **Root cause**: cgroup changes in DinD
 
-### kubectl — 3 failures
+### kubectl — 3 failures (STAGED 7b1bf50 + de62b6f)
 - `kubectl.go:1881` (proxy), `builder.go:97` (scale RC, describe service)
-- **Root cause**: kubectl commands fail — scale/describe/proxy
+- **Root cause**: PATCH handlers routed to SSA when fieldManager was set with non-apply content type; scale auth used group-qualified resource name
+- **Fix staged**: 7b1bf50 only uses SSA for apply-patch content type, de62b6f fixes scale auth
 
 ### Service Latency — 1 failure (STAGED 8d5038e)
 - `service_latency.go:142`
@@ -101,7 +102,7 @@
 - `namespace.go:579`
 - **Root cause**: Namespace deleted before controller sets conditions
 
-## Staged Fixes (21 commits, need deploy)
+## Staged Fixes (25 commits, need deploy)
 
 | Commit | Fix | Tests |
 |--------|-----|-------|
@@ -126,6 +127,9 @@
 | 5c423ba | CRD schema validation + webhook denial reason | field_validation: 3, webhook: 1 |
 | dc42714 | kube-proxy FILTER table KUBE-FORWARD chain | service networking: 5 tests |
 | 8d5038e | Pod IP field tolerant deserialization | service_latency:142 |
+| 7bf82ee | Aggregator ClusterIP + 503 + postStart kills container | aggregator:359, lifecycle |
+| 7b1bf50 | PATCH SSA only for apply-patch content type | kubectl label/scale/annotate |
+| de62b6f | Scale subresource auth resource name | kubectl scale RC |
 
 ## Expected Impact of Staged Fixes
 
@@ -138,7 +142,7 @@ Staged fixes should resolve ~40-45 of 71 failures:
 - Init container: 2 tests
 - Plus individual fixes: ~5 tests
 
-**Projected Round 135**: ~410-415/441 (93-94%)
+**Projected Round 135**: ~415-420/441 (94-95%)
 
 ## Progress History
 
