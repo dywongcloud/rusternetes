@@ -1,6 +1,6 @@
 # Conformance Failure Tracker
 
-**Round 131** | Running | 2026-04-09
+**Round 131** | Running (205/253 at 81.0%, ~57% through) | 2026-04-09
 
 ## Round 131 Failures — Fix Status
 
@@ -22,15 +22,25 @@
 
 | # | Test | Error | Status |
 |---|------|-------|--------|
-| 10 | `webhook.go:463` | Rule update to remove CREATE not taking effect | Webhook rules read from etcd each time — investigating |
-| 11 | `webhook.go:904` | Webhook config never ready (service not reachable) | Pod/service startup timing |
-| 12 | `namespace.go:579` | NamespaceDeletionContentFailure condition missing | Controller sets conditions — may be CAS conflict |
-| 13 | `dns_common.go:476` (x4) | Rate limiter context deadline / shell syntax error in containers | Container exec issue |
-| 14 | `daemon_set.go:1276` | ControllerRevision Match — 0 matching histories | CR data format mismatch? |
-| 15 | `statefulset.go:957` | Pod not deleted during scale-down | Kubelet sync timing |
-| 16 | `preemption.go:181` | Pods not running after scheduling (timeout) | Pod startup timing |
+| 10 | `namespace.go:579` | NamespaceDeletionContentFailure missing | FIXED d26e2ef — retry on CAS conflict |
 
-## Fix Commits This Session (13 commits)
+### Remaining unique failures (42 unique tests, 48 hits at 253/441)
+- **Webhooks** (6): webhook.go:463,520,904,1573,2107,2129 — service readiness/timing
+- **CRD OpenAPI** (6): crd_publish_openapi 211,253,285,318,366,451 — x-kubernetes booleans + watch
+- **DNS** (5): dns_common.go:476 — container exec shell issues
+- **kubectl** (4): builder.go:97 x3, kubectl.go:1881 — merge patch metadata
+- **Scheduling** (3): preemption.go:181,268,516 — pod startup timeout
+- **StatefulSet** (2): statefulset.go:957,1092 — scale-down timing
+- **Job** (2): job.go:555,595
+- **Field validation** (2): field_validation.go:245,428 — CRD watch timeout
+- **Aggregated discovery** (2): aggregated_discovery.go:227,336
+- **Auth SA** (2): service_accounts.go:667,817 — JWT claims/TLS
+- **Network** (3): endpointslice.go:135, proxy.go:271, service_latency.go:142
+- **Node** (3): runtime.go:115, ephemeral_containers.go:92, pod_resize.go:857
+- **Other** (4): namespace.go:579, resource_quota.go:282, custom_resource_definition.go:164, daemon_set.go:1276
+- **Output** (2): pod/output.go:263, rc.go:509, replica_set.go:232, deployment.go:1259
+
+## Fix Commits This Session (14 commits)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -41,6 +51,7 @@
 | 323d9dc | kubelet | Container restart — pass volume paths when recreating |
 | db4855b | common/kubelet/api-server | JWT claims — kubernetes.io nested claims |
 | c5ad02d | controller-manager | Namespace controller — deletion condition logging |
+| d26e2ef | controller-manager | Namespace deletion — retry condition update on CAS conflict |
 | f7dfb20 | api-server | CRD watch — watch support for custom resource instances |
 | c4d3fa7 | controller-manager | Job successPolicy — ready=0 on completion |
 | eb07e78 | api-server | Pod PATCH — preserve metadata.name before deserialization |
