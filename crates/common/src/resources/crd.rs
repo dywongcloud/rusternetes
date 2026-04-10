@@ -232,6 +232,9 @@ pub struct JSONSchemaProps {
     pub unique_items: Option<bool>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub multiple_of: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_properties: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -278,6 +281,9 @@ pub struct JSONSchemaProps {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub example: Option<serde_json::Value>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_docs: Option<serde_json::Value>,
 
     #[serde(skip_serializing_if = "skip_false_or_none")]
     pub nullable: Option<bool>,
@@ -638,6 +644,7 @@ impl Default for JSONSchemaProps {
             max_items: None,
             min_items: None,
             unique_items: None,
+            multiple_of: None,
             max_properties: None,
             min_properties: None,
             required: None,
@@ -654,6 +661,7 @@ impl Default for JSONSchemaProps {
             definitions: None,
             enum_: None,
             example: None,
+            external_docs: None,
             nullable: None,
             x_kubernetes_preserve_unknown_fields: None,
             x_kubernetes_embedded_resource: None,
