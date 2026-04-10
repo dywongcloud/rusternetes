@@ -519,6 +519,11 @@ pub struct CustomResource {
     /// Status is the custom resource's status (if status subresource is enabled)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<serde_json::Value>,
+
+    /// Extra fields — CRDs with x-kubernetes-preserve-unknown-fields can have
+    /// arbitrary top-level fields beyond spec/status. This catches all unknown fields.
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[cfg(test)]
