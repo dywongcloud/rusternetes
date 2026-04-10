@@ -102,7 +102,7 @@
 - `namespace.go:579`
 - **Root cause**: Namespace deleted before controller sets conditions
 
-## Staged Fixes (25 commits, need deploy)
+## Staged Fixes (30 commits, need deploy)
 
 | Commit | Fix | Tests |
 |--------|-----|-------|
@@ -130,6 +130,10 @@
 | 7bf82ee | Aggregator ClusterIP + 503 + postStart kills container | aggregator:359, lifecycle |
 | 7b1bf50 | PATCH SSA only for apply-patch content type | kubectl label/scale/annotate |
 | de62b6f | Scale subresource auth resource name | kubectl scale RC |
+| dd89022 | Scale selector label string format | kubectl scale RC |
+| 319f3f0 | EndpointSlice port name always set | kubectl describe service crash |
+| e810b09 | kube-proxy skip sync when unchanged | service networking flush gap |
+| 79078f9 | RS256 JWT signing for OIDC | service_accounts:667 |
 
 ## Expected Impact of Staged Fixes
 
