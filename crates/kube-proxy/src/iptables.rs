@@ -273,6 +273,71 @@ impl IptablesManager {
             }
         }
 
+        // Add FILTER table rules to accept forwarded traffic.
+        // K8s kube-proxy creates a KUBE-FORWARD chain in the filter table.
+        // Without these rules, forwarded packets (e.g., ClusterIP→Pod DNAT) may
+        // be dropped by the default FORWARD policy.
+        // See: pkg/proxy/iptables/proxier.go — KUBE-FORWARD chain
+        {
+            let forward_chain = "KUBE-FORWARD";
+            self.ensure_chain("filter", forward_chain)?;
+            self.ensure_jump_rule("filter", "FORWARD", forward_chain, "kubernetes forwarding rules")?;
+
+            // Accept packets that have been DNATed (conntrack state DNAT)
+            let dnat_accept_check = Command::new(&self.iptables_cmd)
+                .args([
+                    "-t", "filter", "-C", forward_chain,
+                    "-m", "conntrack", "--ctstate", "DNAT",
+                    "-m", "comment", "--comment", "kubernetes forwarding DNAT conntrack",
+                    "-j", "ACCEPT",
+                ])
+                .output();
+            if dnat_accept_check.map_or(true, |o| !o.status.success()) {
+                let output = Command::new(&self.iptables_cmd)
+                    .args([
+                        "-t", "filter", "-A", forward_chain,
+                        "-m", "conntrack", "--ctstate", "DNAT",
+                        "-m", "comment", "--comment", "kubernetes forwarding DNAT conntrack",
+                        "-j", "ACCEPT",
+                    ])
+                    .output()
+                    .context("Failed to add KUBE-FORWARD DNAT accept rule")?;
+                if output.status.success() {
+                    info!("Added KUBE-FORWARD DNAT accept rule (filter table)");
+                } else {
+                    warn!(
+                        "Failed to add KUBE-FORWARD DNAT accept: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+            }
+
+            // Accept packets from/to the service CIDR
+            for cidr in &["10.96.0.0/12"] {
+                for flag in &["-s", "-d"] {
+                    let check = Command::new(&self.iptables_cmd)
+                        .args([
+                            "-t", "filter", "-C", forward_chain,
+                            flag, cidr,
+                            "-m", "comment", "--comment", "kubernetes forwarding service CIDR",
+                            "-j", "ACCEPT",
+                        ])
+                        .output();
+                    if check.map_or(true, |o| !o.status.success()) {
+                        let _ = Command::new(&self.iptables_cmd)
+                            .args([
+                                "-t", "filter", "-A", forward_chain,
+                                flag, cidr,
+                                "-m", "comment", "--comment", "kubernetes forwarding service CIDR",
+                                "-j", "ACCEPT",
+                            ])
+                            .output();
+                    }
+                }
+            }
+            info!("Ensured KUBE-FORWARD filter rules for service traffic");
+        }
+
         // Ensure the service CIDR (10.96.0.0/12) is routable.
         // Without a route, packets to ClusterIPs are dropped before reaching
         // iptables PREROUTING/DNAT. We add a route pointing to the Docker bridge
