@@ -50,33 +50,42 @@ impl<S: Storage> NamespaceController<S> {
             return self.finalize_namespace(namespace).await;
         }
 
-        // Ensure kube-root-ca.crt ConfigMap exists in active namespaces
+        // Ensure kube-root-ca.crt ConfigMap exists with correct CA data.
+        // K8s rootcacertpublisher checks if the data matches and updates if not.
+        // See: pkg/controller/certificates/rootcacertpublisher/publisher.go:syncNamespace()
         let cm_key = build_key("configmaps", Some(name), "kube-root-ca.crt");
-        if self
-            .storage
-            .get::<serde_json::Value>(&cm_key)
-            .await
-            .is_err()
-        {
-            // Read CA cert — try the standard K8s path first (matches docker-compose mount),
-            // then fall back to the development path
-            let ca_cert = std::fs::read_to_string("/etc/kubernetes/pki/ca.crt")
-                .or_else(|_| std::fs::read_to_string("/root/.rusternetes/certs/ca.crt"))
-                .unwrap_or_else(|_| "".to_string());
-            if !ca_cert.is_empty() {
-                let cm = serde_json::json!({
-                    "apiVersion": "v1",
-                    "kind": "ConfigMap",
-                    "metadata": {
-                        "name": "kube-root-ca.crt",
-                        "namespace": name
-                    },
-                    "data": {
-                        "ca.crt": ca_cert
+        let ca_cert = std::fs::read_to_string("/etc/kubernetes/pki/ca.crt")
+            .or_else(|_| std::fs::read_to_string("/root/.rusternetes/certs/ca.crt"))
+            .unwrap_or_else(|_| "".to_string());
+        if !ca_cert.is_empty() {
+            let expected_data = serde_json::json!({ "ca.crt": ca_cert });
+            match self.storage.get::<serde_json::Value>(&cm_key).await {
+                Ok(existing) => {
+                    // Check if data matches — update if not (handles manual modification)
+                    let current_data = existing.get("data");
+                    if current_data != Some(&expected_data) {
+                        let mut cm = existing.clone();
+                        if let Some(obj) = cm.as_object_mut() {
+                            obj.insert("data".to_string(), expected_data);
+                        }
+                        let _ = self.storage.update(&cm_key, &cm).await;
+                        debug!("Updated kube-root-ca.crt in namespace {} (data mismatch)", name);
                     }
-                });
-                if self.storage.create(&cm_key, &cm).await.is_ok() {
-                    info!("Recreated kube-root-ca.crt ConfigMap in namespace {}", name);
+                }
+                Err(_) => {
+                    // ConfigMap doesn't exist — create it
+                    let cm = serde_json::json!({
+                        "apiVersion": "v1",
+                        "kind": "ConfigMap",
+                        "metadata": {
+                            "name": "kube-root-ca.crt",
+                            "namespace": name
+                        },
+                        "data": expected_data
+                    });
+                    if self.storage.create(&cm_key, &cm).await.is_ok() {
+                        info!("Created kube-root-ca.crt ConfigMap in namespace {}", name);
+                    }
                 }
             }
         }
