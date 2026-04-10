@@ -505,29 +505,26 @@ impl<S: Storage> DeploymentController<S> {
     }
 
     fn replicaset_matches_template(&self, rs: &ReplicaSet, deployment: &Deployment) -> bool {
-        // Simple comparison: check if containers match
-        // In a full implementation, we'd hash the entire pod template
-        if rs.spec.template.spec.containers.len() != deployment.spec.template.spec.containers.len()
-        {
-            return false;
-        }
+        // K8s EqualIgnoreHash: deep-compare templates ignoring pod-template-hash label.
+        // See: pkg/controller/deployment/util/deployment_util.go:EqualIgnoreHash()
+        //
+        // Compare by serializing both templates to JSON, removing pod-template-hash,
+        // and comparing the resulting JSON values.
+        let mut rs_template = serde_json::to_value(&rs.spec.template).unwrap_or_default();
+        let mut deploy_template =
+            serde_json::to_value(&deployment.spec.template).unwrap_or_default();
 
-        for (rs_container, deploy_container) in rs
-            .spec
-            .template
-            .spec
-            .containers
-            .iter()
-            .zip(deployment.spec.template.spec.containers.iter())
-        {
-            if rs_container.image != deploy_container.image
-                || rs_container.name != deploy_container.name
+        // Remove pod-template-hash from labels (K8s ignores this for comparison)
+        for template in [&mut rs_template, &mut deploy_template] {
+            if let Some(labels) = template
+                .pointer_mut("/metadata/labels")
+                .and_then(|l| l.as_object_mut())
             {
-                return false;
+                labels.remove("pod-template-hash");
             }
         }
 
-        true
+        rs_template == deploy_template
     }
 
     async fn create_replicaset(&self, deployment: &Deployment) -> rusternetes_common::Result<()> {
