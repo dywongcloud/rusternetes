@@ -180,7 +180,7 @@ pub async fn get_custom_resource(
 
     // Find the CRD for this resource type
     let crd_name = format!("{}.{}", plural, group);
-    let _crd = get_crd_for_resource(&state, &crd_name).await?;
+    let crd = get_crd_for_resource(&state, &crd_name).await?;
 
     // Check authorization
     let attrs = if let Some(ref ns) = namespace {
@@ -209,7 +209,10 @@ pub async fn get_custom_resource(
         build_key(&resource_type, None, &name)
     };
 
-    let cr = state.storage.get(&key).await?;
+    let mut cr: CustomResource = state.storage.get(&key).await?;
+
+    // Apply schema defaults on read (K8s "defaulting on read")
+    apply_schema_defaults(&crd, &version, &mut cr);
 
     Ok(Json(cr))
 }
