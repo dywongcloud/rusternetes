@@ -283,23 +283,46 @@ impl<S: Storage> NamespaceController<S> {
                 conditions: Some(conditions),
             });
 
-            // Save the updated status with conditions (retry on CAS conflict)
+            // Save the updated status with conditions.
+            // Retry up to 3 times on CAS conflict — other writers (API server,
+            // garbage collector) may update the namespace concurrently.
             info!(
                 "Setting deletion conditions on namespace {} (remaining={}, finalizers={})",
                 name, remaining_count > 0, any_finalizers_remaining
             );
-            if let Err(e) = self.storage.update(&key, &ns).await {
-                warn!("Namespace status update failed, retrying: {}", e);
-                if let Ok(mut fresh_ns) = self.storage.get::<Namespace>(&key).await {
-                    let conditions = Self::build_deletion_conditions(
-                        remaining_count > 0,
-                        any_finalizers_remaining,
-                    );
-                    fresh_ns.status = Some(NamespaceStatus {
-                        phase: Some(Phase::Terminating),
-                        conditions: Some(conditions),
-                    });
-                    let _ = self.storage.update(&key, &fresh_ns).await;
+            for attempt in 0..3 {
+                let fresh_ns_result = if attempt == 0 {
+                    Ok(ns.clone())
+                } else {
+                    self.storage.get::<Namespace>(&key).await
+                };
+                match fresh_ns_result {
+                    Ok(mut fresh_ns) => {
+                        let conditions = Self::build_deletion_conditions(
+                            remaining_count > 0,
+                            any_finalizers_remaining,
+                        );
+                        fresh_ns.status = Some(NamespaceStatus {
+                            phase: Some(Phase::Terminating),
+                            conditions: Some(conditions),
+                        });
+                        match self.storage.update(&key, &fresh_ns).await {
+                            Ok(_) => {
+                                info!("Namespace {} conditions set successfully", name);
+                                break;
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Namespace {} condition update attempt {} failed: {}",
+                                    name, attempt + 1, e
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to re-read namespace {}: {}", name, e);
+                        break;
+                    }
                 }
             }
         }
