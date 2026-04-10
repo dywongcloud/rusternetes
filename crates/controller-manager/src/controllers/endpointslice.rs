@@ -168,19 +168,21 @@ impl<S: Storage> EndpointSliceController<S> {
         let namespace = service.metadata.namespace.as_deref().unwrap_or("default");
         let service_name = &service.metadata.name;
 
-        // Skip services without selectors (ExternalName, headless without selector)
-        let selector = match &service.spec.selector {
-            Some(s) if !s.is_empty() => s,
-            _ => return Ok(()),
-        };
-
-        // Skip ExternalName services
+        // Skip ExternalName services (K8s: services with Type ExternalName receive no endpoints)
         if matches!(
             service.spec.service_type,
             Some(rusternetes_common::resources::ServiceType::ExternalName)
         ) {
             return Ok(());
         }
+
+        // Services without selectors (nil selector) are skipped.
+        // Services with EMPTY selectors (selector: {}) still get EndpointSlices
+        // but with no endpoints. K8s endpointslice controller handles both cases.
+        let selector = match &service.spec.selector {
+            Some(s) => s,
+            None => return Ok(()), // nil selector = skip (headless without selector)
+        };
 
         debug!(
             "Reconciling endpointslices for service {}/{}",
