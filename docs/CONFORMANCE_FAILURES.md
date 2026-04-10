@@ -11,6 +11,10 @@
 | 3 | `pod/output.go:263` | File perms 0755 vs 0777 | Known — Docker umask |
 | 4 | `field_validation.go:278` | CRD resource not found during apply | FIXED 5b19baf (not in this build) |
 | 5 | `statefulset.go:957` | Pod ss-0 not re-created | Known — controller/kubelet timing |
+| 6 | `field_validation.go:611` | CRD apply resource not found | FIXED 5b19baf (not in this build) |
+| 7 | `statefulset.go:1092` | StatefulSet image update | Known — template matching |
+| 8 | `webhook.go:520` | Webhook service not ready | Known — endpoint readiness timing |
+| 9 | `lifecycle_hook.go:132` | PreStop hook not executed | Kubelet preStop hook execution |
 
 ## Fixes Committed (26 this session, not yet deployed)
 
@@ -37,12 +41,13 @@
 | c2a0dd8 | EndpointSlice — handle services with empty selectors |
 | 967b1fd | Node capacity — report ephemeral-storage |
 
-### Committed After Round 132 Build (3 fixes, need redeploy)
+### Committed After Round 132 Build (5 fixes, need redeploy)
 | Commit | Fix |
 |--------|-----|
 | f1e00db | Webhook namespaceSelector — filter by namespace labels |
 | 7ae38d7 | Webhook error messages — lowercase "webhook" |
 | 5b19baf | CRD PATCH — server-side apply creates new resources |
+| b2ba5cf | Deployment template matching — full deep comparison |
 
 ## Remaining Unfixed Issues
 
