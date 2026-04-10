@@ -636,10 +636,16 @@ impl<S: Storage> AdmissionWebhookManager<S> {
 
                     // Check if request was denied
                     if !response.allowed {
+                        // K8s uses status.message first, then status.reason, then fallback
                         let reason = response
                             .status
                             .as_ref()
-                            .and_then(|s| s.message.as_ref())
+                            .and_then(|s| {
+                                s.message
+                                    .as_ref()
+                                    .filter(|m| !m.is_empty())
+                                    .or(s.reason.as_ref())
+                            })
                             .map(|m| m.to_string())
                             .unwrap_or_else(|| format!("Denied by webhook {}", webhook.name));
 
@@ -845,10 +851,16 @@ impl<S: Storage> AdmissionWebhookManager<S> {
 
                     // Check if request was denied
                     if !response.allowed {
+                        // K8s uses status.message first, then status.reason, then fallback
                         let reason = response
                             .status
                             .as_ref()
-                            .and_then(|s| s.message.as_ref())
+                            .and_then(|s| {
+                                s.message
+                                    .as_ref()
+                                    .filter(|m| !m.is_empty())
+                                    .or(s.reason.as_ref())
+                            })
                             .map(|m| m.to_string())
                             .unwrap_or_else(|| format!("Denied by webhook {}", webhook.name));
 
