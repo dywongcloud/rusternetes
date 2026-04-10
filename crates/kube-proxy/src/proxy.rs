@@ -11,6 +11,10 @@ use crate::iptables::IptablesManager;
 pub struct KubeProxy {
     storage: Arc<EtcdStorage>,
     iptables: IptablesManager,
+    /// Hash of last synced state to avoid unnecessary flush+rebuild cycles.
+    /// K8s uses iptables-restore for atomic updates; we approximate by skipping
+    /// sync when state hasn't changed, eliminating the flush gap.
+    last_sync_hash: u64,
 }
 
 impl KubeProxy {
@@ -18,15 +22,16 @@ impl KubeProxy {
         let iptables = IptablesManager::new();
         iptables.initialize()?;
 
-        Ok(Self { storage, iptables })
+        Ok(Self {
+            storage,
+            iptables,
+            last_sync_hash: 0,
+        })
     }
 
     /// Sync all services and their endpoints
     pub async fn sync(&mut self) -> Result<()> {
         debug!("Starting kube-proxy sync");
-
-        // Flush existing rules to start fresh
-        self.iptables.flush_rules()?;
 
         // Get all services
         let services: Vec<Service> = self
@@ -125,6 +130,45 @@ impl KubeProxy {
             endpoints_map.len(),
             all_endpointslices.len()
         );
+
+        // Compute a hash of the current state to detect changes.
+        // Only flush and rebuild rules when the state has actually changed.
+        // This prevents the "Connection refused" gap during flush+rebuild cycles.
+        // K8s uses atomic iptables-restore; we approximate by skipping no-op syncs.
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        // Hash service count + endpoint count + endpointslice count
+        services.len().hash(&mut hasher);
+        endpoints_map.len().hash(&mut hasher);
+        all_endpointslices.len().hash(&mut hasher);
+        // Hash each service's clusterIP + ports + each endpoint's addresses
+        for svc in &services {
+            svc.spec.cluster_ip.hash(&mut hasher);
+            for port in &svc.spec.ports {
+                port.port.hash(&mut hasher);
+                port.name.hash(&mut hasher);
+                port.protocol.hash(&mut hasher);
+            }
+        }
+        for (key, entries) in &endpointslice_map {
+            key.hash(&mut hasher);
+            entries.len().hash(&mut hasher);
+            for (ip, name, port) in entries {
+                ip.hash(&mut hasher);
+                name.hash(&mut hasher);
+                port.hash(&mut hasher);
+            }
+        }
+        let current_hash = hasher.finish();
+
+        if current_hash == self.last_sync_hash {
+            debug!("Kube-proxy: state unchanged, skipping sync");
+            return Ok(());
+        }
+        self.last_sync_hash = current_hash;
+
+        // Flush existing rules before rebuilding
+        self.iptables.flush_rules()?;
 
         // Process each service
         for service in &services {
