@@ -162,12 +162,24 @@ pub async fn get_logs(
             .ok_or_else(|| Error::InvalidResource("Pod has no containers".to_string()))?
     };
 
-    // Verify the container exists in the pod
+    // Verify the container exists in the pod (check containers, init containers, ephemeral containers)
     let container_exists = pod
         .spec
         .as_ref()
-        .and_then(|spec| spec.containers.iter().find(|c| c.name == container_name))
-        .is_some();
+        .map(|spec| {
+            spec.containers.iter().any(|c| c.name == container_name)
+                || spec
+                    .init_containers
+                    .as_ref()
+                    .map(|ics| ics.iter().any(|c| c.name == container_name))
+                    .unwrap_or(false)
+                || spec
+                    .ephemeral_containers
+                    .as_ref()
+                    .map(|ecs| ecs.iter().any(|c| c.name == container_name))
+                    .unwrap_or(false)
+        })
+        .unwrap_or(false);
 
     if !container_exists {
         return Err(Error::NotFound(format!(
