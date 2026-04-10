@@ -899,6 +899,7 @@ mod tests {
             pod_uid: None,
             node_name: None,
             node_uid: None,
+            kubernetes: None,
         };
 
         let token = manager.generate_token(claims).unwrap();
@@ -930,6 +931,7 @@ mod tests {
             pod_uid: None,
             node_name: None,
             node_uid: None,
+            kubernetes: None,
         };
 
         let token = manager.generate_token(claims).unwrap();
@@ -964,6 +966,7 @@ mod tests {
             pod_uid: None,
             node_name: None,
             node_uid: None,
+            kubernetes: None,
         };
 
         let token = manager.generate_token(claims).unwrap();
