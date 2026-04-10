@@ -3,7 +3,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
 /// Deserialize null or missing String as empty string (matching Go's zero value behavior)
-fn deserialize_null_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+pub fn deserialize_null_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
