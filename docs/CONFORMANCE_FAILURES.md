@@ -102,7 +102,7 @@
 - `namespace.go:579`
 - **Root cause**: Namespace deleted before controller sets conditions
 
-## Staged Fixes (30 commits, need deploy)
+## Staged Fixes (32 commits, need deploy)
 
 | Commit | Fix | Tests |
 |--------|-----|-------|
@@ -134,6 +134,8 @@
 | 319f3f0 | EndpointSlice port name always set | kubectl describe service crash |
 | e810b09 | kube-proxy skip sync when unchanged | service networking flush gap |
 | 79078f9 | RS256 JWT signing for OIDC | service_accounts:667 |
+| e810b09 | kube-proxy skip sync when unchanged | service networking flush gap |
+| 01c7443 | Kubelet OnFailure restart policy | runtime:115 |
 
 ## Expected Impact of Staged Fixes
 
