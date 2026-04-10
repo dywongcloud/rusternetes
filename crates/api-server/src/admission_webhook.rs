@@ -435,6 +435,82 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         continue;
                     }
 
+                    // Check namespaceSelector — K8s skips webhooks whose
+                    // namespaceSelector doesn't match the request's namespace labels.
+                    // See: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/predicates/namespace/matcher.go
+                    if let Some(ref ns_selector) = webhook.namespace_selector {
+                        if let Some(ns_name) = namespace {
+                            // Get namespace labels
+                            let ns_key =
+                                rusternetes_storage::build_key("namespaces", None, ns_name);
+                            let ns_labels = self
+                                .storage
+                                .get::<serde_json::Value>(&ns_key)
+                                .await
+                                .ok()
+                                .and_then(|v| {
+                                    v.pointer("/metadata/labels")
+                                        .and_then(|l| l.as_object())
+                                        .map(|obj| {
+                                            obj.iter()
+                                                .filter_map(|(k, v)| {
+                                                    v.as_str().map(|s| (k.clone(), s.to_string()))
+                                                })
+                                                .collect::<std::collections::HashMap<String, String>>()
+                                        })
+                                })
+                                .unwrap_or_default();
+
+                            // Match namespace labels against selector
+                            let matches = if let Some(ref match_labels) = ns_selector.match_labels {
+                                match_labels
+                                    .iter()
+                                    .all(|(k, v)| ns_labels.get(k) == Some(v))
+                            } else {
+                                true // No matchLabels = match all
+                            };
+                            // Also check matchExpressions
+                            let expr_matches = ns_selector
+                                .match_expressions
+                                .as_ref()
+                                .map(|exprs| {
+                                    exprs.iter().all(|expr| {
+                                        let val = ns_labels.get(&expr.key);
+                                        {
+                                            use rusternetes_common::resources::admission_webhook::LabelSelectorOperator;
+                                            match &expr.operator {
+                                                LabelSelectorOperator::In => expr
+                                                    .values
+                                                    .as_ref()
+                                                    .map(|vs| {
+                                                        val.map(|v| vs.contains(v)).unwrap_or(false)
+                                                    })
+                                                    .unwrap_or(false),
+                                                LabelSelectorOperator::NotIn => expr
+                                                    .values
+                                                    .as_ref()
+                                                    .map(|vs| {
+                                                        val.map(|v| !vs.contains(v)).unwrap_or(true)
+                                                    })
+                                                    .unwrap_or(true),
+                                                LabelSelectorOperator::Exists => val.is_some(),
+                                                LabelSelectorOperator::DoesNotExist => val.is_none(),
+                                            }
+                                        }
+                                    })
+                                })
+                                .unwrap_or(true);
+
+                            if !matches || !expr_matches {
+                                debug!(
+                                    "Skipping webhook {} — namespace {} doesn't match namespaceSelector",
+                                    webhook.name, ns_name
+                                );
+                                continue;
+                            }
+                        }
+                    }
+
                     // Skip webhooks whose service no longer exists or namespace is terminating
                     if let Some(ref svc) = webhook.client_config.service {
                         let ns_key =
@@ -582,6 +658,58 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     // Check if this webhook applies to this request
                     if !self.webhook_matches(&webhook.rules, operation, gvk, gvr, namespace) {
                         continue;
+                    }
+
+                    // Check namespaceSelector for mutating webhooks
+                    if let Some(ref ns_selector) = webhook.namespace_selector {
+                        if let Some(ns_name) = namespace {
+                            let ns_key =
+                                rusternetes_storage::build_key("namespaces", None, ns_name);
+                            let ns_labels = self
+                                .storage
+                                .get::<serde_json::Value>(&ns_key)
+                                .await
+                                .ok()
+                                .and_then(|v| {
+                                    v.pointer("/metadata/labels")
+                                        .and_then(|l| l.as_object())
+                                        .map(|obj| {
+                                            obj.iter()
+                                                .filter_map(|(k, v)| {
+                                                    v.as_str().map(|s| (k.clone(), s.to_string()))
+                                                })
+                                                .collect::<std::collections::HashMap<String, String>>()
+                                        })
+                                })
+                                .unwrap_or_default();
+                            let matches = ns_selector
+                                .match_labels
+                                .as_ref()
+                                .map(|ml| ml.iter().all(|(k, v)| ns_labels.get(k) == Some(v)))
+                                .unwrap_or(true);
+                            let expr_matches = ns_selector
+                                .match_expressions
+                                .as_ref()
+                                .map(|exprs| {
+                                    exprs.iter().all(|expr| {
+                                        let val = ns_labels.get(&expr.key);
+                                        {
+                                            use rusternetes_common::resources::admission_webhook::LabelSelectorOperator;
+                                            match &expr.operator {
+                                                LabelSelectorOperator::In => expr.values.as_ref().map(|vs| val.map(|v| vs.contains(v)).unwrap_or(false)).unwrap_or(false),
+                                                LabelSelectorOperator::NotIn => expr.values.as_ref().map(|vs| val.map(|v| !vs.contains(v)).unwrap_or(true)).unwrap_or(true),
+                                                LabelSelectorOperator::Exists => val.is_some(),
+                                                LabelSelectorOperator::DoesNotExist => val.is_none(),
+                                            }
+                                        }
+                                    })
+                                })
+                                .unwrap_or(true);
+                            if !matches || !expr_matches {
+                                debug!("Skipping mutating webhook {} — namespace {} doesn't match namespaceSelector", webhook.name, ns_name);
+                                continue;
+                            }
+                        }
                     }
 
                     // Skip webhooks whose service no longer exists or namespace is terminating
