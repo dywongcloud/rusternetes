@@ -76,11 +76,10 @@
 - **Root cause**: Mirroring skipped for selector-less services
 - **Fix staged**: 6e9a13e only skips when service HAS selector
 
-### Field Validation YAML Dup — 1 failure
+### Field Validation YAML Dup — 1 failure (STAGED 571296a)
 - `field_validation.go:735`
 - **Root cause**: serde_yaml doesn't detect duplicate YAML keys
-- **K8s ref**: Go yaml.v2 reports "key already set in map"
-- **Action**: Add custom YAML duplicate key detection
+- **Fix staged**: 571296a adds duplicate key detection in strict mode
 
 ### Pod Output Permissions — 1 failure
 - `pod/output.go:263`
