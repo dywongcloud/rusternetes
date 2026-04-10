@@ -67,27 +67,42 @@ async fn custom_resource_fallback(
                     "API aggregation: proxying {}/{} to service {}/{}",
                     group, version, svc_ns, svc_name
                 );
-                // Resolve the service to a pod IP via endpoints
-                let ep_key = rusternetes_storage::build_key("endpoints", Some(svc_ns), svc_name);
-                if let Ok(ep) = state
+                // Resolve the service via ClusterIP (like K8s serviceresolver.go)
+                // This routes through kube-proxy iptables, matching real K8s behavior.
+                let svc_key = rusternetes_storage::build_key("services", Some(svc_ns), svc_name);
+                let svc_ip_and_port = if let Ok(svc) = state
                     .storage
-                    .get::<rusternetes_common::resources::Endpoints>(&ep_key)
+                    .get::<rusternetes_common::resources::Service>(&svc_key)
                     .await
                 {
-                    if let Some(addr) = ep
-                        .subsets
-                        .iter()
-                        .flat_map(|s| s.addresses.iter().flatten())
-                        .next()
-                    {
-                        let port = ep
-                            .subsets
-                            .iter()
-                            .flat_map(|s| s.ports.iter().flatten())
+                    let cluster_ip = svc.spec.cluster_ip.clone().filter(|ip| !ip.is_empty() && ip != "None");
+                    let port = svc.spec.ports.first()
+                        .map(|p| p.port)
+                        .unwrap_or(443u16);
+                    cluster_ip.map(|ip| (ip, port))
+                } else {
+                    // Fallback: try endpoints directly
+                    let ep_key = rusternetes_storage::build_key("endpoints", Some(svc_ns), svc_name);
+                    if let Ok(ep) = state.storage.get::<rusternetes_common::resources::Endpoints>(&ep_key).await {
+                        ep.subsets.iter()
+                            .flat_map(|s| s.addresses.iter().flatten())
                             .next()
-                            .map(|p| p.port)
-                            .unwrap_or(443);
-                        let target_url = format!("https://{}:{}{}", addr.ip, port, path);
+                            .map(|addr| {
+                                let port = ep.subsets.iter()
+                                    .flat_map(|s| s.ports.iter().flatten())
+                                    .next()
+                                    .map(|p| p.port)
+                                    .unwrap_or(443u16);
+                                (addr.ip.clone(), port)
+                            })
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some((target_ip, port)) = svc_ip_and_port {
+                    {
+                        let target_url = format!("https://{}:{}{}", target_ip, port, path);
                         info!("API aggregation proxy: {} -> {}", path, target_url);
                         // Forward the request using reqwest with TLS cert verification disabled
                         // (the APIService has a caBundle but we skip verification for simplicity)
@@ -139,6 +154,20 @@ async fn custom_resource_fallback(
                             }
                         }
                     }
+                } else {
+                    // APIService exists but service is not available — return 503
+                    // K8s returns ServiceUnavailable when the backing service has no endpoints
+                    warn!(
+                        "API aggregation: service {}/{} not available for {}/{}",
+                        svc_ns, svc_name, group, version
+                    );
+                    return Ok(Response::builder()
+                        .status(StatusCode::SERVICE_UNAVAILABLE)
+                        .header("Content-Type", "application/json")
+                        .body(Body::from(format!(
+                            "{{\"kind\":\"Status\",\"apiVersion\":\"v1\",\"status\":\"Failure\",\"message\":\"service unavailable\",\"reason\":\"ServiceUnavailable\",\"code\":503}}"
+                        )))
+                        .unwrap());
                 }
             }
         }

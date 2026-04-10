@@ -4250,8 +4250,16 @@ impl ContainerRuntime {
                         "postStart hook failed for container {}: {}",
                         container.name, e
                     );
-                    // In Kubernetes, if postStart fails, the container is killed
-                    // For now, log the error but don't kill the container
+                    // K8s kills the container if postStart fails
+                    // See: pkg/kubelet/kuberuntime/kuberuntime_container.go — killContainer on FailedPostStartHook
+                    let _ = self.docker.stop_container(
+                        &container_name,
+                        Some(StopContainerOptions { t: 0 }),
+                    ).await;
+                    return Err(anyhow::anyhow!(
+                        "PostStartHook failed for container {}: {}",
+                        container.name, e
+                    ));
                 }
             }
         }
