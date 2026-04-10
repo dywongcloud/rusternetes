@@ -280,10 +280,36 @@ fn extract_scale(
         .and_then(|v| v.as_i64())
         .unwrap_or(0) as i32;
 
-    // Extract selector from spec
+    // Extract selector from spec — convert to label selector string format.
+    // K8s returns selector as "key1=value1,key2=value2" (not JSON).
+    // For RCs, selector is a map; for Deployments/RS/SS, it's a matchLabels object.
     let selector = spec.get("selector").and_then(|s| {
-        // Try to serialize the selector as a string
-        serde_json::to_string(s).ok()
+        if let Some(obj) = s.as_object() {
+            // Direct map selector (ReplicationController)
+            if obj.contains_key("matchLabels") || obj.contains_key("matchExpressions") {
+                // LabelSelector — extract matchLabels
+                if let Some(ml) = obj.get("matchLabels").and_then(|v| v.as_object()) {
+                    let parts: Vec<String> = ml
+                        .iter()
+                        .map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or("")))
+                        .collect();
+                    Some(parts.join(","))
+                } else {
+                    None
+                }
+            } else {
+                // Simple map selector (RC style)
+                let parts: Vec<String> = obj
+                    .iter()
+                    .map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or("")))
+                    .collect();
+                Some(parts.join(","))
+            }
+        } else if let Some(str_val) = s.as_str() {
+            Some(str_val.to_string())
+        } else {
+            None
+        }
     });
 
     Ok(Scale {
