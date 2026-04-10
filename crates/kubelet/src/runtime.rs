@@ -1906,10 +1906,12 @@ impl ContainerRuntime {
                             name: pod_name.to_string(),
                             uid: pod.metadata.uid.clone(),
                         }),
-                        node: node_name.as_ref().map(|nn| rusternetes_common::auth::KubeRef {
-                            name: nn.clone(),
-                            uid: node_uid.clone().unwrap_or_default(),
-                        }),
+                        node: node_name
+                            .as_ref()
+                            .map(|nn| rusternetes_common::auth::KubeRef {
+                                name: nn.clone(),
+                                uid: node_uid.clone().unwrap_or_default(),
+                            }),
                     }),
                     pod_name: Some(pod_name.to_string()),
                     pod_uid: Some(pod.metadata.uid.clone()),
@@ -2737,10 +2739,12 @@ impl ContainerRuntime {
                     name: pod_name.clone(),
                     uid: pod.metadata.uid.clone(),
                 }),
-                node: node_name.as_ref().map(|nn| rusternetes_common::auth::KubeRef {
-                    name: nn.clone(),
-                    uid: node_uid.clone().unwrap_or_default(),
-                }),
+                node: node_name
+                    .as_ref()
+                    .map(|nn| rusternetes_common::auth::KubeRef {
+                        name: nn.clone(),
+                        uid: node_uid.clone().unwrap_or_default(),
+                    }),
             }),
             pod_name: Some(pod_name.clone()),
             pod_uid: Some(pod.metadata.uid.clone()),

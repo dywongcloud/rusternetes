@@ -94,10 +94,7 @@ impl ServiceAccountClaims {
             aud: vec!["rusternetes".to_string()],
             kubernetes: Some(KubernetesClaims {
                 namespace,
-                svcacct: KubeRef {
-                    name: sa_name,
-                    uid,
-                },
+                svcacct: KubeRef { name: sa_name, uid },
                 pod: None,
                 node: None,
             }),

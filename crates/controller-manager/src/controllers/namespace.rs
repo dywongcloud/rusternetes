@@ -288,7 +288,9 @@ impl<S: Storage> NamespaceController<S> {
             // garbage collector) may update the namespace concurrently.
             info!(
                 "Setting deletion conditions on namespace {} (remaining={}, finalizers={})",
-                name, remaining_count > 0, any_finalizers_remaining
+                name,
+                remaining_count > 0,
+                any_finalizers_remaining
             );
             for attempt in 0..3 {
                 let fresh_ns_result = if attempt == 0 {
@@ -314,7 +316,9 @@ impl<S: Storage> NamespaceController<S> {
                             Err(e) => {
                                 warn!(
                                     "Namespace {} condition update attempt {} failed: {}",
-                                    name, attempt + 1, e
+                                    name,
+                                    attempt + 1,
+                                    e
                                 );
                             }
                         }

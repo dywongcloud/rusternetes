@@ -1192,12 +1192,12 @@ pub async fn patch(
     // Ensure metadata.name and metadata.namespace are set before deserializing.
     // Merge patches may omit metadata.name, causing it to be null in the result.
     // K8s preserves these from the URL path, not from the patch body.
-    if let Some(metadata) = patched_json.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+    if let Some(metadata) = patched_json
+        .get_mut("metadata")
+        .and_then(|m| m.as_object_mut())
+    {
         metadata.insert("name".to_string(), serde_json::json!(name));
-        metadata.insert(
-            "namespace".to_string(),
-            serde_json::json!(namespace),
-        );
+        metadata.insert("namespace".to_string(), serde_json::json!(namespace));
     }
 
     // Convert back to Pod
