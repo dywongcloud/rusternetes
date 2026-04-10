@@ -19,14 +19,15 @@
 - **Pod output/perms** (1): 263
 - **Others** (15): aggregator, custom_resource_definition, namespace, resource_quota, dns, endpointslice, endpointslicemirroring, hostport, service_latency, service_accounts, runtime, pod_resize, lifecycle_hook, kubectl, builder, daemon_set
 
-### Fixes Not Yet Deployed (6 commits, should fix ~10+ tests)
+### Fixes Not Yet Deployed (7 commits, should fix ~25+ tests)
 | Commit | Fix | Expected Tests Fixed |
 |--------|-----|---------------------|
-| f1e00db | Webhook namespaceSelector | webhook:463 + others |
+| f1e00db | Webhook namespaceSelector | webhook:463 + several others |
 | 7ae38d7 | Webhook error lowercase | webhook:1396 |
-| 5b19baf | CRD PATCH apply creates | field_validation:278,338,462,611,735 |
+| 5b19baf | CRD PATCH apply creates | field_validation:278,338,462,611,735 (5) |
 | b2ba5cf | Deployment template matching | deployment:991 |
-| 06d3a40 | Aggregated discovery shortNames | builder:97 |
+| 06d3a40 | Aggregated discovery shortNames | builder:97, kubectl:1881 |
+| faf427c | JSONSchemaProps omitempty | crd_publish_openapi:77,161,211,253,285,318,366,400,451 (9) |
 
 ## Fix Commits This Session (28 commits)
 
