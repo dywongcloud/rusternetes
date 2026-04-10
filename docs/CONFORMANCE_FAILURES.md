@@ -24,6 +24,8 @@
 | 14 | `webhook.go:1573` | Webhook TLS — accepted self-signed without CA bundle | af5e245 |
 | 15 | `job.go:595` | Same successPolicy ready=0 issue as job.go:555 | c4d3fa7 |
 | 16 | `service_accounts.go:817` | Root CA configmap not reconciled after modification | c4bda95 |
+| 17 | `endpointslice.go:135` | Services with empty selector skipped | c2a0dd8 |
+| 18 | `resource_quota.go:282` | Node missing ephemeral-storage capacity | 967b1fd |
 
 ### Still failing (need fix or investigation)
 
