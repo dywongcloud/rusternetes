@@ -11,11 +11,11 @@
 - **Fix staged**: effdec6 removes Connection: keep-alive header, uses Transfer-Encoding: chunked
 - **K8s ref**: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/watch.go:237
 
-### Webhook Service Readiness — 7 failures
+### Webhook Service Readiness — 7 failures (STAGED 46b54c0)
 - `webhook.go:520,675,904,1269,1334,1400,2107`
-- **Root cause**: Webhook pod + EndpointSlice + readiness check takes >30s
-- **K8s ref**: waitWebhookConfigurationReady polls for 30s at 100ms
-- **Action**: Check why pod→EndpointSlice→webhook ready chain is slow
+- **Root cause**: Webhook resolution bypassed ClusterIP, went directly to endpoint IPs
+- **Fix staged**: 46b54c0 resolves via ClusterIP like K8s (serviceresolver.go)
+- **K8s ref**: staging/src/k8s.io/apiserver/pkg/util/webhook/serviceresolver.go
 
 ### Service Networking — 3 failures
 - `service.go:768,886`, `proxy.go:271,503`
