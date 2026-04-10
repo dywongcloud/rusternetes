@@ -1,7 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 132** | 363/441 (82.3%) | 78 failures | 2026-04-10
-**Round 133** | Running — 22 unique failures at ~3h mark | 2026-04-10
+**Round 133** | Running — ~55 unique failures expected (many cascade) | 2026-04-10
 
 ## Round 132 Results — 62 unique failing tests
 
@@ -34,6 +34,9 @@
 | 2332cf4 | ObjectMeta null name tolerant | builder:97 (kubectl label) |
 | 5ff70c7 | CRD PATCH YAML parsing | field_validation:462 |
 | b5e457c | EndpointAddress ip null tolerant | service_latency:142 |
+| 5ff70c7 | CRD PATCH YAML parsing | field_validation:462 |
+| 09bcebe | Webhook resource/subresource matching | webhook:1481 |
+| 4e442e8 | Scheduler extended resources | preemption:181,268,516 |
 
 ## Fix Commits This Session (28 commits)
 
