@@ -379,9 +379,10 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Start EndpointSlice controller
+    // Start EndpointSlice controller — runs faster (2s) than other controllers
+    // because endpoint changes need to propagate quickly for service routing
+    // and webhook readiness checks (30s timeout in conformance tests).
     let endpointslice_controller = Arc::new(EndpointSliceController::new(storage.clone()));
-    let sync_interval_secs_ep = args.sync_interval;
     spawn_controller!("EndpointSlice controller", leader_elector, {
         let controller = endpointslice_controller.clone();
         async move {
@@ -389,7 +390,7 @@ async fn main() -> Result<()> {
                 if let Err(e) = controller.reconcile_all().await {
                     tracing::error!("EndpointSlice controller error: {}", e);
                 }
-                tokio::time::sleep(tokio::time::Duration::from_secs(sync_interval_secs_ep)).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             }
         }
     });
