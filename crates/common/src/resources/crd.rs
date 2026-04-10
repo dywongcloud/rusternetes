@@ -13,6 +13,12 @@ fn skip_false_or_none(v: &Option<bool>) -> bool {
     !matches!(v, Some(true))
 }
 
+/// Skip serializing Option<String> when None or Some("").
+/// K8s uses omitempty which skips empty strings.
+fn skip_empty_string(v: &Option<String>) -> bool {
+    v.as_ref().map(|s| s.is_empty()).unwrap_or(true)
+}
+
 /// CustomResourceDefinition defines a new custom resource type in the cluster
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -160,25 +166,25 @@ pub struct CustomResourceValidation {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct JSONSchemaProps {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_string")]
     pub id: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none", rename = "$schema")]
+    #[serde(skip_serializing_if = "skip_empty_string", rename = "$schema")]
     pub schema: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none", rename = "$ref")]
+    #[serde(skip_serializing_if = "skip_empty_string", rename = "$ref")]
     pub ref_path: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_string")]
     pub description: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none", rename = "type")]
+    #[serde(skip_serializing_if = "skip_empty_string", rename = "type")]
     pub type_: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_string")]
     pub format: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_string")]
     pub title: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -190,10 +196,10 @@ pub struct JSONSchemaProps {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub minimum: Option<f64>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_false_or_none")]
     pub exclusive_maximum: Option<bool>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_false_or_none")]
     pub exclusive_minimum: Option<bool>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -202,7 +208,7 @@ pub struct JSONSchemaProps {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_length: Option<i64>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_string")]
     pub pattern: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -211,7 +217,7 @@ pub struct JSONSchemaProps {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_items: Option<i64>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_false_or_none")]
     pub unique_items: Option<bool>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -262,7 +268,7 @@ pub struct JSONSchemaProps {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub example: Option<serde_json::Value>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_false_or_none")]
     pub nullable: Option<bool>,
 
     #[serde(
