@@ -189,7 +189,8 @@ impl ContainerRuntime {
         // Use the same JWT secret as the API server for token generation
         let jwt_secret = std::env::var("JWT_SECRET")
             .unwrap_or_else(|_| "rusternetes-secret-change-in-production".to_string());
-        let token_manager = rusternetes_common::auth::TokenManager::new(jwt_secret.as_bytes());
+        let token_manager =
+            rusternetes_common::auth::TokenManager::new_auto(jwt_secret.as_bytes());
 
         Ok(Self {
             docker,

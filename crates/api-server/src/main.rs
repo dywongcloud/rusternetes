@@ -113,9 +113,10 @@ async fn main() -> Result<()> {
     info!("Connecting to etcd: {:?}", etcd_endpoints);
     let storage = Arc::new(EtcdStorage::new(etcd_endpoints).await?);
 
-    // Initialize TokenManager
-    info!("Initializing TokenManager with JWT secret");
-    let token_manager = Arc::new(TokenManager::new(args.jwt_secret.as_bytes()));
+    // Initialize TokenManager — prefer RSA keys for RS256 (K8s OIDC compatible),
+    // fall back to HMAC HS256 if no RSA keys found.
+    info!("Initializing TokenManager");
+    let token_manager = Arc::new(TokenManager::new_auto(args.jwt_secret.as_bytes()));
 
     // Initialize Authorizer (RBAC or AlwaysAllow based on skip_auth)
     let authorizer: Arc<dyn rusternetes_common::authz::Authorizer> = if args.skip_auth {

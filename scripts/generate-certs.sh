@@ -87,12 +87,28 @@ echo "Copied certificate to CoreDNS volume: ${COREDNS_CA_DIR}/ca.crt"
 # Also create ca.crt in certs directory for consistency
 cp "$CERT_FILE" "${CERT_DIR}/ca.crt"
 
+# Generate ServiceAccount signing key pair (RSA 2048) for RS256 JWT tokens.
+# K8s uses --service-account-key-file (public) and --service-account-signing-key-file (private)
+# to sign and verify ServiceAccount tokens. Without RSA keys, we fall back to HS256 HMAC.
+SA_KEY="${CERT_DIR}/sa.key"
+SA_PUB="${CERT_DIR}/sa.pub"
+if [ ! -f "$SA_KEY" ]; then
+    echo "Generating ServiceAccount signing key pair..."
+    openssl genrsa -out "$SA_KEY" 2048 2>/dev/null
+    openssl rsa -in "$SA_KEY" -pubout -out "$SA_PUB" 2>/dev/null
+    echo "  SA private key: $SA_KEY"
+    echo "  SA public key:  $SA_PUB"
+else
+    echo "ServiceAccount signing keys already exist."
+fi
+
 echo ""
 echo "Certificates generated successfully:"
 echo "  Cert: $CERT_FILE"
 echo "  Key:  $KEY_FILE"
 echo "  CA:   ${CERT_DIR}/ca.crt"
 echo "  CoreDNS CA: ${COREDNS_CA_DIR}/ca.crt"
+echo "  SA Key: $SA_KEY"
 echo ""
 echo "Certificate details:"
 openssl x509 -in "$CERT_FILE" -text -noout | grep -E "(Subject:|Issuer:|Not Before|Not After|DNS:|IP:)"

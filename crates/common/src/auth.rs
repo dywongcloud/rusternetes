@@ -110,27 +110,80 @@ impl ServiceAccountClaims {
 pub struct TokenManager {
     encoding_key: EncodingKey,
     decoding_key: DecodingKey,
+    /// Whether we're using RS256 (true) or HS256 (false) signing
+    use_rsa: bool,
 }
 
 impl TokenManager {
-    /// Create a new TokenManager with a secret key
+    /// Create a new TokenManager with a secret key (HS256 — fallback)
     pub fn new(secret: &[u8]) -> Self {
         Self {
             encoding_key: EncodingKey::from_secret(secret),
             decoding_key: DecodingKey::from_secret(secret),
+            use_rsa: false,
         }
+    }
+
+    /// Create a new TokenManager with RSA PEM keys (RS256 — K8s compatible)
+    /// K8s uses RS256 for service account tokens so OIDC discovery works.
+    /// See: pkg/serviceaccount/jwt.go — JWTTokenGenerator
+    pub fn new_rsa(private_key_pem: &[u8], public_key_pem: &[u8]) -> Result<Self> {
+        let encoding_key = EncodingKey::from_rsa_pem(private_key_pem)
+            .map_err(|e| Error::Internal(format!("Invalid RSA private key: {}", e)))?;
+        let decoding_key = DecodingKey::from_rsa_pem(public_key_pem)
+            .map_err(|e| Error::Internal(format!("Invalid RSA public key: {}", e)))?;
+        Ok(Self {
+            encoding_key,
+            decoding_key,
+            use_rsa: true,
+        })
+    }
+
+    /// Create a TokenManager, trying RSA keys first, falling back to HMAC secret
+    pub fn new_auto(secret: &[u8]) -> Self {
+        // Try to load RSA keys from standard paths
+        let key_paths = [
+            ("/etc/kubernetes/pki/sa.key", "/etc/kubernetes/pki/sa.pub"),
+            (
+                "/root/.rusternetes/keys/sa-signing-key.pem",
+                "/root/.rusternetes/keys/sa-signing-key.pub",
+            ),
+        ];
+        for (priv_path, pub_path) in &key_paths {
+            if let (Ok(priv_pem), Ok(pub_pem)) =
+                (std::fs::read(priv_path), std::fs::read(pub_path))
+            {
+                match Self::new_rsa(&priv_pem, &pub_pem) {
+                    Ok(tm) => {
+                        tracing::info!("TokenManager: using RS256 with keys from {}", priv_path);
+                        return tm;
+                    }
+                    Err(e) => {
+                        tracing::warn!("TokenManager: failed to load RSA keys from {}: {}", priv_path, e);
+                    }
+                }
+            }
+        }
+        tracing::info!("TokenManager: using HS256 (no RSA keys found)");
+        Self::new(secret)
     }
 
     /// Generate a JWT token for a service account
     pub fn generate_token(&self, claims: ServiceAccountClaims) -> Result<String> {
-        encode(&Header::default(), &claims, &self.encoding_key)
+        let header = if self.use_rsa {
+            Header::new(Algorithm::RS256)
+        } else {
+            Header::default() // HS256
+        };
+        encode(&header, &claims, &self.encoding_key)
             .map_err(|e| Error::Internal(format!("Failed to generate token: {}", e)))
     }
 
     /// Validate and decode a JWT token
     pub fn validate_token(&self, token: &str) -> Result<ServiceAccountClaims> {
         // First try with standard audience
-        let mut validation = Validation::new(Algorithm::HS256);
+        let algo = if self.use_rsa { Algorithm::RS256 } else { Algorithm::HS256 };
+        let mut validation = Validation::new(algo);
         validation.set_audience(&["rusternetes"]);
         validation.set_issuer(&[
             "https://kubernetes.default.svc.cluster.local",
@@ -143,7 +196,7 @@ impl TokenManager {
 
         // Retry without audience validation — tokens created via TokenRequest API
         // may have custom audiences (e.g. "https://kubernetes.default.svc", "api", etc.)
-        let mut validation_relaxed = Validation::new(Algorithm::HS256);
+        let mut validation_relaxed = Validation::new(algo);
         validation_relaxed.set_issuer(&[
             "https://kubernetes.default.svc.cluster.local",
             "rusternetes-api-server",
@@ -161,7 +214,8 @@ impl TokenManager {
         token: &str,
         audiences: &[String],
     ) -> Result<ServiceAccountClaims> {
-        let mut validation = Validation::new(Algorithm::HS256);
+        let algo = if self.use_rsa { Algorithm::RS256 } else { Algorithm::HS256 };
+        let mut validation = Validation::new(algo);
         if !audiences.is_empty() {
             validation.set_audience(audiences);
         } else {
