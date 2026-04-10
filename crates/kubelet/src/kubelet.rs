@@ -1635,7 +1635,11 @@ impl Kubelet {
                                         {
                                             // For OnFailure, only restart if exit code != 0
                                             if restart_policy == "OnFailure" {
-                                                let exit_code = self.runtime.get_container_exit_code(&cname).await.unwrap_or(1);
+                                                let exit_code = self
+                                                    .runtime
+                                                    .get_container_exit_code(&cname)
+                                                    .await
+                                                    .unwrap_or(1);
                                                 if exit_code == 0 {
                                                     debug!("Container {} exited successfully, not restarting (OnFailure)", cname);
                                                     continue;

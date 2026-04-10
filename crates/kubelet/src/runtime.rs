@@ -5969,10 +5969,7 @@ impl ContainerRuntime {
             .docker
             .inspect_container(container_name, None::<InspectContainerOptions>)
             .await?;
-        Ok(inspect
-            .state
-            .and_then(|s| s.exit_code)
-            .unwrap_or(1))
+        Ok(inspect.state.and_then(|s| s.exit_code).unwrap_or(1))
     }
 
     /// Remove a terminated container so it can be recreated for restart.
