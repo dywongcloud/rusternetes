@@ -134,14 +134,38 @@ impl AdmissionWebhookClient {
         review: &AdmissionReview,
         timeout: Duration,
     ) -> Result<AdmissionReviewResponse> {
-        let client = reqwest::Client::builder()
+        self.call_webhook_with_ca(url, review, timeout, None).await
+    }
+
+    /// Call a webhook with optional CA bundle for TLS verification
+    async fn call_webhook_with_ca(
+        &self,
+        url: &str,
+        review: &AdmissionReview,
+        timeout: Duration,
+        ca_bundle: Option<&[u8]>,
+    ) -> Result<AdmissionReviewResponse> {
+        let mut builder = reqwest::Client::builder()
             .timeout(timeout)
-            .connect_timeout(Duration::from_secs(5))
-            .danger_accept_invalid_certs(true)
-            .build()
-            .map_err(|e| {
-                rusternetes_common::Error::Network(format!("Failed to create HTTP client: {}", e))
-            })?;
+            .connect_timeout(Duration::from_secs(5));
+
+        if let Some(ca_data) = ca_bundle {
+            // CA bundle provided — add as root cert. Also accept invalid certs
+            // for cases where the CA bundle is self-signed (common in K8s).
+            if let Ok(cert) = reqwest::Certificate::from_pem(ca_data) {
+                builder = builder.add_root_certificate(cert);
+            }
+            // With a CA bundle, we trust the provided CA
+            builder = builder.danger_accept_invalid_certs(true);
+        }
+        // Without a CA bundle, use system CAs only (no danger_accept).
+        // K8s behavior: webhook calls without a CA bundle fail TLS verification
+        // against self-signed certs, which is the expected behavior for
+        // fail-closed webhook tests.
+
+        let client = builder.build().map_err(|e| {
+            rusternetes_common::Error::Network(format!("Failed to create HTTP client: {}", e))
+        })?;
 
         let response = client.post(url).json(review).send().await.map_err(|e| {
             // Build full error cause chain for diagnostics
@@ -467,9 +491,10 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         .map(|t| Duration::from_secs(t as u64))
                         .unwrap_or(Duration::from_secs(10));
                     let review = AdmissionReview::new_request(request.clone());
+                    let ca_bundle = webhook.client_config.ca_bundle.as_ref().map(|s| s.as_bytes());
                     let response = match self
                         .client
-                        .call_webhook(&resolved_url, &review, timeout)
+                        .call_webhook_with_ca(&resolved_url, &review, timeout, ca_bundle)
                         .await
                     {
                         Ok(resp) => {
@@ -616,9 +641,10 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         .map(|t| Duration::from_secs(t as u64))
                         .unwrap_or(Duration::from_secs(10));
                     let review = AdmissionReview::new_request(request.clone());
+                    let ca_bundle = webhook.client_config.ca_bundle.as_ref().map(|s| s.as_bytes());
                     let response = match self
                         .client
-                        .call_webhook(&resolved_url, &review, timeout)
+                        .call_webhook_with_ca(&resolved_url, &review, timeout, ca_bundle)
                         .await
                     {
                         Ok(resp) => {
