@@ -102,7 +102,7 @@
 - **Root cause**: CRD GET didn't apply schema defaults on read
 - **Fix staged**: 516922e applies defaults on GET, f096b77 on LIST
 
-## Staged Fixes (10 commits, need deploy)
+## Staged Fixes (11 commits, need deploy)
 
 | Commit | Fix | Tests |
 |--------|-----|-------|
@@ -115,6 +115,7 @@
 | 1be61f8 | EndpointSlice sync interval 2s | webhook readiness timing |
 | 71608a0 | StatefulSet scale-down proper deletion | statefulset:957 |
 | effdec6 | Watch HTTP/2 headers fix | ~15 watch cascade failures |
+| bab6e26 | Deployment maxSurge respect | deployment:995 |
 
 ## All Fix Commits This Session (47)
 
