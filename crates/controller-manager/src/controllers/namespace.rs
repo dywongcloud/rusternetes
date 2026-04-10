@@ -348,16 +348,20 @@ impl<S: Storage> NamespaceController<S> {
             return Ok(()); // Will be retried in next reconciliation
         }
 
-        // All resources deleted. Check if the namespace already has the
-        // deletion conditions set from a previous cycle. If not, set them
-        // and return — the test needs to observe the Terminating state.
-        let conditions_already_set = namespace
+        // Check if conditions were ALREADY set when we entered this function.
+        // We set conditions above (line 295), but we must not finalize in the
+        // same cycle — the test needs time to observe the Terminating state.
+        // Only proceed to finalization if conditions were present at function entry.
+        let conditions_already_set_at_entry = namespace
             .status
             .as_ref()
             .and_then(|s| s.conditions.as_ref())
-            .map(|c| !c.is_empty())
+            .map(|c| {
+                c.iter()
+                    .any(|cond| cond.condition_type == "NamespaceDeletionContentFailure")
+            })
             .unwrap_or(false);
-        if !conditions_already_set {
+        if !conditions_already_set_at_entry {
             info!(
                 "Namespace {} resources cleared, conditions set (will finalize next cycle)",
                 name
