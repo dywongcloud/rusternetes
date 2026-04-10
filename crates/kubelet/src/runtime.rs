@@ -646,6 +646,68 @@ impl ContainerRuntime {
                     // Regular init container - run to completion
                     info!("Running init container: {}", container.name);
 
+                    // Update pod status to show which init container is running.
+                    // K8s kubelet sends status updates between init container runs
+                    // so watches can observe the progression.
+                    if let Some(ref storage) = self.storage {
+                        use rusternetes_storage::Storage;
+                        let pod_key = rusternetes_storage::build_key(
+                            "pods",
+                            Some(namespace),
+                            pod_name,
+                        );
+                        if let Ok(mut status_pod) =
+                            storage.get::<Pod>(&pod_key).await
+                        {
+                            // Build init container statuses showing current state
+                            let init_statuses =
+                                self.get_init_container_statuses(&status_pod).await;
+                            // Set container statuses to Waiting/PodInitializing
+                            let container_statuses: Vec<
+                                rusternetes_common::resources::ContainerStatus,
+                            > = status_pod
+                                .spec
+                                .as_ref()
+                                .map(|s| {
+                                    s.containers
+                                        .iter()
+                                        .map(|c| {
+                                            rusternetes_common::resources::ContainerStatus {
+                                                name: c.name.clone(),
+                                                ready: false,
+                                                restart_count: 0,
+                                                state: Some(
+                                                    rusternetes_common::resources::ContainerState::Waiting {
+                                                        reason: Some(
+                                                            "PodInitializing".to_string(),
+                                                        ),
+                                                        message: None,
+                                                    },
+                                                ),
+                                                last_state: None,
+                                                image: Some(c.image.clone()),
+                                                image_id: None,
+                                                container_id: None,
+                                                started: Some(false),
+                                                resources: None,
+                                                allocated_resources: None,
+                                                allocated_resources_status: None,
+                                                volume_mounts: None,
+                                                user: None,
+                                                stop_signal: None,
+                                            }
+                                        })
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            if let Some(ref mut status) = status_pod.status {
+                                status.init_container_statuses = init_statuses;
+                                status.container_statuses = Some(container_statuses);
+                            }
+                            let _ = storage.update(&pod_key, &status_pod).await;
+                        }
+                    }
+
                     // Ensure image is available
                     if let Err(e) = self
                         .ensure_image(&container.image, container.image_pull_policy.as_deref())
