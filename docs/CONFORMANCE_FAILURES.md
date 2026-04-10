@@ -29,7 +29,9 @@
 
 | Test | Error | Analysis |
 |------|-------|----------|
-| `webhook.go:463,520,904,2107` | Webhook service not ready / rule update timing | Service endpoint readiness timing; webhook config read from etcd each call |
+| `webhook.go:463` | Marker webhook fires in wrong namespace | FIXED f1e00db — namespaceSelector support |
+| `webhook.go:520,904,2107` | Webhook service not ready | Service endpoint readiness timing |
+| `webhook.go:1396` | Error message case mismatch ("Webhook" vs "webhook") | FIXED 7ae38d7 — lowercase error messages |
 | `dns_common.go:476` (x5) | Container exec shell error + rate limiter | Container runs /pause instead of shell; cascades to rate limiter |
 | `preemption.go:181,268,516` | Pod startup timeout | Extended resource (scheduling.k8s.io/foo) handling; node patch timing |
 | `statefulset.go:957,1092` | Pod not deleted/recreated during scale-down | Kubelet container stop grace period + controller reconcile timing |
