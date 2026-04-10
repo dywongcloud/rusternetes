@@ -765,8 +765,11 @@ fn apply_schema_defaults(crd: &CustomResourceDefinition, version: &str, cr: &mut
         // apiVersion/kind/metadata/spec/status)
         if let Some(obj) = cr_value.as_object() {
             for (k, v) in obj {
-                if k != "apiVersion" && k != "kind" && k != "metadata"
-                    && k != "spec" && k != "status"
+                if k != "apiVersion"
+                    && k != "kind"
+                    && k != "metadata"
+                    && k != "spec"
+                    && k != "status"
                 {
                     cr.extra.insert(k.clone(), v.clone());
                 }
