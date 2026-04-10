@@ -332,7 +332,46 @@ impl AdmissionWebhookClient {
         let svc_name = parts[0];
         let svc_namespace = parts[1];
 
-        // Look up endpoint IPs from EndpointSlices
+        // K8s resolves webhook services via DNS → ClusterIP → kube-proxy.
+        // See: staging/src/k8s.io/apiserver/pkg/util/webhook/serviceresolver.go
+        // The API server connects to <name>.<namespace>.svc:<port> which resolves
+        // to the ClusterIP. kube-proxy iptables then DNAT to the pod endpoint.
+        //
+        // We can't use DNS (.svc names), so we resolve ClusterIP from storage.
+        // This matches K8s behavior: traffic goes through ClusterIP/kube-proxy,
+        // which only routes to READY endpoints.
+        let svc_key = format!("/registry/services/{}/{}", svc_namespace, svc_name);
+        if let Ok(svc) = storage
+            .get::<rusternetes_common::resources::Service>(&svc_key)
+            .await
+        {
+            if let Some(cluster_ip) = &svc.spec.cluster_ip {
+                if !cluster_ip.is_empty() && cluster_ip != "None" {
+                    // Use the service's target port if available
+                    let target_port = svc
+                        .spec
+                        .ports
+                        .first()
+                        .and_then(|p| p.target_port.as_ref())
+                        .and_then(|tp| match tp {
+                            rusternetes_common::resources::IntOrString::Int(p) => Some(*p as u16),
+                            rusternetes_common::resources::IntOrString::String(s) => {
+                                s.parse::<u16>().ok()
+                            }
+                        });
+                    // Route through ClusterIP like K8s does
+                    let service_port = svc
+                        .spec
+                        .ports
+                        .first()
+                        .map(|p| p.port)
+                        .unwrap_or_else(|| port.parse::<u16>().unwrap_or(443));
+                    return format!("https://{}:{}{}", cluster_ip, service_port, path);
+                }
+            }
+        }
+
+        // Fall back to direct endpoint lookup (for headless services without ClusterIP)
         let es_prefix = format!("/registry/endpointslices/{}/", svc_namespace);
         if let Ok(slices) = storage
             .list::<rusternetes_common::resources::EndpointSlice>(&es_prefix)
@@ -349,10 +388,6 @@ impl AdmissionWebhookClient {
                 if !matches {
                     continue;
                 }
-                // Use the endpoint port from the EndpointSlice if available.
-                // The service port (e.g. 443) may differ from the container's targetPort
-                // (e.g. 8443 or 8444). The EndpointSlice port is the actual port the
-                // pod is listening on.
                 let ep_port = slice
                     .ports
                     .first()
@@ -365,19 +400,6 @@ impl AdmissionWebhookClient {
                             return format!("https://{}:{}{}", addr, ep_port, path);
                         }
                     }
-                }
-            }
-        }
-
-        // Fall back to ClusterIP
-        let svc_key = format!("/registry/services/{}/{}", svc_namespace, svc_name);
-        if let Ok(svc) = storage
-            .get::<rusternetes_common::resources::Service>(&svc_key)
-            .await
-        {
-            if let Some(cluster_ip) = &svc.spec.cluster_ip {
-                if !cluster_ip.is_empty() && cluster_ip != "None" {
-                    return format!("https://{}:{}{}", cluster_ip, port, path);
                 }
             }
         }
