@@ -40,7 +40,7 @@
 - **Other** (4): namespace.go:579, resource_quota.go:282, custom_resource_definition.go:164, daemon_set.go:1276
 - **Output** (2): pod/output.go:263, rc.go:509, replica_set.go:232, deployment.go:1259
 
-## Fix Commits This Session (14 commits)
+## Fix Commits This Session (17 commits)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -55,8 +55,11 @@
 | f7dfb20 | api-server | CRD watch — watch support for custom resource instances |
 | c4d3fa7 | controller-manager | Job successPolicy — ready=0 on completion |
 | eb07e78 | api-server | Pod PATCH — preserve metadata.name before deserialization |
+| f50d364 | api-server | Pod logs — search ephemeral and init containers |
+| 8dbedb5 | common | EndpointAddress — serde default for ip field |
+| 77f4e6f | common | CRD types — serde defaults for required string fields |
 
-## All Fix Commits (47 total)
+## All Fix Commits (50 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
