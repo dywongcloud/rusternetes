@@ -1,7 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 132** | 363/441 (82.3%) | 78 failures | 2026-04-10
-**Round 133** | Running — ~55 unique failures expected (many cascade) | 2026-04-10
+**Round 133** | 370/441 (83.9%) | 71 failures, 59 unique | 2026-04-10
 
 ## Round 132 Results — 62 unique failing tests
 
@@ -75,3 +75,4 @@
 | 127 | 397 | 44 | 441 | 90.0% |
 | 131 | ~235 | ~57 | ~292 | ~80.5% (aborted) |
 | 132 | 363 | 78 | 441 | 82.3% |
+| 133 | 370 | 71 | 441 | 83.9% |
