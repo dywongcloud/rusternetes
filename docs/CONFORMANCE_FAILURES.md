@@ -28,7 +28,9 @@
 | 5b19baf | CRD PATCH apply creates | field_validation:278,338,462,611,735 (5) |
 | b2ba5cf | Deployment template matching | deployment:991 |
 | 06d3a40 | Aggregated discovery shortNames | builder:97, kubectl:1881 |
-| faf427c | JSONSchemaProps omitempty | crd_publish_openapi:77,161,211,253,285,318,366,400,451 (9) |
+| faf427c | JSONSchemaProps omitempty | crd_publish_openapi (9) |
+| 0b22923 | CustomResource preserve unknown fields | crd_publish_openapi:211 |
+| 182b280 | Namespace finalization timing | namespace.go:579 |
 
 ## Fix Commits This Session (28 commits)
 
