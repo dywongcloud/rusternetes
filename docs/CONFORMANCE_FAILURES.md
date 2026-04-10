@@ -1,7 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 133** | 370/441 (83.9%) | 71 failures, 59 unique | 2026-04-10
-**Round 134** | Starting with all 41 fixes | 2026-04-10
+**Round 134** | Running — 1 failure at 30min mark (all 42 fixes) | 2026-04-10
 
 ## Round 133 Failures by Category
 
