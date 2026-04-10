@@ -446,29 +446,25 @@ pub async fn update_cluster_status(
 
     let current_spec = current_resource.get("spec").cloned();
 
-    // For merge-patch, merge the status fields rather than replacing entirely.
-    // This preserves existing status fields when only some fields are patched.
+    // For merge-patch, DEEP merge the status fields.
+    // K8s strategic merge patch recursively merges maps (like capacity, allocatable).
+    // A shallow merge would replace capacity entirely when only one key is added.
     let new_status = if is_merge_patch {
         let patch_status = new_resource
             .get("status")
             .cloned()
             .unwrap_or(Value::Object(serde_json::Map::new()));
-        let mut merged = current_resource
+        let current_status = current_resource
             .get("status")
             .cloned()
             .unwrap_or(Value::Object(serde_json::Map::new()));
-        if let (Some(merged_obj), Some(patch_obj)) =
-            (merged.as_object_mut(), patch_status.as_object())
-        {
-            for (k, v) in patch_obj {
-                if v.is_null() {
-                    merged_obj.remove(k);
-                } else {
-                    merged_obj.insert(k.clone(), v.clone());
-                }
-            }
-        }
-        merged
+        // Use strategic merge patch for deep recursive merge
+        crate::patch::apply_patch(
+            &current_status,
+            &patch_status,
+            crate::patch::PatchType::StrategicMergePatch,
+        )
+        .unwrap_or(patch_status)
     } else {
         new_resource
             .get("status")
