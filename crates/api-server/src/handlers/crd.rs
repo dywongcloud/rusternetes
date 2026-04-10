@@ -244,11 +244,23 @@ pub async fn create_crd(
 
     let key = build_key("customresourcedefinitions", None, &crd_name);
 
-    // Include observedGeneration in the status before creating, so the CRD is
-    // fully initialized in a single etcd write. This avoids the extra get+update
-    // roundtrip that was causing CRD creation timeouts under load.
-    let mut crd_value = serde_json::to_value(&crd)
-        .map_err(|e| rusternetes_common::Error::Internal(format!("serialize: {}", e)))?;
+    // Store the CRD using the ORIGINAL JSON body to preserve all schema fields.
+    // Going through the typed CustomResourceDefinition struct loses nested schemas
+    // (like items in JSONSchemaPropsOrArray) due to serde untagged enum limitations.
+    // K8s stores CRDs as raw JSON in etcd.
+    let mut crd_value: serde_json::Value = serde_json::from_slice(&body)
+        .map_err(|e| rusternetes_common::Error::Internal(format!("re-parse: {}", e)))?;
+    // Apply metadata enrichment from the typed struct
+    if let Some(obj) = crd_value.as_object_mut() {
+        if let Some(meta) = obj.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+            meta.insert("uid".to_string(), serde_json::json!(crd.metadata.uid));
+            if let Some(ts) = &crd.metadata.creation_timestamp {
+                meta.insert("creationTimestamp".to_string(), serde_json::json!(ts));
+            }
+            meta.insert("generation".to_string(), serde_json::json!(crd.metadata.generation));
+            meta.insert("name".to_string(), serde_json::json!(crd.metadata.name));
+        }
+    }
     if let Some(status) = crd_value.get_mut("status") {
         if let Some(obj) = status.as_object_mut() {
             obj.insert("observedGeneration".to_string(), serde_json::json!(1));
