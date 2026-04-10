@@ -662,12 +662,12 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
 
     // Helper to build a top-level resource entry with optional subresources and short names
     let res_with_short = |name: &str,
-               singular: &str,
-               kind: &str,
-               namespaced: bool,
-               verbs: &[&str],
-               subresources: Vec<serde_json::Value>,
-               short_names: Option<Vec<&str>>| {
+                          singular: &str,
+                          kind: &str,
+                          namespaced: bool,
+                          verbs: &[&str],
+                          subresources: Vec<serde_json::Value>,
+                          short_names: Option<Vec<&str>>| {
         let scope = if namespaced { "Namespaced" } else { "Cluster" };
         let mut entry = serde_json::json!({
             "resource": name,
@@ -824,7 +824,15 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                 vec![sub("status", "PersistentVolumeClaim", status_verbs)],
                 Some(vec!["pvc"]),
             ),
-            res_with_short("events", "event", "Event", true, all_verbs, vec![], Some(vec!["ev"])),
+            res_with_short(
+                "events",
+                "event",
+                "Event",
+                true,
+                all_verbs,
+                vec![],
+                Some(vec!["ev"]),
+            ),
             res_with_short(
                 "resourcequotas",
                 "resourcequota",

@@ -387,8 +387,7 @@ pub async fn patch_custom_resource(
     };
 
     // Get current resource (may not exist for server-side apply)
-    let current_result: rusternetes_common::Result<CustomResource> =
-        state.storage.get(&key).await;
+    let current_result: rusternetes_common::Result<CustomResource> = state.storage.get(&key).await;
 
     // Split request into parts to avoid borrow/move conflict
     let (parts, body) = req.into_parts();
@@ -430,13 +429,12 @@ pub async fn patch_custom_resource(
                 e
             ))
         })?;
-        let patch_type =
-            crate::patch::PatchType::from_content_type(content_type).map_err(|e| {
-                rusternetes_common::Error::InvalidResource(format!(
-                    "Unsupported patch content type: {}",
-                    e
-                ))
-            })?;
+        let patch_type = crate::patch::PatchType::from_content_type(content_type).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!(
+                "Unsupported patch content type: {}",
+                e
+            ))
+        })?;
         crate::patch::apply_patch(&current_json, &patch_value, patch_type).map_err(|e| {
             rusternetes_common::Error::InvalidResource(format!("Failed to apply patch: {}", e))
         })?

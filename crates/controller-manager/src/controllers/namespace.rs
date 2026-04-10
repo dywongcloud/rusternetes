@@ -69,7 +69,10 @@ impl<S: Storage> NamespaceController<S> {
                             obj.insert("data".to_string(), expected_data);
                         }
                         let _ = self.storage.update(&cm_key, &cm).await;
-                        debug!("Updated kube-root-ca.crt in namespace {} (data mismatch)", name);
+                        debug!(
+                            "Updated kube-root-ca.crt in namespace {} (data mismatch)",
+                            name
+                        );
                     }
                 }
                 Err(_) => {

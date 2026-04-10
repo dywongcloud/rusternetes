@@ -193,10 +193,7 @@ impl AdmissionWebhookClient {
                 "Webhook call to {} failed: {} ({}){}",
                 url, e, detail, cause_chain
             );
-            rusternetes_common::Error::Internal(format!(
-                "failed to call webhook: {}",
-                e
-            ))
+            rusternetes_common::Error::Internal(format!("failed to call webhook: {}", e))
         })?;
 
         if !response.status().is_success() {
@@ -570,7 +567,11 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         .map(|t| Duration::from_secs(t as u64))
                         .unwrap_or(Duration::from_secs(10));
                     let review = AdmissionReview::new_request(request.clone());
-                    let ca_bundle = webhook.client_config.ca_bundle.as_ref().map(|s| s.as_bytes());
+                    let ca_bundle = webhook
+                        .client_config
+                        .ca_bundle
+                        .as_ref()
+                        .map(|s| s.as_bytes());
                     let response = match self
                         .client
                         .call_webhook_with_ca(&resolved_url, &review, timeout, ca_bundle)
@@ -772,7 +773,11 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         .map(|t| Duration::from_secs(t as u64))
                         .unwrap_or(Duration::from_secs(10));
                     let review = AdmissionReview::new_request(request.clone());
-                    let ca_bundle = webhook.client_config.ca_bundle.as_ref().map(|s| s.as_bytes());
+                    let ca_bundle = webhook
+                        .client_config
+                        .ca_bundle
+                        .as_ref()
+                        .map(|s| s.as_bytes());
                     let response = match self
                         .client
                         .call_webhook_with_ca(&resolved_url, &review, timeout, ca_bundle)

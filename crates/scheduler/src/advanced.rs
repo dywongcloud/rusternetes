@@ -621,8 +621,11 @@ pub fn calculate_resource_score_with_pods(node: &Node, pod: &Pod, all_pods: &[Po
             if let Some(ref resources) = container.resources {
                 if let Some(ref requests) = resources.requests {
                     for (res_name, req_qty) in requests {
-                        if res_name == "cpu" || res_name == "memory" || res_name == "pods"
-                            || res_name == "ephemeral-storage" {
+                        if res_name == "cpu"
+                            || res_name == "memory"
+                            || res_name == "pods"
+                            || res_name == "ephemeral-storage"
+                        {
                             continue; // Already handled above or not tracked
                         }
                         // Extended resource — check node allocatable
@@ -637,13 +640,22 @@ pub fn calculate_resource_score_with_pods(node: &Node, pod: &Pod, all_pods: &[Po
                         // Count used by other pods
                         let mut used = 0i64;
                         for existing_pod in all_pods {
-                            let on_node = existing_pod.spec.as_ref()
+                            let on_node = existing_pod
+                                .spec
+                                .as_ref()
                                 .and_then(|s| s.node_name.as_ref())
-                                .map(|n| n == node_name).unwrap_or(false);
-                            if !on_node { continue; }
+                                .map(|n| n == node_name)
+                                .unwrap_or(false);
+                            if !on_node {
+                                continue;
+                            }
                             let phase = existing_pod.status.as_ref().and_then(|s| s.phase.as_ref());
-                            if !matches!(phase, Some(rusternetes_common::types::Phase::Running)) { continue; }
-                            if existing_pod.metadata.deletion_timestamp.is_some() { continue; }
+                            if !matches!(phase, Some(rusternetes_common::types::Phase::Running)) {
+                                continue;
+                            }
+                            if existing_pod.metadata.deletion_timestamp.is_some() {
+                                continue;
+                            }
                             if let Some(spec) = &existing_pod.spec {
                                 for c in &spec.containers {
                                     if let Some(ref r) = c.resources {

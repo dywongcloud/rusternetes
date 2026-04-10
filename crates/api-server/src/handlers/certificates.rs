@@ -263,14 +263,20 @@ pub async fn update_certificate_signing_request_status(
     existing_csr.status = updated_csr.status;
     // Merge annotations from the patch into existing (don't replace entirely)
     if let Some(new_annotations) = updated_csr.metadata.annotations {
-        let annotations = existing_csr.metadata.annotations.get_or_insert_with(Default::default);
+        let annotations = existing_csr
+            .metadata
+            .annotations
+            .get_or_insert_with(Default::default);
         for (k, v) in new_annotations {
             annotations.insert(k, v);
         }
     }
     // Merge labels from the patch into existing
     if let Some(new_labels) = updated_csr.metadata.labels {
-        let labels = existing_csr.metadata.labels.get_or_insert_with(Default::default);
+        let labels = existing_csr
+            .metadata
+            .labels
+            .get_or_insert_with(Default::default);
         for (k, v) in new_labels {
             labels.insert(k, v);
         }
