@@ -651,17 +651,11 @@ impl ContainerRuntime {
                     // so watches can observe the progression.
                     if let Some(ref storage) = self.storage {
                         use rusternetes_storage::Storage;
-                        let pod_key = rusternetes_storage::build_key(
-                            "pods",
-                            Some(namespace),
-                            pod_name,
-                        );
-                        if let Ok(mut status_pod) =
-                            storage.get::<Pod>(&pod_key).await
-                        {
+                        let pod_key =
+                            rusternetes_storage::build_key("pods", Some(namespace), pod_name);
+                        if let Ok(mut status_pod) = storage.get::<Pod>(&pod_key).await {
                             // Build init container statuses showing current state
-                            let init_statuses =
-                                self.get_init_container_statuses(&status_pod).await;
+                            let init_statuses = self.get_init_container_statuses(&status_pod).await;
                             // Set container statuses to Waiting/PodInitializing
                             let container_statuses: Vec<
                                 rusternetes_common::resources::ContainerStatus,
