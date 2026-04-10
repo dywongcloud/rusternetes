@@ -240,15 +240,6 @@ pub async fn delete_ns(
 ) -> Result<Json<Namespace>> {
     info!("Deleting namespace: {}", name);
 
-    // Protect system namespaces from deletion (K8s also protects these)
-    const PROTECTED_NAMESPACES: &[&str] = &["default", "kube-system", "kube-public", "kube-node-lease", "sonobuoy"];
-    if PROTECTED_NAMESPACES.contains(&name.as_str()) {
-        return Err(rusternetes_common::Error::Forbidden(format!(
-            "namespace \"{}\" is protected and cannot be deleted",
-            name
-        )));
-    }
-
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
