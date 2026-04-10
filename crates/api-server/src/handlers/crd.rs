@@ -257,7 +257,10 @@ pub async fn create_crd(
             if let Some(ts) = &crd.metadata.creation_timestamp {
                 meta.insert("creationTimestamp".to_string(), serde_json::json!(ts));
             }
-            meta.insert("generation".to_string(), serde_json::json!(crd.metadata.generation));
+            meta.insert(
+                "generation".to_string(),
+                serde_json::json!(crd.metadata.generation),
+            );
             meta.insert("name".to_string(), serde_json::json!(crd.metadata.name));
         }
     }
