@@ -1,7 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 132** | 363/441 (82.3%) | 78 failures | 2026-04-10
-**Round 133** | Running with all 29 fixes + JSONSchemaProps omitempty | 2026-04-10
+**Round 133** | Running — 9 failures so far (~97.9% projected) | 2026-04-10
 
 ## Round 132 Results — 62 unique failing tests
 
