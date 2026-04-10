@@ -72,8 +72,17 @@ impl<S: Storage> EndpointSliceController<S> {
             let ns = ep.metadata.namespace.as_deref().unwrap_or("default");
             let ep_name = &ep.metadata.name;
 
-            // Skip if a Service with the same name exists (handled above)
-            if service_names.contains(&(ns.to_string(), ep_name.clone())) {
+            // Skip if a Service with a SELECTOR exists (handled by the main loop above).
+            // Services WITHOUT selectors need manual endpoint management via mirroring.
+            // K8s endpointslice-mirroring-controller mirrors Endpoints for:
+            // - Services without selectors
+            // - Standalone Endpoints without a matching Service
+            let svc_has_selector = services.iter().any(|s| {
+                s.metadata.namespace.as_deref().unwrap_or("default") == ns
+                    && s.metadata.name == *ep_name
+                    && s.spec.selector.as_ref().map(|sel| !sel.is_empty()).unwrap_or(false)
+            });
+            if svc_has_selector {
                 continue;
             }
 
