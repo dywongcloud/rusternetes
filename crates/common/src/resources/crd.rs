@@ -370,10 +370,11 @@ pub struct CustomResourceSubresourceScale {
 #[serde(rename_all = "camelCase")]
 pub struct CustomResourceColumnDefinition {
     /// Name is the name of the column
+    #[serde(default)]
     pub name: String,
 
     /// Type is the OpenAPI type of the column data
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     pub type_: String,
 
     /// Format is the optional OpenAPI format of the column data
@@ -477,10 +478,11 @@ pub struct CustomResourceDefinitionStatus {
 #[serde(rename_all = "camelCase")]
 pub struct CustomResourceDefinitionCondition {
     /// Type is the type of condition
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     pub type_: String,
 
     /// Status is the status of the condition (True, False, Unknown)
+    #[serde(default)]
     pub status: String,
 
     /// LastTransitionTime is when the condition last transitioned
