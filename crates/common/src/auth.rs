@@ -150,8 +150,7 @@ impl TokenManager {
             ),
         ];
         for (priv_path, pub_path) in &key_paths {
-            if let (Ok(priv_pem), Ok(pub_pem)) =
-                (std::fs::read(priv_path), std::fs::read(pub_path))
+            if let (Ok(priv_pem), Ok(pub_pem)) = (std::fs::read(priv_path), std::fs::read(pub_path))
             {
                 match Self::new_rsa(&priv_pem, &pub_pem) {
                     Ok(tm) => {
@@ -159,7 +158,11 @@ impl TokenManager {
                         return tm;
                     }
                     Err(e) => {
-                        tracing::warn!("TokenManager: failed to load RSA keys from {}: {}", priv_path, e);
+                        tracing::warn!(
+                            "TokenManager: failed to load RSA keys from {}: {}",
+                            priv_path,
+                            e
+                        );
                     }
                 }
             }
@@ -182,7 +185,11 @@ impl TokenManager {
     /// Validate and decode a JWT token
     pub fn validate_token(&self, token: &str) -> Result<ServiceAccountClaims> {
         // First try with standard audience
-        let algo = if self.use_rsa { Algorithm::RS256 } else { Algorithm::HS256 };
+        let algo = if self.use_rsa {
+            Algorithm::RS256
+        } else {
+            Algorithm::HS256
+        };
         let mut validation = Validation::new(algo);
         validation.set_audience(&["rusternetes"]);
         validation.set_issuer(&[
@@ -214,7 +221,11 @@ impl TokenManager {
         token: &str,
         audiences: &[String],
     ) -> Result<ServiceAccountClaims> {
-        let algo = if self.use_rsa { Algorithm::RS256 } else { Algorithm::HS256 };
+        let algo = if self.use_rsa {
+            Algorithm::RS256
+        } else {
+            Algorithm::HS256
+        };
         let mut validation = Validation::new(algo);
         if !audiences.is_empty() {
             validation.set_audience(audiences);
