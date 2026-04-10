@@ -754,12 +754,23 @@ fn apply_schema_defaults(crd: &CustomResourceDefinition, version: &str, cr: &mut
             }
         }
         // Also apply defaults at the top level for the whole object
-        // (handles cases where the schema defines defaults for top-level fields)
+        // (handles cases where the schema defines defaults for top-level fields like "a")
         let mut cr_value = serde_json::to_value(&*cr).unwrap_or_default();
         SchemaValidator::apply_defaults(&validation.open_apiv3_schema, &mut cr_value);
-        // Only update spec from the applied defaults (don't overwrite metadata etc.)
+        // Update spec from applied defaults
         if let Some(spec_val) = cr_value.get("spec") {
             cr.spec = Some(spec_val.clone());
+        }
+        // Update extra fields from applied defaults (top-level fields beyond
+        // apiVersion/kind/metadata/spec/status)
+        if let Some(obj) = cr_value.as_object() {
+            for (k, v) in obj {
+                if k != "apiVersion" && k != "kind" && k != "metadata"
+                    && k != "spec" && k != "status"
+                {
+                    cr.extra.insert(k.clone(), v.clone());
+                }
+            }
         }
     }
 }
