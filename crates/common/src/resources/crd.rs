@@ -273,7 +273,7 @@ pub struct JSONSchemaProps {
     #[serde(skip_serializing_if = "skip_empty_map")]
     pub definitions: Option<HashMap<String, JSONSchemaProps>>,
 
-    #[serde(skip_serializing_if = "skip_empty_vec")]
+    #[serde(rename = "enum", skip_serializing_if = "skip_empty_vec")]
     pub enum_: Option<Vec<serde_json::Value>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
