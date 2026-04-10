@@ -1,13 +1,22 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
+
+/// Deserialize null or missing String as empty string (matching Go's zero value behavior)
+fn deserialize_null_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
+}
 
 /// ObjectMeta is metadata that all persisted resources must have
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ObjectMeta {
     /// Name must be unique within a namespace
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_string")]
     pub name: String,
 
     /// GenerateName is an optional prefix used to generate a unique name when Name is empty.
