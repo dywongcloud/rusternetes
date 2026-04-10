@@ -1,7 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 132** | 363/441 (82.3%) | 78 failures | 2026-04-10
-**Round 133** | Running — 15 unique failures at 1h mark | 2026-04-10
+**Round 133** | Running — 16 unique failures, 5 fixed by undeployed commits | 2026-04-10
 
 ## Round 132 Results — 62 unique failing tests
 
@@ -31,6 +31,7 @@
 | faf427c | JSONSchemaProps omitempty | crd_publish_openapi (9) |
 | 0b22923 | CustomResource preserve unknown fields | crd_publish_openapi:211 |
 | 182b280 | Namespace finalization timing | namespace.go:579 |
+| 2332cf4 | ObjectMeta null name tolerant | builder:97 (kubectl label) |
 
 ## Fix Commits This Session (28 commits)
 
