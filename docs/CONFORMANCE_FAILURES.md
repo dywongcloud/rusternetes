@@ -5,11 +5,11 @@
 
 ## Remaining Issues to Fix
 
-### Watch Reliability — causes ~15 cascade failures
+### Watch Reliability — causes ~15 cascade failures (STAGED effdec6)
 - `deployment.go:1259`, `rc.go:509,623`, `replica_set.go:232,560`, `runtime.go:115`, `service.go:3459`
-- **Root cause**: "Watch failed: context canceled" — HTTP connections drop during long watches
-- **K8s ref**: client-go RetryWatcher reconnects on drop; our server may close connections
-- **Action**: Investigate HTTP/2 keep-alive, connection idle timeouts, bookmark delivery
+- **Root cause**: "Watch failed: context canceled" — Connection header prohibited in HTTP/2
+- **Fix staged**: effdec6 removes Connection: keep-alive header, uses Transfer-Encoding: chunked
+- **K8s ref**: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/watch.go:237
 
 ### Webhook Service Readiness — 7 failures
 - `webhook.go:520,675,904,1269,1334,1400,2107`
@@ -102,7 +102,7 @@
 - **Root cause**: CRD GET didn't apply schema defaults on read
 - **Fix staged**: 516922e applies defaults on GET, f096b77 on LIST
 
-## Staged Fixes (8 commits, need deploy)
+## Staged Fixes (10 commits, need deploy)
 
 | Commit | Fix | Tests |
 |--------|-----|-------|
@@ -113,6 +113,8 @@
 | 776c8fa | ResourceQuota extended resources | resource_quota:282 |
 | 6e9a13e | EndpointSlice mirroring selector-less | endpointslicemirroring:129 |
 | 1be61f8 | EndpointSlice sync interval 2s | webhook readiness timing |
+| 71608a0 | StatefulSet scale-down proper deletion | statefulset:957 |
+| effdec6 | Watch HTTP/2 headers fix | ~15 watch cascade failures |
 
 ## All Fix Commits This Session (47)
 
