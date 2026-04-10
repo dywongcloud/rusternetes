@@ -95,10 +95,10 @@ pub async fn get_scale(
         group, resource, namespace, name
     );
 
-    // Check authorization
-    let resource_type = format!("{}.{}", resource, group);
-    let attrs = RequestAttributes::new(auth_ctx.user, "get", &resource_type)
+    // Check authorization — use resource name directly (not group-qualified)
+    let attrs = RequestAttributes::new(auth_ctx.user, "get", &resource)
         .with_namespace(&namespace)
+        .with_api_group(&group)
         .with_name(&name)
         .with_subresource("scale");
 
@@ -134,10 +134,10 @@ pub async fn update_scale(
         group, resource, namespace, name
     );
 
-    // Check authorization
-    let resource_type = format!("{}.{}", resource, group);
-    let attrs = RequestAttributes::new(auth_ctx.user, "update", &resource_type)
+    // Check authorization — use resource name directly (not group-qualified)
+    let attrs = RequestAttributes::new(auth_ctx.user, "update", &resource)
         .with_namespace(&namespace)
+        .with_api_group(&group)
         .with_name(&name)
         .with_subresource("scale");
 
@@ -191,10 +191,11 @@ pub async fn patch_scale(
         group, resource, namespace, name
     );
 
-    // Check authorization
-    let resource_type = format!("{}.{}", resource, group);
-    let attrs = RequestAttributes::new(auth_ctx.user, "patch", &resource_type)
+    // Check authorization — use the resource name directly (not group-qualified)
+    // K8s authorizes scale subresource as "patch" on the parent resource
+    let attrs = RequestAttributes::new(auth_ctx.user, "patch", &resource)
         .with_namespace(&namespace)
+        .with_api_group(&group)
         .with_name(&name)
         .with_subresource("scale");
 
