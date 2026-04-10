@@ -342,17 +342,30 @@ impl<S: Storage> StatefulSetController<S> {
                     }
                 }
 
-                // Delete this condemned pod
-                let pod_key = format!("/registry/pods/{}/{}", namespace, pod.metadata.name);
+                // Delete this condemned pod — follows K8s DeleteStatefulPod pattern.
+                // K8s calls Pods(ns).Delete(name, DeleteOptions{}) which sets
+                // deletionTimestamp and lets the kubelet handle graceful shutdown.
+                let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
                 match self.storage.get::<Pod>(&pod_key).await {
                     Ok(mut pod_to_delete) => {
                         if pod_to_delete.metadata.deletion_timestamp.is_none() {
                             pod_to_delete.metadata.deletion_timestamp = Some(chrono::Utc::now());
+                            // Use pod's terminationGracePeriodSeconds (K8s default behavior
+                            // when DeleteOptions.GracePeriodSeconds is not set)
                             pod_to_delete.metadata.deletion_grace_period_seconds = pod_to_delete
                                 .spec
                                 .as_ref()
-                                .and_then(|s| s.termination_grace_period_seconds)
-                                .or(Some(30));
+                                .and_then(|s| s.termination_grace_period_seconds);
+                            // Set pod phase to indicate it's terminating
+                            if let Some(ref mut status) = pod_to_delete.status {
+                                if !matches!(
+                                    status.phase,
+                                    Some(Phase::Succeeded) | Some(Phase::Failed)
+                                ) {
+                                    status.reason =
+                                        Some("StatefulSetScaleDown".to_string());
+                                }
+                            }
                             let _ = self.storage.update(&pod_key, &pod_to_delete).await;
                             info!(
                                 "Scale down: set deletionTimestamp on pod {} ({} -> {})",
