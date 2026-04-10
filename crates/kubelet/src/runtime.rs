@@ -5962,6 +5962,19 @@ impl ContainerRuntime {
         Ok(())
     }
 
+    /// Get the exit code of a terminated container.
+    /// Returns the exit code or an error if the container doesn't exist.
+    pub async fn get_container_exit_code(&self, container_name: &str) -> Result<i64> {
+        let inspect = self
+            .docker
+            .inspect_container(container_name, None::<InspectContainerOptions>)
+            .await?;
+        Ok(inspect
+            .state
+            .and_then(|s| s.exit_code)
+            .unwrap_or(1))
+    }
+
     /// Remove a terminated container so it can be recreated for restart.
     pub async fn remove_terminated_container(&self, container_name: &str) -> Result<()> {
         match self

@@ -1536,7 +1536,11 @@ impl Kubelet {
                         .and_then(|s| s.restart_policy.as_deref())
                         .unwrap_or("Always");
 
-                    if restart_policy == "Always" {
+                    // K8s restarts containers for:
+                    // - Always: restart all terminated containers
+                    // - OnFailure: restart containers that exited with non-zero code
+                    // See: pkg/kubelet/kubelet.go — syncPod() → computePodActions()
+                    if restart_policy == "Always" || restart_policy == "OnFailure" {
                         let any_terminated = self.runtime.has_terminated_containers(pod).await;
                         if any_terminated {
                             // Need full container statuses for restart count tracking
@@ -1629,6 +1633,14 @@ impl Kubelet {
                                             .await
                                             .unwrap_or(true)
                                         {
+                                            // For OnFailure, only restart if exit code != 0
+                                            if restart_policy == "OnFailure" {
+                                                let exit_code = self.runtime.get_container_exit_code(&cname).await.unwrap_or(1);
+                                                if exit_code == 0 {
+                                                    debug!("Container {} exited successfully, not restarting (OnFailure)", cname);
+                                                    continue;
+                                                }
+                                            }
                                             let _ = self
                                                 .runtime
                                                 .remove_terminated_container(&cname)
