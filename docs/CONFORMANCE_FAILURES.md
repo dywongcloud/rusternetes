@@ -17,6 +17,10 @@
 | 7 | `job.go:555` | Job successPolicy set ready=current instead of 0 | c4d3fa7 |
 | 8 | `kubectl/builder.go:97` | Merge patch — metadata.name null before deser | eb07e78 |
 | 9 | `aggregated_discovery.go:336` | Same CRD watch issue as field_validation | f7dfb20 |
+| 10 | `ephemeral_containers.go:92` | Pod logs didn't search ephemeral containers | f50d364 |
+| 11 | `custom_resource_definition.go:164` | CRD type/status fields missing defaults | 77f4e6f |
+| 12 | `service_latency.go:142` | EndpointAddress ip field required, not defaulted | 8dbedb5 |
+| 13 | `certificates.go:404` | CSR status PATCH didn't merge metadata | 176b2cd |
 
 ### Still failing (need fix or investigation)
 
@@ -40,7 +44,7 @@
 - **Other** (4): namespace.go:579, resource_quota.go:282, custom_resource_definition.go:164, daemon_set.go:1276
 - **Output** (2): pod/output.go:263, rc.go:509, replica_set.go:232, deployment.go:1259
 
-## Fix Commits This Session (17 commits)
+## Fix Commits This Session (18 commits)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -58,8 +62,9 @@
 | f50d364 | api-server | Pod logs — search ephemeral and init containers |
 | 8dbedb5 | common | EndpointAddress — serde default for ip field |
 | 77f4e6f | common | CRD types — serde defaults for required string fields |
+| 176b2cd | api-server | CSR status PATCH — merge metadata annotations/labels |
 
-## All Fix Commits (50 total)
+## All Fix Commits (51 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
