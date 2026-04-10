@@ -19,6 +19,17 @@ fn skip_empty_string(v: &Option<String>) -> bool {
     v.as_ref().map(|s| s.is_empty()).unwrap_or(true)
 }
 
+/// Skip serializing Option<Vec<T>> when None or Some(empty vec).
+/// K8s uses omitempty which skips nil and empty slices.
+fn skip_empty_vec<T>(v: &Option<Vec<T>>) -> bool {
+    v.as_ref().map(|v| v.is_empty()).unwrap_or(true)
+}
+
+/// Skip serializing Option<HashMap<K,V>> when None or Some(empty map).
+fn skip_empty_map<K, V>(v: &Option<std::collections::HashMap<K, V>>) -> bool {
+    v.as_ref().map(|m| m.is_empty()).unwrap_or(true)
+}
+
 /// CustomResourceDefinition defines a new custom resource type in the cluster
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -226,43 +237,43 @@ pub struct JSONSchemaProps {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_properties: Option<i64>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_vec")]
     pub required: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub items: Option<Box<JSONSchemaPropsOrArray>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_vec")]
     pub all_of: Option<Vec<JSONSchemaProps>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_vec")]
     pub one_of: Option<Vec<JSONSchemaProps>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_vec")]
     pub any_of: Option<Vec<JSONSchemaProps>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub not: Option<Box<JSONSchemaProps>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_map")]
     pub properties: Option<HashMap<String, JSONSchemaProps>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub additional_properties: Option<Box<JSONSchemaPropsOrBool>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_map")]
     pub pattern_properties: Option<HashMap<String, JSONSchemaProps>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_map")]
     pub dependencies: Option<HashMap<String, JSONSchemaPropsOrStringArray>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub additional_items: Option<Box<JSONSchemaPropsOrBool>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_map")]
     pub definitions: Option<HashMap<String, JSONSchemaProps>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "skip_empty_vec")]
     pub enum_: Option<Vec<serde_json::Value>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -290,25 +301,25 @@ pub struct JSONSchemaProps {
     pub x_kubernetes_int_or_string: Option<bool>,
 
     #[serde(
-        skip_serializing_if = "Option::is_none",
+        skip_serializing_if = "skip_empty_vec",
         rename = "x-kubernetes-list-map-keys"
     )]
     pub x_kubernetes_list_map_keys: Option<Vec<String>>,
 
     #[serde(
-        skip_serializing_if = "Option::is_none",
+        skip_serializing_if = "skip_empty_string",
         rename = "x-kubernetes-list-type"
     )]
     pub x_kubernetes_list_type: Option<String>,
 
     #[serde(
-        skip_serializing_if = "Option::is_none",
+        skip_serializing_if = "skip_empty_string",
         rename = "x-kubernetes-map-type"
     )]
     pub x_kubernetes_map_type: Option<String>,
 
     #[serde(
-        skip_serializing_if = "Option::is_none",
+        skip_serializing_if = "skip_empty_vec",
         rename = "x-kubernetes-validations"
     )]
     pub x_kubernetes_validations: Option<Vec<serde_json::Value>>,
