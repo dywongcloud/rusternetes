@@ -227,7 +227,7 @@ pub async fn list_custom_resources(
 
     // Find the CRD for this resource type
     let crd_name = format!("{}.{}", plural, group);
-    let _crd = get_crd_for_resource(&state, &crd_name).await?;
+    let crd = get_crd_for_resource(&state, &crd_name).await?;
 
     // Check authorization
     let attrs = if let Some(ref ns) = namespace {
@@ -253,7 +253,12 @@ pub async fn list_custom_resources(
         build_prefix(&resource_type, None)
     };
 
-    let crs = state.storage.list(&prefix).await?;
+    let mut crs: Vec<CustomResource> = state.storage.list(&prefix).await?;
+
+    // Apply schema defaults on read (K8s "defaulting on read")
+    for cr in &mut crs {
+        apply_schema_defaults(&crd, &version, cr);
+    }
 
     let list = List::new("List", "v1", crs);
     Ok(Json(list))
