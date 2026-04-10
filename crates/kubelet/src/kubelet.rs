@@ -200,11 +200,13 @@ impl Kubelet {
                 ("cpu".to_string(), "4".to_string()),
                 ("memory".to_string(), "8Gi".to_string()),
                 ("pods".to_string(), "110".to_string()),
+                ("ephemeral-storage".to_string(), "100Gi".to_string()),
             ])),
             allocatable: Some(HashMap::from([
                 ("cpu".to_string(), "4".to_string()),
                 ("memory".to_string(), "8Gi".to_string()),
                 ("pods".to_string(), "110".to_string()),
+                ("ephemeral-storage".to_string(), "100Gi".to_string()),
             ])),
             conditions: Some(vec![NodeCondition {
                 condition_type: "Ready".to_string(),
@@ -341,6 +343,7 @@ impl Kubelet {
                     ("cpu".to_string(), "4".to_string()),
                     ("memory".to_string(), "8Gi".to_string()),
                     ("pods".to_string(), "110".to_string()),
+                    ("ephemeral-storage".to_string(), "100Gi".to_string()),
                 ]));
             }
             if status.allocatable.as_ref().map_or(true, |a| a.is_empty()) {
@@ -348,6 +351,7 @@ impl Kubelet {
                     ("cpu".to_string(), "4".to_string()),
                     ("memory".to_string(), "8Gi".to_string()),
                     ("pods".to_string(), "110".to_string()),
+                    ("ephemeral-storage".to_string(), "100Gi".to_string()),
                 ]));
             }
             // Ensure nodeInfo is populated (may have been lost during updates)
