@@ -101,7 +101,7 @@
 - **Root cause**: CRD GET didn't apply schema defaults on read
 - **Fix staged**: 516922e applies defaults on GET, f096b77 on LIST
 
-## Staged Fixes (17 commits, need deploy)
+## Staged Fixes (18 commits, need deploy)
 
 | Commit | Fix | Tests |
 |--------|-----|-------|
@@ -121,6 +121,7 @@
 | 854d9e2 | JSONSchemaProps enum rename | CRD schemas with enum |
 | 99ac117 | JSONSchemaProps missing multipleOf, externalDocs | CRD completeness |
 | 378f3d3 | CRD defaults — top-level extra fields | custom_resource_definition:334 |
+| 047ba6b | CRD storage — preserve original JSON | crd_publish_openapi:ALL 9 tests |
 
 ## All Fix Commits This Session (47)
 
