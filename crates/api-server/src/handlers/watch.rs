@@ -523,12 +523,14 @@ where
     // Convert receiver to stream
     let stream = ReceiverStream::new(rx);
 
-    // Build response with proper headers for streaming
+    // Build response with proper headers for streaming.
+    // Note: Do NOT set Connection header — it's prohibited in HTTP/2
+    // and can cause client-go to drop watch connections.
     let response = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::CACHE_CONTROL, "no-cache")
-        .header(header::CONNECTION, "keep-alive")
+        .header(header::CACHE_CONTROL, "no-cache, private")
+        .header(header::TRANSFER_ENCODING, "chunked")
         .body(Body::from_stream(stream))
         .map_err(|e| Error::Internal(format!("Failed to build response: {}", e)))?;
 
@@ -926,12 +928,14 @@ where
     // Convert receiver to stream
     let stream = ReceiverStream::new(rx);
 
-    // Build response with proper headers for streaming
+    // Build response with proper headers for streaming.
+    // Note: Do NOT set Connection header — it's prohibited in HTTP/2
+    // and can cause client-go to drop watch connections.
     let response = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::CACHE_CONTROL, "no-cache")
-        .header(header::CONNECTION, "keep-alive")
+        .header(header::CACHE_CONTROL, "no-cache, private")
+        .header(header::TRANSFER_ENCODING, "chunked")
         .body(Body::from_stream(stream))
         .map_err(|e| Error::Internal(format!("Failed to build response: {}", e)))?;
 
