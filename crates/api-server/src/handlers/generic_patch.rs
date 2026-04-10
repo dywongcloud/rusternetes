@@ -69,7 +69,17 @@ where
         }
     }
 
-    // Check if this is a server-side apply request (has fieldManager parameter)
+    // SSA is ONLY used with Content-Type: application/apply-patch+yaml.
+    // Regular patches with fieldManager just track ownership, not SSA.
+    // K8s ref: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go
+    let is_apply = headers
+        .get("x-original-content-type")
+        .or_else(|| headers.get("content-type"))
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| ct.contains("apply-patch"))
+        .unwrap_or(false);
+
+    if is_apply {
     if let Some(field_manager) = params.get("fieldManager") {
         info!(
             "Server-side apply for {} {}/{} by manager {}",
@@ -158,6 +168,7 @@ where
                 )));
             }
         }
+    }
     }
 
     // Standard PATCH operation (not server-side apply)
@@ -258,7 +269,17 @@ where
         }
     }
 
-    // Check if this is a server-side apply request (has fieldManager parameter)
+    // SSA is ONLY used with Content-Type: application/apply-patch+yaml.
+    // Regular patches with fieldManager just track ownership, not SSA.
+    // K8s ref: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go
+    let is_apply = headers
+        .get("x-original-content-type")
+        .or_else(|| headers.get("content-type"))
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| ct.contains("apply-patch"))
+        .unwrap_or(false);
+
+    if is_apply {
     if let Some(field_manager) = params.get("fieldManager") {
         info!(
             "Server-side apply for {} {} by manager {}",
@@ -347,6 +368,7 @@ where
                 )));
             }
         }
+    }
     }
 
     // Standard PATCH operation (not server-side apply)

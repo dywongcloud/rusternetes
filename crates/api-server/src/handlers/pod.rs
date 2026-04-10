@@ -1065,6 +1065,12 @@ pub async fn patch(
         .unwrap_or("application/strategic-merge-patch+json");
 
     // Check if this is a server-side apply request
+    // SSA is ONLY used with Content-Type: application/apply-patch+yaml.
+    // Regular patches (merge-patch, strategic-merge-patch, json-patch) with
+    // fieldManager are NOT server-side apply — they just track field ownership.
+    // K8s ref: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go
+    let is_apply = content_type.contains("apply-patch");
+    if is_apply {
     if let Some(field_manager) = params.get("fieldManager") {
         use rusternetes_common::server_side_apply::{server_side_apply, ApplyParams, ApplyResult};
 
@@ -1166,6 +1172,7 @@ pub async fn patch(
                 )));
             }
         }
+    }
     }
 
     // Standard PATCH operation (not server-side apply)
