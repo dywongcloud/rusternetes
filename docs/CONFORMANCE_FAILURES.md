@@ -15,12 +15,15 @@ All fixes through commit `f096b77` (43 commits). Key fixes:
 - CSR status PATCH metadata, root CA reconciliation, ephemeral-storage capacity
 - CRD server-side apply, endpoint slice empty selectors
 
-## Staged for Next Deploy (2 commits after round 134 build)
+## Staged for Next Deploy (7 commits after round 134 build)
 
 | Commit | Fix | Tests |
 |--------|-----|-------|
 | d9c9d34 | Init container intermediate status updates | init_container:440,565 |
 | f096b77 | CRD LIST defaults on read | custom_resource_definition tests |
+| 73eaccf | DaemonSet ControllerRevision key sorting | daemon_set:1276 |
+| 776c8fa | ResourceQuota extended resource tracking | resource_quota:282 |
+| 6e9a13e | EndpointSlice mirror selector-less services | endpointslicemirroring:129 |
 
 ## Remaining Unfixed Issues
 
