@@ -406,9 +406,18 @@ pub async fn patch_custom_resource(
     let body_bytes = to_bytes(body, usize::MAX).await.map_err(|e| {
         rusternetes_common::Error::InvalidResource(format!("Failed to read patch body: {}", e))
     })?;
-    let patch_value: serde_json::Value = serde_json::from_slice(&body_bytes).map_err(|e| {
-        rusternetes_common::Error::InvalidResource(format!("Invalid patch JSON: {}", e))
-    })?;
+
+    // Parse body as JSON or YAML depending on content type
+    let patch_value: serde_json::Value = if content_type.contains("yaml") {
+        // YAML body (server-side apply uses application/apply-patch+yaml)
+        serde_yaml::from_slice(&body_bytes).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid patch YAML: {}", e))
+        })?
+    } else {
+        serde_json::from_slice(&body_bytes).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!("Invalid patch JSON: {}", e))
+        })?
+    };
 
     // For server-side apply (application/apply-patch+yaml), create if not found
     let is_apply = content_type.contains("apply-patch");
