@@ -1,7 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 132** | 363/441 (82.3%) | 78 failures | 2026-04-10
-**Round 133** | Running — 18 unique failures at ~2h mark | 2026-04-10
+**Round 133** | Running — 22 unique failures at ~3h mark | 2026-04-10
 
 ## Round 132 Results — 62 unique failing tests
 
@@ -32,6 +32,8 @@
 | 0b22923 | CustomResource preserve unknown fields | crd_publish_openapi:211 |
 | 182b280 | Namespace finalization timing | namespace.go:579 |
 | 2332cf4 | ObjectMeta null name tolerant | builder:97 (kubectl label) |
+| 5ff70c7 | CRD PATCH YAML parsing | field_validation:462 |
+| b5e457c | EndpointAddress ip null tolerant | service_latency:142 |
 
 ## Fix Commits This Session (28 commits)
 
