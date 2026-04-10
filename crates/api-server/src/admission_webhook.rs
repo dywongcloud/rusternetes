@@ -936,6 +936,8 @@ impl<S: Storage> AdmissionWebhookManager<S> {
     }
 
     /// Check if resource matches webhook rule
+    /// K8s supports resource/subresource format in rules (e.g. "pods/attach", "pods/*", "*/*")
+    /// See: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/predicates/rules/rules.go
     fn resource_matches(
         &self,
         rule: &Rule,
@@ -954,8 +956,26 @@ impl<S: Storage> AdmissionWebhookManager<S> {
             return false;
         }
 
-        // Check resource
-        if !rule.resources.contains(&"*".to_string()) && !rule.resources.contains(&gvr.resource) {
+        // Check resource — handle resource/subresource format
+        // Split the request resource into resource and subresource parts
+        let (op_res, op_sub) = if let Some(idx) = gvr.resource.find('/') {
+            (&gvr.resource[..idx], &gvr.resource[idx + 1..])
+        } else {
+            (gvr.resource.as_str(), "")
+        };
+
+        let resource_matched = rule.resources.iter().any(|r| {
+            let (rule_res, rule_sub) = if let Some(idx) = r.find('/') {
+                (&r[..idx], &r[idx + 1..])
+            } else {
+                (r.as_str(), "")
+            };
+            let res_match = rule_res == "*" || rule_res == op_res;
+            let sub_match = rule_sub == "*" || rule_sub == op_sub;
+            res_match && sub_match
+        });
+
+        if !resource_matched {
             return false;
         }
 
