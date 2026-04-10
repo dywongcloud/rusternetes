@@ -23,6 +23,7 @@
 | 13 | `certificates.go:404` | CSR status PATCH didn't merge metadata | 176b2cd |
 | 14 | `webhook.go:1573` | Webhook TLS — accepted self-signed without CA bundle | af5e245 |
 | 15 | `job.go:595` | Same successPolicy ready=0 issue as job.go:555 | c4d3fa7 |
+| 16 | `service_accounts.go:817` | Root CA configmap not reconciled after modification | c4bda95 |
 
 ### Still failing (need fix or investigation)
 
@@ -46,7 +47,7 @@
 - **Other** (4): namespace.go:579, resource_quota.go:282, custom_resource_definition.go:164, daemon_set.go:1276
 - **Output** (2): pod/output.go:263, rc.go:509, replica_set.go:232, deployment.go:1259
 
-## Fix Commits This Session (20 commits)
+## Fix Commits This Session (21 commits)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
@@ -66,8 +67,9 @@
 | 77f4e6f | common | CRD types — serde defaults for required string fields |
 | 176b2cd | api-server | CSR status PATCH — merge metadata annotations/labels |
 | af5e245 | api-server | Webhook TLS — respect CA bundle for cert verification |
+| c4bda95 | controller-manager | Root CA ConfigMap — reconcile data, not just existence |
 
-## All Fix Commits (52 total)
+## All Fix Commits (53 total)
 
 | Commit | Component | Fix |
 |--------|-----------|-----|
