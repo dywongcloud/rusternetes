@@ -101,7 +101,7 @@
 - **Root cause**: CRD GET didn't apply schema defaults on read
 - **Fix staged**: 516922e applies defaults on GET, f096b77 on LIST
 
-## Staged Fixes (11 commits, need deploy)
+## Staged Fixes (13 commits, need deploy)
 
 | Commit | Fix | Tests |
 |--------|-----|-------|
@@ -115,6 +115,8 @@
 | 71608a0 | StatefulSet scale-down proper deletion | statefulset:957 |
 | effdec6 | Watch HTTP/2 headers fix | ~15 watch cascade failures |
 | bab6e26 | Deployment maxSurge respect | deployment:995 |
+| 571296a | YAML duplicate key detection | field_validation:735 |
+| b37a8b8 | kube-proxy sync interval 1s | service networking |
 
 ## All Fix Commits This Session (47)
 
