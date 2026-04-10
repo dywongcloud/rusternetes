@@ -417,6 +417,49 @@ pub async fn patch_custom_resource(
     // Parse body as JSON or YAML depending on content type
     let patch_value: serde_json::Value = if content_type.contains("yaml") {
         // YAML body (server-side apply uses application/apply-patch+yaml)
+        // Check for duplicate keys in strict mode (K8s uses Go yaml.v2 which
+        // reports "key already set in map")
+        let is_strict = parts
+            .uri
+            .query()
+            .and_then(|q| {
+                url::form_urlencoded::parse(q.as_bytes())
+                    .find(|(k, _)| k == "fieldValidation")
+                    .map(|(_, v)| v.to_string())
+            })
+            .as_deref()
+            == Some("Strict");
+        if is_strict {
+            if let Ok(yaml_str) = std::str::from_utf8(&body_bytes) {
+                // Simple duplicate key detection: parse YAML lines looking for
+                // repeated keys at the same indentation level
+                let mut seen_keys: std::collections::HashMap<(usize, String), usize> =
+                    std::collections::HashMap::new();
+                for (line_num, line) in yaml_str.lines().enumerate() {
+                    let trimmed = line.trim_start();
+                    if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('-') {
+                        continue;
+                    }
+                    let indent = line.len() - trimmed.len();
+                    if let Some(colon_pos) = trimmed.find(':') {
+                        let key = trimmed[..colon_pos].trim().trim_matches('"');
+                        if !key.is_empty() && !key.contains(' ') {
+                            let map_key = (indent, key.to_string());
+                            if let Some(prev_line) = seen_keys.get(&map_key) {
+                                return Err(rusternetes_common::Error::InvalidResource(format!(
+                                    "line {}: key {:?} already set in map",
+                                    line_num + 1,
+                                    key
+                                )));
+                            }
+                            // Clear keys at deeper indentation when we encounter a new key
+                            seen_keys.retain(|(ind, _), _| *ind <= indent);
+                            seen_keys.insert(map_key, line_num + 1);
+                        }
+                    }
+                }
+            }
+        }
         serde_yaml::from_slice(&body_bytes).map_err(|e| {
             rusternetes_common::Error::InvalidResource(format!("Invalid patch YAML: {}", e))
         })?
