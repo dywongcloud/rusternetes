@@ -101,7 +101,7 @@
 - **Root cause**: CRD GET didn't apply schema defaults on read
 - **Fix staged**: 516922e applies defaults on GET, f096b77 on LIST
 
-## Staged Fixes (14 commits, need deploy)
+## Staged Fixes (17 commits, need deploy)
 
 | Commit | Fix | Tests |
 |--------|-----|-------|
@@ -118,6 +118,9 @@
 | 571296a | YAML duplicate key detection | field_validation:735 |
 | b37a8b8 | kube-proxy sync interval 1s | service networking |
 | 2a6d8d8 | Status PATCH deep merge | preemption, resource_quota |
+| 854d9e2 | JSONSchemaProps enum rename | CRD schemas with enum |
+| 99ac117 | JSONSchemaProps missing multipleOf, externalDocs | CRD completeness |
+| 378f3d3 | CRD defaults — top-level extra fields | custom_resource_definition:334 |
 
 ## All Fix Commits This Session (47)
 
