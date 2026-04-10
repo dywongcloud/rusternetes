@@ -21,30 +21,37 @@ We run the official Kubernetes conformance test suite (441 tests) via Sonobuoy a
 | 119   | 2026-04-01 | —    | —    | —         | Pre-fix baseline, 16 fixes pending |
 | 120   | 2026-04-01 | —    | —    | —         | Round with 16 new fixes deployed |
 | 125   | 2026-04-04 | 329  | 112  | 74.6%     | New high score — 30 fixes deployed |
+| 127   | 2026-04-07 | 397  | 44   | 90.0%     | Pre-regression baseline |
+| 132   | 2026-04-09 | 363  | 78   | 82.3%     | First round with major fixes deployed |
+| 133   | 2026-04-10 | 370  | 71   | 83.9%     | 47 fixes deployed, 18 staged |
 
-**Current best deployed**: Round 125 at 74.6% (329/441).
+**Current best deployed**: Round 133 at 83.9% (370/441).
 
-**Latest status (Round 125)**: 30+ root-cause fixes deployed across rounds 119–125, addressing: job CAS conflicts, RC pod label matching, StatefulSet graceful termination, shell substitution preservation, ephemeral container status reporting, kube-proxy DNAT protocol flags, emptyDir permissions, webhook TLS, CRD watch events, API aggregation proxy, pod Started events, watch bookmark intervals, and more.
+**Latest status (Round 133)**: 47 root-cause fixes deployed across rounds 125–133, addressing: CRD schema validation, webhook ClusterIP resolution, CRD storage JSON preservation, init container status, DaemonSet ControllerRevision key sorting, ResourceQuota extended resources, EndpointSlice mirroring, watch HTTP/2 headers, deployment maxSurge, YAML duplicate key detection, status PATCH deep merge, JSONSchemaProps completeness, and more. 18 additional fixes staged for Round 134.
 
-**Total commits**: 1,050+ across 25+ rounds of iterative testing and debugging.
+**Total commits**: 1,271+ across 30+ rounds of iterative testing and debugging.
 
 ## Failure Categories
 
-Based on Round 119 analysis (~30 failures, 21 unique):
+Based on Round 133 analysis (71 failures remaining):
 
-- **CRD watch events (~4)**: Status MODIFIED event lost due to CAS conflict. Fixed: retry with logging.
-- **Job conditions (~3)**: Stale resourceVersion from list() caused silent CAS failures. Fixed: re-read before update.
-- **RC pod matching (~3)**: Pods created without labels couldn't match selector. Fixed: fallback to selector labels.
-- **Ephemeral containers (~2)**: Status never reported for ephemeral containers. Fixed: new status method.
-- **StatefulSet (~2)**: Direct delete skipped graceful termination; updateRevision not computed on update. Fixed both.
-- **kube-proxy DNAT (~4)**: Session affinity rules missing -p protocol flag. Fixed.
-- **Shell substitution (~1)**: $(id -u) replaced with empty string. Fixed: only expand defined env vars.
-- **Webhook TLS (~2)**: native-tls unreliable with self-signed certs. Fixed: switched to rustls.
-- **emptyDir permissions (~2)**: Docker Desktop virtiofs strips write bits. Fixed: use Docker named volumes.
-- **Secret volume (~1)**: Optional secret deletion didn't clean up files. Fixed.
-- **PriorityClass (~1)**: PATCH persisted before immutability check. Fixed: revert on violation.
-- **Init container (~1)**: Wrong condition message format. Fixed.
-- **DNS (~2)**: Pod lifecycle cascading — expected to improve with other fixes.
+- **Watch reliability (~15)**: "Watch failed: context canceled" — Connection header prohibited in HTTP/2. Fix staged.
+- **Webhook service readiness (~7)**: Webhook resolution bypassed ClusterIP. Fixed: resolve via ClusterIP like K8s.
+- **Service networking (~3)**: kube-proxy iptables rules not routing ClusterIP to Pod correctly.
+- **Init container status (~2)**: Kubelet doesn't send intermediate status during init container execution. Fix staged.
+- **CRD defaulting (~1)**: GET/LIST didn't apply schema defaults on read. Fix staged.
+- **DaemonSet ControllerRevision (~1)**: JSON key ordering differs between Go and Rust. Fix staged.
+- **ResourceQuota extended resources (~1)**: Quota controller didn't track extended resources. Fix staged.
+- **EndpointSlice mirroring (~1)**: Mirroring skipped for selector-less services. Fix staged.
+- **Field validation YAML (~1)**: serde_yaml doesn't detect duplicate YAML keys. Fix staged.
+- **StatefulSet scale-down (~1)**: Pod deletion + recreation cycle takes too long.
+- **DNS container exec (~1)**: Container exec runs /pause binary instead of shell.
+- **Aggregator (~1)**: Extension API server deployment doesn't start.
+- **Service accounts OIDC (~1)**: OIDC discovery TLS — pod doesn't trust API server cert.
+- **Host port (~1)**: Host port binding in container-in-container Docker.
+- **Pod output permissions (~1)**: Docker umask 0022 reduces 0777 to 0755.
+- **Pod resize (~1)**: cgroup changes in container-in-container Docker.
+- **kubectl proxy (~1)**: kubectl proxy startup timing.
 
 Detailed tracking in `docs/CONFORMANCE_FAILURES.md`.
 
