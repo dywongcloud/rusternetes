@@ -238,6 +238,7 @@ pub struct PodResourceClaim {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HostAlias {
+    #[serde(default)]
     pub ip: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hostnames: Option<Vec<String>>,
@@ -1153,6 +1154,7 @@ pub struct PersistentVolumeClaimTemplate {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HostIP {
+    #[serde(default)]
     pub ip: String,
 }
 
@@ -1160,6 +1162,7 @@ pub struct HostIP {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PodIP {
+    #[serde(default)]
     pub ip: String,
 }
 
