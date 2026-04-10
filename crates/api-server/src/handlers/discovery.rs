@@ -660,13 +660,14 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
         })
     };
 
-    // Helper to build a top-level resource entry with optional subresources
-    let res = |name: &str,
+    // Helper to build a top-level resource entry with optional subresources and short names
+    let res_with_short = |name: &str,
                singular: &str,
                kind: &str,
                namespaced: bool,
                verbs: &[&str],
-               subresources: Vec<serde_json::Value>| {
+               subresources: Vec<serde_json::Value>,
+               short_names: Option<Vec<&str>>| {
         let scope = if namespaced { "Namespaced" } else { "Cluster" };
         let mut entry = serde_json::json!({
             "resource": name,
@@ -685,7 +686,23 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                 .unwrap()
                 .insert("subresources".to_string(), serde_json::json!(subresources));
         }
+        if let Some(sn) = short_names {
+            entry
+                .as_object_mut()
+                .unwrap()
+                .insert("shortNames".to_string(), serde_json::json!(sn));
+        }
         entry
+    };
+
+    // Wrapper that defaults to no short names (most resources)
+    let res = |name: &str,
+               singular: &str,
+               kind: &str,
+               namespaced: bool,
+               verbs: &[&str],
+               subresources: Vec<serde_json::Value>| {
+        res_with_short(name, singular, kind, namespaced, verbs, subresources, None)
     };
 
     let all_verbs: &[&str] = &[
@@ -702,7 +719,7 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
 
     match group {
         "" => vec![
-            res(
+            res_with_short(
                 "namespaces",
                 "namespace",
                 "Namespace",
@@ -712,8 +729,9 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                     sub("status", "Namespace", status_verbs),
                     sub("finalize", "Namespace", &["update"]),
                 ],
+                Some(vec!["ns"]),
             ),
-            res(
+            res_with_short(
                 "pods",
                 "pod",
                 "Pod",
@@ -730,8 +748,9 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                     sub("ephemeralcontainers", "Pod", &["get", "patch", "update"]),
                     sub("proxy", "Pod", &["get", "put", "post", "delete", "patch"]),
                 ],
+                Some(vec!["po"]),
             ),
-            res(
+            res_with_short(
                 "services",
                 "service",
                 "Service",
@@ -745,16 +764,18 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                         &["get", "put", "post", "delete", "patch"],
                     ),
                 ],
+                Some(vec!["svc"]),
             ),
-            res(
+            res_with_short(
                 "endpoints",
                 "endpoints",
                 "Endpoints",
                 true,
                 all_verbs,
                 vec![],
+                Some(vec!["ep"]),
             ),
-            res(
+            res_with_short(
                 "nodes",
                 "node",
                 "Node",
@@ -764,58 +785,65 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                     sub("status", "Node", status_verbs),
                     sub("proxy", "Node", &["get", "put", "post", "delete", "patch"]),
                 ],
+                Some(vec!["no"]),
             ),
-            res(
+            res_with_short(
                 "configmaps",
                 "configmap",
                 "ConfigMap",
                 true,
                 all_verbs,
                 vec![],
+                Some(vec!["cm"]),
             ),
             res("secrets", "secret", "Secret", true, all_verbs, vec![]),
-            res(
+            res_with_short(
                 "serviceaccounts",
                 "serviceaccount",
                 "ServiceAccount",
                 true,
                 all_verbs,
                 vec![sub("token", "TokenRequest", &["create"])],
+                Some(vec!["sa"]),
             ),
-            res(
+            res_with_short(
                 "persistentvolumes",
                 "persistentvolume",
                 "PersistentVolume",
                 false,
                 all_verbs,
                 vec![sub("status", "PersistentVolume", status_verbs)],
+                Some(vec!["pv"]),
             ),
-            res(
+            res_with_short(
                 "persistentvolumeclaims",
                 "persistentvolumeclaim",
                 "PersistentVolumeClaim",
                 true,
                 all_verbs,
                 vec![sub("status", "PersistentVolumeClaim", status_verbs)],
+                Some(vec!["pvc"]),
             ),
-            res("events", "event", "Event", true, all_verbs, vec![]),
-            res(
+            res_with_short("events", "event", "Event", true, all_verbs, vec![], Some(vec!["ev"])),
+            res_with_short(
                 "resourcequotas",
                 "resourcequota",
                 "ResourceQuota",
                 true,
                 all_verbs,
                 vec![sub("status", "ResourceQuota", status_verbs)],
+                Some(vec!["quota"]),
             ),
-            res(
+            res_with_short(
                 "limitranges",
                 "limitrange",
                 "LimitRange",
                 true,
                 all_verbs,
                 vec![],
+                Some(vec!["limits"]),
             ),
-            res(
+            res_with_short(
                 "replicationcontrollers",
                 "replicationcontroller",
                 "ReplicationController",
@@ -825,6 +853,7 @@ fn get_aggregated_resources_for_group(group: &str, version: &str) -> Vec<serde_j
                     sub("status", "ReplicationController", status_verbs),
                     sub("scale", "Scale", status_verbs),
                 ],
+                Some(vec!["rc"]),
             ),
             res(
                 "componentstatuses",
