@@ -52,6 +52,7 @@ pub struct EndpointSubset {
 #[serde(rename_all = "camelCase")]
 pub struct EndpointAddress {
     /// The IP of this endpoint.
+    #[serde(default)]
     pub ip: String,
 
     /// The Hostname of this endpoint.
