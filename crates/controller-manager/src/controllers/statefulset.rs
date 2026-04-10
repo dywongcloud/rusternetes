@@ -362,8 +362,7 @@ impl<S: Storage> StatefulSetController<S> {
                                     status.phase,
                                     Some(Phase::Succeeded) | Some(Phase::Failed)
                                 ) {
-                                    status.reason =
-                                        Some("StatefulSetScaleDown".to_string());
+                                    status.reason = Some("StatefulSetScaleDown".to_string());
                                 }
                             }
                             let _ = self.storage.update(&pod_key, &pod_to_delete).await;
