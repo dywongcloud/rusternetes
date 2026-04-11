@@ -91,10 +91,7 @@ impl<S: Storage> EndpointsController<S> {
         );
 
         // Build endpoint subsets from matching pods
-        let publish_not_ready = service
-            .spec
-            .publish_not_ready_addresses
-            .unwrap_or(false);
+        let publish_not_ready = service.spec.publish_not_ready_addresses.unwrap_or(false);
         let subsets =
             self.build_endpoint_subsets(&matching_pods, &service.spec.ports, publish_not_ready);
 
