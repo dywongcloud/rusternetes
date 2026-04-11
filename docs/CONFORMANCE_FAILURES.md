@@ -7,10 +7,23 @@
 
 _Tracking failures as they appear. 38 fixes deployed since round 134._
 
-### Preemption — `predicates.go:1041` (3 occurrences so far)
-- Test: "validates lower priority pod preemption by critical pod"
-- Pod stuck in Pending/Unschedulable — critical pod can't preempt lower priority pods
-- Same as round 134 — preemption logic needs further work
+### Preemption — `predicates.go:1041` (3 occurrences)
+- Pod stuck in Pending/Unschedulable — critical pod can't preempt
+- **Root cause**: Scheduler preemption only checked cpu/memory, not extended resources
+- **Fix committed**: e1f4bd0 handles ALL resource types in preemption (for next deploy)
+
+### Webhook — `webhook.go:520`
+- "waiting for webhook configuration to be ready: timed out"
+- Webhook service readiness check still timing out
+
+### CRD OpenAPI — `crd_publish_openapi.go:285`
+- Schema mismatch — investigating
+
+### DNS — `dns_common.go:476`
+- "client rate limiter Wait returned an error: context deadline exceeded"
+
+### EndpointSlice Mirroring — `endpointslicemirroring.go:202`
+- "Did not find matching EndpointSlice" — mirroring didn't create it
 
 
 
