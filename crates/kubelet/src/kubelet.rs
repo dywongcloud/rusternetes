@@ -800,14 +800,19 @@ impl Kubelet {
         match current_phase {
             // If pod is Pending and has been scheduled to this node, start it
             Phase::Pending if !is_running => {
-                // Don't overwrite CreateContainerError/CreateContainerConfigError status —
-                // the test needs to observe it. Only set ContainerCreating on first start attempt.
+                // Don't overwrite error status — the test needs to observe it.
+                // For ErrImagePull, skip retry for this sync cycle to prevent
+                // blocking the sync loop with repeated pull failures.
+                // K8s uses exponential backoff for image pulls.
                 let already_has_error = pod
                     .status
                     .as_ref()
                     .and_then(|s| s.reason.as_deref())
                     .map_or(false, |r| {
-                        r == "CreateContainerError" || r == "CreateContainerConfigError"
+                        r == "CreateContainerError"
+                            || r == "CreateContainerConfigError"
+                            || r == "ErrImagePull"
+                            || r == "ImagePullBackOff"
                     });
 
                 if !already_has_error {
@@ -927,14 +932,21 @@ impl Kubelet {
                                 namespace, pod_name, err_msg
                             );
 
-                            // Determine the error reason: CreateContainerConfigError for
-                            // configuration issues (subPath validation, env var expansion),
-                            // CreateContainerError for runtime container creation failures.
+                            // Determine the error reason matching K8s container status reasons.
+                            // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_container.go
                             let create_error_reason =
                                 if err_msg.starts_with("CreateContainerConfigError:") {
                                     Some("CreateContainerConfigError".to_string())
                                 } else if err_msg.starts_with("CreateContainerError:") {
                                     Some("CreateContainerError".to_string())
+                                } else if err_msg.contains("Image pull failed")
+                                    || err_msg.contains("image not found")
+                                    || err_msg.contains("ErrImagePull")
+                                {
+                                    // K8s sets ErrImagePull on first failure, then
+                                    // ImagePullBackOff on retries with exponential backoff.
+                                    // See: pkg/kubelet/images/image_manager.go
+                                    Some("ErrImagePull".to_string())
                                 } else {
                                     None
                                 };
