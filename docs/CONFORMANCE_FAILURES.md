@@ -1,80 +1,60 @@
 # Conformance Failure Tracker
 
-**Round 135** | Running | 2026-04-11
+**Round 135** | 373/441 (84.6%) | 2026-04-11
 **Round 134** | 370/441 (83.9%) | 2026-04-10
 
-## Round 135 — New Failures
+## Round 135 Results — 68 failures (3 fewer than round 134)
 
-_Tracking failures as they appear. 38 fixes deployed since round 134._
+### Tests fixed (3 new passes)
+- Init container tests (d9c9d34)
+- 1 other test
 
-### Preemption — `predicates.go:1041` (3 occurrences)
-- Pod stuck in Pending/Unschedulable — critical pod can't preempt
-- **Root cause**: Scheduler preemption only checked cpu/memory, not extended resources
-- **Fix committed**: e1f4bd0 handles ALL resource types in preemption (for next deploy)
+### Webhook Service Readiness — 12 failures (HIGHEST PRIORITY)
+- All 12 webhook tests fail with "waiting for webhook configuration to be ready: timed out"
+- ClusterIP resolution fix (46b54c0) deployed but webhook pod never starts
+- **Action needed**: Investigate why webhook deployment pods don't start
 
-### Webhook — `webhook.go:520`
-- "waiting for webhook configuration to be ready: timed out"
-- Webhook service readiness check still timing out
+### CRD OpenAPI — 9 failures (FIX STAGED: 0188c3c)
+- OpenAPI handler still uses typed deserialization losing nested items
+- **Fix staged**: 0188c3c uses raw JSON — not deployed yet
 
-### CRD OpenAPI — `crd_publish_openapi.go:285`
-- Schema mismatch — investigating
+### DNS — 6 failures
+- Rate limiter timeout, pods not starting
 
-### DNS — `dns_common.go:476`
-- "client rate limiter Wait returned an error: context deadline exceeded"
+### Service Networking — 6 failures
+- ClusterIP still unreachable from exec pods
+- kube-proxy FILTER rules deployed but service still shows "Connection refused"
 
-### EndpointSlice Mirroring — `endpointslicemirroring.go:202`
-- "Did not find matching EndpointSlice" — mirrored slices not cleaned up when source Endpoints deleted
-- **Fix committed**: 361752a — cleanup mirrored slices + recognize mirroring-controller label
+### Preemption — 4 failures (FIX STAGED: e1f4bd0)
+- Extended resources not checked in preemption
+- **Fix staged**: e1f4bd0 handles all resource types — not deployed yet
 
-### Service Networking — `service.go:886`
-- Multiport service unreachable via ClusterIP — kube-proxy timing
+### EmptyDir — 4 failures (webhook cascade)
+- Stale webhook blocks pod creation
 
-### CRD OpenAPI — `crd_publish_openapi.go:214,285`
-- Schema items lost during typed deserialization
-- **Fix committed**: 0188c3c — use raw JSON for CRD schemas in OpenAPI handler
+### Field Validation — 3 failures (FIX STAGED: a18febe)
+- Unknown top-level fields not rejected; YAML dup format
+- **Fix staged**: a18febe rejects unknown CR extra fields — not deployed yet
 
+### Deployment/RS/RC/StatefulSet — 8 failures
+- Various controller issues, some watch-related
 
+### Other — 6 failures
+- Discovery PreferredVersion (NEW)
+- Job successPolicy (NEW)
+- SA mount token (NEW)
+- kubectl proxy, describe
+- Lifecycle hook, container runtime, init container, pod resize, hostport, namespace deletion, aggregator, OIDC
 
-## Deployed Fixes (38 commits since round 134)
+## Staged Fixes (for next deploy)
 
-| Commit | Fix |
-|--------|-----|
-| effdec6 | Watch HTTP/2 — remove Connection: keep-alive header |
-| 46b54c0 | Webhook service resolution via ClusterIP |
-| 5c423ba | CRD schema validation spec sub-schema + webhook denial reason |
-| 047ba6b | CRD storage — preserve original JSON |
-| 854d9e2 | JSONSchemaProps enum rename |
-| 99ac117 | JSONSchemaProps missing multipleOf, externalDocs |
-| 378f3d3 | CRD defaults — top-level extra fields |
-| 571296a | YAML duplicate key detection |
-| 2a6d8d8 | Status PATCH deep merge |
-| dc42714 | kube-proxy FILTER table KUBE-FORWARD chain |
-| e810b09 | kube-proxy skip sync when state unchanged |
-| b37a8b8 | kube-proxy sync interval 1s |
-| d9c9d34 | Init container intermediate status |
-| 516922e | CRD GET defaults on read |
-| f096b77 | CRD LIST defaults on read |
-| 73eaccf | DaemonSet CR key sorting |
-| 776c8fa | ResourceQuota extended resources |
-| 6e9a13e | EndpointSlice mirroring selector-less |
-| 1be61f8 | EndpointSlice sync interval 2s |
-| 71608a0 | StatefulSet scale-down proper deletion |
-| bab6e26 | Deployment maxSurge respect |
-| 7bf82ee | Aggregator ClusterIP + 503 + postStart kills container |
-| 7b1bf50 | PATCH SSA only for apply-patch content type |
-| de62b6f | Scale subresource auth resource name |
-| dd89022 | Scale selector label string format |
-| 319f3f0 | EndpointSlice port name always set |
-| 8d5038e | Pod IP field tolerant deserialization |
-| 79078f9 | RS256 JWT signing for OIDC |
-| 12aea53 | OIDC JWKS endpoint returns RSA public key |
-| 01c7443 | Kubelet OnFailure restart policy |
-| 4103c84 | Discovery API trailing slash normalization |
-| 1d9b11f | Kubelet ErrImagePull — don't block sync loop |
-| 5709a1f | Job terminating count + deleteCollection Status |
-| ed474ac | deleteCollection returns Status JSON body |
-| 1fe7e06 | Node DaemonEndpoints kubelet port 10250 |
-| 6031dac | generate-certs.sh SA key before early exit |
+| Commit | Fix | Expected Tests |
+|--------|-----|---------------|
+| e1f4bd0 | Preemption extended resources | 4 preemption |
+| 0188c3c | OpenAPI raw JSON CRD schemas | 9 CRD OpenAPI |
+| 361752a | EndpointSlice mirroring cleanup | 1 mirroring |
+| a18febe | CRD strict unknown top-level fields | 2 field validation |
+| 3ba5e20 | Explicit trailing slash routes | 1 kubectl proxy |
 
 ## Progress History
 
@@ -85,4 +65,5 @@ _Tracking failures as they appear. 38 fixes deployed since round 134._
 | 132 | 363 | 78 | 441 | 82.3% |
 | 133 | 370 | 71 | 441 | 83.9% |
 | 134 | 370 | 71 | 441 | 83.9% |
-| 135 | TBD | TBD | 441 | TBD |
+| 135 | 373 | 68 | 441 | 84.6% |
+| 136 | TBD | TBD | 441 | TBD |
