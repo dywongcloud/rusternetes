@@ -3,58 +3,83 @@
 **Round 135** | 373/441 (84.6%) | 2026-04-11
 **Round 134** | 370/441 (83.9%) | 2026-04-10
 
-## Round 135 Results — 68 failures (3 fewer than round 134)
+## Round 135 — 68 failures, 57 unique locations
 
-### Tests fixed (3 new passes)
-- Init container tests (d9c9d34)
-- 1 other test
+### Webhook — 12 failures
+- `webhook.go:520,675,904,1269,1334,1400,1481,2107(x3),2164,2491`
+- Webhook service IS reachable (logs show `allowed=false` response) but readiness check still times out
+- **Root cause**: Need deep comparison against K8s webhook dispatch flow
 
-### Webhook Service Readiness — 12 failures (HIGHEST PRIORITY)
-- All 12 webhook tests fail with "waiting for webhook configuration to be ready: timed out"
-- ClusterIP resolution fix (46b54c0) deployed but webhook pod never starts
-- **Action needed**: Investigate why webhook deployment pods don't start
-
-### CRD OpenAPI — 9 failures (FIX STAGED: 0188c3c)
-- OpenAPI handler still uses typed deserialization losing nested items
-- **Fix staged**: 0188c3c uses raw JSON — not deployed yet
+### CRD OpenAPI — 9 failures (FIX STAGED 0188c3c)
+- `crd_publish_openapi.go:77,161,214,253,285,318,366,400,451`
+- OpenAPI handler uses typed deserialization losing nested `items` schemas
+- **Fix staged**: 0188c3c uses raw JSON — needs deploy
 
 ### DNS — 6 failures
+- `dns_common.go:476` (x6)
 - Rate limiter timeout, pods not starting
 
 ### Service Networking — 6 failures
-- ClusterIP still unreachable from exec pods
-- kube-proxy FILTER rules deployed but service still shows "Connection refused"
-
-### Preemption — 4 failures (FIX STAGED: e1f4bd0)
-- Extended resources not checked in preemption
-- **Fix staged**: e1f4bd0 handles all resource types — not deployed yet
+- `service.go:768,886,3459`, `proxy.go:271,503`, `service_latency.go:145`
+- ClusterIP service unreachable from exec pods
 
 ### EmptyDir — 4 failures (webhook cascade)
-- Stale webhook blocks pod creation
+- `output.go:263` (x4)
+- Stale webhook configuration blocks pod creation
 
-### Field Validation — 3 failures (FIX STAGED: a18febe)
-- Unknown top-level fields not rejected; YAML dup format
-- **Fix staged**: a18febe rejects unknown CR extra fields — not deployed yet
+### Preemption — 4 failures (FIX STAGED e1f4bd0)
+- `predicates.go:1041(x2)`, `preemption.go:535,1052`
+- Extended resources not checked in preemption
+- **Fix staged**: e1f4bd0 — needs deploy
 
-### Deployment/RS/RC/StatefulSet — 8 failures
-- Various controller issues, some watch-related
+### Field Validation — 3 failures (FIX STAGED a18febe)
+- `field_validation.go:462,611,735`
+- Unknown top-level CR fields not rejected; YAML dup format
+- **Fix staged**: a18febe — needs deploy
 
-### Other — 6 failures
-- Discovery PreferredVersion (NEW)
-- Job successPolicy (NEW)
-- SA mount token (NEW)
-- kubectl proxy, describe
-- Lifecycle hook, container runtime, init container, pod resize, hostport, namespace deletion, aggregator, OIDC
+### Apps Controllers — 8 failures
+- `deployment.go:1008,1322`, `replica_set.go:232,560`, `rc.go:509,623`, `statefulset.go:957,1092`
+- Various controller timing/watch issues
 
-## Staged Fixes (for next deploy)
+### DaemonSet — 1 failure
+- `daemon_set.go:1276`
+
+### Job — 1 failure
+- `job.go:556`
+
+### Init Container — 1 failure
+- `init_container.go:440`
+
+### Discovery — 1 failure (NEW)
+- `discovery.go:131` — PreferredVersion validation
+
+### Namespace — 1 failure
+- `namespace.go:609`
+
+### ResourceQuota — 1 failure
+- `resource_quota.go:282`
+
+### Auth — 2 failures
+- `service_accounts.go:129,667` — SA mount token, OIDC
+
+### kubectl — 2 failures
+- `kubectl.go:1881,2206` — proxy, describe
+
+### Node — 4 failures
+- `lifecycle_hook.go:132`, `runtime.go:115`, `init_container.go:440`, `pod_resize.go:857`
+
+### Other — 2 failures
+- `hostport.go:219`, `aggregator.go:359`, `endpointslicemirroring.go:202`
+
+## Staged Fixes (for round 136)
 
 | Commit | Fix | Expected Tests |
 |--------|-----|---------------|
-| e1f4bd0 | Preemption extended resources | 4 preemption |
-| 0188c3c | OpenAPI raw JSON CRD schemas | 9 CRD OpenAPI |
-| 361752a | EndpointSlice mirroring cleanup | 1 mirroring |
-| a18febe | CRD strict unknown top-level fields | 2 field validation |
-| 3ba5e20 | Explicit trailing slash routes | 1 kubectl proxy |
+| e1f4bd0 | Preemption extended resources | ~4 |
+| 0188c3c | OpenAPI raw JSON CRD schemas | ~9 |
+| 361752a | EndpointSlice mirroring cleanup | 1 |
+| a18febe | CRD strict unknown top-level fields | ~2 |
+| 3ba5e20 | Explicit trailing slash routes | 1 |
 
 ## Progress History
 
