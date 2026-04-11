@@ -320,11 +320,15 @@ impl<S: Storage> ResourceQuotaController<S> {
             usage.insert("pods".to_string(), pod_count.clone());
             usage.insert("count/pods".to_string(), pod_count);
 
-            // Calculate CPU and memory requests/limits
+            // Calculate CPU, memory, and ephemeral-storage requests/limits.
+            // K8s tracks all three standard resource types in quota.
+            // See: pkg/quota/v1/evaluator/core/pods.go — PodUsageFunc
             let mut total_cpu_requests = 0i64;
             let mut total_memory_requests = 0i64;
             let mut total_cpu_limits = 0i64;
             let mut total_memory_limits = 0i64;
+            let mut total_ephemeral_storage_requests = 0i64;
+            let mut total_ephemeral_storage_limits = 0i64;
 
             for pod in pods.iter() {
                 if let Some(spec) = &pod.spec {
@@ -341,6 +345,11 @@ impl<S: Storage> ResourceQuotaController<S> {
                                         total_memory_requests += bytes;
                                     }
                                 }
+                                if let Some(es) = requests.get("ephemeral-storage") {
+                                    if let Ok(bytes) = self.parse_memory_to_bytes(es) {
+                                        total_ephemeral_storage_requests += bytes;
+                                    }
+                                }
                             }
                             if let Some(limits) = &resources.limits {
                                 if let Some(cpu) = limits.get("cpu") {
@@ -351,6 +360,11 @@ impl<S: Storage> ResourceQuotaController<S> {
                                 if let Some(memory) = limits.get("memory") {
                                     if let Ok(bytes) = self.parse_memory_to_bytes(memory) {
                                         total_memory_limits += bytes;
+                                    }
+                                }
+                                if let Some(es) = limits.get("ephemeral-storage") {
+                                    if let Ok(bytes) = self.parse_memory_to_bytes(es) {
+                                        total_ephemeral_storage_limits += bytes;
                                     }
                                 }
                             }
@@ -398,6 +412,18 @@ impl<S: Storage> ResourceQuotaController<S> {
             usage.insert(
                 "limits.memory".to_string(),
                 self.bytes_to_memory_string(total_memory_limits),
+            );
+
+            // Track ephemeral-storage — K8s tracks this alongside cpu/memory
+            let es_req_str = self.bytes_to_memory_string(total_ephemeral_storage_requests);
+            usage.insert(
+                "requests.ephemeral-storage".to_string(),
+                es_req_str.clone(),
+            );
+            usage.insert("ephemeral-storage".to_string(), es_req_str);
+            usage.insert(
+                "limits.ephemeral-storage".to_string(),
+                self.bytes_to_memory_string(total_ephemeral_storage_limits),
             );
         }
 
