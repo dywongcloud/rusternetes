@@ -41,7 +41,19 @@ pub async fn create_custom_resource(
         group, version, plural, cr_name
     );
 
-    // Strict field validation: reject unknown fields when requested
+    // Strict field validation: reject unknown top-level fields for CRDs.
+    // K8s only allows apiVersion, kind, metadata, spec, status at top level.
+    // CustomResource has #[serde(flatten)] extra which captures unknowns.
+    // K8s ref: staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go
+    if params.get("fieldValidation").map(|v| v.as_str()) == Some("Strict") {
+        if !cr.extra.is_empty() {
+            let unknown: Vec<&String> = cr.extra.keys().collect();
+            return Err(rusternetes_common::Error::InvalidResource(format!(
+                "strict decoding error: unknown field \"{}\"",
+                unknown[0]
+            )));
+        }
+    }
     crate::handlers::validation::validate_strict_fields(&params, &body, &cr)?;
 
     // Find the CRD for this resource type
@@ -288,7 +300,16 @@ pub async fn update_custom_resource(
         group, version, plural, name
     );
 
-    // Strict field validation: reject unknown fields when requested
+    // Strict field validation: reject unknown top-level fields for CRDs
+    if params.get("fieldValidation").map(|v| v.as_str()) == Some("Strict") {
+        if !cr.extra.is_empty() {
+            let unknown: Vec<&String> = cr.extra.keys().collect();
+            return Err(rusternetes_common::Error::InvalidResource(format!(
+                "strict decoding error: unknown field \"{}\"",
+                unknown[0]
+            )));
+        }
+    }
     crate::handlers::validation::validate_strict_fields(&params, &body, &cr)?;
 
     // Find the CRD for this resource type
