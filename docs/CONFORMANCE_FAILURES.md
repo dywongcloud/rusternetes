@@ -7,6 +7,11 @@
 
 _Tracking failures as they appear. 38 fixes deployed since round 134._
 
+### Preemption — `predicates.go:1041` (3 occurrences so far)
+- Test: "validates lower priority pod preemption by critical pod"
+- Pod stuck in Pending/Unschedulable — critical pod can't preempt lower priority pods
+- Same as round 134 — preemption logic needs further work
+
 
 
 ## Deployed Fixes (38 commits since round 134)
