@@ -91,7 +91,12 @@ impl<S: Storage> EndpointsController<S> {
         );
 
         // Build endpoint subsets from matching pods
-        let subsets = self.build_endpoint_subsets(&matching_pods, &service.spec.ports);
+        let publish_not_ready = service
+            .spec
+            .publish_not_ready_addresses
+            .unwrap_or(false);
+        let subsets =
+            self.build_endpoint_subsets(&matching_pods, &service.spec.ports, publish_not_ready);
 
         // Create or update endpoints
         let mut endpoints = Endpoints {
@@ -171,17 +176,36 @@ impl<S: Storage> EndpointsController<S> {
             .all(|(key, value)| pod_labels.get(key).map(|v| v == value).unwrap_or(false))
     }
 
-    /// Build endpoint subsets from pods, separating ready and not-ready pods
+    /// Build endpoint subsets from pods, separating ready and not-ready pods.
+    /// K8s ref: pkg/controller/endpoint/endpoints_controller.go — syncService
     fn build_endpoint_subsets(
         &self,
         pods: &[&Pod],
         service_ports: &[rusternetes_common::resources::ServicePort],
+        publish_not_ready: bool,
     ) -> Vec<EndpointSubset> {
         // Separate pods by readiness
         let mut ready_addresses = Vec::new();
         let mut not_ready_addresses = Vec::new();
 
         for pod in pods {
+            // K8s ShouldPodBeInEndpoints() checks:
+            // 1. Skip terminal pods (Succeeded/Failed)
+            // 2. Skip pods without IPs
+            // 3. Skip terminating pods (unless publishNotReadyAddresses)
+            // See: staging/src/k8s.io/endpointslice/util/controller_utils.go
+            let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
+            if matches!(
+                phase,
+                Some(rusternetes_common::types::Phase::Succeeded)
+                    | Some(rusternetes_common::types::Phase::Failed)
+            ) {
+                continue; // Terminal pods are never in endpoints
+            }
+            if !publish_not_ready && pod.metadata.deletion_timestamp.is_some() {
+                continue; // Terminating pods excluded unless publishNotReady
+            }
+
             // Skip pods without an IP address
             let pod_ip = match &pod.status {
                 Some(status) => match &status.pod_ip {
@@ -230,8 +254,8 @@ impl<S: Storage> EndpointsController<S> {
                 }),
             };
 
-            // Check if pod is ready
-            if self.is_pod_ready(pod) {
+            // Check if pod is ready — if publishNotReadyAddresses, all go to ready
+            if publish_not_ready || self.is_pod_ready(pod) {
                 ready_addresses.push(address);
             } else {
                 not_ready_addresses.push(address);
