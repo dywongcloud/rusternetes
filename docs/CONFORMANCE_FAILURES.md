@@ -23,7 +23,15 @@ _Tracking failures as they appear. 38 fixes deployed since round 134._
 - "client rate limiter Wait returned an error: context deadline exceeded"
 
 ### EndpointSlice Mirroring — `endpointslicemirroring.go:202`
-- "Did not find matching EndpointSlice" — mirroring didn't create it
+- "Did not find matching EndpointSlice" — mirrored slices not cleaned up when source Endpoints deleted
+- **Fix committed**: 361752a — cleanup mirrored slices + recognize mirroring-controller label
+
+### Service Networking — `service.go:886`
+- Multiport service unreachable via ClusterIP — kube-proxy timing
+
+### CRD OpenAPI — `crd_publish_openapi.go:214,285`
+- Schema items lost during typed deserialization
+- **Fix committed**: 0188c3c — use raw JSON for CRD schemas in OpenAPI handler
 
 
 
