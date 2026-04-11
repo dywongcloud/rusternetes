@@ -24,34 +24,30 @@ We run the official Kubernetes conformance test suite (441 tests) via Sonobuoy a
 | 127   | 2026-04-07 | 397  | 44   | 90.0%     | Pre-regression baseline |
 | 132   | 2026-04-09 | 363  | 78   | 82.3%     | First round with major fixes deployed |
 | 133   | 2026-04-10 | 370  | 71   | 83.9%     | 47 fixes deployed, 18 staged |
+| 135   | 2026-04-11 | 373  | 68   | 84.6%     | New high score, 57 unique failure locations |
 
-**Current best deployed**: Round 133 at 83.9% (370/441).
+**Current best deployed**: Round 135 at 84.6% (373/441).
 
-**Latest status (Round 133)**: 47 root-cause fixes deployed across rounds 125–133, addressing: CRD schema validation, webhook ClusterIP resolution, CRD storage JSON preservation, init container status, DaemonSet ControllerRevision key sorting, ResourceQuota extended resources, EndpointSlice mirroring, watch HTTP/2 headers, deployment maxSurge, YAML duplicate key detection, status PATCH deep merge, JSONSchemaProps completeness, and more. 18 additional fixes staged for Round 134.
+**Latest status (Round 135)**: 373/441 conformance tests passing with 68 failures across 57 unique locations. Key remaining failure areas: webhook dispatch (12), CRD OpenAPI schema publishing (9, fix staged), DNS pod startup (6), service networking (6), apps controller timing (8), preemption extended resources (4, fix staged), field validation (3, fix staged). Additional fixes staged for Round 136 targeting ~17 tests.
 
-**Total commits**: 1,271+ across 30+ rounds of iterative testing and debugging.
+**Total commits**: 1,314+ across 30+ rounds of iterative testing and debugging.
 
 ## Failure Categories
 
-Based on Round 133 analysis (71 failures remaining):
+Based on Round 135 analysis (68 failures, 57 unique locations):
 
-- **Watch reliability (~15)**: "Watch failed: context canceled" — Connection header prohibited in HTTP/2. Fix staged.
-- **Webhook service readiness (~7)**: Webhook resolution bypassed ClusterIP. Fixed: resolve via ClusterIP like K8s.
-- **Service networking (~3)**: kube-proxy iptables rules not routing ClusterIP to Pod correctly.
-- **Init container status (~2)**: Kubelet doesn't send intermediate status during init container execution. Fix staged.
-- **CRD defaulting (~1)**: GET/LIST didn't apply schema defaults on read. Fix staged.
-- **DaemonSet ControllerRevision (~1)**: JSON key ordering differs between Go and Rust. Fix staged.
-- **ResourceQuota extended resources (~1)**: Quota controller didn't track extended resources. Fix staged.
-- **EndpointSlice mirroring (~1)**: Mirroring skipped for selector-less services. Fix staged.
-- **Field validation YAML (~1)**: serde_yaml doesn't detect duplicate YAML keys. Fix staged.
-- **StatefulSet scale-down (~1)**: Pod deletion + recreation cycle takes too long.
-- **DNS container exec (~1)**: Container exec runs /pause binary instead of shell.
-- **Aggregator (~1)**: Extension API server deployment doesn't start.
-- **Service accounts OIDC (~1)**: OIDC discovery TLS — pod doesn't trust API server cert.
-- **Host port (~1)**: Host port binding in container-in-container Docker.
-- **Pod output permissions (~1)**: Docker umask 0022 reduces 0777 to 0755.
-- **Pod resize (~1)**: cgroup changes in container-in-container Docker.
-- **kubectl proxy (~1)**: kubectl proxy startup timing.
+- **Webhook dispatch (~12)**: Webhook services reachable but readiness check times out. Needs deep comparison against K8s dispatch flow.
+- **CRD OpenAPI (~9)**: OpenAPI handler uses typed deserialization losing nested `items` schemas. Fix staged (0188c3c).
+- **Apps controllers (~8)**: Deployment, ReplicaSet, ReplicationController, StatefulSet timing/watch issues.
+- **DNS (~6)**: Rate limiter timeout, pods not starting.
+- **Service networking (~6)**: ClusterIP service unreachable from exec pods.
+- **EmptyDir (~4)**: Stale webhook configuration blocks pod creation (webhook cascade).
+- **Preemption (~4)**: Extended resources not checked in preemption. Fix staged (e1f4bd0).
+- **Node lifecycle (~4)**: Lifecycle hooks, runtime, init containers, pod resize.
+- **Field validation (~3)**: Unknown top-level CR fields not rejected; YAML dup format. Fix staged (a18febe).
+- **Auth (~2)**: ServiceAccount mount token, OIDC discovery.
+- **kubectl (~2)**: Proxy, describe.
+- **Other (~8)**: DaemonSet, Job, Init container, Discovery, Namespace, ResourceQuota, HostPort, Aggregator, EndpointSlice mirroring.
 
 Detailed tracking in `docs/CONFORMANCE_FAILURES.md`.
 
