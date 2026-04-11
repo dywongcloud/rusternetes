@@ -67,17 +67,21 @@ impl<S: Storage> JobController<S> {
                     let pod_prefix = format!("/registry/pods/{}/", namespace);
                     let all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
                     let job_uid = &job.metadata.uid;
-                    let terminating = all_pods.iter().filter(|p| {
-                        let owned = p.metadata.owner_references.as_ref().map_or(false, |refs| {
-                            refs.iter().any(|r| r.uid == *job_uid && r.kind == "Job")
-                        });
-                        let is_terminating = p.metadata.deletion_timestamp.is_some()
-                            && !matches!(
-                                p.status.as_ref().and_then(|s| s.phase.as_ref()),
-                                Some(Phase::Succeeded) | Some(Phase::Failed)
-                            );
-                        owned && is_terminating
-                    }).count() as i32;
+                    let terminating = all_pods
+                        .iter()
+                        .filter(|p| {
+                            let owned =
+                                p.metadata.owner_references.as_ref().map_or(false, |refs| {
+                                    refs.iter().any(|r| r.uid == *job_uid && r.kind == "Job")
+                                });
+                            let is_terminating = p.metadata.deletion_timestamp.is_some()
+                                && !matches!(
+                                    p.status.as_ref().and_then(|s| s.phase.as_ref()),
+                                    Some(Phase::Succeeded) | Some(Phase::Failed)
+                                );
+                            owned && is_terminating
+                        })
+                        .count() as i32;
                     // Update terminating count if it changed
                     if status.terminating != Some(terminating) {
                         let mut updated_job = job.clone();
