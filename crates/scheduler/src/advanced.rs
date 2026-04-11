@@ -819,62 +819,50 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
     // Sort by priority (lowest first) for eviction
     candidates.sort_by_key(|(_, priority)| *priority);
 
-    // Calculate resources needed by incoming pod
-    let mut cpu_needed = 0i64;
-    let mut memory_needed = 0i64;
-
+    // Calculate ALL resources needed by incoming pod (cpu, memory, AND extended resources)
+    // K8s preemption considers all resource types, not just cpu/memory.
+    // See: pkg/scheduler/framework/preemption/preemption.go
+    let mut resources_needed: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
     if let Some(spec) = &pod.spec {
         for container in &spec.containers {
             if let Some(ref resources) = container.resources {
                 if let Some(ref requests) = resources.requests {
-                    if let Some(cpu) = requests.get("cpu") {
-                        cpu_needed += parse_resource_quantity(cpu, "cpu");
-                    }
-                    if let Some(memory) = requests.get("memory") {
-                        memory_needed += parse_resource_quantity(memory, "memory");
+                    for (key, val) in requests {
+                        let amount = parse_resource_quantity(val, key);
+                        *resources_needed.entry(key.clone()).or_insert(0) += amount;
                     }
                 }
             }
         }
     }
 
-    // Get node's total allocatable resources
-    let (total_cpu, total_memory) = if let Some(status) = &node.status {
-        if let Some(allocatable) = &status.allocatable {
-            let cpu = allocatable
-                .get("cpu")
-                .map(|s| parse_resource_quantity(s, "cpu"))
-                .unwrap_or(0);
-            let memory = allocatable
-                .get("memory")
-                .map(|s| parse_resource_quantity(s, "memory"))
-                .unwrap_or(0);
-            (cpu, memory)
-        } else {
-            return (false, vec![]);
-        }
-    } else {
-        return (false, vec![]);
+    // Get node's total allocatable resources (all types)
+    let allocatable: &std::collections::HashMap<String, String> = match node.status.as_ref().and_then(|s| s.allocatable.as_ref()) {
+        Some(a) => a,
+        None => return (false, vec![]),
     };
+    let mut total_resources: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    for (key, val) in allocatable {
+        total_resources.insert(key.clone(), parse_resource_quantity(val, key));
+    }
 
     // If the pod can't fit even on a completely empty node, preemption won't help
-    if cpu_needed > total_cpu || memory_needed > total_memory {
-        return (false, vec![]);
+    for (key, needed) in &resources_needed {
+        let total = total_resources.get(key).copied().unwrap_or(0);
+        if *needed > total {
+            return (false, vec![]);
+        }
     }
 
     // Calculate resources used by ALL pods on this node (including non-candidates)
-    let mut total_used_cpu = 0i64;
-    let mut total_used_memory = 0i64;
+    let mut total_used: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
     for p in &node_pods {
         if let Some(spec) = &p.spec {
             for container in &spec.containers {
                 if let Some(ref resources) = container.resources {
                     if let Some(ref requests) = resources.requests {
-                        if let Some(cpu) = requests.get("cpu") {
-                            total_used_cpu += parse_resource_quantity(cpu, "cpu");
-                        }
-                        if let Some(memory) = requests.get("memory") {
-                            total_used_memory += parse_resource_quantity(memory, "memory");
+                        for (key, val) in requests {
+                            *total_used.entry(key.clone()).or_insert(0) += parse_resource_quantity(val, key);
                         }
                     }
                 }
@@ -883,33 +871,29 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
     }
 
     // Current remaining resources (before any eviction)
-    let remaining_cpu = total_cpu - total_used_cpu;
-    let remaining_memory = total_memory - total_used_memory;
+    let remaining = |key: &str| -> i64 {
+        let total = total_resources.get(key).copied().unwrap_or(0);
+        let used = total_used.get(key).copied().unwrap_or(0);
+        total - used
+    };
 
-    // If the pod already fits without eviction, no preemption needed
-    // (This shouldn't normally be reached since select_node would have picked this node,
-    //  but check anyway for correctness)
-    if remaining_cpu >= cpu_needed && remaining_memory >= memory_needed {
+    // Check if all resources fit without eviction
+    let all_fit = resources_needed.iter().all(|(key, needed)| remaining(key) >= *needed);
+    if all_fit {
         return (true, vec![]);
     }
 
     // Try to find a minimal set of pods to evict
-    // Simple strategy: evict lowest priority pods until we have enough resources
     let mut pods_to_evict = Vec::new();
-    let mut freed_cpu = 0i64;
-    let mut freed_memory = 0i64;
+    let mut freed: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
 
     for (candidate_pod, _) in candidates {
-        // Calculate resources used by this pod
         if let Some(spec) = &candidate_pod.spec {
             for container in &spec.containers {
                 if let Some(ref resources) = container.resources {
                     if let Some(ref requests) = resources.requests {
-                        if let Some(cpu) = requests.get("cpu") {
-                            freed_cpu += parse_resource_quantity(cpu, "cpu");
-                        }
-                        if let Some(memory) = requests.get("memory") {
-                            freed_memory += parse_resource_quantity(memory, "memory");
+                        for (key, val) in requests {
+                            *freed.entry(key.clone()).or_insert(0) += parse_resource_quantity(val, key);
                         }
                     }
                 }
@@ -918,10 +902,13 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
 
         pods_to_evict.push(candidate_pod.metadata.name.clone());
 
-        // Check if remaining + freed resources are enough for the incoming pod
-        if (remaining_cpu + freed_cpu) >= cpu_needed
-            && (remaining_memory + freed_memory) >= memory_needed
-        {
+        // Check if remaining + freed resources are enough for ALL resource types
+        let enough = resources_needed.iter().all(|(key, needed)| {
+            let rem = remaining(key);
+            let free = freed.get(key).copied().unwrap_or(0);
+            (rem + free) >= *needed
+        });
+        if enough {
             debug!(
                 "Preemption possible on node {}: evicting {} pods",
                 node.metadata.name,
