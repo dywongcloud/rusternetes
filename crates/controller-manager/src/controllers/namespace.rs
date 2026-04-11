@@ -283,8 +283,7 @@ impl<S: Storage> NamespaceController<S> {
             .unwrap_or(false);
         if any_finalizers_remaining && !conditions_already_set {
             let remaining_count = self.count_remaining_resources(name).await?;
-            let conditions =
-                Self::build_deletion_conditions(remaining_count > 0, true);
+            let conditions = Self::build_deletion_conditions(remaining_count > 0, true);
             let key = build_key("namespaces", None, name);
             if let Ok(mut ns) = self.storage.get::<Namespace>(&key).await {
                 ns.status = Some(NamespaceStatus {
