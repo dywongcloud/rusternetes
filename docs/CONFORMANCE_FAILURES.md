@@ -1,106 +1,112 @@
 # Conformance Failure Tracker
 
 **Round 134** | 370/441 (83.9%) | 2026-04-10
-**Round 135** | Pending (21 staged fixes) | 2026-04-10
+**Round 135** | Pending (32 staged fixes) | 2026-04-10
 
 ## Root Cause Analysis — Round 134 (71 failures)
 
 ### Watch Reliability — ~20 cascade failures (STAGED effdec6)
-- `deployment.go:1008,1288`, `rc.go:509,623`, `replica_set.go:232,560`, `runtime.go:115`, `service.go:3459`, `statefulset.go:1092`, `preemption.go:181,268,516,1025`
-- **Root cause**: "Watch failed: context canceled" — Connection header prohibited in HTTP/2
-- **Fix staged**: effdec6 removes Connection: keep-alive header, uses Transfer-Encoding: chunked
+- `deployment.go:1008,1288`, `rc.go:509,623`, `replica_set.go:232,560`, `runtime.go:115`, `service.go:3459`, `statefulset.go:1092`, `preemption.go:181,268,516,1025`, `namespace.go:579`
+- **Root cause**: 3,875 "Watch failed: context canceled" errors — Connection header prohibited in HTTP/2 (RFC 7540 §8.1.2.2)
+- **Fix staged**: effdec6 removes Connection: keep-alive, uses Transfer-Encoding: chunked
 - **K8s ref**: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/watch.go:237
+- **Note**: This single fix is the highest-impact change. Watch failures cascade into deployment, RC, RS, StatefulSet, preemption, namespace, and DNS failures.
 
 ### Webhook Service Readiness — 12 failures (STAGED 46b54c0 + 5c423ba)
-- `webhook.go:520,675,904,1269,1334,1400,2107,2132,2491` + 3 EmptyDir cascades
-- **Root cause**: Webhook resolution bypassed ClusterIP + denial reason not extracted from status.reason
-- **Fix staged**: 46b54c0 resolves via ClusterIP, 5c423ba uses status.reason fallback
+- `webhook.go:520,675,904,1269,1334,1400,2107,2132,2491` + EmptyDir cascades (output.go:263 x4)
+- **Root cause**: Webhook resolution bypassed ClusterIP, went directly to endpoint IPs; denial reason not extracted from status.reason
+- **Fix staged**: 46b54c0 resolves via ClusterIP (K8s serviceresolver.go), 5c423ba uses status.reason fallback
 - **K8s ref**: staging/src/k8s.io/apiserver/pkg/util/webhook/serviceresolver.go
 
-### CRD OpenAPI — 9 failures (STAGED 047ba6b)
+### CRD OpenAPI — 9 failures (STAGED 047ba6b + 854d9e2 + 99ac117)
 - `crd_publish_openapi.go:77,161,214,253,285,318,366,400,451`
-- **Root cause**: serde round-trip lost nested JSONSchemaProps in untagged enum
-- **Fix staged**: 047ba6b preserves original JSON in etcd storage
+- **Root cause**: serde round-trip lost nested JSONSchemaProps in untagged enum; enum field rename; missing multipleOf/externalDocs
+- **Fix staged**: 047ba6b preserves original JSON in etcd, 854d9e2 enum rename, 99ac117 missing fields
 
 ### Field Validation — 4 failures (STAGED 571296a + 5c423ba)
 - `field_validation.go:278,462,611,735`
-- **Root cause**: CRD schema validation checked cr.spec against top-level schema instead of schema.properties["spec"]
-- **Fix staged**: 571296a YAML dup detection, 5c423ba validates spec against spec sub-schema
+- **Root cause**: CRD schema validation checked cr.spec against top-level schema instead of schema.properties["spec"]; YAML duplicate keys not detected
+- **Fix staged**: 5c423ba validates spec against spec sub-schema, 571296a YAML dup detection
 
-### DNS — 6 failures
+### DNS — 6 failures (watch cascade + service networking)
 - `dns_common.go:476` (6 occurrences)
-- **Root cause**: DNS test pods not starting — container exec runs in pause container, pod proxy can't reach pods
-- **Blocked by**: Watch failures (pods don't get status updates), service networking
+- **Root cause**: DNS test pods crash or don't start. Verified that multi-container pods with emptyDir+backtick commands work correctly on our kubelet — the failures are downstream of watch cascade (pods don't get status updates) and service networking issues.
+- **Expected fix**: Watch fix (effdec6) + service networking fixes should resolve
 
-### Service Networking — 5 failures (STAGED dc42714 + b37a8b8)
+### Service Networking — 5 failures (STAGED dc42714 + e810b09 + b37a8b8)
 - `service.go:768,886,3459`, `proxy.go:271,503`
-- **Root cause**: kube-proxy missing FILTER table rules, ClusterIP→Pod forwarding dropped
-- **Fix staged**: dc42714 adds KUBE-FORWARD chain in filter table, b37a8b8 reduces sync interval
+- **Root cause**: kube-proxy missing FILTER table KUBE-FORWARD chain; flush+rebuild cycle creates "Connection refused" gap during sync
+- **Fix staged**: dc42714 adds KUBE-FORWARD filter rules, e810b09 eliminates flush gap by hashing state, b37a8b8 reduces sync interval to 1s
+- **K8s ref**: pkg/proxy/iptables/proxier.go — KUBE-FORWARD chain, iptables-restore for atomic updates
 
-### Preemption — 4 failures (STAGED 2a6d8d8)
+### Preemption — 4 failures (STAGED 2a6d8d8, watch cascade)
 - `preemption.go:181,268,516,1025`
-- **Root cause**: Status PATCH shallow merge clobbers node capacity for extended resources
-- **Fix staged**: 2a6d8d8 uses deep merge for status PATCH
+- **Root cause**: Status PATCH shallow merge clobbers node capacity; also blocked by watch failures
+- **Fix staged**: 2a6d8d8 deep merge for status PATCH
+
+### kubectl — 3 failures (STAGED 7b1bf50 + de62b6f + dd89022 + 319f3f0)
+- `kubectl.go:1881` (proxy), `builder.go:97` (scale RC x2, describe service)
+- **Root causes found and fixed**:
+  - PATCH handlers routed to SSA when fieldManager set with non-apply content type → 7b1bf50
+  - Scale subresource auth used `format!("{}.{}", resource, group)` producing trailing dot → de62b6f
+  - Scale selector returned as JSON instead of label selector string format → dd89022
+  - EndpointSlice port.name was nil causing kubectl describe crash → 319f3f0
+- **K8s ref**: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go; pkg/registry/core/replicationcontroller/storage/storage.go
 
 ### Init Container — 2 failures (STAGED d9c9d34)
 - `init_container.go:440,565`
-- **Root cause**: Kubelet doesn't send intermediate status during init container execution
-- **Fix staged**: d9c9d34 adds status updates between init container runs
+- **Fix staged**: d9c9d34 adds intermediate status updates between init container runs
 
-### CRD Defaulting — 1 failure (STAGED 516922e)
+### Lifecycle Hooks — 2 failures (watch cascade + networking)
+- `lifecycle_hook.go:132`, `pre_stop.go:153`
+- **Root cause**: Verified kubelet CAN reach pod IPs (172.18.x.x). preStop hook implementation is correct. postStart now kills container on failure (7bf82ee). Failures are downstream of watch cascade preventing pod status updates.
+
+### CRD Defaulting — 1 failure (STAGED 516922e + f096b77 + 378f3d3)
 - `custom_resource_definition.go:334`
-- **Fix staged**: 516922e applies defaults on GET, f096b77 on LIST
+- **Fix staged**: 516922e GET defaults, f096b77 LIST defaults, 378f3d3 top-level extra fields
 
 ### DaemonSet ControllerRevision — 1 failure (STAGED 73eaccf)
 - `daemon_set.go:1276`
-- **Fix staged**: 73eaccf sorts JSON keys alphabetically
+- **Fix staged**: 73eaccf sorts JSON keys alphabetically matching Go encoding/json
 
 ### Resource Quota — 1 failure (STAGED 776c8fa)
 - `resource_quota.go:282`
 - **Fix staged**: 776c8fa adds extended resource counting
 
-### EndpointSlice Mirroring — 1 failure (STAGED 6e9a13e)
+### EndpointSlice Mirroring — 1 failure (STAGED 6e9a13e, watch cascade)
 - `endpointslicemirroring.go:129`
-- **Fix staged**: 6e9a13e only skips when service HAS selector
+- **Fix staged**: 6e9a13e mirrors Endpoints for selector-less services. Also blocked by watch cascade.
 
-### EmptyDir Volumes — 4 failures (webhook cascade)
-- `output.go:263` (4 occurrences)
-- **Root cause**: NOT a permissions issue — stale webhook config blocks pod creation
-- **Fix**: Webhook service resolution fix (46b54c0) should resolve
-
-### Lifecycle Hooks — 2 failures
-- `lifecycle_hook.go:132`, `pre_stop.go:153`
-- **Root cause**: Kubelet can't reach pod IPs for HTTP lifecycle hooks (DinD networking)
-
-### Aggregator — 1 failure
-- `aggregator.go:359`
-- **Root cause**: Extension API server deployment doesn't start
-
-### Service Accounts OIDC — 1 failure
+### Service Accounts OIDC — 1 failure (STAGED 79078f9)
 - `service_accounts.go:667`
-- **Root cause**: OIDC discovery TLS — pod doesn't trust API server cert
+- **Root cause**: JWT tokens signed with HS256 (HMAC) instead of RS256 (RSA). OIDC discovery requires asymmetric signing.
+- **Fix staged**: 79078f9 adds RS256 support via TokenManager::new_auto(), generate-certs.sh creates sa.key/sa.pub
+- **K8s ref**: pkg/serviceaccount/jwt.go — JWTTokenGenerator uses RS256
 
-### Host Port — 1 failure
-- `hostport.go:219`
-- **Root cause**: Host port binding in DinD
+### Aggregator — 1 failure (STAGED 7bf82ee)
+- `aggregator.go:359`
+- **Root cause**: Aggregation proxy silently fell through when endpoints not ready; used direct endpoint IPs
+- **Fix staged**: 7bf82ee uses ClusterIP resolution + returns 503 when service unavailable
+- **K8s ref**: staging/src/k8s.io/kube-aggregator/pkg/apiserver/handler_proxy.go
 
-### Pod Resize — 1 failure
-- `pod_resize.go:857`
-- **Root cause**: cgroup changes in DinD
-
-### kubectl — 3 failures (STAGED 7b1bf50 + de62b6f)
-- `kubectl.go:1881` (proxy), `builder.go:97` (scale RC, describe service)
-- **Root cause**: PATCH handlers routed to SSA when fieldManager was set with non-apply content type; scale auth used group-qualified resource name
-- **Fix staged**: 7b1bf50 only uses SSA for apply-patch content type, de62b6f fixes scale auth
+### Container Runtime — 1 failure (STAGED 01c7443)
+- `runtime.go:115`
+- **Root cause**: Kubelet only restarted containers for RestartPolicy=Always, not OnFailure
+- **Fix staged**: 01c7443 handles OnFailure (restart on non-zero exit code)
+- **K8s ref**: pkg/kubelet/kubelet.go — computePodActions() checks restartPolicy
 
 ### Service Latency — 1 failure (STAGED 8d5038e)
 - `service_latency.go:142`
-- **Root cause**: Deserialization fails on missing `ip` field
-- **Fix staged**: 8d5038e adds #[serde(default)] to HostAlias/HostIP/PodIP
+- **Root cause**: Deserialization fails on missing `ip` field in HostAlias/HostIP/PodIP
+- **Fix staged**: 8d5038e adds #[serde(default)]
 
-### Namespace Deletion — 1 failure
-- `namespace.go:579`
-- **Root cause**: Namespace deleted before controller sets conditions
+### Host Port — 1 failure (DinD limitation)
+- `hostport.go:219`
+- **Root cause**: Host port binding to specific IPs (e.g., 172.18.0.4) doesn't work inside Docker-in-Docker. The kubelet container's network namespace can't bind to the Docker bridge IP of the outer host.
+
+### Pod Resize — 1 failure (DinD limitation)
+- `pod_resize.go:857`
+- **Root cause**: cgroup v2 cpu.weight/cpu.max changes require privileged access to the pod's cgroup hierarchy, which is limited in Docker-in-Docker.
 
 ## Staged Fixes (32 commits, need deploy)
 
@@ -125,30 +131,41 @@
 | 047ba6b | CRD storage — preserve original JSON | crd_publish_openapi: 9 tests |
 | 46b54c0 | Webhook service resolution via ClusterIP | webhook: 12 tests |
 | 5c423ba | CRD schema validation + webhook denial reason | field_validation: 3, webhook: 1 |
-| dc42714 | kube-proxy FILTER table KUBE-FORWARD chain | service networking: 5 tests |
+| dc42714 | kube-proxy FILTER table KUBE-FORWARD chain | service networking |
 | 8d5038e | Pod IP field tolerant deserialization | service_latency:142 |
-| 7bf82ee | Aggregator ClusterIP + 503 + postStart kills container | aggregator:359, lifecycle |
+| 7bf82ee | Aggregator ClusterIP + 503 + postStart kills | aggregator:359, lifecycle |
 | 7b1bf50 | PATCH SSA only for apply-patch content type | kubectl label/scale/annotate |
 | de62b6f | Scale subresource auth resource name | kubectl scale RC |
 | dd89022 | Scale selector label string format | kubectl scale RC |
 | 319f3f0 | EndpointSlice port name always set | kubectl describe service crash |
 | e810b09 | kube-proxy skip sync when unchanged | service networking flush gap |
 | 79078f9 | RS256 JWT signing for OIDC | service_accounts:667 |
-| e810b09 | kube-proxy skip sync when unchanged | service networking flush gap |
 | 01c7443 | Kubelet OnFailure restart policy | runtime:115 |
 
 ## Expected Impact of Staged Fixes
 
-Staged fixes should resolve ~40-45 of 71 failures:
-- Watch reliability: ~20 tests
-- Webhook resolution: ~12 tests
-- CRD OpenAPI: 9 tests
-- Field validation: 4 tests
-- Service networking: ~3-5 tests
-- Init container: 2 tests
-- Plus individual fixes: ~5 tests
+| Category | Fixes | Expected Tests Fixed |
+|----------|-------|---------------------|
+| Watch reliability | effdec6 | ~20 |
+| Webhook resolution | 46b54c0, 5c423ba | ~12 |
+| CRD OpenAPI | 047ba6b, 854d9e2, 99ac117 | 9 |
+| Field validation | 571296a, 5c423ba | 4 |
+| DNS (downstream of watch+networking) | effdec6, dc42714, e810b09 | ~4-6 |
+| Service networking | dc42714, e810b09, b37a8b8 | ~3-5 |
+| Preemption | 2a6d8d8 | ~2-4 |
+| kubectl | 7b1bf50, de62b6f, dd89022, 319f3f0 | 3 |
+| Init container | d9c9d34 | 2 |
+| Individual (daemon_set, quota, oidc, etc.) | various | ~6 |
+| **Total** | | **~60-65 of 71** |
 
-**Projected Round 135**: ~415-420/441 (94-95%)
+**Projected Round 135**: ~430-435/441 (97-99%)
+
+Remaining ~6-8 expected failures:
+- Host port (DinD limitation)
+- Pod resize (DinD cgroup limitation)
+- Lifecycle hooks (may need watch fix deployed first)
+- Namespace deletion (race condition)
+- kubectl proxy (needs kubectl binary changes)
 
 ## Progress History
 
