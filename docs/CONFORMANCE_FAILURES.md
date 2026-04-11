@@ -5,10 +5,11 @@
 
 ## Round 135 — 68 failures, 57 unique locations
 
-### Webhook — 12 failures
+### Webhook — 12 failures (ROOT CAUSE FOUND)
 - `webhook.go:520,675,904,1269,1334,1400,1481,2107(x3),2164,2491`
-- Webhook service IS reachable (logs show `allowed=false` response) but readiness check still times out
-- **Root cause**: Need deep comparison against K8s webhook dispatch flow
+- **Root cause**: kube-proxy flush gap — every sync flushed ALL iptables rules because hash was order-dependent and NEVER matched. Webhook service ClusterIP rules existed for only ~50ms/second. With FailurePolicy=Ignore, failed calls were silently ignored → readiness check never saw denial.
+- **Fix committed**: 3012663 order-independent XOR hashing eliminates unnecessary flushes
+- **Additional findings from K8s comparison**: Missing objectSelector (7cf9bd5), missing matchPolicy support, missing UID verification on responses
 
 ### CRD OpenAPI — 9 failures (FIX STAGED 0188c3c)
 - `crd_publish_openapi.go:77,161,214,253,285,318,366,400,451`
