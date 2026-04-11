@@ -445,4 +445,3 @@ pub async fn deletecollection_statefulsets(
         }
     })))
 }
-
