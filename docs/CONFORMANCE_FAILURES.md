@@ -1,7 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 134** | 370/441 (83.9%) | 2026-04-10
-**Round 135** | Pending (35 staged fixes, 105 total fix commits) | 2026-04-10
+**Round 135** | Pending (37 staged fixes, 107 total fix commits) | 2026-04-10
 
 ## Root Cause Analysis — Round 134 (71 failures)
 
@@ -144,6 +144,8 @@
 | 4103c84 | Discovery API trailing slash normalization | kubectl.go:1881 proxy |
 | 12aea53 | OIDC JWKS endpoint returns RSA public key | service_accounts:667 |
 | 1d9b11f | Kubelet ErrImagePull — don't block sync loop | all pod startup timing |
+| 5709a1f | Job terminating count + deleteCollection Status | statefulset list/delete |
+| ed474ac | deleteCollection returns Status JSON body | API contract |
 
 ## Expected Impact of Staged Fixes
 
