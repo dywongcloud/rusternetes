@@ -133,14 +133,29 @@ pub async fn get_swagger_spec(
         .await
     {
         for crd in &crds {
-            let group = crd.pointer("/spec/group").and_then(|v| v.as_str()).unwrap_or("");
-            let plural = crd.pointer("/spec/names/plural").and_then(|v| v.as_str()).unwrap_or("");
-            let kind = crd.pointer("/spec/names/kind").and_then(|v| v.as_str()).unwrap_or("");
-            let scope = crd.pointer("/spec/scope").and_then(|v| v.as_str()).unwrap_or("Namespaced");
+            let group = crd
+                .pointer("/spec/group")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let plural = crd
+                .pointer("/spec/names/plural")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let kind = crd
+                .pointer("/spec/names/kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let scope = crd
+                .pointer("/spec/scope")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Namespaced");
 
             let versions = crd.pointer("/spec/versions").and_then(|v| v.as_array());
             for version in versions.into_iter().flatten() {
-                let served = version.get("served").and_then(|v| v.as_bool()).unwrap_or(false);
+                let served = version
+                    .get("served")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 if !served {
                     continue;
                 }

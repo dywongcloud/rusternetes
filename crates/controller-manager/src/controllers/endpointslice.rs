@@ -169,7 +169,10 @@ impl<S: Storage> EndpointSliceController<S> {
                         // Mirrored: delete if source Endpoints no longer exists
                         // K8s ref: pkg/controller/endpointslicemirroring/reconciler.go
                         let ep_key = build_key("endpoints", Some(ns), svc_name);
-                        self.storage.get::<serde_json::Value>(&ep_key).await.is_err()
+                        self.storage
+                            .get::<serde_json::Value>(&ep_key)
+                            .await
+                            .is_err()
                     }
                     _ => false,
                 };

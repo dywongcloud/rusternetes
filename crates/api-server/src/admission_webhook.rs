@@ -551,14 +551,14 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                             })
                             .unwrap_or_default();
 
-                        let obj_matches =
-                            if let Some(ref match_labels) = obj_selector.match_labels {
-                                match_labels
-                                    .iter()
-                                    .all(|(k, v)| obj_labels.get(k) == Some(v))
-                            } else {
-                                true
-                            };
+                        let obj_matches = if let Some(ref match_labels) = obj_selector.match_labels
+                        {
+                            match_labels
+                                .iter()
+                                .all(|(k, v)| obj_labels.get(k) == Some(v))
+                        } else {
+                            true
+                        };
                         if !obj_matches {
                             debug!(
                                 "Skipping webhook {} — object labels don't match objectSelector",
@@ -796,14 +796,14 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                             })
                             .unwrap_or_default();
 
-                        let obj_matches =
-                            if let Some(ref match_labels) = obj_selector.match_labels {
-                                match_labels
-                                    .iter()
-                                    .all(|(k, v)| obj_labels.get(k) == Some(v))
-                            } else {
-                                true
-                            };
+                        let obj_matches = if let Some(ref match_labels) = obj_selector.match_labels
+                        {
+                            match_labels
+                                .iter()
+                                .all(|(k, v)| obj_labels.get(k) == Some(v))
+                        } else {
+                            true
+                        };
                         if !obj_matches {
                             debug!(
                                 "Skipping mutating webhook {} — object labels don't match objectSelector",

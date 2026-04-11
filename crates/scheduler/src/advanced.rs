@@ -822,7 +822,8 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
     // Calculate ALL resources needed by incoming pod (cpu, memory, AND extended resources)
     // K8s preemption considers all resource types, not just cpu/memory.
     // See: pkg/scheduler/framework/preemption/preemption.go
-    let mut resources_needed: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    let mut resources_needed: std::collections::HashMap<String, i64> =
+        std::collections::HashMap::new();
     if let Some(spec) = &pod.spec {
         for container in &spec.containers {
             if let Some(ref resources) = container.resources {
@@ -837,11 +838,13 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
     }
 
     // Get node's total allocatable resources (all types)
-    let allocatable: &std::collections::HashMap<String, String> = match node.status.as_ref().and_then(|s| s.allocatable.as_ref()) {
-        Some(a) => a,
-        None => return (false, vec![]),
-    };
-    let mut total_resources: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    let allocatable: &std::collections::HashMap<String, String> =
+        match node.status.as_ref().and_then(|s| s.allocatable.as_ref()) {
+            Some(a) => a,
+            None => return (false, vec![]),
+        };
+    let mut total_resources: std::collections::HashMap<String, i64> =
+        std::collections::HashMap::new();
     for (key, val) in allocatable {
         total_resources.insert(key.clone(), parse_resource_quantity(val, key));
     }
@@ -862,7 +865,8 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
                 if let Some(ref resources) = container.resources {
                     if let Some(ref requests) = resources.requests {
                         for (key, val) in requests {
-                            *total_used.entry(key.clone()).or_insert(0) += parse_resource_quantity(val, key);
+                            *total_used.entry(key.clone()).or_insert(0) +=
+                                parse_resource_quantity(val, key);
                         }
                     }
                 }
@@ -878,7 +882,9 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
     };
 
     // Check if all resources fit without eviction
-    let all_fit = resources_needed.iter().all(|(key, needed)| remaining(key) >= *needed);
+    let all_fit = resources_needed
+        .iter()
+        .all(|(key, needed)| remaining(key) >= *needed);
     if all_fit {
         return (true, vec![]);
     }
@@ -893,7 +899,8 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
                 if let Some(ref resources) = container.resources {
                     if let Some(ref requests) = resources.requests {
                         for (key, val) in requests {
-                            *freed.entry(key.clone()).or_insert(0) += parse_resource_quantity(val, key);
+                            *freed.entry(key.clone()).or_insert(0) +=
+                                parse_resource_quantity(val, key);
                         }
                     }
                 }
