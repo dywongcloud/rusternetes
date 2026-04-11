@@ -242,7 +242,13 @@ impl Kubelet {
             images: None,
             volumes_in_use: None,
             volumes_attached: None,
-            daemon_endpoints: None,
+            // K8s sets kubelet endpoint port to 10250 (default kubelet API port)
+            // See: pkg/kubelet/kubelet.go:505 — DaemonEndpoints{KubeletEndpoint{Port: kubeCfg.Port}}
+            daemon_endpoints: Some(rusternetes_common::resources::NodeDaemonEndpoints {
+                kubelet_endpoint: Some(rusternetes_common::resources::DaemonEndpoint {
+                    port: 10250,
+                }),
+            }),
             config: None,
             features: None,
             runtime_handlers: None,
