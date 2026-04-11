@@ -76,11 +76,15 @@
 
 | Commit | Fix | Expected Tests |
 |--------|-----|---------------|
-| e1f4bd0 | Preemption extended resources | ~4 |
+| 3012663 | kube-proxy XOR hash — eliminate flush gap | ~18 (webhook+service+DNS) |
 | 0188c3c | OpenAPI raw JSON CRD schemas | ~9 |
-| 361752a | EndpointSlice mirroring cleanup | 1 |
+| e1f4bd0 | Preemption extended resources | ~4 |
 | a18febe | CRD strict unknown top-level fields | ~2 |
+| 2f20539 | Kubelet RS256 key path match | 1 |
+| 31f4f39 | Job terminating count for completed jobs | 1 |
 | 3ba5e20 | Explicit trailing slash routes | 1 |
+| 361752a | EndpointSlice mirroring cleanup | 1 |
+| 7cf9bd5 | Webhook objectSelector matching | reliability |
 
 ## Progress History
 
