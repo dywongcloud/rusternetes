@@ -145,6 +145,10 @@ impl TokenManager {
         let key_paths = [
             ("/etc/kubernetes/pki/sa.key", "/etc/kubernetes/pki/sa.pub"),
             (
+                "/root/.rusternetes/certs/sa.key",
+                "/root/.rusternetes/certs/sa.pub",
+            ),
+            (
                 "/root/.rusternetes/keys/sa-signing-key.pem",
                 "/root/.rusternetes/keys/sa-signing-key.pub",
             ),
