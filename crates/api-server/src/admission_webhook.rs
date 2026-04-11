@@ -533,6 +533,41 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         }
                     }
 
+                    // Check objectSelector — K8s skips webhooks whose objectSelector
+                    // doesn't match the object's labels.
+                    // See: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/predicates/object/matcher.go
+                    if let Some(ref obj_selector) = webhook.object_selector {
+                        let obj_labels: std::collections::HashMap<String, String> = object
+                            .as_ref()
+                            .and_then(|o| o.pointer("/metadata/labels"))
+                            .and_then(|l| l.as_object())
+                            .map(|labels_obj| {
+                                labels_obj
+                                    .iter()
+                                    .filter_map(|(k, v)| {
+                                        v.as_str().map(|s| (k.clone(), s.to_string()))
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        let obj_matches =
+                            if let Some(ref match_labels) = obj_selector.match_labels {
+                                match_labels
+                                    .iter()
+                                    .all(|(k, v)| obj_labels.get(k) == Some(v))
+                            } else {
+                                true
+                            };
+                        if !obj_matches {
+                            debug!(
+                                "Skipping webhook {} — object labels don't match objectSelector",
+                                webhook.name
+                            );
+                            continue;
+                        }
+                    }
+
                     // Skip webhooks whose service no longer exists or namespace is terminating
                     if let Some(ref svc) = webhook.client_config.service {
                         let ns_key =
@@ -741,6 +776,40 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                                 debug!("Skipping mutating webhook {} — namespace {} doesn't match namespaceSelector", webhook.name, ns_name);
                                 continue;
                             }
+                        }
+                    }
+
+                    // Check objectSelector for mutating webhooks
+                    // K8s ref: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/predicates/object/matcher.go
+                    if let Some(ref obj_selector) = webhook.object_selector {
+                        let obj_labels: std::collections::HashMap<String, String> = object
+                            .as_ref()
+                            .and_then(|o| o.pointer("/metadata/labels"))
+                            .and_then(|l| l.as_object())
+                            .map(|labels_obj| {
+                                labels_obj
+                                    .iter()
+                                    .filter_map(|(k, v)| {
+                                        v.as_str().map(|s| (k.clone(), s.to_string()))
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        let obj_matches =
+                            if let Some(ref match_labels) = obj_selector.match_labels {
+                                match_labels
+                                    .iter()
+                                    .all(|(k, v)| obj_labels.get(k) == Some(v))
+                            } else {
+                                true
+                            };
+                        if !obj_matches {
+                            debug!(
+                                "Skipping mutating webhook {} — object labels don't match objectSelector",
+                                webhook.name
+                            );
+                            continue;
                         }
                     }
 
