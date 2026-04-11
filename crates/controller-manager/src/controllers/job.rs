@@ -52,7 +52,10 @@ impl<S: Storage> JobController<S> {
 
         info!("Reconciling Job {}/{}", namespace, name);
 
-        // Skip already-completed or already-failed jobs
+        // For completed/failed jobs, still update terminating count
+        // (pods may still be shutting down after job completion).
+        // K8s ref: pkg/controller/job/job_controller.go — syncJob continues
+        // to update status.terminating for completed jobs.
         if let Some(ref status) = job.status {
             if let Some(ref conditions) = status.conditions {
                 let is_finished = conditions.iter().any(|c| {
@@ -60,6 +63,30 @@ impl<S: Storage> JobController<S> {
                         && c.status == "True"
                 });
                 if is_finished {
+                    // Still update terminating count for finished jobs
+                    let pod_prefix = format!("/registry/pods/{}/", namespace);
+                    let all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
+                    let job_uid = &job.metadata.uid;
+                    let terminating = all_pods.iter().filter(|p| {
+                        let owned = p.metadata.owner_references.as_ref().map_or(false, |refs| {
+                            refs.iter().any(|r| r.uid == *job_uid && r.kind == "Job")
+                        });
+                        let is_terminating = p.metadata.deletion_timestamp.is_some()
+                            && !matches!(
+                                p.status.as_ref().and_then(|s| s.phase.as_ref()),
+                                Some(Phase::Succeeded) | Some(Phase::Failed)
+                            );
+                        owned && is_terminating
+                    }).count() as i32;
+                    // Update terminating count if it changed
+                    if status.terminating != Some(terminating) {
+                        let mut updated_job = job.clone();
+                        if let Some(ref mut s) = updated_job.status {
+                            s.terminating = Some(terminating);
+                        }
+                        let key = build_key("jobs", Some(namespace), name);
+                        let _ = self.storage.update(&key, &updated_job).await;
+                    }
                     return Ok(());
                 }
             }
