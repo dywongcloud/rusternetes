@@ -779,10 +779,10 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         )
         .route("/openid/v1/jwks", get(handlers::health::openid_jwks))
         // Discovery API endpoints
+        // Trailing slashes are normalized by the middleware layer (see build_router).
         .route("/api", get(handlers::discovery::get_core_api))
         .route("/api/v1", get(handlers::discovery::get_core_resources))
         .route("/apis", get(handlers::discovery::get_api_groups))
-        .route("/apis/", get(handlers::discovery::get_api_groups))
         .route("/apis/:group/", get(handlers::discovery::get_api_group))
         .route(
             "/apis/apps/v1",
@@ -2470,10 +2470,32 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
             .layer(Extension(state.bootstrap_token_manager.clone()));
     }
 
-    // Combine routes and add shared state
+    // Combine routes and add shared state.
+    // K8s (Go) treats /path and /path/ identically. Axum doesn't, so we
+    // normalize URIs by stripping trailing slashes before routing.
     Router::new()
         .merge(public_routes)
         .merge(protected_routes)
+        .layer(axum_middleware::map_request(|mut req: axum::extract::Request| async move {
+            let path = req.uri().path();
+            // Strip trailing slash for non-root paths
+            if path.len() > 1 && path.ends_with('/') {
+                let new_path = path.trim_end_matches('/');
+                if let Ok(new_uri) = axum::http::Uri::builder()
+                    .path_and_query(
+                        if let Some(q) = req.uri().query() {
+                            format!("{}?{}", new_path, q)
+                        } else {
+                            new_path.to_string()
+                        },
+                    )
+                    .build()
+                {
+                    *req.uri_mut() = new_uri;
+                }
+            }
+            req
+        }))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
