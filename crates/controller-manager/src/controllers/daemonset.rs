@@ -729,10 +729,15 @@ impl<S: Storage> DaemonSetController<S> {
         let mut hasher = fnv::FnvHasher::with_key(0x811c9dc5);
         hasher.write(serialized.as_bytes());
         let hash = hasher.finish() as u32;
-        // K8s uses rand.SafeEncodeString(fmt.Sprint(hash)) which produces
-        // a base-36ish encoding. We use a simpler decimal string approach
-        // matching K8s's fmt.Sprint output of the uint32 hash.
-        format!("{}", hash)
+        // K8s uses rand.SafeEncodeString(fmt.Sprint(hash)) which maps each
+        // character of the decimal string through a safe alphabet.
+        // See: staging/src/k8s.io/apimachinery/pkg/util/rand/rand.go
+        let decimal = format!("{}", hash);
+        const ALPHANUMS: &[u8] = b"bcdfghjklmnpqrstvwxz2456789";
+        decimal
+            .bytes()
+            .map(|b| ALPHANUMS[(b as usize) % ALPHANUMS.len()] as char)
+            .collect()
     }
 
     /// Build ControllerRevision data in K8s getPatch() format.
