@@ -375,7 +375,7 @@ pub async fn deletecollection_statefulsets(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<StatusCode> {
+) -> Result<Json<serde_json::Value>> {
     info!(
         "DeleteCollection statefulsets in namespace: {} with params: {:?}",
         namespace, params
@@ -397,7 +397,10 @@ pub async fn deletecollection_statefulsets(
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     if is_dry_run {
         info!("Dry-run: StatefulSet collection would be deleted (not deleted)");
-        return Ok(StatusCode::OK);
+        return Ok(Json(serde_json::json!({
+            "kind": "Status", "apiVersion": "v1", "metadata": {},
+            "status": "Success", "code": 200
+        })));
     }
 
     // Get all statefulsets in the namespace
@@ -429,5 +432,17 @@ pub async fn deletecollection_statefulsets(
         "DeleteCollection completed: {} statefulsets deleted",
         deleted_count
     );
-    Ok(StatusCode::OK)
+    // K8s returns a Status object for deleteCollection
+    // See: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/delete.go:340
+    Ok(Json(serde_json::json!({
+        "kind": "Status",
+        "apiVersion": "v1",
+        "metadata": {},
+        "status": "Success",
+        "code": 200,
+        "details": {
+            "kind": "StatefulSet"
+        }
+    })))
 }
+
