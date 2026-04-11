@@ -131,35 +131,45 @@ impl KubeProxy {
             all_endpointslices.len()
         );
 
-        // Compute a hash of the current state to detect changes.
-        // Only flush and rebuild rules when the state has actually changed.
-        // This prevents the "Connection refused" gap during flush+rebuild cycles.
-        // K8s uses atomic iptables-restore; we approximate by skipping no-op syncs.
+        // Compute an ORDER-INDEPENDENT hash of the current state.
+        // Services and endpoints come back from etcd in arbitrary order,
+        // so we must use a commutative hash (XOR of per-item hashes) to
+        // avoid false "changed" detections that cause unnecessary flush+rebuild.
+        // K8s uses atomic iptables-restore; we skip no-op syncs instead.
         use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // Hash service count + endpoint count + endpointslice count
-        services.len().hash(&mut hasher);
-        endpoints_map.len().hash(&mut hasher);
-        all_endpointslices.len().hash(&mut hasher);
-        // Hash each service's clusterIP + ports + each endpoint's addresses
+
+        let mut current_hash: u64 = 0;
+        current_hash ^= services.len() as u64;
+        current_hash ^= (endpoints_map.len() as u64).wrapping_mul(31);
+        current_hash ^= (all_endpointslices.len() as u64).wrapping_mul(37);
+
         for svc in &services {
-            svc.spec.cluster_ip.hash(&mut hasher);
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            svc.spec.cluster_ip.hash(&mut h);
             for port in &svc.spec.ports {
-                port.port.hash(&mut hasher);
-                port.name.hash(&mut hasher);
-                port.protocol.hash(&mut hasher);
+                port.port.hash(&mut h);
+                port.name.hash(&mut h);
+                port.protocol.hash(&mut h);
             }
+            // XOR makes it order-independent
+            current_hash ^= h.finish();
         }
         for (key, entries) in &endpointslice_map {
-            key.hash(&mut hasher);
-            entries.len().hash(&mut hasher);
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            key.hash(&mut h);
+            entries.len().hash(&mut h);
+            // XOR individual entry hashes for order-independence within entries
+            let mut entries_hash: u64 = 0;
             for (ip, name, port) in entries {
-                ip.hash(&mut hasher);
-                name.hash(&mut hasher);
-                port.hash(&mut hasher);
+                let mut eh = std::collections::hash_map::DefaultHasher::new();
+                ip.hash(&mut eh);
+                name.hash(&mut eh);
+                port.hash(&mut eh);
+                entries_hash ^= eh.finish();
             }
+            entries_hash.hash(&mut h);
+            current_hash ^= h.finish();
         }
-        let current_hash = hasher.finish();
 
         if current_hash == self.last_sync_hash {
             debug!("Kube-proxy: state unchanged, skipping sync");
