@@ -41,17 +41,38 @@ pub async fn create_custom_resource(
         group, version, plural, cr_name
     );
 
-    // Strict field validation: reject unknown top-level fields for CRDs.
-    // K8s only allows apiVersion, kind, metadata, spec, status at top level.
-    // CustomResource has #[serde(flatten)] extra which captures unknowns.
+    // Strict field validation for CRDs:
+    // 1. Reject unknown top-level fields (CustomResource has flatten extra)
+    // 2. Reject unknown metadata fields
     // K8s ref: staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go
     if params.get("fieldValidation").map(|v| v.as_str()) == Some("Strict") {
+        // Check unknown top-level fields
         if !cr.extra.is_empty() {
             let unknown: Vec<&String> = cr.extra.keys().collect();
             return Err(rusternetes_common::Error::InvalidResource(format!(
                 "strict decoding error: unknown field \"{}\"",
                 unknown[0]
             )));
+        }
+        // Check unknown metadata fields — K8s validates ObjectMeta strictly
+        if let Ok(body_json) = serde_json::from_slice::<serde_json::Value>(&body) {
+            if let Some(meta) = body_json.get("metadata").and_then(|m| m.as_object()) {
+                const KNOWN_META: &[&str] = &[
+                    "name", "generateName", "namespace", "selfLink", "uid",
+                    "resourceVersion", "generation", "creationTimestamp",
+                    "deletionTimestamp", "deletionGracePeriodSeconds",
+                    "labels", "annotations", "ownerReferences", "finalizers",
+                    "managedFields", "clusterName",
+                ];
+                for key in meta.keys() {
+                    if !KNOWN_META.contains(&key.as_str()) {
+                        return Err(rusternetes_common::Error::InvalidResource(format!(
+                            ".metadata.{}: field not declared in schema",
+                            key
+                        )));
+                    }
+                }
+            }
         }
     }
     crate::handlers::validation::validate_strict_fields(&params, &body, &cr)?;
