@@ -1269,6 +1269,7 @@ mod tests {
                 "image": "my-cron-image"
             })),
             status: None,
+            extra: Default::default(),
         }
     }
 
@@ -1381,6 +1382,7 @@ mod tests {
                 "cronSpec": "* * * * */5"
             })),
             status: None,
+            extra: Default::default(),
         };
 
         apply_schema_defaults(&crd, "v1", &mut cr);
@@ -1412,6 +1414,7 @@ mod tests {
                 "replicas": 3
             })),
             status: None,
+            extra: Default::default(),
         };
 
         apply_schema_defaults(&crd, "v1", &mut cr);
@@ -1442,6 +1445,7 @@ mod tests {
                 "logging": {}
             })),
             status: None,
+            extra: Default::default(),
         };
 
         apply_schema_defaults(&crd, "v1", &mut cr);
@@ -1463,6 +1467,7 @@ mod tests {
             metadata: ObjectMeta::new("my-crontab"),
             spec: Some(json!({"cronSpec": "* * * * */5"})),
             status: None,
+            extra: Default::default(),
         };
 
         // Body includes an unknown field "unknownTopLevel"
@@ -1497,6 +1502,7 @@ mod tests {
             metadata: ObjectMeta::new("my-crontab"),
             spec: Some(json!({"cronSpec": "* * * * */5"})),
             status: None,
+            extra: Default::default(),
         };
 
         let body = br#"{"apiVersion":"stable.example.com/v1","kind":"CronTab","metadata":{"name":"my-crontab"},"spec":{"cronSpec":"* * * * */5"}}"#;

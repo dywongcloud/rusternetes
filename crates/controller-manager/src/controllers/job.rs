@@ -677,7 +677,8 @@ impl<S: Storage> JobController<S> {
         if success_policy_met {
             info!("Job {}/{} met success policy criteria", namespace, name);
 
-            // Terminate remaining active pods
+            // Terminate remaining active pods and count how many we're terminating
+            let mut terminating_count = 0i32;
             for pod in job_pods.iter() {
                 let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
                 if matches!(phase, Some(Phase::Running) | Some(Phase::Pending)) {
@@ -685,6 +686,7 @@ impl<S: Storage> JobController<S> {
                     let mut term_pod = pod.clone();
                     term_pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
                     let _ = self.storage.update(&pod_key, &term_pod).await;
+                    terminating_count += 1;
                 }
             }
 
@@ -713,23 +715,9 @@ impl<S: Storage> JobController<S> {
                 start_time,
                 completion_time: Some(chrono::Utc::now()),
                 ready: Some(0), // Job is complete, no ready pods
-                // Terminating = pods with deletionTimestamp that are still running.
-                // When job completes, remaining active pods may be terminating.
-                // Count pods that have deletionTimestamp but haven't reached
-                // terminal phase (Succeeded/Failed).
-                terminating: {
-                    let terminating_count = job_pods
-                        .iter()
-                        .filter(|p| {
-                            p.metadata.deletion_timestamp.is_some()
-                                && !matches!(
-                                    p.status.as_ref().and_then(|s| s.phase.as_ref()),
-                                    Some(Phase::Succeeded) | Some(Phase::Failed)
-                                )
-                        })
-                        .count() as i32;
-                    Some(terminating_count)
-                },
+                // Terminating = active pods we just set deletionTimestamp on.
+                // K8s ref: pkg/controller/job/job_controller.go — syncJob
+                terminating: Some(terminating_count),
                 completed_indexes: completed_indexes.clone(),
                 failed_indexes: failed_indexes.clone(),
                 uncounted_terminated_pods: None,

@@ -1312,14 +1312,15 @@ mod tests {
 
     #[test]
     fn test_try_brace_scan_finds_embedded_json() {
-        // Binary prefix followed by actual JSON
+        // Binary prefix followed by actual JSON — must have apiVersion AND kind
+        // to be recognized as a K8s resource (not a random fragment)
         let mut data = Vec::new();
         data.extend_from_slice(b"k8s\0");
         data.extend_from_slice(&[0x0a, 0x10, 0x12]); // some protobuf prefix
-        data.extend_from_slice(br#"{"apiVersion":"v1"}"#);
+        data.extend_from_slice(br#"{"apiVersion":"v1","kind":"Pod"}"#);
 
         let result = try_brace_scan_or_type_meta(&data);
-        assert_eq!(result, br#"{"apiVersion":"v1"}"#.to_vec());
+        assert_eq!(result, br#"{"apiVersion":"v1","kind":"Pod"}"#.to_vec());
     }
 
     #[test]
