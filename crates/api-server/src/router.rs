@@ -779,10 +779,14 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
         )
         .route("/openid/v1/jwks", get(handlers::health::openid_jwks))
         // Discovery API endpoints
-        // Trailing slashes are normalized by the middleware layer (see build_router).
+        // K8s serves identical responses with/without trailing slashes.
+        // The middleware approach doesn't work with Axum's routing, so add explicit routes.
         .route("/api", get(handlers::discovery::get_core_api))
+        .route("/api/", get(handlers::discovery::get_core_api))
         .route("/api/v1", get(handlers::discovery::get_core_resources))
+        .route("/api/v1/", get(handlers::discovery::get_core_resources))
         .route("/apis", get(handlers::discovery::get_api_groups))
+        .route("/apis/", get(handlers::discovery::get_api_groups))
         .route("/apis/:group/", get(handlers::discovery::get_api_group))
         .route(
             "/apis/apps/v1",
