@@ -152,23 +152,35 @@ impl<S: Storage> EndpointSliceController<S> {
                 .map(|s| s.as_str());
 
             if let Some(svc_name) = svc_name {
-                if !service_names.contains(&(ns.to_string(), svc_name.to_string())) {
-                    // Only delete slices managed by our controller
-                    let is_managed = slice
-                        .metadata
-                        .labels
-                        .as_ref()
-                        .and_then(|l| l.get("endpointslice.kubernetes.io/managed-by"))
-                        .map(|v| v == "endpointslice-controller.k8s.io")
-                        .unwrap_or(false);
-                    if is_managed {
-                        let key = build_key("endpointslices", Some(ns), &slice.metadata.name);
-                        debug!(
-                            "Deleting orphaned EndpointSlice {}/{}",
-                            ns, slice.metadata.name
-                        );
-                        let _ = self.storage.delete(&key).await;
+                // Only delete slices managed by our controllers
+                let managed_by = slice
+                    .metadata
+                    .labels
+                    .as_ref()
+                    .and_then(|l| l.get("endpointslice.kubernetes.io/managed-by"))
+                    .map(|v| v.as_str());
+
+                let should_delete = match managed_by {
+                    Some("endpointslice-controller.k8s.io") => {
+                        // Selector-based: delete if service no longer exists
+                        !service_names.contains(&(ns.to_string(), svc_name.to_string()))
                     }
+                    Some("endpointslice-mirroring-controller.k8s.io") => {
+                        // Mirrored: delete if source Endpoints no longer exists
+                        // K8s ref: pkg/controller/endpointslicemirroring/reconciler.go
+                        let ep_key = build_key("endpoints", Some(ns), svc_name);
+                        self.storage.get::<serde_json::Value>(&ep_key).await.is_err()
+                    }
+                    _ => false,
+                };
+
+                if should_delete {
+                    let key = build_key("endpointslices", Some(ns), &slice.metadata.name);
+                    debug!(
+                        "Deleting orphaned EndpointSlice {}/{}",
+                        ns, slice.metadata.name
+                    );
+                    let _ = self.storage.delete(&key).await;
                 }
             }
         }
