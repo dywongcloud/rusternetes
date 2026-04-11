@@ -123,22 +123,28 @@ pub async fn get_swagger_spec(
     let mut paths = serde_json::Map::new();
     let mut definitions = serde_json::Map::new();
 
-    // Read CRDs from storage and include their schemas
+    // Read CRDs from storage as raw JSON to preserve nested schemas.
+    // Using typed deserialization (CustomResourceDefinition) loses nested schemas
+    // in JSONSchemaPropsOrArray untagged enums. Raw JSON preserves everything.
+    // K8s ref: staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go
     if let Ok(crds) = state
         .storage
-        .list::<CustomResourceDefinition>("/registry/customresourcedefinitions")
+        .list::<serde_json::Value>("/registry/customresourcedefinitions")
         .await
     {
         for crd in &crds {
-            let group = &crd.spec.group;
-            let plural = &crd.spec.names.plural;
-            let kind = &crd.spec.names.kind;
+            let group = crd.pointer("/spec/group").and_then(|v| v.as_str()).unwrap_or("");
+            let plural = crd.pointer("/spec/names/plural").and_then(|v| v.as_str()).unwrap_or("");
+            let kind = crd.pointer("/spec/names/kind").and_then(|v| v.as_str()).unwrap_or("");
+            let scope = crd.pointer("/spec/scope").and_then(|v| v.as_str()).unwrap_or("Namespaced");
 
-            for version in &crd.spec.versions {
-                if !version.served {
+            let versions = crd.pointer("/spec/versions").and_then(|v| v.as_array());
+            for version in versions.into_iter().flatten() {
+                let served = version.get("served").and_then(|v| v.as_bool()).unwrap_or(false);
+                if !served {
                     continue;
                 }
-                let ver = &version.name;
+                let ver = version.get("name").and_then(|v| v.as_str()).unwrap_or("");
 
                 // Build definition key like "io.example.stable.v1.CronTab"
                 let group_parts: Vec<&str> = group.rsplitn(10, '.').collect();
@@ -149,17 +155,15 @@ pub async fn get_swagger_spec(
                     kind
                 );
 
-                // Add schema from CRD validation if present
-                if let Some(ref schema) = version.schema {
-                    if let Ok(schema_val) = serde_json::to_value(&schema.open_apiv3_schema) {
-                        definitions.insert(def_key.clone(), schema_val);
-                    }
+                // Add schema from CRD validation — use raw JSON to preserve nested items
+                if let Some(schema_val) = version.pointer("/schema/openAPIV3Schema") {
+                    definitions.insert(def_key.clone(), schema_val.clone());
                 }
 
                 // Add path entries for the CRD's API endpoints
                 let base_path = format!("/apis/{}/{}", group, ver);
 
-                if crd.spec.scope == ResourceScope::Namespaced {
+                if scope == "Namespaced" {
                     let ns_path = format!("{}/namespaces/{{namespace}}/{}", base_path, plural);
                     let ns_item_path = format!("{}/{{name}}", ns_path);
                     paths.insert(
