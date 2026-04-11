@@ -2476,26 +2476,26 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
     Router::new()
         .merge(public_routes)
         .merge(protected_routes)
-        .layer(axum_middleware::map_request(|mut req: axum::extract::Request| async move {
-            let path = req.uri().path();
-            // Strip trailing slash for non-root paths
-            if path.len() > 1 && path.ends_with('/') {
-                let new_path = path.trim_end_matches('/');
-                if let Ok(new_uri) = axum::http::Uri::builder()
-                    .path_and_query(
-                        if let Some(q) = req.uri().query() {
+        .layer(axum_middleware::map_request(
+            |mut req: axum::extract::Request| async move {
+                let path = req.uri().path();
+                // Strip trailing slash for non-root paths
+                if path.len() > 1 && path.ends_with('/') {
+                    let new_path = path.trim_end_matches('/');
+                    if let Ok(new_uri) = axum::http::Uri::builder()
+                        .path_and_query(if let Some(q) = req.uri().query() {
                             format!("{}?{}", new_path, q)
                         } else {
                             new_path.to_string()
-                        },
-                    )
-                    .build()
-                {
-                    *req.uri_mut() = new_uri;
+                        })
+                        .build()
+                    {
+                        *req.uri_mut() = new_uri;
+                    }
                 }
-            }
-            req
-        }))
+                req
+            },
+        ))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

@@ -300,10 +300,7 @@ fn rsa_pem_to_jwk(pem_data: &[u8]) -> Option<serde_json::Value> {
     let n_b64url = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&n);
     let e_b64url = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&e);
 
-    let canonical = format!(
-        r#"{{"e":"{}","kty":"RSA","n":"{}"}}"#,
-        e_b64url, n_b64url
-    );
+    let canonical = format!(r#"{{"e":"{}","kty":"RSA","n":"{}"}}"#, e_b64url, n_b64url);
     let kid = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .encode(Sha256::digest(canonical.as_bytes()));
 
