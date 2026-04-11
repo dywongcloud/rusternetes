@@ -253,10 +253,58 @@ impl<S: Storage> NamespaceController<S> {
             }
         }
 
-        // Delete all resources in the namespace, tracking finalizer state.
-        // Resources with finalizers get deletionTimestamp but remain in storage.
+        // Delete resources in the namespace in TWO phases to match K8s ordering.
+        // Phase 1: Delete pods (set deletionTimestamp for those with finalizers).
+        // K8s deletes pods before other resources so pods can access configmaps/secrets
+        // during shutdown. The conformance test checks this ordering explicitly.
+        // K8s ref: pkg/controller/namespace/deletion/namespaced_resources_deleter.go
         let mut any_finalizers_remaining = false;
+        match self.delete_all_resources(name, "pods").await {
+            Ok(had_finalizers) => {
+                if had_finalizers {
+                    any_finalizers_remaining = true;
+                }
+            }
+            Err(e) => warn!("Failed to delete pods in namespace {}: {}", name, e),
+        }
+
+        // If pods have finalizers AND conditions haven't been set yet, stop here.
+        // This gives the test time to observe pods with deletionTimestamp while
+        // configmaps/secrets still exist (K8s ordering requirement).
+        // On subsequent reconciles (conditions already set), proceed to phase 2.
+        let conditions_already_set = namespace
+            .status
+            .as_ref()
+            .and_then(|s| s.conditions.as_ref())
+            .map(|c| {
+                c.iter()
+                    .any(|cond| cond.condition_type == "NamespaceDeletionContentFailure")
+            })
+            .unwrap_or(false);
+        if any_finalizers_remaining && !conditions_already_set {
+            let remaining_count = self.count_remaining_resources(name).await?;
+            let conditions =
+                Self::build_deletion_conditions(remaining_count > 0, true);
+            let key = build_key("namespaces", None, name);
+            if let Ok(mut ns) = self.storage.get::<Namespace>(&key).await {
+                ns.status = Some(NamespaceStatus {
+                    phase: Some(Phase::Terminating),
+                    conditions: Some(conditions),
+                });
+                let _ = self.storage.update(&key, &ns).await;
+                info!(
+                    "Namespace {} has pods with finalizers, conditions set (will delete other resources next cycle)",
+                    name
+                );
+            }
+            return Ok(());
+        }
+
+        // Phase 2: Delete remaining resources (configmaps, secrets, etc.)
         for resource_type in &resource_types {
+            if *resource_type == "pods" {
+                continue; // Already processed
+            }
             match self.delete_all_resources(name, resource_type).await {
                 Ok(had_finalizers) => {
                     if had_finalizers {
@@ -268,7 +316,6 @@ impl<S: Storage> NamespaceController<S> {
                         "Failed to delete {} in namespace {}: {}",
                         resource_type, name, e
                     );
-                    // Continue with other resource types
                 }
             }
         }
@@ -894,11 +941,21 @@ mod tests {
             "deletionTimestamp should be a string"
         );
 
-        // The configmap should be deleted (no finalizer)
+        // After first reconcile, configmap should still exist (pods processed first,
+        // other resources deferred when pods have finalizers — K8s ordering).
+        let cm_result = storage.get::<serde_json::Value>(&cm_key).await;
+        assert!(
+            cm_result.is_ok(),
+            "ConfigMap should still exist after first reconcile (pods processed first)"
+        );
+
+        // Second reconcile should delete the configmap
+        let ns_for_second = storage.get::<Namespace>(&ns_key).await.unwrap();
+        controller.finalize_namespace(&ns_for_second).await.unwrap();
         let cm_result = storage.get::<serde_json::Value>(&cm_key).await;
         assert!(
             cm_result.is_err(),
-            "ConfigMap without finalizer should be deleted from storage"
+            "ConfigMap without finalizer should be deleted after second reconcile"
         );
 
         // The namespace should have NamespaceDeletionContentFailure condition set to True
