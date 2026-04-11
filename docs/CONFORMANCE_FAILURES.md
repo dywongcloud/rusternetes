@@ -1,7 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 134** | 370/441 (83.9%) | 2026-04-10
-**Round 135** | Pending (32 staged fixes) | 2026-04-10
+**Round 135** | Pending (34 staged fixes) | 2026-04-10
 
 ## Root Cause Analysis — Round 134 (71 failures)
 
@@ -141,6 +141,8 @@
 | e810b09 | kube-proxy skip sync when unchanged | service networking flush gap |
 | 79078f9 | RS256 JWT signing for OIDC | service_accounts:667 |
 | 01c7443 | Kubelet OnFailure restart policy | runtime:115 |
+| 4103c84 | Discovery API trailing slash normalization | kubectl.go:1881 proxy |
+| 12aea53 | OIDC JWKS endpoint returns RSA public key | service_accounts:667 |
 
 ## Expected Impact of Staged Fixes
 
