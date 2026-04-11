@@ -381,19 +381,39 @@ impl IptablesManager {
             // K8s ref: proxier.go line 1460-1466
             let related_check = Command::new(&self.iptables_cmd)
                 .args([
-                    "-t", "filter", "-C", forward_chain,
-                    "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED",
-                    "-m", "comment", "--comment", "kubernetes forwarding conntrack",
-                    "-j", "ACCEPT",
+                    "-t",
+                    "filter",
+                    "-C",
+                    forward_chain,
+                    "-m",
+                    "conntrack",
+                    "--ctstate",
+                    "RELATED,ESTABLISHED",
+                    "-m",
+                    "comment",
+                    "--comment",
+                    "kubernetes forwarding conntrack",
+                    "-j",
+                    "ACCEPT",
                 ])
                 .output();
             if related_check.map_or(true, |o| !o.status.success()) {
                 let _ = Command::new(&self.iptables_cmd)
                     .args([
-                        "-t", "filter", "-A", forward_chain,
-                        "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED",
-                        "-m", "comment", "--comment", "kubernetes forwarding conntrack",
-                        "-j", "ACCEPT",
+                        "-t",
+                        "filter",
+                        "-A",
+                        forward_chain,
+                        "-m",
+                        "conntrack",
+                        "--ctstate",
+                        "RELATED,ESTABLISHED",
+                        "-m",
+                        "comment",
+                        "--comment",
+                        "kubernetes forwarding conntrack",
+                        "-j",
+                        "ACCEPT",
                     ])
                     .output();
             }

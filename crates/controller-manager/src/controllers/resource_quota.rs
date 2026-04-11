@@ -416,10 +416,7 @@ impl<S: Storage> ResourceQuotaController<S> {
 
             // Track ephemeral-storage — K8s tracks this alongside cpu/memory
             let es_req_str = self.bytes_to_memory_string(total_ephemeral_storage_requests);
-            usage.insert(
-                "requests.ephemeral-storage".to_string(),
-                es_req_str.clone(),
-            );
+            usage.insert("requests.ephemeral-storage".to_string(), es_req_str.clone());
             usage.insert("ephemeral-storage".to_string(), es_req_str);
             usage.insert(
                 "limits.ephemeral-storage".to_string(),
