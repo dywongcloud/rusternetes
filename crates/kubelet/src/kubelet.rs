@@ -557,7 +557,8 @@ impl Kubelet {
                         || err_str.contains("FailedToStart")
                     {
                         error!("Fatal error syncing pod {}: {}", pod.metadata.name, err_str);
-                        if let Err(update_err) = self.update_pod_status_error(&pod, &err_str).await {
+                        if let Err(update_err) = self.update_pod_status_error(&pod, &err_str).await
+                        {
                             error!("Failed to update pod status: {}", update_err);
                         }
                     } else {

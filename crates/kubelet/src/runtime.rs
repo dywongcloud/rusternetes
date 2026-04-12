@@ -789,7 +789,8 @@ impl ContainerRuntime {
                                             Some(namespace),
                                             pod_name,
                                         );
-                                        if let Ok(mut status_pod) = storage.get::<Pod>(&pod_key).await
+                                        if let Ok(mut status_pod) =
+                                            storage.get::<Pod>(&pod_key).await
                                         {
                                             let init_statuses =
                                                 self.get_init_container_statuses(&status_pod).await;
@@ -4676,10 +4677,7 @@ impl ContainerRuntime {
     /// - should_retry: true if the next init container failed and should be retried
     ///
     /// K8s ref: pkg/kubelet/kuberuntime/kuberuntime_container.go — computeInitContainerActions
-    pub async fn compute_init_container_actions(
-        &self,
-        pod: &Pod,
-    ) -> (bool, Option<usize>, bool) {
+    pub async fn compute_init_container_actions(&self, pod: &Pod) -> (bool, Option<usize>, bool) {
         let init_containers = match pod.spec.as_ref().and_then(|s| s.init_containers.as_ref()) {
             Some(ics) if !ics.is_empty() => ics,
             _ => return (true, None, false), // No init containers = all done
@@ -9704,7 +9702,10 @@ mod tests {
         // See: init_container.go:414-419 — checks status.State.Terminated.ExitCode != 0
         let state = ContainerState::Waiting {
             reason: Some("CrashLoopBackOff".to_string()),
-            message: Some("back-off restarting failed container init container \"init1\" exited with 1".to_string()),
+            message: Some(
+                "back-off restarting failed container init container \"init1\" exited with 1"
+                    .to_string(),
+            ),
         };
         match &state {
             ContainerState::Waiting { reason, .. } => {
@@ -9749,7 +9750,10 @@ mod tests {
             }
             _ => panic!("App container should be in Waiting state during init"),
         }
-        assert!(!app_status.ready, "App container should not be ready during init");
+        assert!(
+            !app_status.ready,
+            "App container should not be ready during init"
+        );
         assert_eq!(
             app_status.started,
             Some(false),
