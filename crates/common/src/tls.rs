@@ -103,10 +103,18 @@ impl TlsConfig {
     /// Create rustls server config
     pub fn into_server_config(self) -> Result<Arc<rustls::ServerConfig>> {
         ensure_crypto_provider();
-        let config = rustls::ServerConfig::builder()
+        let mut config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(self.cert, self.key)
             .context("Failed to create server config")?;
+
+        // Enable HTTP/2 via ALPN negotiation.
+        // K8s API server advertises h2 and http/1.1.
+        // Go's client-go prefers HTTP/2 for multiplexed watch streams.
+        // Without ALPN, client-go falls back to HTTP/1.1 which has
+        // connection pooling issues that cause "context canceled" watch errors.
+        // K8s ref: staging/src/k8s.io/apiserver/pkg/server/options/serving.go
+        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
         Ok(Arc::new(config))
     }
