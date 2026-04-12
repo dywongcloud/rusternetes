@@ -4669,6 +4669,88 @@ impl ContainerRuntime {
         Some(statuses)
     }
 
+    /// Determine the init container action to take, following K8s's state machine.
+    /// Returns: (all_init_done, next_init_index, should_retry)
+    /// - all_init_done: true if all init containers completed successfully
+    /// - next_init_index: index of the next init container to start/retry, or None
+    /// - should_retry: true if the next init container failed and should be retried
+    ///
+    /// K8s ref: pkg/kubelet/kuberuntime/kuberuntime_container.go — computeInitContainerActions
+    pub async fn compute_init_container_actions(
+        &self,
+        pod: &Pod,
+    ) -> (bool, Option<usize>, bool) {
+        let init_containers = match pod.spec.as_ref().and_then(|s| s.init_containers.as_ref()) {
+            Some(ics) if !ics.is_empty() => ics,
+            _ => return (true, None, false), // No init containers = all done
+        };
+
+        let pod_name = &pod.metadata.name;
+        let restart_on_failure = pod
+            .spec
+            .as_ref()
+            .and_then(|s| s.restart_policy.as_deref())
+            .unwrap_or("Always")
+            != "Never";
+
+        // Check each init container in order
+        for (i, ic) in init_containers.iter().enumerate() {
+            let is_sidecar = ic.restart_policy.as_deref() == Some("Always");
+            if is_sidecar {
+                continue; // Sidecar init containers are handled separately
+            }
+
+            let container_name = format!("{}_{}", pod_name, ic.name);
+            let inspect = self
+                .docker
+                .inspect_container(&container_name, None::<InspectContainerOptions>)
+                .await;
+
+            match inspect {
+                Ok(info) => {
+                    let state = info.state.unwrap_or_default();
+                    let running = state.running.unwrap_or(false);
+                    let exit_code = state.exit_code.unwrap_or(-1);
+                    let status = state.status;
+
+                    if running {
+                        // Init container is still running — wait for it
+                        return (false, None, false);
+                    }
+
+                    if matches!(
+                        status,
+                        Some(bollard::secret::ContainerStateStatusEnum::EXITED)
+                    ) {
+                        if exit_code == 0 {
+                            // This init container completed successfully — check next
+                            continue;
+                        } else {
+                            // Failed with non-zero exit code
+                            if restart_on_failure {
+                                // Should retry this init container
+                                return (false, Some(i), true);
+                            } else {
+                                // RestartPolicy=Never — pod is terminal
+                                return (false, None, false);
+                            }
+                        }
+                    }
+
+                    // Container exists but in unknown state — treat as not started
+                    return (false, Some(i), false);
+                }
+                Err(_) => {
+                    // Container doesn't exist — need to start this init container
+                    return (false, Some(i), false);
+                }
+            }
+        }
+
+        // All init containers completed successfully
+        (true, None, false)
+    }
+
     /// Get detailed status of all containers in a pod
     /// Get statuses for ephemeral containers in a pod.
     pub async fn get_ephemeral_container_statuses(

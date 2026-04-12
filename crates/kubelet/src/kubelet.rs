@@ -822,13 +822,128 @@ impl Kubelet {
                     });
 
                 if !already_has_error {
-                    info!("Starting pod: {}/{}", namespace, pod_name);
                     let has_init_containers = pod
                         .spec
                         .as_ref()
                         .and_then(|s| s.init_containers.as_ref())
-                        .map_or(false, |ic| !ic.is_empty());
-                    let reason = if has_init_containers {
+                        .map_or(false, |ic| {
+                            ic.iter()
+                                .any(|c| c.restart_policy.as_deref() != Some("Always"))
+                        });
+
+                    // For pods with init containers, use the state machine approach.
+                    // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_container.go — computeInitContainerActions
+                    // Check if the pause container exists (pod sandbox created).
+                    let pause_name = format!("{}_pause", pod_name);
+                    let sandbox_exists = self
+                        .runtime
+                        .is_container_running(&pause_name)
+                        .await
+                        .unwrap_or(false);
+
+                    if has_init_containers && sandbox_exists {
+                        // Pod sandbox exists — check init container progress
+                        let (all_done, next_idx, should_retry) =
+                            self.runtime.compute_init_container_actions(pod).await;
+
+                        if all_done {
+                            // All init containers done — start_pod will skip init and start app containers
+                            info!("All init containers completed for pod {}/{}, starting app containers", namespace, pod_name);
+                        } else if let Some(idx) = next_idx {
+                            let init_containers = pod
+                                .spec
+                                .as_ref()
+                                .unwrap()
+                                .init_containers
+                                .as_ref()
+                                .unwrap();
+                            let ic = &init_containers[idx];
+
+                            if should_retry {
+                                // Init container failed — update status and return.
+                                // The next sync cycle will retry (with implicit backoff from sync interval).
+                                info!(
+                                    "Init container {} failed for pod {}/{}, will retry next sync",
+                                    ic.name, namespace, pod_name
+                                );
+                                // Remove failed container so it can be recreated
+                                let cname = format!("{}_{}", pod_name, ic.name);
+                                let _ = self
+                                    .runtime
+                                    .remove_terminated_container(&cname)
+                                    .await;
+                                // Update status with CrashLoopBackOff
+                                let init_statuses = self
+                                    .runtime
+                                    .get_init_container_statuses(pod)
+                                    .await;
+                                let key = build_key("pods", Some(namespace), pod_name);
+                                if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
+                                    if let Some(ref mut s) = p.status {
+                                        s.init_container_statuses = init_statuses;
+                                        s.reason = Some("PodInitializing".to_string());
+                                    }
+                                    let _ = self.storage.update(&key, &p).await;
+                                }
+                                return Ok(());
+                            } else {
+                                // Need to start this init container
+                                info!(
+                                    "Starting init container {} (index {}) for pod {}/{}",
+                                    ic.name, idx, namespace, pod_name
+                                );
+                                let volume_paths: std::collections::HashMap<String, String> = pod
+                                    .spec
+                                    .as_ref()
+                                    .and_then(|s| s.volumes.as_ref())
+                                    .map(|vols| {
+                                        vols.iter()
+                                            .map(|v| {
+                                                let path = format!(
+                                                    "{}/{}/{}",
+                                                    self.runtime.volumes_base_path(),
+                                                    pod_name,
+                                                    v.name
+                                                );
+                                                (v.name.clone(), path)
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+                                let pod_ip = pod.status.as_ref().and_then(|s| s.pod_ip.as_deref());
+                                if let Err(e) = self
+                                    .runtime
+                                    .start_container(pod, ic, &volume_paths, None, None, pod_ip)
+                                    .await
+                                {
+                                    warn!(
+                                        "Failed to start init container {} for {}/{}: {}",
+                                        ic.name, namespace, pod_name, e
+                                    );
+                                }
+                                // Update status
+                                let init_statuses = self
+                                    .runtime
+                                    .get_init_container_statuses(pod)
+                                    .await;
+                                let key = build_key("pods", Some(namespace), pod_name);
+                                if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
+                                    if let Some(ref mut s) = p.status {
+                                        s.init_container_statuses = init_statuses;
+                                        s.reason = Some("PodInitializing".to_string());
+                                    }
+                                    let _ = self.storage.update(&key, &p).await;
+                                }
+                                return Ok(());
+                            }
+                        } else {
+                            // No next init container and not all done — pod is terminal or waiting
+                            return Ok(());
+                        }
+                    }
+
+                    info!("Starting pod: {}/{}", namespace, pod_name);
+                    let reason = if has_init_containers && !sandbox_exists {
                         "PodInitializing"
                     } else {
                         "ContainerCreating"
