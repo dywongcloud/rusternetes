@@ -1,90 +1,46 @@
 # Conformance Failure Tracker
 
 **Round 135** | 373/441 (84.6%) | 2026-04-11
-**Round 134** | 370/441 (83.9%) | 2026-04-10
+**Round 136** | Pending (16 fixes staged) | 2026-04-11
 
-## Round 135 — 68 failures, 57 unique locations
+## Staged Fixes for Round 136 (from deep K8s source comparison)
 
-### Webhook — 12 failures (ROOT CAUSE FOUND)
-- `webhook.go:520,675,904,1269,1334,1400,1481,2107(x3),2164,2491`
-- **Root cause**: kube-proxy flush gap — every sync flushed ALL iptables rules because hash was order-dependent and NEVER matched. Webhook service ClusterIP rules existed for only ~50ms/second. With FailurePolicy=Ignore, failed calls were silently ignored → readiness check never saw denial.
-- **Fix committed**: 3012663 order-independent XOR hashing eliminates unnecessary flushes
-- **Additional findings from K8s comparison**: Missing objectSelector (7cf9bd5), missing matchPolicy support, missing UID verification on responses
+| Commit | Fix | K8s Ref | Expected Impact |
+|--------|-----|---------|-----------------|
+| 3012663 | kube-proxy XOR hash — no flush gap | proxier.go iptables-restore | ~18 (webhook+service+DNS) |
+| fe76396 | kube-proxy RELATED,ESTABLISHED + OUTPUT | proxier.go:1460,386 | service networking |
+| 7f8d692 | kube-proxy --reap for session affinity | proxier.go:1557 | edge cases |
+| 0188c3c | OpenAPI raw JSON CRD schemas | customresource_handler.go | 9 CRD OpenAPI |
+| e1f4bd0 | Preemption extended resources | preemption.go | 4 preemption |
+| 646c713 | DaemonSet SafeEncodeString hash | rand.go SafeEncodeString | 1 daemonset |
+| 73795a7 | Endpoints terminal/terminating/publishNotReady | controller_utils.go ShouldPodBeInEndpoints | endpoints reliability |
+| 0ed1628 | ResourceQuota ephemeral-storage | pods.go PodUsageFunc | 1 quota |
+| a1025ba | Namespace deletion pod ordering | namespaced_resources_deleter.go | 1 namespace |
+| 31f4f39 | Job terminating count for completed | job_controller.go syncJob | 1 job |
+| 2f20539 | Kubelet RS256 key path | jwt.go | 1 SA token |
+| 7cf9bd5 | Webhook objectSelector | object/matcher.go | webhook reliability |
+| a18febe | CRD strict unknown top-level fields | customresource_handler.go | 1 field validation |
+| e2e2f48 | CRD strict unknown metadata fields | customresource_handler.go | 1 field validation |
+| 3ba5e20 | Trailing slash routes /api/ /apis/ | Go http.ServeMux | 1 discovery |
+| 361752a | EndpointSlice mirroring cleanup | reconciler.go | 1 mirroring |
 
-### CRD OpenAPI — 9 failures (FIX STAGED 0188c3c)
-- `crd_publish_openapi.go:77,161,214,253,285,318,366,400,451`
-- OpenAPI handler uses typed deserialization losing nested `items` schemas
-- **Fix staged**: 0188c3c uses raw JSON — needs deploy
+## Known Remaining Issues (need more work)
 
-### DNS — 6 failures
-- `dns_common.go:476` (x6)
-- Rate limiter timeout, pods not starting
+### Watch "context canceled" — ~8 failures
+- Connection header fix deployed but watches still fail
+- Root cause: likely needs HTTP/2 ALPN support for Go client-go compatibility
+- Also: watch stream may close when etcd channel drops
 
-### Service Networking — 6 failures
-- `service.go:768,886,3459`, `proxy.go:271,503`, `service_latency.go:145`
-- ClusterIP service unreachable from exec pods
+### Deployment proportional scaling — 1 failure
+- K8s distributes replicas proportionally during rollover
+- Complex feature not implemented in our controller
 
-### EmptyDir — 4 failures (webhook cascade)
-- `output.go:263` (x4)
-- Stale webhook configuration blocks pod creation
+### Aggregator — 1 failure
+- Sample API server pod never starts (kubelet sync issue)
+- Should improve with kube-proxy fixes
 
-### Preemption — 4 failures (FIX STAGED e1f4bd0)
-- `predicates.go:1041(x2)`, `preemption.go:535,1052`
-- Extended resources not checked in preemption
-- **Fix staged**: e1f4bd0 — needs deploy
-
-### Field Validation — 3 failures (FIX STAGED a18febe)
-- `field_validation.go:462,611,735`
-- Unknown top-level CR fields not rejected; YAML dup format
-- **Fix staged**: a18febe — needs deploy
-
-### Apps Controllers — 8 failures
-- `deployment.go:1008,1322`, `replica_set.go:232,560`, `rc.go:509,623`, `statefulset.go:957,1092`
-- Various controller timing/watch issues
-
-### DaemonSet — 1 failure
-- `daemon_set.go:1276`
-
-### Job — 1 failure
-- `job.go:556`
-
-### Init Container — 1 failure
-- `init_container.go:440`
-
-### Discovery — 1 failure (NEW)
-- `discovery.go:131` — PreferredVersion validation
-
-### Namespace — 1 failure
-- `namespace.go:609`
-
-### ResourceQuota — 1 failure
-- `resource_quota.go:282`
-
-### Auth — 2 failures
-- `service_accounts.go:129,667` — SA mount token, OIDC
-
-### kubectl — 2 failures
-- `kubectl.go:1881,2206` — proxy, describe
-
-### Node — 4 failures
-- `lifecycle_hook.go:132`, `runtime.go:115`, `init_container.go:440`, `pod_resize.go:857`
-
-### Other — 2 failures
-- `hostport.go:219`, `aggregator.go:359`, `endpointslicemirroring.go:202`
-
-## Staged Fixes (for round 136)
-
-| Commit | Fix | Expected Tests |
-|--------|-----|---------------|
-| 3012663 | kube-proxy XOR hash — eliminate flush gap | ~18 (webhook+service+DNS) |
-| 0188c3c | OpenAPI raw JSON CRD schemas | ~9 |
-| e1f4bd0 | Preemption extended resources | ~4 |
-| a18febe | CRD strict unknown top-level fields | ~2 |
-| 2f20539 | Kubelet RS256 key path match | 1 |
-| 31f4f39 | Job terminating count for completed jobs | 1 |
-| 3ba5e20 | Explicit trailing slash routes | 1 |
-| 361752a | EndpointSlice mirroring cleanup | 1 |
-| 7cf9bd5 | Webhook objectSelector matching | reliability |
+### Host Port / Pod Resize — 2 failures
+- DinD infrastructure limitations
 
 ## Progress History
 
