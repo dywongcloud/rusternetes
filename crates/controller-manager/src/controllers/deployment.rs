@@ -384,11 +384,17 @@ impl<S: Storage> DeploymentController<S> {
                 // Scale down old ReplicaSets gradually — only remove old pods
                 // when the new RS has enough available replicas to maintain
                 // the minimum availability guarantee.
+                // K8s ref: pkg/controller/deployment/rolling.go — reconcileOldReplicaSets
                 let new_rs_available = self
                     .count_available_pods_for_rs(&active_name, namespace)
                     .await;
                 let min_available = (desired_replicas - max_unavailable).max(0);
-                let can_scale_down = (new_rs_available - min_available).max(0);
+                let mut can_scale_down = (new_rs_available - min_available).max(0);
+                // When new RS is fully available, ensure old RSes are scaled to 0
+                // even if maxUnavailable rounds to 0 (e.g., 25% of 1 = 0)
+                if new_rs_available >= desired_replicas && old_rs_total > 0 && can_scale_down == 0 {
+                    can_scale_down = old_rs_total; // Force scale down all old RSes
+                }
 
                 if can_scale_down > 0 {
                     let mut remaining = can_scale_down;
