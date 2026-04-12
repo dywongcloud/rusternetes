@@ -1,19 +1,21 @@
 # Conformance Failure Tracker
 
 **Round 135** | 373/441 (84.6%) | 2026-04-11
-**Round 136** | Pending (17 fixes staged) | 2026-04-12
+**Round 136** | Pending (18 fixes staged) | 2026-04-12
 
-## Staged Fixes for Round 136 (from deep K8s source comparison)
+## Staged Fixes for Round 136 (all from deep K8s source comparison)
 
 | Commit | Fix | K8s Ref | Expected Impact |
 |--------|-----|---------|-----------------|
-| 3012663 | kube-proxy XOR hash — no flush gap | proxier.go iptables-restore | ~18 (webhook+service+DNS) |
-| fe76396 | kube-proxy RELATED,ESTABLISHED + OUTPUT | proxier.go:1460,386 | service networking |
-| 7f8d692 | kube-proxy --reap for session affinity | proxier.go:1557 | edge cases |
+| 069e807 | TLS HTTP/2 ALPN negotiation (h2 + http/1.1) | serving.go | ~8 watch failures |
+| 3012663 | kube-proxy XOR hash — eliminate flush gap | proxier.go iptables-restore | ~18 (webhook+service+DNS) |
+| fe76396 | kube-proxy RELATED,ESTABLISHED + filter OUTPUT | proxier.go:1460,386 | service return traffic |
+| 7f8d692 | kube-proxy --reap for session affinity | proxier.go:1557 | affinity edge cases |
 | 0188c3c | OpenAPI raw JSON CRD schemas | customresource_handler.go | 9 CRD OpenAPI |
-| e1f4bd0 | Preemption extended resources | preemption.go | 4 preemption |
-| 646c713 | DaemonSet SafeEncodeString hash | rand.go SafeEncodeString | 1 daemonset |
-| 73795a7 | Endpoints terminal/terminating/publishNotReady | controller_utils.go ShouldPodBeInEndpoints | endpoints reliability |
+| e1f4bd0 | Preemption all resource types | preemption.go | 4 preemption |
+| 646c713 | DaemonSet SafeEncodeString hash | rand.go | 1 daemonset |
+| ea9573e | Deployment force scale-down old RSes | rolling.go reconcileOldReplicaSets | 2 deployment |
+| 73795a7 | Endpoints terminal/terminating/publishNotReady | controller_utils.go ShouldPodBeInEndpoints | endpoint reliability |
 | 0ed1628 | ResourceQuota ephemeral-storage | pods.go PodUsageFunc | 1 quota |
 | a1025ba | Namespace deletion pod ordering | namespaced_resources_deleter.go | 1 namespace |
 | 31f4f39 | Job terminating count for completed | job_controller.go syncJob | 1 job |
@@ -24,24 +26,93 @@
 | 3ba5e20 | Trailing slash routes /api/ /apis/ | Go http.ServeMux | 1 discovery |
 | 361752a | EndpointSlice mirroring cleanup | reconciler.go | 1 mirroring |
 
-## Known Remaining Issues (need more work)
+## Round 135 Failure Analysis (68 failures, 57 unique locations)
 
 ### Watch "context canceled" — ~8 failures (FIX STAGED 069e807)
-- Root cause found: TLS server didn't advertise HTTP/2 via ALPN
-- Go's client-go fell back to HTTP/1.1, causing connection pooling issues
-- **Fix staged**: 069e807 enables h2 + http/1.1 ALPN in rustls ServerConfig
-- K8s ref: staging/src/k8s.io/apiserver/pkg/server/options/serving.go
+- `deployment.go:1008,1322`, `rc.go:509,623`, `replica_set.go:232,560`, `runtime.go:115`, `statefulset.go:957`
+- **Root cause found**: TLS server didn't advertise HTTP/2 via ALPN. Go's client-go fell back to HTTP/1.1 causing connection pooling issues with watches.
+- **Fix**: 069e807 enables h2 + http/1.1 ALPN in rustls ServerConfig
+- **K8s ref**: staging/src/k8s.io/apiserver/pkg/server/options/serving.go
 
-### Deployment proportional scaling — 1 failure
-- K8s distributes replicas proportionally during rollover
-- Complex feature not implemented in our controller
+### Webhook — 12 failures (FIX STAGED 3012663 + fe76396 + 7cf9bd5)
+- `webhook.go:520,675,904,1269,1334,1400,1481,2107(x3),2164,2491`
+- **Root cause found**: kube-proxy flushed ALL iptables rules every second because hash was order-dependent and NEVER matched. Webhook ClusterIP rules existed for only ~50ms/second. FailurePolicy=Ignore silently swallowed the errors.
+- **Deep analysis findings**: Also missing objectSelector, missing RELATED,ESTABLISHED filter rule, missing OUTPUT chain jump
+- **K8s ref**: pkg/proxy/iptables/proxier.go, admission/plugin/webhook/predicates/object/matcher.go
 
-### Aggregator — 1 failure
-- Sample API server pod never starts (kubelet sync issue)
-- Should improve with kube-proxy fixes
+### CRD OpenAPI — 9 failures (FIX STAGED 0188c3c)
+- `crd_publish_openapi.go:77,161,214,253,285,318,366,400,451`
+- **Root cause found**: OpenAPI handler deserialized CRDs through typed struct losing nested `items` in JSONSchemaPropsOrArray untagged enum. Confirmed: CRDs stored with raw JSON (fix 047ba6b) but OpenAPI handler re-deserialized them.
+- **Fix**: 0188c3c reads CRDs as raw serde_json::Value in OpenAPI handler
+- **K8s ref**: staging/src/k8s.io/apiextensions-apiserver/pkg/controller/openapi/builder/builder.go
 
-### Host Port / Pod Resize — 2 failures
-- DinD infrastructure limitations
+### DNS — 6 failures (downstream of kube-proxy + watch fixes)
+- `dns_common.go:476` (x6)
+- **Root cause**: DNS test pods couldn't reach CoreDNS or test servers because kube-proxy iptables flush gap broke ClusterIP routing. Also: rate limiter timeouts from failed proxy requests.
+
+### Service Networking — 6 failures (FIX STAGED 3012663 + fe76396)
+- `service.go:768,886,3459`, `proxy.go:271,503`, `service_latency.go:145`
+- **Root cause found (deep analysis)**: kube-proxy missing RELATED,ESTABLISHED accept rule (return traffic dropped), missing filter OUTPUT chain jump (local pod→ClusterIP failed), flush+rebuild gap every second.
+- **K8s ref**: pkg/proxy/iptables/proxier.go lines 378-386, 1451-1466
+
+### Preemption — 4 failures (FIX STAGED e1f4bd0)
+- `predicates.go:1041(x2)`, `preemption.go:535,1052`
+- **Root cause found**: Preemption only checked cpu/memory, not extended resources
+- **K8s ref**: pkg/scheduler/framework/preemption/preemption.go
+
+### EmptyDir — 4 failures (webhook cascade)
+- `output.go:263` (x4) — stale webhook blocks pod creation
+
+### Field Validation — 3 failures (FIX STAGED a18febe + e2e2f48)
+- `field_validation.go:462,611,735`
+- **Root cause found**: Unknown top-level CR fields not rejected (serde flatten captured them). Unknown metadata fields not validated against known ObjectMeta field list.
+- **K8s ref**: staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go
+
+### Deployment — 2 failures (FIX STAGED ea9573e)
+- `deployment.go:1008,1322`
+- **Root cause found**: Old RSes stuck with non-zero replicas when maxUnavailable rounds to 0. K8s forces scale-down when new RS fully available.
+- **K8s ref**: pkg/controller/deployment/rolling.go — reconcileOldReplicaSets
+
+### DaemonSet — 1 failure (FIX STAGED 646c713)
+- `daemon_set.go:1276`
+- **Root cause found (deep analysis)**: Hash format was raw decimal instead of K8s SafeEncodeString alphabet "bcdfghjklmnpqrstvwxz2456789". ControllerRevision name and Match() byte comparison failed.
+- **K8s ref**: staging/src/k8s.io/apimachinery/pkg/util/rand/rand.go
+
+### ResourceQuota — 1 failure (FIX STAGED 0ed1628)
+- `resource_quota.go:282`
+- **Root cause found (deep analysis)**: Missing ephemeral-storage tracking in quota controller
+- **K8s ref**: pkg/quota/v1/evaluator/core/pods.go — PodUsageFunc
+
+### Namespace Deletion — 1 failure (FIX STAGED a1025ba)
+- `namespace.go:609`
+- **Root cause found**: All resources deleted in one pass. K8s deletes pods first, sets conditions, then deletes configmaps on next cycle for observable ordering.
+- **K8s ref**: pkg/controller/namespace/deletion/namespaced_resources_deleter.go
+
+### Job — 1 failure (FIX STAGED 31f4f39)
+- `job.go:556`
+- **Root cause found**: Completed jobs skipped entirely, terminating count never updated to 0
+- **K8s ref**: pkg/controller/job/job_controller.go — syncJob
+
+### Auth — 2 failures (FIX STAGED 2f20539)
+- `service_accounts.go:129,667`
+- **Root cause found**: Kubelet uses HS256 (can't find SA keys at /root/.rusternetes/certs/sa.key) while API server uses RS256 (finds keys at /etc/kubernetes/pki/sa.key). TokenReview fails because algorithms don't match.
+
+### Discovery — 1 failure (FIX STAGED 3ba5e20)
+- `discovery.go:131`
+- **Root cause found**: /apis/ (trailing slash) returns 404. Go http.ServeMux handles trailing slashes automatically, Axum doesn't.
+
+### EndpointSlice Mirroring — 1 failure (FIX STAGED 361752a)
+- `endpointslicemirroring.go:202`
+- **Root cause found (deep analysis)**: Mirrored slices not deleted when source Endpoints deleted. Cleanup only recognized endpointslice-controller, not mirroring-controller label.
+- **K8s ref**: pkg/controller/endpointslicemirroring/reconciler.go
+
+### Remaining (DinD limitations / complex features)
+- `hostport.go:219` — DinD can't bind to other node's IPs
+- `pod_resize.go:857` — DinD cgroup limitations
+- `aggregator.go:359` — sample API server pod doesn't start (kubelet blocked)
+- `lifecycle_hook.go:132` — downstream of kube-proxy fixes
+- `init_container.go:440` — init container restart timing
+- `statefulset.go:1092` — patch timing
 
 ## Progress History
 
