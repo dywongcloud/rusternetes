@@ -201,8 +201,33 @@ where
         .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch: {}", e)))?;
 
     // Apply patch
-    let patched_json = apply_patch(&current_json, &patch_json, patch_type)
+    let mut patched_json = apply_patch(&current_json, &patch_json, patch_type)
         .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+
+    // Increment metadata.generation if spec changed (K8s behavior for all resources)
+    {
+        let mut old_spec = current_json.clone();
+        let mut new_spec = patched_json.clone();
+        if let Some(obj) = old_spec.as_object_mut() {
+            obj.remove("metadata");
+            obj.remove("status");
+        }
+        if let Some(obj) = new_spec.as_object_mut() {
+            obj.remove("metadata");
+            obj.remove("status");
+        }
+        if old_spec != new_spec {
+            if let Some(metadata) = patched_json.get_mut("metadata") {
+                if let Some(meta_obj) = metadata.as_object_mut() {
+                    let current_gen = meta_obj
+                        .get("generation")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    meta_obj.insert("generation".to_string(), serde_json::json!(current_gen + 1));
+                }
+            }
+        }
+    }
 
     // Convert back to resource type — use lenient deserialization
     let patched_resource: T = serde_json::from_value(patched_json.clone()).map_err(|e| {
@@ -405,8 +430,33 @@ where
         .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch: {}", e)))?;
 
     // Apply patch
-    let patched_json = apply_patch(&current_json, &patch_json, patch_type)
+    let mut patched_json = apply_patch(&current_json, &patch_json, patch_type)
         .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+
+    // Increment metadata.generation if spec changed (K8s behavior for all resources)
+    {
+        let mut old_spec = current_json.clone();
+        let mut new_spec = patched_json.clone();
+        if let Some(obj) = old_spec.as_object_mut() {
+            obj.remove("metadata");
+            obj.remove("status");
+        }
+        if let Some(obj) = new_spec.as_object_mut() {
+            obj.remove("metadata");
+            obj.remove("status");
+        }
+        if old_spec != new_spec {
+            if let Some(metadata) = patched_json.get_mut("metadata") {
+                if let Some(meta_obj) = metadata.as_object_mut() {
+                    let current_gen = meta_obj
+                        .get("generation")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    meta_obj.insert("generation".to_string(), serde_json::json!(current_gen + 1));
+                }
+            }
+        }
+    }
 
     // Convert back to resource type
     let patched_resource: T = serde_json::from_value(patched_json).map_err(|e| {

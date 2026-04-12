@@ -90,14 +90,35 @@ impl<S: Storage> StatefulSetController<S> {
             })
             .collect();
 
-        // Filter out terminated (Failed/Succeeded) pods — only count active pods as replicas
-        statefulset_pods.retain(|pod| {
-            // Exclude terminated pods (Failed/Succeeded phase)
-            !matches!(
+        // K8s processReplica(): delete Failed/Succeeded pods so they get recreated.
+        // This matches K8s behavior where the StatefulSet controller deletes completed
+        // pods and recreates them on the next sync cycle.
+        let mut active_pods = Vec::new();
+        for pod in statefulset_pods {
+            let is_terminal = matches!(
                 pod.status.as_ref().and_then(|s| s.phase.as_ref()),
                 Some(Phase::Failed) | Some(Phase::Succeeded)
-            )
-        });
+            );
+            if is_terminal && pod.metadata.deletion_timestamp.is_none() {
+                // Delete the terminal pod so it gets recreated
+                let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
+                let mut pod_to_delete = pod.clone();
+                pod_to_delete.metadata.deletion_timestamp = Some(chrono::Utc::now());
+                pod_to_delete.metadata.deletion_grace_period_seconds = Some(0);
+                let _ = self.storage.update(&pod_key, &pod_to_delete).await;
+                info!(
+                    "StatefulSet {}/{}: deleted terminal pod {} (phase: {:?})",
+                    namespace,
+                    name,
+                    pod.metadata.name,
+                    pod.status.as_ref().and_then(|s| s.phase.as_ref())
+                );
+            } else if !is_terminal {
+                active_pods.push(pod);
+            }
+            // Terminal pods with deletionTimestamp already set are being cleaned up
+        }
+        let mut statefulset_pods = active_pods;
 
         // Sort pods by ordinal index
         statefulset_pods.sort_by_key(|pod| {

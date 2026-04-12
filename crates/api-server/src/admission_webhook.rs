@@ -147,7 +147,7 @@ impl AdmissionWebhookClient {
     ) -> Result<AdmissionReviewResponse> {
         let mut builder = reqwest::Client::builder()
             .timeout(timeout)
-            .connect_timeout(Duration::from_secs(5));
+            .connect_timeout(Duration::from_secs(2));
 
         if let Some(ca_data) = ca_bundle {
             // CA bundle provided — add as root cert. Also accept invalid certs
@@ -404,6 +404,13 @@ impl AdmissionWebhookClient {
             }
         }
 
+        // Service not found or no ready endpoints. Return original URL — the
+        // HTTP client will fail with a DNS/connection error. FailurePolicy
+        // determines whether this blocks the request or is ignored.
+        warn!(
+            "Webhook service {}/{} not found or has no ready endpoints, falling back to original URL",
+            svc_namespace, svc_name
+        );
         url.to_string()
     }
 }
@@ -429,7 +436,11 @@ impl<S: Storage> AdmissionWebhookManager<S> {
         }
     }
 
-    /// Run validating webhooks for an admission request
+    /// Run validating webhooks for an admission request.
+    ///
+    /// K8s calls all matching validating webhooks in parallel (goroutines) and
+    /// collects errors. This matches that architecture using tokio::spawn.
+    /// See: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/validating/dispatcher.go
     pub async fn run_validating_webhooks(
         &self,
         operation: &Operation,
@@ -447,7 +458,18 @@ impl<S: Storage> AdmissionWebhookManager<S> {
             .list("/registry/validatingwebhookconfigurations/")
             .await?;
 
-        let mut all_warnings = Vec::new();
+        // Phase 1: Collect all matching webhooks with their resolved URLs and configs.
+        // This is the "ShouldCallHook" phase in K8s.
+        struct WebhookInvocation {
+            webhook_name: String,
+            resolved_url: String,
+            timeout: Duration,
+            ca_bundle: Option<String>,
+            failure_policy: FailurePolicy,
+            request: AdmissionReviewRequest,
+        }
+
+        let mut invocations = Vec::new();
 
         for config in configs {
             if let Some(webhooks) = &config.webhooks {
@@ -457,12 +479,9 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         continue;
                     }
 
-                    // Check namespaceSelector — K8s skips webhooks whose
-                    // namespaceSelector doesn't match the request's namespace labels.
-                    // See: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/predicates/namespace/matcher.go
+                    // Check namespaceSelector
                     if let Some(ref ns_selector) = webhook.namespace_selector {
                         if let Some(ns_name) = namespace {
-                            // Get namespace labels
                             let ns_key =
                                 rusternetes_storage::build_key("namespaces", None, ns_name);
                             let ns_labels = self
@@ -483,15 +502,13 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                                 })
                                 .unwrap_or_default();
 
-                            // Match namespace labels against selector
                             let matches = if let Some(ref match_labels) = ns_selector.match_labels {
                                 match_labels
                                     .iter()
                                     .all(|(k, v)| ns_labels.get(k) == Some(v))
                             } else {
-                                true // No matchLabels = match all
+                                true
                             };
-                            // Also check matchExpressions
                             let expr_matches = ns_selector
                                 .match_expressions
                                 .as_ref()
@@ -533,9 +550,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         }
                     }
 
-                    // Check objectSelector — K8s skips webhooks whose objectSelector
-                    // doesn't match the object's labels.
-                    // See: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/predicates/object/matcher.go
+                    // Check objectSelector
                     if let Some(ref obj_selector) = webhook.object_selector {
                         let obj_labels: std::collections::HashMap<String, String> = object
                             .as_ref()
@@ -568,14 +583,13 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         }
                     }
 
-                    // Skip webhooks whose service no longer exists or namespace is terminating
+                    // Skip webhooks whose service namespace no longer exists or is terminating
                     if let Some(ref svc) = webhook.client_config.service {
                         let ns_key =
                             rusternetes_storage::build_key("namespaces", None, &svc.namespace);
                         let ns_gone = match self.storage.get::<serde_json::Value>(&ns_key).await {
                             Err(_) => true,
                             Ok(ns_val) => {
-                                // Also skip if namespace is Terminating
                                 ns_val.pointer("/status/phase").and_then(|p| p.as_str())
                                     == Some("Terminating")
                                     || ns_val
@@ -590,12 +604,20 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         }
                     }
 
-                    info!(
-                        "Running validating webhook {} for {}/{}",
-                        webhook.name, gvk.kind, name
-                    );
+                    // Resolve webhook URL and build invocation
+                    let raw_url = self.client.build_webhook_url(&webhook.client_config)?;
+                    let resolved_url =
+                        AdmissionWebhookClient::resolve_service_url(&raw_url, &self.storage).await;
+                    let timeout = webhook
+                        .timeout_seconds
+                        .map(|t| Duration::from_secs(t as u64))
+                        .unwrap_or(Duration::from_secs(10));
+                    let failure_policy = webhook
+                        .failure_policy
+                        .clone()
+                        .unwrap_or(FailurePolicy::Fail);
+                    let ca_bundle = webhook.client_config.ca_bundle.clone();
 
-                    // Build admission request
                     let request = AdmissionReviewRequest {
                         uid: uuid::Uuid::new_v4().to_string(),
                         kind: gvk.clone(),
@@ -614,64 +636,76 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         options: None,
                     };
 
-                    // Call the webhook
-                    // Resolve webhook URL — K8s service names need endpoint IP lookup
-                    let raw_url = self.client.build_webhook_url(&webhook.client_config)?;
-                    let resolved_url =
-                        AdmissionWebhookClient::resolve_service_url(&raw_url, &self.storage).await;
-                    let timeout = webhook
-                        .timeout_seconds
-                        .map(|t| Duration::from_secs(t as u64))
-                        .unwrap_or(Duration::from_secs(10));
-                    let review = AdmissionReview::new_request(request.clone());
-                    let ca_bundle = webhook
-                        .client_config
-                        .ca_bundle
-                        .as_ref()
-                        .map(|s| s.as_bytes());
-                    let response = match self
-                        .client
-                        .call_webhook_with_ca(&resolved_url, &review, timeout, ca_bundle)
-                        .await
-                    {
-                        Ok(resp) => {
-                            info!(
-                                "Webhook {} response: allowed={}, url={}",
-                                webhook.name, resp.allowed, resolved_url
-                            );
-                            resp
-                        }
-                        Err(e) => {
-                            let fp = webhook
-                                .failure_policy
-                                .as_ref()
-                                .unwrap_or(&FailurePolicy::Fail);
-                            match fp {
-                                FailurePolicy::Ignore => {
-                                    warn!("Webhook {} failed (Ignore): {}", webhook.name, e);
-                                    AdmissionReviewResponse {
-                                        uid: request.uid.clone(),
-                                        allowed: true,
-                                        status: None,
-                                        patch: None,
-                                        patch_type: None,
-                                        audit_annotations: None,
-                                        warnings: None,
-                                    }
-                                }
-                                _ => return Err(e),
-                            }
-                        }
-                    };
+                    info!(
+                        "Queuing validating webhook {} for {}/{} at {}",
+                        webhook.name, gvk.kind, name, resolved_url
+                    );
 
-                    // Collect warnings
+                    invocations.push(WebhookInvocation {
+                        webhook_name: webhook.name.clone(),
+                        resolved_url,
+                        timeout,
+                        ca_bundle,
+                        failure_policy,
+                        request,
+                    });
+                }
+            }
+        }
+
+        if invocations.is_empty() {
+            return Ok(AdmissionResponse::Allow);
+        }
+
+        // Phase 2: Call all matching webhooks in parallel.
+        // K8s dispatches all validating webhooks concurrently via goroutines.
+        // See: dispatcher.go lines 126-131
+        let mut handles = Vec::new();
+        for inv in invocations {
+            let review = AdmissionReview::new_request(inv.request.clone());
+            let ca_data = inv.ca_bundle.as_ref().map(|s| s.as_bytes().to_vec());
+            let url = inv.resolved_url.clone();
+            let timeout = inv.timeout;
+            let webhook_name = inv.webhook_name.clone();
+            let failure_policy = inv.failure_policy.clone();
+            let uid = inv.request.uid.clone();
+
+            handles.push(tokio::spawn(async move {
+                let client = AdmissionWebhookClient::new();
+                let ca_ref = ca_data.as_deref();
+                let result = client
+                    .call_webhook_with_ca(&url, &review, timeout, ca_ref)
+                    .await;
+                (webhook_name, failure_policy, uid, result)
+            }));
+        }
+
+        // Phase 3: Collect results. Any denial or Fail-policy error rejects the request.
+        let results = futures::future::join_all(handles).await;
+        let mut all_warnings = Vec::new();
+
+        for result in results {
+            let (webhook_name, failure_policy, uid, call_result) = match result {
+                Ok(r) => r,
+                Err(e) => {
+                    error!("Webhook task panicked: {}", e);
+                    return Err(rusternetes_common::Error::Internal(format!(
+                        "webhook task panicked: {}",
+                        e
+                    )));
+                }
+            };
+
+            match call_result {
+                Ok(response) => {
+                    info!(
+                        "Webhook {} response: allowed={}",
+                        webhook_name, response.allowed
+                    );
                     if let Some(warnings) = &response.warnings {
                         all_warnings.extend(warnings.clone());
                     }
-
-                    // Check if request was denied
                     if !response.allowed {
-                        // K8s uses status.message first, then status.reason, then fallback
                         let reason = response
                             .status
                             .as_ref()
@@ -682,15 +716,28 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                                     .or(s.reason.as_ref())
                             })
                             .map(|m| m.to_string())
-                            .unwrap_or_else(|| format!("Denied by webhook {}", webhook.name));
-
+                            .unwrap_or_else(|| format!("Denied by webhook {}", webhook_name));
                         return Ok(AdmissionResponse::Deny(reason));
                     }
                 }
+                Err(e) => match failure_policy {
+                    FailurePolicy::Ignore => {
+                        warn!(
+                            "Webhook {} failed, failing open (Ignore): {}",
+                            webhook_name, e
+                        );
+                    }
+                    _ => {
+                        warn!(
+                            "Webhook {} failed, failing closed (Fail): {}",
+                            webhook_name, e
+                        );
+                        return Err(e);
+                    }
+                },
             }
         }
 
-        // All validating webhooks passed
         if !all_warnings.is_empty() {
             info!("Validating webhooks returned warnings: {:?}", all_warnings);
         }

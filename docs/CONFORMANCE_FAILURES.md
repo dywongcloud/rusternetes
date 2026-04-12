@@ -1,8 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 135** | 373/441 (84.6%) | 2026-04-11
-**Round 136** | Pending (22 fixes staged) | 2026-04-12
-**Round 136** | Pending (18 fixes staged) | 2026-04-12
+**Round 136** | Pending (25 fixes staged) | 2026-04-12
 
 ## Staged Fixes for Round 136 (all from deep K8s source comparison)
 
@@ -26,6 +25,13 @@
 | e2e2f48 | CRD strict unknown metadata fields | customresource_handler.go | 1 field validation |
 | 3ba5e20 | Trailing slash routes /api/ /apis/ | Go http.ServeMux | 1 discovery |
 | 361752a | EndpointSlice mirroring cleanup | reconciler.go | 1 mirroring |
+| 07a393c | Deployment proportional scaling | sync.go scale() | deployment reliability |
+| 7fa3ce5 | Kubelet concurrent pod sync via tokio::spawn | podWorkerLoop | pod start timing |
+| d3011e0 | Kubelet init container state machine | computeInitContainerActions | init container restart |
+| 7ea2d20 | Kubelet init container status during backoff | kuberuntime_container.go | init container status |
+| PENDING | Generic PATCH generation increment | patch.go | statefulset patch timing |
+| PENDING | StatefulSet delete terminal pods | stateful_set_control.go processReplica | statefulset lifecycle |
+| PENDING | Validating webhooks parallel execution | dispatcher.go | ~4 emptydir webhook cascade |
 
 ## Round 135 Failure Analysis (68 failures, 57 unique locations)
 
@@ -47,9 +53,10 @@
 - **Fix**: 0188c3c reads CRDs as raw serde_json::Value in OpenAPI handler
 - **K8s ref**: staging/src/k8s.io/apiextensions-apiserver/pkg/controller/openapi/builder/builder.go
 
-### DNS — 6 failures (downstream of kube-proxy + watch fixes)
+### DNS — 6 failures (downstream of kube-proxy fixes)
 - `dns_common.go:476` (x6)
-- **Root cause**: DNS test pods couldn't reach CoreDNS or test servers because kube-proxy iptables flush gap broke ClusterIP routing. Also: rate limiter timeouts from failed proxy requests.
+- **Root cause**: DNS test pods couldn't reach CoreDNS or test servers because kube-proxy iptables flush gap broke ClusterIP routing to CoreDNS (10.96.0.10). Verified: resolv.conf generation matches K8s (`{ns}.svc.{domain} svc.{domain} {domain}`, ndots:5). Fix is kube-proxy XOR hash + RELATED,ESTABLISHED.
+- **K8s ref**: pkg/kubelet/network/dns/dns.go — generateSearchesForDNSClusterFirst
 
 ### Service Networking — 6 failures (FIX STAGED 3012663 + fe76396)
 - `service.go:768,886,3459`, `proxy.go:271,503`, `service_latency.go:145`
@@ -61,8 +68,11 @@
 - **Root cause found**: Preemption only checked cpu/memory, not extended resources
 - **K8s ref**: pkg/scheduler/framework/preemption/preemption.go
 
-### EmptyDir — 4 failures (webhook cascade)
+### EmptyDir — 4 failures (FIX STAGED: parallel webhooks)
 - `output.go:263` (x4) — stale webhook blocks pod creation
+- **Root cause found (deep analysis)**: Validating webhooks called sequentially (our code) vs parallel (K8s). K8s dispatches all matching validating webhooks concurrently via goroutines (dispatcher.go:126-131). Sequential execution means N stale webhooks each timing out = N*10s delay. Parallel = max(10s).
+- **Fix**: Refactored run_validating_webhooks to use tokio::spawn + join_all for parallel execution matching K8s architecture. Also downstream of kube-proxy fix (stale webhooks can't reach targets through broken iptables).
+- **K8s ref**: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/validating/dispatcher.go
 
 ### Field Validation — 3 failures (FIX STAGED a18febe + e2e2f48)
 - `field_validation.go:462,611,735`
@@ -107,20 +117,17 @@
 - **Root cause found (deep analysis)**: Mirrored slices not deleted when source Endpoints deleted. Cleanup only recognized endpointslice-controller, not mirroring-controller label.
 - **K8s ref**: pkg/controller/endpointslicemirroring/reconciler.go
 
-### Additional Fixes Staged (from continued deep K8s comparison)
-- **07a393c** — Deployment proportional scaling (K8s sync.go scale())
-- **7fa3ce5** — Kubelet concurrent pod sync via tokio::spawn (K8s podWorkerLoop)
-- **d3011e0** — Kubelet init container state machine (K8s computeInitContainerActions)
-- **7ea2d20** — Kubelet init container status during backoff
-- **ea9573e** — Deployment force scale-down old RSes when new RS available
+### StatefulSet — 1 failure (FIX STAGED: generation + terminal pod cleanup)
+- `statefulset.go:1092`
+- **Root cause found**: Generic PATCH handler didn't increment metadata.generation on spec changes. K8s increments generation on every spec mutation. Also: terminal (Failed/Succeeded) pods not deleted for recreation — K8s processReplica() deletes terminal pods so StatefulSet recreates them.
+- **Fix**: Added generation increment to generic_patch.rs for both namespaced and cluster-scoped resources. StatefulSet controller now deletes Failed/Succeeded pods matching K8s processReplica() behavior.
+- **K8s ref**: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go, pkg/controller/statefulset/stateful_set_control.go:431
 
 ### Remaining (DinD limitations)
 - `hostport.go:219` — DinD can't bind to other node's IPs
 - `pod_resize.go:857` — DinD cgroup limitations
-- `aggregator.go:359` — sample API server pod doesn't start (kubelet blocked)
-- `lifecycle_hook.go:132` — downstream of kube-proxy fixes
-- `init_container.go:440` — init container restart timing
-- `statefulset.go:1092` — patch timing
+- `aggregator.go:359` — sample API server deployment needs image pull (DinD network)
+- `lifecycle_hook.go:132` — downstream of kube-proxy fixes (preStop curls another pod)
 
 ## Progress History
 
