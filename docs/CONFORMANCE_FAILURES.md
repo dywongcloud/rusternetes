@@ -1,7 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 135** | 373/441 (84.6%) | 2026-04-11
-**Round 136** | Pending (16 fixes staged) | 2026-04-11
+**Round 136** | Pending (17 fixes staged) | 2026-04-12
 
 ## Staged Fixes for Round 136 (from deep K8s source comparison)
 
@@ -26,10 +26,11 @@
 
 ## Known Remaining Issues (need more work)
 
-### Watch "context canceled" — ~8 failures
-- Connection header fix deployed but watches still fail
-- Root cause: likely needs HTTP/2 ALPN support for Go client-go compatibility
-- Also: watch stream may close when etcd channel drops
+### Watch "context canceled" — ~8 failures (FIX STAGED 069e807)
+- Root cause found: TLS server didn't advertise HTTP/2 via ALPN
+- Go's client-go fell back to HTTP/1.1, causing connection pooling issues
+- **Fix staged**: 069e807 enables h2 + http/1.1 ALPN in rustls ServerConfig
+- K8s ref: staging/src/k8s.io/apiserver/pkg/server/options/serving.go
 
 ### Deployment proportional scaling — 1 failure
 - K8s distributes replicas proportionally during rollover
