@@ -318,7 +318,9 @@ impl<S: Storage> DeploymentController<S> {
                 }
 
                 for (rs_name, new_replicas) in &updates {
-                    if let Some(rs) = owned_replicasets.iter().find(|r| &r.metadata.name == rs_name)
+                    if let Some(rs) = owned_replicasets
+                        .iter()
+                        .find(|r| &r.metadata.name == rs_name)
                     {
                         info!(
                             "Proportional scaling: {}/{} {} -> {}",
