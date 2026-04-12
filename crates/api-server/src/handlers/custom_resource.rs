@@ -58,11 +58,22 @@ pub async fn create_custom_resource(
         if let Ok(body_json) = serde_json::from_slice::<serde_json::Value>(&body) {
             if let Some(meta) = body_json.get("metadata").and_then(|m| m.as_object()) {
                 const KNOWN_META: &[&str] = &[
-                    "name", "generateName", "namespace", "selfLink", "uid",
-                    "resourceVersion", "generation", "creationTimestamp",
-                    "deletionTimestamp", "deletionGracePeriodSeconds",
-                    "labels", "annotations", "ownerReferences", "finalizers",
-                    "managedFields", "clusterName",
+                    "name",
+                    "generateName",
+                    "namespace",
+                    "selfLink",
+                    "uid",
+                    "resourceVersion",
+                    "generation",
+                    "creationTimestamp",
+                    "deletionTimestamp",
+                    "deletionGracePeriodSeconds",
+                    "labels",
+                    "annotations",
+                    "ownerReferences",
+                    "finalizers",
+                    "managedFields",
+                    "clusterName",
                 ];
                 for key in meta.keys() {
                     if !KNOWN_META.contains(&key.as_str()) {
