@@ -268,6 +268,73 @@ impl<S: Storage> DeploymentController<S> {
             .map(|rs| rs.spec.replicas)
             .sum();
 
+        // Proportional scaling: when deployment.spec.replicas changes and there are
+        // multiple active RSes, distribute replicas proportionally.
+        // K8s ref: pkg/controller/deployment/sync.go — scale()
+        if is_rolling_update && old_rs_total > 0 {
+            let all_rs_replicas: i32 = owned_replicasets.iter().map(|rs| rs.spec.replicas).sum();
+            let allowed_size = desired_replicas + max_surge;
+            let replicas_to_add = allowed_size - all_rs_replicas;
+
+            if replicas_to_add != 0 {
+                // Distribute proportionally across all active RSes
+                let mut added = 0i32;
+                let mut updates: Vec<(String, i32)> = Vec::new();
+
+                for (i, rs) in owned_replicasets.iter().enumerate() {
+                    if rs.spec.replicas == 0 {
+                        continue;
+                    }
+                    let fraction = if all_rs_replicas > 0 {
+                        let f = (replicas_to_add as f64) * (rs.spec.replicas as f64)
+                            / (all_rs_replicas as f64);
+                        if replicas_to_add > 0 {
+                            f.ceil() as i32 // Round up when scaling up
+                        } else {
+                            f.floor() as i32 // Round down when scaling down
+                        }
+                    } else {
+                        0
+                    };
+
+                    let allowed = replicas_to_add - added;
+                    let proportion = if replicas_to_add > 0 {
+                        fraction.min(allowed)
+                    } else {
+                        fraction.max(allowed)
+                    };
+
+                    let new_replicas = (rs.spec.replicas + proportion).max(0);
+                    if new_replicas != rs.spec.replicas {
+                        updates.push((rs.metadata.name.clone(), new_replicas));
+                    }
+                    added += proportion;
+                }
+
+                // Apply leftover to first RS
+                if !updates.is_empty() && replicas_to_add != added {
+                    let leftover = replicas_to_add - added;
+                    updates[0].1 = (updates[0].1 + leftover).max(0);
+                }
+
+                for (rs_name, new_replicas) in &updates {
+                    if let Some(rs) = owned_replicasets.iter().find(|r| &r.metadata.name == rs_name)
+                    {
+                        info!(
+                            "Proportional scaling: {}/{} {} -> {}",
+                            namespace, rs_name, rs.spec.replicas, new_replicas
+                        );
+                        self.update_replicaset_replicas(rs, *new_replicas).await?;
+                    }
+                }
+
+                if !updates.is_empty() {
+                    // Status will be updated at end of reconcile
+                    return self.update_deployment_status(deployment).await;
+                }
+            }
+        }
+
         if let Some(active) = active_rs {
             let active_name = active.metadata.name.clone();
             let active_replicas = active.spec.replicas;
