@@ -20,10 +20,13 @@ use tracing::{debug, error, info, warn};
 pub struct Kubelet {
     node_name: String,
     storage: Arc<EtcdStorage>,
-    runtime: ContainerRuntime,
+    runtime: Arc<ContainerRuntime>,
     sync_interval: Duration,
     eviction_manager: Mutex<EvictionManager>,
 }
+
+// Kubelet needs Send+Sync for Arc<Kubelet> in spawned tasks
+// All fields are Send+Sync: Arc<EtcdStorage>, Arc<ContainerRuntime>, Mutex<EvictionManager>
 
 impl Kubelet {
     pub async fn new(
@@ -49,13 +52,13 @@ impl Kubelet {
         Ok(Self {
             node_name,
             storage,
-            runtime,
+            runtime: Arc::new(runtime),
             sync_interval: Duration::from_secs(sync_interval_secs),
             eviction_manager: Mutex::new(EvictionManager::new()),
         })
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(self: &Arc<Self>) -> Result<()> {
         info!("Kubelet started for node: {}", self.node_name);
 
         // Register the node
@@ -490,7 +493,7 @@ impl Kubelet {
         Ok(())
     }
 
-    async fn sync_loop(&self) -> Result<()> {
+    async fn sync_loop(self: &Arc<Self>) -> Result<()> {
         debug!("Running sync loop for node: {}", self.node_name);
 
         // Get all pods — used for both node-pod filtering and orphan cleanup
@@ -511,22 +514,42 @@ impl Kubelet {
 
         debug!("Found {} pods assigned to this node", node_pods.len());
 
-        // Sync all pods. Use a per-pod timeout to prevent a single slow pod
-        // from blocking the entire sync loop and starving other pods' readiness updates.
-        // Pods being deleted get a longer timeout to allow preStop hooks and graceful
-        // shutdown to complete (preStop exec drain: 30s + container stop grace: 30s).
+        // Sync all pods in parallel using tokio::spawn — one task per pod.
+        // K8s uses one goroutine per pod (podWorkerLoop). Each pod runs
+        // independently so a slow pod (image pull, init container) doesn't
+        // block other pods from being processed.
+        // K8s ref: pkg/kubelet/pod_workers.go — podWorkerLoop
+        let mut handles = Vec::new();
         for pod in &node_pods {
+            let pod = pod.clone();
+            let kubelet = Arc::clone(self);
             let timeout_secs = if pod.metadata.deletion_timestamp.is_some() {
-                90 // Allow time for preStop hooks + graceful shutdown
+                90u64
             } else {
-                30
+                30u64
             };
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(timeout_secs),
-                self.sync_pod(pod),
-            )
-            .await
-            {
+            handles.push(tokio::spawn(async move {
+                let result = tokio::time::timeout(
+                    std::time::Duration::from_secs(timeout_secs),
+                    kubelet.sync_pod(&pod),
+                )
+                .await;
+                (pod, result)
+            }));
+        }
+
+        // Wait for all pod syncs to complete
+        let results = futures::future::join_all(handles).await;
+
+        for join_result in results {
+            let (pod, result) = match join_result {
+                Ok(r) => r,
+                Err(e) => {
+                    error!("Pod sync task panicked: {}", e);
+                    continue;
+                }
+            };
+            match result {
                 Ok(Err(e)) => {
                     let err_str = e.to_string();
                     if err_str.contains("Failed to create container")
@@ -534,7 +557,7 @@ impl Kubelet {
                         || err_str.contains("FailedToStart")
                     {
                         error!("Fatal error syncing pod {}: {}", pod.metadata.name, err_str);
-                        if let Err(update_err) = self.update_pod_status_error(pod, &err_str).await {
+                        if let Err(update_err) = self.update_pod_status_error(&pod, &err_str).await {
                             error!("Failed to update pod status: {}", update_err);
                         }
                     } else {
@@ -545,10 +568,7 @@ impl Kubelet {
                     }
                 }
                 Err(_timeout) => {
-                    warn!(
-                        "Timeout syncing pod {} ({}s), skipping to next pod",
-                        pod.metadata.name, timeout_secs
-                    );
+                    warn!("Timeout syncing pod {}, skipping", pod.metadata.name);
                 }
                 Ok(Ok(())) => {}
             }
@@ -850,13 +870,8 @@ impl Kubelet {
                             // All init containers done — start_pod will skip init and start app containers
                             info!("All init containers completed for pod {}/{}, starting app containers", namespace, pod_name);
                         } else if let Some(idx) = next_idx {
-                            let init_containers = pod
-                                .spec
-                                .as_ref()
-                                .unwrap()
-                                .init_containers
-                                .as_ref()
-                                .unwrap();
+                            let init_containers =
+                                pod.spec.as_ref().unwrap().init_containers.as_ref().unwrap();
                             let ic = &init_containers[idx];
 
                             if should_retry {
@@ -868,15 +883,10 @@ impl Kubelet {
                                 );
                                 // Remove failed container so it can be recreated
                                 let cname = format!("{}_{}", pod_name, ic.name);
-                                let _ = self
-                                    .runtime
-                                    .remove_terminated_container(&cname)
-                                    .await;
+                                let _ = self.runtime.remove_terminated_container(&cname).await;
                                 // Update status with CrashLoopBackOff
-                                let init_statuses = self
-                                    .runtime
-                                    .get_init_container_statuses(pod)
-                                    .await;
+                                let init_statuses =
+                                    self.runtime.get_init_container_statuses(pod).await;
                                 let key = build_key("pods", Some(namespace), pod_name);
                                 if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
                                     if let Some(ref mut s) = p.status {
@@ -892,6 +902,18 @@ impl Kubelet {
                                     "Starting init container {} (index {}) for pod {}/{}",
                                     ic.name, idx, namespace, pod_name
                                 );
+                                // Ensure image is available before starting
+                                if let Err(e) = self
+                                    .runtime
+                                    .ensure_image(&ic.image, ic.image_pull_policy.as_deref())
+                                    .await
+                                {
+                                    warn!(
+                                        "Failed to pull image for init container {}: {}",
+                                        ic.name, e
+                                    );
+                                    return Ok(());
+                                }
                                 let volume_paths: std::collections::HashMap<String, String> = pod
                                     .spec
                                     .as_ref()
@@ -922,10 +944,8 @@ impl Kubelet {
                                     );
                                 }
                                 // Update status
-                                let init_statuses = self
-                                    .runtime
-                                    .get_init_container_statuses(pod)
-                                    .await;
+                                let init_statuses =
+                                    self.runtime.get_init_container_statuses(pod).await;
                                 let key = build_key("pods", Some(namespace), pod_name);
                                 if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
                                     if let Some(ref mut s) = p.status {

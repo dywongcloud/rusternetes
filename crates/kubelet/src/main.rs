@@ -208,17 +208,19 @@ async fn main() -> Result<()> {
     });
 
     // Create and run kubelet
-    let kubelet = Kubelet::new(
-        runtime_config.node_name.clone(),
-        storage,
-        runtime_config.sync_frequency,
-        runtime_config.volume_dir.to_string_lossy().to_string(),
-        cluster_dns,
-        args.cluster_domain,
-        args.network,
-        runtime_config.kubernetes_service_host.clone(),
-    )
-    .await?;
+    let kubelet = Arc::new(
+        Kubelet::new(
+            runtime_config.node_name.clone(),
+            storage,
+            runtime_config.sync_frequency,
+            runtime_config.volume_dir.to_string_lossy().to_string(),
+            cluster_dns,
+            args.cluster_domain,
+            args.network,
+            runtime_config.kubernetes_service_host.clone(),
+        )
+        .await?,
+    );
     kubelet.run().await?;
 
     Ok(())

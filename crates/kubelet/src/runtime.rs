@@ -358,7 +358,7 @@ impl ContainerRuntime {
     }
 
     /// Pull an image if necessary based on the pull policy
-    async fn ensure_image(&self, image: &str, pull_policy: Option<&str>) -> Result<()> {
+    pub async fn ensure_image(&self, image: &str, pull_policy: Option<&str>) -> Result<()> {
         let policy = pull_policy.unwrap_or("IfNotPresent");
 
         // Normalize image name to include registry if not specified
