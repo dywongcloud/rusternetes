@@ -778,15 +778,61 @@ impl ContainerRuntime {
                                             }),
                                         )
                                         .await;
+
+                                    // Update pod status during backoff to show CrashLoopBackOff.
+                                    // K8s updates status on every sync cycle, not just after retries.
+                                    // This lets tests observe the init container failure state.
+                                    if let Some(ref storage) = self.storage {
+                                        use rusternetes_storage::Storage;
+                                        let pod_key = rusternetes_storage::build_key(
+                                            "pods",
+                                            Some(namespace),
+                                            pod_name,
+                                        );
+                                        if let Ok(mut status_pod) = storage.get::<Pod>(&pod_key).await
+                                        {
+                                            let init_statuses =
+                                                self.get_init_container_statuses(&status_pod).await;
+                                            if let Some(ref mut s) = status_pod.status {
+                                                s.init_container_statuses = init_statuses;
+                                                s.reason = Some("PodInitializing".to_string());
+                                                s.message = Some(format!(
+                                                    "Init container {} failed, retrying in {}s",
+                                                    container.name, backoff
+                                                ));
+                                            }
+                                            let _ = storage.update(&pod_key, &status_pod).await;
+                                        }
+                                    }
+
                                     tokio::time::sleep(Duration::from_secs(backoff)).await;
                                 } else {
-                                    // Before returning, update init container status so the
-                                    // pod status shows the actual Terminated state with exit code.
-                                    // Without this, init containers show "incomplete status".
+                                    // Update init container status to show CrashLoopBackOff
+                                    // before returning error. The kubelet sync loop will
+                                    // re-call start_pod on the next cycle.
+                                    // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_container.go
                                     warn!(
-                                        "Init container {} failed permanently: {}",
+                                        "Init container {} failed (will retry next sync): {}",
                                         container.name, e
                                     );
+                                    if let Some(ref storage) = self.storage {
+                                        use rusternetes_storage::Storage;
+                                        let pod_key = rusternetes_storage::build_key(
+                                            "pods",
+                                            Some(namespace),
+                                            pod_name,
+                                        );
+                                        if let Ok(mut status_pod) =
+                                            storage.get::<Pod>(&pod_key).await
+                                        {
+                                            let init_statuses =
+                                                self.get_init_container_statuses(&status_pod).await;
+                                            if let Some(ref mut s) = status_pod.status {
+                                                s.init_container_statuses = init_statuses;
+                                            }
+                                            let _ = storage.update(&pod_key, &status_pod).await;
+                                        }
+                                    }
                                     return Err(e);
                                 }
                             }
