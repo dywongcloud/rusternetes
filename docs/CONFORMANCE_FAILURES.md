@@ -1,6 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 135** | 373/441 (84.6%) | 2026-04-11
+**Round 136** | Pending (22 fixes staged) | 2026-04-12
 **Round 136** | Pending (18 fixes staged) | 2026-04-12
 
 ## Staged Fixes for Round 136 (all from deep K8s source comparison)
@@ -106,7 +107,14 @@
 - **Root cause found (deep analysis)**: Mirrored slices not deleted when source Endpoints deleted. Cleanup only recognized endpointslice-controller, not mirroring-controller label.
 - **K8s ref**: pkg/controller/endpointslicemirroring/reconciler.go
 
-### Remaining (DinD limitations / complex features)
+### Additional Fixes Staged (from continued deep K8s comparison)
+- **07a393c** — Deployment proportional scaling (K8s sync.go scale())
+- **7fa3ce5** — Kubelet concurrent pod sync via tokio::spawn (K8s podWorkerLoop)
+- **d3011e0** — Kubelet init container state machine (K8s computeInitContainerActions)
+- **7ea2d20** — Kubelet init container status during backoff
+- **ea9573e** — Deployment force scale-down old RSes when new RS available
+
+### Remaining (DinD limitations)
 - `hostport.go:219` — DinD can't bind to other node's IPs
 - `pod_resize.go:857` — DinD cgroup limitations
 - `aggregator.go:359` — sample API server pod doesn't start (kubelet blocked)
