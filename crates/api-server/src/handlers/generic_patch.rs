@@ -204,19 +204,21 @@ where
     let mut patched_json = apply_patch(&current_json, &patch_json, patch_type)
         .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
 
-    // Increment metadata.generation if spec changed (K8s behavior for all resources)
+    // Increment metadata.generation only when spec changes.
+    // K8s only tracks generation for resources WITH a spec field
+    // (Deployments, StatefulSets, Services, etc.). Resources without
+    // spec (Events, ConfigMaps, Secrets) don't increment generation.
+    // See: staging/src/k8s.io/apiserver/pkg/registry/rest/update.go
     {
-        let mut old_spec = current_json.clone();
-        let mut new_spec = patched_json.clone();
-        if let Some(obj) = old_spec.as_object_mut() {
-            obj.remove("metadata");
-            obj.remove("status");
-        }
-        if let Some(obj) = new_spec.as_object_mut() {
-            obj.remove("metadata");
-            obj.remove("status");
-        }
-        if old_spec != new_spec {
+        let old_spec = current_json.get("spec");
+        let new_spec = patched_json.get("spec");
+        let spec_changed = match (old_spec, new_spec) {
+            (Some(old), Some(new)) => old != new,
+            (None, Some(_)) => true,
+            (Some(_), None) => true,
+            (None, None) => false,
+        };
+        if spec_changed {
             if let Some(metadata) = patched_json.get_mut("metadata") {
                 if let Some(meta_obj) = metadata.as_object_mut() {
                     let current_gen = meta_obj
@@ -433,19 +435,21 @@ where
     let mut patched_json = apply_patch(&current_json, &patch_json, patch_type)
         .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
 
-    // Increment metadata.generation if spec changed (K8s behavior for all resources)
+    // Increment metadata.generation only when spec changes.
+    // K8s only tracks generation for resources WITH a spec field
+    // (Deployments, StatefulSets, Services, etc.). Resources without
+    // spec (Events, ConfigMaps, Secrets) don't increment generation.
+    // See: staging/src/k8s.io/apiserver/pkg/registry/rest/update.go
     {
-        let mut old_spec = current_json.clone();
-        let mut new_spec = patched_json.clone();
-        if let Some(obj) = old_spec.as_object_mut() {
-            obj.remove("metadata");
-            obj.remove("status");
-        }
-        if let Some(obj) = new_spec.as_object_mut() {
-            obj.remove("metadata");
-            obj.remove("status");
-        }
-        if old_spec != new_spec {
+        let old_spec = current_json.get("spec");
+        let new_spec = patched_json.get("spec");
+        let spec_changed = match (old_spec, new_spec) {
+            (Some(old), Some(new)) => old != new,
+            (None, Some(_)) => true,
+            (Some(_), None) => true,
+            (None, None) => false,
+        };
+        if spec_changed {
             if let Some(metadata) = patched_json.get_mut("metadata") {
                 if let Some(meta_obj) = metadata.as_object_mut() {
                     let current_gen = meta_obj
