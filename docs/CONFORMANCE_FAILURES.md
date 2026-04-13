@@ -26,8 +26,9 @@
 - `preemption.go:268` — watch context canceled prevents observing pod Running
 - `preemption.go:877` — failed pod observation expectations
 
-### Service — 2 failures — INVESTIGATING
-- `service.go:3459,4291`
+### Service — 2 failures — PARTIALLY FIXED
+- `service.go:3459` — service deletion timeout (watch issue)
+- `service.go:4291` — NodePort unreachable. **Fix staged**: f80d0c6 (NodePort rules in atomic path)
 
 ### DNS — 1 failure — INVESTIGATING
 - `dns_common.go:476`
@@ -51,6 +52,7 @@
 | 858d091 | Schema validator collects ALL unknown fields (with tests) |
 | 86b048a | OpenAPI strip ALL Go omitempty defaults (with test) |
 | 31e5e4f | Job successPolicy terminating=0 |
+| f80d0c6 | kube-proxy atomic path: NodePort DNAT rules |
 
 ## Progress History
 
