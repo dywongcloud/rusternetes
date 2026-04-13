@@ -1,98 +1,115 @@
 # Conformance Failure Tracker
 
 **Round 137** | Complete | 2026-04-13
-**Result**: ~399/441 (~90.5%) — 42 unique failures
+**Result**: ~380/441 (~86.2%) — 61 failure instances, 50 unique locations
 
-## Round 137 Failures — Root Cause Analysis (42 unique)
+## Round 137 Failures — Complete Itemized List
 
-### Webhook — 11 failures — FIX STAGED ✅
-- **Root cause**: kube-proxy flush gap during iptables rebuild
-- **Fix**: 6af8bb9 — Atomic iptables-restore
+### Webhook — 11 failures — FIX STAGED ✅ (kube-proxy atomic)
+- `webhook.go:675,904,1269,1334,1400,1481,2107(x3),2164,2491`
+- **Fix**: 6af8bb9 — Atomic iptables-restore eliminates flush gap
 
-### CRD OpenAPI — 8 failures — FIX STAGED ✅
-- **Root cause**: false x-kubernetes extensions + watch context canceled
-- **Fix**: 3186cf5 + f1bf53f
+### CRD OpenAPI — 9 failures — FIX STAGED ✅
+- `crd_publish_openapi.go:77,161,211,253,285,318,366,400,451`
+- **Fix**: 3186cf5 (false extensions) + f1bf53f (watch pre-buffer)
 
-### DNS — 5 failures — FIX STAGED ✅
-- **Root cause**: kube-proxy flush gap breaks CoreDNS ClusterIP routing
+### DNS — 6 failures — FIX STAGED ✅ (kube-proxy atomic)
+- `dns_common.go:476` (x6)
 - **Fix**: 6af8bb9
 
-### EmptyDir/output — 3 failures — 1 DinD + 2 watch
-- 1 macOS filesystem permissions (DinD), 2 watch context canceled
+### EmptyDir/output — 4 failures — MIXED
+- `output.go:263` (x4) — macOS filesystem permissions (DinD) + watch issues
 
-### Preemption — 2 failures — FIX STAGED ✅
-- **Fix**: fb9728d + c19a049
+### Service — 3 failures — PARTIALLY STAGED
+- `service.go:251` (x2) — Session affinity transition from ClientIP→None doesn't clear state. **NEEDS FIX ❌**
+- `service.go:768` — Service unreachable, kube-proxy flush gap. Fix staged ✅
+- `service.go:3459` — same as 768
 
-### Service — 2 failures — FIX STAGED ✅
-- **Root cause**: kube-proxy flush gap
-- **Fix**: 6af8bb9
+### Deployment — 3 failures — FIX STAGED ✅
+- `deployment.go:781` — revision not incremented on adoption. **Fix**: f524e6c
+- `deployment.go:995` — rollover pods not available, watch/timing
+- `deployment.go:1264` — RS replicas timeout, watch
 
-### Proxy — 2 failures — FIX STAGED ✅
-- **Root cause**: kube-proxy flush gap
-- **Fix**: 6af8bb9
+### Preemption — 3 failures — PARTIALLY STAGED
+- `preemption.go:181,268` — **Fix staged**: fb9728d + c19a049
+- `resource.go:512` — Preempted pod missing `DisruptionTarget` condition. Our scheduler sets it but may be overwritten by kubelet status update. **NEEDS FIX ❌**
 
-### Deployment — 2 failures — FIX STAGED ✅
-- `deployment.go:781` — revision annotation not incremented on RS adoption
-- `deployment.go:1264` — RS replicas timeout + watch context canceled
-- **Fix**: f524e6c — newRevision = MaxRevision(oldRSes) + 1 matching K8s sync.go
+### Field Validation — 3 failures — PARTIALLY STAGED
+- `field_validation.go:611` — **Fix staged**: 47fb9ec (preserve-unknown-fields)
+- `field_validation.go:735` — duplicate key detection, fix staged
+- `field_validation.go:462` — CR with `unknownField` not rejected by strict validation. CRD does NOT have preserveUnknownFields but our validator accepted the unknown field. **NEEDS FIX ❌**
+
+### Webhook configuration — counted in Webhook above
 
 ### StatefulSet — 2 failures — FIX STAGED ✅
+- `statefulset.go:957,1092`
 - **Fix**: 8673d37 + 4438743 + watch fix
 
-### Field Validation — 2 failures — FIX STAGED ✅
-- **Fix**: 47fb9ec
+### RC — 2 failures — PARTIALLY STAGED
+- `rc.go:509` — over-creation. **Fix staged**: 070dde7
+- `rc.go:623` — RC never clears `ReplicaFailure` condition after quota freed. **NEEDS FIX ❌**
+
+### ReplicaSet — 2 failures — DOWNSTREAM
+- `replica_set.go:232` — pod responses timeout (watch+networking)
+- `replica_set.go:560` — scaling timeout (watch+networking)
+
+### Proxy — 2 failures — FIX STAGED ✅ (kube-proxy atomic)
+- `proxy.go:271,503`
 
 ### Namespace — 1 failure — FIX STAGED ✅
-- **Fix**: 125d91a
+- `namespace.go:579` — **Fix**: 125d91a
 
-### RC — 1 failure — FIX STAGED ✅
-- **Fix**: 070dde7
-
-### DaemonSet — 1 failure — DOWNSTREAM of watch fix
-- Watch context canceled during pod readiness check
-
-### ReplicaSet — 1 failure — DOWNSTREAM of watch + kube-proxy
-- Pod responses timeout
+### DaemonSet — 1 failure — DOWNSTREAM of watch
+- `daemon_set.go:1276` — watch context canceled during readiness
 
 ### Init Container — 1 failure — DOWNSTREAM of watch
-- Watch timeout during state transition
+- `init_container.go:440`
 
 ### Service Latency — 1 failure — FIX STAGED ✅
-- **Fix**: 6af8bb9
+- `service_latency.go:145` — **Fix**: 6af8bb9
 
 ### Runtime — 1 failure — DOWNSTREAM of watch
-- Expected 2 ready replicas, got 0. Watch context canceled.
+- `runtime.go:115` — expected 2 replicas, got 0
 
 ### Events — 1 failure — FIX STAGED ✅
-- `events.go:167` — Event generation incremented on PATCH (1→2). K8s only increments generation for spec changes. Our generic PATCH handler compared all non-metadata/non-status fields.
-- **Fix**: 2f0cbd9 — Only compare spec field for generation increment
+- `events.go:167` — **Fix**: 2f0cbd9 (generation only on spec)
 
 ### Kubectl — 1 failure — FIX STAGED ✅
-- `kubectl.go:2206` — `sessionAffinity` not defaulted to "None"
-- **Fix**: b65f0f9
+- `kubectl.go:2206` — **Fix**: b65f0f9 (sessionAffinity "None")
+
+### Aggregator — 1 failure — DinD
+- `aggregator.go:359` — sample API server image not available
 
 ### HostPort — 1 failure — DinD
-### Pod Resize — 1 failure — DinD
+- `hostport.go:219`
 
-## Staged Fixes (not yet deployed)
+### Pod Resize — 1 failure — DinD
+- `pod_resize.go:857`
+
+## Issues That Need Fix (not yet staged)
+
+| Issue | Root Cause | Impact |
+|-------|-----------|--------|
+| service.go:251 (x2) | Session affinity transition ClientIP→None doesn't clear kube-proxy state | 2 failures |
+| resource.go:512 | Preempted pod DisruptionTarget condition overwritten by kubelet status update | 1 failure |
+| field_validation.go:462 | CRD without preserveUnknownFields still accepts unknown top-level fields | 1 failure |
+| rc.go:623 | RC controller never clears ReplicaFailure condition when quota freed | 1 failure |
+
+## Staged Fixes
 
 | Commit | Fix | Expected Impact |
 |--------|-----|-----------------|
-| 6af8bb9 | **kube-proxy atomic iptables-restore** | ~20 failures |
+| 6af8bb9 | kube-proxy atomic iptables-restore | ~20 failures |
 | f1bf53f | Watch pre-buffer initial events | ~5-8 failures |
 | 070dde7 | RC UID ownership + active pod filtering | 1 |
-| 3186cf5 | Strip false x-kubernetes extensions | 3-8 |
-| 125d91a | GC no longer cascade-deletes namespace resources | 1+ |
-| 47fb9ec | CRD validation: preserve-unknown-fields + embedded resources | 2 |
+| 3186cf5 | Strip false x-kubernetes extensions | 3-9 |
+| 125d91a | GC no namespace cascade | 1+ |
+| 47fb9ec | CRD validation: preserve-unknown-fields + embedded | 2 |
 | fb9728d | Preemption reprieve + grace period | 2 |
 | c19a049 | Priority admission controller | 1 |
-| b65f0f9 | Service sessionAffinity default to "None" | 1 |
+| b65f0f9 | Service sessionAffinity default "None" | 1 |
 | f524e6c | Deployment revision = MaxRevision(oldRSes) + 1 | 1-2 |
-| 2f0cbd9 | Generation only incremented on spec changes (not Events etc) | 1 |
-
-## All Issues Have Fixes
-
-Every failure in round 137 now has either a staged fix, is downstream of a staged fix, or is a DinD limitation.
+| 2f0cbd9 | Generation only on spec changes | 1 |
 
 ## Progress History
 
@@ -100,5 +117,5 @@ Every failure in round 137 now has either a staged fix, is downstream of a stage
 |-------|------|------|-------|------|
 | 135 | 373 | 68 | 441 | 84.6% |
 | 136 | ABORTED | — | 441 | — |
-| 137 | ~399 | ~42 | 441 | ~90.5% |
+| 137 | ~380 | ~61 | 441 | ~86.2% |
 | 138 | TBD | TBD | 441 | TBD |
