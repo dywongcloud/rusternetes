@@ -222,17 +222,11 @@ pub async fn update_status(
             .get("status")
             .cloned()
             .unwrap_or(Value::Object(serde_json::Map::new()));
-        if let (Some(merged_obj), Some(patch_obj)) =
-            (merged.as_object_mut(), patch_status.as_object())
-        {
-            for (k, v) in patch_obj {
-                if v.is_null() {
-                    merged_obj.remove(k);
-                } else {
-                    merged_obj.insert(k.clone(), v.clone());
-                }
-            }
-        }
+        // K8s strategic merge patch recursively merges maps (like
+        // capacity, allocatable). Simple insert replaces the entire
+        // map, wiping out existing entries. This broke preemption
+        // tests that patch node status to add extended resources.
+        crate::patch::deep_merge_objects(&mut merged, &patch_status);
         merged
     } else {
         new_resource

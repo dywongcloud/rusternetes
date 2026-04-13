@@ -855,3 +855,57 @@ mod tests {
         assert!(result["metadata"]["annotations"].is_null());
     }
 }
+
+/// Recursively merge two JSON objects. For nested objects, entries from
+/// `patch` are merged INTO `target` without replacing existing entries.
+/// Null values in patch remove the key from target.
+/// This is used for strategic merge patch on status subresources where
+/// maps like capacity/allocatable must be merged, not replaced.
+pub fn deep_merge_objects(target: &mut serde_json::Value, patch: &serde_json::Value) {
+    if let (Some(target_obj), Some(patch_obj)) = (target.as_object_mut(), patch.as_object()) {
+        for (k, v) in patch_obj {
+            if v.is_null() {
+                target_obj.remove(k);
+            } else if v.is_object() {
+                let existing = target_obj
+                    .entry(k.clone())
+                    .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+                deep_merge_objects(existing, v);
+            } else {
+                target_obj.insert(k.clone(), v.clone());
+            }
+        }
+    }
+}
+
+#[test]
+fn test_deep_merge_preserves_existing_map_entries() {
+    let mut target = serde_json::json!({
+        "capacity": {
+            "cpu": "4",
+            "memory": "8Gi",
+            "pods": "110"
+        },
+        "conditions": [{"type": "Ready"}]
+    });
+    let patch = serde_json::json!({
+        "capacity": {
+            "scheduling.k8s.io/foo": "5"
+        }
+    });
+    deep_merge_objects(&mut target, &patch);
+
+    let cap = target.get("capacity").unwrap().as_object().unwrap();
+    assert_eq!(cap.get("cpu").unwrap(), "4", "existing cpu preserved");
+    assert_eq!(
+        cap.get("memory").unwrap(),
+        "8Gi",
+        "existing memory preserved"
+    );
+    assert_eq!(
+        cap.get("scheduling.k8s.io/foo").unwrap(),
+        "5",
+        "new extended resource added"
+    );
+    assert!(target.get("conditions").is_some(), "conditions preserved");
+}
