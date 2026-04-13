@@ -172,6 +172,85 @@ pub async fn create(
         }
     }
 
+    // Resolve priority from PriorityClass (K8s Priority admission controller)
+    // See: plugin/pkg/admission/priority/admission.go lines 162-201
+    if let Some(ref mut spec) = pod.spec {
+        let mut resolved_priority: i32 = 0;
+        let mut resolved_preemption_policy: Option<String> = None;
+
+        if let Some(ref pc_name) = spec.priority_class_name {
+            if !pc_name.is_empty() {
+                // Resolve priorityClassName → priority value
+                let pc_key = format!("/registry/priorityclasses/{}", pc_name);
+                match state.storage.get::<serde_json::Value>(&pc_key).await {
+                    Ok(pc) => {
+                        resolved_priority =
+                            pc.get("value").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                        resolved_preemption_policy = pc
+                            .get("preemptionPolicy")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        info!(
+                            "Resolved priorityClassName {} → priority {} for pod {}",
+                            pc_name, resolved_priority, pod.metadata.name
+                        );
+                    }
+                    Err(rusternetes_common::Error::NotFound(_)) => {
+                        // K8s rejects pods with unknown priorityClassName
+                        return Err(rusternetes_common::Error::Forbidden(format!(
+                            "no PriorityClass with name {} was found",
+                            pc_name
+                        )));
+                    }
+                    Err(_) => {} // Other errors: proceed with default
+                }
+            }
+        } else {
+            // No priorityClassName — look for globalDefault PriorityClass
+            let pcs: Vec<serde_json::Value> = state
+                .storage
+                .list("/registry/priorityclasses/")
+                .await
+                .unwrap_or_default();
+            for pc in &pcs {
+                if pc
+                    .get("globalDefault")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    resolved_priority =
+                        pc.get("value").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    resolved_preemption_policy = pc
+                        .get("preemptionPolicy")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    if let Some(name) = pc.pointer("/metadata/name").and_then(|n| n.as_str()) {
+                        spec.priority_class_name = Some(name.to_string());
+                    }
+                    break;
+                }
+            }
+        }
+
+        // K8s rejects pods where spec.priority differs from computed priority
+        if let Some(existing_priority) = spec.priority {
+            if existing_priority != resolved_priority {
+                return Err(rusternetes_common::Error::Forbidden(format!(
+                    "the integer value of priority ({}) must not be provided in pod spec; priority admission controller computed {} from the given PriorityClass name",
+                    existing_priority, resolved_priority
+                )));
+            }
+        }
+        spec.priority = Some(resolved_priority);
+
+        // Set preemptionPolicy from PriorityClass if not already set
+        if let Some(ref policy) = resolved_preemption_policy {
+            if spec.preemption_policy.is_none() {
+                spec.preemption_policy = Some(policy.clone());
+            }
+        }
+    }
+
     // Ensure namespace is set correctly
     pod.metadata.namespace = Some(namespace.clone());
 
