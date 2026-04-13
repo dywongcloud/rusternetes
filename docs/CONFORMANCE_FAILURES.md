@@ -1,155 +1,138 @@
 # Conformance Failure Tracker
 
-**Round 135** | 373/441 (84.6%) | 2026-04-11
-**Round 136** | ABORTED after 94 tests — preemption killed e2e pod | 2026-04-12
-**Round 137** | Pending (28 fixes staged) | 2026-04-13
+**Round 137** | Running | 2026-04-13
 
-## Staged Fixes for Round 136 (all from deep K8s source comparison)
+## Known Issues To Fix
 
-| Commit | Fix | K8s Ref | Expected Impact |
-|--------|-----|---------|-----------------|
-| 069e807 | TLS HTTP/2 ALPN negotiation (h2 + http/1.1) | serving.go | ~8 watch failures |
-| 3012663 | kube-proxy XOR hash — eliminate flush gap | proxier.go iptables-restore | ~18 (webhook+service+DNS) |
-| fe76396 | kube-proxy RELATED,ESTABLISHED + filter OUTPUT | proxier.go:1460,386 | service return traffic |
-| 7f8d692 | kube-proxy --reap for session affinity | proxier.go:1557 | affinity edge cases |
-| 0188c3c | OpenAPI raw JSON CRD schemas | customresource_handler.go | 9 CRD OpenAPI |
-| e1f4bd0 | Preemption all resource types | preemption.go | 4 preemption |
-| 646c713 | DaemonSet SafeEncodeString hash | rand.go | 1 daemonset |
-| ea9573e | Deployment force scale-down old RSes | rolling.go reconcileOldReplicaSets | 2 deployment |
-| 73795a7 | Endpoints terminal/terminating/publishNotReady | controller_utils.go ShouldPodBeInEndpoints | endpoint reliability |
-| 0ed1628 | ResourceQuota ephemeral-storage | pods.go PodUsageFunc | 1 quota |
-| a1025ba | Namespace deletion pod ordering | namespaced_resources_deleter.go | 1 namespace |
-| 31f4f39 | Job terminating count for completed | job_controller.go syncJob | 1 job |
-| 2f20539 | Kubelet RS256 key path | jwt.go | 1 SA token |
-| 7cf9bd5 | Webhook objectSelector | object/matcher.go | webhook reliability |
-| a18febe | CRD strict unknown top-level fields | customresource_handler.go | 1 field validation |
-| e2e2f48 | CRD strict unknown metadata fields | customresource_handler.go | 1 field validation |
-| 3ba5e20 | Trailing slash routes /api/ /apis/ | Go http.ServeMux | 1 discovery |
-| 361752a | EndpointSlice mirroring cleanup | reconciler.go | 1 mirroring |
-| 07a393c | Deployment proportional scaling | sync.go scale() | deployment reliability |
-| 7fa3ce5 | Kubelet concurrent pod sync via tokio::spawn | podWorkerLoop | pod start timing |
-| d3011e0 | Kubelet init container state machine | computeInitContainerActions | init container restart |
-| 7ea2d20 | Kubelet init container status during backoff | kuberuntime_container.go | init container status |
-| 8673d37 | Parallel validating webhook dispatch | dispatcher.go:126-131 | ~4 emptydir webhook cascade |
-| 8673d37 | Generic PATCH generation increment | patch.go | 1 statefulset patch |
-| 8673d37 | StatefulSet delete terminal (Failed/Succeeded) pods | stateful_set_control.go:431 processReplica | statefulset lifecycle |
-| 4438743 | StatefulSet replica counting — match computeReplicaStatus() | stateful_set_control.go:370-399 | statefulset status accuracy |
-| ea9573e | Deployment force scale-down old RSes when new RS available | rolling.go | 2 deployment |
-| b60b87a | System PriorityClasses + CoreDNS priority protection | scheduling/types.go | prevents e2e pod preemption |
+Round 137 has 30 fixes deployed since round 135 (373/441). The following issues are known from round 135 analysis. Some may be resolved by staged fixes; others need new work. Round 137 results will confirm which are actually fixed.
 
-## Round 136 Failure — Preemption Killed E2E Pod
-
-Round 136 aborted after 94/441 tests. The `preemptor-pod` (preemption conformance test) evicted **5 pods on node-1** including CoreDNS, the sonobuoy aggregator, and the e2e test runner itself. All had priority 0 (no priorityClassName set).
-
-**Timeline:**
-- 00:56:45 — e2e pod started on node-1
-- 02:40:16 — Scheduler evicted e2e pod for preemption by `preemptor-pod`
-- 02:40:20 — GC deleted e2e pod from etcd (no owner reference)
-- 02:40:21 — kubelet2 orphan cleanup killed the e2e container
-
-**Root cause:** No system PriorityClasses existed (`system-cluster-critical`, `system-node-critical`). CoreDNS and sonobuoy pods had priority 0, making them preemptable by any pod with priority > 0.
-
-**Fix (b60b87a):** Added `system-node-critical` (2000001000) and `system-cluster-critical` (2000000000) PriorityClasses to bootstrap. Set CoreDNS to `priorityClassName: system-cluster-critical` with `priority: 2000000000`. The scheduler already protects pods with priority >= 2000000000 (SYSTEM_CRITICAL_PRIORITY).
-
-## Round 135 Failure Analysis (68 failures, 57 unique locations)
-
-### Watch "context canceled" — ~8 failures (FIX STAGED 069e807)
+### 1. Watch "context canceled" — ~8 failures
 - `deployment.go:1008,1322`, `rc.go:509,623`, `replica_set.go:232,560`, `runtime.go:115`, `statefulset.go:957`
-- **Root cause found**: TLS server didn't advertise HTTP/2 via ALPN. Go's client-go fell back to HTTP/1.1 causing connection pooling issues with watches.
-- **Fix**: 069e807 enables h2 + http/1.1 ALPN in rustls ServerConfig
-- **K8s ref**: staging/src/k8s.io/apiserver/pkg/server/options/serving.go
+- **Status**: FIX DEPLOYED (069e807 — HTTP/2 ALPN negotiation)
+- **Awaiting round 137 results**
 
-### Webhook — 12 failures (FIX STAGED 3012663 + fe76396 + 7cf9bd5 + 8673d37)
+### 2. Webhook — 12 failures
 - `webhook.go:520,675,904,1269,1334,1400,1481,2107(x3),2164,2491`
-- **Root cause found**: kube-proxy flushed ALL iptables rules every second because hash was order-dependent and NEVER matched. Webhook ClusterIP rules existed for only ~50ms/second. FailurePolicy=Ignore silently swallowed the errors.
-- **Deep analysis findings**: Also missing objectSelector, missing RELATED,ESTABLISHED filter rule, missing OUTPUT chain jump. Validating webhooks called sequentially instead of in parallel.
-- **Fix**: kube-proxy XOR hash eliminates flush gap. RELATED,ESTABLISHED + OUTPUT chain fix service traffic. objectSelector matching added. Validating webhooks now dispatched in parallel via tokio::spawn matching K8s goroutine architecture (dispatcher.go:126-131).
-- **K8s ref**: pkg/proxy/iptables/proxier.go, admission/plugin/webhook/validating/dispatcher.go, predicates/object/matcher.go
+- **Status**: FIX DEPLOYED (3012663 kube-proxy XOR hash + fe76396 RELATED,ESTABLISHED + 7cf9bd5 objectSelector + 8673d37 parallel dispatch)
+- **Awaiting round 137 results**
 
-### CRD OpenAPI — 9 failures (FIX STAGED 0188c3c)
+### 3. CRD OpenAPI — 9 failures
 - `crd_publish_openapi.go:77,161,214,253,285,318,366,400,451`
-- **Root cause found**: OpenAPI handler deserialized CRDs through typed struct losing nested `items` in JSONSchemaPropsOrArray untagged enum. Confirmed: CRDs stored with raw JSON (fix 047ba6b) but OpenAPI handler re-deserialized them.
-- **Fix**: 0188c3c reads CRDs as raw serde_json::Value in OpenAPI handler
-- **K8s ref**: staging/src/k8s.io/apiextensions-apiserver/pkg/controller/openapi/builder/builder.go
+- **Status**: FIX DEPLOYED (0188c3c — raw JSON CRD schemas in OpenAPI handler)
+- **Awaiting round 137 results**
 
-### DNS — 6 failures (downstream of kube-proxy fixes)
+### 4. DNS — 6 failures
 - `dns_common.go:476` (x6)
-- **Root cause**: DNS test pods couldn't reach CoreDNS or test servers because kube-proxy iptables flush gap broke ClusterIP routing to CoreDNS (10.96.0.10). Verified: resolv.conf generation matches K8s (`{ns}.svc.{domain} svc.{domain} {domain}`, ndots:5). Fix is kube-proxy XOR hash + RELATED,ESTABLISHED.
-- **K8s ref**: pkg/kubelet/network/dns/dns.go — generateSearchesForDNSClusterFirst
+- **Status**: Downstream of kube-proxy fixes (3012663 + fe76396). No DNS-specific code changes needed — resolv.conf generation verified correct.
+- **Awaiting round 137 results**
 
-### Service Networking — 6 failures (FIX STAGED 3012663 + fe76396)
+### 5. Service Networking — 6 failures
 - `service.go:768,886,3459`, `proxy.go:271,503`, `service_latency.go:145`
-- **Root cause found (deep analysis)**: kube-proxy missing RELATED,ESTABLISHED accept rule (return traffic dropped), missing filter OUTPUT chain jump (local pod→ClusterIP failed), flush+rebuild gap every second.
-- **K8s ref**: pkg/proxy/iptables/proxier.go lines 378-386, 1451-1466
+- **Status**: FIX DEPLOYED (3012663 + fe76396 — kube-proxy flush gap + filter rules)
+- **Awaiting round 137 results**
 
-### Preemption — 4 failures (FIX STAGED e1f4bd0)
+### 6. Preemption — 4 failures
 - `predicates.go:1041(x2)`, `preemption.go:535,1052`
-- **Root cause found**: Preemption only checked cpu/memory, not extended resources
-- **K8s ref**: pkg/scheduler/framework/preemption/preemption.go
+- **Status**: FIX DEPLOYED (e1f4bd0 — all resource types in preemption + b60b87a system PriorityClasses + c19a049 priority admission controller)
+- **Awaiting round 137 results**
 
-### EmptyDir — 4 failures (FIX STAGED 8673d37 + kube-proxy)
-- `output.go:263` (x4) — stale webhook blocks pod creation
-- **Root cause found (deep analysis)**: Two issues: (1) kube-proxy flush gap breaks webhook ClusterIP routing; (2) validating webhooks called sequentially — N stale webhooks each timing out = N*10s delay. K8s dispatches all validating webhooks concurrently via goroutines (dispatcher.go:126-131), bounding total delay to max(10s).
-- **Fix**: 8673d37 refactored run_validating_webhooks to use tokio::spawn + join_all for parallel execution matching K8s architecture. Combined with kube-proxy XOR hash fix to eliminate flush gap.
-- **K8s ref**: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/validating/dispatcher.go
+### 7. EmptyDir — 4 failures (webhook cascade)
+- `output.go:263` (x4)
+- **Status**: FIX DEPLOYED (8673d37 parallel webhook dispatch + kube-proxy fixes)
+- **Awaiting round 137 results**
 
-### Field Validation — 3 failures (FIX STAGED a18febe + e2e2f48)
+### 8. Field Validation — 3 failures
 - `field_validation.go:462,611,735`
-- **Root cause found**: Unknown top-level CR fields not rejected (serde flatten captured them). Unknown metadata fields not validated against known ObjectMeta field list.
-- **K8s ref**: staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go
+- **Status**: FIX DEPLOYED (a18febe + e2e2f48 — strict unknown field validation)
+- **Awaiting round 137 results**
 
-### Deployment — 2 failures (FIX STAGED ea9573e + 07a393c)
+### 9. Deployment — 2 failures
 - `deployment.go:1008,1322`
-- **Root cause found**: Old RSes stuck with non-zero replicas when maxUnavailable rounds to 0. K8s forces scale-down when new RS fully available. Also missing proportional scaling across RSes.
-- **K8s ref**: pkg/controller/deployment/rolling.go — reconcileOldReplicaSets, sync.go — scale()
+- **Status**: FIX DEPLOYED (ea9573e force scale-down + 07a393c proportional scaling)
+- **Awaiting round 137 results**
 
-### DaemonSet — 1 failure (FIX STAGED 646c713)
+### 10. DaemonSet — 1 failure
 - `daemon_set.go:1276`
-- **Root cause found (deep analysis)**: Hash format was raw decimal instead of K8s SafeEncodeString alphabet "bcdfghjklmnpqrstvwxz2456789". ControllerRevision name and Match() byte comparison failed.
-- **K8s ref**: staging/src/k8s.io/apimachinery/pkg/util/rand/rand.go
+- **Status**: FIX DEPLOYED (646c713 — SafeEncodeString hash)
+- **Awaiting round 137 results**
 
-### ResourceQuota — 1 failure (FIX STAGED 0ed1628)
+### 11. ResourceQuota — 1 failure
 - `resource_quota.go:282`
-- **Root cause found (deep analysis)**: Missing ephemeral-storage tracking in quota controller
-- **K8s ref**: pkg/quota/v1/evaluator/core/pods.go — PodUsageFunc
+- **Status**: FIX DEPLOYED (0ed1628 — ephemeral-storage tracking)
+- **Awaiting round 137 results**
 
-### Namespace Deletion — 1 failure (FIX STAGED a1025ba)
+### 12. Namespace Deletion — 1 failure
 - `namespace.go:609`
-- **Root cause found**: All resources deleted in one pass. K8s deletes pods first, sets conditions, then deletes configmaps on next cycle for observable ordering.
-- **K8s ref**: pkg/controller/namespace/deletion/namespaced_resources_deleter.go
+- **Status**: FIX DEPLOYED (a1025ba — pod deletion ordering)
+- **Awaiting round 137 results**
 
-### Job — 1 failure (FIX STAGED 31f4f39)
+### 13. Job — 1 failure
 - `job.go:556`
-- **Root cause found**: Completed jobs skipped entirely, terminating count never updated to 0
-- **K8s ref**: pkg/controller/job/job_controller.go — syncJob
+- **Status**: FIX DEPLOYED (31f4f39 — terminating count for completed jobs)
+- **Awaiting round 137 results**
 
-### Auth — 2 failures (FIX STAGED 2f20539)
+### 14. Auth — 2 failures
 - `service_accounts.go:129,667`
-- **Root cause found**: Kubelet uses HS256 (can't find SA keys at /root/.rusternetes/certs/sa.key) while API server uses RS256 (finds keys at /etc/kubernetes/pki/sa.key). TokenReview fails because algorithms don't match.
+- **Status**: FIX DEPLOYED (2f20539 — RS256 key path)
+- **Awaiting round 137 results**
 
-### Discovery — 1 failure (FIX STAGED 3ba5e20)
+### 15. Discovery — 1 failure
 - `discovery.go:131`
-- **Root cause found**: /apis/ (trailing slash) returns 404. Go http.ServeMux handles trailing slashes automatically, Axum doesn't.
+- **Status**: FIX DEPLOYED (3ba5e20 — trailing slash routes)
+- **Awaiting round 137 results**
 
-### EndpointSlice Mirroring — 1 failure (FIX STAGED 361752a)
+### 16. EndpointSlice Mirroring — 1 failure
 - `endpointslicemirroring.go:202`
-- **Root cause found (deep analysis)**: Mirrored slices not deleted when source Endpoints deleted. Cleanup only recognized endpointslice-controller, not mirroring-controller label.
-- **K8s ref**: pkg/controller/endpointslicemirroring/reconciler.go
+- **Status**: FIX DEPLOYED (361752a — mirroring cleanup)
+- **Awaiting round 137 results**
 
-### StatefulSet — 1 failure (FIX STAGED 8673d37 + 4438743)
+### 17. StatefulSet — 1 failure
 - `statefulset.go:1092`
-- **Root cause found (deep analysis)**: Three issues identified from K8s source comparison:
-  1. Generic PATCH handler didn't increment metadata.generation on spec changes. Test verifies ObservedGeneration >= Generation after strategic merge patch. K8s increments generation on every spec mutation.
-  2. Terminal (Failed/Succeeded) pods not deleted for recreation. K8s processReplica() at stateful_set_control.go:431 deletes terminal pods so StatefulSet recreates them.
-  3. Replica counting wrong — K8s computeReplicaStatus() counts terminating pods in `replicas` but excludes them from `currentReplicas`/`updatedReplicas`. We excluded terminating from all counts.
-- **Fix**: 8673d37 adds generation increment to generic_patch.rs and terminal pod deletion. 4438743 fixes replica counting to match K8s computeReplicaStatus() exactly.
-- **K8s ref**: pkg/controller/statefulset/stateful_set_control.go:370-399,431, staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go
+- **Status**: FIX DEPLOYED (8673d37 generation + terminal pods + 4438743 computeReplicaStatus)
+- **Awaiting round 137 results**
 
-### Remaining (DinD/environment limitations)
-- `hostport.go:219` — DinD can't bind to other node's IPs (HostPort networking)
-- `pod_resize.go:857` — DinD cgroup limitations (in-place resource resize)
-- `aggregator.go:359` — Sample API server deployment needs image pull + etcd sidecar (DinD network/image availability)
-- `lifecycle_hook.go:132` — Downstream of kube-proxy fixes. PreStop HTTP hook curls another pod via pod IP. Pod-to-pod networking requires working kube-proxy. Verified: kubelet lifecycle hook implementation matches K8s (postStart kills container on failure, preStop warns and continues). K8s ref: pkg/kubelet/kuberuntime/kuberuntime_container.go:762-893
+### 18. Lifecycle Hook — 1 failure
+- `lifecycle_hook.go:132`
+- **Status**: Downstream of kube-proxy fixes (preStop HTTP hook uses pod-to-pod networking)
+- **Awaiting round 137 results**
+
+### 19. DinD Limitations — 3 failures (may not be fixable)
+- `hostport.go:219` — DinD can't bind to other node's IPs
+- `pod_resize.go:857` — DinD cgroup limitations
+- `aggregator.go:359` — Sample API server needs image pull in DinD
+
+## Fixes Deployed in Round 137
+
+| Commit | Fix | K8s Ref |
+|--------|-----|---------|
+| 069e807 | TLS HTTP/2 ALPN negotiation | serving.go |
+| 3012663 | kube-proxy XOR hash — eliminate flush gap | proxier.go |
+| fe76396 | kube-proxy RELATED,ESTABLISHED + filter OUTPUT | proxier.go:1460,386 |
+| 7f8d692 | kube-proxy --reap for session affinity | proxier.go:1557 |
+| 0188c3c | OpenAPI raw JSON CRD schemas | customresource_handler.go |
+| e1f4bd0 | Preemption all resource types | preemption.go |
+| 646c713 | DaemonSet SafeEncodeString hash | rand.go |
+| ea9573e | Deployment force scale-down old RSes | rolling.go |
+| 07a393c | Deployment proportional scaling | sync.go scale() |
+| 73795a7 | Endpoints terminal/terminating/publishNotReady | controller_utils.go |
+| 0ed1628 | ResourceQuota ephemeral-storage | pods.go PodUsageFunc |
+| a1025ba | Namespace deletion pod ordering | namespaced_resources_deleter.go |
+| 31f4f39 | Job terminating count for completed | job_controller.go |
+| 2f20539 | Kubelet RS256 key path | jwt.go |
+| 7cf9bd5 | Webhook objectSelector | object/matcher.go |
+| a18febe | CRD strict unknown top-level fields | customresource_handler.go |
+| e2e2f48 | CRD strict unknown metadata fields | customresource_handler.go |
+| 3ba5e20 | Trailing slash routes /api/ /apis/ | http.ServeMux |
+| 361752a | EndpointSlice mirroring cleanup | reconciler.go |
+| 7fa3ce5 | Kubelet concurrent pod sync | podWorkerLoop |
+| d3011e0 | Kubelet init container state machine | computeInitContainerActions |
+| 7ea2d20 | Kubelet init container status during backoff | kuberuntime_container.go |
+| 8673d37 | Parallel validating webhook dispatch | dispatcher.go:126-131 |
+| 8673d37 | Generic PATCH generation increment | patch.go |
+| 8673d37 | StatefulSet delete terminal pods | stateful_set_control.go:431 |
+| 4438743 | StatefulSet computeReplicaStatus() counting | stateful_set_control.go:370-399 |
+| b60b87a | System PriorityClasses + CoreDNS priority | scheduling/types.go |
+| c19a049 | Priority admission controller — resolve priorityClassName | admission/priority/admission.go |
 
 ## Progress History
 
