@@ -3,99 +3,97 @@
 **Round 137** | Complete | 2026-04-13
 **Result**: ~399/441 (~90.5%) — 42 unique failures
 
-## Round 137 Failures (42 unique)
+## Round 137 Failures — Root Cause Analysis (42 unique)
 
 ### Webhook — 11 failures — FIX STAGED ✅
-- `webhook.go:675,904,1269,1334,1400,1481,2107(x2),2164,2491` + watch failures
-- **Root cause**: kube-proxy flush gap. Individual `iptables -F` + `iptables -A` commands create a window where NO ClusterIP rules exist. Any webhook call during rebuild gets "connection refused". K8s uses `iptables-restore --noflush` for atomic replacement (proxier.go:1495).
-- **Fix**: 6af8bb9 — Atomic iptables-restore, eliminates flush gap
+- **Root cause**: kube-proxy flush gap during iptables rebuild
+- **Fix**: 6af8bb9 — Atomic iptables-restore
 
 ### CRD OpenAPI — 8 failures — FIX STAGED ✅
-- `crd_publish_openapi.go:77,161,211,285,318,366,400,451`
-- **Root cause**: (1) `x-kubernetes-embedded-resource: false` / `x-kubernetes-int-or-string: false` serialized when K8s omits them. (2) Watch context canceled during schema polling.
-- **Fix**: 3186cf5 — Strip false x-kubernetes extensions + f1bf53f watch pre-buffer
+- **Root cause**: false x-kubernetes extensions + watch context canceled
+- **Fix**: 3186cf5 + f1bf53f
 
 ### DNS — 5 failures — FIX STAGED ✅
-- `dns_common.go:476` (x5)
-- **Root cause**: kube-proxy flush gap breaks ClusterIP routing to CoreDNS (10.96.0.10)
-- **Fix**: 6af8bb9 — Atomic iptables-restore
-
-### EmptyDir/output — 3 failures — MIXED
-- `output.go:263` (x3) — some are macOS permission issues, some may be watch-related
-
-### Preemption — 2 failures — FIX STAGED ✅
-- `preemption.go:181,268`
-- **Fix**: fb9728d — Reprieve algorithm + c19a049 priority admission
-
-### Service — 2 failures — FIX STAGED ✅
-- `service.go:251,3459`
-- **Root cause**: kube-proxy flush gap
-- **Fix**: 6af8bb9 — Atomic iptables-restore
-
-### Proxy — 2 failures — FIX STAGED ✅
-- `proxy.go:271,503`
-- **Root cause**: kube-proxy flush gap breaks service proxy routing
-- **Fix**: 6af8bb9 — Atomic iptables-restore
-
-### Deployment — 2 failures — PARTIALLY DOWNSTREAM
-- `deployment.go:781,1264` — RS replicas timeout + watch context canceled
-
-### StatefulSet — 2 failures — FIX STAGED ✅
-- `statefulset.go:957,1092`
-- **Fix**: 8673d37 generation + 4438743 counting + watch fix
-
-### Field Validation — 2 failures — FIX STAGED ✅
-- `field_validation.go:611,735`
-- **Fix**: 47fb9ec — CRD preserve-unknown-fields + embedded resources
-
-### Namespace — 1 failure — FIX STAGED ✅
-- `namespace.go:579` — GC cascade-deleted namespace resources ignoring finalizers
-- **Fix**: 125d91a — Removed GC namespace cascade
-
-### RC — 1 failure — FIX STAGED ✅
-- `rc.go:509` — creates 5+ pods/sec
-- **Fix**: 070dde7 — UID ownership + active pod filtering
-
-### DaemonSet — 1 failure — INVESTIGATING
-- `daemon_set.go:1276`
-
-### ReplicaSet — 1 failure — DOWNSTREAM
-- `replica_set.go:232` — pod responses timeout
-
-### Init Container — 1 failure — DOWNSTREAM
-- `init_container.go:440` — watch timeout
-
-### Service Latency — 1 failure — FIX STAGED ✅
-- `service_latency.go:145` — deployment not ready, kube-proxy flush gap
+- **Root cause**: kube-proxy flush gap breaks CoreDNS ClusterIP routing
 - **Fix**: 6af8bb9
 
-### Runtime — 1 failure — INVESTIGATING
-- `runtime.go:115`
+### EmptyDir/output — 3 failures — 1 DinD + 2 watch
+- 1 macOS filesystem permissions (DinD), 2 watch context canceled
 
-### Events — 1 failure — INVESTIGATING
-- `events.go:167`
+### Preemption — 2 failures — FIX STAGED ✅
+- **Fix**: fb9728d + c19a049
 
-### Kubectl — 1 failure — INVESTIGATING
-- `kubectl.go:2206`
+### Service — 2 failures — FIX STAGED ✅
+- **Root cause**: kube-proxy flush gap
+- **Fix**: 6af8bb9
+
+### Proxy — 2 failures — FIX STAGED ✅
+- **Root cause**: kube-proxy flush gap
+- **Fix**: 6af8bb9
+
+### Deployment — 2 failures — NEEDS FIX ❌
+- `deployment.go:781` — Deployment revision annotation not incremented when adopting RS. K8s creates a new RS with revision max+1 even when adopting. Our code sets deployment revision to max (not max+1).
+- `deployment.go:1264` — RS replicas timeout + watch context canceled
+- **Status**: Needs deployment revision handling fix
+
+### StatefulSet — 2 failures — FIX STAGED ✅
+- **Fix**: 8673d37 + 4438743 + watch fix
+
+### Field Validation — 2 failures — FIX STAGED ✅
+- **Fix**: 47fb9ec
+
+### Namespace — 1 failure — FIX STAGED ✅
+- **Fix**: 125d91a
+
+### RC — 1 failure — FIX STAGED ✅
+- **Fix**: 070dde7
+
+### DaemonSet — 1 failure — DOWNSTREAM of watch fix
+- Watch context canceled during pod readiness check
+
+### ReplicaSet — 1 failure — DOWNSTREAM of watch + kube-proxy
+- Pod responses timeout
+
+### Init Container — 1 failure — DOWNSTREAM of watch
+- Watch timeout during state transition
+
+### Service Latency — 1 failure — FIX STAGED ✅
+- **Fix**: 6af8bb9
+
+### Runtime — 1 failure — DOWNSTREAM of watch
+- Expected 2 ready replicas, got 0. Watch context canceled.
+
+### Events — 1 failure — NEEDS FIX ❌
+- `events.go:167` — Event PATCH doesn't properly preserve/update Series field. DeepEqual comparison fails after patching. The `series` field with `count` and `lastObservedTime` is not correctly round-tripped through PATCH.
+- **Status**: Needs investigation of Event Series PATCH handling
+
+### Kubectl — 1 failure — FIX STAGED ✅
+- `kubectl.go:2206` — `sessionAffinity` not defaulted to "None"
+- **Fix**: b65f0f9
 
 ### HostPort — 1 failure — DinD
-- `hostport.go:219`
-
 ### Pod Resize — 1 failure — DinD
-- `pod_resize.go:857`
 
 ## Staged Fixes (not yet deployed)
 
 | Commit | Fix | Expected Impact |
 |--------|-----|-----------------|
-| 6af8bb9 | **kube-proxy atomic iptables-restore** | ~20 failures (webhook+DNS+service+proxy) |
-| f1bf53f | Watch pre-buffer initial events | ~5-8 failures (systemic) |
-| 070dde7 | RC UID ownership + active pod filtering | 1 failure |
-| 3186cf5 | Strip false x-kubernetes extensions | 3-8 failures |
-| 125d91a | GC no longer cascade-deletes namespace resources | 1+ failures |
-| 47fb9ec | CRD validation: preserve-unknown-fields + embedded resources | 2 failures |
-| fb9728d | Preemption reprieve + grace period | 2 failures |
-| c19a049 | Priority admission controller | preemption reliability |
+| 6af8bb9 | **kube-proxy atomic iptables-restore** | ~20 failures |
+| f1bf53f | Watch pre-buffer initial events | ~5-8 failures |
+| 070dde7 | RC UID ownership + active pod filtering | 1 |
+| 3186cf5 | Strip false x-kubernetes extensions | 3-8 |
+| 125d91a | GC no longer cascade-deletes namespace resources | 1+ |
+| 47fb9ec | CRD validation: preserve-unknown-fields + embedded resources | 2 |
+| fb9728d | Preemption reprieve + grace period | 2 |
+| c19a049 | Priority admission controller | 1 |
+| b65f0f9 | Service sessionAffinity default to "None" | 1 |
+
+## Still Need Fix
+
+| Issue | Root Cause |
+|-------|-----------|
+| deployment.go:781 | Deployment revision not incremented on RS adoption |
+| events.go:167 | Event Series field not preserved through PATCH |
 
 ## Progress History
 
