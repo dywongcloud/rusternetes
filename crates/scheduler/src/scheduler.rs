@@ -584,7 +584,13 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
                 // Set deletionTimestamp and add DisruptionTarget condition
                 if pod.metadata.deletion_timestamp.is_none() {
                     pod.metadata.deletion_timestamp = Some(Utc::now());
-                    pod.metadata.deletion_grace_period_seconds = Some(0);
+                    // K8s uses the pod's termination grace period, not 0.
+                    // See: pkg/scheduler/framework/preemption/preemption.go — DeletePod
+                    pod.metadata.deletion_grace_period_seconds = pod
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.termination_grace_period_seconds)
+                        .or(Some(30));
                     // Update the status phase to indicate termination
                     if let Some(ref mut status) = pod.status {
                         status.phase = Some(rusternetes_common::types::Phase::Failed);

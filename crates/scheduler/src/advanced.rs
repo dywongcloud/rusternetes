@@ -889,44 +889,108 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
         return (true, vec![]);
     }
 
-    // Try to find a minimal set of pods to evict
-    let mut pods_to_evict = Vec::new();
-    let mut freed: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    // K8s preemption algorithm: "remove all, then reprieve"
+    // 1. Remove ALL lower-priority candidates and check if pod fits
+    // 2. If it doesn't fit even with all removed → node not suitable
+    // 3. Try to add back (reprieve) candidates from highest to lowest priority
+    // 4. If adding a candidate back still lets the pod fit → reprieve it
+    // 5. Final victims = candidates that could NOT be reprieved
+    // See: pkg/scheduler/framework/plugins/defaultpreemption/default_preemption.go:233-300
 
-    for (candidate_pod, _) in candidates {
+    // Calculate total freed resources if ALL candidates are evicted
+    let mut total_freed: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    for (candidate_pod, _) in &candidates {
         if let Some(spec) = &candidate_pod.spec {
             for container in &spec.containers {
                 if let Some(ref resources) = container.resources {
                     if let Some(ref requests) = resources.requests {
                         for (key, val) in requests {
-                            *freed.entry(key.clone()).or_insert(0) +=
+                            *total_freed.entry(key.clone()).or_insert(0) +=
                                 parse_resource_quantity(val, key);
                         }
                     }
                 }
             }
         }
-
-        pods_to_evict.push(candidate_pod.metadata.name.clone());
-
-        // Check if remaining + freed resources are enough for ALL resource types
-        let enough = resources_needed.iter().all(|(key, needed)| {
-            let rem = remaining(key);
-            let free = freed.get(key).copied().unwrap_or(0);
-            (rem + free) >= *needed
-        });
-        if enough {
-            debug!(
-                "Preemption possible on node {}: evicting {} pods",
-                node.metadata.name,
-                pods_to_evict.len()
-            );
-            return (true, pods_to_evict);
-        }
     }
 
-    // Even after evicting all lower-priority pods, not enough resources
-    (false, vec![])
+    // Check if pod fits even with ALL candidates removed
+    let fits_without_all = resources_needed.iter().all(|(key, needed)| {
+        let rem = remaining(key);
+        let free = total_freed.get(key).copied().unwrap_or(0);
+        (rem + free) >= *needed
+    });
+    if !fits_without_all {
+        return (false, vec![]);
+    }
+
+    // Sort candidates by DESCENDING priority (highest first) for reprieve pass
+    // K8s tries to reprieve higher-priority pods first
+    let mut candidates_for_reprieve = candidates.clone();
+    candidates_for_reprieve.sort_by_key(|(_, priority)| std::cmp::Reverse(*priority));
+
+    // Track which candidates are victims (start with all as victims)
+    let mut reprieved: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Try to reprieve each candidate (highest priority first)
+    for (candidate_pod, _) in &candidates_for_reprieve {
+        // Calculate resources freed by all NON-reprieved candidates (excluding this one)
+        let mut freed_without_this: std::collections::HashMap<String, i64> =
+            std::collections::HashMap::new();
+        for (other_pod, _) in &candidates {
+            if other_pod.metadata.name == candidate_pod.metadata.name {
+                continue; // Skip the candidate we're trying to reprieve
+            }
+            if reprieved.contains(&other_pod.metadata.name) {
+                continue; // Skip already-reprieved pods
+            }
+            if let Some(spec) = &other_pod.spec {
+                for container in &spec.containers {
+                    if let Some(ref resources) = container.resources {
+                        if let Some(ref requests) = resources.requests {
+                            for (key, val) in requests {
+                                *freed_without_this.entry(key.clone()).or_insert(0) +=
+                                    parse_resource_quantity(val, key);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check if pod still fits without evicting this candidate
+        let fits_without = resources_needed.iter().all(|(key, needed)| {
+            let rem = remaining(key);
+            let free = freed_without_this.get(key).copied().unwrap_or(0);
+            (rem + free) >= *needed
+        });
+
+        if fits_without {
+            // Pod fits without evicting this candidate → reprieve it
+            reprieved.insert(candidate_pod.metadata.name.clone());
+        }
+        // else: must evict this candidate
+    }
+
+    // Collect final victims (candidates that were NOT reprieved)
+    let pods_to_evict: Vec<String> = candidates
+        .iter()
+        .filter(|(p, _)| !reprieved.contains(&p.metadata.name))
+        .map(|(p, _)| p.metadata.name.clone())
+        .collect();
+
+    if pods_to_evict.is_empty() {
+        // All candidates were reprieved — pod fits without any eviction
+        return (true, vec![]);
+    }
+
+    debug!(
+        "Preemption possible on node {}: evicting {} pods (reprieved {})",
+        node.metadata.name,
+        pods_to_evict.len(),
+        reprieved.len()
+    );
+    (true, pods_to_evict)
 }
 
 /// Check topology spread constraints for a pod
