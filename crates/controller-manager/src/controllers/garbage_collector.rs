@@ -115,22 +115,25 @@ impl<S: Storage + 'static> GarbageCollector<S> {
             );
         }
 
-        // Handle namespace deletion - delete all resources in deleted namespaces
+        // NOTE: Namespace deletion is handled by the NamespaceController, NOT the GC.
+        // K8s GC handles ownerReference cascading (e.g. Deployment → ReplicaSet → Pod).
+        // Namespace cleanup (deleting all resources in a namespace) is done by the
+        // NamespacedResourcesDeleter (our NamespaceController).
+        // Previously, the GC also did cascade_delete_namespace which force-deleted
+        // all resources ignoring finalizers, racing with the namespace controller
+        // and breaking conformance tests that rely on finalizer-blocked deletion ordering.
+        // K8s ref: pkg/controller/namespace/deletion/namespaced_resources_deleter.go
+        //
+        // Skipping namespace cascade in GC. The deleted_namespaces detection below
+        // is kept but the cascade is removed.
         let deleted_namespaces: Vec<_> = all_resources
             .iter()
             .filter(|r| r.resource_type == "namespaces" && r.metadata.is_being_deleted())
             .collect();
 
-        for namespace in deleted_namespaces {
-            if let Err(e) = self
-                .cascade_delete_namespace(namespace, &all_resources)
-                .await
-            {
-                error!(
-                    "Failed to cascade delete namespace {}: {}",
-                    namespace.metadata.name, e
-                );
-            }
+        for _namespace in deleted_namespaces {
+            // Namespace cleanup handled by NamespaceController — do nothing here.
+            // The namespace controller respects finalizers and deletion ordering.
         }
 
         // Process resources with deletion timestamp
