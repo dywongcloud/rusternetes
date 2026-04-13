@@ -220,8 +220,12 @@ where
     let current_rev = state.storage.current_revision().await.unwrap_or(1);
     let current_rev_str = current_rev.to_string();
 
-    // Create channel for sending events to client
-    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(8192);
+    // Create channel for sending events to client.
+    // Small buffer (16) forces hyper to yield data frames more frequently,
+    // preventing HTTP/2 buffering from delaying event delivery to client-go.
+    // K8s uses explicit flusher.Flush() after each event (watch.go:275).
+    // Large buffers cause hyper to batch items and delay flushing.
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(16);
 
     // Determine whether to send initial ADDED events:
     // - If sendInitialEvents=true: always send
@@ -340,7 +344,10 @@ where
 
         // Always send periodic bookmarks as keep-alive to prevent the K8s client
         // from closing the watch connection due to inactivity
-        let mut bookmark_interval = Some(interval(Duration::from_secs(5)));
+        // K8s flushes after every event when the channel buffer is empty
+        // (watch.go:275). More frequent bookmarks act as keepalives that
+        // prevent client-go from timing out on idle connections.
+        let mut bookmark_interval = Some(interval(Duration::from_secs(1)));
 
         // Box-pin the watch stream so it can be replaced on reconnect
         let mut watch_stream: std::pin::Pin<
@@ -657,8 +664,12 @@ where
     let current_rev = state.storage.current_revision().await.unwrap_or(1);
     let current_rev_str = current_rev.to_string();
 
-    // Create channel for sending events to client
-    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(8192);
+    // Create channel for sending events to client.
+    // Small buffer (16) forces hyper to yield data frames more frequently,
+    // preventing HTTP/2 buffering from delaying event delivery to client-go.
+    // K8s uses explicit flusher.Flush() after each event (watch.go:275).
+    // Large buffers cause hyper to batch items and delay flushing.
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(16);
 
     // Determine whether to send initial ADDED events
     let should_send_initial =
@@ -745,7 +756,10 @@ where
 
         // Always send periodic bookmarks as keep-alive to prevent the K8s client
         // from closing the watch connection due to inactivity
-        let mut bookmark_interval = Some(interval(Duration::from_secs(5)));
+        // K8s flushes after every event when the channel buffer is empty
+        // (watch.go:275). More frequent bookmarks act as keepalives that
+        // prevent client-go from timing out on idle connections.
+        let mut bookmark_interval = Some(interval(Duration::from_secs(1)));
 
         // Box-pin the watch stream so it can be replaced on reconnect
         let mut watch_stream: std::pin::Pin<
