@@ -62,6 +62,12 @@ pub async fn create(
         service.spec.service_type = Some(ServiceType::ClusterIP);
     }
 
+    // Default sessionAffinity to "None" if not set
+    // K8s: pkg/apis/core/v1/defaults.go:108
+    if service.spec.session_affinity.is_none() {
+        service.spec.session_affinity = Some("None".to_string());
+    }
+
     // Default target_port to port value if not set
     for port in &mut service.spec.ports {
         if port.target_port.is_none() {
