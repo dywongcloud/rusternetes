@@ -2,6 +2,13 @@
 //
 // This module provides JSON Schema validation for custom resources based on
 // OpenAPI v3 schemas defined in CustomResourceDefinitions.
+//
+// K8s architecture (customresource_handler.go):
+// 1. GetObjectMetaWithOptions — validates top-level metadata, collects unknown meta fields
+// 2. PruneWithOptions — walks structural schema, collects unknown field paths
+// 3. CoerceWithOptions — validates embedded resource metadata
+// All unknown field paths are collected and returned together.
+// See: staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/schema/pruning/algorithm.go
 
 use crate::error::Error;
 use crate::resources::crd::JSONSchemaProps;
@@ -11,16 +18,32 @@ use serde_json::Value;
 pub struct SchemaValidator;
 
 impl SchemaValidator {
-    /// Validate a JSON value against a schema
+    /// Validate a JSON value against a schema.
+    /// Collects ALL unknown field paths and returns them as a single error,
+    /// matching K8s behavior where PruneWithOptions collects all paths.
     pub fn validate(schema: &JSONSchemaProps, value: &Value) -> Result<(), Error> {
-        Self::validate_with_path(schema, value, "")
+        let mut unknown_fields = Vec::new();
+        Self::validate_with_path(schema, value, "", &mut unknown_fields)?;
+        if !unknown_fields.is_empty() {
+            unknown_fields.sort();
+            let msg = unknown_fields
+                .iter()
+                .map(|p| format!("{}: field not declared in schema", p))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(Error::InvalidResource(msg));
+        }
+        Ok(())
     }
 
-    /// Validate with a path for error reporting
+    /// Validate with a path for error reporting.
+    /// Unknown fields are collected into `unknown_fields` instead of returning
+    /// immediately, matching K8s PruneWithOptions behavior.
     fn validate_with_path(
         schema: &JSONSchemaProps,
         value: &Value,
         path: &str,
+        unknown_fields: &mut Vec<String>,
     ) -> Result<(), Error> {
         // Validate type
         if let Some(ref type_) = schema.type_ {
@@ -29,11 +52,11 @@ impl SchemaValidator {
 
         // Validate based on value type
         match value {
-            Value::Object(obj) => Self::validate_object(schema, obj, path)?,
-            Value::Array(arr) => Self::validate_array(schema, arr, path)?,
+            Value::Object(obj) => Self::validate_object(schema, obj, path, unknown_fields)?,
+            Value::Array(arr) => Self::validate_array(schema, arr, path, unknown_fields)?,
             Value::String(s) => Self::validate_string(schema, s, path)?,
             Value::Number(n) => Self::validate_number(schema, n, path)?,
-            Value::Bool(_) => {} // Booleans don't have additional constraints
+            Value::Bool(_) => {}
             Value::Null => {
                 if let Some(false) = schema.nullable {
                     return Err(Error::InvalidResource(format!(
@@ -56,9 +79,10 @@ impl SchemaValidator {
 
         // Validate oneOf
         if let Some(ref one_of) = schema.one_of {
+            let mut dummy = Vec::new();
             let matches: Vec<_> = one_of
                 .iter()
-                .filter(|s| Self::validate_with_path(s, value, path).is_ok())
+                .filter(|s| Self::validate_with_path(s, value, path, &mut dummy).is_ok())
                 .collect();
 
             if matches.len() != 1 {
@@ -72,9 +96,10 @@ impl SchemaValidator {
 
         // Validate anyOf
         if let Some(ref any_of) = schema.any_of {
+            let mut dummy = Vec::new();
             let matches = any_of
                 .iter()
-                .any(|s| Self::validate_with_path(s, value, path).is_ok());
+                .any(|s| Self::validate_with_path(s, value, path, &mut dummy).is_ok());
 
             if !matches {
                 return Err(Error::InvalidResource(format!(
@@ -87,13 +112,14 @@ impl SchemaValidator {
         // Validate allOf
         if let Some(ref all_of) = schema.all_of {
             for sub_schema in all_of {
-                Self::validate_with_path(sub_schema, value, path)?;
+                Self::validate_with_path(sub_schema, value, path, unknown_fields)?;
             }
         }
 
         // Validate not
         if let Some(ref not) = schema.not {
-            if Self::validate_with_path(not, value, path).is_ok() {
+            let mut dummy = Vec::new();
+            if Self::validate_with_path(not, value, path, &mut dummy).is_ok() {
                 return Err(Error::InvalidResource(format!(
                     "Field at {} must not match the schema",
                     path
@@ -132,6 +158,7 @@ impl SchemaValidator {
         schema: &JSONSchemaProps,
         obj: &serde_json::Map<String, Value>,
         path: &str,
+        unknown_fields: &mut Vec<String>,
     ) -> Result<(), Error> {
         // Validate required fields
         if let Some(ref required) = schema.required {
@@ -165,7 +192,8 @@ impl SchemaValidator {
         }
 
         // K8s embedded resource meta fields are always allowed:
-        // apiVersion, kind, metadata. See: pruning/algorithm.go:77
+        // apiVersion, kind, metadata (case-sensitive).
+        // See: pruning/algorithm.go:51-55, 77
         let is_embedded = schema.x_kubernetes_embedded_resource == Some(true);
 
         // Validate properties
@@ -177,36 +205,42 @@ impl SchemaValidator {
                     } else {
                         format!("{}.{}", path, key)
                     };
-                    Self::validate_with_path(prop_schema, value, &new_path)?;
+                    Self::validate_with_path(prop_schema, value, &new_path, unknown_fields)?;
                 } else if is_embedded && (key == "apiVersion" || key == "kind" || key == "metadata")
                 {
                     // Embedded resource meta fields are implicitly allowed
                     continue;
                 } else if let Some(ref additional) = schema.additional_properties {
-                    // Validate against additionalProperties schema
                     let new_path = if path.is_empty() {
                         key.clone()
                     } else {
                         format!("{}.{}", path, key)
                     };
-                    Self::validate_additional_properties(additional, value, &new_path)?;
+                    Self::validate_additional_properties(
+                        additional,
+                        value,
+                        &new_path,
+                        unknown_fields,
+                    )?;
                 } else if schema.x_kubernetes_preserve_unknown_fields != Some(true) {
-                    // Unknown field and additionalProperties not set
-                    return Err(Error::InvalidResource(format!(
-                        "Unknown field '{}' at {}",
-                        key, path
-                    )));
+                    // Unknown field — collect path instead of returning immediately.
+                    // K8s PruneWithOptions collects all unknown field paths.
+                    let field_path = if path.is_empty() {
+                        format!(".{}", key)
+                    } else {
+                        format!(".{}.{}", path, key)
+                    };
+                    unknown_fields.push(field_path);
                 }
             }
         } else if let Some(ref additional) = schema.additional_properties {
-            // No specific properties defined, validate all against additionalProperties
             for (key, value) in obj {
                 let new_path = if path.is_empty() {
                     key.clone()
                 } else {
                     format!("{}.{}", path, key)
                 };
-                Self::validate_additional_properties(additional, value, &new_path)?;
+                Self::validate_additional_properties(additional, value, &new_path, unknown_fields)?;
             }
         }
 
@@ -217,12 +251,13 @@ impl SchemaValidator {
         additional: &crate::resources::crd::JSONSchemaPropsOrBool,
         value: &Value,
         path: &str,
+        unknown_fields: &mut Vec<String>,
     ) -> Result<(), Error> {
         use crate::resources::crd::JSONSchemaPropsOrBool;
 
         match additional {
             JSONSchemaPropsOrBool::Schema(schema) => {
-                Self::validate_with_path(schema, value, path)?;
+                Self::validate_with_path(schema, value, path, unknown_fields)?;
             }
             JSONSchemaPropsOrBool::Bool(false) => {
                 return Err(Error::InvalidResource(format!(
@@ -230,16 +265,18 @@ impl SchemaValidator {
                     path
                 )));
             }
-            JSONSchemaPropsOrBool::Bool(true) => {
-                // Any additional properties are allowed
-            }
+            JSONSchemaPropsOrBool::Bool(true) => {}
         }
 
         Ok(())
     }
 
-    fn validate_array(schema: &JSONSchemaProps, arr: &[Value], path: &str) -> Result<(), Error> {
-        // Validate min/max items
+    fn validate_array(
+        schema: &JSONSchemaProps,
+        arr: &[Value],
+        path: &str,
+        unknown_fields: &mut Vec<String>,
+    ) -> Result<(), Error> {
         if let Some(min) = schema.min_items {
             if (arr.len() as i64) < min {
                 return Err(Error::InvalidResource(format!(
@@ -258,7 +295,6 @@ impl SchemaValidator {
             }
         }
 
-        // Validate unique items
         if let Some(true) = schema.unique_items {
             let mut seen = Vec::new();
             for item in arr {
@@ -272,26 +308,22 @@ impl SchemaValidator {
             }
         }
 
-        // Validate items schema
         if let Some(ref items) = schema.items {
             use crate::resources::crd::JSONSchemaPropsOrArray;
 
             match items.as_ref() {
                 JSONSchemaPropsOrArray::Schema(item_schema) => {
-                    // All items must match this schema
                     for (i, item) in arr.iter().enumerate() {
                         let new_path = format!("{}[{}]", path, i);
-                        Self::validate_with_path(item_schema, item, &new_path)?;
+                        Self::validate_with_path(item_schema, item, &new_path, unknown_fields)?;
                     }
                 }
                 JSONSchemaPropsOrArray::Schemas(schemas) => {
-                    // Each item matches the corresponding schema (tuple validation)
                     for (i, item) in arr.iter().enumerate() {
                         if i < schemas.len() {
                             let new_path = format!("{}[{}]", path, i);
-                            Self::validate_with_path(&schemas[i], item, &new_path)?;
+                            Self::validate_with_path(&schemas[i], item, &new_path, unknown_fields)?;
                         } else if let Some(ref additional) = schema.additional_items {
-                            // Additional items beyond schema array
                             let new_path = format!("{}[{}]", path, i);
                             Self::validate_additional_items(additional, item, &new_path)?;
                         }
@@ -312,7 +344,8 @@ impl SchemaValidator {
 
         match additional {
             JSONSchemaPropsOrBool::Schema(schema) => {
-                Self::validate_with_path(schema, value, path)?;
+                let mut dummy = Vec::new();
+                Self::validate_with_path(schema, value, path, &mut dummy)?;
             }
             JSONSchemaPropsOrBool::Bool(false) => {
                 return Err(Error::InvalidResource(format!(
@@ -320,16 +353,13 @@ impl SchemaValidator {
                     path
                 )));
             }
-            JSONSchemaPropsOrBool::Bool(true) => {
-                // Any additional items are allowed
-            }
+            JSONSchemaPropsOrBool::Bool(true) => {}
         }
 
         Ok(())
     }
 
     fn validate_string(schema: &JSONSchemaProps, s: &str, path: &str) -> Result<(), Error> {
-        // Validate min/max length
         if let Some(min) = schema.min_length {
             if (s.len() as i64) < min {
                 return Err(Error::InvalidResource(format!(
@@ -348,7 +378,6 @@ impl SchemaValidator {
             }
         }
 
-        // Validate pattern
         if let Some(ref pattern) = schema.pattern {
             let re = regex::Regex::new(pattern)
                 .map_err(|e| Error::InvalidResource(format!("Invalid regex pattern: {}", e)))?;
@@ -361,7 +390,6 @@ impl SchemaValidator {
             }
         }
 
-        // Validate format
         if let Some(ref format) = schema.format {
             Self::validate_format(format, s, path)?;
         }
@@ -376,7 +404,6 @@ impl SchemaValidator {
     ) -> Result<(), Error> {
         let value = n.as_f64().unwrap_or(0.0);
 
-        // Validate minimum
         if let Some(min) = schema.minimum {
             let exclusive = schema.exclusive_minimum.unwrap_or(false);
             if exclusive {
@@ -394,7 +421,6 @@ impl SchemaValidator {
             }
         }
 
-        // Validate maximum
         if let Some(max) = schema.maximum {
             let exclusive = schema.exclusive_maximum.unwrap_or(false);
             if exclusive {
@@ -418,7 +444,6 @@ impl SchemaValidator {
     fn validate_format(format: &str, value: &str, path: &str) -> Result<(), Error> {
         match format {
             "date-time" => {
-                // Simplified date-time validation
                 if !value.contains('T') || !value.contains(':') {
                     return Err(Error::InvalidResource(format!(
                         "String at {} must be a valid date-time",
@@ -443,7 +468,6 @@ impl SchemaValidator {
                 }
             }
             "uuid" => {
-                // Simplified UUID validation
                 if value.len() != 36 || value.chars().filter(|c| *c == '-').count() != 4 {
                     return Err(Error::InvalidResource(format!(
                         "String at {} must be a valid UUID",
@@ -451,9 +475,7 @@ impl SchemaValidator {
                     )));
                 }
             }
-            _ => {
-                // Unknown formats are ignored per JSON Schema spec
-            }
+            _ => {}
         }
 
         Ok(())
@@ -471,33 +493,25 @@ impl SchemaValidator {
     }
 
     /// Apply default values from a JSONSchemaProps to a JSON value.
-    ///
-    /// Walks the schema recursively and for each property that has a `default`
-    /// value, inserts that default into `value` if the field is missing.
-    /// Handles nested objects recursively.
     pub fn apply_defaults(schema: &JSONSchemaProps, value: &mut Value) {
         Self::apply_defaults_recursive(schema, value);
     }
 
     fn apply_defaults_recursive(schema: &JSONSchemaProps, value: &mut Value) {
-        // If the value is an object, walk its properties and apply defaults
         if let Value::Object(ref mut map) = value {
             if let Some(ref properties) = schema.properties {
                 for (key, prop_schema) in properties {
                     if map.contains_key(key) {
-                        // Property exists -- recurse into it for nested defaults
                         if let Some(val) = map.get_mut(key) {
                             Self::apply_defaults_recursive(prop_schema, val);
                         }
                     } else if let Some(ref default_val) = prop_schema.default {
-                        // Property missing -- apply default
                         map.insert(key.clone(), default_val.clone());
                     }
                 }
             }
         }
 
-        // If the value is an array, apply defaults to each item using the items schema
         if let Value::Array(ref mut arr) = value {
             if let Some(ref items) = schema.items {
                 use crate::resources::crd::JSONSchemaPropsOrArray;
@@ -651,5 +665,110 @@ mod tests {
 
         let invalid = json!("Hello123");
         assert!(SchemaValidator::validate(&schema, &invalid).is_err());
+    }
+
+    /// Test that unknown fields are collected (not returned on first error)
+    /// matching K8s PruneWithOptions behavior.
+    #[test]
+    fn test_collects_all_unknown_fields() {
+        let mut properties = HashMap::new();
+        properties.insert(
+            "known".to_string(),
+            JSONSchemaProps {
+                type_: Some("string".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let schema = JSONSchemaProps {
+            type_: Some("object".to_string()),
+            properties: Some(properties),
+            ..Default::default()
+        };
+
+        // Two unknown fields — both should appear in the error
+        let value = json!({"known": "ok", "unknown1": "bad", "unknown2": "also bad"});
+        let err = SchemaValidator::validate(&schema, &value).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(".unknown1") && msg.contains(".unknown2"),
+            "Error should contain ALL unknown fields, got: {}",
+            msg
+        );
+    }
+
+    /// Test that embedded resource allows apiVersion/kind/metadata (case-sensitive)
+    /// but rejects other unknown fields like 'apiversion' (lowercase).
+    /// K8s ref: pruning/algorithm.go:51-55, 77
+    #[test]
+    fn test_embedded_resource_meta_fields() {
+        let mut template_properties = HashMap::new();
+        template_properties.insert(
+            "name".to_string(),
+            JSONSchemaProps {
+                type_: Some("string".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let mut properties = HashMap::new();
+        properties.insert(
+            "template".to_string(),
+            JSONSchemaProps {
+                type_: Some("object".to_string()),
+                x_kubernetes_embedded_resource: Some(true),
+                properties: Some(template_properties),
+                ..Default::default()
+            },
+        );
+
+        let schema = JSONSchemaProps {
+            type_: Some("object".to_string()),
+            properties: Some(properties),
+            ..Default::default()
+        };
+
+        // apiVersion (camelCase) should be allowed on embedded resource
+        let valid = json!({"template": {"apiVersion": "v1", "kind": "Pod", "name": "test"}});
+        assert!(
+            SchemaValidator::validate(&schema, &valid).is_ok(),
+            "apiVersion/kind should be allowed on embedded resource"
+        );
+
+        // apiversion (lowercase) is NOT a meta field — should be rejected
+        let invalid = json!({"template": {"apiversion": "v1", "name": "test"}});
+        let err = SchemaValidator::validate(&schema, &invalid).unwrap_err();
+        assert!(
+            err.to_string().contains("apiversion"),
+            "lowercase 'apiversion' should be rejected: {}",
+            err
+        );
+    }
+
+    /// Test that x-kubernetes-preserve-unknown-fields allows arbitrary fields
+    #[test]
+    fn test_preserve_unknown_fields() {
+        let mut properties = HashMap::new();
+        properties.insert(
+            "known".to_string(),
+            JSONSchemaProps {
+                type_: Some("string".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let schema = JSONSchemaProps {
+            type_: Some("object".to_string()),
+            properties: Some(properties),
+            x_kubernetes_preserve_unknown_fields: Some(true),
+            ..Default::default()
+        };
+
+        // Unknown fields should be allowed when preserve-unknown-fields is true
+        let value = json!({"known": "ok", "arbitrary": "allowed", "anything": 123});
+        assert!(
+            SchemaValidator::validate(&schema, &value).is_ok(),
+            "preserve-unknown-fields should allow arbitrary fields"
+        );
     }
 }
