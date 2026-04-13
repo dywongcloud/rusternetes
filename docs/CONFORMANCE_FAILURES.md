@@ -133,6 +133,14 @@ Round 137 has 30 fixes deployed since round 135 (373/441). The following issues 
 | 4438743 | StatefulSet computeReplicaStatus() counting | stateful_set_control.go:370-399 |
 | b60b87a | System PriorityClasses + CoreDNS priority | scheduling/types.go |
 | c19a049 | Priority admission controller — resolve priorityClassName | admission/priority/admission.go |
+| fb9728d | Preemption — K8s "remove all, reprieve" victim selection | default_preemption.go:233-300 |
+| fb9728d | Preemption — proper grace period (not forced 0) | preemption.go:177-219 |
+
+**Not yet deployed (staged for round 138):**
+
+| Commit | Fix | K8s Ref |
+|--------|-----|---------|
+| fb9728d | Preemption reprieve algorithm + grace period | default_preemption.go, preemption.go |
 
 ## Progress History
 
