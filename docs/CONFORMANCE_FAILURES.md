@@ -1,57 +1,63 @@
 # Conformance Failure Tracker
 
-**Round 137** | Running | 2026-04-13
+**Round 137** | Running (25+ failures at ~200/441) | 2026-04-13
 
-## Active Failures (14 so far)
+## Active Failures
 
-### 1. Watch "context canceled" — SYSTEMIC (~5 tests) — FIX STAGED ✅
-- 1777 watch failures across entire run
-- **Root cause**: Watch handler spawned background task to send events, returned Response with empty Body. Hyper blocked polling empty channel. Client-go timed out waiting for first DATA frame.
-- **Fix**: f1bf53f — Pre-buffer initial events before returning Response
-- K8s ref: watch.go:205-282
+### Watch — SYSTEMIC — FIX STAGED ✅
+- 1777 "context canceled" errors affecting ~5 tests directly
+- **Fix**: f1bf53f — Pre-buffer initial events before Response
 
-### 2. CRD OpenAPI — 3 failures — FIX STAGED ✅
-- `crd_publish_openapi.go:400,318,285`
-- **Root cause**: `x-kubernetes-embedded-resource: false` and `x-kubernetes-int-or-string: false` in schema. K8s omits false values.
+### CRD OpenAPI — 4 failures — FIX STAGED ✅
+- `crd_publish_openapi.go:400,318,285,161`
 - **Fix**: 3186cf5 — Strip false x-kubernetes extensions
 
-### 3. ReplicationController — 1 failure — FIX STAGED ✅
+### ReplicationController — 1 failure — FIX STAGED ✅
 - `rc.go:509` — creates 5+ pods/sec
-- **Root cause**: current_replicas included terminating/terminal pods. K8s FilterActivePods excludes these.
 - **Fix**: 070dde7 — UID ownership + active pod filtering
 
-### 4. DNS — 1 failure — DOWNSTREAM OF #1
-- `dns_common.go:476` — rate limiter timeout
-- Watch failures exhaust rate limiter. Should improve with watch fix.
+### Namespace — 1 failure — FIX STAGED ✅
+- `namespace.go:579` — "namespace was deleted unexpectedly"
+- **Root cause**: GC's cascade_delete_namespace force-deleted all resources ignoring finalizers, racing with namespace controller. K8s GC does NOT handle namespace cleanup — that's the NamespacedResourcesDeleter's job.
+- **Fix**: 125d91a — Removed GC namespace cascade, namespace controller handles it
 
-### 5. ReplicaSet — 1 failure — DOWNSTREAM OF #1
-- `replica_set.go:232` — pod responses timeout
-- Watch context canceled + networking. Should improve with watch fix.
+### Webhook — 7 failures — PARTIALLY DOWNSTREAM
+- `webhook.go:675,904,1269,1400,1481,2107,2164`
+- All "waiting for webhook configuration to be ready: timed out"
+- **Root cause**: Webhook pod readiness probe (20s initial delay) + endpoint creation + kube-proxy sync. With GC fix, pods won't be force-deleted. Watch fix should help too. Remaining issue is kube-proxy timing.
+- **Status**: Should improve with watch + GC fixes
 
-### 6. EmptyDir permissions — 1 failure — DinD LIMITATION
-- `output.go:263` — macOS filesystem ignores chmod
+### Field Validation — 2 failures — NEEDS FIX ❌
+- `field_validation.go:611` — "Unknown field 'apiversion' at template" — CRD strict validation rejecting wrong fields when x-kubernetes-preserve-unknown-fields is set
+- `field_validation.go:735` — duplicate field detection works but response body format may not match K8s expectation
+- **Status**: NEEDS DEEP K8s COMPARISON
 
-### 7. Pod Resize — 1 failure — DinD LIMITATION
-- `pod_resize.go:857` — cgroup manipulation unavailable
+### DNS — 2 failures — DOWNSTREAM
+- `dns_common.go:476` (x2) — rate limiter timeout, downstream of watch + kube-proxy
 
-### 8. Init Container — 1 failure — DOWNSTREAM OF #1
-- `init_container.go:440` — watch failures prevent observing state transition
+### Deployment — 1 failure — DOWNSTREAM
+- `deployment.go:1264` — RS replicas timeout, downstream of watch
 
-### 9. Deployment — 1 failure — DOWNSTREAM OF #1
-- `deployment.go:1264` — RS never had desired replicas due to watch failures
+### ReplicaSet — 1 failure — DOWNSTREAM
+- `replica_set.go:232` — pod responses timeout, downstream of watch + networking
 
-### 10. Service Proxy — 1 failure — NEEDS FIX ❌
-- `proxy.go:271` — context deadline exceeded reaching service through proxy
-- **Root cause**: INVESTIGATING — API server proxy handler or kube-proxy routing
+### StatefulSet — 1 failure — DOWNSTREAM
+- `statefulset.go:1092` — patch timing, fix staged (8673d37 generation + 4438743 counting)
 
-### 11. Webhook — 2 failures — NEEDS FIX ❌
-- `webhook.go:904,1269` — webhook configuration not ready
-- **Root cause**: INVESTIGATING — Secret mounting timing + kube-proxy routing to webhook ClusterIP
+### Init Container — 1 failure — DOWNSTREAM
+- `init_container.go:440` — watch timeout
 
-### 12. Field Validation — 1 failure — NEEDS FIX ❌
-- `field_validation.go:735` — duplicate field error not in response body
-- **Root cause**: YAML with duplicate keys sent via apply-patch+yaml with fieldValidation=Strict. We don't detect duplicate YAML keys and return error in HTTP response body as K8s Status object.
-- **Status**: INVESTIGATING
+### Service Proxy — 1 failure — DOWNSTREAM
+- `proxy.go:271` — service proxy timeout, downstream of kube-proxy
+
+### Service Latency — 1 failure — DOWNSTREAM
+- `service_latency.go:145` — deployment not ready, same as webhook timing
+
+### EmptyDir — 1 failure — DinD
+- `output.go:263` — macOS filesystem permissions
+
+### Pod Resize — 1 failure — DinD
+- `pod_resize.go:857` — cgroup limitation
 
 ## Staged Fixes (not yet deployed)
 
@@ -59,7 +65,8 @@
 |--------|-----|-----------------|
 | f1bf53f | Watch pre-buffer initial events | ~5-8 failures (systemic) |
 | 070dde7 | RC UID ownership + active pod filtering | 1 failure |
-| 3186cf5 | Strip false x-kubernetes extensions | 3 failures |
+| 3186cf5 | Strip false x-kubernetes extensions | 3-4 failures |
+| 125d91a | GC no longer cascade-deletes namespace resources | 1+ failures (namespace + webhook timing) |
 | fb9728d | Preemption reprieve + grace period | preemption reliability |
 
 ## Progress History
