@@ -3,11 +3,32 @@
 **Round 137** | Running | 2026-04-13
 **Baseline**: Round 135 = 373/441 (84.6%), Round 136 = ABORTED (preemption killed e2e)
 
-## Round 137 Failures
+## Round 137 Failures (tracking live — 6 failures at test 55/441)
 
-_Tracking failures as they are identified from the running conformance tests._
+### 1. CRD OpenAPI — 2 failures (STILL FAILING)
+- `crd_publish_openapi.go:400,318`
+- **Root cause**: Schema includes `x-kubernetes-embedded-resource: false` and `x-kubernetes-int-or-string: false` when K8s omits false values. These extension fields should use `skip_serializing_if` to omit when false.
+- **Status**: NEEDS FIX
 
-_(none yet — monitoring)_
+### 2. ReplicationController — 1 failure (STILL FAILING)
+- `rc.go:509`
+- "Watch failed: context canceled" + pods not coming up in 2 minutes
+- **Status**: INVESTIGATING — may be watch/HTTP2 issue still present
+
+### 3. DNS — 1 failure (STILL FAILING)
+- `dns_common.go:476`
+- "rate: Wait(n=1) would exceed context deadline" — pod can't reach DNS in time
+- **Status**: INVESTIGATING — may be kube-proxy timing or DNS route issue
+
+### 4. ReplicaSet — 1 failure (STILL FAILING)
+- `replica_set.go:232`
+- Pod responses timed out after 120s
+- **Status**: INVESTIGATING — related to watch/networking issues
+
+### 5. EmptyDir volume permissions — 1 failure (NEW)
+- `output.go:263`
+- Expected file permissions `-rw-rw-rw-` not matching
+- **Status**: NEEDS FIX — kubelet volume permission handling
 
 ## Staged for Round 138 (not yet deployed)
 
