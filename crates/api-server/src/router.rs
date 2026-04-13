@@ -409,7 +409,7 @@ async fn custom_resource_fallback(
                 Ok((status, json)) => (status, json).into_response(),
                 Err(e) => {
                     warn!("Error creating custom resource: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                    e.into_response()
                 }
             }
         }
@@ -465,7 +465,7 @@ async fn custom_resource_fallback(
                         Ok(resp) => resp,
                         Err(e) => {
                             warn!("Error watching custom resources: {}", e);
-                            (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                            e.into_response()
                         }
                     }
                 } else {
@@ -483,7 +483,7 @@ async fn custom_resource_fallback(
                         Ok(resp) => resp,
                         Err(e) => {
                             warn!("Error watching custom resources: {}", e);
-                            (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                            e.into_response()
                         }
                     }
                 }
@@ -503,7 +503,7 @@ async fn custom_resource_fallback(
                     Ok(json) => json.into_response(),
                     Err(e) => {
                         warn!("Error listing custom resources: {}", e);
-                        (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                        e.into_response()
                     }
                 }
             }
@@ -526,7 +526,7 @@ async fn custom_resource_fallback(
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error getting custom resource: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                    e.into_response()
                 }
             }
         }
@@ -564,7 +564,7 @@ async fn custom_resource_fallback(
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error updating custom resource: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                    e.into_response()
                 }
             }
         }
@@ -597,7 +597,7 @@ async fn custom_resource_fallback(
                 Ok(status) => status.into_response(),
                 Err(e) => {
                     warn!("Error deleting custom resource: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                    e.into_response()
                 }
             }
         }
@@ -623,8 +623,10 @@ async fn custom_resource_fallback(
             {
                 Ok(json) => json.into_response(),
                 Err(e) => {
-                    warn!("Error patching custom resource: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                    // Use Error's IntoResponse which returns proper K8s
+                    // Status JSON with correct HTTP status codes (422 for
+                    // InvalidResource, etc). Previously returned 500 text/plain.
+                    e.into_response()
                 }
             }
         }
@@ -646,7 +648,7 @@ async fn custom_resource_fallback(
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error getting custom resource status: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                    e.into_response()
                 }
             }
         }
@@ -674,7 +676,7 @@ async fn custom_resource_fallback(
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error updating custom resource status: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                    e.into_response()
                 }
             }
         }
@@ -700,7 +702,7 @@ async fn custom_resource_fallback(
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error patching custom resource status: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                    e.into_response()
                 }
             }
         }
@@ -722,7 +724,7 @@ async fn custom_resource_fallback(
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error getting custom resource scale: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                    e.into_response()
                 }
             }
         }
@@ -750,7 +752,7 @@ async fn custom_resource_fallback(
                 Ok(json) => json.into_response(),
                 Err(e) => {
                     warn!("Error updating custom resource scale: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)).into_response()
+                    e.into_response()
                 }
             }
         }
