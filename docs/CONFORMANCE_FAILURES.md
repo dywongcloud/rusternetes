@@ -49,6 +49,7 @@
 | 0061469 | Watch channel buffer 16 + bookmark 1s | — |
 | 55d52d7 | Status PATCH deep merge (node capacity) | 1 test |
 | 294358e | CRD error responses: proper K8s Status JSON (10 handlers) | — |
+| 5b7048f | **HTTP/2 flow control: match K8s window sizes (256KB/25MB)** | — |
 
 ## Progress History
 
