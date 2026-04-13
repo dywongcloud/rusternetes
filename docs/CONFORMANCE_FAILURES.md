@@ -63,9 +63,9 @@
 ### Runtime — 1 failure — DOWNSTREAM of watch
 - Expected 2 ready replicas, got 0. Watch context canceled.
 
-### Events — 1 failure — NEEDS FIX ❌
-- `events.go:167` — Event PATCH doesn't properly preserve/update Series field. DeepEqual comparison fails after patching. The `series` field with `count` and `lastObservedTime` is not correctly round-tripped through PATCH.
-- **Status**: Needs investigation of Event Series PATCH handling
+### Events — 1 failure — FIX STAGED ✅
+- `events.go:167` — Event generation incremented on PATCH (1→2). K8s only increments generation for spec changes. Our generic PATCH handler compared all non-metadata/non-status fields.
+- **Fix**: 2f0cbd9 — Only compare spec field for generation increment
 
 ### Kubectl — 1 failure — FIX STAGED ✅
 - `kubectl.go:2206` — `sessionAffinity` not defaulted to "None"
@@ -88,12 +88,11 @@
 | c19a049 | Priority admission controller | 1 |
 | b65f0f9 | Service sessionAffinity default to "None" | 1 |
 | f524e6c | Deployment revision = MaxRevision(oldRSes) + 1 | 1-2 |
+| 2f0cbd9 | Generation only incremented on spec changes (not Events etc) | 1 |
 
-## Still Need Fix
+## All Issues Have Fixes
 
-| Issue | Root Cause |
-|-------|-----------|
-| events.go:167 | Event Series field not preserved through PATCH |
+Every failure in round 137 now has either a staged fix, is downstream of a staged fix, or is a DinD limitation.
 
 ## Progress History
 
