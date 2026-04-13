@@ -1,75 +1,101 @@
 # Conformance Failure Tracker
 
-**Round 137** | Running (25+ failures at ~200/441) | 2026-04-13
+**Round 137** | Complete | 2026-04-13
+**Result**: ~399/441 (~90.5%) — 42 unique failures
 
-## Active Failures
+## Round 137 Failures (42 unique)
 
-### Watch — SYSTEMIC — FIX STAGED ✅
-- 1777 "context canceled" errors affecting ~5 tests directly
-- **Fix**: f1bf53f — Pre-buffer initial events before Response
+### Webhook — 11 failures — FIX STAGED ✅
+- `webhook.go:675,904,1269,1334,1400,1481,2107(x2),2164,2491` + watch failures
+- **Root cause**: kube-proxy flush gap. Individual `iptables -F` + `iptables -A` commands create a window where NO ClusterIP rules exist. Any webhook call during rebuild gets "connection refused". K8s uses `iptables-restore --noflush` for atomic replacement (proxier.go:1495).
+- **Fix**: 6af8bb9 — Atomic iptables-restore, eliminates flush gap
 
-### CRD OpenAPI — 4 failures — FIX STAGED ✅
-- `crd_publish_openapi.go:400,318,285,161`
-- **Fix**: 3186cf5 — Strip false x-kubernetes extensions
+### CRD OpenAPI — 8 failures — FIX STAGED ✅
+- `crd_publish_openapi.go:77,161,211,285,318,366,400,451`
+- **Root cause**: (1) `x-kubernetes-embedded-resource: false` / `x-kubernetes-int-or-string: false` serialized when K8s omits them. (2) Watch context canceled during schema polling.
+- **Fix**: 3186cf5 — Strip false x-kubernetes extensions + f1bf53f watch pre-buffer
 
-### ReplicationController — 1 failure — FIX STAGED ✅
+### DNS — 5 failures — FIX STAGED ✅
+- `dns_common.go:476` (x5)
+- **Root cause**: kube-proxy flush gap breaks ClusterIP routing to CoreDNS (10.96.0.10)
+- **Fix**: 6af8bb9 — Atomic iptables-restore
+
+### EmptyDir/output — 3 failures — MIXED
+- `output.go:263` (x3) — some are macOS permission issues, some may be watch-related
+
+### Preemption — 2 failures — FIX STAGED ✅
+- `preemption.go:181,268`
+- **Fix**: fb9728d — Reprieve algorithm + c19a049 priority admission
+
+### Service — 2 failures — FIX STAGED ✅
+- `service.go:251,3459`
+- **Root cause**: kube-proxy flush gap
+- **Fix**: 6af8bb9 — Atomic iptables-restore
+
+### Proxy — 2 failures — FIX STAGED ✅
+- `proxy.go:271,503`
+- **Root cause**: kube-proxy flush gap breaks service proxy routing
+- **Fix**: 6af8bb9 — Atomic iptables-restore
+
+### Deployment — 2 failures — PARTIALLY DOWNSTREAM
+- `deployment.go:781,1264` — RS replicas timeout + watch context canceled
+
+### StatefulSet — 2 failures — FIX STAGED ✅
+- `statefulset.go:957,1092`
+- **Fix**: 8673d37 generation + 4438743 counting + watch fix
+
+### Field Validation — 2 failures — FIX STAGED ✅
+- `field_validation.go:611,735`
+- **Fix**: 47fb9ec — CRD preserve-unknown-fields + embedded resources
+
+### Namespace — 1 failure — FIX STAGED ✅
+- `namespace.go:579` — GC cascade-deleted namespace resources ignoring finalizers
+- **Fix**: 125d91a — Removed GC namespace cascade
+
+### RC — 1 failure — FIX STAGED ✅
 - `rc.go:509` — creates 5+ pods/sec
 - **Fix**: 070dde7 — UID ownership + active pod filtering
 
-### Namespace — 1 failure — FIX STAGED ✅
-- `namespace.go:579` — "namespace was deleted unexpectedly"
-- **Root cause**: GC's cascade_delete_namespace force-deleted all resources ignoring finalizers, racing with namespace controller. K8s GC does NOT handle namespace cleanup — that's the NamespacedResourcesDeleter's job.
-- **Fix**: 125d91a — Removed GC namespace cascade, namespace controller handles it
-
-### Webhook — 7 failures — PARTIALLY DOWNSTREAM
-- `webhook.go:675,904,1269,1400,1481,2107,2164`
-- All "waiting for webhook configuration to be ready: timed out"
-- **Root cause**: Webhook pod readiness probe (20s initial delay) + endpoint creation + kube-proxy sync. With GC fix, pods won't be force-deleted. Watch fix should help too. Remaining issue is kube-proxy timing.
-- **Status**: Should improve with watch + GC fixes
-
-### Field Validation — 2 failures — FIX STAGED ✅
-- `field_validation.go:611` — CRD validation rejected `apiversion` inside embedded resource. K8s skips structural validation when `preserveUnknownFields: true`. Also, embedded resources implicitly allow `apiVersion`/`kind`/`metadata` meta fields.
-- `field_validation.go:735` — duplicate key detection works, response body format issue
-- **Fix**: 47fb9ec — Skip validation for preserve-unknown-fields CRDs + embedded resource meta fields
-
-### DNS — 2 failures — DOWNSTREAM
-- `dns_common.go:476` (x2) — rate limiter timeout, downstream of watch + kube-proxy
-
-### Deployment — 1 failure — DOWNSTREAM
-- `deployment.go:1264` — RS replicas timeout, downstream of watch
+### DaemonSet — 1 failure — INVESTIGATING
+- `daemon_set.go:1276`
 
 ### ReplicaSet — 1 failure — DOWNSTREAM
-- `replica_set.go:232` — pod responses timeout, downstream of watch + networking
-
-### StatefulSet — 1 failure — DOWNSTREAM
-- `statefulset.go:1092` — patch timing, fix staged (8673d37 generation + 4438743 counting)
+- `replica_set.go:232` — pod responses timeout
 
 ### Init Container — 1 failure — DOWNSTREAM
 - `init_container.go:440` — watch timeout
 
-### Service Proxy — 1 failure — DOWNSTREAM
-- `proxy.go:271` — service proxy timeout, downstream of kube-proxy
+### Service Latency — 1 failure — FIX STAGED ✅
+- `service_latency.go:145` — deployment not ready, kube-proxy flush gap
+- **Fix**: 6af8bb9
 
-### Service Latency — 1 failure — DOWNSTREAM
-- `service_latency.go:145` — deployment not ready, same as webhook timing
+### Runtime — 1 failure — INVESTIGATING
+- `runtime.go:115`
 
-### EmptyDir — 1 failure — DinD
-- `output.go:263` — macOS filesystem permissions
+### Events — 1 failure — INVESTIGATING
+- `events.go:167`
+
+### Kubectl — 1 failure — INVESTIGATING
+- `kubectl.go:2206`
+
+### HostPort — 1 failure — DinD
+- `hostport.go:219`
 
 ### Pod Resize — 1 failure — DinD
-- `pod_resize.go:857` — cgroup limitation
+- `pod_resize.go:857`
 
 ## Staged Fixes (not yet deployed)
 
 | Commit | Fix | Expected Impact |
 |--------|-----|-----------------|
+| 6af8bb9 | **kube-proxy atomic iptables-restore** | ~20 failures (webhook+DNS+service+proxy) |
 | f1bf53f | Watch pre-buffer initial events | ~5-8 failures (systemic) |
 | 070dde7 | RC UID ownership + active pod filtering | 1 failure |
-| 3186cf5 | Strip false x-kubernetes extensions | 3-4 failures |
-| 125d91a | GC no longer cascade-deletes namespace resources | 1+ failures (namespace + webhook timing) |
+| 3186cf5 | Strip false x-kubernetes extensions | 3-8 failures |
 | 125d91a | GC no longer cascade-deletes namespace resources | 1+ failures |
 | 47fb9ec | CRD validation: preserve-unknown-fields + embedded resources | 2 failures |
-| fb9728d | Preemption reprieve + grace period | preemption reliability |
+| fb9728d | Preemption reprieve + grace period | 2 failures |
+| c19a049 | Priority admission controller | preemption reliability |
 
 ## Progress History
 
@@ -77,4 +103,5 @@
 |-------|------|------|-------|------|
 | 135 | 373 | 68 | 441 | 84.6% |
 | 136 | ABORTED | — | 441 | — |
-| 137 | TBD | TBD | 441 | TBD |
+| 137 | ~399 | ~42 | 441 | ~90.5% |
+| 138 | TBD | TBD | 441 | TBD |
