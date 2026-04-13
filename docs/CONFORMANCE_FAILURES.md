@@ -53,6 +53,7 @@
 | 31e5e4f | Job successPolicy terminating=0 |
 | f80d0c6 | kube-proxy atomic path: NodePort DNAT rules |
 | 0061469 | Watch channel buffer 16 + bookmark 1s |
+| 55d52d7 | Status PATCH deep merge — preserve node capacity (with test) |
 
 ## Progress History
 
