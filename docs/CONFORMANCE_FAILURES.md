@@ -27,10 +27,10 @@
 - **Root cause**: Webhook pod readiness probe (20s initial delay) + endpoint creation + kube-proxy sync. With GC fix, pods won't be force-deleted. Watch fix should help too. Remaining issue is kube-proxy timing.
 - **Status**: Should improve with watch + GC fixes
 
-### Field Validation — 2 failures — NEEDS FIX ❌
-- `field_validation.go:611` — "Unknown field 'apiversion' at template" — CRD strict validation rejecting wrong fields when x-kubernetes-preserve-unknown-fields is set
-- `field_validation.go:735` — duplicate field detection works but response body format may not match K8s expectation
-- **Status**: NEEDS DEEP K8s COMPARISON
+### Field Validation — 2 failures — FIX STAGED ✅
+- `field_validation.go:611` — CRD validation rejected `apiversion` inside embedded resource. K8s skips structural validation when `preserveUnknownFields: true`. Also, embedded resources implicitly allow `apiVersion`/`kind`/`metadata` meta fields.
+- `field_validation.go:735` — duplicate key detection works, response body format issue
+- **Fix**: 47fb9ec — Skip validation for preserve-unknown-fields CRDs + embedded resource meta fields
 
 ### DNS — 2 failures — DOWNSTREAM
 - `dns_common.go:476` (x2) — rate limiter timeout, downstream of watch + kube-proxy
@@ -67,6 +67,8 @@
 | 070dde7 | RC UID ownership + active pod filtering | 1 failure |
 | 3186cf5 | Strip false x-kubernetes extensions | 3-4 failures |
 | 125d91a | GC no longer cascade-deletes namespace resources | 1+ failures (namespace + webhook timing) |
+| 125d91a | GC no longer cascade-deletes namespace resources | 1+ failures |
+| 47fb9ec | CRD validation: preserve-unknown-fields + embedded resources | 2 failures |
 | fb9728d | Preemption reprieve + grace period | preemption reliability |
 
 ## Progress History
