@@ -277,19 +277,44 @@ pub async fn get_swagger_spec(
         .unwrap()
 }
 
-/// Recursively strip x-kubernetes extension fields that are false from a JSON schema.
-/// K8s omits these when they're false/default. Our serde serialization emits them
-/// because they're stored as `Some(false)` in etcd.
+/// Recursively strip default/empty values from a CRD JSON schema to match
+/// K8s Go's omitempty behavior. Go omitempty skips false booleans, empty
+/// strings, nil pointers, and zero values. Our Rust serialization includes
+/// these as explicit values in stored JSON.
+///
+/// K8s ref: JSONSchemaProps fields in apiextensions/v1/types.go all use
+/// `json:",omitempty"` which omits zero values.
 fn strip_false_extensions(value: &mut serde_json::Value) {
     if let Some(obj) = value.as_object_mut() {
-        // Remove false extension fields at this level
-        let keys_to_check = [
+        // Fields that should be omitted when false (Go omitempty on bool)
+        let false_fields = [
             "x-kubernetes-embedded-resource",
             "x-kubernetes-int-or-string",
+            "exclusiveMaximum",
+            "exclusiveMinimum",
+            "uniqueItems",
+            "nullable",
         ];
-        for key in &keys_to_check {
-            if let Some(v) = obj.get(*key) {
-                if v == &serde_json::Value::Bool(false) {
+        for key in &false_fields {
+            if obj.get(*key) == Some(&serde_json::Value::Bool(false)) {
+                obj.remove(*key);
+            }
+        }
+
+        // Fields that should be omitted when empty string (Go omitempty on string)
+        let empty_string_fields = [
+            "id",
+            "$schema",
+            "$ref",
+            "description",
+            "type",
+            "format",
+            "title",
+            "pattern",
+        ];
+        for key in &empty_string_fields {
+            if let Some(serde_json::Value::String(s)) = obj.get(*key) {
+                if s.is_empty() {
                     obj.remove(*key);
                 }
             }
@@ -312,6 +337,74 @@ fn strip_false_extensions(value: &mut serde_json::Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_strip_false_extensions_removes_defaults() {
+        let mut schema = serde_json::json!({
+            "description": "Foo",
+            "type": "object",
+            "$schema": "",
+            "id": "",
+            "format": "",
+            "pattern": "",
+            "exclusiveMaximum": false,
+            "exclusiveMinimum": false,
+            "nullable": false,
+            "x-kubernetes-embedded-resource": false,
+            "x-kubernetes-int-or-string": false,
+            "properties": {
+                "spec": {
+                    "description": "Spec",
+                    "type": "object",
+                    "$schema": "",
+                    "nullable": false
+                }
+            }
+        });
+
+        strip_false_extensions(&mut schema);
+
+        let obj = schema.as_object().unwrap();
+        // Kept: non-empty description, type
+        assert!(obj.contains_key("description"));
+        assert!(obj.contains_key("type"));
+        assert!(obj.contains_key("properties"));
+
+        // Removed: empty strings and false booleans
+        assert!(!obj.contains_key("$schema"), "$schema should be removed");
+        assert!(!obj.contains_key("id"), "id should be removed");
+        assert!(!obj.contains_key("format"), "format should be removed");
+        assert!(!obj.contains_key("pattern"), "pattern should be removed");
+        assert!(
+            !obj.contains_key("exclusiveMaximum"),
+            "exclusiveMaximum should be removed"
+        );
+        assert!(
+            !obj.contains_key("exclusiveMinimum"),
+            "exclusiveMinimum should be removed"
+        );
+        assert!(!obj.contains_key("nullable"), "nullable should be removed");
+        assert!(!obj.contains_key("x-kubernetes-embedded-resource"));
+        assert!(!obj.contains_key("x-kubernetes-int-or-string"));
+
+        // Recursion: nested spec should also be cleaned
+        let spec = obj
+            .get("properties")
+            .unwrap()
+            .get("spec")
+            .unwrap()
+            .as_object()
+            .unwrap();
+        assert!(spec.contains_key("description"));
+        assert!(
+            !spec.contains_key("$schema"),
+            "nested $schema should be removed"
+        );
+        assert!(
+            !spec.contains_key("nullable"),
+            "nested nullable should be removed"
+        );
+    }
 
     #[test]
     fn test_wrap_in_k8s_protobuf_uses_correct_field_numbers() {
