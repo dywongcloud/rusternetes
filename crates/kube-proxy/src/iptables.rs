@@ -1292,6 +1292,58 @@ impl IptablesManager {
             }
         }
 
+        // NodePort rules — add DNAT rules to RUSTERNETES-NODEPORTS chain
+        for service in services {
+            let namespace = service.metadata.namespace.as_deref().unwrap_or("default");
+            for svc_port in &service.spec.ports {
+                let node_port = match svc_port.node_port {
+                    Some(np) if np > 0 => np,
+                    _ => continue,
+                };
+                let proto = svc_port.protocol.as_deref().unwrap_or("TCP").to_lowercase();
+
+                let svc_key = format!("{}/{}", namespace, service.metadata.name);
+                let endpoints: Vec<(String, u16)> = endpointslice_map
+                    .get(&svc_key)
+                    .map(|eps| {
+                        eps.iter()
+                            .filter(|(_, port_name, ep_port)| {
+                                *ep_port == svc_port.port
+                                    || (svc_port.name.is_some()
+                                        && svc_port.name.as_deref() == port_name.as_deref())
+                            })
+                            .map(|(ip, _, ep_port)| (ip.clone(), *ep_port))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                if endpoints.is_empty() {
+                    continue;
+                }
+
+                let n = endpoints.len();
+                for (idx, (endpoint_ip, endpoint_port)) in endpoints.iter().enumerate() {
+                    let is_last = idx == n - 1;
+                    let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
+
+                    let mut rule = format!(
+                        "-A {} -p {} --dport {}",
+                        self.nodeports_chain, proto, node_port
+                    );
+                    if !is_last {
+                        let prob = 1.0 / (n - idx) as f64;
+                        rule.push_str(&format!(
+                            " -m statistic --mode random --probability {:.10}",
+                            prob
+                        ));
+                    }
+                    rule.push_str(&format!(" -j DNAT --to-destination {}", dnat_target));
+                    rules.push_str(&rule);
+                    rules.push('\n');
+                }
+            }
+        }
+
         rules.push_str("COMMIT\n");
         rules
     }
