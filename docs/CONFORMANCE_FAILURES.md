@@ -30,14 +30,14 @@
 - `deployment.go:995` — rollover pods not available, watch/timing
 - `deployment.go:1264` — RS replicas timeout, watch
 
-### Preemption — 3 failures — PARTIALLY STAGED
+### Preemption — 3 failures — FIX STAGED ✅
 - `preemption.go:181,268` — **Fix staged**: fb9728d + c19a049
-- `resource.go:512` — Preempted pod missing `DisruptionTarget` condition. Our scheduler sets it but may be overwritten by kubelet status update. **NEEDS FIX ❌**
+- `resource.go:512` — Kubelet overwrote DisruptionTarget condition. **Fix**: 1810ac1
 
-### Field Validation — 3 failures — PARTIALLY STAGED
-- `field_validation.go:611` — **Fix staged**: 47fb9ec (preserve-unknown-fields)
-- `field_validation.go:735` — duplicate key detection, fix staged
-- `field_validation.go:462` — CR with `unknownField` not rejected by strict validation. CRD does NOT have preserveUnknownFields but our validator accepted the unknown field. **NEEDS FIX ❌**
+### Field Validation — 3 failures — FIX STAGED ✅
+- `field_validation.go:611` — **Fix**: 47fb9ec (preserve-unknown-fields)
+- `field_validation.go:735` — duplicate key detection
+- `field_validation.go:462` — PATCH missing strict validation. **Fix**: 1810ac1
 
 ### Webhook configuration — counted in Webhook above
 
@@ -45,9 +45,9 @@
 - `statefulset.go:957,1092`
 - **Fix**: 8673d37 + 4438743 + watch fix
 
-### RC — 2 failures — PARTIALLY STAGED
-- `rc.go:509` — over-creation. **Fix staged**: 070dde7
-- `rc.go:623` — RC never clears `ReplicaFailure` condition after quota freed. **NEEDS FIX ❌**
+### RC — 2 failures — FIX STAGED ✅
+- `rc.go:509` — over-creation. **Fix**: 070dde7
+- `rc.go:623` — ReplicaFailure never cleared. **Fix**: 1810ac1
 
 ### ReplicaSet — 2 failures — DOWNSTREAM
 - `replica_set.go:232` — pod responses timeout (watch+networking)
@@ -90,10 +90,7 @@
 
 | Issue | Root Cause | Impact |
 |-------|-----------|--------|
-| service.go:251 (x2) | Session affinity transition ClientIP→None doesn't clear kube-proxy state | 2 failures |
-| resource.go:512 | Preempted pod DisruptionTarget condition overwritten by kubelet status update | 1 failure |
-| field_validation.go:462 | CRD without preserveUnknownFields still accepts unknown top-level fields | 1 failure |
-| rc.go:623 | RC controller never clears ReplicaFailure condition when quota freed | 1 failure |
+| service.go:251 (x2) | Session affinity transition ClientIP→None — atomic iptables-restore doesn't implement affinity rules yet | 2 failures |
 
 ## Staged Fixes
 
@@ -110,6 +107,9 @@
 | b65f0f9 | Service sessionAffinity default "None" | 1 |
 | f524e6c | Deployment revision = MaxRevision(oldRSes) + 1 | 1-2 |
 | 2f0cbd9 | Generation only on spec changes | 1 |
+| 1810ac1 | Kubelet preserves DisruptionTarget condition on preempted pods | 1 |
+| 1810ac1 | CRD PATCH strict validation for unknown fields | 1 |
+| 1810ac1 | RC only sets ReplicaFailure from actual creation errors | 1 |
 
 ## Progress History
 
