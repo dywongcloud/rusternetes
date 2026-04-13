@@ -485,7 +485,30 @@ impl<S: Storage> DeploymentController<S> {
                         is_ready
                     })
                     .count() as i32;
-                let can_remove = (total_available - min_available).max(0);
+                // K8s reconcileOldReplicaSets (rolling.go:86-132):
+                // maxScaledDown = allPodsCount - minAvailable - newRSUnavailablePodCount
+                // This prevents over-aggressive scale-down when new pods aren't ready.
+                let new_rs_unavailable =
+                    new_active_replicas
+                        - all_pods
+                            .iter()
+                            .filter(|p| {
+                                p.metadata.owner_references.as_ref().map_or(false, |refs| {
+                                    refs.iter().any(|r| r.name == active_name)
+                                }) && p.metadata.deletion_timestamp.is_none()
+                                    && p.status
+                                        .as_ref()
+                                        .and_then(|s| s.conditions.as_ref())
+                                        .map(|conds| {
+                                            conds.iter().any(|c| {
+                                                c.condition_type == "Ready" && c.status == "True"
+                                            })
+                                        })
+                                        .unwrap_or(false)
+                            })
+                            .count() as i32;
+                let can_remove =
+                    (total_available - min_available - new_rs_unavailable.max(0)).max(0);
                 let scale_down_by = if can_remove > 0 {
                     can_remove.min(old_rs_total)
                 } else {
