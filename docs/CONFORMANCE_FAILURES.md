@@ -31,10 +31,10 @@
 - **Root cause**: kube-proxy flush gap
 - **Fix**: 6af8bb9
 
-### Deployment — 2 failures — NEEDS FIX ❌
-- `deployment.go:781` — Deployment revision annotation not incremented when adopting RS. K8s creates a new RS with revision max+1 even when adopting. Our code sets deployment revision to max (not max+1).
+### Deployment — 2 failures — FIX STAGED ✅
+- `deployment.go:781` — revision annotation not incremented on RS adoption
 - `deployment.go:1264` — RS replicas timeout + watch context canceled
-- **Status**: Needs deployment revision handling fix
+- **Fix**: f524e6c — newRevision = MaxRevision(oldRSes) + 1 matching K8s sync.go
 
 ### StatefulSet — 2 failures — FIX STAGED ✅
 - **Fix**: 8673d37 + 4438743 + watch fix
@@ -87,12 +87,12 @@
 | fb9728d | Preemption reprieve + grace period | 2 |
 | c19a049 | Priority admission controller | 1 |
 | b65f0f9 | Service sessionAffinity default to "None" | 1 |
+| f524e6c | Deployment revision = MaxRevision(oldRSes) + 1 | 1-2 |
 
 ## Still Need Fix
 
 | Issue | Root Cause |
 |-------|-----------|
-| deployment.go:781 | Deployment revision not incremented on RS adoption |
 | events.go:167 | Event Series field not preserved through PATCH |
 
 ## Progress History
