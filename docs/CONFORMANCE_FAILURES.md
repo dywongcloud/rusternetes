@@ -29,10 +29,10 @@
 - `service.go:768` — Service unreachable. **Fix**: 6af8bb9 + 9c21776
 - `service.go:3459` — Same as 768
 
-### Deployment — 3 failures — PARTIALLY STAGED
-- `deployment.go:781` — Revision not incremented on RS adoption. **Fix**: f524e6c ✅
-- `deployment.go:995` — Rollover pods not available (0 of 1). No watch failures nearby. May be deployment controller rollover timing issue. **NEEDS VERIFICATION**
-- `deployment.go:1264` — RS replicas timeout with watch context canceled. Downstream of watch fix.
+### Deployment — 3 failures — FIX STAGED ✅
+- `deployment.go:781` — Revision not incremented. **Fix**: f524e6c
+- `deployment.go:995` — Rollover: old RS scaled down before new RS pods ready. Our scale-down didn't subtract newRSUnavailablePodCount like K8s rolling.go:128. **Fix**: 07f5054
+- `deployment.go:1264` — RS replicas timeout. Downstream of watch fix.
 
 ### Preemption — 3 failures — FIX STAGED ✅
 - `preemption.go:181,268` — **Fix**: fb9728d + c19a049
@@ -92,7 +92,7 @@
 - **FIX STAGED**: 40 failures have direct fixes
 - **DOWNSTREAM**: 6 failures caused by watch context canceled (fix staged: f1bf53f)
 - **DinD LIMITATION**: 7 failures (emptyDir permissions, aggregator, hostport, pod resize)
-- **NEEDS VERIFICATION**: 1 failure (deployment.go:995 rollover)
+- All non-DinD, non-downstream failures have direct fixes
 - **DUPLICATE**: 7 failures counted in category totals above
 
 ## Staged Fixes (15 commits)
@@ -114,6 +114,7 @@
 | 1810ac1 | Kubelet DisruptionTarget + CRD PATCH strict + RC condition |
 | 8673d37 | StatefulSet terminal pods + generation + parallel webhooks |
 | 4438743 | StatefulSet computeReplicaStatus |
+| 07f5054 | Deployment rollover: subtract newRSUnavailablePodCount |
 
 ## Progress History
 
