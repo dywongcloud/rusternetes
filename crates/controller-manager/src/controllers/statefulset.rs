@@ -529,27 +529,43 @@ impl<S: Storage> StatefulSetController<S> {
             })
             .collect();
 
-        // Filter out terminating pods (deletionTimestamp set) — K8s does not count
-        // terminating pods in replicas/readyReplicas/availableReplicas.
-        let non_terminating_pods: Vec<&Pod> = statefulset_pods_after
+        // K8s computeReplicaStatus() counts differently per field:
+        // - replicas: isCreated(pod) — includes terminating pods
+        // - readyReplicas: isRunningAndReady(pod) — Running + Ready condition
+        // - availableReplicas: isRunningAndAvailable(pod, minReadySeconds)
+        // - currentReplicas/updatedReplicas: isCreated && !isTerminating && revision match
+        // See: pkg/controller/statefulset/stateful_set_control.go:370-399
+        let is_created =
+            |pod: &&Pod| -> bool { pod.status.as_ref().and_then(|s| s.phase.as_ref()).is_some() };
+        let is_ready = |pod: &&Pod| -> bool {
+            matches!(
+                pod.status.as_ref().and_then(|s| s.phase.as_ref()),
+                Some(Phase::Running)
+            ) && pod
+                .status
+                .as_ref()
+                .and_then(|s| s.conditions.as_ref())
+                .map(|conditions| {
+                    conditions
+                        .iter()
+                        .any(|c| c.condition_type == "Ready" && c.status == "True")
+                })
+                .unwrap_or(false)
+        };
+        let is_terminating = |pod: &&Pod| -> bool { pod.metadata.deletion_timestamp.is_some() };
+
+        // replicas = all created pods (including terminating)
+        let final_current_replicas = statefulset_pods_after
             .iter()
-            .filter(|pod| pod.metadata.deletion_timestamp.is_none())
-            .collect();
-        let final_current_replicas = non_terminating_pods.len() as i32;
-        let final_ready_pods = non_terminating_pods
-            .iter()
-            .filter(|pod| {
-                pod.status
-                    .as_ref()
-                    .and_then(|s| s.conditions.as_ref())
-                    .map(|conditions| {
-                        conditions
-                            .iter()
-                            .any(|c| c.condition_type == "Ready" && c.status == "True")
-                    })
-                    .unwrap_or(false)
-            })
+            .filter(|p| is_created(p))
             .count() as i32;
+        // readyReplicas = Running + Ready (non-terminating implied by Running phase)
+        let final_ready_pods = statefulset_pods_after
+            .iter()
+            .filter(|p| is_ready(p))
+            .count() as i32;
+        // availableReplicas = same as ready for now (minReadySeconds=0 default)
+        let final_available_pods = final_ready_pods;
 
         // Generate a revision hash from the current pod template spec
         let update_revision = Self::compute_revision(&statefulset.spec.template);
@@ -573,29 +589,34 @@ impl<S: Storage> StatefulSetController<S> {
             })
             .unwrap_or_else(|| update_revision.clone());
 
-        // Count how many pods match the update revision (have the matching controller-revision-hash label)
+        // K8s: currentReplicas/updatedReplicas only count isCreated && !isTerminating pods
         let updated_count = statefulset_pods_after
             .iter()
             .filter(|pod| {
-                pod.metadata
-                    .labels
-                    .as_ref()
-                    .and_then(|l| l.get("controller-revision-hash"))
-                    .map(|h| h == &update_revision)
-                    .unwrap_or(false)
+                is_created(pod)
+                    && !is_terminating(pod)
+                    && pod
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| l.get("controller-revision-hash"))
+                        .map(|h| h == &update_revision)
+                        .unwrap_or(false)
             })
             .count() as i32;
 
-        // Count how many pods match the current revision
         let current_rev_count = statefulset_pods_after
             .iter()
             .filter(|pod| {
-                pod.metadata
-                    .labels
-                    .as_ref()
-                    .and_then(|l| l.get("controller-revision-hash"))
-                    .map(|h| h == &current_revision)
-                    .unwrap_or(false)
+                is_created(pod)
+                    && !is_terminating(pod)
+                    && pod
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| l.get("controller-revision-hash"))
+                        .map(|h| h == &current_revision)
+                        .unwrap_or(false)
             })
             .count() as i32;
 
@@ -623,7 +644,7 @@ impl<S: Storage> StatefulSetController<S> {
                 current_rev_count
             }),
             updated_replicas: Some(updated_count),
-            available_replicas: Some(final_ready_pods),
+            available_replicas: Some(final_available_pods),
             collision_count: None,
             observed_generation: statefulset.metadata.generation,
             current_revision: Some(final_current_revision),
