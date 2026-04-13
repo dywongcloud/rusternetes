@@ -746,9 +746,10 @@ impl<S: Storage> JobController<S> {
                 start_time,
                 completion_time: Some(chrono::Utc::now()),
                 ready: Some(0), // Job is complete, no ready pods
-                // Terminating = active pods we just set deletionTimestamp on.
-                // K8s ref: pkg/controller/job/job_controller.go — syncJob
-                terminating: Some(terminating_count),
+                // K8s sets terminating to 0 when the job completes, even if pods
+                // are still being cleaned up. The job status should reflect the
+                // final state, not the transitional state.
+                terminating: Some(0),
                 completed_indexes: completed_indexes.clone(),
                 failed_indexes: failed_indexes.clone(),
                 uncounted_terminated_pods: None,
