@@ -170,9 +170,13 @@ pub async fn get_swagger_spec(
                     kind
                 );
 
-                // Add schema from CRD validation — use raw JSON to preserve nested items
+                // Add schema from CRD validation — use raw JSON to preserve nested items.
+                // Strip x-kubernetes extension fields that are false — K8s omits them.
+                // See: staging/src/k8s.io/apiextensions-apiserver/pkg/controller/openapi/builder/builder.go
                 if let Some(schema_val) = version.pointer("/schema/openAPIV3Schema") {
-                    definitions.insert(def_key.clone(), schema_val.clone());
+                    let mut cleaned = schema_val.clone();
+                    strip_false_extensions(&mut cleaned);
+                    definitions.insert(def_key.clone(), cleaned);
                 }
 
                 // Add path entries for the CRD's API endpoints
@@ -271,6 +275,38 @@ pub async fn get_swagger_spec(
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json_bytes))
         .unwrap()
+}
+
+/// Recursively strip x-kubernetes extension fields that are false from a JSON schema.
+/// K8s omits these when they're false/default. Our serde serialization emits them
+/// because they're stored as `Some(false)` in etcd.
+fn strip_false_extensions(value: &mut serde_json::Value) {
+    if let Some(obj) = value.as_object_mut() {
+        // Remove false extension fields at this level
+        let keys_to_check = [
+            "x-kubernetes-embedded-resource",
+            "x-kubernetes-int-or-string",
+        ];
+        for key in &keys_to_check {
+            if let Some(v) = obj.get(*key) {
+                if v == &serde_json::Value::Bool(false) {
+                    obj.remove(*key);
+                }
+            }
+        }
+
+        // Recurse into all nested objects/arrays
+        let keys: Vec<String> = obj.keys().cloned().collect();
+        for key in keys {
+            if let Some(v) = obj.get_mut(&key) {
+                strip_false_extensions(v);
+            }
+        }
+    } else if let Some(arr) = value.as_array_mut() {
+        for item in arr.iter_mut() {
+            strip_false_extensions(item);
+        }
+    }
 }
 
 #[cfg(test)]
