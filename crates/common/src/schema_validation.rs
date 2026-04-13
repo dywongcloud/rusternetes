@@ -164,6 +164,10 @@ impl SchemaValidator {
             }
         }
 
+        // K8s embedded resource meta fields are always allowed:
+        // apiVersion, kind, metadata. See: pruning/algorithm.go:77
+        let is_embedded = schema.x_kubernetes_embedded_resource == Some(true);
+
         // Validate properties
         if let Some(ref properties) = schema.properties {
             for (key, value) in obj {
@@ -174,6 +178,10 @@ impl SchemaValidator {
                         format!("{}.{}", path, key)
                     };
                     Self::validate_with_path(prop_schema, value, &new_path)?;
+                } else if is_embedded && (key == "apiVersion" || key == "kind" || key == "metadata")
+                {
+                    // Embedded resource meta fields are implicitly allowed
+                    continue;
                 } else if let Some(ref additional) = schema.additional_properties {
                     // Validate against additionalProperties schema
                     let new_path = if path.is_empty() {

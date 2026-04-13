@@ -859,20 +859,29 @@ fn validate_custom_resource(
         )));
     }
 
-    // Validate against schema if present
-    // The CRD's open_apiv3_schema is the top-level schema for the entire CR object.
-    // K8s validates cr.spec against schema.properties["spec"], not the root schema.
+    // Validate against schema if present.
+    // K8s skips structural pruning/validation when CRD has preserveUnknownFields: true
+    // (line 1432 in customresource_handler.go). Only metadata coercion runs.
+    // Also skip if the schema root has x-kubernetes-preserve-unknown-fields: true.
+    let crd_preserves = crd.spec.preserve_unknown_fields == Some(true);
     if let Some(ref validation) = crd_version.schema {
-        if let Some(ref spec) = cr.spec {
-            // Extract the "spec" sub-schema from the top-level schema
-            if let Some(ref properties) = validation.open_apiv3_schema.properties {
-                if let Some(spec_schema) = properties.get("spec") {
-                    SchemaValidator::validate(spec_schema, spec)?;
+        let schema_preserves = validation
+            .open_apiv3_schema
+            .x_kubernetes_preserve_unknown_fields
+            == Some(true);
+
+        if !crd_preserves && !schema_preserves {
+            if let Some(ref spec) = cr.spec {
+                // Extract the "spec" sub-schema from the top-level schema
+                if let Some(ref properties) = validation.open_apiv3_schema.properties {
+                    if let Some(spec_schema) = properties.get("spec") {
+                        SchemaValidator::validate(spec_schema, spec)?;
+                    }
                 }
-                // If no "spec" property in schema, skip validation (schema allows anything)
             }
-            // If no properties at all, skip validation
         }
+        // When preserveUnknownFields is true, skip structural validation.
+        // K8s only runs metadata coercion (CoerceWithOptions) in this case.
     }
 
     Ok(())
