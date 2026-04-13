@@ -20,9 +20,9 @@
 ### EmptyDir/output — 4 failures — MIXED
 - `output.go:263` (x4) — macOS filesystem permissions (DinD) + watch issues
 
-### Service — 3 failures — PARTIALLY STAGED
-- `service.go:251` (x2) — Session affinity transition from ClientIP→None doesn't clear state. **NEEDS FIX ❌**
-- `service.go:768` — Service unreachable, kube-proxy flush gap. Fix staged ✅
+### Service — 3 failures — FIX STAGED ✅
+- `service.go:251` (x2) — Session affinity transition. **Fix**: 9c21776 (affinity in atomic path)
+- `service.go:768` — kube-proxy flush gap. **Fix**: 6af8bb9 + 9c21776
 - `service.go:3459` — same as 768
 
 ### Deployment — 3 failures — FIX STAGED ✅
@@ -86,11 +86,9 @@
 ### Pod Resize — 1 failure — DinD
 - `pod_resize.go:857`
 
-## Issues That Need Fix (not yet staged)
+## All Issues Have Fixes Staged
 
-| Issue | Root Cause | Impact |
-|-------|-----------|--------|
-| service.go:251 (x2) | Session affinity transition ClientIP→None — atomic iptables-restore doesn't implement affinity rules yet | 2 failures |
+Every failure from round 137 now has a fix staged for round 138, is downstream of a staged fix, or is a DinD limitation.
 
 ## Staged Fixes
 
@@ -110,6 +108,7 @@
 | 1810ac1 | Kubelet preserves DisruptionTarget condition on preempted pods | 1 |
 | 1810ac1 | CRD PATCH strict validation for unknown fields | 1 |
 | 1810ac1 | RC only sets ReplicaFailure from actual creation errors | 1 |
+| 9c21776 | kube-proxy session affinity in atomic path + no pre-flush | 2 |
 
 ## Progress History
 
