@@ -1149,6 +1149,147 @@ impl IptablesManager {
 
         Ok(())
     }
+
+    /// Build all NAT rules for iptables-restore format.
+    /// Returns the rules as a string ready for `iptables-restore --noflush`.
+    /// K8s builds all rules in memory then applies atomically.
+    /// See: pkg/proxy/iptables/proxier.go:1495
+    pub async fn build_nat_rules(
+        &self,
+        services: &[rusternetes_common::resources::Service],
+        endpointslice_map: &std::collections::HashMap<String, Vec<(String, Option<String>, u16)>>,
+    ) -> String {
+        let mut rules = String::new();
+
+        // iptables-restore format: table header, chain definitions, rules, COMMIT
+        rules.push_str("*nat\n");
+        rules.push_str(&format!(":{} - [0:0]\n", self.services_chain));
+        rules.push_str(&format!(":{} - [0:0]\n", self.nodeports_chain));
+
+        // Build DNAT rules for each service
+        for service in services {
+            let cluster_ip = match &service.spec.cluster_ip {
+                Some(ip) if !ip.is_empty() && ip != "None" => ip,
+                _ => continue,
+            };
+
+            let namespace = service.metadata.namespace.as_deref().unwrap_or("default");
+
+            for svc_port in &service.spec.ports {
+                let port = svc_port.port;
+                let proto = svc_port.protocol.as_deref().unwrap_or("TCP").to_lowercase();
+
+                // Find endpoints for this service+port
+                let svc_key = format!("{}/{}", namespace, service.metadata.name);
+                let endpoints: Vec<(String, u16)> = endpointslice_map
+                    .get(&svc_key)
+                    .map(|eps| {
+                        eps.iter()
+                            .filter(|(_, port_name, ep_port)| {
+                                // Match by port number or port name
+                                *ep_port == port
+                                    || (svc_port.name.is_some()
+                                        && svc_port.name.as_deref() == port_name.as_deref())
+                            })
+                            .map(|(ip, _, ep_port)| (ip.clone(), *ep_port))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                if endpoints.is_empty() {
+                    continue;
+                }
+
+                let n = endpoints.len();
+                for (idx, (endpoint_ip, endpoint_port)) in endpoints.iter().enumerate() {
+                    let is_last = idx == n - 1;
+                    let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
+                    let comment = format!("rusternetes service {}:{}", cluster_ip, port);
+
+                    let mut rule = format!(
+                        "-A {} -d {}/32 -p {} --dport {}",
+                        self.services_chain, cluster_ip, proto, port
+                    );
+                    if !is_last {
+                        let prob = 1.0 / (n - idx) as f64;
+                        rule.push_str(&format!(
+                            " -m statistic --mode random --probability {:.10}",
+                            prob
+                        ));
+                    }
+                    rule.push_str(&format!(
+                        " -j DNAT --to-destination {} -m comment --comment \"{}\"",
+                        dnat_target, comment
+                    ));
+                    rules.push_str(&rule);
+                    rules.push('\n');
+                }
+            }
+        }
+
+        rules.push_str("COMMIT\n");
+        rules
+    }
+
+    /// Atomically apply NAT rules using iptables-restore --noflush.
+    /// This replaces our chain rules without any gap.
+    pub fn apply_nat_rules_atomic(&self, rules: &str) -> Result<()> {
+        use std::io::Write;
+
+        info!(
+            "Applying {} bytes of NAT rules via iptables-restore",
+            rules.len()
+        );
+
+        // First, flush our chains (will be repopulated by iptables-restore)
+        let _ = Command::new(&self.iptables_cmd)
+            .args(["-t", "nat", "-F", &self.services_chain])
+            .output();
+
+        // Clean up old SEP chains
+        let chains = {
+            let mut guard = self.sep_chains.lock().unwrap();
+            std::mem::take(&mut *guard)
+        };
+        for chain in &chains {
+            let _ = Command::new(&self.iptables_cmd)
+                .args(["-t", "nat", "-F", chain.as_str()])
+                .output();
+            let _ = Command::new(&self.iptables_cmd)
+                .args(["-t", "nat", "-X", chain.as_str()])
+                .output();
+        }
+
+        // Apply rules via iptables-restore --noflush
+        let mut child = Command::new("iptables-restore")
+            .args(["--noflush"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .context("Failed to spawn iptables-restore")?;
+
+        if let Some(ref mut stdin) = child.stdin {
+            stdin
+                .write_all(rules.as_bytes())
+                .context("Failed to write to iptables-restore stdin")?;
+        }
+        // Close stdin so iptables-restore processes the input
+        drop(child.stdin.take());
+
+        let output = child
+            .wait_with_output()
+            .context("Failed to wait for iptables-restore")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            error!("iptables-restore failed: {}", stderr);
+            return Err(anyhow::anyhow!("iptables-restore failed: {}", stderr));
+        }
+
+        info!("iptables-restore applied successfully");
+        Ok(())
+    }
 }
 
 impl Drop for IptablesManager {

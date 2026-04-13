@@ -177,18 +177,34 @@ impl KubeProxy {
         }
         self.last_sync_hash = current_hash;
 
-        // Flush existing rules before rebuilding
-        self.iptables.flush_rules()?;
+        // K8s uses iptables-restore to atomically replace all NAT rules.
+        // Individual iptables -F + -A creates a gap where no rules exist,
+        // causing "connection refused" for any ClusterIP traffic during rebuild.
+        // See: pkg/proxy/iptables/proxier.go:1495 — RestoreAll with NoFlushTables
+        //
+        // Build all rules in memory, then apply atomically.
+        let nat_rules = self
+            .iptables
+            .build_nat_rules(&services, &endpointslice_map)
+            .await;
 
-        // Process each service
-        for service in &services {
-            if let Err(e) = self
-                .sync_service(service, &endpoints_map, &endpointslice_map)
-                .await
-            {
-                let namespace = service.metadata.namespace.as_deref().unwrap_or("unknown");
-                let name = &service.metadata.name;
-                error!("Failed to sync service {}/{}: {}", namespace, name, e);
+        // Apply atomically via iptables-restore --noflush
+        if let Err(e) = self.iptables.apply_nat_rules_atomic(&nat_rules) {
+            error!(
+                "Failed atomic iptables-restore, falling back to flush+rebuild: {}",
+                e
+            );
+            // Fallback: flush and rebuild (has gap but better than nothing)
+            self.iptables.flush_rules()?;
+            for service in &services {
+                if let Err(e) = self
+                    .sync_service(service, &endpoints_map, &endpointslice_map)
+                    .await
+                {
+                    let namespace = service.metadata.namespace.as_deref().unwrap_or("unknown");
+                    let name = &service.metadata.name;
+                    error!("Failed to sync service {}/{}: {}", namespace, name, e);
+                }
             }
         }
 
