@@ -55,9 +55,10 @@
 
 | Commit | Fix |
 |--------|-----|
+| f1bf53f | **Watch pre-buffer — send initial events before Response** (fixes 1777 context canceled errors) |
 | fb9728d | Preemption reprieve algorithm + proper grace period |
 | 3186cf5 | Strip false x-kubernetes extensions from OpenAPI schemas |
-| PENDING | RC active pod filtering + UID ownership |
+| 070dde7 | RC active pod filtering + UID ownership |
 
 ## Progress History
 
