@@ -347,9 +347,11 @@ mod tests {
             "id": "",
             "format": "",
             "pattern": "",
+            "title": "",
             "exclusiveMaximum": false,
             "exclusiveMinimum": false,
             "nullable": false,
+            "uniqueItems": false,
             "x-kubernetes-embedded-resource": false,
             "x-kubernetes-int-or-string": false,
             "properties": {
@@ -357,7 +359,20 @@ mod tests {
                     "description": "Spec",
                     "type": "object",
                     "$schema": "",
-                    "nullable": false
+                    "id": "",
+                    "title": "",
+                    "format": "",
+                    "nullable": false,
+                    "uniqueItems": false,
+                    "exclusiveMaximum": false,
+                    "properties": {
+                        "bars": {
+                            "description": "List of bars",
+                            "type": "array",
+                            "$schema": "",
+                            "nullable": false
+                        }
+                    }
                 }
             }
         });
@@ -384,10 +399,15 @@ mod tests {
             "exclusiveMinimum should be removed"
         );
         assert!(!obj.contains_key("nullable"), "nullable should be removed");
+        assert!(!obj.contains_key("title"), "title should be removed");
+        assert!(
+            !obj.contains_key("uniqueItems"),
+            "uniqueItems should be removed"
+        );
         assert!(!obj.contains_key("x-kubernetes-embedded-resource"));
         assert!(!obj.contains_key("x-kubernetes-int-or-string"));
 
-        // Recursion: nested spec should also be cleaned
+        // Recursion: nested spec should also be cleaned (2 levels deep)
         let spec = obj
             .get("properties")
             .unwrap()
@@ -395,13 +415,37 @@ mod tests {
             .unwrap()
             .as_object()
             .unwrap();
-        assert!(spec.contains_key("description"));
         assert!(
-            !spec.contains_key("$schema"),
-            "nested $schema should be removed"
+            spec.contains_key("description"),
+            "non-empty description kept"
+        );
+        assert!(spec.contains_key("properties"), "properties kept");
+        assert!(!spec.contains_key("$schema"), "nested $schema removed");
+        assert!(!spec.contains_key("id"), "nested id removed");
+        assert!(!spec.contains_key("title"), "nested title removed");
+        assert!(!spec.contains_key("format"), "nested format removed");
+        assert!(!spec.contains_key("nullable"), "nested nullable removed");
+        assert!(
+            !spec.contains_key("uniqueItems"),
+            "nested uniqueItems removed"
         );
         assert!(
-            !spec.contains_key("nullable"),
+            !spec.contains_key("exclusiveMaximum"),
+            "nested exclusiveMaximum removed"
+        );
+
+        // 3 levels deep: spec.properties.bars
+        let bars = spec
+            .get("properties")
+            .unwrap()
+            .get("bars")
+            .unwrap()
+            .as_object()
+            .unwrap();
+        assert!(bars.contains_key("description"), "deep description kept");
+        assert!(!bars.contains_key("$schema"), "deep $schema removed");
+        assert!(
+            !bars.contains_key("nullable"),
             "nested nullable should be removed"
         );
     }
