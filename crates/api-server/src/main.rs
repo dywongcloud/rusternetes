@@ -283,9 +283,26 @@ async fn main() -> Result<()> {
         let rustls_config = RustlsConfig::from_config(tls_config.into_server_config()?);
 
         info!("HTTPS server listening on {}", args.bind_address);
-        axum_server::bind_rustls(args.bind_address.parse()?, rustls_config)
-            .serve(app.into_make_service())
-            .await?;
+        let mut server = axum_server::bind_rustls(args.bind_address.parse()?, rustls_config);
+
+        // Configure HTTP/2 settings to match K8s API server.
+        // K8s sets these in secure_serving.go:175-199:
+        //   MaxConcurrentStreams = 100
+        //   MaxUploadBufferPerStream = 256KB
+        //   IdleTimeout = 90s
+        //
+        // Hyper defaults (64KB window, 200 streams) cause watch stream
+        // stalls with many concurrent watches — the flow control windows
+        // fill up and events can't be delivered, causing client-go's
+        // "Watch failed: context canceled" errors.
+        server
+            .http_builder()
+            .http2()
+            .initial_stream_window_size(256 * 1024) // 256KB per stream (K8s: 256KB)
+            .initial_connection_window_size(256 * 1024 * 100) // 25MB total (K8s: 256KB * 100)
+            .max_concurrent_streams(100); // K8s default
+
+        server.serve(app.into_make_service()).await?;
     } else {
         info!("TLS disabled - starting HTTP server (not recommended for production)");
         info!("API Server listening on {}", args.bind_address);
