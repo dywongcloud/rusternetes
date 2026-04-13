@@ -1,7 +1,8 @@
 # Conformance Failure Tracker
 
 **Round 135** | 373/441 (84.6%) | 2026-04-11
-**Round 136** | Pending (27 fixes staged) | 2026-04-12
+**Round 136** | ABORTED after 94 tests — preemption killed e2e pod | 2026-04-12
+**Round 137** | Pending (28 fixes staged) | 2026-04-13
 
 ## Staged Fixes for Round 136 (all from deep K8s source comparison)
 
@@ -34,6 +35,21 @@
 | 8673d37 | StatefulSet delete terminal (Failed/Succeeded) pods | stateful_set_control.go:431 processReplica | statefulset lifecycle |
 | 4438743 | StatefulSet replica counting — match computeReplicaStatus() | stateful_set_control.go:370-399 | statefulset status accuracy |
 | ea9573e | Deployment force scale-down old RSes when new RS available | rolling.go | 2 deployment |
+| b60b87a | System PriorityClasses + CoreDNS priority protection | scheduling/types.go | prevents e2e pod preemption |
+
+## Round 136 Failure — Preemption Killed E2E Pod
+
+Round 136 aborted after 94/441 tests. The `preemptor-pod` (preemption conformance test) evicted **5 pods on node-1** including CoreDNS, the sonobuoy aggregator, and the e2e test runner itself. All had priority 0 (no priorityClassName set).
+
+**Timeline:**
+- 00:56:45 — e2e pod started on node-1
+- 02:40:16 — Scheduler evicted e2e pod for preemption by `preemptor-pod`
+- 02:40:20 — GC deleted e2e pod from etcd (no owner reference)
+- 02:40:21 — kubelet2 orphan cleanup killed the e2e container
+
+**Root cause:** No system PriorityClasses existed (`system-cluster-critical`, `system-node-critical`). CoreDNS and sonobuoy pods had priority 0, making them preemptable by any pod with priority > 0.
+
+**Fix (b60b87a):** Added `system-node-critical` (2000001000) and `system-cluster-critical` (2000000000) PriorityClasses to bootstrap. Set CoreDNS to `priorityClassName: system-cluster-critical` with `priority: 2000000000`. The scheduler already protects pods with priority >= 2000000000 (SYSTEM_CRITICAL_PRIORITY).
 
 ## Round 135 Failure Analysis (68 failures, 57 unique locations)
 
@@ -145,4 +161,5 @@
 | 133 | 370 | 71 | 441 | 83.9% |
 | 134 | 370 | 71 | 441 | 83.9% |
 | 135 | 373 | 68 | 441 | 84.6% |
-| 136 | TBD | TBD | 441 | TBD |
+| 136 | ABORTED | — | 441 | — |
+| 137 | TBD | TBD | 441 | TBD |
