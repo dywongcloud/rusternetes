@@ -25,10 +25,11 @@
 - Pod responses timed out after 120s
 - **Status**: INVESTIGATING — related to watch/networking issues
 
-### 5. EmptyDir volume permissions — 1 failure (NEW)
-- `output.go:263`
-- Expected file permissions `-rw-rw-rw-` not matching
-- **Status**: NEEDS FIX — kubelet volume permission handling
+### 5. EmptyDir volume permissions — 1 failure (DinD/macOS limitation)
+- `output.go:263` — test "(root,0666,default)"
+- Expected `-rw-rw-rw-` (0666), got `-rw-r--r--` (0644)
+- **Root cause**: agnhost mounttest binary calls `umask(0)` before creating files (mt.go:74-75). But emptyDir volumes are bind mounts from macOS host filesystem, which doesn't support full Unix permission semantics through Docker Desktop. chmod succeeds but permissions are controlled by the macOS filesystem.
+- **Status**: DinD/macOS limitation — not a code bug
 
 ## Staged for Round 138 (not yet deployed)
 
