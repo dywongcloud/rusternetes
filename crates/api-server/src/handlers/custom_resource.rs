@@ -558,6 +558,30 @@ pub async fn patch_custom_resource(
         ))
     })?;
 
+    // Strict field validation for patched CRDs: reject unknown top-level fields
+    // when the CRD does NOT have preserveUnknownFields.
+    // K8s prunes unknown fields and returns them as errors with fieldValidation=Strict.
+    let is_strict = parts
+        .uri
+        .query()
+        .and_then(|q| {
+            url::form_urlencoded::parse(q.as_bytes())
+                .find(|(k, _)| k == "fieldValidation")
+                .map(|(_, v)| v.to_string())
+        })
+        .as_deref()
+        == Some("Strict");
+    if is_strict && !patched.extra.is_empty() {
+        let crd_preserves = crd.spec.preserve_unknown_fields == Some(true);
+        if !crd_preserves {
+            let unknown: Vec<&String> = patched.extra.keys().collect();
+            return Err(rusternetes_common::Error::InvalidResource(format!(
+                ".{}: field not declared in schema",
+                unknown[0]
+            )));
+        }
+    }
+
     // Validate the patched resource against CRD schema
     validate_custom_resource(&crd, &version, &patched)?;
 

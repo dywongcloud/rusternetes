@@ -233,16 +233,11 @@ impl<S: Storage> ReplicationControllerController<S> {
             })
             .count();
 
-        // If we had actual pod creation errors, keep them. Only add a new failure
-        // message for failed pods — don't set ReplicaFailure just because pods
-        // haven't started yet (K8s only sets this on actual creation errors).
-        if create_failure.is_none() && final_current_replicas < desired_replicas && failed_pods > 0
-        {
-            create_failure = Some(format!(
-                "pods for rc {}/{} failed: {} pods in Failed phase",
-                namespace, rc.metadata.name, failed_pods
-            ));
-        }
+        // K8s only sets ReplicaFailure from actual pod creation errors
+        // (manageReplicas return value), NOT from existing Failed pods.
+        // Don't override create_failure here — the condition should clear
+        // once pod creation succeeds again.
+        // See: pkg/controller/replication/replication_controller.go — syncReplicationController
 
         // Update status with accurate counts
         self.update_status(

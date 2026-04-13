@@ -730,10 +730,18 @@ impl Kubelet {
                     "Pod {}/{} has finalizers, keeping in storage with deletionTimestamp",
                     namespace, pod_name
                 );
-                // Update status to show pod is terminated but not deleted
+                // Update status to show pod is terminated but not deleted.
+                // IMPORTANT: Preserve existing conditions (like DisruptionTarget
+                // set by scheduler preemption). K8s doesn't overwrite conditions
+                // when terminating — only updates phase and container statuses.
                 if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
                     if let Some(ref mut status) = p.status {
-                        status.phase = Some(Phase::Succeeded);
+                        // Only change phase if it wasn't already set to Failed
+                        // (e.g., by preemption). Failed takes precedence over Succeeded.
+                        if status.phase != Some(Phase::Failed) {
+                            status.phase = Some(Phase::Succeeded);
+                        }
+                        // Preserve existing conditions — don't overwrite
                     }
                     let _ = self.storage.update(&key, &p).await;
                 }
