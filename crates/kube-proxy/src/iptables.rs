@@ -1200,29 +1200,94 @@ impl IptablesManager {
                     continue;
                 }
 
-                let n = endpoints.len();
-                for (idx, (endpoint_ip, endpoint_port)) in endpoints.iter().enumerate() {
-                    let is_last = idx == n - 1;
-                    let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
-                    let comment = format!("rusternetes service {}:{}", cluster_ip, port);
+                let session_affinity = service.spec.session_affinity.as_deref() == Some("ClientIP");
+                let affinity_timeout = service
+                    .spec
+                    .session_affinity_config
+                    .as_ref()
+                    .and_then(|c| c.client_ip.as_ref())
+                    .and_then(|c| c.timeout_seconds)
+                    .unwrap_or(10800); // K8s default: 3 hours
 
-                    let mut rule = format!(
-                        "-A {} -d {}/32 -p {} --dport {}",
-                        self.services_chain, cluster_ip, proto, port
-                    );
-                    if !is_last {
-                        let prob = 1.0 / (n - idx) as f64;
-                        rule.push_str(&format!(
-                            " -m statistic --mode random --probability {:.10}",
-                            prob
+                let n = endpoints.len();
+
+                if session_affinity && n > 1 && self.recent_available {
+                    // Session affinity with xt_recent: create per-endpoint chains
+                    // K8s pattern: writeServiceToEndpointRules (proxier.go:1541-1562)
+                    for (idx, (endpoint_ip, endpoint_port)) in endpoints.iter().enumerate() {
+                        let sep_chain =
+                            format!("KUBE-SEP-{}-{}-{}", cluster_ip.replace('.', ""), port, idx);
+                        let recent_name =
+                            format!("AFFINITY-{}-{}-{}", cluster_ip.replace('.', ""), port, idx);
+                        let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
+
+                        // Define the per-endpoint chain
+                        rules.push_str(&format!(":{} - [0:0]\n", sep_chain));
+
+                        // SEP chain: set recent mark + DNAT
+                        rules.push_str(&format!(
+                            "-A {} -m recent --name {} --set\n",
+                            sep_chain, recent_name
+                        ));
+                        rules.push_str(&format!(
+                            "-A {} -p {} -j DNAT --to-destination {}\n",
+                            sep_chain, proto, dnat_target
+                        ));
+
+                        // Service chain: affinity check (--rcheck) jumps to SEP if recent
+                        rules.push_str(&format!(
+                            "-A {} -d {}/32 -p {} --dport {} -m recent --name {} --rcheck --seconds {} --reap -j {}\n",
+                            self.services_chain, cluster_ip, proto, port,
+                            recent_name, affinity_timeout, sep_chain
                         ));
                     }
-                    rule.push_str(&format!(
-                        " -j DNAT --to-destination {} -m comment --comment \"{}\"",
-                        dnat_target, comment
-                    ));
-                    rules.push_str(&rule);
-                    rules.push('\n');
+
+                    // Fallback: probability-based load balancing for new connections
+                    for (idx, (_endpoint_ip, _endpoint_port)) in endpoints.iter().enumerate() {
+                        let is_last = idx == n - 1;
+                        let sep_chain =
+                            format!("KUBE-SEP-{}-{}-{}", cluster_ip.replace('.', ""), port, idx);
+
+                        let mut rule = format!(
+                            "-A {} -d {}/32 -p {} --dport {}",
+                            self.services_chain, cluster_ip, proto, port
+                        );
+                        if !is_last {
+                            let prob = 1.0 / (n - idx) as f64;
+                            rule.push_str(&format!(
+                                " -m statistic --mode random --probability {:.10}",
+                                prob
+                            ));
+                        }
+                        rule.push_str(&format!(" -j {}", sep_chain));
+                        rules.push_str(&rule);
+                        rules.push('\n');
+                    }
+                } else {
+                    // No session affinity or single endpoint: direct DNAT
+                    for (idx, (endpoint_ip, endpoint_port)) in endpoints.iter().enumerate() {
+                        let is_last = idx == n - 1;
+                        let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
+                        let comment = format!("rusternetes service {}:{}", cluster_ip, port);
+
+                        let mut rule = format!(
+                            "-A {} -d {}/32 -p {} --dport {}",
+                            self.services_chain, cluster_ip, proto, port
+                        );
+                        if !is_last {
+                            let prob = 1.0 / (n - idx) as f64;
+                            rule.push_str(&format!(
+                                " -m statistic --mode random --probability {:.10}",
+                                prob
+                            ));
+                        }
+                        rule.push_str(&format!(
+                            " -j DNAT --to-destination {} -m comment --comment \"{}\"",
+                            dnat_target, comment
+                        ));
+                        rules.push_str(&rule);
+                        rules.push('\n');
+                    }
                 }
             }
         }
@@ -1241,24 +1306,17 @@ impl IptablesManager {
             rules.len()
         );
 
-        // First, flush our chains (will be repopulated by iptables-restore)
-        let _ = Command::new(&self.iptables_cmd)
-            .args(["-t", "nat", "-F", &self.services_chain])
-            .output();
-
-        // Clean up old SEP chains
-        let chains = {
+        // DO NOT flush chains before iptables-restore.
+        // iptables-restore --noflush with ":CHAIN - [0:0]" atomically
+        // resets chain counters and replaces rules within the restore
+        // transaction. Manual flush + restore creates a gap where
+        // no rules exist (the original kube-proxy bug).
+        //
+        // Clean up old SEP chains AFTER restore (they're no longer referenced).
+        let old_sep_chains = {
             let mut guard = self.sep_chains.lock().unwrap();
             std::mem::take(&mut *guard)
         };
-        for chain in &chains {
-            let _ = Command::new(&self.iptables_cmd)
-                .args(["-t", "nat", "-F", chain.as_str()])
-                .output();
-            let _ = Command::new(&self.iptables_cmd)
-                .args(["-t", "nat", "-X", chain.as_str()])
-                .output();
-        }
 
         // Apply rules via iptables-restore --noflush
         let mut child = Command::new("iptables-restore")
@@ -1288,6 +1346,18 @@ impl IptablesManager {
         }
 
         info!("iptables-restore applied successfully");
+
+        // Clean up old SEP chains AFTER successful restore.
+        // These chains are no longer referenced by the new rules.
+        for chain in &old_sep_chains {
+            let _ = Command::new(&self.iptables_cmd)
+                .args(["-t", "nat", "-F", chain.as_str()])
+                .output();
+            let _ = Command::new(&self.iptables_cmd)
+                .args(["-t", "nat", "-X", chain.as_str()])
+                .output();
+        }
+
         Ok(())
     }
 }
