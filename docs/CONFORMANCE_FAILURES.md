@@ -3,45 +3,52 @@
 **Round 138** | Running | 2026-04-13
 **Baseline**: Round 137 = ~380/441 (~86.2%), 61 failures
 
-## Round 138 Failures (12 so far — ~97% pass rate)
+## Round 138 Failures (20 so far at ~half complete)
 
-### 1. CRD OpenAPI — 2 failures — INVESTIGATING
-- `crd_publish_openapi.go:77,400`
-- False extensions stripped (fix working), schemas appear identical but still timeout. May be subtle multi-version or schema ordering difference.
+### CRD OpenAPI — 5 failures — FIX STAGED ✅ (not yet deployed)
+- `crd_publish_openapi.go:77,161,211,285,400`
+- **Root cause**: Schema includes empty strings and false booleans that K8s omits via Go omitempty
+- **Fix**: 86b048a — strip ALL Go omitempty defaults (with test). Not deployed in this round.
 
-### 2. Field Validation — 1 failure — FIX STAGED ✅
-- `field_validation.go:611`
-- **Fix**: 858d091 — Validator collects ALL unknown fields. Tests added.
+### Webhook — 4 failures — TIMING
+- `webhook.go:425,904,1194,2338` — readiness timeout
+- kube-proxy atomic restore working. Pod readiness probe 20s delay + endpoint + iptables creates tight window.
 
-### 3. Webhook — 3 failures — TIMING
-- `webhook.go:425,904,1194` — "waiting for webhook configuration to be ready: timed out"
-- kube-proxy atomic restore working (77 successful restores). Webhook pod readiness probe (20s delay) + endpoint + iptables creates tight timing window.
+### Field Validation — 2 failures — FIX STAGED ✅ (not yet deployed)
+- `field_validation.go:611` — **Fix**: 858d091 (collect all unknown fields)
+- `field_validation.go:735` — duplicate key detection
 
-### 4. StatefulSet — 1 failure — INVESTIGATING
-- `statefulset.go:957` — "Pod ss-0 expected to be re-created at least once"
-- Test creates pod with conflicting port. StatefulSet controller should detect failure and recreate.
+### StatefulSet — 2 failures — NEEDS FIX ❌
+- `statefulset.go:957` — pod not re-created (port conflict test)
+- `statefulset.go:1092` — patch timing
 
-### 5. DaemonSet — 1 failure — INVESTIGATING
-- `daemon_set.go:1276`
-
-### 6. DNS — 1 failure — INVESTIGATING
+### DNS — 1 failure — INVESTIGATING
 - `dns_common.go:476`
 
-### 7. Preemption — 1 failure — INVESTIGATING
-- `preemption.go:877` — "failed pod observation expectations"
+### DaemonSet — 1 failure — INVESTIGATING
+- `daemon_set.go:1276`
 
-### 8. EmptyDir — 1 failure — DinD
-- `output.go:263` — macOS filesystem permissions
+### Job — 1 failure — NEEDS FIX ❌
+- `job.go:596` — Job successPolicy not implemented. Test expects SuccessCriteriaMet condition.
 
-### 9. Service Proxy — 1 failure — INVESTIGATING
-- `proxy.go:503` — "unexpected end of JSON input"
+### Preemption — 1 failure — INVESTIGATING
+- `preemption.go:877`
 
-## Fixes Deployed in Round 138
+### Service — 1 failure — INVESTIGATING
+- `service.go:4291`
+
+### Service Proxy — 1 failure — INVESTIGATING
+- `proxy.go:503` — truncated JSON response
+
+### EmptyDir — 1 failure — DinD
+- `output.go:263`
+
+## Staged Fixes (not yet deployed in round 138)
 
 | Commit | Fix |
 |--------|-----|
 | 858d091 | Schema validator collects ALL unknown fields (with tests) |
-| _(plus 16 from round 137 tracker)_ | |
+| 86b048a | OpenAPI strip ALL Go omitempty defaults (with test) |
 
 ## Progress History
 
@@ -50,4 +57,4 @@
 | 135 | 373 | 68 | 441 | 84.6% |
 | 136 | ABORTED | — | 441 | — |
 | 137 | ~380 | ~61 | 441 | ~86.2% |
-| 138 | TBD (~12 failures so far) | TBD | 441 | ~97% so far |
+| 138 | TBD (~20 failures at half) | TBD | 441 | TBD |
