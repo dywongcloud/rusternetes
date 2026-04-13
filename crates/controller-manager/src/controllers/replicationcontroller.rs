@@ -133,13 +133,30 @@ impl<S: Storage> ReplicationControllerController<S> {
         // Adopt orphan pods and release non-matching owned pods
         let all_pods = self.adopt_and_release(rc, all_pods, namespace).await?;
 
-        // Filter to only pods owned by this RC (after adopt/release)
+        // Filter to only pods owned by this RC (after adopt/release).
+        // K8s FilterActivePods: exclude Failed/Succeeded and terminating pods.
+        // See: pkg/controller/controller_utils.go — FilterActivePods
         let rc_pods: Vec<Pod> = all_pods
             .into_iter()
             .filter(|p| self.is_owned_by(p, rc))
             .collect();
 
-        let current_replicas = rc_pods.len() as i32;
+        let active_rc_pods: Vec<&Pod> = rc_pods
+            .iter()
+            .filter(|p| {
+                // Exclude terminating pods
+                if p.metadata.deletion_timestamp.is_some() {
+                    return false;
+                }
+                // Exclude terminal pods (Failed/Succeeded)
+                !matches!(
+                    p.status.as_ref().and_then(|s| s.phase.as_ref()),
+                    Some(Phase::Failed) | Some(Phase::Succeeded)
+                )
+            })
+            .collect();
+
+        let current_replicas = active_rc_pods.len() as i32;
         let desired_replicas = rc.spec.replicas.unwrap_or(1);
 
         info!(
@@ -256,13 +273,16 @@ impl<S: Storage> ReplicationControllerController<S> {
 
     /// Check if a pod is owned by this RC (has a controller ownerReference pointing to it)
     fn is_owned_by(&self, pod: &Pod, rc: &ReplicationController) -> bool {
+        // K8s uses UID matching for ownership, not name matching.
+        // Name matching can cause false positives across namespaces or after recreation.
+        // See: pkg/controller/replication/replication_controller.go
         pod.metadata
             .owner_references
             .as_ref()
             .map(|refs| {
                 refs.iter().any(|r| {
                     r.kind == "ReplicationController"
-                        && r.name == rc.metadata.name
+                        && r.uid == rc.metadata.uid
                         && r.controller == Some(true)
                 })
             })
