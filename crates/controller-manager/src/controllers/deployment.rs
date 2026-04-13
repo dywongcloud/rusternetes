@@ -162,13 +162,26 @@ impl<S: Storage> DeploymentController<S> {
             .filter(|rs| self.is_owned_by_deployment(rs, deployment))
             .collect();
 
-        // Update the deployment's revision annotation to match the max across
-        // owned ReplicaSets. In K8s, the deployment revision tracks the highest
-        // RS revision. This must be updated every reconcile (not just when missing)
-        // because new RSes may be adopted with higher revisions.
+        // K8s deployment revision handling (sync.go:146-190):
+        // 1. Find "new" RS (matches current template) and "old" RSes (don't match)
+        // 2. newRevision = MaxRevision(oldRSes) + 1
+        // 3. Set new RS annotation to newRevision
+        // 4. Set deployment annotation to newRevision
         {
-            let max_revision = owned_replicasets
+            let template_hash = Self::compute_pod_template_hash(deployment);
+            let max_old_revision = owned_replicasets
                 .iter()
+                .filter(|rs| {
+                    // "Old" RSes: those that DON'T match the current template
+                    let rs_hash = rs
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| l.get("pod-template-hash"))
+                        .map(|s| s.as_str())
+                        .unwrap_or("");
+                    rs_hash != template_hash
+                })
                 .filter_map(|rs| {
                     rs.metadata
                         .annotations
@@ -178,21 +191,84 @@ impl<S: Storage> DeploymentController<S> {
                 })
                 .max()
                 .unwrap_or(0);
-            let revision = std::cmp::max(max_revision, 1).to_string();
-            let current_revision = deployment
+
+            // Also consider the new RS's current revision (it might already be higher)
+            let new_rs_revision = owned_replicasets
+                .iter()
+                .filter(|rs| {
+                    let rs_hash = rs
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| l.get("pod-template-hash"))
+                        .map(|s| s.as_str())
+                        .unwrap_or("");
+                    rs_hash == template_hash
+                })
+                .filter_map(|rs| {
+                    rs.metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+                        .and_then(|v| v.parse::<i64>().ok())
+                })
+                .max()
+                .unwrap_or(0);
+
+            let new_revision = std::cmp::max(max_old_revision + 1, new_rs_revision);
+            let revision_str = std::cmp::max(new_revision, 1).to_string();
+
+            // Update new RS annotation if needed
+            for rs in &owned_replicasets {
+                let rs_hash = rs
+                    .metadata
+                    .labels
+                    .as_ref()
+                    .and_then(|l| l.get("pod-template-hash"))
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                if rs_hash == template_hash {
+                    let current_rs_rev = rs
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+                        .cloned()
+                        .unwrap_or_default();
+                    if current_rs_rev != revision_str {
+                        let mut updated_rs = rs.clone();
+                        updated_rs
+                            .metadata
+                            .annotations
+                            .get_or_insert_with(std::collections::HashMap::new)
+                            .insert(
+                                "deployment.kubernetes.io/revision".to_string(),
+                                revision_str.clone(),
+                            );
+                        let rs_key = build_key("replicasets", Some(namespace), &rs.metadata.name);
+                        let _ = self.storage.update(&rs_key, &updated_rs).await;
+                    }
+                }
+            }
+
+            // Update deployment annotation
+            let current_dep_rev = deployment
                 .metadata
                 .annotations
                 .as_ref()
                 .and_then(|a| a.get("deployment.kubernetes.io/revision"))
                 .cloned()
                 .unwrap_or_default();
-            if current_revision != revision {
+            if current_dep_rev != revision_str {
                 let mut updated = deployment.clone();
                 updated
                     .metadata
                     .annotations
                     .get_or_insert_with(std::collections::HashMap::new)
-                    .insert("deployment.kubernetes.io/revision".to_string(), revision);
+                    .insert(
+                        "deployment.kubernetes.io/revision".to_string(),
+                        revision_str,
+                    );
                 let key = build_key("deployments", Some(namespace), &deployment.metadata.name);
                 let _ = self.storage.update(&key, &updated).await;
             }
