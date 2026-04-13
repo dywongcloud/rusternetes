@@ -1,7 +1,7 @@
 # Conformance Failure Tracker
 
 **Round 135** | 373/441 (84.6%) | 2026-04-11
-**Round 136** | Pending (25 fixes staged) | 2026-04-12
+**Round 136** | Pending (27 fixes staged) | 2026-04-12
 
 ## Staged Fixes for Round 136 (all from deep K8s source comparison)
 
@@ -29,9 +29,11 @@
 | 7fa3ce5 | Kubelet concurrent pod sync via tokio::spawn | podWorkerLoop | pod start timing |
 | d3011e0 | Kubelet init container state machine | computeInitContainerActions | init container restart |
 | 7ea2d20 | Kubelet init container status during backoff | kuberuntime_container.go | init container status |
-| PENDING | Generic PATCH generation increment | patch.go | statefulset patch timing |
-| PENDING | StatefulSet delete terminal pods | stateful_set_control.go processReplica | statefulset lifecycle |
-| PENDING | Validating webhooks parallel execution | dispatcher.go | ~4 emptydir webhook cascade |
+| 8673d37 | Parallel validating webhook dispatch | dispatcher.go:126-131 | ~4 emptydir webhook cascade |
+| 8673d37 | Generic PATCH generation increment | patch.go | 1 statefulset patch |
+| 8673d37 | StatefulSet delete terminal (Failed/Succeeded) pods | stateful_set_control.go:431 processReplica | statefulset lifecycle |
+| 4438743 | StatefulSet replica counting — match computeReplicaStatus() | stateful_set_control.go:370-399 | statefulset status accuracy |
+| ea9573e | Deployment force scale-down old RSes when new RS available | rolling.go | 2 deployment |
 
 ## Round 135 Failure Analysis (68 failures, 57 unique locations)
 
@@ -41,11 +43,12 @@
 - **Fix**: 069e807 enables h2 + http/1.1 ALPN in rustls ServerConfig
 - **K8s ref**: staging/src/k8s.io/apiserver/pkg/server/options/serving.go
 
-### Webhook — 12 failures (FIX STAGED 3012663 + fe76396 + 7cf9bd5)
+### Webhook — 12 failures (FIX STAGED 3012663 + fe76396 + 7cf9bd5 + 8673d37)
 - `webhook.go:520,675,904,1269,1334,1400,1481,2107(x3),2164,2491`
 - **Root cause found**: kube-proxy flushed ALL iptables rules every second because hash was order-dependent and NEVER matched. Webhook ClusterIP rules existed for only ~50ms/second. FailurePolicy=Ignore silently swallowed the errors.
-- **Deep analysis findings**: Also missing objectSelector, missing RELATED,ESTABLISHED filter rule, missing OUTPUT chain jump
-- **K8s ref**: pkg/proxy/iptables/proxier.go, admission/plugin/webhook/predicates/object/matcher.go
+- **Deep analysis findings**: Also missing objectSelector, missing RELATED,ESTABLISHED filter rule, missing OUTPUT chain jump. Validating webhooks called sequentially instead of in parallel.
+- **Fix**: kube-proxy XOR hash eliminates flush gap. RELATED,ESTABLISHED + OUTPUT chain fix service traffic. objectSelector matching added. Validating webhooks now dispatched in parallel via tokio::spawn matching K8s goroutine architecture (dispatcher.go:126-131).
+- **K8s ref**: pkg/proxy/iptables/proxier.go, admission/plugin/webhook/validating/dispatcher.go, predicates/object/matcher.go
 
 ### CRD OpenAPI — 9 failures (FIX STAGED 0188c3c)
 - `crd_publish_openapi.go:77,161,214,253,285,318,366,400,451`
@@ -68,10 +71,10 @@
 - **Root cause found**: Preemption only checked cpu/memory, not extended resources
 - **K8s ref**: pkg/scheduler/framework/preemption/preemption.go
 
-### EmptyDir — 4 failures (FIX STAGED: parallel webhooks)
+### EmptyDir — 4 failures (FIX STAGED 8673d37 + kube-proxy)
 - `output.go:263` (x4) — stale webhook blocks pod creation
-- **Root cause found (deep analysis)**: Validating webhooks called sequentially (our code) vs parallel (K8s). K8s dispatches all matching validating webhooks concurrently via goroutines (dispatcher.go:126-131). Sequential execution means N stale webhooks each timing out = N*10s delay. Parallel = max(10s).
-- **Fix**: Refactored run_validating_webhooks to use tokio::spawn + join_all for parallel execution matching K8s architecture. Also downstream of kube-proxy fix (stale webhooks can't reach targets through broken iptables).
+- **Root cause found (deep analysis)**: Two issues: (1) kube-proxy flush gap breaks webhook ClusterIP routing; (2) validating webhooks called sequentially — N stale webhooks each timing out = N*10s delay. K8s dispatches all validating webhooks concurrently via goroutines (dispatcher.go:126-131), bounding total delay to max(10s).
+- **Fix**: 8673d37 refactored run_validating_webhooks to use tokio::spawn + join_all for parallel execution matching K8s architecture. Combined with kube-proxy XOR hash fix to eliminate flush gap.
 - **K8s ref**: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/validating/dispatcher.go
 
 ### Field Validation — 3 failures (FIX STAGED a18febe + e2e2f48)
@@ -79,10 +82,10 @@
 - **Root cause found**: Unknown top-level CR fields not rejected (serde flatten captured them). Unknown metadata fields not validated against known ObjectMeta field list.
 - **K8s ref**: staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go
 
-### Deployment — 2 failures (FIX STAGED ea9573e)
+### Deployment — 2 failures (FIX STAGED ea9573e + 07a393c)
 - `deployment.go:1008,1322`
-- **Root cause found**: Old RSes stuck with non-zero replicas when maxUnavailable rounds to 0. K8s forces scale-down when new RS fully available.
-- **K8s ref**: pkg/controller/deployment/rolling.go — reconcileOldReplicaSets
+- **Root cause found**: Old RSes stuck with non-zero replicas when maxUnavailable rounds to 0. K8s forces scale-down when new RS fully available. Also missing proportional scaling across RSes.
+- **K8s ref**: pkg/controller/deployment/rolling.go — reconcileOldReplicaSets, sync.go — scale()
 
 ### DaemonSet — 1 failure (FIX STAGED 646c713)
 - `daemon_set.go:1276`
@@ -117,17 +120,20 @@
 - **Root cause found (deep analysis)**: Mirrored slices not deleted when source Endpoints deleted. Cleanup only recognized endpointslice-controller, not mirroring-controller label.
 - **K8s ref**: pkg/controller/endpointslicemirroring/reconciler.go
 
-### StatefulSet — 1 failure (FIX STAGED: generation + terminal pod cleanup)
+### StatefulSet — 1 failure (FIX STAGED 8673d37 + 4438743)
 - `statefulset.go:1092`
-- **Root cause found**: Generic PATCH handler didn't increment metadata.generation on spec changes. K8s increments generation on every spec mutation. Also: terminal (Failed/Succeeded) pods not deleted for recreation — K8s processReplica() deletes terminal pods so StatefulSet recreates them.
-- **Fix**: Added generation increment to generic_patch.rs for both namespaced and cluster-scoped resources. StatefulSet controller now deletes Failed/Succeeded pods matching K8s processReplica() behavior.
-- **K8s ref**: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go, pkg/controller/statefulset/stateful_set_control.go:431
+- **Root cause found (deep analysis)**: Three issues identified from K8s source comparison:
+  1. Generic PATCH handler didn't increment metadata.generation on spec changes. Test verifies ObservedGeneration >= Generation after strategic merge patch. K8s increments generation on every spec mutation.
+  2. Terminal (Failed/Succeeded) pods not deleted for recreation. K8s processReplica() at stateful_set_control.go:431 deletes terminal pods so StatefulSet recreates them.
+  3. Replica counting wrong — K8s computeReplicaStatus() counts terminating pods in `replicas` but excludes them from `currentReplicas`/`updatedReplicas`. We excluded terminating from all counts.
+- **Fix**: 8673d37 adds generation increment to generic_patch.rs and terminal pod deletion. 4438743 fixes replica counting to match K8s computeReplicaStatus() exactly.
+- **K8s ref**: pkg/controller/statefulset/stateful_set_control.go:370-399,431, staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go
 
-### Remaining (DinD limitations)
-- `hostport.go:219` — DinD can't bind to other node's IPs
-- `pod_resize.go:857` — DinD cgroup limitations
-- `aggregator.go:359` — sample API server deployment needs image pull (DinD network)
-- `lifecycle_hook.go:132` — downstream of kube-proxy fixes (preStop curls another pod)
+### Remaining (DinD/environment limitations)
+- `hostport.go:219` — DinD can't bind to other node's IPs (HostPort networking)
+- `pod_resize.go:857` — DinD cgroup limitations (in-place resource resize)
+- `aggregator.go:359` — Sample API server deployment needs image pull + etcd sidecar (DinD network/image availability)
+- `lifecycle_hook.go:132` — Downstream of kube-proxy fixes. PreStop HTTP hook curls another pod via pod IP. Pod-to-pod networking requires working kube-proxy. Verified: kubelet lifecycle hook implementation matches K8s (postStart kills container on failure, preStop warns and continues). K8s ref: pkg/kubelet/kuberuntime/kuberuntime_container.go:762-893
 
 ## Progress History
 
