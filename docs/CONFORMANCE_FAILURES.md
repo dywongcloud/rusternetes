@@ -31,11 +31,14 @@
 ### CRD Error Responses — FIX STAGED ✅
 - **Fix**: 294358e — 10 handlers fixed
 
-### DaemonSet — 1 failure — INVESTIGATING
+### DaemonSet — 1 failure — INVESTIGATE IN ROUND 139
 - 0 watch failures near test. Pod created but not observed as running within timeout.
+- E2e logs lost when pod was terminated. Need to investigate in next round.
+- May be resolved by kubelet fire-and-forget fix (106b7b6) since pod start delays were caused by sync_loop blocking.
 
-### Proxy — 2 failures — INVESTIGATING
+### Proxy — 2 failures — INVESTIGATE IN ROUND 139
 - 0 watch failures near test. Pod not starting in time.
+- E2e logs lost. May also be resolved by kubelet fire-and-forget fix.
 
 ### Other fixes staged:
 - Job: 31e5e4f (test: success_policy_terminating_zero)
