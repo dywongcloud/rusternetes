@@ -333,6 +333,7 @@ impl<S: Storage> EndpointSliceController<S> {
         }
 
         // Create/update EndpointSlices for each port group
+        let port_group_count = port_groups.len();
         for (idx, (_key, (ports, endpoints))) in port_groups.into_iter().enumerate() {
             let slice_name = if idx == 0 {
                 service_name.clone()
@@ -392,6 +393,58 @@ impl<S: Storage> EndpointSliceController<S> {
                     );
                 }
                 Err(e) => return Err(e.into()),
+            }
+        }
+
+        // Clean up stale EndpointSlices that are no longer needed.
+        // K8s reconciler deletes slices that are no longer in the desired set.
+        // Without this, deleted pods leave behind stale EndpointSlices with
+        // outdated endpoint entries (causes "extra port mappings" test failures).
+        let es_prefix = build_prefix("endpointslices", Some(namespace));
+        let existing_slices: Vec<EndpointSlice> =
+            self.storage.list(&es_prefix).await.unwrap_or_default();
+        for existing in &existing_slices {
+            // Only manage slices owned by this service
+            let owned = existing
+                .metadata
+                .labels
+                .as_ref()
+                .and_then(|l| l.get("kubernetes.io/service-name"))
+                .map(|n| n == service_name)
+                .unwrap_or(false);
+            let managed = existing
+                .metadata
+                .labels
+                .as_ref()
+                .and_then(|l| l.get("endpointslice.kubernetes.io/managed-by"))
+                .map(|m| m == "endpointslice-controller.k8s.io")
+                .unwrap_or(false);
+            if !owned || !managed {
+                continue;
+            }
+            // Check if this slice name was in our current set
+            let slice_name = &existing.metadata.name;
+            let in_current_set = (0..port_group_count).any(|idx| {
+                let expected = if idx == 0 {
+                    service_name.clone()
+                } else {
+                    format!("{}-{}", service_name, idx)
+                };
+                slice_name == &expected
+            });
+            if !in_current_set {
+                let stale_key = build_key("endpointslices", Some(namespace), slice_name);
+                if let Err(e) = self.storage.delete(&stale_key).await {
+                    debug!(
+                        "Failed to delete stale endpointslice {}/{}: {}",
+                        namespace, slice_name, e
+                    );
+                } else {
+                    info!(
+                        "Deleted stale endpointslice {}/{} (no longer needed for service {})",
+                        namespace, slice_name, service_name
+                    );
+                }
             }
         }
 
