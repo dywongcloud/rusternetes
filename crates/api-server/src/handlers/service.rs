@@ -81,6 +81,20 @@ pub async fn create(
         }
     }
 
+    // Default internalTrafficPolicy to "Cluster" for ClusterIP/NodePort/LoadBalancer
+    // K8s ref: pkg/apis/core/v1/defaults.go:141-146
+    if service.spec.internal_traffic_policy.is_none() {
+        if matches!(
+            service.spec.service_type,
+            Some(ServiceType::ClusterIP)
+                | Some(ServiceType::NodePort)
+                | Some(ServiceType::LoadBalancer)
+        ) {
+            service.spec.internal_traffic_policy =
+                Some(rusternetes_common::resources::ServiceInternalTrafficPolicy::Cluster);
+        }
+    }
+
     // Default ip_families and ip_family_policy for non-ExternalName services
     if !matches!(service.spec.service_type, Some(ServiceType::ExternalName)) {
         if service.spec.ip_families.is_none() {

@@ -50,6 +50,9 @@ pub async fn create(
     daemonset.metadata.ensure_uid();
     daemonset.metadata.ensure_creation_timestamp();
 
+    // Apply K8s defaults (SetDefaults_DaemonSet + SetDefaults_PodSpec + SetDefaults_Container)
+    crate::handlers::defaults::apply_daemonset_defaults(&mut daemonset);
+
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
         info!(
@@ -121,6 +124,9 @@ pub async fn update(
 
     daemonset.metadata.name = name.clone();
     daemonset.metadata.namespace = Some(namespace.clone());
+
+    // Apply K8s defaults (SetDefaults_DaemonSet + SetDefaults_PodSpec + SetDefaults_Container)
+    crate::handlers::defaults::apply_daemonset_defaults(&mut daemonset);
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {

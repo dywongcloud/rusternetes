@@ -50,6 +50,9 @@ pub async fn create(
     statefulset.metadata.ensure_uid();
     statefulset.metadata.ensure_creation_timestamp();
 
+    // Apply K8s defaults (SetDefaults_StatefulSet + SetDefaults_PodSpec + SetDefaults_Container)
+    crate::handlers::defaults::apply_statefulset_defaults(&mut statefulset);
+
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {
         info!(
@@ -121,6 +124,9 @@ pub async fn update(
 
     statefulset.metadata.name = name.clone();
     statefulset.metadata.namespace = Some(namespace.clone());
+
+    // Apply K8s defaults (SetDefaults_StatefulSet + SetDefaults_PodSpec + SetDefaults_Container)
+    crate::handlers::defaults::apply_statefulset_defaults(&mut statefulset);
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {

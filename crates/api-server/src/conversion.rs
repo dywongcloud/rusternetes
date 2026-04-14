@@ -385,6 +385,7 @@ mod tests {
                 "image": "my-cron-image"
             })),
             status: None,
+            extra: std::collections::HashMap::new(),
         };
 
         let result = convert_custom_resource(&crd, resource.clone(), "v1").await;

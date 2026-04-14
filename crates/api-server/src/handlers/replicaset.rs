@@ -50,6 +50,9 @@ pub async fn create(
     replicaset.metadata.ensure_uid();
     replicaset.metadata.ensure_creation_timestamp();
 
+    // Apply K8s defaults (SetDefaults_ReplicaSet + SetDefaults_PodSpec + SetDefaults_Container)
+    crate::handlers::defaults::apply_replicaset_defaults(&mut replicaset);
+
     // Initialize status if not present
     if replicaset.status.is_none() {
         replicaset.status = Some(ReplicaSetStatus {
@@ -134,6 +137,9 @@ pub async fn update(
 
     replicaset.metadata.name = name.clone();
     replicaset.metadata.namespace = Some(namespace.clone());
+
+    // Apply K8s defaults (SetDefaults_ReplicaSet + SetDefaults_PodSpec + SetDefaults_Container)
+    crate::handlers::defaults::apply_replicaset_defaults(&mut replicaset);
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {

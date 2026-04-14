@@ -118,20 +118,15 @@ pub async fn create(
     let limit_ranges: Vec<rusternetes_common::resources::LimitRange> =
         state.storage.list(&lr_prefix).await.unwrap_or_default();
 
-    // Set defaults
+    // Apply shared PodSpec defaults (dnsPolicy, restartPolicy, etc.)
+    // K8s ref: pkg/apis/core/v1/defaults.go SetDefaults_PodSpec + SetDefaults_Container
     if let Some(ref mut spec) = pod.spec {
-        if spec.restart_policy.is_none() {
-            spec.restart_policy = Some("Always".to_string());
-        }
-        if spec.dns_policy.is_none() {
-            spec.dns_policy = Some("ClusterFirst".to_string());
-        }
-        if spec.termination_grace_period_seconds.is_none() {
-            spec.termination_grace_period_seconds = Some(30);
-        }
-        // K8s pod defaulting: if a container has explicit limits but no requests,
+        crate::handlers::defaults::apply_pod_spec_defaults(spec);
+
+        // K8s pod-only defaulting: if a container has explicit limits but no requests,
         // default requests to the limit value. This happens BEFORE LimitRange so that
         // explicit limits take precedence over LimitRange defaultRequest.
+        // K8s ref: SetDefaults_Pod (NOT SetDefaults_PodSpec — only on Pods, not templates)
         for container in &mut spec.containers {
             if let Some(ref limits) = container.resources.as_ref().and_then(|r| r.limits.clone()) {
                 if !limits.is_empty() {
@@ -153,23 +148,6 @@ pub async fn create(
         }
 
         // LimitRange defaults are applied by apply_limit_range_with() below.
-
-        for container in &mut spec.containers {
-            if container.termination_message_path.is_none() {
-                container.termination_message_path = Some("/dev/termination-log".to_string());
-            }
-            if container.termination_message_policy.is_none() {
-                container.termination_message_policy = Some("File".to_string());
-            }
-            if container.image_pull_policy.is_none() {
-                // Default based on image tag
-                if container.image.contains(":latest") || !container.image.contains(':') {
-                    container.image_pull_policy = Some("Always".to_string());
-                } else {
-                    container.image_pull_policy = Some("IfNotPresent".to_string());
-                }
-            }
-        }
     }
 
     // Resolve priority from PriorityClass (K8s Priority admission controller)
@@ -429,7 +407,9 @@ pub async fn create(
         }
     }
 
-    // Check ResourceQuota
+    // Check ResourceQuota — K8s does this atomically in the admission plugin.
+    // check_resource_quota checks quota limits AND atomically increments usage.
+    // K8s ref: staging/src/k8s.io/apiserver/pkg/admission/plugin/resourcequota/controller.go
     match crate::admission::check_resource_quota(&state.storage, &namespace, &pod).await {
         Ok(true) => {
             info!(
@@ -443,7 +423,7 @@ pub async fn create(
                 namespace, pod.metadata.name
             );
             return Err(rusternetes_common::Error::Forbidden(
-                "Pod creation would exceed ResourceQuota".to_string(),
+                "exceeded quota".to_string(),
             ));
         }
         Err(e) => {

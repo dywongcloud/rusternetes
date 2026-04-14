@@ -44,6 +44,9 @@ pub async fn create(
     job.metadata.ensure_uid();
     job.metadata.ensure_creation_timestamp();
 
+    // Apply K8s defaults (SetDefaults_Job + SetDefaults_PodSpec + SetDefaults_Container)
+    crate::handlers::defaults::apply_job_defaults(&mut job);
+
     // Auto-generate selector if not set (like real K8s).
     // When manualSelector is not true, K8s generates a selector from the controller-uid label
     // and adds the controller-uid label to the pod template.
@@ -136,6 +139,9 @@ pub async fn update(
 
     job.metadata.name = name.clone();
     job.metadata.namespace = Some(namespace.clone());
+
+    // Apply K8s defaults (SetDefaults_Job + SetDefaults_PodSpec + SetDefaults_Container)
+    crate::handlers::defaults::apply_job_defaults(&mut job);
 
     // If dry-run, skip storage operation but return the validated resource
     if is_dry_run {

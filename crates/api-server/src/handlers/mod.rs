@@ -14,6 +14,7 @@ pub mod csistoragecapacity;
 pub mod custom_metrics;
 pub mod custom_resource;
 pub mod daemonset;
+pub mod defaults;
 pub mod deployment;
 pub mod deviceclass;
 pub mod discovery;

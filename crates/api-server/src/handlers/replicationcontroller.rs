@@ -45,6 +45,9 @@ pub async fn create_replicationcontroller(
     rc.metadata.ensure_uid();
     rc.metadata.ensure_creation_timestamp();
 
+    // Apply K8s defaults to pod template
+    crate::handlers::defaults::apply_pod_template_defaults(&mut rc.spec.template);
+
     let key = build_key(
         "replicationcontrollers",
         Some(&namespace),

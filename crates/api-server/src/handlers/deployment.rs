@@ -100,6 +100,9 @@ pub async fn create(
     deployment.metadata.ensure_creation_timestamp();
     crate::handlers::lifecycle::set_initial_generation(&mut deployment.metadata);
 
+    // Apply K8s defaults (SetDefaults_Deployment + SetDefaults_PodSpec + SetDefaults_Container)
+    crate::handlers::defaults::apply_deployment_defaults(&mut deployment);
+
     // Set initial revision annotation if not already present
     let annotations = deployment
         .metadata
@@ -188,6 +191,9 @@ pub async fn update(
     if deployment.type_meta.api_version.is_empty() {
         deployment.type_meta.api_version = "apps/v1".to_string();
     }
+
+    // Apply K8s defaults (SetDefaults_Deployment + SetDefaults_PodSpec + SetDefaults_Container)
+    crate::handlers::defaults::apply_deployment_defaults(&mut deployment);
 
     let key = build_key("deployments", Some(&namespace), &name);
 

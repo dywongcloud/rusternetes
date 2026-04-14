@@ -287,9 +287,21 @@ pub async fn get_swagger_spec(
 fn strip_false_extensions(value: &mut serde_json::Value) {
     if let Some(obj) = value.as_object_mut() {
         // Fields that should be omitted when false (Go omitempty on bool)
-        let false_fields = [
+        // K8s OpenAPI v2 representation uses Go struct fields for these
+        // extensions, NOT vendor extension maps. So they should be stripped
+        // entirely from the JSON output (both true and false values).
+        // K8s ref: controller/openapi/v2/conversion.go
+        let extension_fields = [
             "x-kubernetes-embedded-resource",
             "x-kubernetes-int-or-string",
+            "x-kubernetes-preserve-unknown-fields",
+        ];
+        for key in &extension_fields {
+            obj.remove(*key);
+        }
+
+        // Other boolean fields: strip only when false (Go omitempty)
+        let false_fields = [
             "exclusiveMaximum",
             "exclusiveMinimum",
             "uniqueItems",
@@ -354,6 +366,7 @@ mod tests {
             "uniqueItems": false,
             "x-kubernetes-embedded-resource": false,
             "x-kubernetes-int-or-string": false,
+            "x-kubernetes-preserve-unknown-fields": true,
             "properties": {
                 "spec": {
                     "description": "Spec",
@@ -365,6 +378,8 @@ mod tests {
                     "nullable": false,
                     "uniqueItems": false,
                     "exclusiveMaximum": false,
+                    "x-kubernetes-preserve-unknown-fields": false,
+                    "x-kubernetes-embedded-resource": true,
                     "properties": {
                         "bars": {
                             "description": "List of bars",
@@ -406,6 +421,10 @@ mod tests {
         );
         assert!(!obj.contains_key("x-kubernetes-embedded-resource"));
         assert!(!obj.contains_key("x-kubernetes-int-or-string"));
+        assert!(
+            !obj.contains_key("x-kubernetes-preserve-unknown-fields"),
+            "x-kubernetes-preserve-unknown-fields should be stripped entirely"
+        );
 
         // Recursion: nested spec should also be cleaned (2 levels deep)
         let spec = obj
@@ -432,6 +451,14 @@ mod tests {
         assert!(
             !spec.contains_key("exclusiveMaximum"),
             "nested exclusiveMaximum removed"
+        );
+        assert!(
+            !spec.contains_key("x-kubernetes-preserve-unknown-fields"),
+            "nested x-kubernetes-preserve-unknown-fields (false) should be stripped"
+        );
+        assert!(
+            !spec.contains_key("x-kubernetes-embedded-resource"),
+            "nested x-kubernetes-embedded-resource (true) should be stripped"
         );
 
         // 3 levels deep: spec.properties.bars

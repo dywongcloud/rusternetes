@@ -452,6 +452,16 @@ impl<S: Storage> AdmissionWebhookManager<S> {
         old_object: Option<Value>,
         user_info: &UserInfo,
     ) -> Result<AdmissionResponse> {
+        // K8s exempts webhook configuration objects from admission webhooks.
+        // Webhooks must not be able to mutate or prevent deletion of webhook
+        // configuration objects, otherwise a broken webhook could lock the cluster.
+        // K8s ref: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/predicates/rules/rules.go
+        if gvr.resource == "validatingwebhookconfigurations"
+            || gvr.resource == "mutatingwebhookconfigurations"
+        {
+            return Ok(AdmissionResponse::Allow);
+        }
+
         // Load all ValidatingWebhookConfigurations
         let configs: Vec<ValidatingWebhookConfiguration> = self
             .storage
@@ -757,6 +767,14 @@ impl<S: Storage> AdmissionWebhookManager<S> {
         old_object: Option<Value>,
         user_info: &UserInfo,
     ) -> Result<(AdmissionResponse, Option<Value>)> {
+        // K8s exempts webhook configuration objects from admission webhooks.
+        // K8s ref: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/predicates/rules/rules.go
+        if gvr.resource == "validatingwebhookconfigurations"
+            || gvr.resource == "mutatingwebhookconfigurations"
+        {
+            return Ok((AdmissionResponse::Allow, object));
+        }
+
         // Load all MutatingWebhookConfigurations
         let configs: Vec<MutatingWebhookConfiguration> = self
             .storage
