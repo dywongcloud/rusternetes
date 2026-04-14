@@ -228,16 +228,22 @@ impl Kubelet {
                 }
                 // Periodic full sync as safety net
                 _ = full_sync_timer.tick() => {
+                    // Send heartbeat BEFORE sync (sync is now fire-and-forget
+                    // so it returns quickly, but in case it doesn't, heartbeat
+                    // is already sent)
+                    if let Err(e) = self.update_node_status().await {
+                        error!("Error updating node status: {}", e);
+                    }
                     if let Err(e) = self.sync_loop().await {
                         error!("Error in periodic sync: {}", e);
                     }
                 }
-                // Node status heartbeat now runs in a separate task above.
-                // This branch is a fallback periodic heartbeat in case the
-                // separate task fails. It won't block sync_loop.
-                _ = tokio::time::sleep(Duration::from_secs(30)) => {
-                    // Periodic wakeup — sync loop handles pod reconciliation.
-                    // Heartbeat is handled by the separate spawned task.
+                // Periodic heartbeat fallback
+                _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                    // Send heartbeat even if no sync is needed
+                    if let Err(e) = self.update_node_status().await {
+                        error!("Error updating node status: {}", e);
+                    }
                 }
             }
         }
