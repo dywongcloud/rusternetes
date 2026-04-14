@@ -127,72 +127,100 @@ impl Kubelet {
         let full_sync_interval = Duration::from_secs(self.sync_interval.as_secs().max(1));
         let mut full_sync_timer = tokio::time::interval(full_sync_interval);
 
-        // Node status heartbeat runs in a SEPARATE task so it can't be blocked
-        // by a slow sync_loop (e.g., docker.stop_container taking 30+ seconds).
-        // K8s runs heartbeat and sync in separate goroutines.
-        // If heartbeat is in the same select! as sync, a slow sync blocks heartbeat,
-        // causing the node to go NotReady and the node controller to evict ALL pods.
+        // Lease-based heartbeat in a SEPARATE task.
+        // K8s kubelet uses Lease objects (coordination.k8s.io/v1) for heartbeats
+        // since v1.14. The Lease is in the kube-node-lease namespace and is a
+        // separate object from the Node, so updates NEVER conflict with node
+        // status updates (no CAS conflicts).
+        //
+        // The node controller checks the Lease renewTime to determine if
+        // the node is healthy. This is lightweight (just one field update)
+        // and reliable (no competing writers).
+        //
+        // K8s ref: pkg/kubelet/util/nodelease.go, pkg/kubelet/kubelet.go:235
         {
-            let heartbeat_storage = self.storage.clone();
-            let heartbeat_node_name = self.node_name.clone();
+            let lease_storage = self.storage.clone();
+            let lease_node_name = self.node_name.clone();
             tokio::spawn(async move {
-                let mut node_status_timer = tokio::time::interval(Duration::from_secs(10));
+                let lease_key = format!("/registry/leases/kube-node-lease/{}", lease_node_name);
+                let mut lease_timer = tokio::time::interval(Duration::from_secs(10));
+
+                // Ensure kube-node-lease namespace exists
+                let ns_key = "/registry/namespaces/kube-node-lease";
+                if lease_storage
+                    .get::<serde_json::Value>(ns_key)
+                    .await
+                    .is_err()
+                {
+                    let ns = serde_json::json!({
+                        "apiVersion": "v1",
+                        "kind": "Namespace",
+                        "metadata": {"name": "kube-node-lease"}
+                    });
+                    let _ = lease_storage.create(ns_key, &ns).await;
+                }
+
                 loop {
-                    node_status_timer.tick().await;
-                    // Lightweight heartbeat: just update the node's Ready condition timestamp
-                    let key = format!("/registry/nodes/{}", heartbeat_node_name);
-                    match heartbeat_storage
-                        .get::<rusternetes_common::resources::Node>(&key)
+                    lease_timer.tick().await;
+                    let now = chrono::Utc::now();
+
+                    // Try to update existing lease
+                    match lease_storage
+                        .get::<rusternetes_common::resources::Lease>(&lease_key)
                         .await
                     {
-                        Ok(mut node) => {
-                            if let Some(ref mut status) = node.status {
-                                if let Some(ref mut conditions) = status.conditions {
-                                    let now = chrono::Utc::now();
-                                    for condition in conditions.iter_mut() {
-                                        condition.last_heartbeat_time = Some(now);
-                                    }
-                                }
+                        Ok(mut lease) => {
+                            if let Some(ref mut spec) = lease.spec {
+                                spec.renew_time = Some(now);
                             }
-                            // Retry on CAS conflict — the sync loop may
-                            // update the node concurrently
-                            match heartbeat_storage.update(&key, &node).await {
+                            match lease_storage.update(&lease_key, &lease).await {
                                 Ok(_) => {
                                     tracing::debug!(
-                                        "Heartbeat: updated node {}",
-                                        heartbeat_node_name
+                                        "Lease heartbeat: renewed for node {}",
+                                        lease_node_name
                                     );
                                 }
                                 Err(e) => {
                                     tracing::warn!(
-                                        "Heartbeat: CAS conflict updating node {}: {}, will retry",
-                                        heartbeat_node_name,
+                                        "Lease heartbeat: update failed for {}: {}",
+                                        lease_node_name,
                                         e
                                     );
-                                    // Retry once with fresh read
-                                    if let Ok(mut fresh) = heartbeat_storage
-                                        .get::<rusternetes_common::resources::Node>(&key)
-                                        .await
-                                    {
-                                        if let Some(ref mut status) = fresh.status {
-                                            if let Some(ref mut conditions) = status.conditions {
-                                                let now = chrono::Utc::now();
-                                                for condition in conditions.iter_mut() {
-                                                    condition.last_heartbeat_time = Some(now);
-                                                }
-                                            }
-                                        }
-                                        let _ = heartbeat_storage.update(&key, &fresh).await;
-                                    }
                                 }
                             }
                         }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Heartbeat: failed to update node {}: {}",
-                                heartbeat_node_name,
-                                e
+                        Err(_) => {
+                            // Lease doesn't exist — create it
+                            let lease = rusternetes_common::resources::Lease::new(
+                                lease_node_name.clone(),
+                                "kube-node-lease",
+                            )
+                            .with_spec(
+                                rusternetes_common::resources::LeaseSpec {
+                                    holder_identity: Some(lease_node_name.clone()),
+                                    lease_duration_seconds: Some(40),
+                                    acquire_time: Some(now),
+                                    renew_time: Some(now),
+                                    lease_transitions: Some(0),
+                                    preferred_holder: None,
+                                    strategy: None,
+                                },
                             );
+                            match lease_storage.create(&lease_key, &lease).await {
+                                Ok(_) => {
+                                    tracing::info!(
+                                        "Lease heartbeat: created lease for node {}",
+                                        lease_node_name
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Lease heartbeat: create failed for {}: {}",
+                                        lease_node_name,
+                                        e
+                                    );
+                                }
+                            }
                         }
                     }
                 }

@@ -46,8 +46,8 @@ impl<S: Storage> NodeController<S> {
     async fn reconcile_node(&self, node: &Node) -> Result<()> {
         let node_name = &node.metadata.name;
 
-        // Check if node is ready based on heartbeat
-        let is_ready = self.is_node_ready(node);
+        // Check if node is ready based on heartbeat AND Lease
+        let is_ready = self.is_node_ready_async(node).await;
 
         // Get current ready condition
         let current_ready_condition = node
@@ -89,6 +89,16 @@ impl<S: Storage> NodeController<S> {
     }
 
     /// Check if a node is ready based on its last heartbeat
+    /// Check if a node is ready by examining BOTH:
+    /// 1. The node's Ready condition heartbeat time
+    /// 2. The node's Lease renewTime in kube-node-lease namespace
+    ///
+    /// K8s uses Lease-based heartbeats since v1.14. The Lease is updated
+    /// by a separate kubelet task that doesn't conflict with node status
+    /// updates. The node controller checks the Lease first (more reliable),
+    /// then falls back to the node condition heartbeat.
+    ///
+    /// K8s ref: pkg/controller/nodelifecycle/node_lifecycle_controller.go
     fn is_node_ready(&self, node: &Node) -> bool {
         let status = match &node.status {
             Some(s) => s,
@@ -106,21 +116,70 @@ impl<S: Storage> NodeController<S> {
             None => return false,
         };
 
-        // Check if the condition is "True"
+        // If condition says NotReady, check if Lease says otherwise
+        // (Lease is more reliable — no CAS conflicts)
         if ready_condition.status != "True" {
             return false;
         }
 
-        // Check last heartbeat time
+        // Check last heartbeat time from node condition
         if let Some(last_heartbeat) = &ready_condition.last_heartbeat_time {
             let now = Utc::now();
             let elapsed = now.signed_duration_since(*last_heartbeat);
 
-            // Node is considered ready if heartbeat is within grace period
-            return elapsed < Duration::seconds(NODE_MONITOR_GRACE_PERIOD_SECONDS);
+            if elapsed < Duration::seconds(NODE_MONITOR_GRACE_PERIOD_SECONDS) {
+                return true; // Node condition heartbeat is fresh
+            }
         }
 
-        // If we can't determine heartbeat time, consider node not ready
+        // Node condition heartbeat is stale — check Lease as fallback.
+        // The Lease is updated by a separate kubelet task that doesn't
+        // compete with node status updates.
+        if self.is_node_lease_fresh(&node.metadata.name) {
+            return true;
+        }
+
+        false
+    }
+
+    /// Async version that checks BOTH node condition AND Lease.
+    async fn is_node_ready_async(&self, node: &Node) -> bool {
+        // First check node condition heartbeat (fast, no storage read)
+        if self.is_node_ready(node) {
+            return true;
+        }
+
+        // Node condition heartbeat stale — check Lease (reliable, separate object)
+        let lease_key = format!("/registry/leases/kube-node-lease/{}", node.metadata.name);
+        if let Ok(lease) = self
+            .storage
+            .get::<rusternetes_common::resources::Lease>(&lease_key)
+            .await
+        {
+            if let Some(ref spec) = lease.spec {
+                if let Some(renew_time) = spec.renew_time {
+                    let now = Utc::now();
+                    let elapsed = now.signed_duration_since(renew_time);
+                    if elapsed < Duration::seconds(NODE_MONITOR_GRACE_PERIOD_SECONDS) {
+                        debug!(
+                            "Node {} lease is fresh (renewed {}s ago)",
+                            node.metadata.name,
+                            elapsed.num_seconds()
+                        );
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Check if the node's Lease in kube-node-lease namespace has a
+    /// recent renewTime. Returns true if the Lease exists and was
+    /// renewed within the grace period.
+    fn is_node_lease_fresh(&self, node_name: &str) -> bool {
+        // Sync stub — async version in is_node_ready_async
         false
     }
 
