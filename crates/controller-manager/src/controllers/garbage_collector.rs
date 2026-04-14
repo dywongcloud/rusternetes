@@ -610,6 +610,13 @@ impl<S: Storage + 'static> GarbageCollector<S> {
                 .await
             {
                 error!("Failed to orphan dependent {}: {}", dependent.key, e);
+                // Return error so the orphan finalizer is NOT removed.
+                // This prevents the race where the owner is deleted while
+                // dependents still have ownerReferences pointing to it.
+                return Err(rusternetes_common::Error::Internal(format!(
+                    "Failed to orphan dependent {}: {}",
+                    dependent.key, e
+                )));
             }
         }
 
