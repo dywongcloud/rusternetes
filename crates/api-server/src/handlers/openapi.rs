@@ -170,13 +170,35 @@ pub async fn get_swagger_spec(
                     kind
                 );
 
-                // Add schema from CRD validation — use raw JSON to preserve nested items.
-                // Strip x-kubernetes extension fields that are false — K8s omits them.
-                // See: staging/src/k8s.io/apiextensions-apiserver/pkg/controller/openapi/builder/builder.go
+                // Add schema from CRD validation.
+                // K8s ref: controller/openapi/builder/builder.go:392-407
+                //
+                // When XPreserveUnknownFields is true at the schema root OR
+                // CRD-level preserveUnknownFields is true, K8s replaces the
+                // ENTIRE schema with just {"type": "object"}. This prevents
+                // kubectl from rejecting unknown fields during client-side
+                // validation.
+                let crd_preserves = crd
+                    .pointer("/spec/preserveUnknownFields")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
                 if let Some(schema_val) = version.pointer("/schema/openAPIV3Schema") {
-                    let mut cleaned = schema_val.clone();
-                    strip_false_extensions(&mut cleaned);
-                    definitions.insert(def_key.clone(), cleaned);
+                    let schema_preserves = schema_val
+                        .get("x-kubernetes-preserve-unknown-fields")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+
+                    if crd_preserves || schema_preserves {
+                        // Replace entire schema with just {type: object}
+                        // K8s ref: builder.go:393-395
+                        definitions.insert(def_key.clone(), serde_json::json!({"type": "object"}));
+                    } else {
+                        // Apply v2 conversion: strip extensions, omitempty defaults
+                        let mut cleaned = schema_val.clone();
+                        strip_false_extensions(&mut cleaned);
+                        definitions.insert(def_key.clone(), cleaned);
+                    }
                 }
 
                 // Add path entries for the CRD's API endpoints
@@ -286,26 +308,38 @@ pub async fn get_swagger_spec(
 /// `json:",omitempty"` which omits zero values.
 fn strip_false_extensions(value: &mut serde_json::Value) {
     if let Some(obj) = value.as_object_mut() {
-        // Fields that should be omitted when false (Go omitempty on bool)
-        // K8s OpenAPI v2 representation uses Go struct fields for these
-        // extensions, NOT vendor extension maps. So they should be stripped
-        // entirely from the JSON output (both true and false values).
-        // K8s ref: controller/openapi/v2/conversion.go
-        let extension_fields = [
-            "x-kubernetes-embedded-resource",
-            "x-kubernetes-int-or-string",
-            "x-kubernetes-preserve-unknown-fields",
-        ];
-        for key in &extension_fields {
-            obj.remove(*key);
+        // K8s v2 conversion: when x-kubernetes-preserve-unknown-fields is true,
+        // clear items and properties (kubectl can't handle them).
+        // Also clear type if it was "object" with preserve-unknown-fields.
+        // K8s ref: controller/openapi/v2/conversion.go:68-89
+        if obj.get("x-kubernetes-preserve-unknown-fields") == Some(&serde_json::Value::Bool(true)) {
+            obj.remove("items");
+            obj.remove("properties");
+            // If type is "object" with preserve-unknown-fields, clear it
+            if obj.get("type") == Some(&serde_json::json!("object")) {
+                obj.remove("type");
+            }
+        }
+
+        // K8s v2: when nullable is true, clear type, items, properties
+        // K8s ref: conversion.go:56-66
+        if obj.get("nullable") == Some(&serde_json::Value::Bool(true)) {
+            obj.remove("type");
+            obj.remove("items");
+            obj.remove("properties");
         }
 
         // Other boolean fields: strip only when false (Go omitempty)
+        // x-kubernetes-* booleans are added by toKubeOpenAPI() only when true,
+        // so they should be stripped when false but kept when true.
         let false_fields = [
             "exclusiveMaximum",
             "exclusiveMinimum",
             "uniqueItems",
             "nullable",
+            "x-kubernetes-embedded-resource",
+            "x-kubernetes-int-or-string",
+            "x-kubernetes-preserve-unknown-fields",
         ];
         for key in &false_fields {
             if obj.get(*key) == Some(&serde_json::Value::Bool(false)) {
@@ -352,6 +386,12 @@ mod tests {
 
     #[test]
     fn test_strip_false_extensions_removes_defaults() {
+        // Test v2 conversion behavior matching K8s:
+        // - False booleans stripped (Go omitempty)
+        // - Empty strings stripped (Go omitempty)
+        // - x-kubernetes-* false values stripped, true values KEPT as vendor extensions
+        // - When x-kubernetes-preserve-unknown-fields=true, items/properties cleared
+        // - When nullable=true, type/items/properties cleared
         let mut schema = serde_json::json!({
             "description": "Foo",
             "type": "object",
@@ -366,7 +406,6 @@ mod tests {
             "uniqueItems": false,
             "x-kubernetes-embedded-resource": false,
             "x-kubernetes-int-or-string": false,
-            "x-kubernetes-preserve-unknown-fields": true,
             "properties": {
                 "spec": {
                     "description": "Spec",
@@ -388,6 +427,16 @@ mod tests {
                             "nullable": false
                         }
                     }
+                },
+                "nested_preserve": {
+                    "description": "Has preserve-unknown-fields",
+                    "type": "object",
+                    "x-kubernetes-preserve-unknown-fields": true,
+                    "properties": {
+                        "should_be_removed": {
+                            "type": "string"
+                        }
+                    }
                 }
             }
         });
@@ -395,7 +444,6 @@ mod tests {
         strip_false_extensions(&mut schema);
 
         let obj = schema.as_object().unwrap();
-        // Kept: non-empty description, type
         assert!(obj.contains_key("description"));
         assert!(obj.contains_key("type"));
         assert!(obj.contains_key("properties"));
@@ -405,60 +453,46 @@ mod tests {
         assert!(!obj.contains_key("id"), "id should be removed");
         assert!(!obj.contains_key("format"), "format should be removed");
         assert!(!obj.contains_key("pattern"), "pattern should be removed");
-        assert!(
-            !obj.contains_key("exclusiveMaximum"),
-            "exclusiveMaximum should be removed"
-        );
-        assert!(
-            !obj.contains_key("exclusiveMinimum"),
-            "exclusiveMinimum should be removed"
-        );
+        assert!(!obj.contains_key("exclusiveMaximum"));
+        assert!(!obj.contains_key("exclusiveMinimum"));
         assert!(!obj.contains_key("nullable"), "nullable should be removed");
         assert!(!obj.contains_key("title"), "title should be removed");
-        assert!(
-            !obj.contains_key("uniqueItems"),
-            "uniqueItems should be removed"
-        );
+        assert!(!obj.contains_key("uniqueItems"));
+        // false x-kubernetes-* stripped
         assert!(!obj.contains_key("x-kubernetes-embedded-resource"));
         assert!(!obj.contains_key("x-kubernetes-int-or-string"));
-        assert!(
-            !obj.contains_key("x-kubernetes-preserve-unknown-fields"),
-            "x-kubernetes-preserve-unknown-fields should be stripped entirely"
-        );
 
-        // Recursion: nested spec should also be cleaned (2 levels deep)
-        let spec = obj
-            .get("properties")
-            .unwrap()
-            .get("spec")
-            .unwrap()
-            .as_object()
-            .unwrap();
-        assert!(
-            spec.contains_key("description"),
-            "non-empty description kept"
-        );
-        assert!(spec.contains_key("properties"), "properties kept");
-        assert!(!spec.contains_key("$schema"), "nested $schema removed");
-        assert!(!spec.contains_key("id"), "nested id removed");
-        assert!(!spec.contains_key("title"), "nested title removed");
-        assert!(!spec.contains_key("format"), "nested format removed");
-        assert!(!spec.contains_key("nullable"), "nested nullable removed");
-        assert!(
-            !spec.contains_key("uniqueItems"),
-            "nested uniqueItems removed"
-        );
-        assert!(
-            !spec.contains_key("exclusiveMaximum"),
-            "nested exclusiveMaximum removed"
-        );
+        // Nested spec: false x-kubernetes-* stripped, true KEPT
+        let spec = obj["properties"]["spec"].as_object().unwrap();
+        assert!(spec.contains_key("description"));
+        assert!(spec.contains_key("properties"));
+        assert!(!spec.contains_key("$schema"));
+        assert!(!spec.contains_key("id"));
+        assert!(!spec.contains_key("nullable"));
         assert!(
             !spec.contains_key("x-kubernetes-preserve-unknown-fields"),
-            "nested x-kubernetes-preserve-unknown-fields (false) should be stripped"
+            "false preserve-unknown-fields should be stripped"
+        );
+        // x-kubernetes-embedded-resource=true should be KEPT
+        assert!(
+            spec.contains_key("x-kubernetes-embedded-resource"),
+            "true x-kubernetes-embedded-resource should be KEPT as vendor extension"
+        );
+
+        // Nested with preserve-unknown-fields=true: properties and type cleared
+        let nested = obj["properties"]["nested_preserve"].as_object().unwrap();
+        assert!(nested.contains_key("description"), "description kept");
+        assert!(
+            nested.contains_key("x-kubernetes-preserve-unknown-fields"),
+            "true preserve-unknown-fields KEPT as vendor extension"
         );
         assert!(
-            !spec.contains_key("x-kubernetes-embedded-resource"),
-            "nested x-kubernetes-embedded-resource (true) should be stripped"
+            !nested.contains_key("properties"),
+            "properties cleared when preserve-unknown-fields=true"
+        );
+        assert!(
+            !nested.contains_key("type"),
+            "type=object cleared when preserve-unknown-fields=true"
         );
 
         // 3 levels deep: spec.properties.bars
