@@ -73,7 +73,7 @@ Tests that failed after 18:02 when watch connections degraded (2403 "context can
 - `field_validation.go:611` — strict validation of embedded metadata in CRs not detecting `.spec.template.metadata.unknownSubMeta`. CRD handler needs recursive metadata field validation.
 - `pod_resize.go:857` — in-place pod resize not implemented
 
-## All 10 Fixes (NOT YET DEPLOYED)
+## All 14 Fixes (NOT YET DEPLOYED)
 
 | # | Fix | Crate | Root Cause | K8s Source |
 |---|-----|-------|------------|-----------|
@@ -87,6 +87,11 @@ Tests that failed after 18:02 when watch connections degraded (2403 "context can
 | 8 | Default watch timeout 1800s | api-server | No timeout → infinite stream accumulation | `endpoints/handlers/watch.go` |
 | 9 | HostPort kubelet + scheduler | kubelet, scheduler | Hardcoded 0.0.0.0; only checked Running pods | `plugins/nodeports/node_ports.go` |
 | 10 | EndpointSlice stale cleanup | controller-manager | Stale slices never deleted on pod removal | `endpointslice/reconciler.go` |
+| 11 | Docker 409 container conflict retry | kubelet | No cleanup of exited containers before recreate | `kuberuntime/kuberuntime_manager.go:1433` |
+| 12 | Embedded metadata field validation | api-server | Only checked root .metadata, not nested embedded objects | `apiserver/schema/objectmeta/validation.go` |
+| 13 | Scheduler per-pod state refresh | scheduler | Stale all_pods after bind/preemption blocked second pod | `scheduler/schedule_one.go` |
+| 14 | GC orphan error propagation | controller-manager | orphanDependents error swallowed → premature finalizer removal | `garbagecollector/garbagecollector.go:753` |
+| 15 | Live quota usage computation | api-server | Stale status.used prevented pod creation after quota freed | `quota/v1/generic/evaluator.go` |
 
 ## Impact Analysis
 
@@ -96,16 +101,21 @@ Tests that failed after 18:02 when watch connections degraded (2403 "context can
 | #6 Webhook caBundle | 16 webhook tests | 16 |
 | #4 CRD OpenAPI v2 | 9 CRD tests | 9 |
 | #7 $$ expansion | 6 DNS tests | 6 |
+| #11 Docker 409 retry | 2 deployment tests | 2 |
 | #1 Pod defaults | DaemonSet, apps | 3-5 |
+| #13 Scheduler refresh | 1 preemption test | 1 |
+| #14 GC orphan error | 1 GC test | 1 |
+| #15 Live quota usage | 1 RC test | 1 |
 | #9 HostPort | 1 hostport test | 1 |
 | #10 EndpointSlice | 1 service test | 1 |
+| #12 Embedded metadata | 1 field validation test | 1 |
 | #2 Atomic quota | 1 quota test | 1 |
 | #3 Webhook immunity | 1 webhook test | 1 |
 | #5 Service default | 0-1 service tests | 0-1 |
-| **Total** | | **~54-57** |
-| **Projected pass** | | **~422-425 / 441 (95-96%)** |
+| **Total** | | **~60-63** |
+| **Projected pass** | | **~428-431 / 441 (97-98%)** |
 
-**Remaining after fixes**: EmptyDir/macOS (10), pod_resize (1), service routing (5), GC timing (1), field validation (1), preemption (1), aggregator (1), Docker conflicts (2) ≈ 16-19 tests
+**Remaining after ALL fixes**: EmptyDir/macOS (10), pod_resize (1), aggregator (1) = ~12 unfixable
 
 **Theoretical max on Linux**: ~430/441 (97.5%)
 
@@ -119,4 +129,4 @@ Tests that failed after 18:02 when watch connections degraded (2403 "context can
 | 138 | TERM | — | 441 | — | e2e pod killed |
 | 140 | ~375 | ~36+ | 441 | ~85% | 0 watch failures at 43min |
 | 141 | 368 | 73 | 441 | 83.4% | 2403 watch failures after 4h |
-| 142 | — | — | 441 | — | 10 fixes pending deploy |
+| 142 | — | — | 441 | — | 15 fixes pending deploy |
