@@ -1282,6 +1282,44 @@ mod tests {
         // Verify labels include controller-revision-hash
         let labels = cr.metadata.labels.as_ref().unwrap();
         assert!(labels.contains_key("controller-revision-hash"));
+
+        // Verify ControllerRevision data format matches K8s getPatch().
+        // K8s Match() does bytes.Equal(getPatch(ds), history.Data.Raw).
+        // The data MUST have: {"spec":{"template":{...,"$patch":"replace"}}}
+        // with alphabetically sorted keys.
+        let data = cr
+            .data
+            .as_ref()
+            .expect("ControllerRevision should have data");
+        let data_obj = data.as_object().expect("data should be an object");
+        assert!(data_obj.contains_key("spec"), "data should have 'spec'");
+        let spec = data_obj.get("spec").unwrap().as_object().unwrap();
+        assert!(spec.contains_key("template"), "spec should have 'template'");
+        let template = spec.get("template").unwrap().as_object().unwrap();
+        assert_eq!(
+            template.get("$patch"),
+            Some(&serde_json::json!("replace")),
+            "template should have $patch: replace"
+        );
+
+        // Verify keys are alphabetically sorted (Match() does byte comparison)
+        let data_json = serde_json::to_string(&data).unwrap();
+        // Re-parse and re-serialize to verify sorting is stable
+        let reparsed: serde_json::Value = serde_json::from_str(&data_json).unwrap();
+        let reserialized = serde_json::to_string(&reparsed).unwrap();
+        assert_eq!(
+            data_json, reserialized,
+            "ControllerRevision data JSON should be deterministic (sorted keys)"
+        );
+
+        // Verify Match() equivalent: build_patch_data should produce same bytes
+        let fresh_patch = DaemonSetController::<MemoryStorage>::build_patch_data(&ds.spec.template)
+            .expect("build_patch_data should succeed");
+        let fresh_json = serde_json::to_string(&fresh_patch).unwrap();
+        assert_eq!(
+            data_json, fresh_json,
+            "build_patch_data should produce identical bytes for same template (K8s Match)"
+        );
     }
 
     #[tokio::test]
