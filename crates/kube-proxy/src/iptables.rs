@@ -469,6 +469,107 @@ impl IptablesManager {
             }
         }
 
+        // Create KUBE-FORWARD chain in the filter table and add rules.
+        // K8s kube-proxy creates filter table rules that allow forwarded service traffic.
+        // Without these, Docker's default FORWARD policy (DROP) blocks all DNATed traffic,
+        // making services unreachable from other containers on the bridge network.
+        // K8s ref: pkg/proxy/iptables/proxier.go:384,1452-1466
+        self.ensure_chain("filter", "KUBE-FORWARD")?;
+        self.ensure_jump_rule(
+            "filter",
+            "FORWARD",
+            "KUBE-FORWARD",
+            "kubernetes forwarding rules",
+        )?;
+
+        // Accept RELATED,ESTABLISHED traffic — return traffic for established connections.
+        // This is critical: without it, response packets from the DNAT'd pod back to
+        // the client are dropped by the FORWARD chain.
+        let _ = Command::new(&self.iptables_cmd)
+            .args([
+                "-t",
+                "filter",
+                "-C",
+                "KUBE-FORWARD",
+                "-m",
+                "conntrack",
+                "--ctstate",
+                "RELATED,ESTABLISHED",
+                "-j",
+                "ACCEPT",
+            ])
+            .output()
+            .and_then(|o| {
+                if !o.status.success() {
+                    let _ = Command::new(&self.iptables_cmd)
+                        .args([
+                            "-t",
+                            "filter",
+                            "-A",
+                            "KUBE-FORWARD",
+                            "-m",
+                            "comment",
+                            "--comment",
+                            "kubernetes forwarding conntrack rule",
+                            "-m",
+                            "conntrack",
+                            "--ctstate",
+                            "RELATED,ESTABLISHED",
+                            "-j",
+                            "ACCEPT",
+                        ])
+                        .output();
+                }
+                Ok(o)
+            });
+
+        // Accept all forwarded traffic on the Docker bridge — our services use
+        // the Docker bridge network. Without this, NEW connections to DNATed
+        // service IPs are blocked if the default FORWARD policy is DROP.
+        let _ = Command::new(&self.iptables_cmd)
+            .args([
+                "-t",
+                "filter",
+                "-C",
+                "KUBE-FORWARD",
+                "-m",
+                "comment",
+                "--comment",
+                "kubernetes forwarding rules",
+                "-j",
+                "ACCEPT",
+            ])
+            .output()
+            .and_then(|o| {
+                if !o.status.success() {
+                    let _ = Command::new(&self.iptables_cmd)
+                        .args([
+                            "-t",
+                            "filter",
+                            "-A",
+                            "KUBE-FORWARD",
+                            "-m",
+                            "comment",
+                            "--comment",
+                            "kubernetes forwarding rules",
+                            "-j",
+                            "ACCEPT",
+                        ])
+                        .output();
+                }
+                Ok(o)
+            });
+
+        // Also ensure the OUTPUT chain in the filter table accepts service traffic.
+        // Traffic originating from the kube-proxy host (API server container) goes
+        // through OUTPUT, not FORWARD.
+        self.ensure_jump_rule(
+            "filter",
+            "OUTPUT",
+            "KUBE-FORWARD",
+            "kubernetes forwarding rules",
+        )?;
+
         info!("Iptables chains initialized successfully");
         Ok(())
     }
