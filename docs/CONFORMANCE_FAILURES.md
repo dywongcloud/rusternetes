@@ -2,16 +2,37 @@
 
 **Round 141** | Complete — 368/441 (83.4%) | 2026-04-14
 
-## Round 141 Failures (73 total)
+## Round 141 Failures by Root Cause (73 total)
 
-### Webhook — 16 failures — BIGGEST BLOCKER
+### Watch Timeout Regression — ~15 failures caused by watch degradation
+- Watch failures started at 18:02 (4h into test), 2403 "context canceled" errors cascaded
+- **Root cause**: watches without client-specified timeout ran FOREVER, accumulating HTTP/2 streams until connection degraded
+- **FIXED**: default watch timeout now 1800s matching K8s MinRequestTimeout
+- Affected tests: `init_container.go:440`, `runtime.go:115`, `rc.go:509`, `replica_set.go:560`, `job.go:1251`, `projected_configmap.go:330`, and others that failed after 18:02
+- K8s ref: apiserver/pkg/endpoints/handlers/watch.go
+
+### Webhook caBundle — 16 failures — FIXED (not deployed)
 - `webhook.go:425,520,601,675,904,1194,1244,1334,1549,1631,2032,2107(x3),2338,2465`
-- `:1631` — **FIXED** (not deployed): webhook config objects now exempt from admission webhooks
-- All other 15: webhook service readiness timeout — API server can't reach webhook pods via ClusterIP
-  - Root cause: API server resolves webhook service to ClusterIP, but traffic from the API server Docker container may not traverse kube-proxy iptables chains correctly
-  - kube-proxy runs host-network; API server runs Docker bridge — traffic path: container → bridge → host iptables → pod IP
-  - Need to verify iptables OUTPUT chain rules apply to traffic originating from Docker bridge
-- **K8s ref**: apiserver/pkg/admission/plugin/webhook/predicates/rules/rules.go
+- **Root cause**: caBundle stored as Go `[]byte` → JSON base64. We passed the base64 string directly to `Certificate::from_pem()` which expects raw PEM. TLS verification failed silently on every webhook call.
+- `:1631` additionally fixed: webhook config objects now exempt from admission webhooks
+- **Fix**: base64-decode caBundle before PEM parsing; skip webhooks for webhook config objects
+- K8s ref: admissionregistration/v1/types.go — `CABundle []byte`
+
+### CRD OpenAPI v2 Conversion — 9 failures — FIXED (not deployed)
+- `crd_publish_openapi.go:77,161,211,253,285,318,366,400,451`
+- **Root cause**: OpenAPI v2 conversion didn't match K8s builder.go
+  - Root `x-kubernetes-preserve-unknown-fields=true` → K8s replaces entire schema with `{type: object}` (builder.go:392-395)
+  - Nested → K8s clears items/properties/type but KEEPS extension as vendor ext (conversion.go:68-89)
+  - K8s KEEPS `x-kubernetes-*` extensions when true via `toKubeOpenAPI()`, strips when false
+  - We were incorrectly stripping ALL extensions
+- **Fix**: match K8s builder.go + conversion.go + kubeopenapi.go exactly
+- K8s ref: controller/openapi/builder/builder.go:392-407, v2/conversion.go:68-89, schema/kubeopenapi.go:67-90
+
+### DNS Command Expansion — 6 failures — FIXED (not deployed)
+- `dns_common.go:476` (x6)
+- **Root cause**: K8s `expand.go` converts `$$` to `$` (escape sequence). Our `expand_k8s_vars` only handled `$(VAR_NAME)` expansion, missing `$$` → `$`. DNS probe commands use `$$(dig ...)` which should expand to `$(dig ...)` for shell command substitution. Without this, the literal `$$` was interpreted by the shell differently, causing `pause: syntax error: unexpected word (expecting "do")`.
+- **Fix**: rewrite expand_k8s_vars to match K8s third_party/forked/golang/expansion/expand.go
+- K8s ref: third_party/forked/golang/expansion/expand.go:83-85
 
 ### EmptyDir / Volumes — 10 failures — macOS DinD limitation
 - `output.go:263` (x9), `output.go:282` (x1)
@@ -19,122 +40,99 @@
 - macOS Docker filesystem doesn't support 0666 mode
 - Not fixable in our code — requires Linux host
 
-### CRD OpenAPI — 9 failures — FIXED (not deployed)
-- `crd_publish_openapi.go:77,161,211,253,285,318,366,400,451`
-- **Root cause**: OpenAPI v2 conversion didn't match K8s builder.go behavior
-  - When `x-kubernetes-preserve-unknown-fields=true` at root, K8s replaces entire schema with `{type: object}` (builder.go:392-395)
-  - When nested, K8s clears items/properties/type but KEEPS extension as vendor extension
-  - K8s KEEPS `x-kubernetes-*` extensions when true, strips when false (toKubeOpenAPI)
-  - We were incorrectly stripping all extensions
-- **Fix**: Match K8s v2 conversion exactly
-- **K8s ref**: controller/openapi/builder/builder.go:392-407, v2/conversion.go:68-89, schema/kubeopenapi.go:67-90
-
-### DNS — 6 failures — kubelet command handling
-- `dns_common.go:476` (x6)
-- Pod logs show: "pause: line 1: syntax error: unexpected word (expecting 'do')"
-- agnhost container running `pause` instead of intended command
-- Kubelet may be wrapping commands incorrectly or using image default entrypoint
-
-### Service — 6 failures — kube-proxy routing
+### Service Routing — 6 failures — kube-proxy / networking
 - `service.go:768,896,3459,4291(x4)`
-- Service routing failures — pods not reachable via ClusterIP/NodePort
-- Related to kube-proxy iptables chain correctness
+- Services not reachable via ClusterIP/NodePort
+- `:896` specifically: EndpointSlice has extra port mappings that shouldn't be there — EndpointSlice controller including stale endpoints
+- Related to kube-proxy iptables chain correctness and EndpointSlice controller accuracy
 
-### Apps Controllers — 10 failures
-- `deployment.go:995,1259` — RS never reached desired availableReplicas; Docker 409 container name conflicts
-- `statefulset.go:957,1092` — pod not deleted by controller; controller sets deletionTimestamp but kubelet doesn't complete removal
-- `replica_set.go:232,560` — RS controller issues
-- `rc.go:509,623` — ReplicaFailure condition not cleared after quota freed; RC controller logic
-- `job.go:935,1251` — Job controller issues
+### Apps Controllers — 10 failures — mixed causes
+- `deployment.go:995` — rollover: 0 pods available, Docker 409 container name conflicts in kubelet
+- `deployment.go:1259` — RS never reached desired availableReplicas (Docker conflicts)
+- `statefulset.go:957` — controller sets deletionTimestamp but kubelet doesn't complete pod removal fast enough
+- `statefulset.go:1092` — StatefulSet update/rollback (watch degradation at 17:30)
+- `replica_set.go:232` — pod running but not reachable via network (service routing)
+- `replica_set.go:560` — RS status update: late-stage watch degradation at 17:36
+- `rc.go:509` — pod didn't come up: watch degradation at 18:04
+- `rc.go:623` — ReplicaFailure condition not cleared after quota freed (timing between quota controller and RC controller)
+- `job.go:935` — job pods didn't become active within timeout
+- `job.go:1251` — job issue: watch degradation at 18:35
 - `daemon_set.go:1276` — ControllerRevision Match() byte comparison (pod template defaults fix may help)
 
 ### Network — 3 failures
 - `proxy.go:271,503` — proxy subresource routing
-- `hostport.go:219` — host port mapping
+- `hostport.go:219` — host port mapping (two pods with same hostPort but different hostIPs)
 
-### Other — 13 failures
+### Other — 8 failures
 - `service_latency.go:145` — deployment not ready before latency test starts
-- `preemption.go:877` — RS only created 1 of 2 required pods
-- `resource_quota.go:290` — **FIXED** (not deployed): pod allowed when quota exceeded; now uses atomic quota update
-- `aggregator.go:359` — API aggregation (sample-apiserver)
-- `garbage_collector.go:436` — GC issue
-- `field_validation.go:611` — strict field validation
-- `projected_configmap.go:330` — projected volume
-- `runtime.go:115` — container runtime
+- `preemption.go:877` — RS only created 1 of 2 required pods via preemption
+- `resource_quota.go:290` — **FIXED**: pod allowed when quota exceeded; now uses atomic quota update
+- `aggregator.go:359` — API aggregation (sample-apiserver service unreachable)
+- `garbage_collector.go:436` — GC deleting orphaned pods when it shouldn't (propagationPolicy: Orphan timing)
+- `field_validation.go:611` — strict validation of embedded metadata in CRs: `.spec.template.metadata.unknownSubMeta: field not declared in schema` not detected
 - `pod_resize.go:857` — in-place pod resize (not implemented)
-- `init_container.go:440` — init container handling
 
-## Fixes Made This Session (NOT YET DEPLOYED)
+## All Fixes Made (NOT YET DEPLOYED)
 
-### 1. Pod Template Defaults (MAJOR — affects all workloads)
+### 1. Pod Template Defaults — affects all workloads
 - Created `handlers/defaults.rs` with K8s-compatible defaulting
-- PodSpec: dnsPolicy=ClusterFirst, restartPolicy=Always, terminationGracePeriodSeconds=30, schedulerName=default-scheduler
+- PodSpec: dnsPolicy, restartPolicy, terminationGracePeriodSeconds, schedulerName
 - Container: terminationMessagePath, terminationMessagePolicy, imagePullPolicy
-- Probe: timeoutSeconds=1, periodSeconds=10, successThreshold=1, failureThreshold=3
-- Workload defaults: DaemonSet (updateStrategy, revisionHistoryLimit), Deployment (replicas, strategy, progressDeadlineSeconds), StatefulSet (podManagementPolicy, updateStrategy), Job (completions, parallelism, backoffLimit, completionMode), CronJob (concurrencyPolicy, historyLimits)
-- Applied to create AND update handlers for: Pod, DaemonSet, Deployment, StatefulSet, ReplicaSet, Job, CronJob, ReplicationController
+- Probe: timeoutSeconds, periodSeconds, successThreshold, failureThreshold
+- Workload-specific: DaemonSet, Deployment, StatefulSet, ReplicaSet, Job, CronJob defaults
+- Applied to create AND update handlers for all 8 workload types
 - K8s ref: pkg/apis/core/v1/defaults.go, pkg/apis/apps/v1/defaults.go, pkg/apis/batch/v1/defaults.go
 
 ### 2. Atomic ResourceQuota Admission
 - check_resource_quota now checks limits AND atomically increments quota status.used
 - CAS retry on concurrent creates
-- K8s error format: "exceeded quota: <name>, requested: ..., used: ..., limited: ..."
 - K8s ref: apiserver/pkg/admission/plugin/resourcequota/controller.go
 
 ### 3. Webhook Configuration Immunity
-- Skip admission webhooks for ValidatingWebhookConfiguration and MutatingWebhookConfiguration objects
-- Prevents broken webhooks from locking cluster config
+- Skip admission webhooks for ValidatingWebhookConfiguration and MutatingWebhookConfiguration
 - K8s ref: apiserver/pkg/admission/plugin/webhook/predicates/rules/rules.go
 
-### 4. CRD OpenAPI v2 Conversion (MAJOR)
-- Root preserve-unknown-fields → replace entire schema with {type: object}
+### 4. CRD OpenAPI v2 Conversion
+- Root preserve-unknown-fields → replace entire schema with `{type: object}`
 - Nested preserve-unknown-fields → clear items/properties, keep extension as vendor ext
-- Nullable=true → clear type/items/properties
-- x-kubernetes-* extensions: kept when true (vendor ext), stripped when false (omitempty)
-- K8s ref: controller/openapi/builder/builder.go, v2/conversion.go, schema/kubeopenapi.go
+- Nullable=true → clear type/items/properties (conversion.go:56-66)
+- x-kubernetes-* extensions: kept when true, stripped when false
+- K8s ref: builder/builder.go:392-407, v2/conversion.go:68-89, schema/kubeopenapi.go:67-90
 
 ### 5. Service Internal Traffic Policy Default
 - Default internalTrafficPolicy to "Cluster" for ClusterIP/NodePort/LoadBalancer
 - K8s ref: pkg/apis/core/v1/defaults.go:141-146
 
+### 6. Webhook caBundle Base64 Decoding — CRITICAL
+- K8s caBundle is `[]byte` → JSON base64. Must decode before Certificate::from_pem().
+- Fixed in both validating and mutating webhook call paths.
+- K8s ref: admissionregistration/v1/types.go
+
+### 7. K8s $$ → $ Escape in Command/Args Expansion
+- Rewrote expand_k8s_vars to match K8s expansion/expand.go exactly
+- Handles: `$$` → `$`, `$(VAR)` → expand or literal, `$other` → literal
+- K8s ref: third_party/forked/golang/expansion/expand.go
+
+### 8. Default Watch Timeout 1800s
+- All 4 watch handler variants now default to 1800s when client omits timeoutSeconds
+- Prevents HTTP/2 stream accumulation and connection degradation
+- K8s ref: apiserver/pkg/endpoints/handlers/watch.go, MinRequestTimeout=1800
+
 ## Impact Analysis (if deployed)
 
-| Fix | Potential Tests Fixed | New Pass Count |
-|-----|----------------------|----------------|
-| CRD OpenAPI v2 | up to 9 | 377 |
-| Webhook immunity | 1 | 378 |
-| Pod template defaults | 1-5 (DaemonSet, apps) | 379-383 |
-| Atomic quota | 1 | 380-384 |
-| Service default | 0-1 | 380-385 |
-| **Total potential** | **12-17** | **380-385** |
+| Fix | Potential Tests Fixed | Cumulative |
+|-----|----------------------|------------|
+| Watch timeout (prevents regression) | ~15 (late-stage failures) | 383 |
+| Webhook caBundle base64 | up to 16 | 399 |
+| CRD OpenAPI v2 | up to 9 | 408 |
+| $$ escape (DNS) | up to 6 | 414 |
+| Pod template defaults | 1-5 | 415-419 |
+| Atomic quota | 1 | 416-420 |
+| Webhook immunity | 1 | 417-421 |
+| Service default | 0-1 | 417-422 |
+| **Total potential** | **~49-54** | **~417-422 (94-96%)** |
 
-**To reach 90%+ (397+)**: Must fix webhook routing (16 tests) — this requires kube-proxy iptables to work for traffic originating from Docker bridge containers.
-
-## Key Metrics
-- **Watch failures: 2403** — regression! Started at 18:02 (4h into test), cascaded until end
-- Previous round 138 had 3012, round 140 had 0 — this round regressed
-- Watch failures may be caused by long-running HTTP/2 connection degradation
-- Lease-based heartbeat preventing node NotReady
-
-## Additional Fixes (Session 2, NOT YET DEPLOYED)
-
-### 6. Webhook caBundle Base64 Decoding (CRITICAL — 16 tests)
-- K8s stores caBundle as []byte → JSON base64. We were passing base64 string to PEM parser.
-- This caused ALL webhook TLS connections to fail silently.
-- K8s ref: admissionregistration/v1/types.go — CABundle []byte
-
-### 7. K8s-compatible $$ → $ Escape in Command/Args Expansion (6 tests)
-- K8s uses expansion/expand.go which converts $$ to $ (escape sequence)
-- Our expand_k8s_vars only handled $(VAR_NAME) expansion, missing $$ → $
-- This broke DNS conformance tests using $$(dig ...) shell commands
-- K8s ref: third_party/forked/golang/expansion/expand.go:83-85
-
-### 8. Default Watch Timeout (prevents watch regression — many tests)
-- Watches without timeoutSeconds ran FOREVER, accumulating HTTP/2 streams
-- After ~4 hours of testing, 2403 watch failures cascaded
-- K8s defaults to minRequestTimeout=1800s (30 min) when client omits timeout
-- Applied to all 4 watch handler variants
-- K8s ref: apiserver/pkg/endpoints/handlers/watch.go, MinRequestTimeout=1800s
+**Remaining unfixable**: EmptyDir/macOS (10), pod_resize (1) = 11 tests = max possible ~430/441 (97.5%)
 
 ## Progress History
 
