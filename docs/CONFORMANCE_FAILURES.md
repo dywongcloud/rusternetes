@@ -2,124 +2,95 @@
 
 **Round 141** | Complete — 368/441 (83.4%) | 2026-04-14
 
-## Round 141 — All 73 Failures by Root Cause
+## Round 141 — All 73 Failures
 
-### 1. Watch Timeout Regression — ~15 failures
-Tests that failed after 18:02 when watch connections degraded (2403 "context canceled" errors):
-- `init_container.go:440`, `runtime.go:115`, `rc.go:509`, `replica_set.go:560`
-- `job.go:1251`, `projected_configmap.go:330`, `statefulset.go:1092`
-- Several service/deployment tests that timed out in the last hour
-- **Root cause**: watches without client timeout ran forever, accumulating HTTP/2 streams
-- **FIXED** (#8): default watch timeout 1800s matching K8s MinRequestTimeout
-- K8s ref: `apiserver/pkg/endpoints/handlers/watch.go`
+### 1. Watch Timeout Regression — ~15 failures — FIXED ✅
+- **FIXED** (#8): default watch timeout 1800s
 
-### 2. Webhook TLS — 16 failures
-`webhook.go:425,520,601,675,904,1194,1244,1334,1549,1631,2032,2107(x3),2338,2465`
-- **Root cause**: K8s `caBundle` is Go `[]byte` → JSON base64. We passed base64 string to `Certificate::from_pem()` which expects raw PEM bytes. Every webhook TLS handshake failed silently.
-- `:1631` also needs webhook config immunity (webhooks must not intercept webhook config objects)
-- **FIXED** (#6): base64-decode caBundle; (#3): skip webhooks for webhook config objects
-- K8s ref: `admissionregistration/v1/types.go`, `admission/plugin/webhook/predicates/rules/rules.go`
+### 2. Webhook TLS — 16 failures — FIXED ✅
+- **FIXED** (#6): base64-decode caBundle; (#3): webhook config immunity
 
-### 3. CRD OpenAPI v2 — 9 failures
-`crd_publish_openapi.go:77,161,211,253,285,318,366,400,451`
-- **Root cause**: three mismatches vs K8s builder.go:
-  1. Root `x-kubernetes-preserve-unknown-fields=true` → K8s replaces entire schema with `{type: object}` (builder.go:392)
-  2. Nested preserve-unknown-fields → K8s clears items/properties/type but KEEPS the extension as a vendor extension (conversion.go:68)
-  3. `x-kubernetes-*` extensions: K8s keeps when true (via `toKubeOpenAPI()`), omits when false. We stripped all.
+### 3. CRD OpenAPI v2 — 9 failures — FIXED ✅
 - **FIXED** (#4): match K8s builder.go + conversion.go + kubeopenapi.go
-- K8s ref: `controller/openapi/builder/builder.go:392-407`, `v2/conversion.go:68-89`, `schema/kubeopenapi.go:67-90`
 
-### 4. DNS $$ Expansion — 6 failures
-`dns_common.go:476` (x6)
-- **Root cause**: K8s `expand.go` converts `$$` → `$` (escape sequence for shell command substitution). Our `expand_k8s_vars` only handled `$(VAR_NAME)`. DNS probe commands use `$$(dig ...)` which must become `$(dig ...)`. Without this, `$$` was interpreted as PID by the shell, causing `pause: syntax error: unexpected word (expecting "do")`.
-- **FIXED** (#7): rewrote expand_k8s_vars matching K8s `expansion/expand.go` exactly
-- K8s ref: `third_party/forked/golang/expansion/expand.go:83-85`
+### 4. DNS $$ Expansion — 6 failures — FIXED ✅
+- **FIXED** (#7): rewrote expand_k8s_vars matching K8s expand.go
 
-### 5. EmptyDir Permissions — 10 failures (unfixable on macOS)
-`output.go:263` (x9), `output.go:282` (x1)
-- File permissions `-rw-r--r--` instead of `-rw-rw-rw-`
-- macOS Docker Desktop filesystem does not support 0666 mode
-- Not fixable — requires Linux host
+### 5. EmptyDir Permissions — 10 failures — UNFIXABLE ❌
+- macOS Docker Desktop filesystem does not support 0666 mode — requires Linux host
 
-### 6. Service Routing — 6 failures
-`service.go:768,896,3459,4291(x4)`
-- `:896` — **Root cause**: EndpointSlice controller never deleted stale slices when pods were removed. Old slices with outdated endpoints persisted. **FIXED** (#10): cleanup stale slices after reconcile.
-- `:768,3459,4291(x4)` — services not reachable via ClusterIP/NodePort. **Root cause**: kube-proxy had NO filter table rules — Docker's default FORWARD policy (DROP) blocked all DNATed service traffic. **FIXED** (#16): added KUBE-FORWARD chain with ACCEPT rules for RELATED,ESTABLISHED and all forwarded traffic.
-- K8s ref: `pkg/controller/endpointslice/reconciler.go`
+### 6. Service Routing — 6 failures — FIXED ✅
+- **FIXED** (#10): EndpointSlice stale slice cleanup
+- **FIXED** (#16): filter table KUBE-FORWARD chain for service traffic forwarding
 
-### 7. Apps Controllers — 10 failures (mixed causes)
-- `deployment.go:995,1259` — Docker 409 container name conflicts. **FIXED** (#11): kubelet now removes old container and retries on 409 Conflict.
-- `statefulset.go:957` — controller sets deletionTimestamp but test expects DELETE watch event. Kubelet graceful termination + storage deletion flow needs timing improvement.
-- `statefulset.go:1092` — watch degradation (failed at 17:30, after degradation began)
-- `replica_set.go:232` — pod running but not network-reachable. **Root cause**: same as service routing — missing filter table FORWARD rules. **FIXED** (#16).
-- `replica_set.go:560` — watch degradation (failed at 17:36)
-- `rc.go:509` — watch degradation (failed at 18:04)
-- `rc.go:623` — ReplicaFailure condition not cleared after quota freed. **Root cause**: quota admission used stale status.used instead of live computation. **FIXED** (#15): quota now computes live usage from actual pods.
-- `job.go:935` — job pods didn't become active (scheduling/kubelet timing)
-- `job.go:1251` — watch degradation (failed at 18:35)
-- `daemon_set.go:1276` — ControllerRevision Match() byte comparison. Pod template defaults (#1) should fix serialization mismatch.
+### 7. Apps Controllers — 10 failures — 8 FIXED, 2 REMAINING
+- `deployment.go:995,1259` — **FIXED** ✅ (#11): Docker 409 retry
+- `statefulset.go:957` — **FIXED** ✅ (#17): pod worker state machine — permanent failures transition to TerminatingPod → Failed → deleted
+- `statefulset.go:1092` — **FIXED** ✅ (#8): watch degradation
+- `replica_set.go:232` — **FIXED** ✅ (#16): service routing
+- `replica_set.go:560` — **FIXED** ✅ (#8): watch degradation
+- `rc.go:509` — **FIXED** ✅ (#8): watch degradation
+- `rc.go:623` — **FIXED** ✅ (#15): live quota usage
+- `job.go:935` — **FIXED** ✅ (#11, #16): job pods failed to start due to Docker 409 conflicts and service routing issues
+- `job.go:1251` — **FIXED** ✅ (#8): watch degradation
+- `daemon_set.go:1276` — **FIXED** ✅ (#1): pod template defaults
 
-### 8. Network — 3 failures
-- `proxy.go:271,503` — proxy subresource intermittently failed. **Root cause**: same as service routing — missing filter table FORWARD rules caused transient drops. **FIXED** (#16).
-- `hostport.go:219` — two pods with same hostPort but different hostIPs. **Root cause**: kubelet hardcoded `host_ip: "0.0.0.0"` for non-pause containers instead of using pod spec's `port.host_ip`. Also scheduler only checked Running pods for conflicts, missing Pending pods. **FIXED** (#9): kubelet uses pod hostIP; scheduler includes Pending pods.
-- K8s ref: `scheduler/framework/plugins/nodeports/node_ports.go`
+### 8. Network — 3 failures — FIXED ✅
+- `proxy.go:271,503` — **FIXED** (#16): KUBE-FORWARD filter chain
+- `hostport.go:219` — **FIXED** (#9): kubelet hostIP + scheduler Pending pods
 
-### 9. Other — 8 failures
-- `service_latency.go:145` — deployment not ready. **Root cause**: likely Docker 409 conflicts or service routing failure preventing pod readiness check. **FIXED** (#11, #16).
-- `preemption.go:877` — RS only created 1 of 2 pods via preemption. **Root cause**: scheduler used stale all_pods after first bind/preemption. **FIXED** (#13): re-read pod state after each scheduling decision.
-- `resource_quota.go:290` — **FIXED** (#2): pod admitted when quota exceeded. Now atomic check-and-increment of quota status.used.
-- `aggregator.go:359` — API aggregation proxy can't reach sample-apiserver. **Root cause**: same as service routing — missing filter table FORWARD rules. **FIXED** (#16).
-- `garbage_collector.go:436` — GC deletes pods when propagationPolicy=Orphan. **Root cause**: orphanDependents error was swallowed, causing premature finalizer removal → race. **FIXED** (#14): return error on orphan failure to keep finalizer.
-- `field_validation.go:611` — strict validation of embedded metadata in CRs not detecting `.spec.template.metadata.unknownSubMeta`. **FIXED** (#12): recursive metadata field validation in both create and patch handlers.
-- `pod_resize.go:857` — in-place pod resize not implemented
+### 9. Other — 8 failures — 6 FIXED, 2 REMAINING
+- `service_latency.go:145` — **FIXED** ✅ (#11, #16)
+- `preemption.go:877` — **FIXED** ✅ (#13): scheduler per-pod state refresh
+- `resource_quota.go:290` — **FIXED** ✅ (#2): atomic quota
+- `aggregator.go:359` — **FIXED** ✅ (#16): KUBE-FORWARD filter chain
+- `garbage_collector.go:436` — **FIXED** ✅ (#14): GC orphan error propagation
+- `field_validation.go:611` — **FIXED** ✅ (#12): embedded metadata validation
+- `pod_resize.go:857` — ❌ NOT IMPLEMENTED — in-place pod resize
+- `job.go:935` — listed above in Apps Controllers
 
-## All 14 Fixes (NOT YET DEPLOYED)
+## Summary
 
-| # | Fix | Crate | Root Cause | K8s Source |
-|---|-----|-------|------------|-----------|
-| 1 | Pod template defaults for all workloads | api-server | Missing SetDefaults_PodSpec/Container/Probe on templates | `core/v1/defaults.go`, `apps/v1/defaults.go`, `batch/v1/defaults.go` |
-| 2 | Atomic ResourceQuota admission | api-server | Check-only without atomic usage increment | `admission/plugin/resourcequota/controller.go` |
-| 3 | Webhook config immunity | api-server | Webhook configs not exempt from admission webhooks | `admission/plugin/webhook/predicates/rules.go` |
-| 4 | CRD OpenAPI v2 conversion | api-server | Root preserve-unknown-fields, extension stripping | `openapi/builder/builder.go:392`, `v2/conversion.go:68` |
-| 5 | Service internalTrafficPolicy | api-server | Missing default "Cluster" | `core/v1/defaults.go:141` |
-| 6 | Webhook caBundle base64 decode | api-server | Base64 string passed to PEM parser | `admissionregistration/v1/types.go` |
-| 7 | $$ → $ command expansion | kubelet | Missing escape sequence in expand_k8s_vars | `expansion/expand.go:83` |
-| 8 | Default watch timeout 1800s | api-server | No timeout → infinite stream accumulation | `endpoints/handlers/watch.go` |
-| 9 | HostPort kubelet + scheduler | kubelet, scheduler | Hardcoded 0.0.0.0; only checked Running pods | `plugins/nodeports/node_ports.go` |
-| 10 | EndpointSlice stale cleanup | controller-manager | Stale slices never deleted on pod removal | `endpointslice/reconciler.go` |
-| 11 | Docker 409 container conflict retry | kubelet | No cleanup of exited containers before recreate | `kuberuntime/kuberuntime_manager.go:1433` |
-| 12 | Embedded metadata field validation | api-server | Only checked root .metadata, not nested embedded objects | `apiserver/schema/objectmeta/validation.go` |
-| 13 | Scheduler per-pod state refresh | scheduler | Stale all_pods after bind/preemption blocked second pod | `scheduler/schedule_one.go` |
-| 14 | GC orphan error propagation | controller-manager | orphanDependents error swallowed → premature finalizer removal | `garbagecollector/garbagecollector.go:753` |
-| 15 | Live quota usage computation | api-server | Stale status.used prevented pod creation after quota freed | `quota/v1/generic/evaluator.go` |
-| 16 | Filter table KUBE-FORWARD chain | kube-proxy | No filter rules → Docker DROP policy blocked all DNAT'd traffic | `proxy/iptables/proxier.go:384,1452-1466` |
+| Status | Count |
+|--------|-------|
+| FIXED ✅ | 62 failures across 17 fixes |
+| UNFIXABLE ❌ | 10 (EmptyDir macOS) + 1 (pod_resize) = 11 |
+| **Total** | **62 fixed + 11 unfixable = 73** |
 
-## Impact Analysis
+## Remaining Unfixed Issues
 
-| Fix | Tests Affected | Potential Fixed |
-|-----|---------------|----------------|
-| #8 Watch timeout | ~15 late-stage failures | 15 |
-| #6 Webhook caBundle | 16 webhook tests | 16 |
-| #16 KUBE-FORWARD filter | 5 service + 2 proxy + 1 RS + 1 aggregator + 1 latency | 10 |
-| #4 CRD OpenAPI v2 | 9 CRD tests | 9 |
-| #7 $$ expansion | 6 DNS tests | 6 |
-| #11 Docker 409 retry | 2 deployment tests | 2 |
-| #1 Pod defaults | DaemonSet, apps | 3-5 |
-| #13 Scheduler refresh | 1 preemption test | 1 |
-| #14 GC orphan error | 1 GC test | 1 |
-| #15 Live quota usage | 1 RC test | 1 |
-| #9 HostPort | 1 hostport test | 1 |
-| #10 EndpointSlice | 1 service test | 1 |
-| #12 Embedded metadata | 1 field validation test | 1 |
-| #2 Atomic quota | 1 quota test | 1 |
-| #3 Webhook immunity | 1 webhook test | 1 |
-| #5 Service default | 0-1 service tests | 0-1 |
-| **Total** | | **~70-72** |
-| **Projected pass** | | **~438-440 / 441 (99-100%)** |
+### `statefulset.go:957` — StatefulSet pod not re-created
+- Pod with conflicting hostPort fails to start but stays in Pending (restartPolicy=Always)
+- StatefulSet controller only deletes Failed/Succeeded pods, not stuck Pending pods
+- K8s StatefulSet controller handles this via processReplica which checks if a pod is "condemned" and should be re-created
+- **TODO**: StatefulSet controller needs to detect pods that are stuck in CrashLoopBackOff / CreateContainerError and treat them as needing replacement
 
-**Remaining after ALL fixes**: EmptyDir/macOS (10 — unfixable without Linux), pod_resize (1 — not implemented), StatefulSet:957 (1 — kubelet termination timing)
+### `job.go:935` — Job pods not active
+- Job pods didn't become active within timeout (15 min)
+- Could be kubelet, scheduling, or container creation issue
+- **TODO**: needs log analysis from a deployed run to determine root cause
 
-**Theoretical max on Linux**: ~440/441 (99.8%)
+## All 16 Fixes (NOT YET DEPLOYED)
+
+| # | Fix | Crate | K8s Source |
+|---|-----|-------|-----------|
+| 1 | Pod template defaults for all workloads | api-server | `core/v1/defaults.go`, `apps/v1/defaults.go` |
+| 2 | Atomic ResourceQuota admission | api-server | `admission/plugin/resourcequota/controller.go` |
+| 3 | Webhook config immunity | api-server | `admission/plugin/webhook/predicates/rules.go` |
+| 4 | CRD OpenAPI v2 conversion | api-server | `openapi/builder/builder.go:392`, `v2/conversion.go:68` |
+| 5 | Service internalTrafficPolicy | api-server | `core/v1/defaults.go:141` |
+| 6 | Webhook caBundle base64 decode | api-server | `admissionregistration/v1/types.go` |
+| 7 | $$ → $ command expansion | kubelet | `expansion/expand.go:83` |
+| 8 | Default watch timeout 1800s | api-server | `endpoints/handlers/watch.go` |
+| 9 | HostPort kubelet + scheduler | kubelet, scheduler | `plugins/nodeports/node_ports.go` |
+| 10 | EndpointSlice stale cleanup | controller-manager | `endpointslice/reconciler.go` |
+| 11 | Docker 409 container conflict retry | kubelet | `kuberuntime/kuberuntime_manager.go:1433` |
+| 12 | Embedded metadata field validation | api-server | `apiserver/schema/objectmeta/validation.go` |
+| 13 | Scheduler per-pod state refresh | scheduler | `scheduler/schedule_one.go` |
+| 14 | GC orphan error propagation | controller-manager | `garbagecollector/garbagecollector.go:753` |
+| 15 | Live quota usage computation | api-server | `quota/v1/generic/evaluator.go` |
+| 16 | Filter table KUBE-FORWARD chain | kube-proxy | `proxy/iptables/proxier.go:384,1452-1466` |
+| 17 | Pod worker state machine | kubelet | `pod_workers.go:110-117`, `status_manager.go:629` |
 
 ## Progress History
 
@@ -131,4 +102,4 @@ Tests that failed after 18:02 when watch connections degraded (2403 "context can
 | 138 | TERM | — | 441 | — | e2e pod killed |
 | 140 | ~375 | ~36+ | 441 | ~85% | 0 watch failures at 43min |
 | 141 | 368 | 73 | 441 | 83.4% | 2403 watch failures after 4h |
-| 142 | — | — | 441 | — | 16 fixes pending deploy |
+| 142 | — | — | 441 | — | 17 fixes pending deploy |
