@@ -110,6 +110,11 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
         // Load all PriorityClasses for pod priority resolution
         let priority_classes = self.load_priority_classes().await?;
 
+        // Re-read all_pods before each scheduling decision. K8s re-evaluates
+        // cluster state per-pod. Using stale pod data causes preemption to
+        // fail for the second pod because evicted victims are still counted.
+        let mut all_pods = all_pods;
+
         // Schedule each pod with a timeout to prevent one slow pod from
         // blocking all others. K8s processes pods concurrently in the
         // scheduling queue; we process sequentially but with a per-pod timeout.
@@ -134,8 +139,12 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
             .await;
 
             match schedule_result {
-                Ok(true) => continue, // Pod bound successfully
-                Ok(false) => {}       // No node found, try preemption below
+                Ok(true) => {
+                    // Pod bound — re-read all_pods so next pod sees updated state
+                    all_pods = self.storage.list(&prefix).await.unwrap_or_default();
+                    continue;
+                }
+                Ok(false) => {} // No node found, try preemption below
                 Err(_) => {
                     warn!(
                         "Scheduling timed out for pod {}/{}, will retry",
@@ -182,6 +191,8 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
                             node_name, pod.metadata.name
                         );
                     }
+                    // Re-read all_pods after preemption so next pod sees evictions
+                    all_pods = self.storage.list(&prefix).await.unwrap_or_default();
                 } else {
                     warn!(
                         "No suitable node found for pod {} (even with preemption)",
