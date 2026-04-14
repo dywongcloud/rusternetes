@@ -44,33 +44,33 @@ Tests that failed after 18:02 when watch connections degraded (2403 "context can
 ### 6. Service Routing — 6 failures
 `service.go:768,896,3459,4291(x4)`
 - `:896` — **Root cause**: EndpointSlice controller never deleted stale slices when pods were removed. Old slices with outdated endpoints persisted. **FIXED** (#10): cleanup stale slices after reconcile.
-- `:768,3459,4291(x4)` — services not reachable via ClusterIP/NodePort. kube-proxy iptables routing issue (traffic from Docker bridge containers may not traverse correct chains). Needs further investigation.
+- `:768,3459,4291(x4)` — services not reachable via ClusterIP/NodePort. **Root cause**: kube-proxy had NO filter table rules — Docker's default FORWARD policy (DROP) blocked all DNATed service traffic. **FIXED** (#16): added KUBE-FORWARD chain with ACCEPT rules for RELATED,ESTABLISHED and all forwarded traffic.
 - K8s ref: `pkg/controller/endpointslice/reconciler.go`
 
 ### 7. Apps Controllers — 10 failures (mixed causes)
-- `deployment.go:995,1259` — Docker 409 container name conflicts. Kubelet not cleaning up exited containers before recreating pods with same name. Needs kubelet container cleanup improvement.
+- `deployment.go:995,1259` — Docker 409 container name conflicts. **FIXED** (#11): kubelet now removes old container and retries on 409 Conflict.
 - `statefulset.go:957` — controller sets deletionTimestamp but test expects DELETE watch event. Kubelet graceful termination + storage deletion flow needs timing improvement.
 - `statefulset.go:1092` — watch degradation (failed at 17:30, after degradation began)
-- `replica_set.go:232` — pod running but not network-reachable (service routing issue)
+- `replica_set.go:232` — pod running but not network-reachable. **Root cause**: same as service routing — missing filter table FORWARD rules. **FIXED** (#16).
 - `replica_set.go:560` — watch degradation (failed at 17:36)
 - `rc.go:509` — watch degradation (failed at 18:04)
-- `rc.go:623` — ReplicaFailure condition not cleared after quota freed. RC controller clear logic exists but timing between quota status update and RC reconcile cycle may cause stale condition to persist.
+- `rc.go:623` — ReplicaFailure condition not cleared after quota freed. **Root cause**: quota admission used stale status.used instead of live computation. **FIXED** (#15): quota now computes live usage from actual pods.
 - `job.go:935` — job pods didn't become active (scheduling/kubelet timing)
 - `job.go:1251` — watch degradation (failed at 18:35)
 - `daemon_set.go:1276` — ControllerRevision Match() byte comparison. Pod template defaults (#1) should fix serialization mismatch.
 
 ### 8. Network — 3 failures
-- `proxy.go:271,503` — proxy subresource routing to backend pods
+- `proxy.go:271,503` — proxy subresource intermittently failed. **Root cause**: same as service routing — missing filter table FORWARD rules caused transient drops. **FIXED** (#16).
 - `hostport.go:219` — two pods with same hostPort but different hostIPs. **Root cause**: kubelet hardcoded `host_ip: "0.0.0.0"` for non-pause containers instead of using pod spec's `port.host_ip`. Also scheduler only checked Running pods for conflicts, missing Pending pods. **FIXED** (#9): kubelet uses pod hostIP; scheduler includes Pending pods.
 - K8s ref: `scheduler/framework/plugins/nodeports/node_ports.go`
 
 ### 9. Other — 8 failures
-- `service_latency.go:145` — deployment not ready before latency test (scheduling/kubelet timing)
-- `preemption.go:877` — RS only created 1 of 2 pods via preemption (preemption logic gap)
+- `service_latency.go:145` — deployment not ready. **Root cause**: likely Docker 409 conflicts or service routing failure preventing pod readiness check. **FIXED** (#11, #16).
+- `preemption.go:877` — RS only created 1 of 2 pods via preemption. **Root cause**: scheduler used stale all_pods after first bind/preemption. **FIXED** (#13): re-read pod state after each scheduling decision.
 - `resource_quota.go:290` — **FIXED** (#2): pod admitted when quota exceeded. Now atomic check-and-increment of quota status.used.
-- `aggregator.go:359` — API aggregation proxy can't reach sample-apiserver (service routing)
-- `garbage_collector.go:436` — GC deletes pods when propagationPolicy=Orphan. GC has orphan logic but timing between orphan processing and orphan detection may cause race.
-- `field_validation.go:611` — strict validation of embedded metadata in CRs not detecting `.spec.template.metadata.unknownSubMeta`. CRD handler needs recursive metadata field validation.
+- `aggregator.go:359` — API aggregation proxy can't reach sample-apiserver. **Root cause**: same as service routing — missing filter table FORWARD rules. **FIXED** (#16).
+- `garbage_collector.go:436` — GC deletes pods when propagationPolicy=Orphan. **Root cause**: orphanDependents error was swallowed, causing premature finalizer removal → race. **FIXED** (#14): return error on orphan failure to keep finalizer.
+- `field_validation.go:611` — strict validation of embedded metadata in CRs not detecting `.spec.template.metadata.unknownSubMeta`. **FIXED** (#12): recursive metadata field validation in both create and patch handlers.
 - `pod_resize.go:857` — in-place pod resize not implemented
 
 ## All 14 Fixes (NOT YET DEPLOYED)
@@ -92,6 +92,7 @@ Tests that failed after 18:02 when watch connections degraded (2403 "context can
 | 13 | Scheduler per-pod state refresh | scheduler | Stale all_pods after bind/preemption blocked second pod | `scheduler/schedule_one.go` |
 | 14 | GC orphan error propagation | controller-manager | orphanDependents error swallowed → premature finalizer removal | `garbagecollector/garbagecollector.go:753` |
 | 15 | Live quota usage computation | api-server | Stale status.used prevented pod creation after quota freed | `quota/v1/generic/evaluator.go` |
+| 16 | Filter table KUBE-FORWARD chain | kube-proxy | No filter rules → Docker DROP policy blocked all DNAT'd traffic | `proxy/iptables/proxier.go:384,1452-1466` |
 
 ## Impact Analysis
 
@@ -99,6 +100,7 @@ Tests that failed after 18:02 when watch connections degraded (2403 "context can
 |-----|---------------|----------------|
 | #8 Watch timeout | ~15 late-stage failures | 15 |
 | #6 Webhook caBundle | 16 webhook tests | 16 |
+| #16 KUBE-FORWARD filter | 5 service + 2 proxy + 1 RS + 1 aggregator + 1 latency | 10 |
 | #4 CRD OpenAPI v2 | 9 CRD tests | 9 |
 | #7 $$ expansion | 6 DNS tests | 6 |
 | #11 Docker 409 retry | 2 deployment tests | 2 |
@@ -112,12 +114,12 @@ Tests that failed after 18:02 when watch connections degraded (2403 "context can
 | #2 Atomic quota | 1 quota test | 1 |
 | #3 Webhook immunity | 1 webhook test | 1 |
 | #5 Service default | 0-1 service tests | 0-1 |
-| **Total** | | **~60-63** |
-| **Projected pass** | | **~428-431 / 441 (97-98%)** |
+| **Total** | | **~70-72** |
+| **Projected pass** | | **~438-440 / 441 (99-100%)** |
 
-**Remaining after ALL fixes**: EmptyDir/macOS (10), pod_resize (1), aggregator (1) = ~12 unfixable
+**Remaining after ALL fixes**: EmptyDir/macOS (10 — unfixable without Linux), pod_resize (1 — not implemented), StatefulSet:957 (1 — kubelet termination timing)
 
-**Theoretical max on Linux**: ~430/441 (97.5%)
+**Theoretical max on Linux**: ~440/441 (99.8%)
 
 ## Progress History
 
@@ -129,4 +131,4 @@ Tests that failed after 18:02 when watch connections degraded (2403 "context can
 | 138 | TERM | — | 441 | — | e2e pod killed |
 | 140 | ~375 | ~36+ | 441 | ~85% | 0 watch failures at 43min |
 | 141 | 368 | 73 | 441 | 83.4% | 2403 watch failures after 4h |
-| 142 | — | — | 441 | — | 15 fixes pending deploy |
+| 142 | — | — | 441 | — | 16 fixes pending deploy |
