@@ -9,9 +9,10 @@
 - **Fix**: 86b048a — strip ALL Go omitempty defaults
 - **Test**: test_strip_false_extensions_removes_defaults (3 levels deep)
 
-### Webhook — 7 failures — NEEDS INVESTIGATION ❌
+### Webhook — 7 failures — NEEDS FIX ❌
 - NOT downstream of watch (0 watch failures near test failure)
-- Webhook pod readiness + kube-proxy routing — needs own root cause
+- **Root cause found**: Webhook test namespace deleted 33 seconds after creation. Namespace controller or test framework cleanup racing with test execution. Webhook service existed for only 2 seconds before namespace finalization deleted it. kube-proxy saw 4 services→3 services in 2 seconds.
+- Needs investigation: who set deletionTimestamp on webhook-192 at 21:07:43 (created 21:07:10)
 
 ### Preemption — 3 failures — FIX STAGED + TESTED ✅
 - **Root cause**: Status PATCH replaced node capacity map, wiping extended resources
