@@ -110,16 +110,43 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
         // Load all PriorityClasses for pod priority resolution
         let priority_classes = self.load_priority_classes().await?;
 
-        // Simple round-robin scheduling
+        // Schedule each pod with a timeout to prevent one slow pod from
+        // blocking all others. K8s processes pods concurrently in the
+        // scheduling queue; we process sequentially but with a per-pod timeout.
         for pod in pending_pods {
-            if let Some(node) = self
-                .select_node(&pod, &nodes, &all_pods, &priority_classes)
-                .await
-            {
-                if let Err(e) = self.bind_pod_to_node(pod, &node.metadata.name).await {
-                    error!("Failed to bind pod to node: {}", e);
+            // 5-second timeout per pod — if scheduling takes longer (e.g.,
+            // complex preemption calculation), skip and retry next cycle.
+            let schedule_result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                if let Some(node) = self
+                    .select_node(&pod, &nodes, &all_pods, &priority_classes)
+                    .await
+                {
+                    if let Err(e) = self
+                        .bind_pod_to_node(pod.clone(), &node.metadata.name)
+                        .await
+                    {
+                        error!("Failed to bind pod to node: {}", e);
+                    }
+                    return true;
                 }
-            } else {
+                false
+            })
+            .await;
+
+            match schedule_result {
+                Ok(true) => continue, // Pod bound successfully
+                Ok(false) => {}       // No node found, try preemption below
+                Err(_) => {
+                    warn!(
+                        "Scheduling timed out for pod {}/{}, will retry",
+                        pod.metadata.namespace.as_deref().unwrap_or(""),
+                        pod.metadata.name
+                    );
+                    continue;
+                }
+            }
+
+            {
                 // No suitable node found, try preemption if pod has priority
                 if let Some(preemption_result) = self.try_preempt(&pod, &nodes, &all_pods).await {
                     let (node_name, pods_to_evict) = preemption_result;
