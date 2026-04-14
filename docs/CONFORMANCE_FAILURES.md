@@ -111,9 +111,23 @@
 **To reach 90%+ (397+)**: Must fix webhook routing (16 tests) — this requires kube-proxy iptables to work for traffic originating from Docker bridge containers.
 
 ## Key Metrics
-- **Watch failures: 0** (down from 3012 in round 138!)
-- HTTP/2 flow control fix eliminated all watch context canceled errors
+- **Watch failures: 2403** — regression! Started at 18:02 (4h into test), cascaded until end
+- Previous round 138 had 3012, round 140 had 0 — this round regressed
+- Watch failures may be caused by long-running HTTP/2 connection degradation
 - Lease-based heartbeat preventing node NotReady
+
+## Additional Fixes (Session 2, NOT YET DEPLOYED)
+
+### 6. Webhook caBundle Base64 Decoding (CRITICAL — 16 tests)
+- K8s stores caBundle as []byte → JSON base64. We were passing base64 string to PEM parser.
+- This caused ALL webhook TLS connections to fail silently.
+- K8s ref: admissionregistration/v1/types.go — CABundle []byte
+
+### 7. K8s-compatible $$ → $ Escape in Command/Args Expansion (6 tests)
+- K8s uses expansion/expand.go which converts $$ to $ (escape sequence)
+- Our expand_k8s_vars only handled $(VAR_NAME) expansion, missing $$ → $
+- This broke DNS conformance tests using $$(dig ...) shell commands
+- K8s ref: third_party/forked/golang/expansion/expand.go:83-85
 
 ## Progress History
 
