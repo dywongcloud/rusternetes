@@ -159,7 +159,11 @@ where
     // Extract parameters
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
-    let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
+    // K8s default watch timeout: minRequestTimeout + random(0, 2*minRequestTimeout)
+    // where minRequestTimeout = 1800s. Without this, watches run forever, accumulating
+    // HTTP/2 streams and causing connection degradation after hours of testing.
+    // K8s ref: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/watch.go
+    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(1800)));
     let label_selector = params.label_selector.clone();
     let field_selector = params.field_selector.clone();
     let requested_rv = params.resource_version.clone();
@@ -608,7 +612,11 @@ where
     // Extract parameters
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
-    let timeout_duration = params.timeout_seconds.map(|s| Duration::from_secs(s));
+    // K8s default watch timeout: minRequestTimeout + random(0, 2*minRequestTimeout)
+    // where minRequestTimeout = 1800s. Without this, watches run forever, accumulating
+    // HTTP/2 streams and causing connection degradation after hours of testing.
+    // K8s ref: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/watch.go
+    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(1800)));
     let label_selector = params.label_selector.clone();
     let field_selector = params.field_selector.clone();
     let requested_rv = params.resource_version.clone();
@@ -2137,7 +2145,7 @@ pub async fn watch_cluster_scoped_json(
 
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
-    let timeout_duration = params.timeout_seconds.map(Duration::from_secs);
+    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(1800)));
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
@@ -2318,7 +2326,7 @@ pub async fn watch_namespaced_json(
 
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
-    let timeout_duration = params.timeout_seconds.map(Duration::from_secs);
+    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(1800)));
     let requested_rv = params.resource_version.clone();
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
