@@ -1,8 +1,8 @@
 # Conformance Failure Tracker
 
-**Round 141** | Running (3h+) | 2026-04-14
+**Round 141** | Complete — 368/441 (83.4%) | 2026-04-14
 
-## Round 141 Failures (36+ at ~300 tests, still running)
+## Round 141 Failures (73 total)
 
 ### CRD OpenAPI — 7 failures — FIXED
 - `crd_publish_openapi.go:77,161,211,253,366,400,451`
@@ -118,4 +118,4 @@
 | 137 | ~380 | ~61 | 441 | ~86.2% |
 | 138 | TERMINATED | ~35+ | 441 | — |
 | 140 | ~375 | ~36+ | 441 | ~85% |
-| 141 | TBD (36 failures at ~300 tests) | TBD | 441 | TBD |
+| 141 | 368 | 73 | 441 | 83.4% |
