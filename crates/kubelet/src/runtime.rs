@@ -1163,10 +1163,42 @@ impl ContainerRuntime {
             ..Default::default()
         };
 
-        self.docker
-            .create_container(Some(options), config)
+        // Create pause container, handling 409 Conflict by removing and retrying
+        match self
+            .docker
+            .create_container(Some(options.clone()), config.clone())
             .await
-            .context("Failed to create pause container")?;
+        {
+            Ok(_) => {}
+            Err(e) => {
+                let err_str = format!("{}", e);
+                if err_str.contains("409")
+                    || err_str.contains("Conflict")
+                    || err_str.contains("already in use")
+                {
+                    warn!(
+                        "Pause container {} already exists, removing and retrying",
+                        pause_name
+                    );
+                    let _ = self
+                        .docker
+                        .remove_container(
+                            &pause_name,
+                            Some(bollard::container::RemoveContainerOptions {
+                                force: true,
+                                ..Default::default()
+                            }),
+                        )
+                        .await;
+                    self.docker
+                        .create_container(Some(options), config)
+                        .await
+                        .context("Failed to create pause container after cleanup")?;
+                } else {
+                    return Err(e).context("Failed to create pause container");
+                }
+            }
+        }
 
         self.docker
             .start_container(&pause_name, None::<StartContainerOptions<String>>)
@@ -4253,13 +4285,49 @@ impl ContainerRuntime {
             ..Default::default()
         };
 
-        // Create the container
-        if let Err(e) = self.docker.create_container(Some(options), config).await {
-            error!(
-                "Docker API error creating container {}: {}",
-                container_name, e
-            );
-            return Err(anyhow::anyhow!("Failed to create container: {}", e));
+        // Create the container. If a container with this name already exists
+        // (Docker 409 Conflict), remove it and retry. K8s kills and removes
+        // old containers before creating new ones during SyncPod.
+        // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_manager.go:1433-1447
+        if let Err(e) = self
+            .docker
+            .create_container(Some(options.clone()), config.clone())
+            .await
+        {
+            let err_str = format!("{}", e);
+            if err_str.contains("409")
+                || err_str.contains("Conflict")
+                || err_str.contains("already in use")
+            {
+                warn!(
+                    "Container {} already exists, removing and retrying",
+                    container_name
+                );
+                let _ = self
+                    .docker
+                    .remove_container(
+                        &container_name,
+                        Some(bollard::container::RemoveContainerOptions {
+                            force: true,
+                            ..Default::default()
+                        }),
+                    )
+                    .await;
+                // Retry creation after removal
+                if let Err(e2) = self.docker.create_container(Some(options), config).await {
+                    error!(
+                        "Docker API error creating container {} after cleanup: {}",
+                        container_name, e2
+                    );
+                    return Err(anyhow::anyhow!("Failed to create container: {}", e2));
+                }
+            } else {
+                error!(
+                    "Docker API error creating container {}: {}",
+                    container_name, e
+                );
+                return Err(anyhow::anyhow!("Failed to create container: {}", e));
+            }
         }
 
         // Start the container

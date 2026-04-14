@@ -54,35 +54,78 @@ pub async fn create_custom_resource(
                 unknown[0]
             )));
         }
-        // Check unknown metadata fields — K8s validates ObjectMeta strictly
+        // Check unknown metadata fields — K8s validates ObjectMeta strictly,
+        // BOTH at root AND in embedded objects (x-kubernetes-embedded-resource).
+        // K8s ref: apiextensions-apiserver/pkg/apiserver/schema/objectmeta/validation.go
         if let Ok(body_json) = serde_json::from_slice::<serde_json::Value>(&body) {
-            if let Some(meta) = body_json.get("metadata").and_then(|m| m.as_object()) {
-                const KNOWN_META: &[&str] = &[
-                    "name",
-                    "generateName",
-                    "namespace",
-                    "selfLink",
-                    "uid",
-                    "resourceVersion",
-                    "generation",
-                    "creationTimestamp",
-                    "deletionTimestamp",
-                    "deletionGracePeriodSeconds",
-                    "labels",
-                    "annotations",
-                    "ownerReferences",
-                    "finalizers",
-                    "managedFields",
-                    "clusterName",
-                ];
-                for key in meta.keys() {
-                    if !KNOWN_META.contains(&key.as_str()) {
-                        return Err(rusternetes_common::Error::InvalidResource(format!(
-                            ".metadata.{}: field not declared in schema",
-                            key
-                        )));
+            const KNOWN_META: &[&str] = &[
+                "name",
+                "generateName",
+                "namespace",
+                "selfLink",
+                "uid",
+                "resourceVersion",
+                "generation",
+                "creationTimestamp",
+                "deletionTimestamp",
+                "deletionGracePeriodSeconds",
+                "labels",
+                "annotations",
+                "ownerReferences",
+                "finalizers",
+                "managedFields",
+                "clusterName",
+            ];
+
+            // Recursively find all "metadata" objects in the body and validate them
+            fn check_metadata_fields(
+                value: &serde_json::Value,
+                path: &str,
+                known: &[&str],
+            ) -> Option<String> {
+                if let Some(obj) = value.as_object() {
+                    // Check if this object has a "metadata" field
+                    if let Some(meta) = obj.get("metadata").and_then(|m| m.as_object()) {
+                        let meta_path = if path.is_empty() {
+                            ".metadata".to_string()
+                        } else {
+                            format!("{}.metadata", path)
+                        };
+                        for key in meta.keys() {
+                            if !known.contains(&key.as_str()) {
+                                return Some(format!(
+                                    "{}.{}: field not declared in schema",
+                                    meta_path, key
+                                ));
+                            }
+                        }
+                    }
+                    // Recurse into all nested objects
+                    for (key, val) in obj {
+                        if key == "metadata" {
+                            continue; // Already checked above
+                        }
+                        let child_path = if path.is_empty() {
+                            format!(".{}", key)
+                        } else {
+                            format!("{}.{}", path, key)
+                        };
+                        if let Some(err) = check_metadata_fields(val, &child_path, known) {
+                            return Some(err);
+                        }
+                    }
+                } else if let Some(arr) = value.as_array() {
+                    for item in arr {
+                        if let Some(err) = check_metadata_fields(item, path, known) {
+                            return Some(err);
+                        }
                     }
                 }
+                None
+            }
+
+            if let Some(err_msg) = check_metadata_fields(&body_json, "", KNOWN_META) {
+                return Err(rusternetes_common::Error::InvalidResource(err_msg));
             }
         }
     }
@@ -579,6 +622,71 @@ pub async fn patch_custom_resource(
                 ".{}: field not declared in schema",
                 unknown[0]
             )));
+        }
+    }
+    // Also validate embedded metadata fields in the patched result
+    if is_strict {
+        let patched_value = serde_json::to_value(&patched).unwrap_or_default();
+        const KNOWN_META: &[&str] = &[
+            "name",
+            "generateName",
+            "namespace",
+            "selfLink",
+            "uid",
+            "resourceVersion",
+            "generation",
+            "creationTimestamp",
+            "deletionTimestamp",
+            "deletionGracePeriodSeconds",
+            "labels",
+            "annotations",
+            "ownerReferences",
+            "finalizers",
+            "managedFields",
+            "clusterName",
+        ];
+        fn check_embedded_meta(
+            value: &serde_json::Value,
+            path: &str,
+            known: &[&str],
+        ) -> Option<String> {
+            if let Some(obj) = value.as_object() {
+                if let Some(meta) = obj.get("metadata").and_then(|m| m.as_object()) {
+                    let mp = if path.is_empty() {
+                        ".metadata".to_string()
+                    } else {
+                        format!("{}.metadata", path)
+                    };
+                    for key in meta.keys() {
+                        if !known.contains(&key.as_str()) {
+                            return Some(format!("{}.{}: field not declared in schema", mp, key));
+                        }
+                    }
+                }
+                for (key, val) in obj {
+                    if key == "metadata" {
+                        continue;
+                    }
+                    let cp = if path.is_empty() {
+                        format!(".{}", key)
+                    } else {
+                        format!("{}.{}", path, key)
+                    };
+                    if let Some(err) = check_embedded_meta(val, &cp, known) {
+                        return Some(err);
+                    }
+                }
+            } else if let Some(arr) = value.as_array() {
+                for item in arr {
+                    if let Some(err) = check_embedded_meta(item, path, known) {
+                        return Some(err);
+                    }
+                }
+            }
+            None
+        }
+        if let Some(err_msg) = check_embedded_meta(&patched_value, "", KNOWN_META) {
+            return Err(rusternetes_common::Error::InvalidResource(err_msg));
         }
     }
 
