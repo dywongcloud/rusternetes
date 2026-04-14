@@ -3377,14 +3377,19 @@ impl ContainerRuntime {
         if !using_pause_network {
             if let Some(ports) = &container.ports {
                 for port in ports {
-                    let port_key = format!("{}/tcp", port.container_port);
+                    let proto = port.protocol.as_deref().unwrap_or("TCP").to_lowercase();
+                    let port_key = format!("{}/{}", port.container_port, proto);
                     exposed_ports.insert(port_key.clone(), HashMap::new());
 
                     if let Some(host_port) = port.host_port {
+                        // Use the pod spec's hostIP if specified, otherwise 0.0.0.0.
+                        // K8s allows different pods to bind the same hostPort on
+                        // different hostIPs (e.g., 127.0.0.1 vs 172.18.0.6).
+                        let bind_ip = port.host_ip.as_deref().unwrap_or("0.0.0.0").to_string();
                         port_bindings.insert(
                             port_key,
                             Some(vec![bollard::models::PortBinding {
-                                host_ip: Some("0.0.0.0".to_string()),
+                                host_ip: Some(bind_ip),
                                 host_port: Some(host_port.to_string()),
                             }]),
                         );

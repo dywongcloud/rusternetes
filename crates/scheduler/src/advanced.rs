@@ -448,10 +448,14 @@ pub fn check_host_port_conflicts(node: &Node, pod: &Pod, all_pods: &[Pod]) -> bo
             continue;
         }
 
-        // Skip non-running pods: Pending pods haven't acquired resources,
-        // Succeeded/Failed have released them, terminating pods are being evicted.
+        // K8s tracks UsedPorts for ALL pods assigned to a node (including
+        // Pending). Only skip terminal pods (Succeeded/Failed) and terminating.
         let phase = existing_pod.status.as_ref().and_then(|s| s.phase.as_ref());
-        if !matches!(phase, Some(rusternetes_common::types::Phase::Running)) {
+        if matches!(
+            phase,
+            Some(rusternetes_common::types::Phase::Succeeded)
+                | Some(rusternetes_common::types::Phase::Failed)
+        ) {
             continue;
         }
         if existing_pod.metadata.deletion_timestamp.is_some() {
@@ -581,10 +585,14 @@ pub fn calculate_resource_score_with_pods(node: &Node, pod: &Pod, all_pods: &[Po
         if !scheduled_on_this_node {
             continue;
         }
-        // Skip non-running pods: Pending pods haven't acquired resources,
-        // Succeeded/Failed have released them, terminating pods are being evicted.
+        // K8s tracks UsedPorts for ALL pods assigned to a node (including
+        // Pending). Only skip terminal pods (Succeeded/Failed) and terminating.
         let phase = existing_pod.status.as_ref().and_then(|s| s.phase.as_ref());
-        if !matches!(phase, Some(rusternetes_common::types::Phase::Running)) {
+        if matches!(
+            phase,
+            Some(rusternetes_common::types::Phase::Succeeded)
+                | Some(rusternetes_common::types::Phase::Failed)
+        ) {
             continue;
         }
         if existing_pod.metadata.deletion_timestamp.is_some() {
