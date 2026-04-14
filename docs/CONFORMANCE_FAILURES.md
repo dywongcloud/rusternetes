@@ -31,14 +31,17 @@
 ### CRD Error Responses — FIX STAGED ✅
 - **Fix**: 294358e — 10 handlers fixed
 
-### DaemonSet — 1 failure — INVESTIGATE IN ROUND 139
-- 0 watch failures near test. Pod created but not observed as running within timeout.
-- E2e logs lost when pod was terminated. Need to investigate in next round.
-- May be resolved by kubelet fire-and-forget fix (106b7b6) since pod start delays were caused by sync_loop blocking.
+### DaemonSet — 1 failure — INVESTIGATED
+- daemon_set.go:1276: `foundCurHistories == 0` — ControllerRevision Match() fails
+- **Root cause**: K8s Match() does `bytes.Equal(getPatch(ds), history.Data.Raw)`. Our ControllerRevision data must produce identical JSON bytes as Go's getPatch(). Any extra default fields or different key ordering causes mismatch.
+- Test added (c96c641) to verify Match() compatibility: $patch marker, sorted keys, deterministic bytes
+- **May also be affected by** kubelet sync_loop blocking (pods not running in time)
 
-### Proxy — 2 failures — INVESTIGATE IN ROUND 139
-- 0 watch failures near test. Pod not starting in time.
-- E2e logs lost. May also be resolved by kubelet fire-and-forget fix.
+### Proxy — 2 failures — LIKELY KUBELET SYNC
+- proxy.go:271: service unreachable (context deadline)
+- proxy.go:503: pod didn't start in time
+- Both with 0 watch failures. Root cause: kubelet sync_loop blocking delays pod starts.
+- **Fix staged**: 106b7b6 (fire-and-forget sync)
 
 ### Other fixes staged:
 - Job: 31e5e4f (test: success_policy_terminating_zero)
