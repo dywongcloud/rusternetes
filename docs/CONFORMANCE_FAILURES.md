@@ -118,6 +118,17 @@
 - Prevents HTTP/2 stream accumulation and connection degradation
 - K8s ref: apiserver/pkg/endpoints/handlers/watch.go, MinRequestTimeout=1800
 
+### 9. HostPort Handling — Kubelet + Scheduler
+- Kubelet: non-pause containers hardcoded `host_ip: "0.0.0.0"` instead of using pod spec's `port.host_ip`. Also fixed protocol to use port.protocol instead of "tcp".
+- Scheduler: hostPort conflict check only considered Running pods. K8s includes Pending (scheduled but not started). Changed to skip only terminal/terminating.
+- K8s ref: scheduler/framework/plugins/nodeports/node_ports.go, scheduler/framework/types.go
+
+### 10. EndpointSlice Stale Slice Cleanup
+- Controller created/updated slices for current pods but never deleted stale slices from removed pods
+- Caused "Unexpected port mappings on slices, extra: [{...}]" conformance failures
+- Now deletes EndpointSlices owned by the service that aren't in the current desired set
+- K8s ref: pkg/controller/endpointslice/reconciler.go — finalize()
+
 ## Impact Analysis (if deployed)
 
 | Fix | Potential Tests Fixed | Cumulative |
