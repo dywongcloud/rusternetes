@@ -222,25 +222,35 @@ impl Kubelet {
                     }
 
                     last_watch_sync = tokio::time::Instant::now();
-                    if let Err(e) = self.sync_loop().await {
-                        error!("Error in watch-triggered sync: {}", e);
+                    match tokio::time::timeout(
+                        Duration::from_secs(5),
+                        self.sync_loop(),
+                    ).await {
+                        Ok(Ok(())) => {},
+                        Ok(Err(e)) => error!("Error in watch-triggered sync: {}", e),
+                        Err(_) => warn!("Watch-triggered sync_loop timed out after 5s"),
                     }
                 }
                 // Periodic full sync as safety net
                 _ = full_sync_timer.tick() => {
-                    // Send heartbeat BEFORE sync (sync is now fire-and-forget
-                    // so it returns quickly, but in case it doesn't, heartbeat
-                    // is already sent)
+                    // Timeout sync_loop to prevent blocking heartbeat.
+                    // sync_loop is fire-and-forget so it should return in
+                    // <100ms, but storage.list can be slow under load.
+                    match tokio::time::timeout(
+                        Duration::from_secs(5),
+                        self.sync_loop(),
+                    ).await {
+                        Ok(Ok(())) => {},
+                        Ok(Err(e)) => error!("Error in periodic sync: {}", e),
+                        Err(_) => warn!("sync_loop timed out after 5s"),
+                    }
+                    // Always send heartbeat after sync
                     if let Err(e) = self.update_node_status().await {
                         error!("Error updating node status: {}", e);
                     }
-                    if let Err(e) = self.sync_loop().await {
-                        error!("Error in periodic sync: {}", e);
-                    }
                 }
-                // Periodic heartbeat fallback
+                // Dedicated heartbeat — runs every 10s independently of sync
                 _ = tokio::time::sleep(Duration::from_secs(10)) => {
-                    // Send heartbeat even if no sync is needed
                     if let Err(e) = self.update_node_status().await {
                         error!("Error updating node status: {}", e);
                     }
