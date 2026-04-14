@@ -195,16 +195,12 @@ pub async fn check_resource_quota<S: Storage>(
             None => continue,
         };
 
-        let mut current_usage = quota
-            .status
-            .as_ref()
-            .and_then(|s| s.used.clone())
-            .unwrap_or_default();
-
-        // If status.used is empty, calculate from existing pods
-        if current_usage.is_empty() {
-            current_usage = calculate_namespace_usage(storage, namespace).await?;
-        }
+        // Always compute live usage from actual pods, not from quota status.used.
+        // K8s quota evaluator recomputes usage to avoid stale data causing
+        // false rejections (e.g., after pods are deleted, status.used is stale
+        // until the quota controller reconciles).
+        // K8s ref: staging/src/k8s.io/apiserver/pkg/quota/v1/generic/evaluator.go
+        let current_usage = calculate_namespace_usage(storage, namespace).await?;
 
         let mut new_usage = current_usage.clone();
         let mut exceeded = Vec::new();
