@@ -3992,39 +3992,64 @@ impl ContainerRuntime {
         // In Kubernetes: command overrides Docker ENTRYPOINT, args overrides Docker CMD
         // Kubernetes expands $(VAR_NAME) references in command and args using the
         // container's own environment variables.
+        // K8s variable expansion matching third_party/forked/golang/expansion/expand.go:
+        // - $(VAR_NAME) → expand if VAR_NAME is a defined env var, else leave literal
+        // - $$ → $ (escape sequence, critical for shell command substitutions)
+        // - $other → $other (literal)
         let expand_k8s_vars = |items: &[String]| -> Vec<String> {
             items
                 .iter()
                 .map(|item| {
-                    let mut result = item.clone();
-                    let mut search_from = 0;
-                    loop {
-                        let start = match result[search_from..].find("$(") {
-                            Some(s) => search_from + s,
-                            None => break,
-                        };
-                        let end = match result[start..].find(')') {
-                            Some(e) => start + e,
-                            None => break,
-                        };
-                        let var_name = &result[start + 2..end];
-                        // Only expand $(VAR) if VAR matches a defined env var.
-                        // Unmatched references like $(id -u) are shell command
-                        // substitutions and must be passed through literally.
-                        if let Some((_, value)) =
-                            resolved_env_pairs.iter().find(|(k, _)| k == var_name)
-                        {
-                            let value = value.clone();
-                            result.replace_range(start..end + 1, &value);
-                            // Don't advance search_from — the replacement might
-                            // contain more $(VAR) references to expand
+                    let input = item.as_bytes();
+                    let mut buf = Vec::with_capacity(input.len());
+                    let mut cursor = 0;
+                    while cursor < input.len() {
+                        if input[cursor] == b'$' && cursor + 1 < input.len() {
+                            match input[cursor + 1] {
+                                b'$' => {
+                                    // $$ → $ (escaped operator)
+                                    buf.push(b'$');
+                                    cursor += 2;
+                                }
+                                b'(' => {
+                                    // Possible $(VAR_NAME) reference
+                                    if let Some(close) =
+                                        input[cursor + 2..].iter().position(|&b| b == b')')
+                                    {
+                                        let var_name = std::str::from_utf8(
+                                            &input[cursor + 2..cursor + 2 + close],
+                                        )
+                                        .unwrap_or("");
+                                        if let Some((_, value)) =
+                                            resolved_env_pairs.iter().find(|(k, _)| k == var_name)
+                                        {
+                                            buf.extend_from_slice(value.as_bytes());
+                                            cursor += 2 + close + 1; // skip past )
+                                        } else {
+                                            // Not a defined env var — return literal $(VAR_NAME)
+                                            buf.extend_from_slice(
+                                                &input[cursor..cursor + 2 + close + 1],
+                                            );
+                                            cursor += 2 + close + 1;
+                                        }
+                                    } else {
+                                        // No closing ) — literal $(
+                                        buf.extend_from_slice(&input[cursor..cursor + 2]);
+                                        cursor += 2;
+                                    }
+                                }
+                                _ => {
+                                    // $other → literal $other
+                                    buf.push(input[cursor]);
+                                    cursor += 1;
+                                }
+                            }
                         } else {
-                            // Not a K8s env var — skip past this $( to avoid
-                            // infinite loop and preserve the literal text
-                            search_from = start + 2;
+                            buf.push(input[cursor]);
+                            cursor += 1;
                         }
                     }
-                    result
+                    String::from_utf8(buf).unwrap_or_else(|_| item.clone())
                 })
                 .collect()
         };
@@ -8698,12 +8723,14 @@ mod tests {
         assert!(docker_vol_name.starts_with(&prefix));
     }
 
-    /// Test expand_k8s_vars logic: only expand $(VAR) for defined env vars,
-    /// preserve shell substitutions like $(id -u).
+    /// Test expand_k8s_vars logic matching K8s third_party/forked/golang/expansion/expand.go:
+    /// - $(VAR) → expand if VAR is defined env var, else leave literal
+    /// - $$ → $ (escape sequence, critical for DNS test shell commands)
+    /// - $other → $other (literal)
     #[test]
     fn test_expand_k8s_vars_preserves_shell_substitutions() {
         // Simulate the expand_k8s_vars closure logic
-        let env_pairs: Vec<(String, String)> = vec![
+        let resolved_env_pairs: Vec<(String, String)> = vec![
             ("MY_VAR".to_string(), "hello".to_string()),
             ("PORT".to_string(), "8080".to_string()),
         ];
@@ -8712,26 +8739,51 @@ mod tests {
             items
                 .iter()
                 .map(|item| {
-                    let mut result = item.clone();
-                    let mut search_from = 0;
-                    loop {
-                        let start = match result[search_from..].find("$(") {
-                            Some(s) => search_from + s,
-                            None => break,
-                        };
-                        let end = match result[start..].find(')') {
-                            Some(e) => start + e,
-                            None => break,
-                        };
-                        let var_name = &result[start + 2..end];
-                        if let Some((_, value)) = env_pairs.iter().find(|(k, _)| k == var_name) {
-                            let value = value.clone();
-                            result.replace_range(start..end + 1, &value);
+                    let input = item.as_bytes();
+                    let mut buf = Vec::with_capacity(input.len());
+                    let mut cursor = 0;
+                    while cursor < input.len() {
+                        if input[cursor] == b'$' && cursor + 1 < input.len() {
+                            match input[cursor + 1] {
+                                b'$' => {
+                                    buf.push(b'$');
+                                    cursor += 2;
+                                }
+                                b'(' => {
+                                    if let Some(close) =
+                                        input[cursor + 2..].iter().position(|&b| b == b')')
+                                    {
+                                        let var_name = std::str::from_utf8(
+                                            &input[cursor + 2..cursor + 2 + close],
+                                        )
+                                        .unwrap_or("");
+                                        if let Some((_, value)) =
+                                            resolved_env_pairs.iter().find(|(k, _)| k == var_name)
+                                        {
+                                            buf.extend_from_slice(value.as_bytes());
+                                            cursor += 2 + close + 1;
+                                        } else {
+                                            buf.extend_from_slice(
+                                                &input[cursor..cursor + 2 + close + 1],
+                                            );
+                                            cursor += 2 + close + 1;
+                                        }
+                                    } else {
+                                        buf.extend_from_slice(&input[cursor..cursor + 2]);
+                                        cursor += 2;
+                                    }
+                                }
+                                _ => {
+                                    buf.push(input[cursor]);
+                                    cursor += 1;
+                                }
+                            }
                         } else {
-                            search_from = start + 2;
+                            buf.push(input[cursor]);
+                            cursor += 1;
                         }
                     }
-                    result
+                    String::from_utf8(buf).unwrap_or_else(|_| item.clone())
                 })
                 .collect()
         };
@@ -8754,42 +8806,41 @@ mod tests {
         // No vars at all
         assert_eq!(expand(&["plain text".to_string()]), vec!["plain text"]);
 
-        // Nested: $(VAR) inside result of expansion should also expand
-        let env_pairs2: Vec<(String, String)> = vec![
-            ("A".to_string(), "$(B)".to_string()),
-            ("B".to_string(), "final".to_string()),
-        ];
-        let expand2 = |items: &[String]| -> Vec<String> {
-            items
-                .iter()
-                .map(|item| {
-                    let mut result = item.clone();
-                    let mut search_from = 0;
-                    loop {
-                        let start = match result[search_from..].find("$(") {
-                            Some(s) => search_from + s,
-                            None => break,
-                        };
-                        let end = match result[start..].find(')') {
-                            Some(e) => start + e,
-                            None => break,
-                        };
-                        let var_name = &result[start + 2..end];
-                        if let Some((_, value)) = env_pairs2.iter().find(|(k, _)| k == var_name) {
-                            let value = value.clone();
-                            result.replace_range(start..end + 1, &value);
-                        } else {
-                            search_from = start + 2;
-                        }
-                    }
-                    result
-                })
-                .collect()
-        };
+        // $$ → $ (escape sequence — K8s expand.go line 83-85)
+        // This is critical for DNS conformance tests which use $$(dig ...)
         assert_eq!(
-            expand2(&["$(A)".to_string()]),
-            vec!["final"],
-            "Nested variable expansion should work"
+            expand(&["check=$$(dig +notcp)".to_string()]),
+            vec!["check=$(dig +notcp)"],
+            "$$ should be unescaped to $ for shell command substitution"
+        );
+
+        // Multiple $$ escapes
+        assert_eq!(
+            expand(&["$$A $$B $$(cmd)".to_string()]),
+            vec!["$A $B $(cmd)"]
+        );
+
+        // Mixed: $$ escape + $(VAR) expansion
+        assert_eq!(
+            expand(&["$$(echo $(MY_VAR))".to_string()]),
+            vec!["$(echo hello)"],
+            "$$ unescaped then $(MY_VAR) expanded"
+        );
+
+        // K8s test case: $$$$$$(BIG_MONEY) → $$$(BIG_MONEY)
+        assert_eq!(
+            expand(&["$$$$$$(BIG_MONEY)".to_string()]),
+            vec!["$$$(BIG_MONEY)"]
+        );
+
+        // DNS test probe command pattern
+        assert_eq!(
+            expand(&[
+                r#"for i in 1 2 3; do check="$$(dig +notcp)" && test -n "$$check"; done"#
+                    .to_string()
+            ]),
+            vec![r#"for i in 1 2 3; do check="$(dig +notcp)" && test -n "$check"; done"#],
+            "DNS probe command $$ escaping must produce valid shell syntax"
         );
     }
 
