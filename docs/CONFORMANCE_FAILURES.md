@@ -1,35 +1,34 @@
 # Conformance Failure Tracker
 
-**Round 140** | Running | 2026-04-14
+**Round 140** | Running (43 min, 0 watch failures!) | 2026-04-14
 
-## Fixes Deployed
+## Round 140 Failures (8 so far)
 
-| Commit | Fix |
-|--------|-----|
-| 5b7048f | HTTP/2 flow control: K8s window sizes (256KB/25MB) |
-| 8ce0c36 | Lease-based node heartbeat (K8s v1.14+) |
-| e430f8d | Kubelet heartbeat in separate task |
-| 106b7b6 | Kubelet sync fire-and-forget (no join_all) |
-| be581f5 | Kubelet sync_loop 5s timeout |
-| 858d091 | Schema validator collects ALL unknown fields |
-| 86b048a | OpenAPI strip ALL Go omitempty defaults |
-| 55d52d7 | Status PATCH deep merge (node capacity) |
-| 31e5e4f | Job successPolicy terminating=0 |
-| 294358e | CRD error responses: K8s Status JSON |
-| f80d0c6 | kube-proxy NodePort DNAT rules |
-| 0061469 | Watch channel buffer 16 + bookmark 1s |
+### CRD OpenAPI — 2 failures — INVESTIGATING
+- `crd_publish_openapi.go:161,253`
 
-## Round 140 Failures
+### Webhook — 2 failures — INVESTIGATING
+- `webhook.go:1631,2107`
 
-_Tracking as tests complete._
+### EmptyDir — 2 failures — DinD
+- `output.go:263` (x2) — macOS filesystem permissions
+
+### Service Latency — 1 failure — INVESTIGATING
+- `service_latency.go:145` — deployment not ready
+
+### DaemonSet — 1 failure — INVESTIGATING
+- `daemon_set.go:1276`
+
+## Key Metrics
+- **Watch failures: 0** (down from 3012 in round 138!)
+- HTTP/2 flow control fix completely eliminated watch context canceled
+- Lease-based heartbeat preventing node NotReady
 
 ## Progress History
 
 | Round | Pass | Fail | Total | Rate |
 |-------|------|------|-------|------|
 | 135 | 373 | 68 | 441 | 84.6% |
-| 136 | ABORTED | — | 441 | — |
 | 137 | ~380 | ~61 | 441 | ~86.2% |
 | 138 | TERMINATED | ~35+ | 441 | — |
-| 139 | TERMINATED | — | 441 | — |
-| 140 | TBD | TBD | 441 | TBD |
+| 140 | TBD (8 failures at 43min) | TBD | 441 | TBD |
