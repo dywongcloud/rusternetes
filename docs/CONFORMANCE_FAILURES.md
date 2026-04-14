@@ -129,6 +129,13 @@
 - This broke DNS conformance tests using $$(dig ...) shell commands
 - K8s ref: third_party/forked/golang/expansion/expand.go:83-85
 
+### 8. Default Watch Timeout (prevents watch regression — many tests)
+- Watches without timeoutSeconds ran FOREVER, accumulating HTTP/2 streams
+- After ~4 hours of testing, 2403 watch failures cascaded
+- K8s defaults to minRequestTimeout=1800s (30 min) when client omits timeout
+- Applied to all 4 watch handler variants
+- K8s ref: apiserver/pkg/endpoints/handlers/watch.go, MinRequestTimeout=1800s
+
 ## Progress History
 
 | Round | Pass | Fail | Total | Rate |
