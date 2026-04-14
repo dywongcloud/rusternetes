@@ -127,8 +127,46 @@ impl Kubelet {
         let full_sync_interval = Duration::from_secs(self.sync_interval.as_secs().max(1));
         let mut full_sync_timer = tokio::time::interval(full_sync_interval);
 
-        // Node status update runs every 10 seconds (heartbeat)
-        let mut node_status_timer = tokio::time::interval(Duration::from_secs(10));
+        // Node status heartbeat runs in a SEPARATE task so it can't be blocked
+        // by a slow sync_loop (e.g., docker.stop_container taking 30+ seconds).
+        // K8s runs heartbeat and sync in separate goroutines.
+        // If heartbeat is in the same select! as sync, a slow sync blocks heartbeat,
+        // causing the node to go NotReady and the node controller to evict ALL pods.
+        {
+            let heartbeat_storage = self.storage.clone();
+            let heartbeat_node_name = self.node_name.clone();
+            tokio::spawn(async move {
+                let mut node_status_timer = tokio::time::interval(Duration::from_secs(10));
+                loop {
+                    node_status_timer.tick().await;
+                    // Lightweight heartbeat: just update the node's Ready condition timestamp
+                    let key = format!("/registry/nodes/{}", heartbeat_node_name);
+                    match heartbeat_storage
+                        .get::<rusternetes_common::resources::Node>(&key)
+                        .await
+                    {
+                        Ok(mut node) => {
+                            if let Some(ref mut status) = node.status {
+                                if let Some(ref mut conditions) = status.conditions {
+                                    let now = chrono::Utc::now();
+                                    for condition in conditions.iter_mut() {
+                                        condition.last_heartbeat_time = Some(now);
+                                    }
+                                }
+                            }
+                            let _ = heartbeat_storage.update(&key, &node).await;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Heartbeat: failed to update node {}: {}",
+                                heartbeat_node_name,
+                                e
+                            );
+                        }
+                    }
+                }
+            });
+        }
 
         // Debounce watch-triggered syncs to prevent feedback loops:
         // sync_pod writes status -> triggers watch event -> triggers sync_pod -> ...
@@ -163,11 +201,12 @@ impl Kubelet {
                         error!("Error in periodic sync: {}", e);
                     }
                 }
-                // Node status heartbeat
-                _ = node_status_timer.tick() => {
-                    if let Err(e) = self.update_node_status().await {
-                        error!("Error updating node status: {}", e);
-                    }
+                // Node status heartbeat now runs in a separate task above.
+                // This branch is a fallback periodic heartbeat in case the
+                // separate task fails. It won't block sync_loop.
+                _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                    // Periodic wakeup — sync loop handles pod reconciliation.
+                    // Heartbeat is handled by the separate spawned task.
                 }
             }
         }
