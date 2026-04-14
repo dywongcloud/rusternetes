@@ -48,6 +48,7 @@
 |--------|-----|------|
 | 5b7048f | **HTTP/2 flow control: K8s window sizes** | K8s source ✅ |
 | e430f8d | **Kubelet heartbeat in separate task** | K8s source ✅ |
+| 106b7b6 | **Kubelet sync loop fire-and-forget (no join_all)** | K8s source ✅ |
 | 858d091 | Schema validator collects ALL unknown fields | 3 tests ✅ |
 | 86b048a | OpenAPI strip ALL Go omitempty defaults | 1 test ✅ |
 | 55d52d7 | Status PATCH deep merge (node capacity) | 1 test ✅ |
