@@ -154,7 +154,38 @@ impl Kubelet {
                                     }
                                 }
                             }
-                            let _ = heartbeat_storage.update(&key, &node).await;
+                            // Retry on CAS conflict — the sync loop may
+                            // update the node concurrently
+                            match heartbeat_storage.update(&key, &node).await {
+                                Ok(_) => {
+                                    tracing::debug!(
+                                        "Heartbeat: updated node {}",
+                                        heartbeat_node_name
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Heartbeat: CAS conflict updating node {}: {}, will retry",
+                                        heartbeat_node_name,
+                                        e
+                                    );
+                                    // Retry once with fresh read
+                                    if let Ok(mut fresh) = heartbeat_storage
+                                        .get::<rusternetes_common::resources::Node>(&key)
+                                        .await
+                                    {
+                                        if let Some(ref mut status) = fresh.status {
+                                            if let Some(ref mut conditions) = status.conditions {
+                                                let now = chrono::Utc::now();
+                                                for condition in conditions.iter_mut() {
+                                                    condition.last_heartbeat_time = Some(now);
+                                                }
+                                            }
+                                        }
+                                        let _ = heartbeat_storage.update(&key, &fresh).await;
+                                    }
+                                }
+                            }
                         }
                         Err(e) => {
                             tracing::warn!(
