@@ -673,7 +673,12 @@ impl<S: Storage> AdmissionWebhookManager<S> {
         let mut handles = Vec::new();
         for inv in invocations {
             let review = AdmissionReview::new_request(inv.request.clone());
-            let ca_data = inv.ca_bundle.as_ref().map(|s| s.as_bytes().to_vec());
+            // K8s caBundle is []byte in Go, which JSON-serializes as base64.
+            // We need to decode the base64 to get the raw PEM certificate data.
+            let ca_data = inv.ca_bundle.as_ref().and_then(|s| {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD.decode(s).ok()
+            });
             let url = inv.resolved_url.clone();
             let timeout = inv.timeout;
             let webhook_name = inv.webhook_name.clone();
@@ -935,11 +940,12 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         .map(|t| Duration::from_secs(t as u64))
                         .unwrap_or(Duration::from_secs(10));
                     let review = AdmissionReview::new_request(request.clone());
-                    let ca_bundle = webhook
-                        .client_config
-                        .ca_bundle
-                        .as_ref()
-                        .map(|s| s.as_bytes());
+                    // K8s caBundle is []byte → JSON base64. Decode to get PEM.
+                    let ca_decoded = webhook.client_config.ca_bundle.as_ref().and_then(|s| {
+                        use base64::Engine;
+                        base64::engine::general_purpose::STANDARD.decode(s).ok()
+                    });
+                    let ca_bundle = ca_decoded.as_deref();
                     let response = match self
                         .client
                         .call_webhook_with_ca(&resolved_url, &review, timeout, ca_bundle)
