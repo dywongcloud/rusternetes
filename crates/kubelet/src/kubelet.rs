@@ -553,12 +553,16 @@ impl Kubelet {
 
         debug!("Found {} pods assigned to this node", node_pods.len());
 
-        // Sync all pods in parallel using tokio::spawn — one task per pod.
+        // Sync all pods using tokio::spawn — fire and forget.
         // K8s uses one goroutine per pod (podWorkerLoop). Each pod runs
-        // independently so a slow pod (image pull, init container) doesn't
-        // block other pods from being processed.
-        // K8s ref: pkg/kubelet/pod_workers.go — podWorkerLoop
-        let mut handles = Vec::new();
+        // independently — the kubelet loop does NOT wait for all pods to
+        // complete. This prevents a slow pod (stop_container with 30s
+        // grace period) from blocking the entire sync loop and delaying
+        // other pods from starting.
+        //
+        // Previously used join_all which waited for ALL pods, causing
+        // 28-second delays when one pod was being stopped.
+        // K8s ref: pkg/kubelet/pod_workers.go — podWorkerLoop (long-lived)
         for pod in &node_pods {
             let pod = pod.clone();
             let kubelet = Arc::clone(self);
@@ -567,52 +571,51 @@ impl Kubelet {
             } else {
                 30u64
             };
-            handles.push(tokio::spawn(async move {
+            tokio::spawn(async move {
                 let result = tokio::time::timeout(
                     std::time::Duration::from_secs(timeout_secs),
                     kubelet.sync_pod(&pod),
                 )
                 .await;
-                (pod, result)
-            }));
-        }
-
-        // Wait for all pod syncs to complete
-        let results = futures::future::join_all(handles).await;
-
-        for join_result in results {
-            let (pod, result) = match join_result {
-                Ok(r) => r,
-                Err(e) => {
-                    error!("Pod sync task panicked: {}", e);
-                    continue;
-                }
-            };
-            match result {
-                Ok(Err(e)) => {
-                    let err_str = e.to_string();
-                    if err_str.contains("Failed to create container")
-                        || err_str.contains("Failed to pull image")
-                        || err_str.contains("FailedToStart")
-                    {
-                        error!("Fatal error syncing pod {}: {}", pod.metadata.name, err_str);
-                        if let Err(update_err) = self.update_pod_status_error(&pod, &err_str).await
+                match result {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        let err_str = e.to_string();
+                        if err_str.contains("Failed to create container")
+                            || err_str.contains("Failed to pull image")
+                            || err_str.contains("FailedToStart")
                         {
-                            error!("Failed to update pod status: {}", update_err);
+                            tracing::error!(
+                                "Fatal error syncing pod {}/{}: {}",
+                                pod.metadata.namespace.as_deref().unwrap_or(""),
+                                pod.metadata.name,
+                                err_str
+                            );
+                            let _ = kubelet.update_pod_status_error(&pod, &err_str).await;
+                        } else {
+                            tracing::warn!(
+                                "Transient error syncing pod {}/{} (will retry): {}",
+                                pod.metadata.namespace.as_deref().unwrap_or(""),
+                                pod.metadata.name,
+                                err_str
+                            );
                         }
-                    } else {
-                        warn!(
-                            "Transient error syncing pod {} (will retry): {}",
-                            pod.metadata.name, err_str
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            "Pod sync timed out for {}/{} ({}s)",
+                            pod.metadata.namespace.as_deref().unwrap_or(""),
+                            pod.metadata.name,
+                            timeout_secs
                         );
                     }
                 }
-                Err(_timeout) => {
-                    warn!("Timeout syncing pod {}, skipping", pod.metadata.name);
-                }
-                Ok(Ok(())) => {}
-            }
+            });
         }
+
+        // Pod sync tasks now run independently (fire-and-forget).
+        // Error handling is in each spawned task above.
+        // This matches K8s podWorkerLoop which runs independently per pod.
 
         // Clean up orphaned containers using the pod list we already fetched
         if let Err(e) = self
