@@ -2760,4 +2760,70 @@ mod tests {
         assert_eq!(status.succeeded, Some(2));
         assert!(status.completion_time.is_some());
     }
+
+    /// Test that when a Job completes via successPolicy, the status has
+    /// terminating=0 (not the count of pods being terminated).
+    /// K8s ref: test/e2e/apps/job.go:596 checks terminating==0
+    #[tokio::test]
+    async fn test_success_policy_sets_terminating_zero() {
+        let storage = Arc::new(MemoryStorage::new());
+
+        let mut job = make_job("sp-job", "default", 2, 5);
+        job.spec.completion_mode = Some("Indexed".to_string());
+        job.spec.success_policy = Some(serde_json::json!({
+            "rules": [{"succeededCount": 1}]
+        }));
+        storage
+            .create("/registry/jobs/default/sp-job", &job)
+            .await
+            .unwrap();
+
+        let job_uid = job.metadata.uid.clone();
+
+        // Create one succeeded pod (index 0)
+        let mut pod = make_pod("sp-job-0", "default", Phase::Succeeded, "sp-job", &job_uid);
+        pod.metadata.labels.as_mut().unwrap().insert(
+            "batch.kubernetes.io/job-completion-index".to_string(),
+            "0".to_string(),
+        );
+        storage
+            .create("/registry/pods/default/sp-job-0", &pod)
+            .await
+            .unwrap();
+
+        // Create one running pod (index 1) that will need termination
+        let mut pod1 = make_pod("sp-job-1", "default", Phase::Running, "sp-job", &job_uid);
+        pod1.metadata.labels.as_mut().unwrap().insert(
+            "batch.kubernetes.io/job-completion-index".to_string(),
+            "1".to_string(),
+        );
+        storage
+            .create("/registry/pods/default/sp-job-1", &pod1)
+            .await
+            .unwrap();
+
+        let controller = JobController::new(storage.clone());
+        controller.reconcile_all().await.unwrap();
+
+        let updated_job: Job = storage.get("/registry/jobs/default/sp-job").await.unwrap();
+        let status = updated_job.status.unwrap();
+
+        // Job should be complete via success policy
+        assert!(
+            status.conditions.as_ref().map_or(false, |c| c
+                .iter()
+                .any(|cond| cond.condition_type == "SuccessCriteriaMet" && cond.status == "True")),
+            "Job should have SuccessCriteriaMet condition"
+        );
+
+        // terminating MUST be 0, not the count of pods being terminated
+        assert_eq!(
+            status.terminating,
+            Some(0),
+            "terminating should be 0 when job completes via successPolicy"
+        );
+
+        // ready should be 0
+        assert_eq!(status.ready, Some(0));
+    }
 }
