@@ -819,79 +819,6 @@ impl Kubelet {
 
         debug!("Syncing pod: {}/{}", namespace, pod_name);
 
-        // Pod worker state machine: check current state and handle transitions.
-        // K8s ref: pkg/kubelet/pod_workers.go — podWorkerLoop
-        let current_state = {
-            let states = self.pod_worker_states.lock().unwrap();
-            states.get(pod_uid).cloned()
-        }; // MutexGuard dropped here before any await
-
-        match current_state {
-            Some(PodWorkerState::TerminatedPod) => {
-                // Pod is fully terminated — delete from storage and clean up
-                let key = build_key("pods", Some(namespace), pod_name);
-                let has_finalizers = pod
-                    .metadata
-                    .finalizers
-                    .as_ref()
-                    .map(|f| !f.is_empty())
-                    .unwrap_or(false);
-                if !has_finalizers {
-                    if let Err(e) = self.storage.delete(&key).await {
-                        warn!(
-                            "Error deleting terminated pod {}/{}: {}",
-                            namespace, pod_name, e
-                        );
-                    } else {
-                        info!(
-                            "Pod {}/{} deleted from storage (terminated)",
-                            namespace, pod_name
-                        );
-                    }
-                }
-                self.pod_worker_states.lock().unwrap().remove(pod_uid);
-                return Ok(());
-            }
-            Some(PodWorkerState::TerminatingPod) => {
-                // Pod is terminating — stop containers, set Failed, transition to Terminated
-                // K8s ref: pkg/kubelet/status/status_manager.go:629 — TerminatePod
-                info!(
-                    "Pod {}/{} in TerminatingPod state, finalizing",
-                    namespace, pod_name
-                );
-                let grace_period = pod
-                    .spec
-                    .as_ref()
-                    .and_then(|s| s.termination_grace_period_seconds)
-                    .unwrap_or(0);
-                let _ = self.runtime.stop_pod_for(pod, grace_period).await;
-                let _ = self.runtime.stop_and_remove_pod(pod_name).await;
-
-                // Set phase to Failed — K8s TerminatePod sets phase for non-static pods
-                let key = build_key("pods", Some(namespace), pod_name);
-                if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
-                    if let Some(ref mut status) = p.status {
-                        if status.phase != Some(Phase::Failed)
-                            && status.phase != Some(Phase::Succeeded)
-                        {
-                            status.phase = Some(Phase::Failed);
-                            status.reason = Some("FailedToStart".to_string());
-                        }
-                    }
-                    let _ = self.storage.update(&key, &p).await;
-                }
-
-                self.pod_worker_states
-                    .lock()
-                    .unwrap()
-                    .insert(pod_uid.clone(), PodWorkerState::TerminatedPod);
-                return Ok(());
-            }
-            Some(PodWorkerState::SyncPod) | None => {
-                // Normal state — continue to sync below
-            }
-        }
-
         // Check if the pod is marked for deletion (deletionTimestamp set by API server)
         if pod.metadata.deletion_timestamp.is_some() {
             info!(
@@ -1418,24 +1345,17 @@ impl Kubelet {
                                     .as_ref()
                                     .and_then(|s| s.restart_policy.as_deref())
                                     .unwrap_or("Always");
-                                let is_permanent_failure = err_msg
+                                // K8s does NOT transition to TerminatingPod for container
+                                // creation errors. It retries in SyncPod state. The pod stays
+                                // Pending and the controller (StatefulSet, etc.) handles it.
+                                // Only eviction and deletion trigger TerminatingPod.
+                                // K8s ref: pkg/kubelet/pod_workers.go — podWorkerLoop
+                                let is_port_conflict = err_msg
                                     .contains("port is already allocated")
-                                    || err_msg.contains("bind: address already in use")
-                                    || err_msg.contains("Failed to create container");
-
-                                // For permanent failures, transition pod worker to TerminatingPod
-                                // so the pod gets cleaned up and deleted on the next sync.
-                                // K8s ref: pkg/kubelet/pod_workers.go — transition to TerminatingPod
-                                if is_permanent_failure {
-                                    let uid = pod.metadata.uid.clone();
-                                    self.pod_worker_states
-                                        .lock()
-                                        .unwrap()
-                                        .insert(uid, PodWorkerState::TerminatingPod);
-                                }
+                                    || err_msg.contains("bind: address already in use");
 
                                 let (phase, reason) =
-                                    if restart_policy == "Never" || is_permanent_failure {
+                                    if restart_policy == "Never" || is_port_conflict {
                                         (Phase::Failed, "FailedToStart".to_string())
                                     } else {
                                         (Phase::Pending, "InitContainerFailed".to_string())
