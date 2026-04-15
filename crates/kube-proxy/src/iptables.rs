@@ -1320,6 +1320,14 @@ impl IptablesManager {
                     .unwrap_or_default();
 
                 if endpoints.is_empty() {
+                    info!(
+                        "No endpoints matched for service {}/{}:{} (target_port={:?}, endpointslice_entries={})",
+                        namespace,
+                        service.metadata.name,
+                        port,
+                        target_port,
+                        endpointslice_map.get(&svc_key).map(|e| e.len()).unwrap_or(0)
+                    );
                     continue;
                 }
 
