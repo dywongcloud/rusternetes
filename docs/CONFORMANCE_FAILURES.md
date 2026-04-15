@@ -31,21 +31,24 @@
 - EndpointSlice ready state issue
 
 ### 6. Apps controllers — 10 failures — MIXED CAUSES
-- `deployment.go:995,1259` — Docker 409 still happening (removal then retry still gets 409 from different container ID)
+- `deployment.go:995,1259` — Docker 409 fixed (container ID-based removal). Still may need verification.
 - `statefulset.go:957,1092` — pod lifecycle issues
-- `replica_set.go:232,560` — network unreachable / pod status
-- `rc.go:509,623` — pod creation / quota condition
+- `replica_set.go:232,560` — `:232` same as webhook (kube-proxy port matching → FIXED). `:560` — pod status update issue.
+- `rc.go:509,623` — `:509` service routing (FIXED by kube-proxy). `:623` quota counting (FIXED by active pods).
 - `daemon_set.go:1276` — ControllerRevision byte match
-- `init_container.go:233` — init container failure
+- `init_container.go:233` — pod phase not set to Succeeded after init containers + main container exit. Kubelet lifecycle issue — needs deeper investigation of how we detect all containers completed.
 
 ### 7. Network — 3 failures
 - `proxy.go:271,503` — service routing
 - `hostport.go:219` — hostPort binding
 
-### 8. Watch regression — affects late tests
+### 8. Watch regression — affects ~8 late tests
 - 1567 watch failures starting at 10:23 (3h22m into test)
-- Watch timeout set to 1800s but failures still accumulate
-- Affects: `garbage_collector.go:436`, `runtime.go:115`, `init_container.go:440`, `secrets_volume.go:337`, `pre_stop.go:153`, `pod_client.go:236`
+- Watch timeout set to 1800s but client-go sets its own shorter timeout
+- Root cause likely HTTP/2 connection degradation or memory pressure — needs profiling
+- Affects: `garbage_collector.go:436`, `runtime.go:115`, `init_container.go:440`, `secrets_volume.go:337`
+- `pre_stop.go:153` — actually service routing (0 endpoints for nettest service, FIXED by kube-proxy port matching)
+- `pod_client.go:236` — pod deletion during lifecycle hook test, needs investigation
 
 ### 9. Other
 - `resource_quota.go:290` — **ROOT CAUSE FOUND, FIXED**: quota counted ALL pods including terminal/terminating. K8s only counts active pods.
