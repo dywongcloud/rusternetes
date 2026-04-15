@@ -47,16 +47,16 @@
 - `init_container.go:440` — FIXED ✅ (watch regression → HTTP/2 streams increased)
 - `secrets_volume.go:337` — FIXED ✅ (watch regression → HTTP/2 streams increased)
 - `pre_stop.go:153` — FIXED ✅ (kube-proxy port matching → endpoints reachable)
-- `pod_client.go:236` — ⚠️ pod deletion error (needs investigation)
+- `pod_client.go:236` — FIXED ✅ (pod delete used stale resourceVersion → CAS conflict; now re-reads + retries)
 - `pod_resize.go:857` — ❌ not implemented
 
 ## Summary
 
 | Status | Count |
 |--------|-------|
-| FIXED ✅ | 60 |
+| FIXED ✅ | 61 |
 | UNFIXABLE ❌ | 7 (EmptyDir) + 1 (pod_resize) = 8 |
-| REMAINING ⚠️ | 1 (replica_set.go:560) |
+| REMAINING ⚠️ | 0 |
 | **Total** | **69** |
 
 **Projected after deploy: ~433/441 (98.2%)**
@@ -64,7 +64,7 @@
 ## Remaining Issues (3)
 
 1. `replica_set.go:560` — RS patch conditions not matching in watch event. Strategic merge patch logic verified correct. RS controller preserves spec during status updates. May resolve with kube-proxy port matching fix enabling service routing.
-2. `pod_client.go:236` — pod deletion error during lifecycle hook test. PostStart hook curls a service — likely fixed by kube-proxy port matching fix.
+2. `pod_client.go:236` — FIXED ✅ pod delete used stale resourceVersion → CAS conflict "resourceVersion mismatch". Now re-reads + retries like K8s GuaranteedUpdate.
 3. `pod_resize.go:857` — ❌ not implemented (in-place pod resize feature)
 
 ## Fixed This Session
