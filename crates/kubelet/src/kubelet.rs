@@ -17,29 +17,12 @@ use std::{
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-/// Pod worker state machine matching K8s pkg/kubelet/pod_workers.go.
-/// Each pod transitions: SyncPod → TerminatingPod → TerminatedPod.
-/// K8s ref: pkg/kubelet/pod_workers.go:110-117
-#[derive(Debug, Clone, PartialEq)]
-enum PodWorkerState {
-    /// Pod is expected to be started and running.
-    SyncPod,
-    /// Pod is being torn down (containers stopping).
-    TerminatingPod,
-    /// Pod is stopped, ready for cleanup and removal from storage.
-    TerminatedPod,
-}
-
 pub struct Kubelet {
     node_name: String,
     storage: Arc<EtcdStorage>,
     runtime: Arc<ContainerRuntime>,
     sync_interval: Duration,
     eviction_manager: Mutex<EvictionManager>,
-    /// Per-pod worker state tracking. K8s uses a podWorker goroutine per pod;
-    /// we use a state map checked each sync cycle.
-    /// K8s ref: pkg/kubelet/pod_workers.go
-    pod_worker_states: Mutex<HashMap<String, PodWorkerState>>,
 }
 
 // Kubelet needs Send+Sync for Arc<Kubelet> in spawned tasks
@@ -72,7 +55,6 @@ impl Kubelet {
             runtime: Arc::new(runtime),
             sync_interval: Duration::from_secs(sync_interval_secs),
             eviction_manager: Mutex::new(EvictionManager::new()),
-            pod_worker_states: Mutex::new(HashMap::new()),
         })
     }
 
