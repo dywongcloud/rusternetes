@@ -63,8 +63,8 @@
 
 ## Remaining Issues (3)
 
-1. `replica_set.go:560` — RS patch conditions not matching in watch event. Likely terminationGracePeriodSeconds or label not propagating through watch.
-2. `pod_client.go:236` — pod deletion error during lifecycle hook test. PostStart hook curls a service — may be fixed by kube-proxy port matching fix.
+1. `replica_set.go:560` — RS patch conditions not matching in watch event. Strategic merge patch logic verified correct. RS controller preserves spec during status updates. May resolve with kube-proxy port matching fix enabling service routing.
+2. `pod_client.go:236` — pod deletion error during lifecycle hook test. PostStart hook curls a service — likely fixed by kube-proxy port matching fix.
 3. `pod_resize.go:857` — ❌ not implemented (in-place pod resize feature)
 
 ## Fixed This Session
