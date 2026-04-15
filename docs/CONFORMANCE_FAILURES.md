@@ -2,55 +2,67 @@
 
 **Round 143** | Complete — 372/441 (84.4%) | 2026-04-15
 
-## Round 143 Failures (69 total)
+## Root Cause Analysis (69 failures)
 
-### Webhook — 18 failures
+### 1. Webhook routing — 18 failures — INVESTIGATING
 - `webhook.go:425,520,601,675,904,1194,1244,1269,1334,1549,1631,2032,2107(x3),2338,2465`
-- Still "No route to host" or "connection refused" to ClusterIP
+- API server gets "No route to host" to webhook service ClusterIPs
+- kube-proxy DOES apply iptables-restore with DNAT rules (504 times during test)
+- EndpointSlice controller creates EndpointSlices for webhook services (GC no longer deleting them)
+- BUT: kube-proxy only ever sees 3-6 services at a time — test services are ephemeral
+- **Root cause theory**: EndpointSlice endpoints have `ready: false` because kubelet hasn't set pod Ready condition → kube-proxy skips not-ready endpoints → no DNAT rule created
+- **TODO**: verify if webhook pod has Ready=true condition. If not, fix kubelet readiness detection.
 
-### CRD OpenAPI — 9 failures
+### 2. CRD OpenAPI — 9 failures — INVESTIGATING
 - `crd_publish_openapi.go:77,170,211,267,285,318,366,400,451`
+- `:170,211` — kubectl create fails with rc=1 — client-side validation rejects unknown fields
+- Root cause: our OpenAPI v2 spec for CRDs with `preserve-unknown-fields` doesn't properly advertise the schema. kubectl validates client-side and rejects.
+- **TODO**: verify our get_swagger_spec returns correct schema for preserve-unknown-fields CRDs
 
-### EmptyDir/Volumes — 7 failures
-- `output.go:263` (x5), `output.go:282` (x2)
-
-### DNS — 6 failures
+### 3. DNS — 6 failures — ROOT CAUSE FOUND
 - `dns_common.go:476` (x6)
+- "pause: line 1: syntax error: unexpected word (expecting 'do')"
+- **Root cause**: umask wrapper double-wraps `sh -c "script"` commands. When command=`["sh","-c","for i in..."]`, the umask wrapper creates `sh -c "umask 0000 && exec sh -c 'for i in...'"` which mangles quotes/backticks.
+- **FIX IN PROGRESS**: inject `umask 0000 &&` into the script argument instead of wrapping
 
-### Service — 5 failures
+### 4. EmptyDir — 7 failures — macOS limitation
+- `output.go:263` (x5), `output.go:282` (x2)
+- macOS Docker filesystem doesn't support 0666 mode
+
+### 5. Service routing — 5 failures — SAME AS WEBHOOK
 - `service.go:768,3459,4291(x3)`
+- Same root cause as webhook: kube-proxy doesn't have DNAT rules for test services
+- EndpointSlice ready state issue
 
-### Apps — 10 failures
-- `deployment.go:995,1259`
-- `statefulset.go:957,1092`
-- `replica_set.go:232,560`
-- `rc.go:509,623`
-- `daemon_set.go:1276`
-- `init_container.go:233`
+### 6. Apps controllers — 10 failures — MIXED CAUSES
+- `deployment.go:995,1259` — Docker 409 still happening (removal then retry still gets 409 from different container ID)
+- `statefulset.go:957,1092` — pod lifecycle issues
+- `replica_set.go:232,560` — network unreachable / pod status
+- `rc.go:509,623` — pod creation / quota condition
+- `daemon_set.go:1276` — ControllerRevision byte match
+- `init_container.go:233` — init container failure
 
-### Network — 3 failures
-- `proxy.go:271,503`
-- `hostport.go:219`
+### 7. Network — 3 failures
+- `proxy.go:271,503` — service routing
+- `hostport.go:219` — hostPort binding
 
-### Other — 11 failures
-- `service_latency.go:145`
-- `preemption.go:877`
-- `resource_quota.go:290`
-- `aggregator.go:359`
-- `garbage_collector.go:436`
-- `runtime.go:115`
-- `pod_resize.go:857`
-- `init_container.go:440`
-- `secrets_volume.go:337`
-- `pod_client.go:236`
-- `pre_stop.go:153`
+### 8. Watch regression — affects late tests
+- 1567 watch failures starting at 10:23 (3h22m into test)
+- Watch timeout set to 1800s but failures still accumulate
+- Affects: `garbage_collector.go:436`, `runtime.go:115`, `init_container.go:440`, `secrets_volume.go:337`, `pre_stop.go:153`, `pod_client.go:236`
+
+### 9. Other
+- `resource_quota.go:290` — quota still not rejecting — live usage fix not working
+- `preemption.go:877` — preemption logic
+- `aggregator.go:359` — service routing
+- `pod_resize.go:857` — not implemented
+- `service_latency.go:145` — deployment not ready
 
 ## Progress History
 
 | Round | Pass | Fail | Total | Rate |
 |-------|------|------|-------|------|
 | 135 | 373 | 68 | 441 | 84.6% |
-| 137 | ~380 | ~61 | 441 | ~86.2% |
 | 141 | 368 | 73 | 441 | 83.4% |
 | 142 | 372 | 69 | 441 | 84.4% |
 | 143 | 372 | 69 | 441 | 84.4% |

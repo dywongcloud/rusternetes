@@ -4177,17 +4177,36 @@ impl ContainerRuntime {
                 let expanded_cmd = expand_k8s_vars(command);
                 let expanded_args = expand_k8s_vars(args);
                 if needs_umask_fix {
-                    let full = format!(
-                        "umask 0000 && exec {} {}",
-                        shell_join(&expanded_cmd),
-                        shell_join(&expanded_args)
-                    );
-                    info!(
-                        "Container {} - wrapping with umask 0: {}",
-                        container.name, full
-                    );
-                    config.entrypoint = Some(vec!["/bin/sh".to_string(), "-c".to_string(), full]);
-                    config.cmd = Some(vec![]);
+                    // If the command is already ["sh", "-c", "script"], inject
+                    // umask into the script itself to avoid double-wrapping.
+                    // Double-wrapping breaks backticks, quotes, and $() in the script.
+                    if expanded_cmd.len() >= 2
+                        && (expanded_cmd[0] == "sh" || expanded_cmd[0] == "/bin/sh")
+                        && expanded_cmd[1] == "-c"
+                        && expanded_cmd.len() == 3
+                    {
+                        let mut modified_cmd = expanded_cmd.clone();
+                        modified_cmd[2] = format!("umask 0000 && {}", modified_cmd[2]);
+                        info!(
+                            "Container {} - injecting umask into sh -c script",
+                            container.name
+                        );
+                        config.entrypoint = Some(modified_cmd);
+                        config.cmd = Some(expanded_args);
+                    } else {
+                        let full = format!(
+                            "umask 0000 && exec {} {}",
+                            shell_join(&expanded_cmd),
+                            shell_join(&expanded_args)
+                        );
+                        info!(
+                            "Container {} - wrapping with umask 0: {}",
+                            container.name, full
+                        );
+                        config.entrypoint =
+                            Some(vec!["/bin/sh".to_string(), "-c".to_string(), full]);
+                        config.cmd = Some(vec![]);
+                    }
                 } else {
                     info!(
                         "Container {} - setting entrypoint {:?} and cmd {:?}",
@@ -4199,12 +4218,24 @@ impl ContainerRuntime {
             } else {
                 let expanded_cmd = expand_k8s_vars(command);
                 if needs_umask_fix {
-                    let full = format!("umask 0000 && exec {}", shell_join(&expanded_cmd));
-                    info!(
-                        "Container {} - wrapping with umask 0: {}",
-                        container.name, full
-                    );
-                    config.entrypoint = Some(vec!["/bin/sh".to_string(), "-c".to_string(), full]);
+                    // Same sh -c injection for command-only case
+                    if expanded_cmd.len() >= 2
+                        && (expanded_cmd[0] == "sh" || expanded_cmd[0] == "/bin/sh")
+                        && expanded_cmd[1] == "-c"
+                        && expanded_cmd.len() == 3
+                    {
+                        let mut modified_cmd = expanded_cmd.clone();
+                        modified_cmd[2] = format!("umask 0000 && {}", modified_cmd[2]);
+                        config.entrypoint = Some(modified_cmd);
+                    } else {
+                        let full = format!("umask 0000 && exec {}", shell_join(&expanded_cmd));
+                        info!(
+                            "Container {} - wrapping with umask 0: {}",
+                            container.name, full
+                        );
+                        config.entrypoint =
+                            Some(vec!["/bin/sh".to_string(), "-c".to_string(), full]);
+                    }
                 } else {
                     info!(
                         "Container {} - setting entrypoint: {:?}",
@@ -4303,16 +4334,42 @@ impl ContainerRuntime {
                     "Container {} already exists, removing and retrying",
                     container_name
                 );
+                // Parse the container ID from the Docker error message.
+                // Format: "...already in use by container \"<id>\". You have to..."
+                // Remove THAT specific container, not just by name.
+                let conflicting_id = err_str
+                    .split("already in use by container \"")
+                    .nth(1)
+                    .and_then(|s| s.split('"').next())
+                    .map(|s| s.to_string());
+
+                // Remove by ID if available, otherwise by name
+                let remove_target = conflicting_id.as_deref().unwrap_or(&container_name);
                 let _ = self
                     .docker
                     .remove_container(
-                        &container_name,
+                        remove_target,
                         Some(bollard::container::RemoveContainerOptions {
                             force: true,
                             ..Default::default()
                         }),
                     )
                     .await;
+                // Also remove by name in case there are multiple conflicts
+                if conflicting_id.is_some() {
+                    let _ = self
+                        .docker
+                        .remove_container(
+                            &container_name,
+                            Some(bollard::container::RemoveContainerOptions {
+                                force: true,
+                                ..Default::default()
+                            }),
+                        )
+                        .await;
+                }
+                // Brief pause for Docker to finalize removal
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 // Retry creation after removal
                 if let Err(e2) = self.docker.create_container(Some(options), config).await {
                     error!(
