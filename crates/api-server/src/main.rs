@@ -300,7 +300,9 @@ async fn main() -> Result<()> {
             .http2()
             .initial_stream_window_size(256 * 1024) // 256KB per stream (K8s: 256KB)
             .initial_connection_window_size(256 * 1024 * 100) // 25MB total (K8s: 256KB * 100)
-            .max_concurrent_streams(100); // K8s default
+            .max_concurrent_streams(250) // Increased from 100 — conformance tests create many concurrent watches
+            .keep_alive_interval(Some(std::time::Duration::from_secs(30))) // HTTP/2 PING every 30s
+            .keep_alive_timeout(std::time::Duration::from_secs(20)); // Close if no PING response in 20s
 
         server.serve(app.into_make_service()).await?;
     } else {
