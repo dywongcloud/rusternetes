@@ -9,11 +9,11 @@
 - **Root cause**: kube-proxy matched EndpointSlice ports against SERVICE port (443) instead of TARGET port (8443). Webhook service has port:443 targetPort:8443. EndpointSlice port is the target (8443). Filter `ep_port == svc_port` (8443 != 443) → no match → no DNAT rule → "No route to host"
 - **FIXED**: match by port name, then targetPort, then servicePort, then single-port fallback
 
-### 2. CRD OpenAPI — 9 failures — INVESTIGATING
+### 2. CRD OpenAPI — 9 failures — ROOT CAUSE FOUND, FIXED
 - `crd_publish_openapi.go:77,170,211,267,285,318,366,400,451`
-- `:170,211` — kubectl create fails with rc=1 — client-side validation rejects unknown fields
-- Root cause: our OpenAPI v2 spec for CRDs with `preserve-unknown-fields` doesn't properly advertise the schema. kubectl validates client-side and rejects.
-- **TODO**: verify our get_swagger_spec returns correct schema for preserve-unknown-fields CRDs
+- **Root cause**: kubectl sends `fieldValidation=Strict` by default (`--validate=true`). Our CRD create handler rejected unknown top-level fields even for CRDs with `preserve-unknown-fields:true`. K8s skips strict field rejection for CRDs that allow unknown properties.
+- Error: `strict decoding error: unknown field "a"` for CRDs that explicitly allow arbitrary fields
+- **FIXED**: check CRD's preserve-unknown-fields before rejecting unknown fields in strict mode
 
 ### 3. DNS — 6 failures — ROOT CAUSE FOUND
 - `dns_common.go:476` (x6)
