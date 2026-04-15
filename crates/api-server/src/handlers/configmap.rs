@@ -105,6 +105,14 @@ pub async fn create(
                 &user_info,
             )
             .await?;
+        // Check if the mutating webhook DENIED the request.
+        // K8s mutating webhooks CAN deny — the denial must be enforced.
+        if let rusternetes_common::admission::AdmissionResponse::Deny(reason) = &_response {
+            return Err(rusternetes_common::Error::Forbidden(format!(
+                "admission webhook denied the request: {}",
+                reason
+            )));
+        }
         if let Some(mutated) = mutated_obj {
             if let Ok(m) = serde_json::from_value::<ConfigMap>(mutated) {
                 configmap = m;
