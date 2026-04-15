@@ -1280,17 +1280,39 @@ impl IptablesManager {
                 let port = svc_port.port;
                 let proto = svc_port.protocol.as_deref().unwrap_or("TCP").to_lowercase();
 
-                // Find endpoints for this service+port
+                // Find endpoints for this service+port.
+                // EndpointSlice ports are TARGET ports (container port), not service ports.
+                // Match by: port name, target port number, or if service has only one port
+                // take all endpoints.
+                // K8s ref: pkg/proxy/iptables/proxier.go — servicePortEndpointChains
                 let svc_key = format!("{}/{}", namespace, service.metadata.name);
+                let target_port = svc_port.target_port.as_ref().and_then(|tp| match tp {
+                    rusternetes_common::resources::IntOrString::Int(p) => Some(*p as u16),
+                    rusternetes_common::resources::IntOrString::String(s) => s.parse::<u16>().ok(),
+                });
                 let endpoints: Vec<(String, u16)> = endpointslice_map
                     .get(&svc_key)
                     .map(|eps| {
                         eps.iter()
                             .filter(|(_, port_name, ep_port)| {
-                                // Match by port number or port name
-                                *ep_port == port
-                                    || (svc_port.name.is_some()
-                                        && svc_port.name.as_deref() == port_name.as_deref())
+                                // Match by port name (most reliable)
+                                if svc_port.name.is_some()
+                                    && svc_port.name.as_deref() == port_name.as_deref()
+                                {
+                                    return true;
+                                }
+                                // Match by target port number
+                                if let Some(tp) = target_port {
+                                    if *ep_port == tp {
+                                        return true;
+                                    }
+                                }
+                                // Match by service port (for services where target_port == port)
+                                if *ep_port == port {
+                                    return true;
+                                }
+                                // If service has only one port, take all endpoints
+                                service.spec.ports.len() == 1
                             })
                             .map(|(ip, _, ep_port)| (ip.clone(), *ep_port))
                             .collect()
@@ -1404,14 +1426,29 @@ impl IptablesManager {
                 let proto = svc_port.protocol.as_deref().unwrap_or("TCP").to_lowercase();
 
                 let svc_key = format!("{}/{}", namespace, service.metadata.name);
+                let np_target_port = svc_port.target_port.as_ref().and_then(|tp| match tp {
+                    rusternetes_common::resources::IntOrString::Int(p) => Some(*p as u16),
+                    rusternetes_common::resources::IntOrString::String(s) => s.parse::<u16>().ok(),
+                });
                 let endpoints: Vec<(String, u16)> = endpointslice_map
                     .get(&svc_key)
                     .map(|eps| {
                         eps.iter()
                             .filter(|(_, port_name, ep_port)| {
-                                *ep_port == svc_port.port
-                                    || (svc_port.name.is_some()
-                                        && svc_port.name.as_deref() == port_name.as_deref())
+                                if svc_port.name.is_some()
+                                    && svc_port.name.as_deref() == port_name.as_deref()
+                                {
+                                    return true;
+                                }
+                                if let Some(tp) = np_target_port {
+                                    if *ep_port == tp {
+                                        return true;
+                                    }
+                                }
+                                if *ep_port == svc_port.port {
+                                    return true;
+                                }
+                                service.spec.ports.len() == 1
                             })
                             .map(|(ip, _, ep_port)| (ip.clone(), *ep_port))
                             .collect()
