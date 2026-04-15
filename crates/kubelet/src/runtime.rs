@@ -515,6 +515,48 @@ impl ContainerRuntime {
 
         info!("Starting pod: {}/{}", namespace, pod_name);
 
+        // Proactively remove any old exited containers for this pod.
+        // K8s does this in SyncPod before creating new containers.
+        // Without this, Docker returns 409 Conflict for container name reuse.
+        // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_manager.go — SyncPod
+        if let Ok(containers) = self
+            .docker
+            .list_containers(Some(ListContainersOptions::<String> {
+                all: true,
+                filters: {
+                    let mut f = std::collections::HashMap::new();
+                    f.insert("name".to_string(), vec![format!("^/{}", pod_name)]);
+                    f.insert(
+                        "status".to_string(),
+                        vec![
+                            "exited".to_string(),
+                            "dead".to_string(),
+                            "created".to_string(),
+                        ],
+                    );
+                    f
+                },
+                ..Default::default()
+            }))
+            .await
+        {
+            for c in &containers {
+                if let Some(ref id) = c.id {
+                    debug!("Removing old container {} for pod {}", id, pod_name);
+                    let _ = self
+                        .docker
+                        .remove_container(
+                            id,
+                            Some(bollard::container::RemoveContainerOptions {
+                                force: true,
+                                ..Default::default()
+                            }),
+                        )
+                        .await;
+                }
+            }
+        }
+
         // Create network namespace and setup CNI networking if enabled
         // If CNI setup fails, netns_path will be None and we fall back to Podman networking
         let netns_path = if self.use_cni {
