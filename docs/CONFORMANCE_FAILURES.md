@@ -54,21 +54,24 @@
 
 | Status | Count |
 |--------|-------|
-| FIXED ✅ | 55 |
+| FIXED ✅ | 57 |
 | UNFIXABLE ❌ | 7 (EmptyDir) + 1 (pod_resize) = 8 |
-| REMAINING ⚠️ | 6 |
+| REMAINING ⚠️ | 4 |
 | **Total** | **69** |
 
-**Projected after deploy: ~427/441 (96.8%)**
+**Projected after deploy: ~430/441 (97.5%)**
 
-## Remaining Issues (6)
+## Remaining Issues (4)
 
-1. `statefulset.go:957` — FIXED ✅ Docker 409 (proactive container cleanup before pod start)
-2. `replica_set.go:560` — RS patch conditions not matching (image/label/terminationGracePeriod)
-3. `daemon_set.go:1276` — ControllerRevision JSON byte comparison mismatch
-4. `init_container.go:233` — kubelet polling too slow for fast-exiting containers (architecture)
-5. `pod_client.go:236` — pod deletion error during lifecycle hook test
-6. `pod_resize.go:857` — ❌ not implemented
+1. `replica_set.go:560` — RS patch conditions not matching (image/label/terminationGracePeriod)
+2. `daemon_set.go:1276` — ControllerRevision JSON byte comparison mismatch
+3. `pod_client.go:236` — pod deletion error during lifecycle hook test
+4. `pod_resize.go:857` — ❌ not implemented
+
+## Fixed This Session
+
+- `statefulset.go:957` — FIXED ✅ proactive container cleanup before pod start
+- `init_container.go:233` — FIXED ✅ fast-exit detection in start_pod for restartPolicy=Never
 
 ## Progress History
 
