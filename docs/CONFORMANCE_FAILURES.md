@@ -63,12 +63,12 @@
 
 ## Remaining Issues (6)
 
-1. `statefulset.go:957` — kubelet doesn't set Failed for port-conflicting pods with restartPolicy=Always
-2. `replica_set.go:560` — RS status update timing
+1. `statefulset.go:957` — FIXED ✅ Docker 409 (proactive container cleanup before pod start)
+2. `replica_set.go:560` — RS patch conditions not matching (image/label/terminationGracePeriod)
 3. `daemon_set.go:1276` — ControllerRevision JSON byte comparison mismatch
-4. `init_container.go:233` — kubelet polling too slow for fast-exiting containers
-5. `pod_client.go:236` — pod deletion returns error during lifecycle hook test
-6. `pod_resize.go:857` — in-place pod resize not implemented
+4. `init_container.go:233` — kubelet polling too slow for fast-exiting containers (architecture)
+5. `pod_client.go:236` — pod deletion error during lifecycle hook test
+6. `pod_resize.go:857` — ❌ not implemented
 
 ## Progress History
 
