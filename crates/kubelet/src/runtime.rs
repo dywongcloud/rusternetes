@@ -965,6 +965,64 @@ impl ContainerRuntime {
             }
         }
 
+        // For restartPolicy=Never pods, containers may exit immediately.
+        // K8s SyncPod detects this within the same call and updates status.
+        // Without this, the kubelet sync loop (3s interval) misses fast-exiting
+        // containers that have already been removed by Docker.
+        // K8s ref: pkg/kubelet/kubelet_pods.go:1639 — getPhase
+        let restart_policy = pod
+            .spec
+            .as_ref()
+            .and_then(|s| s.restart_policy.as_deref())
+            .unwrap_or("Always");
+        if restart_policy == "Never" {
+            // Brief delay for containers to exit
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+            // Check if all containers have terminated
+            if let Ok(statuses) = self.get_container_statuses(pod).await {
+                let all_terminated = !statuses.is_empty()
+                    && statuses.iter().all(|cs| {
+                        matches!(
+                            cs.state,
+                            Some(rusternetes_common::resources::ContainerState::Terminated { .. })
+                        )
+                    });
+                if all_terminated {
+                    let any_failed = statuses.iter().any(|cs| {
+                        matches!(
+                            cs.state,
+                            Some(rusternetes_common::resources::ContainerState::Terminated { exit_code, .. }) if exit_code != 0
+                        )
+                    });
+                    let phase = if any_failed {
+                        rusternetes_common::types::Phase::Failed
+                    } else {
+                        rusternetes_common::types::Phase::Succeeded
+                    };
+
+                    if let Some(ref storage) = self.storage {
+                        use rusternetes_storage::Storage;
+                        let pod_key =
+                            rusternetes_storage::build_key("pods", Some(namespace), pod_name);
+                        if let Ok(mut p) = storage.get::<Pod>(&pod_key).await {
+                            if let Some(ref mut status) = p.status {
+                                status.phase = Some(phase);
+                                status.container_statuses = Some(statuses);
+                            }
+                            let _ = storage.update(&pod_key, &p).await;
+                            info!(
+                                "Pod {}/{} all containers terminated, set phase={:?}",
+                                namespace,
+                                pod_name,
+                                if any_failed { "Failed" } else { "Succeeded" }
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
