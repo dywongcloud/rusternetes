@@ -17,12 +17,37 @@ use std::{
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
+/// Pod worker state machine matching K8s pkg/kubelet/pod_workers.go.
+///
+/// K8s transitions:
+/// - SyncPod: normal operation — create/update containers, retry on failure
+/// - TerminatingPod: pod is being stopped (deletionTimestamp set OR evicted)
+///   → stop containers, run preStop hooks, set Phase=Failed
+/// - TerminatedPod: all containers stopped → delete pod from storage
+///
+/// IMPORTANT: Container creation errors do NOT trigger TerminatingPod.
+/// The kubelet retries in SyncPod state. Only deletion and eviction trigger it.
+/// K8s ref: pkg/kubelet/pod_workers.go:110-117, 260
+#[derive(Debug, Clone, PartialEq)]
+pub enum PodWorkerState {
+    /// Pod is expected to be started and running. Failures are retried.
+    SyncPod,
+    /// Pod is being torn down — deletion or eviction requested.
+    TerminatingPod,
+    /// All containers stopped, pod can be removed from storage.
+    TerminatedPod,
+}
+
 pub struct Kubelet {
     node_name: String,
     storage: Arc<EtcdStorage>,
     runtime: Arc<ContainerRuntime>,
     sync_interval: Duration,
     eviction_manager: Mutex<EvictionManager>,
+    /// Per-pod worker state. K8s uses a goroutine per pod; we track state
+    /// per-UID and dispatch in the sync loop.
+    /// K8s ref: pkg/kubelet/pod_workers.go
+    pod_states: Mutex<HashMap<String, PodWorkerState>>,
 }
 
 // Kubelet needs Send+Sync for Arc<Kubelet> in spawned tasks
@@ -55,6 +80,7 @@ impl Kubelet {
             runtime: Arc::new(runtime),
             sync_interval: Duration::from_secs(sync_interval_secs),
             eviction_manager: Mutex::new(EvictionManager::new()),
+            pod_states: Mutex::new(HashMap::new()),
         })
     }
 
@@ -800,6 +826,63 @@ impl Kubelet {
         let pod_uid = &pod.metadata.uid;
 
         debug!("Syncing pod: {}/{}", namespace, pod_name);
+
+        // Pod worker state machine dispatch.
+        // K8s ref: pkg/kubelet/pod_workers.go — podWorkerLoop
+        //
+        // Transition triggers:
+        // - deletionTimestamp set → TerminatingPod (API delete, controller delete)
+        // - eviction → TerminatingPod (handled by eviction manager separately)
+        // - Container creation errors → stay in SyncPod (retry)
+        let current_state = { self.pod_states.lock().unwrap().get(pod_uid).cloned() };
+
+        // Transition to TerminatingPod when deletionTimestamp is set
+        if pod.metadata.deletion_timestamp.is_some()
+            && !matches!(current_state, Some(PodWorkerState::TerminatedPod))
+        {
+            self.pod_states
+                .lock()
+                .unwrap()
+                .insert(pod_uid.clone(), PodWorkerState::TerminatingPod);
+        }
+
+        // Handle TerminatedPod: delete from storage, clean up state
+        if matches!(current_state, Some(PodWorkerState::TerminatedPod)) {
+            let key = build_key("pods", Some(namespace), pod_name);
+            let has_finalizers = pod
+                .metadata
+                .finalizers
+                .as_ref()
+                .map(|f| !f.is_empty())
+                .unwrap_or(false);
+            if !has_finalizers {
+                if let Err(e) = self.storage.delete(&key).await {
+                    warn!(
+                        "Error deleting terminated pod {}/{}: {}",
+                        namespace, pod_name, e
+                    );
+                } else {
+                    info!(
+                        "Pod {}/{} deleted from storage (terminated)",
+                        namespace, pod_name
+                    );
+                }
+            } else {
+                // Pod has finalizers — update status to Failed but don't delete
+                if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
+                    if let Some(ref mut status) = p.status {
+                        if status.phase != Some(Phase::Failed)
+                            && status.phase != Some(Phase::Succeeded)
+                        {
+                            status.phase = Some(Phase::Succeeded);
+                        }
+                    }
+                    let _ = self.storage.update(&key, &p).await;
+                }
+            }
+            self.pod_states.lock().unwrap().remove(pod_uid);
+            return Ok(());
+        }
 
         // Check if the pod is marked for deletion (deletionTimestamp set by API server)
         if pod.metadata.deletion_timestamp.is_some() {
