@@ -4,14 +4,10 @@
 
 ## Root Cause Analysis (69 failures)
 
-### 1. Webhook routing — 18 failures — INVESTIGATING
+### 1. Webhook routing — 18 failures — ROOT CAUSE FOUND, FIXED
 - `webhook.go:425,520,601,675,904,1194,1244,1269,1334,1549,1631,2032,2107(x3),2338,2465`
-- API server gets "No route to host" to webhook service ClusterIPs
-- kube-proxy DOES apply iptables-restore with DNAT rules (504 times during test)
-- EndpointSlice controller creates EndpointSlices for webhook services (GC no longer deleting them)
-- BUT: kube-proxy only ever sees 3-6 services at a time — test services are ephemeral
-- **Root cause theory**: EndpointSlice endpoints have `ready: false` because kubelet hasn't set pod Ready condition → kube-proxy skips not-ready endpoints → no DNAT rule created
-- **TODO**: verify if webhook pod has Ready=true condition. If not, fix kubelet readiness detection.
+- **Root cause**: kube-proxy matched EndpointSlice ports against SERVICE port (443) instead of TARGET port (8443). Webhook service has port:443 targetPort:8443. EndpointSlice port is the target (8443). Filter `ep_port == svc_port` (8443 != 443) → no match → no DNAT rule → "No route to host"
+- **FIXED**: match by port name, then targetPort, then servicePort, then single-port fallback
 
 ### 2. CRD OpenAPI — 9 failures — INVESTIGATING
 - `crd_publish_openapi.go:77,170,211,267,285,318,366,400,451`
