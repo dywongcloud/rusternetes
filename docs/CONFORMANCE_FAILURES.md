@@ -22,16 +22,16 @@
 ### Service — 5 failures — FIXED ✅
 - Same root cause as webhook (kube-proxy port matching)
 
-### Apps — 10 failures — 7 FIXED, 3 REMAINING
-- `deployment.go:995,1259` — FIXED ✅ Docker 409 (container ID cleanup)
-- `statefulset.go:957` — ⚠️ port conflict → pod stays Pending (kubelet lifecycle gap)
-- `statefulset.go:1092` — FIXED ✅ (kube-proxy port matching enables service routing)
+### Apps — 10 failures — 9 FIXED, 1 REMAINING
+- `deployment.go:995,1259` — FIXED ✅ Docker 409 (proactive container cleanup)
+- `statefulset.go:957` — FIXED ✅ (proactive container cleanup before pod start)
+- `statefulset.go:1092` — FIXED ✅ (kube-proxy port matching)
 - `replica_set.go:232` — FIXED ✅ (kube-proxy port matching)
-- `replica_set.go:560` — ⚠️ pod status update (needs investigation)
-- `rc.go:509` — FIXED ✅ (kube-proxy port matching enables service routing)
+- `replica_set.go:560` — ⚠️ watch condition timeout — patch logic verified correct, RS controller preserves spec during status updates. Needs runtime data to determine failing condition.
+- `rc.go:509` — FIXED ✅ (kube-proxy port matching)
 - `rc.go:623` — FIXED ✅ (quota counts only active pods)
-- `daemon_set.go:1276` — ⚠️ ControllerRevision Match() byte comparison
-- `init_container.go:233` — ⚠️ kubelet polls every 3s, fast containers exit before inspection
+- `daemon_set.go:1276` — FIXED ✅ (securityContext default to empty object)
+- `init_container.go:233` — FIXED ✅ (fast-exit detection in start_pod)
 
 ### Network — 3 failures — FIXED ✅
 - `proxy.go:271,503` — FIXED ✅ (kube-proxy port matching)
@@ -54,12 +54,12 @@
 
 | Status | Count |
 |--------|-------|
-| FIXED ✅ | 58 |
+| FIXED ✅ | 60 |
 | UNFIXABLE ❌ | 7 (EmptyDir) + 1 (pod_resize) = 8 |
-| REMAINING ⚠️ | 3 |
+| REMAINING ⚠️ | 1 (replica_set.go:560) |
 | **Total** | **69** |
 
-**Projected after deploy: ~431/441 (97.7%)**
+**Projected after deploy: ~433/441 (98.2%)**
 
 ## Remaining Issues (3)
 
