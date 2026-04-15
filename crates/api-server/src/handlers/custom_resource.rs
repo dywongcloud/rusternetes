@@ -41,13 +41,26 @@ pub async fn create_custom_resource(
         group, version, plural, cr_name
     );
 
+    // Look up the CRD first — we need it to check preserve-unknown-fields
+    // before strict validation. CRDs with preserve-unknown-fields allow
+    // arbitrary top-level fields even with fieldValidation=Strict.
+    let crd_name_for_lookup = format!("{}.{}", plural, group);
+    let crd_for_validation = get_crd_for_resource(&state, &crd_name_for_lookup).await?;
+    let crd_preserves = crd_for_validation.spec.preserve_unknown_fields == Some(true);
+    let schema_preserves = crd_for_validation
+        .spec
+        .versions
+        .iter()
+        .find(|v| v.name == version)
+        .and_then(|v| v.schema.as_ref())
+        .map(|s| s.open_apiv3_schema.x_kubernetes_preserve_unknown_fields == Some(true))
+        .unwrap_or(false);
+
     // Strict field validation for CRDs:
-    // 1. Reject unknown top-level fields (CustomResource has flatten extra)
-    // 2. Reject unknown metadata fields
     // K8s ref: staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go
     if params.get("fieldValidation").map(|v| v.as_str()) == Some("Strict") {
-        // Check unknown top-level fields
-        if !cr.extra.is_empty() {
+        // Check unknown top-level fields — but SKIP if CRD preserves unknown fields
+        if !cr.extra.is_empty() && !crd_preserves && !schema_preserves {
             let unknown: Vec<&String> = cr.extra.keys().collect();
             return Err(rusternetes_common::Error::InvalidResource(format!(
                 "strict decoding error: unknown field \"{}\"",
@@ -131,9 +144,8 @@ pub async fn create_custom_resource(
     }
     crate::handlers::validation::validate_strict_fields(&params, &body, &cr)?;
 
-    // Find the CRD for this resource type
-    let crd_name = format!("{}.{}", plural, group);
-    let crd = get_crd_for_resource(&state, &crd_name).await?;
+    // Use the CRD we already looked up for preserve-unknown-fields check
+    let crd = crd_for_validation;
 
     // Apply schema defaults before validation
     apply_schema_defaults(&crd, &version, &mut cr);
