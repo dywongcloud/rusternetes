@@ -1,39 +1,56 @@
 # Conformance Failure Tracker
 
-**Round 142** | Building | 2026-04-14
+**Round 143** | Complete — 372/441 (84.4%) | 2026-04-15
 
-## Deployed Fixes (17 total)
+## Round 143 Failures (69 total)
 
-| # | Fix | Crate |
-|---|-----|-------|
-| 1 | Pod template defaults for all workloads | api-server |
-| 2 | Atomic ResourceQuota admission | api-server |
-| 3 | Webhook config immunity | api-server |
-| 4 | CRD OpenAPI v2 conversion | api-server |
-| 5 | Service internalTrafficPolicy default | api-server |
-| 6 | Webhook caBundle base64 decode | api-server |
-| 7 | $$ → $ command expansion | kubelet |
-| 8 | Default watch timeout 1800s | api-server |
-| 9 | HostPort kubelet + scheduler | kubelet, scheduler |
-| 10 | EndpointSlice stale cleanup | controller-manager |
-| 11 | Docker 409 container conflict retry | kubelet |
-| 12 | Embedded metadata field validation | api-server |
-| 13 | Scheduler per-pod state refresh | scheduler |
-| 14 | GC orphan error propagation | controller-manager |
-| 15 | Live quota usage computation | api-server |
-| 16 | Filter table KUBE-FORWARD chain | kube-proxy |
-| 17 | Pod worker state machine | kubelet |
+### Webhook — 18 failures
+- `webhook.go:425,520,601,675,904,1194,1244,1269,1334,1549,1631,2032,2107(x3),2338,2465`
+- Still "No route to host" or "connection refused" to ClusterIP
 
-## Round 142 Failures
+### CRD OpenAPI — 9 failures
+- `crd_publish_openapi.go:77,170,211,267,285,318,366,400,451`
 
-_Waiting for test results_
+### EmptyDir/Volumes — 7 failures
+- `output.go:263` (x5), `output.go:282` (x2)
+
+### DNS — 6 failures
+- `dns_common.go:476` (x6)
+
+### Service — 5 failures
+- `service.go:768,3459,4291(x3)`
+
+### Apps — 10 failures
+- `deployment.go:995,1259`
+- `statefulset.go:957,1092`
+- `replica_set.go:232,560`
+- `rc.go:509,623`
+- `daemon_set.go:1276`
+- `init_container.go:233`
+
+### Network — 3 failures
+- `proxy.go:271,503`
+- `hostport.go:219`
+
+### Other — 11 failures
+- `service_latency.go:145`
+- `preemption.go:877`
+- `resource_quota.go:290`
+- `aggregator.go:359`
+- `garbage_collector.go:436`
+- `runtime.go:115`
+- `pod_resize.go:857`
+- `init_container.go:440`
+- `secrets_volume.go:337`
+- `pod_client.go:236`
+- `pre_stop.go:153`
 
 ## Progress History
 
-| Round | Pass | Fail | Total | Rate | Notes |
-|-------|------|------|-------|------|-------|
-| 134 | 370 | 71 | 441 | 83.9% | |
-| 135 | 373 | 68 | 441 | 84.6% | |
-| 137 | ~380 | ~61 | 441 | ~86.2% | |
-| 141 | 368 | 73 | 441 | 83.4% | 2403 watch failures after 4h |
-| 142 | — | — | 441 | — | 17 fixes deployed |
+| Round | Pass | Fail | Total | Rate |
+|-------|------|------|-------|------|
+| 135 | 373 | 68 | 441 | 84.6% |
+| 137 | ~380 | ~61 | 441 | ~86.2% |
+| 141 | 368 | 73 | 441 | 83.4% |
+| 142 | 372 | 69 | 441 | 84.4% |
+| 143 | 372 | 69 | 441 | 84.4% |
