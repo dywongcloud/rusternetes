@@ -859,15 +859,35 @@ pub async fn delete_pod(
         return Ok(Json(updated_pod));
     }
 
-    // Bump generation — setting deletionTimestamp is a metadata change
-    // that K8s considers a generation bump.
-    let current_gen = updated_pod.metadata.generation.unwrap_or(1);
-    updated_pod.metadata.generation = Some(current_gen + 1);
+    // Update the pod in storage with deletionTimestamp set.
+    // Re-read for fresh resourceVersion to avoid CAS conflict.
+    // K8s doesn't use CAS for deletion — it reads the latest, sets
+    // deletionTimestamp, and writes. If there's a conflict, retry.
+    // K8s ref: staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go
+    let mut fresh_pod: Pod = state.storage.get(&key).await?;
+    if fresh_pod.metadata.deletion_timestamp.is_none() {
+        fresh_pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
+    }
+    fresh_pod.metadata.deletion_grace_period_seconds = Some(grace_period);
+    let current_gen = fresh_pod.metadata.generation.unwrap_or(1);
+    fresh_pod.metadata.generation = Some(current_gen + 1);
 
-    // Update the pod in storage with deletionTimestamp set
-    // The kubelet will detect this and handle graceful shutdown
-    let saved: Pod = state.storage.update(&key, &updated_pod).await?;
-    Ok(Json(saved))
+    match state.storage.update(&key, &fresh_pod).await {
+        Ok(saved) => Ok(Json(saved)),
+        Err(rusternetes_common::Error::Conflict(_)) => {
+            // CAS conflict — retry once with latest version
+            let mut retry_pod: Pod = state.storage.get(&key).await?;
+            if retry_pod.metadata.deletion_timestamp.is_none() {
+                retry_pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
+            }
+            retry_pod.metadata.deletion_grace_period_seconds = Some(grace_period);
+            let gen = retry_pod.metadata.generation.unwrap_or(1);
+            retry_pod.metadata.generation = Some(gen + 1);
+            let saved: Pod = state.storage.update(&key, &retry_pod).await?;
+            Ok(Json(saved))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 pub async fn list(
