@@ -36,7 +36,7 @@
 - `replica_set.go:232,560` — `:232` same as webhook (kube-proxy port matching → FIXED). `:560` — pod status update issue.
 - `rc.go:509,623` — `:509` service routing (FIXED by kube-proxy). `:623` quota counting (FIXED by active pods).
 - `daemon_set.go:1276` — ControllerRevision byte match
-- `init_container.go:233` — pod phase not set to Succeeded after init containers + main container exit. Kubelet lifecycle issue — needs deeper investigation of how we detect all containers completed.
+- `init_container.go:233` — pod phase not set to Succeeded after fast-exiting containers (`/bin/true`). **Root cause**: kubelet polls every 3s, but containers exit in milliseconds. By the time kubelet syncs, containers are gone from Docker with no status to inspect. K8s kubelet is event-driven (informer triggers pod worker immediately). **Architecture gap**: need event-driven pod sync or faster initial polling for new pods.
 
 ### 7. Network — 3 failures
 - `proxy.go:271,503` — service routing
