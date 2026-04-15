@@ -30,6 +30,13 @@ pub fn apply_pod_spec_defaults(spec: &mut PodSpec) {
     if spec.scheduler_name.is_none() {
         spec.scheduler_name = Some("default-scheduler".to_string());
     }
+    // K8s defaults securityContext to empty struct (not nil).
+    // This matters for byte-level comparisons like DaemonSet ControllerRevision Match().
+    // K8s ref: pkg/apis/core/v1/defaults.go:222-224
+    if spec.security_context.is_none() {
+        spec.security_context =
+            Some(rusternetes_common::resources::pod::PodSecurityContext::default());
+    }
 
     // K8s: SetDefaults_Container (runs on all containers in the spec)
     for container in &mut spec.containers {
