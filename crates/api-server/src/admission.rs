@@ -497,16 +497,29 @@ async fn calculate_namespace_usage<S: Storage>(
 ) -> anyhow::Result<HashMap<String, String>> {
     let mut usage = HashMap::new();
 
-    // Count pods
+    // Count ACTIVE pods (exclude terminal and terminating).
+    // K8s only counts non-terminal pods against quota.
+    // K8s ref: pkg/quota/v1/evaluator/core/pods.go — PodEvaluator
     let pod_prefix = format!("/registry/pods/{}/", namespace);
     let pods: Vec<Pod> = storage.list(&pod_prefix).await?;
-    usage.insert("pods".to_string(), pods.len().to_string());
+    let active_pods: Vec<&Pod> = pods
+        .iter()
+        .filter(|p| {
+            let phase = p.status.as_ref().and_then(|s| s.phase.as_ref());
+            !matches!(
+                phase,
+                Some(rusternetes_common::types::Phase::Succeeded)
+                    | Some(rusternetes_common::types::Phase::Failed)
+            ) && p.metadata.deletion_timestamp.is_none()
+        })
+        .collect();
+    usage.insert("pods".to_string(), active_pods.len().to_string());
 
-    // Calculate CPU and memory requests
+    // Calculate CPU and memory requests from ACTIVE pods only
     let mut total_cpu_requests = 0i64;
     let mut total_memory_requests = 0i64;
 
-    for pod in &pods {
+    for pod in &active_pods {
         if let Some(spec) = &pod.spec {
             for container in &spec.containers {
                 if let Some(resources) = &container.resources {
