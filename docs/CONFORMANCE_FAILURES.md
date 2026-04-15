@@ -48,11 +48,11 @@
 - Affects: `garbage_collector.go:436`, `runtime.go:115`, `init_container.go:440`, `secrets_volume.go:337`, `pre_stop.go:153`, `pod_client.go:236`
 
 ### 9. Other
-- `resource_quota.go:290` — quota still not rejecting — live usage fix not working
-- `preemption.go:877` — preemption logic
-- `aggregator.go:359` — service routing
+- `resource_quota.go:290` — **ROOT CAUSE FOUND, FIXED**: quota counted ALL pods including terminal/terminating. K8s only counts active pods.
+- `preemption.go:877` — preemption logic (scheduler state refresh fix may help)
+- `aggregator.go:359` — same root cause as webhook (kube-proxy port matching). **FIXED**.
 - `pod_resize.go:857` — not implemented
-- `service_latency.go:145` — deployment not ready
+- `service_latency.go:145` — same root cause as webhook (kube-proxy port matching). **FIXED**.
 
 ## Progress History
 
