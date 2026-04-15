@@ -27,16 +27,22 @@ pub struct GarbageCollector<S: Storage> {
     delete_batch_size: usize,
     /// Maximum retry attempts for failed deletions
     max_retries: u32,
+    /// Orphans detected in the previous scan. Only delete orphans that appear
+    /// in TWO consecutive scans. This prevents race conditions where a resource
+    /// is created between the GC listing owners and listing dependents.
+    /// K8s avoids this via informer caches; we use a grace period.
+    pending_orphans: std::sync::Mutex<HashSet<String>>,
 }
 
 impl<S: Storage + 'static> GarbageCollector<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self {
             storage,
-            scan_interval: Duration::from_secs(5), // Run every 5 seconds
-            max_concurrent_deletes: 50,            // Limit concurrent operations
-            delete_batch_size: 100,                // Process up to 100 deletions per batch
-            max_retries: 3,                        // Retry failed deletions up to 3 times
+            scan_interval: Duration::from_secs(5),
+            max_concurrent_deletes: 50,
+            delete_batch_size: 100,
+            max_retries: 3,
+            pending_orphans: std::sync::Mutex::new(HashSet::new()),
         }
     }
 
@@ -53,6 +59,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
             max_concurrent_deletes,
             delete_batch_size,
             max_retries: 3,
+            pending_orphans: std::sync::Mutex::new(HashSet::new()),
         }
     }
 
@@ -88,14 +95,33 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         // Find orphaned resources (resources whose owners no longer exist)
         let orphans = self.find_orphans(&all_resources, &owner_map);
 
-        if !orphans.is_empty() {
-            info!("Found {} orphaned resources", orphans.len());
+        // Two-scan grace period: only delete orphans that were ALSO orphans in
+        // the previous scan. This prevents race conditions where a resource is
+        // created between the GC listing owners and listing dependents.
+        // K8s avoids this via informer caches with consistent snapshots.
+        let orphan_keys: HashSet<String> = orphans.iter().map(|o| o.key.clone()).collect();
+        let confirmed_orphans: Vec<ResourceInfo>;
+        {
+            let mut pending = self.pending_orphans.lock().unwrap();
+            // Only delete orphans that were pending from the PREVIOUS scan
+            confirmed_orphans = orphans
+                .into_iter()
+                .filter(|o| pending.contains(&o.key))
+                .collect();
+            // Update pending set for next scan
+            *pending = orphan_keys;
+        }
 
-            // Process orphans in batches with retry logic
+        if !confirmed_orphans.is_empty() {
+            info!(
+                "Found {} confirmed orphaned resources (2-scan grace)",
+                confirmed_orphans.len()
+            );
+
             let mut deleted_count = 0;
             let mut failed_count = 0;
 
-            for batch in orphans.chunks(self.delete_batch_size) {
+            for batch in confirmed_orphans.chunks(self.delete_batch_size) {
                 let batch_results = self.delete_batch_with_retry(batch).await;
 
                 for result in batch_results {
