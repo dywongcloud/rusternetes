@@ -29,7 +29,7 @@
 
 ### Other — 11 failures — FIXED ✅ (except pod_resize)
 - Various: quota, preemption, GC, field validation, lifecycle hooks
-- `pod_resize.go:857` — ❌ not implemented
+- `pod_resize.go:857` — ⚠️ partially implemented: API server sets resize=Proposed, kubelet detects and calls Docker update_container. But some containers (c2) don't get their cgroup updated. Either status.resize is cleared by a concurrent status write before the kubelet processes it, or the memory value parsing fails for specific resource values.
 
 ## Summary
 
