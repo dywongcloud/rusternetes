@@ -117,7 +117,7 @@
 
 ## Expected Impact
 
-With fixes 1-7, we expect to fix approximately 19-21 of the 36 failures:
+With fixes 1-8, we expect to fix approximately 25-30 of the 36 failures:
 - Fix 1 (RC selector): rc.go, gc.go, possibly deployment.go, replica_set.go (2-4 tests)
 - Fix 2 (matchConditions): webhook.go:932, :2222, :2164 (3 tests)
 - Fix 3 (deadline): webhook.go:1400 (1 test)
@@ -125,6 +125,7 @@ With fixes 1-7, we expect to fix approximately 19-21 of the 36 failures:
 - Fix 5 (conditions): init_container.go:235 (1 test)
 - Fix 6 (defaults after mutation): webhook.go:1352 (1 test)
 - Fix 7 (CRD items unwrap): crd_publish_openapi.go:77, :184, :225, :267, :285, :318, :366, :451 (8 tests)
+- Fix 8 (LIST resourceVersion): systemic fix for watch failures — affects deployment, replica_set, sysctl, statefulset, service, and many others that use LIST+WATCH
 
 ## Progress History
 
