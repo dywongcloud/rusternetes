@@ -192,11 +192,31 @@ pub async fn get_swagger_spec(
                     if crd_preserves || schema_preserves {
                         // Replace entire schema with just {type: object}
                         // K8s ref: builder.go:393-395
-                        definitions.insert(def_key.clone(), serde_json::json!({"type": "object"}));
+                        definitions.insert(def_key.clone(), serde_json::json!({
+                            "type": "object",
+                            "x-kubernetes-group-version-kind": [{
+                                "group": group,
+                                "kind": kind,
+                                "version": ver,
+                            }],
+                        }));
                     } else {
                         // Apply v2 conversion: strip extensions, omitempty defaults
                         let mut cleaned = schema_val.clone();
                         strip_false_extensions(&mut cleaned);
+                        // Add x-kubernetes-group-version-kind extension.
+                        // kubectl explain uses this to map GVR → OpenAPI definition.
+                        // K8s ref: staging/src/k8s.io/apiextensions-apiserver/pkg/controller/openapi/builder/builder.go
+                        if let Some(obj) = cleaned.as_object_mut() {
+                            obj.insert(
+                                "x-kubernetes-group-version-kind".to_string(),
+                                serde_json::json!([{
+                                    "group": group,
+                                    "kind": kind,
+                                    "version": ver,
+                                }]),
+                            );
+                        }
                         definitions.insert(def_key.clone(), cleaned);
                     }
                 }
