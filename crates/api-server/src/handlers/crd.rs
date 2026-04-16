@@ -555,12 +555,32 @@ pub async fn update_crd(
         return Ok(Json(crd));
     }
 
-    let updated = state.storage.update(&key, &crd).await?;
+    // Store as raw JSON (not typed struct) to preserve nested schemas.
+    // The typed CustomResourceDefinition loses fields like "enum" in nested
+    // JSONSchemaProps due to serde untagged enum limitations with JSONSchemaPropsOrArray.
+    // K8s ref: CRD storage preserves original schema bytes.
+    let mut raw_value: serde_json::Value = serde_json::from_slice(&body)
+        .map_err(|e| rusternetes_common::Error::Internal(format!("re-parse for storage: {}", e)))?;
+    // Apply metadata from typed struct (uid, resourceVersion, generation)
+    if let Some(obj) = raw_value.as_object_mut() {
+        if let Some(meta) = obj.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+            meta.insert("uid".to_string(), serde_json::json!(crd.metadata.uid));
+            meta.insert("name".to_string(), serde_json::json!(crd.metadata.name));
+            if let Some(gen) = crd.metadata.generation {
+                meta.insert("generation".to_string(), serde_json::json!(gen));
+            }
+        }
+        // Copy status from typed struct (may have been enriched)
+        if let Ok(status_val) = serde_json::to_value(&crd.status) {
+            obj.insert("status".to_string(), status_val);
+        }
+    }
+    let updated: serde_json::Value = state.storage.update(&key, &raw_value).await?;
 
     // Notify dynamic route manager about CRD update
     info!("CRD updated: {}", name);
 
-    Ok(Json(updated))
+    Ok(Json(serde_json::from_value(updated).unwrap_or(crd)))
 }
 
 /// Delete a CustomResourceDefinition
