@@ -2,7 +2,7 @@
 
 **Round 146** | 379/441 passed (85.9%) — 62 failed, 51 unique test locations | 2026-04-15
 
-## Fixes Applied This Round (12 total, not yet deployed)
+## Fixes Applied This Round (13 total, not yet deployed)
 
 | # | Fix | Root Cause | Fix Location | Tests Expected to Fix |
 |---|-----|-----------|-------------|----------------------|
@@ -18,6 +18,7 @@
 | 10 | ResourceQuota cpu/memory aliases | "cpu" alias for "requests.cpu" not handled; errors silently passed | api-server/admission.rs, handlers/pod.rs | resource_quota.go:290 |
 | 11 | Exec websocket Success status | Missing status JSON on channel 3 for exit code 0 | api-server/streaming.rs | exec_util.go:113 |
 | 12 | Docker 409 container conflict | 100ms wait insufficient; containers not stopped before removal | kubelet/runtime.rs | pod startup failures (~9 tests) |
+| 13 | Attach webhook validation | Attach handler missing webhook check entirely | api-server/handlers/pod_subresources.rs | webhook.go:1481 |
 
 ## Root Cause Details
 
@@ -135,10 +136,9 @@
 | 12 downstream | aggregator.go:359, deployment.go:995, proxy.go:271, :503, service.go:251, :768, :4271 |
 
 ### Likely still failing after deployment:
-- webhook.go:1481 (attach denial format)
-- builder.go:97 (CAS race)
-- job.go:144 (init container exit code timing)
-- pod_resize.go:857 (known partial)
+- builder.go:97 (CAS race — kubelet status updates bump RV between kubectl read and write)
+- job.go:144 (downstream of Docker 409 — pod can't start, so exit code never captured)
+- pod_resize.go:857 (known partial implementation)
 
 ## Progress History
 
@@ -153,6 +153,7 @@
 ## Commits (This Round)
 
 ```
+de85728 fix: Run admission webhooks on pod attach requests
 f23bfeb fix: Docker container name 409 conflict — stop before remove, increase wait
 92d6314 fix: Always send Success status on exec websocket channel 3
 d120ea1 fix: ResourceQuota check cpu/memory aliases and fail on quota errors
