@@ -571,9 +571,11 @@ pub fn calculate_resource_score_with_pods(node: &Node, pod: &Pod, all_pods: &[Po
         .map(|s| parse_resource_quantity(s, "memory"))
         .unwrap_or(0);
 
-    // Subtract resources used by pods already scheduled on this node
+    // Subtract resources used by pods already scheduled on this node.
+    // K8s checks ALL resources (cpu, memory, AND extended resources like fakecpu).
     let mut used_cpu = 0i64;
     let mut used_memory = 0i64;
+    let mut used_extended: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
     let node_name = &node.metadata.name;
     for existing_pod in all_pods {
         let scheduled_on_this_node = existing_pod
@@ -607,6 +609,39 @@ pub fn calculate_resource_score_with_pods(node: &Node, pod: &Pod, all_pods: &[Po
                         }
                         if let Some(memory) = requests.get("memory") {
                             used_memory += parse_resource_quantity(memory, "memory");
+                        }
+                        // Track extended resource usage
+                        for (key, val) in requests {
+                            if key != "cpu" && key != "memory" && key != "ephemeral-storage" {
+                                if let Ok(n) = val.parse::<i64>() {
+                                    *used_extended.entry(key.clone()).or_insert(0) += n;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Check extended resources requested by the pod against node allocatable.
+    // If ANY extended resource is insufficient, return 0 (can't schedule).
+    if let Some(spec) = &pod.spec {
+        for container in &spec.containers {
+            if let Some(ref resources) = container.resources {
+                if let Some(ref requests) = resources.requests {
+                    for (key, val) in requests {
+                        if key != "cpu" && key != "memory" && key != "ephemeral-storage" {
+                            if let Ok(requested) = val.parse::<i64>() {
+                                let node_capacity = allocatable
+                                    .get(key)
+                                    .and_then(|s| s.parse::<i64>().ok())
+                                    .unwrap_or(0);
+                                let used = used_extended.get(key).copied().unwrap_or(0);
+                                if used + requested > node_capacity {
+                                    return 0; // Extended resource insufficient
+                                }
+                            }
                         }
                     }
                 }
