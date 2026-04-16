@@ -2,7 +2,7 @@
 
 **Round 146** | 379/441 passed (85.9%) — 62 failed, 51 unique test locations | 2026-04-15
 
-## Fixes Applied This Round (13 total, not yet deployed)
+## Fixes Applied This Round (14 total, not yet deployed)
 
 | # | Fix | Root Cause | Fix Location | Tests Expected to Fix |
 |---|-----|-----------|-------------|----------------------|
@@ -19,6 +19,7 @@
 | 11 | Exec websocket Success status | Missing status JSON on channel 3 for exit code 0 | api-server/streaming.rs | exec_util.go:113 |
 | 12 | Docker 409 container conflict | 100ms wait insufficient; containers not stopped before removal | kubelet/runtime.rs | pod startup failures (~9 tests) |
 | 13 | Attach webhook validation | Attach handler missing webhook check entirely | api-server/handlers/pod_subresources.rs | webhook.go:1481 |
+| 14 | Per-pod sync lock | Concurrent sync_pod calls for same pod → Docker 409 races | kubelet/kubelet.rs | all pod startup failures |
 
 ## Root Cause Details
 
@@ -153,6 +154,7 @@
 ## Commits (This Round)
 
 ```
+59ec5c6 fix: Per-pod sync lock prevents concurrent sync_pod Docker 409 races
 de85728 fix: Run admission webhooks on pod attach requests
 f23bfeb fix: Docker container name 409 conflict — stop before remove, increase wait
 92d6314 fix: Always send Success status on exec websocket channel 3
