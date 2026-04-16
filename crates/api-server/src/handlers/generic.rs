@@ -213,7 +213,7 @@ pub async fn list_apiservices(
     let list = serde_json::json!({
         "apiVersion": "apiregistration.k8s.io/v1",
         "kind": "APIServiceList",
-        "metadata": { "resourceVersion": chrono::Utc::now().timestamp().to_string() },
+        "metadata": { "resourceVersion": crate::handlers::list_resource_version(&items) },
         "items": items
     });
     Ok(Json(list).into_response())

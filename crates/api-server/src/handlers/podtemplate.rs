@@ -249,7 +249,7 @@ pub async fn list_podtemplates(
         limit,
         continue_token,
     };
-    let resource_version = chrono::Utc::now().timestamp().to_string();
+    let resource_version = crate::handlers::list_resource_version(&podtemplates);
 
     let paginated =
         match rusternetes_common::paginate(podtemplates, pagination_params, &resource_version) {
@@ -344,7 +344,7 @@ pub async fn list_all_podtemplates(
         limit,
         continue_token,
     };
-    let resource_version = chrono::Utc::now().timestamp().to_string();
+    let resource_version = crate::handlers::list_resource_version(&podtemplates);
 
     let paginated =
         match rusternetes_common::paginate(podtemplates, pagination_params, &resource_version) {

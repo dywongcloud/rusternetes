@@ -252,15 +252,14 @@ pub async fn list_replicationcontrollers(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut rcs, &params)?;
 
-    // Get a resource version for consistency
-    let resource_version = chrono::Utc::now().timestamp().to_string();
+    let resource_version = crate::handlers::list_resource_version(&rcs);
 
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());
     if crate::handlers::table::wants_table(accept) {
         let table = crate::handlers::table::generic_table(
             rcs,
-            Some(resource_version),
+            Some(resource_version.clone()),
             "ReplicationController",
         );
         return Ok(axum::Json(table).into_response());
@@ -308,15 +307,14 @@ pub async fn list_all_replicationcontrollers(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut rcs, &params)?;
 
-    // Get a resource version for consistency
-    let resource_version = chrono::Utc::now().timestamp().to_string();
+    let resource_version = crate::handlers::list_resource_version(&rcs);
 
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());
     if crate::handlers::table::wants_table(accept) {
         let table = crate::handlers::table::generic_table(
             rcs,
-            Some(resource_version),
+            Some(resource_version.clone()),
             "ReplicationController",
         );
         return Ok(axum::Json(table).into_response());

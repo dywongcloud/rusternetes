@@ -74,3 +74,31 @@ pub mod volumesnapshot;
 pub mod volumesnapshotclass;
 pub mod volumesnapshotcontent;
 pub mod watch;
+
+/// Compute the list-level resourceVersion from the max item resourceVersion.
+/// This uses etcd mod_revisions (from individual items) rather than timestamps.
+/// Using timestamps causes LIST+WATCH failures because watches start from a
+/// revision that etcd never reaches.
+pub fn list_resource_version<T: serde::Serialize>(items: &[T]) -> String {
+    let mut max_rv: i64 = 0;
+    for item in items {
+        if let Ok(v) = serde_json::to_value(item) {
+            if let Some(rv_str) = v
+                .get("metadata")
+                .and_then(|m| m.get("resourceVersion"))
+                .and_then(|r| r.as_str())
+            {
+                if let Ok(rv) = rv_str.parse::<i64>() {
+                    if rv > max_rv {
+                        max_rv = rv;
+                    }
+                }
+            }
+        }
+    }
+    if max_rv > 0 {
+        max_rv.to_string()
+    } else {
+        "1".to_string()
+    }
+}

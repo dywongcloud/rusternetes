@@ -971,9 +971,10 @@ pub async fn list(
         continue_token,
     };
 
-    // Get a resource version for consistency
-    // In a real implementation, this would be from etcd or storage layer
-    let resource_version = chrono::Utc::now().timestamp().to_string();
+    // Compute resource version from max item RV (etcd mod_revision).
+    // DO NOT use timestamps — they create revision space mismatches with etcd,
+    // causing LIST+WATCH to fail because watches start from a revision etcd never reaches.
+    let resource_version = crate::handlers::list_resource_version(&pods);
 
     // Apply pagination
     let paginated = match rusternetes_common::paginate(pods, pagination_params, &resource_version) {
@@ -1081,8 +1082,7 @@ pub async fn list_all_pods(
         continue_token,
     };
 
-    // Get a resource version for consistency
-    let resource_version = chrono::Utc::now().timestamp().to_string();
+    let resource_version = crate::handlers::list_resource_version(&pods);
 
     // Apply pagination
     let paginated = match rusternetes_common::paginate(pods, pagination_params, &resource_version) {
