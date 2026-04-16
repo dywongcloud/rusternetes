@@ -4903,12 +4903,51 @@ impl ContainerRuntime {
 
             let is_terminated = matches!(state, ContainerState::Terminated { .. });
 
+            // Preserve restart_count and last_state from the pod's existing status.
+            // When we remove and recreate a failed init container, the Docker state
+            // resets, but K8s tracks restarts across container recreations.
+            let existing_status = pod
+                .status
+                .as_ref()
+                .and_then(|s| s.init_container_statuses.as_ref())
+                .and_then(|statuses| statuses.iter().find(|s| s.name == ic.name));
+
+            let mut restart_count = existing_status.map(|s| s.restart_count).unwrap_or(0);
+            let mut last_state = existing_status.and_then(|s| s.last_state.clone());
+
+            // If the container failed (non-zero exit) and the previous state was also
+            // terminated, increment restart_count and move current to last_state.
+            if let ContainerState::Terminated { exit_code, .. } = &state {
+                if *exit_code != 0 {
+                    if let Some(prev) = existing_status {
+                        if let Some(ContainerState::Terminated { .. }) = &prev.state {
+                            // Container was previously terminated too — this is a restart
+                        } else if matches!(prev.state, Some(ContainerState::Waiting { .. })) {
+                            // Previous was Waiting (after removal) — count the restart
+                            restart_count += 1;
+                        }
+                    }
+                    // Set last_state to the current terminated state for CrashLoopBackOff
+                    last_state = Some(state.clone());
+                }
+            } else if matches!(state, ContainerState::Waiting { .. }) {
+                // Waiting after a failure — keep last_state from existing
+                if existing_status
+                    .and_then(|s| s.state.as_ref())
+                    .map(|s| matches!(s, ContainerState::Terminated { exit_code, .. } if *exit_code != 0))
+                    .unwrap_or(false)
+                {
+                    restart_count += 1;
+                    last_state = existing_status.and_then(|s| s.state.clone());
+                }
+            }
+
             statuses.push(ContainerStatus {
                 name: ic.name.clone(),
                 ready: is_terminated && matches!(&state, ContainerState::Terminated { exit_code, .. } if *exit_code == 0),
-                restart_count: 0,
+                restart_count,
                 state: Some(state),
-                last_state: None,
+                last_state,
                 image: Some(ic.image.clone()),
                 image_id,
                 container_id,
