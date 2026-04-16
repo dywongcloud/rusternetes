@@ -72,9 +72,13 @@ impl<S: Storage> ReplicationControllerController<S> {
                     "RC {}/{} being deleted with orphan policy, removing ownerRefs from pods",
                     namespace, rc.metadata.name
                 );
-                // Remove ownerReferences from all owned pods
+                // Remove ownerReferences from all owned pods.
+                // K8s orphan processing: must remove ALL ownerRefs before removing
+                // the finalizer. If any PATCH fails (CAS conflict), retry on the
+                // next reconcile cycle instead of deleting the RC with un-orphaned pods.
                 let pods_prefix = build_prefix("pods", Some(namespace));
                 let all_pods: Vec<Pod> = self.storage.list(&pods_prefix).await?;
+                let mut all_orphaned = true;
                 for pod in &all_pods {
                     let owned = pod
                         .metadata
@@ -90,8 +94,20 @@ impl<S: Storage> ReplicationControllerController<S> {
                                     .collect()
                             });
                         let pod_key = build_key("pods", Some(namespace), &pod.metadata.name);
-                        let _ = self.storage.update(&pod_key, &updated_pod).await;
+                        if let Err(e) = self.storage.update(&pod_key, &updated_pod).await {
+                            debug!("Failed to orphan pod {}: {} — will retry", pod.metadata.name, e);
+                            all_orphaned = false;
+                        }
                     }
+                }
+                // Only remove the finalizer and delete if ALL pods were orphaned.
+                // If any failed, return and retry on the next cycle.
+                if !all_orphaned {
+                    info!(
+                        "RC {}/{} orphan incomplete, will retry next cycle",
+                        namespace, rc.metadata.name
+                    );
+                    return Ok(());
                 }
                 // Remove orphan finalizer and delete the RC
                 let mut updated_rc = rc.clone();
