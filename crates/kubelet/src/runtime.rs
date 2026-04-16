@@ -1362,6 +1362,19 @@ impl ContainerRuntime {
             .await
             .context("Failed to start pause container")?;
 
+        // Wait for pause container to be fully running before starting app containers.
+        // Docker's start_container API returns before the container reaches "running" state.
+        // App containers that join the pause container's network namespace fail with
+        // "cannot join network namespace of a non running container" if pause isn't ready.
+        for _ in 0..10 {
+            if let Ok(info) = self.docker.inspect_container(&pause_name, None::<InspectContainerOptions>).await {
+                if info.state.as_ref().and_then(|s| s.running).unwrap_or(false) {
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
         info!("Pause container {} started", pause_name);
 
         // Inspect to get the assigned IP
