@@ -2,7 +2,7 @@
 
 **Round 146** | 379/441 passed (85.9%) — 62 failed, 51 unique test locations | 2026-04-15
 
-## Fixes Applied This Round (14 total, not yet deployed)
+## Fixes Applied This Round (15 total, not yet deployed)
 
 | # | Fix | Root Cause | Fix Location | Tests Expected to Fix |
 |---|-----|-----------|-------------|----------------------|
@@ -20,6 +20,7 @@
 | 12 | Docker 409 container conflict | 100ms wait insufficient; containers not stopped before removal | kubelet/runtime.rs | pod startup failures (~9 tests) |
 | 13 | Attach webhook validation | Attach handler missing webhook check entirely | api-server/handlers/pod_subresources.rs | webhook.go:1481 |
 | 14 | Per-pod sync lock | Concurrent sync_pod calls for same pod → Docker 409 races | kubelet/kubelet.rs | all pod startup failures |
+| 15 | Skip unchanged status writes | Status written every 5s even when unchanged → RV churn | kubelet/kubelet.rs | builder.go:97 (CAS race) |
 
 ## Root Cause Details
 
@@ -137,9 +138,8 @@
 | 12 downstream | aggregator.go:359, deployment.go:995, proxy.go:271, :503, service.go:251, :768, :4271 |
 
 ### Likely still failing after deployment:
-- builder.go:97 (CAS race — kubelet status updates bump RV between kubectl read and write)
-- job.go:144 (downstream of Docker 409 — pod can't start, so exit code never captured)
-- pod_resize.go:857 (known partial implementation)
+- job.go:144 (downstream of Docker 409 — pod can't start, so exit code never captured; fix 14 may resolve)
+- pod_resize.go:857 (known partial — Docker update_container API may not update all cgroups)
 
 ## Progress History
 
@@ -154,6 +154,7 @@
 ## Commits (This Round)
 
 ```
+7fa25ef fix: Skip pod status update when status unchanged — reduce RV churn
 59ec5c6 fix: Per-pod sync lock prevents concurrent sync_pod Docker 409 races
 de85728 fix: Run admission webhooks on pod attach requests
 f23bfeb fix: Docker container name 409 conflict — stop before remove, increase wait
