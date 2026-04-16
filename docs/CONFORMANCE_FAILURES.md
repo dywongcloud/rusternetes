@@ -2,7 +2,7 @@
 
 **Round 146** | 379/441 passed (85.9%) — 62 failed, 51 unique test locations | 2026-04-15
 
-## Fixes Applied This Round (16 total, not yet deployed)
+## Fixes Applied This Round (19 total — 16 deployed in round 147, 3 more pending)
 
 | # | Fix | Root Cause | Fix Location | Tests Expected to Fix |
 |---|-----|-----------|-------------|----------------------|
@@ -22,6 +22,9 @@
 | 14 | Per-pod sync lock | Concurrent sync_pod calls for same pod → Docker 409 races | kubelet/kubelet.rs | all pod startup failures |
 | 15 | Skip unchanged status writes | Status written every 5s even when unchanged → RV churn | kubelet/kubelet.rs | builder.go:97 (CAS race) |
 | 16 | Pod resize memory_swap | Docker rejects memory update without memory_swap | kubelet/runtime.rs | pod_resize.go:857 |
+| 17 | Pod conditions in runtime.rs | Missed Succeeded path in runtime.rs (fix 5 only covered kubelet.rs) | kubelet/runtime.rs | init_container.go:235 |
+| 18 | Webhook URL timeout param | Missing ?timeout=Ns in webhook URL (test checks URL in error) | api-server/admission_webhook.rs | webhook.go:2491 |
+| 19 | Pagination staleness | Item count change invalidated tokens; K8s only uses timeout | common/pagination.rs | chunking.go:194 |
 
 ## Root Cause Details
 
